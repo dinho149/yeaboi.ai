@@ -12,7 +12,7 @@
 
 - No build tooling (Node, bundlers, static site generators, markdown renderers). Every page is hand-written HTML.
 - No webfonts loaded — use the system font stack (`var(--sans)` / `var(--mono)`) everywhere. This is a deliberate choice from the design spec, not an oversight.
-- Every internal link and asset reference across the whole site uses an **absolute path from the domain root** (`/docs/...`), never a relative path — `docs/docs/modes/*.html` pages are nested one level deeper than `docs/docs/*.html`, and relative paths silently break when a page moves between those levels.
+- Every internal link and asset reference across the whole site uses an **absolute path from the domain root**, never a relative path. GitHub Pages serves this repo's `docs/` folder AS the site root (per `docs/CNAME`), so the repo path and the URL path are NOT the same string — one directory level is stripped: repo `docs/index.html` → URL `/`, repo `docs/assets/site.css` → URL `/assets/site.css`, repo `docs/lightsail-setup/*.png` → URL `/lightsail-setup/*.png`, repo `docs/docs/index.html` → URL `/docs/index.html`, repo `docs/docs/assets/nav.js` → URL `/docs/assets/nav.js`, repo `docs/docs/modes/planning.html` → URL `/docs/modes/planning.html`. Every path given in this plan already reflects the correct URL (post-strip) form — copy them verbatim, do not add an extra `docs/` segment because a file "looks like" it lives under a `docs/docs/` repo path.
 - Palette is grayscale + exactly one accent color (`--accent: #6a93bd`, a desaturated slate blue). No purple/indigo, no amber, no neon, no glow/box-shadow-as-glow. Borders are hairline (`--border`) and shape is sharp (`--radius: 6px`, never pill-shaped).
 - Docs pages get **no scroll-triggered animation** — instant navigation only, per the spec's "Developer Docs" motion budget.
 - Static-content tasks (every docs/HTML page) are "tested" via the **Definition of Done checklist** in that task, not an automated test suite — there is no test framework for static HTML in this repo. The one task with real automated tests is Task 22 (code comment migration), which is verified with `make lint` / `make test`.
@@ -224,28 +224,28 @@ git commit -m "feat(site): add shared design tokens and copy-button behavior"
 // highlighting, and the title search all read from this array — adding a
 // docs page means adding one entry here, not editing every page.
 const NAV = [
-  { title: "Docs Home", path: "/docs/docs/index.html" },
-  { title: "Getting Started", path: "/docs/docs/getting-started.html" },
-  { title: "CLI Reference", path: "/docs/docs/cli-reference.html" },
+  { title: "Docs Home", path: "/docs/index.html" },
+  { title: "Getting Started", path: "/docs/getting-started.html" },
+  { title: "CLI Reference", path: "/docs/cli-reference.html" },
   {
     title: "Modes",
-    path: "/docs/docs/modes/index.html",
+    path: "/docs/modes/index.html",
     children: [
-      { title: "Planning", path: "/docs/docs/modes/planning.html" },
-      { title: "Daily Standup", path: "/docs/docs/modes/standup.html" },
-      { title: "Retro", path: "/docs/docs/modes/retro.html" },
-      { title: "Performance", path: "/docs/docs/modes/performance.html" },
-      { title: "Reporting", path: "/docs/docs/modes/reporting.html" },
-      { title: "Team Analysis", path: "/docs/docs/modes/team-analysis.html" },
+      { title: "Planning", path: "/docs/modes/planning.html" },
+      { title: "Daily Standup", path: "/docs/modes/standup.html" },
+      { title: "Retro", path: "/docs/modes/retro.html" },
+      { title: "Performance", path: "/docs/modes/performance.html" },
+      { title: "Reporting", path: "/docs/modes/reporting.html" },
+      { title: "Team Analysis", path: "/docs/modes/team-analysis.html" },
     ],
   },
-  { title: "Integrations & Exports", path: "/docs/docs/integrations-exports.html" },
-  { title: "Session Management", path: "/docs/docs/session-management.html" },
-  { title: "Tools", path: "/docs/docs/tools.html" },
-  { title: "Architecture & Concepts", path: "/docs/docs/architecture.html" },
-  { title: "Scrum Standards", path: "/docs/docs/scrum-standards.html" },
-  { title: "Deployment", path: "/docs/docs/deployment.html" },
-  { title: "Development", path: "/docs/docs/development.html" },
+  { title: "Integrations & Exports", path: "/docs/integrations-exports.html" },
+  { title: "Session Management", path: "/docs/session-management.html" },
+  { title: "Tools", path: "/docs/tools.html" },
+  { title: "Architecture & Concepts", path: "/docs/architecture.html" },
+  { title: "Scrum Standards", path: "/docs/scrum-standards.html" },
+  { title: "Deployment", path: "/docs/deployment.html" },
+  { title: "Development", path: "/docs/development.html" },
 ];
 
 function _flatNav() {
@@ -344,7 +344,7 @@ document.addEventListener("DOMContentLoaded", renderDocsShell);
 
 ```css
 /* Docs-only layer: sidebar + TOC + article typography + code blocks.
-   Loaded after /docs/assets/site.css on every docs page. */
+   Loaded after /assets/site.css on every docs page. */
 body.docs{ margin:0 }
 .docs-shell{
   display:grid;
@@ -433,12 +433,12 @@ Run: `cat docs/index.html` — note the hero tagline copy, the six mode descript
 
 Replace the entire file with a version that:
 - Links `docs/assets/site.css` and (deferred) `docs/assets/site.js` instead of an inline `<style>`/`<script>` block.
-- Adds a `.navbar` (Task 1 provides the class) with the `🤙 yeaboi` wordmark on the left and `Docs` / `GitHub ↗` / `PyPI ↗` links on the right, `Docs` pointing to `/docs/docs/index.html`.
+- Adds a `.navbar` (Task 1 provides the class) with the `🤙 yeaboi` wordmark on the left and `Docs` / `GitHub ↗` / `PyPI ↗` links on the right, `Docs` pointing to `/docs/index.html`.
 - Replaces the centered hero with an **asymmetric** two-column hero inside a `.wrap`: left column (~55%) has the tagline (as plain heading text, no gradient/shine), the lede paragraph, and the install `.codeblock` + `.copy` button (Task 1's shared component — drop the old page-local `.cmdbox`/`.install` CSS and inline copy-handler script, since `site.css`/`site.js` now provide it); right column (~45%) is the `.term` terminal-chrome frame containing `<img src="demo.gif">` (move the demo image here instead of its own later section — one strong hero visual beats a decorative ASCII wordmark).
 - Removes the animated ASCII wordmark (`pre.wordmark`), the `shine` keyframe, and the `radial-gradient` page background entirely — replace the wordmark with a plain `<p class="badge">🤙 yeaboi</p>`-style eyebrow above the tagline, or omit it (the navbar wordmark is enough branding).
 - Keeps the six-mode grid section, restyled with `.card` (Task 1) instead of the old `.mode` gradient-hover cards — same six mode descriptions, same 2-column responsive grid, drop the `transform:translateY` hover lift (keep only a border-color hover shift, consistent with "no glow" motion budget).
 - Keeps the "Get started" 3-step section, restyled with `.card`/`.codeblock`.
-- Footer: keep the same three links (GitHub / PyPI / Docs-note), but the "Docs ↗" link now points to `/docs/docs/index.html` instead of the GitHub README anchor, and add a note like `Full documentation → yeaboi.ai/docs`.
+- Footer: keep the same three links (GitHub / PyPI / Docs-note), but the "Docs ↗" link now points to `/docs/index.html` instead of the GitHub README anchor, and add a note like `Full documentation → yeaboi.ai/docs`.
 - Delete the standalone `<section id="demo">` (its content moved into the hero in this step) — do not leave a duplicate.
 
 - [ ] **Step 3: Verify**
@@ -461,7 +461,7 @@ git commit -m "redesign: rebuild landing page on shared design tokens, remove AI
 - Create: `docs/docs/index.html`
 
 **Interfaces:**
-- Consumes: `/docs/assets/site.css`, `/docs/docs/assets/docs.css`, `/docs/docs/assets/nav.js` (calls `renderDocsShell()` on load via the shared `DOMContentLoaded` listener already registered inside `nav.js` — the page just needs to include the script tag, no manual call required).
+- Consumes: `/assets/site.css`, `/docs/assets/docs.css`, `/docs/assets/nav.js` (calls `renderDocsShell()` on load via the shared `DOMContentLoaded` listener already registered inside `nav.js` — the page just needs to include the script tag, no manual call required).
 - Content source: `README.md` lines 114–155 (`## ✨ Features`) for the summary blurbs; the six mode names/descriptions from Task 3's landing page copy.
 
 - [ ] **Step 1: Read source content**
@@ -481,15 +481,15 @@ Use this exact page shell (every subsequent docs-page task reuses this `<head>`/
 <title>Docs — yeaboi</title>
 <meta name="description" content="yeaboi documentation: getting started, CLI reference, all six modes, integrations, architecture, and deployment." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/docs/assets/site.css" />
-<link rel="stylesheet" href="/docs/docs/assets/docs.css" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
 </head>
 <body class="docs">
 <header class="navbar">
   <div class="wrap">
-    <a class="brand" href="/docs/index.html">🤙 yeaboi</a>
+    <a class="brand" href="/">🤙 yeaboi</a>
     <nav>
-      <a href="/docs/docs/index.html" class="current">Docs</a>
+      <a href="/docs/index.html" class="current">Docs</a>
       <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
       <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
     </nav>
@@ -503,26 +503,26 @@ Use this exact page shell (every subsequent docs-page task reuses this `<head>`/
       <p class="lede">A team lead's best friend — plans, standups, retros, performance &amp; reporting, right from your terminal.</p>
 
       <h2 id="start-here">Start here</h2>
-      <p>New to yeaboi? Start with <a href="/docs/docs/getting-started.html">Getting Started</a>, then explore the <a href="/docs/docs/modes/index.html">six modes</a>.</p>
+      <p>New to yeaboi? Start with <a href="/docs/getting-started.html">Getting Started</a>, then explore the <a href="/docs/modes/index.html">six modes</a>.</p>
 
       <h2 id="sections">Sections</h2>
       <ul>
-        <li><a href="/docs/docs/getting-started.html">Getting Started</a> — install, setup, API keys, intake modes</li>
-        <li><a href="/docs/docs/cli-reference.html">CLI Reference</a> — every flag, headless mode, session flags</li>
-        <li><a href="/docs/docs/modes/index.html">Modes</a> — Planning, Daily Standup, Retro, Performance, Reporting, Team Analysis</li>
-        <li><a href="/docs/docs/integrations-exports.html">Integrations &amp; Exports</a> — Markdown, HTML, Notion, Confluence, Jira, Azure DevOps, JSON</li>
-        <li><a href="/docs/docs/session-management.html">Session Management</a> — sessions, Usage page, Settings page</li>
-        <li><a href="/docs/docs/tools.html">Tools</a> — all 35 tools and their risk levels</li>
-        <li><a href="/docs/docs/architecture.html">Architecture &amp; Concepts</a> — LangGraph architecture, prompt construction, guardrails, multi-provider LLM support</li>
-        <li><a href="/docs/docs/scrum-standards.html">Scrum Standards</a> — story format, acceptance criteria, DoD, the intake questionnaire</li>
-        <li><a href="/docs/docs/deployment.html">Deployment</a> — AWS Lightsail via OpenClaw, Slack integration</li>
-        <li><a href="/docs/docs/development.html">Development</a> — build/test commands, tech stack</li>
+        <li><a href="/docs/getting-started.html">Getting Started</a> — install, setup, API keys, intake modes</li>
+        <li><a href="/docs/cli-reference.html">CLI Reference</a> — every flag, headless mode, session flags</li>
+        <li><a href="/docs/modes/index.html">Modes</a> — Planning, Daily Standup, Retro, Performance, Reporting, Team Analysis</li>
+        <li><a href="/docs/integrations-exports.html">Integrations &amp; Exports</a> — Markdown, HTML, Notion, Confluence, Jira, Azure DevOps, JSON</li>
+        <li><a href="/docs/session-management.html">Session Management</a> — sessions, Usage page, Settings page</li>
+        <li><a href="/docs/tools.html">Tools</a> — all 35 tools and their risk levels</li>
+        <li><a href="/docs/architecture.html">Architecture &amp; Concepts</a> — LangGraph architecture, prompt construction, guardrails, multi-provider LLM support</li>
+        <li><a href="/docs/scrum-standards.html">Scrum Standards</a> — story format, acceptance criteria, DoD, the intake questionnaire</li>
+        <li><a href="/docs/deployment.html">Deployment</a> — AWS Lightsail via OpenClaw, Slack integration</li>
+        <li><a href="/docs/development.html">Development</a> — build/test commands, tech stack</li>
       </ul>
     </article>
   </main>
   <nav class="docs-toc" id="docs-toc"></nav>
 </div>
-<script src="/docs/docs/assets/nav.js"></script>
+<script src="/docs/assets/nav.js"></script>
 </body>
 </html>
 ```
@@ -586,10 +586,10 @@ git commit -m "feat(docs): add CLI Reference page"
 **Files:** Create `docs/docs/modes/index.html`
 **Source:** the six mode descriptions already written for Task 3's landing-page mode grid (Planning/Analysis/Standup/Retro/Performance/Reporting — reuse that copy, it's already accurate and concise) — read `docs/index.html` after Task 3 lands to pull it.
 
-**Note on paths:** this page lives one directory deeper (`docs/docs/modes/`) than Tasks 4–6, but every asset/link in the Task 4 shell already uses absolute `/docs/...` paths, so the exact same `<head>` and `<script src="/docs/docs/assets/nav.js">` block works unchanged — do not switch to relative paths.
+**Note on paths:** this page lives one directory deeper (`docs/docs/modes/`) than Tasks 4–6, but every asset/link in the Task 4 shell already uses absolute `/docs/...` paths, so the exact same `<head>` and `<script src="/docs/assets/nav.js">` block works unchanged — do not switch to relative paths.
 
 - [ ] **Step 1:** Read `docs/index.html`'s six `.card` mode blocks for copy.
-- [ ] **Step 2:** Write `docs/docs/modes/index.html` (Task 4 shell, title "Modes — yeaboi docs"). Body: `<h1>Modes</h1>`, a lede paragraph ("Everything a lead does between planning and delivery — six modes, one command."), then six `<h2 id="...">` sections (`planning`, `daily-standup`, `retro`, `performance`, `reporting`, `team-analysis`), each with 2–3 sentences (expand slightly on the landing-page card copy, since this page has more room) and a link to its dedicated page, e.g. `<p><a href="/docs/docs/modes/planning.html">Full Planning docs →</a></p>`.
+- [ ] **Step 2:** Write `docs/docs/modes/index.html` (Task 4 shell, title "Modes — yeaboi docs"). Body: `<h1>Modes</h1>`, a lede paragraph ("Everything a lead does between planning and delivery — six modes, one command."), then six `<h2 id="...">` sections (`planning`, `daily-standup`, `retro`, `performance`, `reporting`, `team-analysis`), each with 2–3 sentences (expand slightly on the landing-page card copy, since this page has more room) and a link to its dedicated page, e.g. `<p><a href="/docs/modes/planning.html">Full Planning docs →</a></p>`.
 - [ ] **Step 3: Verify (Definition of Done)** — all six mode names link to the correct dedicated-page paths from `nav.js`'s `Modes.children`; `<h1>`/`<h2>` ids present; no relative links.
 - [ ] **Step 4: Commit**
 
@@ -807,7 +807,7 @@ git commit -m "feat(docs): add Scrum Standards page"
 **Source:** `README.md` lines 229–554 (`## ☁️ Deploy on AWS Lightsail (OpenClaw)`, all 14 numbered subsections including Slack integration).
 
 - [ ] **Step 1:** Run `sed -n '229,554p' README.md` and read the output.
-- [ ] **Step 2:** Write `docs/docs/deployment.html` (Task 4 shell, title "Deployment — yeaboi docs"). `<h1>Deployment</h1>`, one `<h2 id="step-N-...">` per numbered subsection (Create the instance, Attach a static IP, Enable Bedrock access, ... through Next steps), preserving every shell command as a code block and every screenshot reference (`docs/lightsail-setup/*.png`) as an `<img>` with `src="/docs/lightsail-setup/<file>.png"` (absolute path — these existing images live at `docs/lightsail-setup/`, one level up from the new `docs/docs/` pages).
+- [ ] **Step 2:** Write `docs/docs/deployment.html` (Task 4 shell, title "Deployment — yeaboi docs"). `<h1>Deployment</h1>`, one `<h2 id="step-N-...">` per numbered subsection (Create the instance, Attach a static IP, Enable Bedrock access, ... through Next steps), preserving every shell command as a code block and every screenshot reference (`docs/lightsail-setup/*.png`) as an `<img>` with `src="/lightsail-setup/<file>.png"` (absolute path — these existing images live at `docs/lightsail-setup/`, one level up from the new `docs/docs/` pages).
 - [ ] **Step 3: Verify (Definition of Done)** — same checks as Task 5, plus: every `<img src>` resolves to a file that actually exists in `docs/lightsail-setup/` (cross-check filenames with `ls docs/lightsail-setup/`).
 - [ ] **Step 4: Commit**
 
@@ -1008,7 +1008,7 @@ broken = []
 for f in html_files:
     text = f.read_text()
     for href in re.findall(r'href="(/docs/[^"#]+)"', text):
-        target = "." + href  # href is absolute-from-root, e.g. /docs/docs/tools.html
+        target = "." + href  # href is absolute-from-root, e.g. /docs/tools.html
         if not pathlib.Path(target).exists():
             broken.append((str(f), href))
     for src in re.findall(r'src="(/docs/[^"]+)"', text):
@@ -1033,7 +1033,7 @@ Expected: `All internal links resolve.` If any are reported broken, fix the offe
 grep -L 'assets/nav.js' docs/docs/*.html docs/docs/modes/*.html
 ```
 
-Expected: no output (every file matched `nav.js`). Any file listed here is missing the shell — go back to its task and add `<script src="/docs/docs/assets/nav.js"></script>` before `</body>`.
+Expected: no output (every file matched `nav.js`). Any file listed here is missing the shell — go back to its task and add `<script src="/docs/assets/nav.js"></script>` before `</body>`.
 
 - [ ] **Step 3: Spot-check in a browser**
 
