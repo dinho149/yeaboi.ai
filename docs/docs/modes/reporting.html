@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reporting — yeaboi docs</title>
+<meta name="description" content="yeaboi's Reporting mode: turn delivered work into a business-friendly update, exported as Markdown, HTML, and a slide deck." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Reporting</h1>
+      <p class="lede">Reporting turns the work your team actually delivered into a business-friendly update you can hand straight to stakeholders — no ticket jargon, just outcomes. Open the <strong>Reporting</strong> card, pick a period, and press <strong>Generate Report</strong>.</p>
+
+      <h2 id="periods">Periods</h2>
+      <p>Three periods:</p>
+      <ul>
+        <li><strong>Last sprint</strong> — the most recent sprint's completed work.</li>
+        <li><strong>Last month (~2 sprints)</strong> — the last ~4 weeks across roughly two sprints.</li>
+        <li><strong>Whole quarter</strong> — a full calendar quarter (Q1 starts January). The app auto-detects the current quarter (e.g. <code>Q3 2026</code>) and, when you generate, shows a sprint checklist: the sprints that fall in the quarter are pre-ticked, and you can ↑/↓ + <strong>Space</strong> to add or remove others (it lists a wider range than the ~6 sprints of a quarter so you can shape it exactly). Press <strong>Enter</strong> to report over the date span of the sprints you kept.</li>
+      </ul>
+
+      <h2 id="what-it-does">What it does</h2>
+      <p>It pulls the tickets marked Done / Closed in that window from Jira or Azure DevOps (the same board connection the Standup uses), computes headline metrics (items delivered, contributors, per-source counts), then makes a single LLM design pass that writes an executive summary, groups the work into outcome themes, calls out highlights, and picks a tasteful emoji for each section. If the LLM is unavailable it falls back to a plain, deterministic summary — it never fails.</p>
+
+      <h2 id="outputs">Outputs</h2>
+      <p>Three outputs, auto-saved to <code>~/.yeaboi/exports/reporting/&lt;project&gt;/</code> on every run (and re-writable with the <strong>Export</strong> button):</p>
+      <ul>
+        <li><strong>Markdown</strong> (<code>.md</code>) — drop into a wiki or PR.</li>
+        <li><strong>HTML</strong> (<code>.html</code>) — a self-contained styled report.</li>
+        <li><strong>Slide deck</strong> (<code>-slides.html</code>) — a self-contained, offline presentation: open it in any browser and use ← / → / Space to present. Press <strong>T</strong> to cycle 4 built-in themes (midnight / aurora / sunset / mono); the Theme button in the TUI sets which palette is baked into the exported deck. Everything is inline (no CDN, no network) and every piece of ticket text is rendered inertly, so it's safe to share.</li>
+      </ul>
+      <p>Reporting runs are logged to <code>~/.yeaboi/logs/reporting/</code> and persisted to the <code>reporting_history</code> table.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
