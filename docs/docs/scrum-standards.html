@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scrum Standards — yeaboi docs</title>
+<meta name="description" content="The project intake questionnaire, issue hierarchy, user story format, acceptance criteria, Definition of Done for stories and spikes, sprint ceremonies, backlog health, and story splitting guidelines the agent enforces." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Scrum Standards</h1>
+      <p class="lede">These are the team's codified practices. The agent enforces all of these when generating and validating Scrum artifacts.</p>
+
+      <h2 id="intake-questionnaire">Project Intake Questionnaire</h2>
+      <p>Before generating any Scrum artifacts, the agent runs a structured discovery phase — asking the user questions <strong>one at a time</strong> in a conversational flow. This is the "flipped prompt" technique: the agent gathers what it needs before it acts.</p>
+
+      <h3 id="questionnaire-flow">Questionnaire Flow</h3>
+      <p>The agent asks these questions sequentially. Each question is asked individually, the user responds, and the agent moves to the next. The agent adapts follow-up questions based on previous answers.</p>
+
+      <h4 id="phase-1-project-context">Phase 1 — Project Context</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><strong>What is the project?</strong> Describe it in a few sentences, or point me to a repo/doc.</td><td>Establishes the core scope and domain</td></tr>
+          <tr><td>2</td><td><strong>Is this a greenfield project or are you building on an existing codebase?</strong></td><td>Determines whether the agent should scan existing code, and whether there's legacy complexity</td></tr>
+          <tr><td>3</td><td><strong>What problem does this project solve? Who are the end users?</strong></td><td>Grounds epic/story generation in real user needs rather than abstract features</td></tr>
+          <tr><td>4</td><td><strong>What does "done" look like? What's the end-state you're targeting?</strong></td><td>Defines the finish line — prevents scope creep and gives the agent a clear goal to decompose toward</td></tr>
+          <tr><td>5</td><td><strong>Are there any hard deadlines or milestones?</strong></td><td>Constrains the sprint plan; the agent needs to know if time is fixed</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-2-team-capacity">Phase 2 — Team &amp; Capacity</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>6</td><td><strong>How many engineers are working on this?</strong></td><td>Directly affects sprint capacity and parallelism of work</td></tr>
+          <tr><td>7</td><td><strong>What are the roles on the team?</strong> (e.g., 2 backend, 1 frontend, 1 fullstack)</td><td>Lets the agent tag stories by discipline and balance sprint workload across skillsets</td></tr>
+          <tr><td>8</td><td><strong>How long are your sprints?</strong> (e.g., 1 week, 2 weeks)</td><td>Required for sprint planning — determines how many points fit per sprint</td></tr>
+          <tr><td>9</td><td><strong>Do you have a known velocity from previous sprints?</strong> If yes, what is it?</td><td>If available, the agent uses real velocity; otherwise it defaults to <strong>5 points per engineer per sprint</strong></td></tr>
+          <tr><td>10</td><td><strong>How many sprints are you targeting to complete this project?</strong></td><td>Bounds the total effort and forces prioritization if scope exceeds capacity</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-3-technical-context">Phase 3 — Technical Context</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>11</td><td><strong>What is the tech stack?</strong> (languages, frameworks, databases, infra)</td><td>Stories and tasks need to be written in terms the team actually works with</td></tr>
+          <tr><td>12</td><td><strong>Are there any existing APIs, services, or third-party integrations involved?</strong></td><td>Identifies external dependencies that create stories of their own (auth, payments, etc.)</td></tr>
+          <tr><td>13</td><td><strong>Are there any architectural constraints or decisions already made?</strong> (e.g., must use microservices, must deploy to AWS)</td><td>Prevents the agent from suggesting work that contradicts fixed decisions</td></tr>
+          <tr><td>14</td><td><strong>Is there any existing documentation, PRDs, or design docs I should reference?</strong></td><td>The agent can ingest these for grounded story generation</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-3a-codebase-context">Phase 3a — Codebase Context</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>15</td><td><strong>Does the project have an existing codebase, or is this a new build?</strong></td><td>Determines whether the agent needs to account for existing code, migrations, and legacy constraints</td></tr>
+          <tr><td>16</td><td><strong>Where is the code hosted?</strong> (GitHub, Azure DevOps, GitLab, Bitbucket, local only)</td><td>Tells the agent which source control tool to use for repo scanning</td></tr>
+          <tr><td>17</td><td><strong>Can you share the repo URL(s)?</strong> (the agent can connect and scan the repo for context)</td><td>Enables the agent to read repo structure, key files, and README to ground its output</td></tr>
+          <tr><td>18</td><td><strong>How is the repo structured?</strong> (monorepo, multi-repo, microservices, monolith)</td><td>Affects how the agent decomposes work</td></tr>
+          <tr><td>19</td><td><strong>Is there an existing CI/CD pipeline or deployment setup?</strong></td><td>Identifies whether DevOps stories are needed</td></tr>
+          <tr><td>20</td><td><strong>Is there any known technical debt?</strong> (legacy code, outdated dependencies, areas needing refactoring)</td><td>Surfaces refactoring stories and constraints</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-4-risks-unknowns">Phase 4 — Risks &amp; Unknowns</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>21</td><td><strong>Are there any areas of the project you're uncertain or worried about?</strong></td><td>The agent flags these as spike stories or high-risk items</td></tr>
+          <tr><td>22</td><td><strong>Are there any known blockers or dependencies on external teams/systems?</strong></td><td>Creates blocked/dependency stories and affects sprint ordering</td></tr>
+          <tr><td>23</td><td><strong>Is there anything that's explicitly out of scope?</strong></td><td>Prevents generating stories for work the team won't do</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-5-preferences-process">Phase 5 — Preferences &amp; Process</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>24</td><td><strong>How do you want stories estimated?</strong> (Fibonacci story points, T-shirt sizes, or no estimates)</td><td>Configures the output format</td></tr>
+          <tr><td>25</td><td><strong>Do you have a Definition of Done the team follows?</strong></td><td>Incorporated into acceptance criteria validation</td></tr>
+          <tr><td>26</td><td><strong>Do you want the output pushed to Jira, exported as Markdown, or both?</strong></td><td>Determines the final step of the pipeline</td></tr>
+        </tbody>
+      </table>
+
+      <h4 id="phase-6-capacity-planning">Phase 6 — Capacity Planning</h4>
+      <table>
+        <thead><tr><th>#</th><th>Question</th><th>Why the Agent Needs This</th></tr></thead>
+        <tbody>
+          <tr><td>27</td><td><strong>Which sprint are you planning for?</strong></td><td>Anchors the planning window. Auto-detected from Jira active sprint if configured; otherwise presented as a choice question</td></tr>
+          <tr><td>28</td><td><strong>How many bank holidays fall within your planning window?</strong></td><td>Deducts from gross capacity. Auto-detected via <code>detect_bank_holidays</code> tool (100+ countries, 3-layer locale fallback: Jira timezone → shell locale → GB default). User can override</td></tr>
+          <tr><td>29</td><td><strong>What percentage of capacity is typically lost to unplanned absences?</strong> (default: 10%)</td><td>Real feature capacity is ~24% of gross after all deductions (based on analysis of capacity planning templates)</td></tr>
+          <tr><td>30</td><td><strong>Are any engineers currently onboarding or ramping up?</strong></td><td>Reduces individual capacity during ramp-up sprints</td></tr>
+        </tbody>
+      </table>
+
+      <p>After Q28 (bank holidays), the agent asks about <strong>planned leave (PTO)</strong>:</p>
+      <ul>
+        <li>Per-person entry with name, start date, and end date (DD/MM/YYYY format with validation)</li>
+        <li>Dates outside the planning window are rejected</li>
+        <li>Working-day calculation excludes weekends</li>
+        <li>Summary shown after each entry with option to add more</li>
+        <li>Quick mode skips PTO (defaults to 0)</li>
+      </ul>
+
+      <h3 id="adaptive-behavior">Adaptive Behavior</h3>
+      <p>The questionnaire is not rigid — the agent adapts:</p>
+      <ul>
+        <li><strong>Skips questions the user already answered.</strong> If your initial description included "we're a team of 4 using React and Node", the agent won't re-ask team size or tech stack.</li>
+        <li><strong>Extracts answers from descriptions.</strong> Keyword matching detects project type (greenfield/existing), integrations (Stripe, Auth0), and infrastructure constraints (Kubernetes, microservices).</li>
+        <li><strong>Uses conditional essentials.</strong> Q7 (team roles) only appears if Q6 (team size) was answered. Q12 (integrations) only if Q11 (tech stack) was answered.</li>
+        <li><strong>Asks targeted follow-ups.</strong> Instead of generic "tell me more", the agent uses question-specific probing templates.</li>
+        <li><strong>Validates across questions.</strong> Catches contradictions — e.g., team size of 1 but multiple roles listed.</li>
+        <li><strong>Adapts question text.</strong> "You said <strong>5 engineers</strong> — what are their roles?" instead of static text.</li>
+        <li><strong>Allows "skip" and "I don't know".</strong> Proceeds with reasonable defaults and flags assumptions.</li>
+        <li><strong>Summarizes before proceeding.</strong> After all questions, presents a structured summary for confirmation.</li>
+      </ul>
+
+      <h3 id="intake-summary-output">Intake Summary Output</h3>
+      <p>After the questionnaire, the agent produces a structured summary:</p>
+      <pre><code>Here's what I understand about your project:
+
+  Project:        E-commerce platform redesign
+  Type:           Existing codebase (monolith → microservices migration)
+  End Users:      Online shoppers, internal warehouse staff
+  Target State:   Fully migrated to microservices with new checkout flow
+
+  Team:           5 engineers (2 backend, 2 frontend, 1 devops)
+  Sprint Length:  2 weeks
+  Velocity:       25 pts/sprint (default: 5 × 5 engineers, no historical data)
+  Target Sprints: 6 sprints (12 weeks)
+
+  Tech Stack:     Python/FastAPI, React, PostgreSQL, AWS ECS
+  Integrations:   Stripe (payments), SendGrid (email), existing REST API
+  Constraints:    Must maintain backward compat with mobile app v2.x
+
+  Risks:
+    - Payment flow migration (high complexity, Stripe webhook changes)
+    - No clear spec for warehouse dashboard requirements
+
+  Out of Scope:   Mobile app redesign, analytics pipeline
+
+  Output:         Jira + Markdown export
+
+  Does this look right? [Confirm / Edit]</code></pre>
+      <p>Only after the user confirms does the agent proceed to feature generation.</p>
+
+      <h2 id="issue-hierarchy">Issue Hierarchy</h2>
+      <table>
+        <thead><tr><th>Level</th><th>What It Represents</th><th>Scope</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Epic</strong></td><td>A large body of work representing the big picture. Can span months or multiple sprints.</td><td>The <strong>Why</strong> of the project</td><td><em>"Customer Self-Service Portal"</em></td></tr>
+          <tr><td><strong>Feature</strong></td><td>A significant piece of functionality that contributes to the big picture. Can span multiple sprints.</td><td>The <strong>What</strong> we're building</td><td><em>"Subscription Management"</em></td></tr>
+          <tr><td><strong>User Story</strong></td><td>A smaller, well-defined unit of work. Must be completable within a single sprint.</td><td>The <strong>How</strong> of the project</td><td><em>"As a customer, I want to upgrade my plan"</em></td></tr>
+          <tr><td><strong>Sub-Task</strong></td><td>A breakdown of a story into manageable, assignable parts.</td><td>Implementation detail</td><td><em>"Add upgrade endpoint to billing API"</em></td></tr>
+          <tr><td><strong>Spike</strong></td><td>A time-boxed research task to reduce uncertainty before delivery work begins.</td><td>Learning &amp; discovery</td><td><em>"Investigate Stripe webhook reliability"</em></td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="user-stories">User Stories</h2>
+
+      <h3 id="format">Format</h3>
+      <p>User stories follow this structure:</p>
+      <blockquote><p><strong>"As a [persona], I want to [goal], so that [benefit]."</strong></p></blockquote>
+
+      <h3 id="breaking-it-down">Breaking It Down</h3>
+      <table>
+        <thead><tr><th>Part</th><th>What It Means</th><th>Guidance</th></tr></thead>
+        <tbody>
+          <tr><td><strong>As a [persona]</strong></td><td>Who are we building this for? Not a job title — a real persona the team understands with empathy.</td><td>The team should have a shared understanding of this person — how they work, think, and feel.</td></tr>
+          <tr><td><strong>I want to [goal]</strong></td><td>What is the user actually trying to achieve? Describes intent, not features.</td><td>Must be implementation-free. If you're describing UI elements instead of the user's goal, you're missing the point.</td></tr>
+          <tr><td><strong>So that [benefit]</strong></td><td>How does this fit into their bigger picture? What problem does it solve?</td><td>Ties the story back to real value and helps define when the story is truly done.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="user-story-examples">Examples</h3>
+      <ul>
+        <li><em>As Max, I want to invite my friends, so we can enjoy this service together.</em></li>
+        <li><em>As Sascha, I want to organise my work, so I can feel more in control.</em></li>
+        <li><em>As a manager, I want to understand my colleagues' progress, so I can better report our successes and failures.</em></li>
+      </ul>
+
+      <h3 id="story-point-rules">Story Point Rules</h3>
+      <table>
+        <thead><tr><th>Rule</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Scale</strong></td><td>Fibonacci: 1, 2, 3, 5, 8</td></tr>
+          <tr><td><strong>Maximum</strong></td><td>8 points per story. If estimated above 8, the story <strong>must</strong> be split.</td></tr>
+          <tr><td><strong>What points measure</strong></td><td>Relative complexity and effort, not hours.</td></tr>
+          <tr><td><strong>Default velocity</strong></td><td>When no historical data exists: <strong>5 points per engineer per sprint</strong>.</td></tr>
+          <tr><td><strong>Sprint capacity</strong></td><td>Stories are allocated to sprints without exceeding capacity (<code>engineers x 5</code> or known velocity).</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Velocity Calculation Examples:</strong></p>
+      <table>
+        <thead><tr><th>Scenario</th><th>Calculation</th><th>Sprint Capacity</th></tr></thead>
+        <tbody>
+          <tr><td>3 engineers, no known velocity</td><td>3 × 5</td><td>15 pts/sprint</td></tr>
+          <tr><td>5 engineers, no known velocity</td><td>5 × 5</td><td>25 pts/sprint</td></tr>
+          <tr><td>4 engineers, known velocity of 30</td><td>Use 30 directly</td><td>30 pts/sprint</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Auto-Split Example:</strong></p>
+      <p>If the agent estimates "Build the full payment integration" at 13 points:</p>
+      <pre><code>This story exceeds the 8-point maximum. Splitting:
+
+  Original: Build the full payment integration (13 pts)
+
+  Split into:
+    US-010: Set up Stripe SDK and payment intent flow    (5 pts)
+    US-011: Build webhook handler for payment events      (5 pts)
+    US-012: Add payment error handling and retry logic    (3 pts)
+
+  Total: 13 pts across 3 stories (all ≤ 8)
+
+  [Accept split / Edit / Reject]?</code></pre>
+
+      <h3 id="discipline-tagging">Discipline Tagging</h3>
+      <p>Every story is tagged with the primary discipline needed:</p>
+      <table>
+        <thead><tr><th>Discipline</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>frontend</code></td><td>UI/UX implementation</td></tr>
+          <tr><td><code>backend</code></td><td>API, business logic, data</td></tr>
+          <tr><td><code>fullstack</code></td><td>Spans both (default fallback)</td></tr>
+          <tr><td><code>infrastructure</code></td><td>DevOps, CI/CD, deployment</td></tr>
+          <tr><td><code>design</code></td><td>UX research, visual design</td></tr>
+          <tr><td><code>testing</code></td><td>QA, test automation</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="story-checklist">Story Checklist</h3>
+      <p>Before a story is considered ready for sprint planning, it must have:</p>
+      <ul>
+        <li>Clear persona identified</li>
+        <li>Goal is implementation-free and user-focused</li>
+        <li>Benefit ties to real business or user value</li>
+        <li>Acceptance criteria written (see Acceptance Criteria)</li>
+        <li>Story points estimated (1–8 range)</li>
+        <li>Dependencies identified and linked</li>
+        <li>Fits within a single sprint</li>
+      </ul>
+
+      <h2 id="acceptance-criteria">Acceptance Criteria</h2>
+
+      <h3 id="what-they-are">What They Are</h3>
+      <p>Acceptance criteria are clear, concise, and testable statements that define the conditions a user story must meet to be accepted by stakeholders and considered "Done." They are the source of truth for developers, testers, and product stakeholders.</p>
+
+      <h3 id="purpose">Purpose</h3>
+      <ul>
+        <li>Clarify the scope of a user story</li>
+        <li>Ensure shared understanding between product, platform, and stakeholders</li>
+        <li>Provide a basis for test cases</li>
+        <li>Define the boundaries of success</li>
+      </ul>
+      <blockquote><p>Acceptance criteria describe <strong>what</strong> should happen, not <strong>how</strong> it's implemented. They avoid technical specifics and focus on the desired outcome.</p></blockquote>
+
+      <h3 id="key-characteristics">Key Characteristics</h3>
+      <table>
+        <thead><tr><th>Characteristic</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Clear</strong></td><td>Easy to understand, no ambiguity</td></tr>
+          <tr><td><strong>Concise</strong></td><td>No unnecessary details or fluff</td></tr>
+          <tr><td><strong>Testable</strong></td><td>Verifiable through manual or automated testing</td></tr>
+          <tr><td><strong>Outcome-Oriented</strong></td><td>Focused on the end result, not the implementation approach</td></tr>
+          <tr><td><strong>Consistent</strong></td><td>Written in a standardised format (Given/When/Then)</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="format-given-when-then">Format: Given / When / Then</h3>
+      <p>All acceptance criteria use the <strong>Given / When / Then</strong> format:</p>
+      <pre><code>Given [precondition]
+When  [action]
+Then  [expected outcome]</code></pre>
+
+      <h3 id="ac-examples">Examples</h3>
+      <p><strong>Reset Password</strong></p>
+      <blockquote><p><em>User Story: As a user, I want to reset my password so that I can regain access to my account.</em></p></blockquote>
+      <pre><code>Given I am on the password reset page
+When  I enter my registered email and click "Send Reset Link"
+Then  I should see a confirmation message saying "Reset link sent to your email"</code></pre>
+
+      <p><strong>Form Validation</strong></p>
+      <blockquote><p><em>User Story: As a user, I want to be informed when I submit an invalid phone number.</em></p></blockquote>
+      <pre><code>Given I enter an invalid phone number
+When  I try to submit the form
+Then  I should see an error message saying "Please enter a valid phone number"</code></pre>
+
+      <p><strong>Negative / Edge Case</strong></p>
+      <blockquote><p><em>User Story: As a user, I want to be prevented from registering with an already-used email.</em></p></blockquote>
+      <pre><code>Given I am on the registration page
+When  I enter an email that is already registered and click "Sign Up"
+Then  I should see an error message saying "An account with this email already exists"
+And   no duplicate account should be created</code></pre>
+
+      <h3 id="coverage-requirements">Coverage Requirements</h3>
+      <p>Every story must have acceptance criteria covering:</p>
+      <table>
+        <thead><tr><th>Scenario Type</th><th>What It Covers</th><th>Required?</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Happy path</strong></td><td>The expected, successful flow</td><td>Yes</td></tr>
+          <tr><td><strong>Negative path</strong></td><td>Invalid input, denied access, failures</td><td>Yes</td></tr>
+          <tr><td><strong>Edge cases</strong></td><td>Boundary conditions, empty states, max limits</td><td>Where applicable</td></tr>
+          <tr><td><strong>Error states</strong></td><td>What the user sees when something goes wrong</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="common-pitfalls">Common Pitfalls</h3>
+      <table>
+        <thead><tr><th>Pitfall</th><th>Why It's a Problem</th></tr></thead>
+        <tbody>
+          <tr><td>Writing implementation details (e.g., <em>"Use React component X"</em>)</td><td>Criteria should be tech-agnostic and outcome-focused</td></tr>
+          <tr><td>Vague language (e.g., <em>"It should work properly"</em>)</td><td>Not testable — what does "properly" mean?</td></tr>
+          <tr><td>Skipping negative scenarios and edge cases</td><td>Leaves gaps that surface as bugs in production</td></tr>
+          <tr><td>Using criteria as a task checklist</td><td>Criteria define outcomes, not implementation steps</td></tr>
+          <tr><td>Only covering the happy path</td><td>Real users hit errors, edge cases, and unexpected states</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="definition-of-done-user-story">Definition of Done — User Story</h2>
+      <p>A story is not "Done" until every applicable item is satisfied. The agent evaluates which DoD items apply to each story and marks the rest as N/A.</p>
+
+      <h3 id="ac-fully-met">Acceptance Criteria Fully Met</h3>
+      <ul>
+        <li>Acceptance criteria are written <strong>before</strong> work begins</li>
+        <li>Reviewed and approved by the team during backlog refinement</li>
+        <li>All criteria are fully met and tested</li>
+        <li>Given/When/Then format used consistently</li>
+      </ul>
+
+      <h3 id="documentation">Documentation</h3>
+      <ul>
+        <li>Relevant documentation created or updated</li>
+        <li>Added to the appropriate shared space / folder</li>
+        <li>Outdated documentation updated if affected by the change</li>
+        <li>Documentation completed within the sprint (unless explicitly agreed otherwise)</li>
+      </ul>
+
+      <h3 id="testing">Testing</h3>
+      <ul>
+        <li>Testing conducted across all environments where changes are deployed</li>
+        <li>Test cases clearly identified and documented</li>
+        <li>End-to-end (E2E) tests included for business-critical services where applicable</li>
+        <li>Testing deemed sufficient before marking as Done</li>
+      </ul>
+
+      <h3 id="code-merged">Code Merged</h3>
+      <ul>
+        <li>Branch merged into <code>main</code> / <code>master</code> via Pull Request</li>
+        <li>PR reviewed by at least <strong>two engineers</strong></li>
+        <li>All review comments and questions fully addressed before merge</li>
+      </ul>
+
+      <h3 id="released-via-sdlc">Released via SDLC</h3>
+      <ul>
+        <li>Release conducted through the standard SDLC process (e.g., Jenkins pipeline)</li>
+        <li>Release channel notified with relevant details (e.g., <code>#developer-releases</code> on Slack)</li>
+        <li>Story not marked Done until successfully released</li>
+      </ul>
+
+      <h3 id="stakeholder-sign-off">Stakeholder Sign-Off (if required)</h3>
+      <ul>
+        <li>Sign-off received from relevant stakeholders for features impacting external teams</li>
+        <li>Approval logged (Slack message, Jira comment, or verbal approval noted in ticket)</li>
+      </ul>
+
+      <h3 id="knowledge-sharing">Knowledge Sharing</h3>
+      <ul>
+        <li>If the change introduces new functionality, architectural decisions, or process changes — a knowledge-sharing activity is conducted</li>
+        <li>This can be a Slack update, team demo, short write-up, or Confluence page</li>
+        <li>Ensures team-wide understanding and reduces knowledge silos</li>
+      </ul>
+
+      <h2 id="definition-of-done-spike">Definition of Done — Spike</h2>
+      <p>Spikes are time-boxed research tasks used to reduce uncertainty, explore solutions, or gain clarity before delivery work begins.</p>
+
+      <h3 id="when-to-use-a-spike">When to Use a Spike</h3>
+      <ul>
+        <li>Investigating an unknown technical or product area</li>
+        <li>Evaluating possible solutions or approaches</li>
+        <li>Identifying potential blockers or risks</li>
+        <li>Prototyping or validating ideas before full implementation</li>
+      </ul>
+
+      <h3 id="spike-checklist">Checklist</h3>
+      <table>
+        <thead><tr><th>Criteria</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Objective clearly stated</strong></td><td>The goal or research question is documented in the ticket or a linked page</td></tr>
+          <tr><td><strong>Time-box respected</strong></td><td>Completed within the agreed timeframe (typically 1–3 days or a single sprint). Extensions discussed with the team.</td></tr>
+          <tr><td><strong>Findings documented</strong></td><td>All research outcomes, technical analysis, and code snippets are documented in a shared location</td></tr>
+          <tr><td><strong>Recommendation made</strong></td><td>A clear path forward is proposed — including implementation guidance, trade-offs, or alternatives</td></tr>
+          <tr><td><strong>Next steps outlined</strong></td><td>New stories, tickets, or action items are created and linked for follow-up work</td></tr>
+          <tr><td><strong>Shared with team</strong></td><td>Results communicated via stand-up, short demo, Slack summary, or write-up</td></tr>
+          <tr><td><strong>Resources linked</strong></td><td>All relevant links (API docs, diagrams, repos, articles) attached for future reference</td></tr>
+        </tbody>
+      </table>
+      <blockquote><p>The goal of a spike is <strong>learning and knowledge sharing</strong> — not production-ready code.</p></blockquote>
+
+      <h2 id="sprint-ceremonies">Sprint Ceremonies</h2>
+      <table>
+        <thead><tr><th>Ceremony</th><th>Purpose</th><th>Cadence</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Sprint Planning</strong></td><td>Select stories from the backlog, confirm capacity, commit to sprint goal</td><td>Start of sprint</td></tr>
+          <tr><td><strong>Daily Stand-up</strong></td><td>Surface blockers, sync on progress, keep momentum</td><td>Daily (15 min max)</td></tr>
+          <tr><td><strong>Backlog Refinement</strong></td><td>Review upcoming stories, write/validate acceptance criteria, estimate points, split oversized stories</td><td>Mid-sprint</td></tr>
+          <tr><td><strong>Sprint Review / Demo</strong></td><td>Show completed work to stakeholders, gather feedback</td><td>End of sprint</td></tr>
+          <tr><td><strong>Sprint Retrospective</strong></td><td>Reflect on what went well, what didn't, and what to improve</td><td>End of sprint</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="backlog-health">Backlog Health</h2>
+
+      <h3 id="priority-levels">Priority Levels</h3>
+      <table>
+        <thead><tr><th>Priority</th><th>Meaning</th><th>Sprint Scheduling</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Critical</strong></td><td>Blocks other work or has an imminent deadline</td><td>Must be in the current or next sprint</td></tr>
+          <tr><td><strong>High</strong></td><td>Core functionality, high user/business impact</td><td>Scheduled within the next 1–2 sprints</td></tr>
+          <tr><td><strong>Medium</strong></td><td>Important but not urgent</td><td>Scheduled when capacity allows</td></tr>
+          <tr><td><strong>Low</strong></td><td>Nice to have, minor improvements</td><td>Backlog — pulled in when higher priorities are clear</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="backlog-hygiene-rules">Backlog Hygiene Rules</h3>
+      <ul>
+        <li>Stories older than 3 sprints without movement should be reviewed — re-prioritise or remove</li>
+        <li>Every story in the backlog must have a clear persona, goal, and benefit</li>
+        <li>Stories without acceptance criteria are <strong>not ready</strong> for sprint planning</li>
+        <li>Blocked stories must have the blocker documented and linked</li>
+      </ul>
+
+      <h2 id="story-splitting-guidelines">Story Splitting Guidelines</h2>
+      <p>When a story is too large (estimated above 8 points), split it using one of these strategies:</p>
+      <table>
+        <thead><tr><th>Strategy</th><th>How It Works</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td><strong>By workflow step</strong></td><td>Split along the steps a user takes</td><td><em>"Register" → "Register with email" + "Register with OAuth"</em></td></tr>
+          <tr><td><strong>By business rule</strong></td><td>Separate different rules or conditions</td><td><em>"Apply discount" → "Percentage discount" + "Fixed amount discount"</em></td></tr>
+          <tr><td><strong>By data type</strong></td><td>Split by the different data being handled</td><td><em>"Import data" → "Import CSV" + "Import JSON"</em></td></tr>
+          <tr><td><strong>By happy/unhappy path</strong></td><td>Separate the success flow from error handling</td><td><em>"Process payment" → "Successful payment" + "Payment failure handling"</em></td></tr>
+          <tr><td><strong>By platform</strong></td><td>Split by target platform or environment</td><td><em>"Push notifications" → "iOS notifications" + "Android notifications"</em></td></tr>
+          <tr><td><strong>Spike + delivery</strong></td><td>Research first, build second</td><td><em>"Integrate Stripe" → "Spike: Stripe webhook approach" + "Implement Stripe webhooks"</em></td></tr>
+        </tbody>
+      </table>
+      <blockquote><p>The goal is to produce stories that are each independently valuable, testable, and completable within a sprint.</p></blockquote>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
