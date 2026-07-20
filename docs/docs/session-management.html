@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Session Management — yeaboi docs</title>
+<meta name="description" content="How yeaboi persists sessions to SQLite, resumes and lists them, auto-prunes old ones, and the Usage and Settings pages." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Session Management</h1>
+      <p class="lede">Sessions are persisted to SQLite at <code>~/.yeaboi/data/sessions.db</code>. Every terminal session gets a unique ID (<code>new-&lt;8hex&gt;-&lt;YYYY-MM-DD&gt;</code>) and a human-readable display name derived from the project slug (<code>todoapp-2026-03-19</code>). Team analysis profiles are stored in the same database.</p>
+
+      <h2 id="directory-structure">Directory structure</h2>
+      <pre><code>~/.yeaboi/
+  data/
+    sessions.db         # SQLite — planning sessions, analysis profiles, token usage
+  exports/
+    analysis/           # HTML + Markdown analysis reports
+    planning/           # HTML + Markdown planning exports
+  logs/                 # All logs rotate at 2 MB with 3 backups, one shared format
+    tui/                # Main application log (yeaboi.log) — always on
+    analysis/           # Analysis mode log + per-analysis text reports
+    planning/           # Per-planning-session logs ({session-id}.log)
+    standup/            # Daily Standup log (standup.log, incl. scheduled runs)
+    retro/              # Retro mode log (retro.log)
+    performance/        # Performance mode log (performance.log)
+    reporting/          # Reporting mode log (reporting.log)
+  .env                  # API keys and credentials</code></pre>
+
+      <h2 id="resume-a-session">Resume a session</h2>
+      <pre><code>yeaboi --resume            # interactive picker
+yeaboi --resume latest     # most recent session
+yeaboi --resume &lt;id&gt;       # specific session ID</code></pre>
+      <p>Resumed sessions pick up exactly where you left off — mid-questionnaire, mid-review, or between pipeline stages.</p>
+
+      <h2 id="list-sessions">List sessions</h2>
+      <pre><code>yeaboi --list-sessions</code></pre>
+      <p>Shows a table with project name, date, last completed step, and session ID.</p>
+
+      <h2 id="delete-sessions">Delete sessions</h2>
+      <pre><code>yeaboi --clear-sessions</code></pre>
+      <p>Interactive picker to delete one session or clear all.</p>
+
+      <h2 id="auto-pruning">Auto-pruning</h2>
+      <p>Sessions older than 30 days are auto-pruned at startup. Configure via <code>SESSION_PRUNE_DAYS</code> in <code>.env</code> (set to <code>0</code> to disable).</p>
+
+      <h2 id="usage-page">Usage Page</h2>
+      <p>The Usage page tracks token consumption across all sessions, accessible from the main menu.</p>
+      <table>
+        <thead><tr><th>Metric</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Session tokens</strong></td><td>Input and output tokens for the current session</td></tr>
+          <tr><td><strong>Lifetime tokens</strong></td><td>Cumulative total across all sessions, persisted in SQLite</td></tr>
+          <tr><td><strong>Per-provider breakdown</strong></td><td>Tokens split by LLM provider (Anthropic, OpenAI, Google, Bedrock)</td></tr>
+          <tr><td><strong>Session history</strong></td><td>Recent sessions with their token counts and timestamps</td></tr>
+          <tr><td><strong>Cost estimate</strong></td><td>Approximate cost based on provider pricing</td></tr>
+        </tbody>
+      </table>
+      <p>Token usage is tracked automatically via <code>track_usage()</code> on every LLM call and persisted to the <code>token_usage</code> table in SQLite. The page uses a dedicated amber colour theme to distinguish it from Planning (blue) and Analysis (green).</p>
+
+      <h2 id="settings-page">Settings Page</h2>
+      <p>The Settings page provides a read-only view of your current configuration and a shortcut to the setup wizard.</p>
+      <table>
+        <thead><tr><th>Section</th><th>What it shows</th></tr></thead>
+        <tbody>
+          <tr><td><strong>LLM Provider</strong></td><td>Active provider and model (e.g., Anthropic / claude-sonnet-4)</td></tr>
+          <tr><td><strong>API Keys</strong></td><td>Configured keys with values masked (e.g., <code>sk-ant-***...***abc</code>)</td></tr>
+          <tr><td><strong>Issue Tracking</strong></td><td>Jira and/or Azure DevOps connection status, org URL, project</td></tr>
+          <tr><td><strong>Version Control</strong></td><td>GitHub token status</td></tr>
+          <tr><td><strong>Storage</strong></td><td>The data directory (<code>YEABOI_HOME</code>) everything is written under</td></tr>
+        </tbody>
+      </table>
+      <p>From the Settings page you can launch the <strong>setup wizard</strong> to reconfigure providers, API keys, and integrations, cycle the <strong>log level</strong>, and change the <strong>data directory</strong> (with an offer to move your existing sessions, exports, and logs to the new location). The page uses a grey colour theme.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
