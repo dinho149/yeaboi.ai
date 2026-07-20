@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Getting Started — yeaboi docs</title>
+<meta name="description" content="Install yeaboi, run the first-time setup wizard, configure API keys, and pick an intake mode." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Getting Started</h1>
+
+      <h2 id="prerequisites">Prerequisites</h2>
+      <ul>
+        <li>Python 3.11+</li>
+        <li>An API key for at least one LLM provider:
+          <ul>
+            <li><a href="https://console.anthropic.com/settings/keys">Anthropic</a> (recommended)</li>
+            <li><a href="https://platform.openai.com/api-keys">OpenAI</a></li>
+            <li><a href="https://aistudio.google.com/app/apikey">Google AI Studio</a></li>
+            <li><a href="https://aws.amazon.com/bedrock/">AWS Bedrock</a> (IAM credentials — no API key needed on EC2/Lightsail)</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h2 id="installation">Installation (development)</h2>
+      <pre><code>make install        # installs uv, creates venv, installs dependencies
+make env            # creates .env from .env.example
+make pre-commit     # installs pre-commit hooks</code></pre>
+
+      <h2 id="first-run-setup-wizard">First-run setup wizard</h2>
+      <p>On first launch (or with <code>--setup</code>), an interactive wizard walks you through:</p>
+      <ol>
+        <li><strong>LLM provider selection</strong> — choose Anthropic, OpenAI, Google, or AWS Bedrock</li>
+        <li><strong>API key entry</strong> — with format validation hints (e.g., Anthropic keys start with <code>sk-ant-</code>)</li>
+        <li><strong>Issue tracking</strong> — Jira or Azure DevOps Boards (with org URL, project, and PAT verification)</li>
+        <li><strong>Version control</strong> — GitHub PAT token (or skip)</li>
+        <li><strong>Credential storage</strong> — saved to <code>~/.yeaboi/.env</code></li>
+      </ol>
+      <pre><code>yeaboi --setup   # re-run anytime to update credentials</code></pre>
+
+      <h2 id="api-keys">API keys</h2>
+
+      <h3 id="anthropic-default">Anthropic (default)</h3>
+      <pre><code>ANTHROPIC_API_KEY=sk-ant-...</code></pre>
+
+      <h3 id="openai-alternative">OpenAI (alternative)</h3>
+      <pre><code>LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...</code></pre>
+
+      <h3 id="google-alternative">Google (alternative)</h3>
+      <pre><code>LLM_PROVIDER=google
+GOOGLE_API_KEY=AIza...</code></pre>
+
+      <h3 id="langsmith-optional-tracing">LangSmith (optional tracing)</h3>
+      <p><a href="https://smith.langchain.com/">LangSmith</a> provides tracing and observability. Add to <code>.env</code>:</p>
+      <pre><code>LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_...
+LANGSMITH_PROJECT=yeaboi</code></pre>
+
+      <h2 id="intake-modes">Intake Modes</h2>
+      <p>The agent supports four intake modes, each balancing thoroughness with speed.</p>
+
+      <h3 id="smart-mode-default">Smart mode (default)</h3>
+      <p>The recommended mode. The agent:</p>
+      <ol>
+        <li>Reads your initial project description and extracts answers to as many questions as possible</li>
+        <li><strong>When an analysis profile is selected</strong>, auto-fills team size, sprint length, velocity, tech stack, and integrations from real data</li>
+        <li>Asks only the remaining essential questions (typically 2–4)</li>
+        <li>Uses <strong>answer provenance tracking</strong> to tag how each answer was obtained:
+          <ul>
+            <li><code>DIRECT</code> — you explicitly answered</li>
+            <li><code>EXTRACTED</code> — parsed from your initial description</li>
+            <li><code>DEFAULTED</code> — filled with a sensible default</li>
+            <li><code>PROBED</code> — filled via a targeted follow-up question</li>
+            <li><code>SCRUM_MD</code> — loaded from a <code>SCRUM.md</code> file in the current directory</li>
+          </ul>
+        </li>
+        <li>Applies <strong>conditional essentials</strong> — questions that only appear when relevant (e.g., "What are their roles?" only asked after you give a team size)</li>
+        <li>Runs <strong>cross-question validation</strong> — catches contradictions (e.g., team size of 1 but multiple roles listed)</li>
+        <li>Generates <strong>adaptive follow-ups</strong> using question-specific templates (not generic "tell me more")</li>
+        <li>Accepts <strong>"any" / "no preference"</strong> for tech stack (Q11) and <strong>"none"</strong> for integrations (Q12) without triggering follow-up probes</li>
+      </ol>
+
+      <h3 id="quick-mode-quick">Quick mode (<code>--quick</code>)</h3>
+      <p>Two questions only: team size and tech stack. Everything else gets sensible defaults. Best for rapid prototyping or CI pipelines.</p>
+
+      <h3 id="standard-mode-full-intake">Standard mode (<code>--full-intake</code>)</h3>
+      <p>Six questions are rendered as numbered selection menus instead of free text:</p>
+      <table>
+        <thead><tr><th>Q</th><th>Topic</th><th>Options</th></tr></thead>
+        <tbody>
+          <tr><td>Q2</td><td>Project type</td><td>Greenfield / Existing codebase / Hybrid</td></tr>
+          <tr><td>Q8</td><td>Sprint length</td><td>1 week / 2 weeks <em>(default)</em> / 3 weeks / 4 weeks</td></tr>
+          <tr><td>Q16</td><td>Code hosting</td><td>GitHub / Azure DevOps / GitLab / Bitbucket / Local</td></tr>
+          <tr><td>Q18</td><td>Repo structure</td><td>Monorepo / Multi-repo / Microservices / Monolith</td></tr>
+          <tr><td>Q24</td><td>Estimation style</td><td>Fibonacci points / T-shirt sizes / No estimates</td></tr>
+          <tr><td>Q26</td><td>Output format</td><td>Jira / Markdown / Both</td></tr>
+        </tbody>
+      </table>
+      <p>Type <code>defaults</code> at any question to batch-accept all defaults for the current phase and skip ahead.</p>
+      <p>All 30 questions asked one-at-a-time in a conversational flow. Seven phases:</p>
+      <ol>
+        <li><strong>Project Context</strong> (Q1–Q5) — name, type, goals, users, deadlines</li>
+        <li><strong>Team &amp; Capacity</strong> (Q6–Q10) — engineers, roles, sprint length, velocity, target sprints</li>
+        <li><strong>Technical Context</strong> (Q11–Q14) — tech stack, integrations, constraints, docs</li>
+        <li><strong>Codebase Context</strong> (Q15–Q20) — repo, structure, CI/CD, tech debt</li>
+        <li><strong>Risks &amp; Unknowns</strong> (Q21–Q23) — risks, blockers, out-of-scope</li>
+        <li><strong>Preferences</strong> (Q24–Q26) — estimation, DoD, output format</li>
+        <li><strong>Capacity Planning</strong> (Q27–Q30) — sprint selection, bank holidays, unplanned absence %, onboarding</li>
+      </ol>
+
+      <h3 id="offline-import-questionnaire">Offline import (<code>--questionnaire</code>)</h3>
+      <ol>
+        <li>Export a blank template: <code>yeaboi --export-questionnaire</code></li>
+        <li>Fill it in at your own pace in any editor</li>
+        <li>Import: <code>yeaboi --questionnaire intake.md</code></li>
+        <li>Review the summary and confirm before proceeding</li>
+      </ol>
+      <p>The format is round-trippable (export → edit → import preserves answers exactly).</p>
+
+      <h3 id="scrum-md-context">SCRUM.md context</h3>
+      <p>Drop a <code>SCRUM.md</code> file in your project directory with any relevant context — project notes, design decisions, URLs, architecture diagrams. The agent reads it automatically and uses it to pre-fill answers and ground its output. Answers extracted from SCRUM.md are tagged with <code>*(from SCRUM.md)*</code> provenance markers in the intake summary. Your typed description always takes priority over SCRUM.md when both provide the same information.</p>
+
+      <h3 id="scrum-docs-directory">scrum-docs/ directory</h3>
+      <p>Place PRDs, design docs, or reference material in a <code>scrum-docs/</code> directory. Supported formats: <code>.md</code>, <code>.txt</code>, <code>.rst</code>, <code>.pdf</code>. PDF support requires the <code>pymupdf</code> optional dependency:</p>
+      <pre><code>uv sync --extra pdf</code></pre>
+      <p>Files are automatically ingested and fed into the project analyzer for grounded output.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
