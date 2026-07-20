@@ -1,0 +1,99 @@
+/* yeaboi.ai — shared design tokens + base components
+   Palette: grayscale + one accent. No gradients, no glow, no pill shapes. */
+:root{
+  --bg:#0a0a0a;
+  --bg-raised:#111214;
+  --bg-sunken:#070707;
+  --border:rgba(255,255,255,.08);
+  --border-strong:rgba(255,255,255,.16);
+  --text:#e8e8e6;
+  --text-muted:#9a9ea3;
+  --text-dim:#6b6e73;
+  --accent:#6a93bd;
+  --accent-dim:rgba(106,147,189,.14);
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --radius:6px;
+  --maxw:1120px;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+::selection{background:var(--accent-dim)}
+code,pre,kbd{font-family:var(--mono)}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 20px}
+
+/* ---- top nav (site-wide) ---- */
+.navbar{
+  position:sticky; top:0; z-index:20; background:rgba(10,10,10,.92);
+  backdrop-filter:blur(6px); border-bottom:1px solid var(--border);
+}
+.navbar .wrap{display:flex; align-items:center; justify-content:space-between; height:56px}
+.navbar .brand{font-family:var(--mono); font-weight:600; color:var(--text); font-size:.95rem}
+.navbar .brand:hover{text-decoration:none; color:var(--accent)}
+.navbar nav{display:flex; gap:22px; align-items:center; font-size:.9rem}
+.navbar nav a{color:var(--text-muted)}
+.navbar nav a:hover{color:var(--text)}
+.navbar nav a.current{color:var(--text); border-bottom:1px solid var(--accent)}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex; align-items:center; gap:8px; border-radius:var(--radius);
+  border:1px solid var(--border-strong); padding:9px 16px; font-size:.92rem;
+  font-family:var(--sans); cursor:pointer; transition:border-color .15s,color .15s;
+  background:transparent; color:var(--text);
+}
+.btn:hover{border-color:var(--accent); color:var(--accent); text-decoration:none}
+.btn-primary{background:var(--text); color:var(--bg); border-color:var(--text)}
+.btn-primary:hover{background:var(--accent); border-color:var(--accent); color:var(--bg)}
+
+/* ---- cards ---- */
+.card{
+  background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--radius);
+  padding:20px 22px;
+}
+.badge{
+  display:inline-block; font-family:var(--mono); font-size:.72rem; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--text-muted); border:1px solid var(--border-strong);
+  border-radius:var(--radius); padding:2px 8px;
+}
+
+/* ---- terminal window chrome (used by hero demo + code samples) ---- */
+.term{
+  background:var(--bg-raised); border:1px solid var(--border); border-radius:var(--radius);
+  overflow:hidden;
+}
+.term-bar{
+  display:flex; align-items:center; gap:8px; padding:10px 14px;
+  background:var(--bg-sunken); border-bottom:1px solid var(--border);
+}
+.dot{width:11px;height:11px;border-radius:50%; background:var(--border-strong)}
+.term-title{
+  margin-left:8px; font-family:var(--mono); font-size:.78rem; color:var(--text-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.term-body{padding:22px clamp(16px,4vw,32px) 26px}
+
+/* ---- code blocks + copy button (shared by landing + docs) ---- */
+.codeblock{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:var(--bg-sunken); border:1px solid var(--border); border-radius:var(--radius);
+  padding:12px 12px 12px 16px; font-family:var(--mono); font-size:.92rem;
+}
+.codeblock code{color:var(--text)}
+.copy{
+  border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-muted);
+  font-family:var(--mono); font-size:.76rem; border-radius:var(--radius); padding:6px 10px;
+  cursor:pointer; transition:.15s; white-space:nowrap;
+}
+.copy:hover{color:var(--text); border-color:var(--accent)}
+.copy.done{color:var(--accent); border-color:var(--accent)}
+
+@media (max-width:640px){
+  .navbar nav{gap:14px; font-size:.84rem}
+}
