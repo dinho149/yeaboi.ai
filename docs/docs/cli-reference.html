@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CLI Reference — yeaboi docs</title>
+<meta name="description" content="Every yeaboi CLI flag: interactive modes, headless mode, standup flags, session management, configuration, and the ffplay music integration." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>CLI Reference</h1>
+      <pre><code>yeaboi [OPTIONS]</code></pre>
+
+      <h2 id="interactive-modes">Interactive modes</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><em>(no flags)</em></td><td>Launch the full-screen TUI with mode selection</td></tr>
+          <tr><td><code>--quick</code></td><td>Quick intake — 2 questions only (team size + tech stack), auto-fill rest</td></tr>
+          <tr><td><code>--full-intake</code></td><td>Full 30-question intake (standard mode)</td></tr>
+          <tr><td><code>--mode project-planning</code></td><td>Skip the startup menu, go directly to project planning</td></tr>
+          <tr><td><code>--questionnaire PATH</code></td><td>Import a filled-in questionnaire Markdown file</td></tr>
+          <tr><td><code>--export-only</code></td><td>Auto-accept all review checkpoints and exit after plan generation</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="non-interactive-headless">Non-interactive / headless</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--non-interactive</code></td><td>Run headlessly (requires <code>--description</code>)</td></tr>
+          <tr><td><code>--description TEXT</code></td><td>Project description. Use <code>@file.txt</code> to read from a file</td></tr>
+          <tr><td><code>--output {markdown,json,html}</code></td><td>Output format (default: markdown). Only valid with <code>--non-interactive</code> or <code>--export-only</code></td></tr>
+          <tr><td><code>--team-size N</code></td><td>Team size (maps to intake Q6)</td></tr>
+          <tr><td><code>--sprint-length {1,2,3,4}</code></td><td>Sprint length in weeks (maps to intake Q8)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="daily-standup-flags">Daily Standup</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--standup-run</code></td><td>Run a daily standup headlessly and deliver it (what the OS scheduler invokes)</td></tr>
+          <tr><td><code>--standup-interactive</code></td><td>With <code>--standup-run</code>: prompt for your update + confirm (timed) before generating; falls back to headless with no TTY</td></tr>
+          <tr><td><code>--standup-session ID</code></td><td>Session to run the standup for (default: most recent)</td></tr>
+          <tr><td><code>--standup-output {terminal,desktop,slack,email,all}</code></td><td>Override the session's saved delivery channels</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="session-management-flags">Session management</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--resume [ID]</code></td><td>Resume a session. No argument = interactive picker. <code>latest</code> = most recent. Or pass a session ID</td></tr>
+          <tr><td><code>--list-sessions</code></td><td>List all saved sessions and exit</td></tr>
+          <tr><td><code>--clear-sessions</code></td><td>Interactively delete saved sessions</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="configuration">Configuration</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--setup</code></td><td>Re-run the first-time setup wizard</td></tr>
+          <tr><td><code>--theme {dark,light}</code></td><td>Terminal colour theme (default: dark)</td></tr>
+          <tr><td><code>--no-bell</code></td><td>Disable terminal bell after pipeline steps</td></tr>
+          <tr><td><code>--dry-run</code></td><td>Run TUI with mock data and fake delays — no LLM calls</td></tr>
+          <tr><td><code>--version</code></td><td>Print version and exit</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="questionnaire-export">Questionnaire export</h2>
+      <table>
+        <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--export-questionnaire [PATH]</code></td><td>Export a blank questionnaire template as Markdown</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="music-ffplay">🎵 Music (ffplay)</h2>
+      <p>Play focus music while you plan. This is an <strong>optional</strong> integration with <a href="https://ffmpeg.org/ffplay.html"><code>ffplay</code></a>, the headless player bundled with <strong>ffmpeg</strong> — install it separately (<code>brew install ffmpeg</code>, or your platform's package manager). ffplay is used because background music has to play <em>headlessly</em> alongside our own full-screen TUI: interactive terminal players refuse to start without a controlling terminal, whereas <code>ffplay -nodisp</code> plays a stream with no UI of its own. If the <code>ffplay</code> binary isn't on your <code>PATH</code>, the feature is disabled — the status bar shows a dim <code>♪ music: brew install ffmpeg</code> hint and the controls are no-ops until you install it.</p>
+      <p>Once installed, a compact player status appears on the bottom border of <strong>every</strong> screen, and two control chords work app-wide — even while typing in a text field:</p>
+      <table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>Ctrl+P</code></td><td>Play / pause (starts the current channel when stopped)</td></tr>
+          <tr><td><code>Ctrl+O</code></td><td>Switch to the next channel (Lofi → Jazz → Classical → Ambient)</td></tr>
+        </tbody>
+      </table>
+      <p>Music <strong>auto-pauses while you record a voice note</strong> (double-tap Space) and resumes when the recording ends, so it never bleeds into your dictation. The on/off state and selected channel are remembered between runs. Under the hood, playback runs as a headless <code>ffplay -nodisp</code> process (one per stream); pause/resume suspend and continue it with <code>SIGSTOP</code>/<code>SIGCONT</code>, and it is stopped automatically when you exit.</p>
+      <p><strong>Troubleshooting — the equalizer animates but there's no sound.</strong> The equalizer is a light animation that only means "a player was launched"; it is not driven by the audio itself. If you hear nothing, the <code>ffplay</code> process likely exited on its own (a stream URL that's down, or a codec the build can't decode). The status bar detects a player that exits unexpectedly and reverts to <code>♪ music stopped — stream unavailable, ^P to retry</code> instead of showing a phantom "playing" state — press <code>Ctrl+P</code> to retry, or <code>Ctrl+O</code> to switch to a different stream. Confirm your ffmpeg build can play a stream directly with <code>ffplay -nodisp https://ice1.somafm.com/groovesalad-128-mp3</code>.</p>
+
+      <h3 id="in-session-commands">In-session commands</h3>
+      <p>These commands are available at the <code>scrum&gt;</code> prompt during an interactive session:</p>
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>help</code>, <code>?</code></td><td>Show available commands</td></tr>
+          <tr><td><code>skip</code></td><td>Skip the current intake question (uses a sensible default)</td></tr>
+          <tr><td><code>defaults</code></td><td>Apply defaults for all remaining questions in the current phase</td></tr>
+          <tr><td><code>export</code></td><td>Export current artifacts as HTML report + Markdown</td></tr>
+          <tr><td><code>/compact</code></td><td>Switch to compact output (hide secondary columns)</td></tr>
+          <tr><td><code>/verbose</code></td><td>Switch to verbose output (full detail, default)</td></tr>
+          <tr><td><code>/resume</code></td><td>Load a previously saved session</td></tr>
+          <tr><td><code>/clear</code></td><td>Delete saved sessions (pick one or all)</td></tr>
+          <tr><td><code>Q6: answer</code></td><td>Edit Q6 inline from the summary</td></tr>
+          <tr><td><code>edit Q6</code></td><td>Re-answer Q6 interactively from the summary</td></tr>
+          <tr><td><code>exit</code>, <code>quit</code></td><td>Exit the agent</td></tr>
+          <tr><td><code>Ctrl+C</code>, <code>Ctrl+D</code></td><td>Exit the agent</td></tr>
+        </tbody>
+      </table>
+      <p>The <strong>status bar</strong> at the bottom of the terminal shows project name, current phase, and session info. It updates automatically as you progress through the pipeline.</p>
+
+      <h3 id="examples">Examples</h3>
+      <pre><code>yeaboi                                                 # interactive TUI (recommended)
+yeaboi --quick                                    # quick intake (2 questions only)
+yeaboi --full-intake                              # full 30-question intake
+yeaboi --questionnaire intake.md                  # import pre-filled questionnaire
+yeaboi --export-only --quick                      # non-interactive, auto-accept all
+yeaboi --resume                                   # resume last session (picker)
+yeaboi --resume latest                            # resume most recent session
+yeaboi --list-sessions                            # list all saved sessions
+yeaboi --clear-sessions                           # delete saved sessions
+yeaboi --non-interactive --description "Build X"  # headless mode
+yeaboi --non-interactive --description @brief.txt --output json  # JSON to stdout
+yeaboi --dry-run                                  # TUI with mock data</code></pre>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
