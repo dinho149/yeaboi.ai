@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deployment — yeaboi docs</title>
+<meta name="description" content="Deploy yeaboi as a cloud service on AWS Lightsail via OpenClaw with Amazon Bedrock — instance setup, Bedrock IAM access, the OpenClaw skill, and optional Slack integration." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Deployment</h1>
+      <p class="lede">Run yeaboi as a cloud service via <a href="https://aws.amazon.com/lightsail/openclaw/">OpenClaw</a> on AWS Lightsail. OpenClaw comes pre-installed on the Lightsail blueprint and uses Amazon Bedrock (Claude Sonnet 4.6) as its model provider.</p>
+
+      <h2 id="step-1-create-the-instance">1. Create the instance</h2>
+      <ol>
+        <li>Open the <a href="https://lightsail.aws.amazon.com/">AWS Lightsail console</a></li>
+        <li><strong>Create instance</strong> → choose the <strong>OpenClaw</strong> blueprint under "Apps + OS"</li>
+        <li>Select your region (e.g., <code>eu-west-2</code>) and instance plan (2 GB RAM minimum recommended)</li>
+        <li>Name the instance (e.g., <code>OpenClaw-1</code>) and create it</li>
+      </ol>
+      <img src="/lightsail-setup/01-create-instance.png" alt="Create instance — select OpenClaw blueprint" />
+
+      <h2 id="step-2-attach-a-static-ip">2. Attach a static IP</h2>
+      <p>Your public IP changes on every stop/start. Attach a static IP in the Lightsail <strong>Networking</strong> tab to keep it stable.</p>
+      <img src="/lightsail-setup/02-static-ip.png" alt="Attach static IP" />
+
+      <h2 id="step-3-enable-bedrock-access">3. Enable Bedrock access</h2>
+      <p>OpenClaw uses Amazon Bedrock as its default AI model provider. Grant Bedrock API access by running the setup script in <strong>AWS CloudShell</strong>:</p>
+      <pre><code>curl -s https://d25b4yjpexuuj4.cloudfront.net/scripts/lightsail/setup-lightsail-openclaw-bedrock-role.sh \
+  | bash -s -- OpenClaw-1 eu-west-2</code></pre>
+      <p>Replace <code>OpenClaw-1</code> with your instance name and <code>eu-west-2</code> with your region.</p>
+      <blockquote><p><strong>Note:</strong> If this is your first time using Anthropic models in Amazon Bedrock, you'll need to complete the <a href="https://console.aws.amazon.com/bedrock/home#/modelaccess">First Time Use (FTU) form</a> to gain access.</p></blockquote>
+      <img src="/lightsail-setup/03-bedrock-setup.png" alt="Run Bedrock setup script in CloudShell" />
+
+      <h2 id="step-4-pair-your-browser">4. Pair your browser</h2>
+      <ol>
+        <li>Click <strong>Connect using SSH</strong> in the Lightsail console (or use your own SSH client)</li>
+        <li>Follow the on-screen instructions to pair your browser with the OpenClaw dashboard</li>
+        <li>Click <strong>Open dashboard</strong> to access the OpenClaw web UI</li>
+      </ol>
+      <img src="/lightsail-setup/04-pair-browser.png" alt="SSH and pair browser" />
+      <img src="/lightsail-setup/05-dashboard.png" alt="OpenClaw dashboard" />
+
+      <h2 id="step-5-install-yeaboi-on-the-instance">5. Install yeaboi on the instance</h2>
+      <p>SSH into the instance and install yeaboi with Bedrock support:</p>
+      <pre><code># Install pipx if not present
+sudo apt update && sudo apt install -y pipx
+pipx ensurepath
+source ~/.bashrc   # reload PATH so pipx-installed binaries are found
+
+# Install yeaboi with Bedrock provider
+pipx install "yeaboi[bedrock]"</code></pre>
+      <blockquote><p><strong>Tip:</strong> If <code>yeaboi: command not found</code> after install, run <code>source ~/.bashrc</code> (or start a new SSH session) to pick up the updated PATH.</p></blockquote>
+      <img src="/lightsail-setup/06-install-scrum-agent.png" alt="Install yeaboi and verify headless mode" />
+
+      <h2 id="step-6-run-the-setup-wizard">6. Run the setup wizard</h2>
+      <pre><code>yeaboi --setup</code></pre>
+      <ol>
+        <li>Select <strong>Bedrock</strong> as your LLM provider</li>
+        <li>The AWS region is auto-detected from <code>~/.aws/config</code> (e.g., <code>eu-west-2</code>) — press Enter to confirm</li>
+        <li>The wizard verifies Bedrock access using the IAM role attached by the Bedrock setup script — no API key needed</li>
+        <li>If OpenClaw is installed, the Bedrock model ID (e.g., <code>global.anthropic.claude-sonnet-4-6</code>) is auto-detected and saved to <code>~/.yeaboi/.env</code></li>
+      </ol>
+      <img src="/lightsail-setup/07-setup-bedrock.png" alt="Setup wizard — Bedrock provider" />
+
+      <h2 id="step-7-test-headless-mode">7. Test headless mode</h2>
+      <p>Verify yeaboi works end-to-end before installing the skill:</p>
+      <pre><code>yeaboi --non-interactive --description "Build a todo app" --output json</code></pre>
+      <p>You should see JSON output with features, stories, tasks, and sprints.</p>
+      <img src="/lightsail-setup/08-headless-test.png" alt="Headless mode test" />
+
+      <h2 id="step-8-install-the-openclaw-skill">8. Install the OpenClaw skill</h2>
+      <p>The <code>scrum-planner</code> skill lets OpenClaw conduct conversational scrum planning — it asks intake questions (or skips them in quick mode), generates a temp SCRUM.md, invokes <code>yeaboi --non-interactive --output json</code>, and presents results phase-by-phase with accept/edit/regenerate options.</p>
+      <blockquote><p><strong>Tip:</strong> After every <code>pipx install --force</code> (e.g., updating to a new version), re-run <code>yeaboi --install-skill</code> to update the skill files and refresh the configuration.</p></blockquote>
+      <p>A single command handles the full setup:</p>
+      <pre><code>yeaboi --install-skill</code></pre>
+      <p>This will:</p>
+      <ol>
+        <li>Copy the skill files to the skills registry at <code>/usr/lib/node_modules/openclaw/skills/scrum-planner/</code> (may prompt for sudo)</li>
+        <li>Copy the skill files into the sandbox workspace at <code>~/.openclaw/workspace/skills/scrum-planner/</code></li>
+        <li>Sync the Bedrock model ID and region from OpenClaw's config into <code>~/.yeaboi/.env</code></li>
+        <li>Disable the Docker sandbox so <code>yeaboi</code> runs directly on the host</li>
+        <li>Restart the OpenClaw gateway to load the new skill</li>
+      </ol>
+      <pre><code>[1/5] Skill registry: /usr/lib/node_modules/openclaw/skills/scrum-planner
+[2/5] Sandbox workspace: /home/ubuntu/.openclaw/workspace/skills/scrum-planner
+[3/5] Bedrock config synced: model=global.anthropic.claude-sonnet-4-6, region=eu-west-2
+[4/5] Sandbox disabled — yeaboi will run on host
+[5/5] Restart OpenClaw gateway to load the skill? [Y/n]</code></pre>
+      <blockquote><p><strong>Security note:</strong> This disables OpenClaw's Docker sandbox isolation, meaning tools execute directly on the host. This is safe for dedicated Lightsail instances running only the scrum-planner skill. For shared or multi-tenant setups, consider building a <a href="https://docs.openclaw.ai/gateway/sandboxing">custom sandbox image</a> with Python pre-installed instead.</p></blockquote>
+      <p>To install to a custom skills directory:</p>
+      <pre><code>yeaboi --install-skill /path/to/openclaw/skills</code></pre>
+      <img src="/lightsail-setup/09-install-skill.png" alt="Install the OpenClaw skill" />
+
+      <h2 id="step-9-verify-the-skill-is-loaded">9. Verify the skill is loaded</h2>
+      <p>Open the OpenClaw dashboard and check the <strong>Skills</strong> page. You should see <code>scrum-planner</code> listed under <strong>Installed Skills</strong> with an "eligible" badge.</p>
+      <img src="/lightsail-setup/10-skill-dashboard.png" alt="Skill visible in OpenClaw dashboard" />
+
+      <h2 id="step-10-test-the-skill">10. Test the skill</h2>
+      <p>Start a new conversation in the OpenClaw dashboard or Slack. Try a detailed project:</p>
+      <blockquote><p>"Plan an e-commerce marketplace — React + Next.js frontend, Python FastAPI backend, PostgreSQL, Redis, Stripe for payments, Auth0 for auth. 4 engineers, 2-week sprints. Deployed on AWS ECS."</p></blockquote>
+      <p>You should see:</p>
+      <ol>
+        <li><strong>Smart extraction</strong> — the skill detects project, tech stack, team size, integrations from your message</li>
+        <li><strong>Follow-up questions</strong> — only asks what's missing (project type, definition of done, target sprints)</li>
+        <li><strong>Confirmation summary</strong> — your answers + defaults, with option to override</li>
+        <li><strong>TUI recommendation</strong> — for complex projects (3+ features, 5+ engineers), the skill suggests installing the full TUI via <code>uv tool install yeaboi</code> or <code>pipx install yeaboi</code> for interactive editing, sprint visualisation, and capacity planning. This is informational only — generation always proceeds.</li>
+        <li><strong>Background generation</strong> — progress updates as each phase completes (~3-5 minutes)</li>
+        <li><strong>Phase-by-phase review</strong> — features, stories, tasks, sprint plan — each with accept/edit/regenerate</li>
+      </ol>
+      <p>For a faster test, try quick mode:</p>
+      <blockquote><p>"just plan it — todo app, FastAPI + PostgreSQL, 1 engineer"</p></blockquote>
+      <img src="/lightsail-setup/11-skill-intake.png" alt="Skill intake conversation" />
+      <img src="/lightsail-setup/12-skill-output.png" alt="Skill output — generated sprint plan" />
+
+      <h2 id="step-11-troubleshooting">11. Troubleshooting</h2>
+      <p>If the skill doesn't appear in the dashboard:</p>
+      <pre><code># Re-install and restart
+yeaboi --install-skill</code></pre>
+      <p>If <code>yeaboi</code> fails inside the skill:</p>
+      <pre><code># Test headless mode directly
+yeaboi --non-interactive --description "Build a todo app" --team-size 3 --sprint-length 2 --output json
+
+# Check logs
+ls -lt ~/.yeaboi/logs/ | head -5
+tail -50 ~/.yeaboi/logs/*.log
+
+# Check credentials
+grep LLM_PROVIDER ~/.yeaboi/.env</code></pre>
+
+      <h2 id="step-12-connect-slack-optional">12. Connect Slack (optional)</h2>
+      <p>Connect OpenClaw to your Slack workspace so users can trigger the scrum-planner skill via <code>@mention</code>.</p>
+
+      <h3 id="quick-setup-interactive">Quick setup (interactive)</h3>
+      <pre><code>openclaw channels add</code></pre>
+      <p>Follow the interactive prompts — OpenClaw walks you through each step.</p>
+
+      <h3 id="manual-setup">Manual setup</h3>
+      <p>If you prefer to set up the Slack App manually:</p>
+      <ol>
+        <li>Go to <a href="https://api.slack.com/apps">Slack API → Create App</a> → <strong>From manifest</strong> and paste the JSON below</li>
+        <li><strong>Socket Mode</strong> → Enable it → copy the <strong>App-Level Token</strong> (<code>xapp-...</code>)</li>
+        <li><strong>Install App</strong> to your workspace → copy the <strong>Bot Token</strong> (<code>xoxb-...</code>)</li>
+        <li><strong>Event Subscriptions</strong> → already configured via the manifest (socket mode)</li>
+        <li><strong>App Home</strong> → Messages tab is enabled for DMs</li>
+      </ol>
+      <p>Slack App manifest:</p>
+      <pre><code>{
+  "display_information": {
+    "name": "OpenClaw",
+    "description": "OpenClaw connector"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "OpenClaw",
+      "always_online": false
+    },
+    "app_home": {
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "slash_commands": [
+      {
+        "command": "/openclaw",
+        "description": "Send a message to OpenClaw",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "channels:history",
+        "channels:read",
+        "groups:history",
+        "im:history",
+        "mpim:history",
+        "users:read",
+        "app_mentions:read",
+        "reactions:read",
+        "reactions:write",
+        "pins:read",
+        "pins:write",
+        "emoji:read",
+        "commands",
+        "files:read",
+        "files:write",
+        "canvases:read",
+        "canvases:write"
+      ]
+    }
+  },
+  "settings": {
+    "socket_mode_enabled": true,
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim",
+        "reaction_added",
+        "reaction_removed",
+        "member_joined_channel",
+        "member_left_channel",
+        "channel_rename",
+        "pin_added",
+        "pin_removed"
+      ]
+    }
+  }
+}</code></pre>
+      <blockquote><p><strong>Important:</strong> The manifest includes <code>canvases:read</code> and <code>canvases:write</code> scopes. These are required for OpenClaw to post the finalized sprint plan as a Slack Canvas. Without them, the plan will be posted as threaded messages instead (which also works, but Canvas gives a better reading experience for large plans).</p></blockquote>
+      <p>Set the tokens on the Lightsail instance:</p>
+      <pre><code>openclaw channels add
+# When prompted, enter:
+#   App-Level Token: xapp-...
+#   Bot Token: xoxb-...</code></pre>
+      <img src="/lightsail-setup/13-slack-channel-add.png" alt="Connect Slack channel" />
+      <img src="/lightsail-setup/14-slack-channel-configure.png" alt="Configure Slack channel" />
+
+      <h2 id="step-13-use-the-skill-in-slack">13. Use the skill in Slack</h2>
+      <p>Once Slack is connected, <code>@mention</code> the bot in a channel to invite it. Send a casual first message to establish the thread — the bot's first reply won't appear in a thread, so keep it simple:</p>
+      <blockquote><p><strong>You:</strong> @OpenClaw hey, how's it going?</p></blockquote>
+      <img src="/lightsail-setup/15-slack-openclaw-invite.png" alt="OpenClaw invite &amp; first message" />
+      <p>Then start your planning session in a <strong>new message</strong> (this one will create a proper thread):</p>
+      <blockquote><p><strong>You:</strong> @OpenClaw Plan a mobile banking app — React Native, Node.js, PostgreSQL, 6 engineers</p></blockquote>
+      <p>The skill runs the same conversational intake as the dashboard, directly in a Slack thread:</p>
+      <ol>
+        <li><strong>Smart extraction</strong> — the bot detects answers from your initial message and shows what it found</li>
+        <li><strong>Follow-up questions</strong> — numbered choices for project type, sprint length, and target sprints</li>
+        <li><strong>Adaptive probes</strong> — "You said 6 engineers — what are their roles?"</li>
+        <li><strong>Confirmation</strong> — summary list with answer sources and defaults before generating</li>
+      </ol>
+      <p>After confirmation, the bot runs <code>yeaboi</code> in the background (~3-5 minutes), then presents results phase-by-phase with accept/edit/regenerate options.</p>
+      <img src="/lightsail-setup/16-slack-intake.png" alt="Slack conversation — intake" />
+      <img src="/lightsail-setup/17-slack-output-message.png" alt="Slack conversation — output message" />
+      <img src="/lightsail-setup/18-slack-output-canvas.png" alt="Slack conversation — output canvas" />
+
+      <h2 id="step-14-next-steps">14. Next steps</h2>
+      <ul>
+        <li><strong>Push to Jira</strong> — Configure Jira credentials in <code>yeaboi --setup</code>, then the skill offers "Push to Jira" after plan finalization.</li>
+        <li><strong>Customize the skill</strong> — Edit <code>~/.openclaw/workspace/skills/scrum-planner/SKILL.md</code> to adjust question flow, add domain-specific defaults, or change the output format.</li>
+        <li><strong>Review diagnostics</strong> — Check <code>~/.yeaboi/logs/</code> for detailed run logs if anything looks off.</li>
+        <li><strong>Secure with Teleport</strong> — For production use, add Teleport for identity-aware access to the Lightsail instance and OpenClaw dashboard.</li>
+      </ul>
+      <p>See <code>skills/scrum-planner/README.md</code> in the repo for full skill documentation, question-to-CLI mapping, and troubleshooting.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
