@@ -2,28 +2,28 @@
 // highlighting, and the title search all read from this array — adding a
 // docs page means adding one entry here, not editing every page.
 const NAV = [
-  { title: "Docs Home", path: "/docs/docs/index.html" },
-  { title: "Getting Started", path: "/docs/docs/getting-started.html" },
-  { title: "CLI Reference", path: "/docs/docs/cli-reference.html" },
+  { title: "Docs Home", path: "/docs/index.html" },
+  { title: "Getting Started", path: "/docs/getting-started.html" },
+  { title: "CLI Reference", path: "/docs/cli-reference.html" },
   {
     title: "Modes",
-    path: "/docs/docs/modes/index.html",
+    path: "/docs/modes/index.html",
     children: [
-      { title: "Planning", path: "/docs/docs/modes/planning.html" },
-      { title: "Daily Standup", path: "/docs/docs/modes/standup.html" },
-      { title: "Retro", path: "/docs/docs/modes/retro.html" },
-      { title: "Performance", path: "/docs/docs/modes/performance.html" },
-      { title: "Reporting", path: "/docs/docs/modes/reporting.html" },
-      { title: "Team Analysis", path: "/docs/docs/modes/team-analysis.html" },
+      { title: "Planning", path: "/docs/modes/planning.html" },
+      { title: "Daily Standup", path: "/docs/modes/standup.html" },
+      { title: "Retro", path: "/docs/modes/retro.html" },
+      { title: "Performance", path: "/docs/modes/performance.html" },
+      { title: "Reporting", path: "/docs/modes/reporting.html" },
+      { title: "Team Analysis", path: "/docs/modes/team-analysis.html" },
     ],
   },
-  { title: "Integrations & Exports", path: "/docs/docs/integrations-exports.html" },
-  { title: "Session Management", path: "/docs/docs/session-management.html" },
-  { title: "Tools", path: "/docs/docs/tools.html" },
-  { title: "Architecture & Concepts", path: "/docs/docs/architecture.html" },
-  { title: "Scrum Standards", path: "/docs/docs/scrum-standards.html" },
-  { title: "Deployment", path: "/docs/docs/deployment.html" },
-  { title: "Development", path: "/docs/docs/development.html" },
+  { title: "Integrations & Exports", path: "/docs/integrations-exports.html" },
+  { title: "Session Management", path: "/docs/session-management.html" },
+  { title: "Tools", path: "/docs/tools.html" },
+  { title: "Architecture & Concepts", path: "/docs/architecture.html" },
+  { title: "Scrum Standards", path: "/docs/scrum-standards.html" },
+  { title: "Deployment", path: "/docs/deployment.html" },
+  { title: "Development", path: "/docs/development.html" },
 ];
 
 function _flatNav() {
