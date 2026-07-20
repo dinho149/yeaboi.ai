@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Retro — yeaboi docs</title>
+<meta name="description" content="yeaboi's Retro mode: a collaborative sprint retrospective board your whole team joins from any browser on the LAN." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Retro</h1>
+      <p class="lede">A collaborative sprint retrospective, run from the terminal but joined from any browser.</p>
+
+      <h2 id="how-it-works">How it works</h2>
+      <p>Retro mode is built around a live board rather than a solo report. The host opens the Retro page in the yeaboi TUI, which starts a small local web server for the session. Teammates then open a URL from any browser on the LAN — no install or account required — and add sticky cards to four grids: <strong>What went well</strong>, <strong>What didn't go well</strong>, <strong>Action items</strong>, and <strong>Demos</strong>.</p>
+      <p>Because the board is served over the network rather than shared as a static file, everyone sees the same state as it grows: cards added by any participant update live on every other participant's screen, kept in sync by polling the server every 2 seconds.</p>
+      <p>Access to a session is protected rather than open to anyone who happens to be on the network. Each retro gets a random access token together with a short, human-friendly join code, so the board can't be discovered or written to by an uninvited device. Card text itself is also treated as untrusted input — it's length-capped and escaped everywhere it gets rendered, so a pasted card can't be used to break the page.</p>
+      <p>Beyond the four grids, the live board supports emoji reactions on cards, drag-to-reorder, a shared countdown timer, a theme switcher, and ambient background music — all built with zero extra dependencies, since the server itself is just Python's standard-library HTTP server.</p>
+
+      <h2 id="joining">Joining</h2>
+      <p>Teammates get into a running retro via the join code and URL the host shares, rather than needing any setup of their own. The short code is designed to be easy to read aloud or type in on the spot, and it resolves to the same token-gated board as the full URL, so there's no separate account step for anyone joining the session.</p>
+
+      <h2 id="ai-action-items">AI action items</h2>
+      <p>Once the retrospective discussion winds down, yeaboi can turn the "didn't go well" cards into a set of suggested action items with a single LLM call. These AI-suggested items are clearly marked as AI-added on the board, so the team can tell at a glance which action items came from the discussion itself and which were synthesized afterward.</p>
+
+      <h2 id="remote-sharing">Remote sharing</h2>
+      <p>The board is a LAN server by default, which covers a team in the same office or on the same network. For remote or hybrid teams, a "Share Remotely" button opens a free Cloudflare quick tunnel, making the board reachable from outside the LAN while remaining protected by the same token gate as local access.</p>
+
+      <h2 id="exports">Exports</h2>
+      <p>Every retro auto-exports once it wraps up, saving both a Markdown file and a self-contained HTML report to <code>~/.yeaboi/exports/retro/&lt;project&gt;/</code>, so the outcome of the session is captured as a shareable document rather than something that only lived on the board.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
