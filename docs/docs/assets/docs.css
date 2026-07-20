@@ -1,0 +1,57 @@
+/* Docs-only layer: sidebar + TOC + article typography + code blocks.
+   Loaded after /docs/assets/site.css on every docs page. */
+body.docs{ margin:0 }
+.docs-shell{
+  display:grid;
+  grid-template-columns:240px minmax(0,1fr) 220px;
+  gap:40px;
+  max-width:1360px;
+  margin:0 auto;
+  padding:32px 24px 80px;
+}
+.docs-sidebar{ position:sticky; top:72px; align-self:start; max-height:calc(100vh - 96px); overflow-y:auto }
+.docs-sidebar input#docs-search{
+  width:100%; background:var(--bg-raised); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text); font-family:var(--sans);
+  font-size:.86rem; padding:8px 10px; margin-bottom:14px;
+}
+.docs-sidebar input#docs-search:focus{ outline:none; border-color:var(--accent) }
+ul.docs-tree{ list-style:none; margin:0; padding:0; font-size:.88rem }
+ul.docs-tree ul.docs-tree{ margin-left:14px; margin-top:2px }
+.docs-tree li{ margin:2px 0 }
+.docs-tree a{ display:block; padding:5px 8px; border-radius:var(--radius); color:var(--text-muted) }
+.docs-tree a:hover{ color:var(--text); text-decoration:none; background:var(--bg-raised) }
+.docs-tree a.current{ color:var(--text); background:var(--accent-dim); border-left:2px solid var(--accent) }
+
+.docs-content article{ max-width:74ch }
+.docs-content h1{ font-size:1.9rem; letter-spacing:-.01em; margin:0 0 8px }
+.docs-content h2{ font-size:1.35rem; margin:40px 0 12px; padding-top:8px; border-top:1px solid var(--border) }
+.docs-content h2:first-of-type{ border-top:none; padding-top:0 }
+.docs-content h3{ font-size:1.08rem; margin:26px 0 10px }
+.docs-content p{ color:var(--text); margin:0 0 14px }
+.docs-content p.lede{ color:var(--text-muted); font-size:1.02rem }
+.docs-content ul,.docs-content ol{ color:var(--text); padding-left:1.3em; margin:0 0 14px }
+.docs-content li{ margin:4px 0 }
+.docs-content code{ background:var(--bg-raised); border:1px solid var(--border); border-radius:4px; padding:1px 5px; font-size:.88em }
+.docs-content pre{
+  background:var(--bg-sunken); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; overflow-x:auto; margin:0 0 16px;
+}
+.docs-content pre code{ background:none; border:none; padding:0; font-size:.88rem }
+.docs-content table{ width:100%; border-collapse:collapse; margin:0 0 20px; font-size:.9rem }
+.docs-content th,.docs-content td{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--border) }
+.docs-content th{ color:var(--text-muted); font-weight:600 }
+
+.docs-toc{ position:sticky; top:72px; align-self:start; font-size:.82rem }
+.docs-toc .toc-label{ color:var(--text-dim); font-family:var(--mono); text-transform:uppercase; letter-spacing:.04em; font-size:.72rem; margin:0 0 10px }
+.docs-toc ul{ list-style:none; margin:0; padding:0; border-left:1px solid var(--border) }
+.docs-toc li{ margin:0 }
+.docs-toc li.toc-sub{ padding-left:12px }
+.docs-toc a{ display:block; padding:4px 0 4px 12px; color:var(--text-muted); margin-left:-1px; border-left:1px solid transparent }
+.docs-toc a:hover{ color:var(--text); text-decoration:none; border-left-color:var(--border-strong) }
+
+@media (max-width:1000px){
+  .docs-shell{ grid-template-columns:1fr; }
+  .docs-toc{ display:none }
+  .docs-sidebar{ position:static; max-height:none; margin-bottom:24px }
+}
