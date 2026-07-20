@@ -4,6 +4,7 @@
   --bg:#0a0a0a;
   --bg-raised:#111214;
   --bg-sunken:#070707;
+  --bg-translucent:rgba(10,10,10,.92);
   --border:rgba(255,255,255,.08);
   --border-strong:rgba(255,255,255,.16);
   --text:#e8e8e6;
@@ -30,7 +31,7 @@ code,pre,kbd{font-family:var(--mono)}
 
 /* ---- top nav (site-wide) ---- */
 .navbar{
-  position:sticky; top:0; z-index:20; background:rgba(10,10,10,.92);
+  position:sticky; top:0; z-index:20; background:var(--bg-translucent);
   backdrop-filter:blur(6px); border-bottom:1px solid var(--border);
 }
 .navbar .wrap{display:flex; align-items:center; justify-content:space-between; height:56px}
@@ -51,6 +52,8 @@ code,pre,kbd{font-family:var(--mono)}
 .btn:hover{border-color:var(--accent); color:var(--accent); text-decoration:none}
 .btn-primary{background:var(--text); color:var(--bg); border-color:var(--text)}
 .btn-primary:hover{background:var(--accent); border-color:var(--accent); color:var(--bg)}
+.btn-secondary{background:transparent; color:var(--text-muted); border-color:var(--border-strong)}
+.btn-secondary:hover{color:var(--accent); border-color:var(--accent)}
 
 /* ---- cards ---- */
 .card{
