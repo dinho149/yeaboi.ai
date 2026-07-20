@@ -1,6 +1,6 @@
 """Publish generated Markdown exports to Notion / Confluence.
 
-# See README: "Tools" — this module deliberately bypasses the @tool wrappers in
+# See docs: "Tools" — this module deliberately bypasses the @tool wrappers in
 tools/notion.py and tools/confluence.py. Those wrappers are for the LLM agent:
 they return user-facing strings (success is indistinguishable from failure
 programmatically), accept only plain text bodies, and can't batch. The TUI

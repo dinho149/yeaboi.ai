@@ -1,7 +1,7 @@
 """System prompt for the Scrum Master agent.
 
-# See README: "Prompt Construction" — ARC framework, persona, flipped prompt
-# See README: "Scrum Standards" — story format, AC, points, DoD
+# See docs: "Prompt Construction" — ARC framework, persona, flipped prompt
+# See docs: "Scrum Standards" — story format, AC, points, DoD
 
 This module defines the always-on system prompt that every LLM call receives.
 The prompt establishes the agent's persona (Senior Scrum Master), core scrum
@@ -92,7 +92,7 @@ the problem first.
 def get_system_prompt() -> str:
     """Return the Scrum Master system prompt.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     # This is a factory function (not a bare constant) for two reasons:
     # 1. Consistent with the project's factory pattern (get_llm(), get_anthropic_api_key())
     # 2. Future-proof — later steps can add parameters (e.g. project name, team size)

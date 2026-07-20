@@ -12,8 +12,8 @@ Pipeline:
                               → LLM narrative + themes + emoji (design pass)
                               → DeliveryReport → store + export (md / html / slides)
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the reporting prompt
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the reporting prompt
 """
 
 from __future__ import annotations

@@ -22,7 +22,7 @@ The big CSS/JS blocks are plain (non-f-string) module constants with
 — this avoids f-string ``{{ }}`` brace-escaping. Untrusted strings (card text,
 names) are rendered via ``textContent`` (``esc()``), never raw ``innerHTML``.
 
-# See README: "Guardrails" — output validation / escaping
+# See docs: "Guardrails" — output validation / escaping
 """
 
 from __future__ import annotations

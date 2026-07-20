@@ -1,6 +1,6 @@
 """Confluence (Docs) phase of the provider selection wizard.
 
-# See README: "Architecture" — this module handles the Confluence sub-step of the
+# See docs: "Architecture" — this module handles the Confluence sub-step of the
 # Docs wizard step. Unlike Notion (an independent doc tool with its own token),
 # Confluence rides on Jira's Atlassian auth (JIRA_BASE_URL/EMAIL/API_TOKEN — see
 # tools/confluence.py); the only extra credential is the space key. The wizard

@@ -181,7 +181,7 @@ def _edit_accordion_browse(
 ) -> dict | None:
     """Show the accordion with free arrow-key navigation for editing answers.
 
-    # See README: "Architecture" — edit mode lets the user browse all questions
+    # See docs: "Architecture" — edit mode lets the user browse all questions
     # with up/down arrows. Enter re-asks the highlighted question; Esc returns
     # to the review screen without changes.
 

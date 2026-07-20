@@ -17,7 +17,7 @@ from yeaboi.agent.state import QuestionnaireState
 
 logger = logging.getLogger(__name__)
 
-# See README: "Architecture" — each node maps to a user-facing status message.
+# See docs: "Architecture" — each node maps to a user-facing status message.
 _SPINNER_MESSAGES: dict[str, str] = {
     "project_intake": "Processing your answer",
     "project_analyzer": "Analysing project",
@@ -56,7 +56,7 @@ def _build_spinner_message(node_name: str) -> str:
 def _build_toolbar(graph_state: dict) -> HTML:
     """Build an HTML status bar for prompt_toolkit's bottom_toolbar.
 
-    # See README: "Architecture" — REPL-side UI layer
+    # See docs: "Architecture" — REPL-side UI layer
     #
     # prompt_toolkit's bottom_toolbar uses HTML() objects, not Rich markup.
     # The closure over graph_state re-reads the mutable dict on each prompt

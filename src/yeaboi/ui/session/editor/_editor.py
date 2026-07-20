@@ -1,6 +1,6 @@
 """Story editor — interactive text editor for UserStory fields.
 
-# See README: "Architecture" — UI component in the session layer.
+# See docs: "Architecture" — UI component in the session layer.
 # The most complex editor: includes DoD toggle buttons, AC insertion,
 # and custom grid navigation. Other editors (task, sprint, analysis,
 # feature) live in _editor_artifacts.py and use the generic loop from

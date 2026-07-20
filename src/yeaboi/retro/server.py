@@ -23,8 +23,8 @@ Concurrency pitfalls, all handled below:
   * HTTP/1.1 keep-alive requires ``Content-Length`` on every response or the
     browser hangs — every ``_send_*`` helper sets it.
 
-# See README: "Guardrails" — token gating / input validation
-# See README: "Daily Standup" — stdlib-only delivery (same ethos)
+# See docs: "Guardrails" — token gating / input validation
+# See docs: "Daily Standup" — stdlib-only delivery (same ethos)
 """
 
 from __future__ import annotations

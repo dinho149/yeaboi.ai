@@ -1,6 +1,6 @@
 """Section navigation for the setup wizard's step state machine.
 
-# See README: "Architecture" — the setup wizard (``select_provider``) is a step
+# See docs: "Architecture" — the setup wizard (``select_provider``) is a step
 # state machine that, by default, runs LLM Provider → Issue Tracking → Docs →
 # Version Control in order. This module lets the user move between those sections
 # with the ← / → arrow keys (a "tab bar" over the progress chips) and finish from

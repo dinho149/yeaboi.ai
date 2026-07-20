@@ -1,6 +1,6 @@
 """Batch Jira creation with idempotency, progress callbacks, and error accumulation.
 
-# See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+# See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
 #
 # This module orchestrates creating Jira resources (Epic, Stories, Sub-tasks, Sprints)
 # from the scrum agent's generated artifacts. It is called by the TUI pipeline

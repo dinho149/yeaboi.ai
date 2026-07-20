@@ -1,6 +1,6 @@
 """Output guardrails — programmatic validation of LLM-generated artifacts.
 
-# See README: "Guardrails" — three lines of defence (Output layer)
+# See docs: "Guardrails" — three lines of defence (Output layer)
 
 These validators run after the LLM generates stories and sprints.
 They catch structural issues that prompt enforcement alone can miss:
@@ -155,7 +155,7 @@ def validate_estimation_calibration(
     Emits a warning (not an error) when the plan's discipline averages are more
     than _CALIBRATION_DEVIATION_FACTOR times the team's historical average.
 
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
 
     Args:
         stories: Generated user stories with story_points and discipline fields.

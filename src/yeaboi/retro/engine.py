@@ -10,8 +10,8 @@ An LLM auth/billing error is NOT re-raised — it is turned into a user-facing
 status message and the deterministic fallback is used, so the retro never
 crashes over a missing key (same policy as standup/engine.py).
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the retro action-items prompt
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the retro action-items prompt
 """
 
 from __future__ import annotations

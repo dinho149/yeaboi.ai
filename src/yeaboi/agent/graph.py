@@ -1,7 +1,7 @@
 """LangGraph graph factory — wires nodes and edges into a compiled graph.
 
-# See README: "Agentic Blueprint Reference" — Core Graph Setup, Wiring
-# See README: "The ReAct Loop" — Thought → Action → Observation pattern
+# See docs: "Agentic Blueprint Reference" — Core Graph Setup, Wiring
+# See docs: "The ReAct Loop" — Thought → Action → Observation pattern
 
 This module contains the factory function that assembles the agent graph.
 It is kept separate from node functions (nodes.py) and state (state.py) so that
@@ -50,7 +50,7 @@ def create_graph(
 ) -> CompiledStateGraph:
     """Build and compile the Scrum Agent LangGraph graph.
 
-    # See README: "Agentic Blueprint Reference" — this is the core graph setup
+    # See docs: "Agentic Blueprint Reference" — this is the core graph setup
     #
     # The graph implements the intake questionnaire + ReAct loop:
     #
@@ -81,7 +81,7 @@ def create_graph(
     # Callers (e.g. the REPL) can call create_graph() with no arguments and get
     # a fully-wired graph with all available tools. Tests that want an isolated
     # graph can pass tools=[] explicitly to opt out of auto-loading.
-    # See README: "Tools" — tool registration pattern
+    # See docs: "Tools" — tool registration pattern
 
     Args:
         tools: Sequence of LangChain tools to bind to the agent. When empty (default),
@@ -105,7 +105,7 @@ def create_graph(
     # and manages how state flows between nodes. Each node receives the full state
     # and returns a partial update dict that gets merged back using the reducers
     # defined on the schema (e.g. add_messages for the messages list).
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     graph = StateGraph(ScrumState)
 
     # ── Register nodes ──────────────────────────────────────────────
@@ -117,39 +117,39 @@ def create_graph(
     # Asks one intake question per invocation. When all 26 questions are
     # answered, sets questionnaire.completed = True so route_entry sends
     # future invocations to the "project_analyzer" node.
-    # See README: "Scrum Standards" — questionnaire phases
+    # See docs: "Scrum Standards" — questionnaire phases
     graph.add_node("project_intake", project_intake)
 
     # "project_analyzer" node — synthesizes confirmed intake answers into
     # a structured ProjectAnalysis. Single LLM call with JSON-schema prompt.
     # After this runs, route_entry sees project_analysis populated and
     # routes future invocations to the "feature_generator" node.
-    # See README: "Architecture" — project_analyzer sits between intake and agent
+    # See docs: "Architecture" — project_analyzer sits between intake and agent
     graph.add_node("project_analyzer", project_analyzer)
 
     # "feature_skip" node — creates a single feature for small projects.
     # When the analyzer determines skip_features=True, this node creates one feature
     # named after the project instead of running the full feature generator.
-    # See README: "Scrum Standards" — feature generation
+    # See docs: "Scrum Standards" — feature generation
     graph.add_node("feature_skip", feature_skip)
 
     # "feature_generator" node — decomposes ProjectAnalysis into 3-6 features.
     # Single LLM call with JSON-schema prompt. After this runs, route_entry
     # sees features populated and routes future invocations to the "story_writer" node.
-    # See README: "Architecture" — feature_generator sits between analyzer and story_writer
+    # See docs: "Architecture" — feature_generator sits between analyzer and story_writer
     graph.add_node("feature_generator", feature_generator)
 
     # "story_writer" node — decomposes features into 2-5 user stories each.
     # Single LLM call with JSON-schema prompt including nested acceptance criteria.
     # After this runs, route_entry sees stories populated and routes future
     # invocations to the "task_decomposer" node.
-    # See README: "Architecture" — story_writer sits between feature_generator and task_decomposer
+    # See docs: "Architecture" — story_writer sits between feature_generator and task_decomposer
     graph.add_node("story_writer", story_writer)
 
     # "task_decomposer" node — breaks user stories into 2-5 implementation tasks.
     # Single LLM call with JSON-schema prompt. After this runs, route_entry
     # sees tasks populated and routes future invocations to the "sprint_planner" node.
-    # See README: "Architecture" — task_decomposer sits between story_writer and sprint_planner
+    # See docs: "Architecture" — task_decomposer sits between story_writer and sprint_planner
     graph.add_node("task_decomposer", task_decomposer)
 
     # "sprint_planner" node — allocates stories to sprints based on velocity.
@@ -157,14 +157,14 @@ def create_graph(
     # stories, then a validator corrects capacity math and handles orphans.
     # Uses starting_sprint_number (from sprint_selector) for real sprint names.
     # After this runs, route_entry sees sprints populated and routes to the "agent" node.
-    # See README: "Architecture" — sprint_planner sits between task_decomposer and agent
+    # See docs: "Architecture" — sprint_planner sits between task_decomposer and agent
     graph.add_node("sprint_planner", sprint_planner)
 
     # "agent" node — the LLM reasoning step (Thought in ReAct).
     # make_call_model(tools) returns a node function with the tools bound to the LLM
     # via bind_tools(). Without bind_tools(), the LLM has no awareness of available
     # tools and can never generate tool_calls — the ReAct loop would be inert.
-    # See README: "Agentic Blueprint Reference" — bind_tools
+    # See docs: "Agentic Blueprint Reference" — bind_tools
     graph.add_node("agent", make_call_model(list(tools)))
 
     # "tools" node — the tool execution step (Action in ReAct).
@@ -180,8 +180,8 @@ def create_graph(
     # respond gracefully (e.g. apologise, suggest an alternative).
     # Without this, any tool exception propagates up and terminates the
     # REPL session unexpectedly.
-    # See README: "Tools" — tool types and ToolNode
-    # See README: "Guardrails" — graceful degradation on tool failure
+    # See docs: "Tools" — tool types and ToolNode
+    # See docs: "Guardrails" — graceful degradation on tool failure
     graph.add_node("tools", ToolNode(list(tools), handle_tool_errors=True))
 
     # "human_review" node — the human-in-the-loop step for high-risk writes.
@@ -190,7 +190,7 @@ def create_graph(
     # then routes to END so the REPL displays the confirmation to the user.
     # If the user confirms, the next invocation's should_continue detects the
     # confirmation pattern and routes directly to "tools".
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     graph.add_node("human_review", human_review)
 
     # ── Wire edges ──────────────────────────────────────────────────
@@ -207,7 +207,7 @@ def create_graph(
     #   - Tasks done, no sprints → "sprint_planner"
     #   - Sprints populated → "agent" (ReAct loop takes over)
     #
-    # See README: "Agentic Blueprint Reference" — conditional edges
+    # See docs: "Agentic Blueprint Reference" — conditional edges
     graph.add_conditional_edges(
         START,
         route_entry,
@@ -264,8 +264,8 @@ def create_graph(
     #   - low-risk tools  → "tools"        (auto-execute)
     #   - high-risk tools → "human_review" (pause for user confirmation)
     # The third argument lists all possible destinations for topology validation.
-    # See README: "Agentic Blueprint Reference" — conditional edges
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Agentic Blueprint Reference" — conditional edges
+    # See docs: "Guardrails" — human-in-the-loop pattern
     graph.add_conditional_edges("agent", should_continue, ["tools", "human_review", END])
 
     # After the tools node runs, always loop back to the agent node.
@@ -286,7 +286,7 @@ def create_graph(
     # is what you actually invoke — it has .invoke() and .stream() methods.
     # The optional checkpointer parameter enables state persistence across
     # invocations (Phase 7: Memory & Session Persistence).
-    # See README: "Memory & State" — MemorySaver, thread_id
+    # See docs: "Memory & State" — MemorySaver, thread_id
     compiled = graph.compile(checkpointer=checkpointer)
     logger.info(
         "Graph compiled: %d node(s), %d tool(s)",

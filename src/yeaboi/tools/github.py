@@ -1,6 +1,6 @@
 """GitHub read-only tools for fetching repo context.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # All four tools are read-only (low risk) — they fetch public data from the
 # GitHub API and return it as a string for the LLM to reason about. The LLM
@@ -80,7 +80,7 @@ def _get_github_client() -> github.Github:
     """Create a PyGithub client, using GITHUB_TOKEN if available."""
     token = get_github_token()
     # PyGithub accepts token=None for unauthenticated access (lower rate limits).
-    # See README: "Tools" — authentication pattern
+    # See docs: "Tools" — authentication pattern
     if not token:
         logger.warning("No GITHUB_TOKEN set — using unauthenticated access (60 req/hr)")
     logger.debug("Creating GitHub client (authenticated=%s)", bool(token))
@@ -96,7 +96,7 @@ def github_read_repo(repo_url: str, max_depth: int = 2) -> str:
     breakdown. Use this first to understand a project's structure before reading
     individual files.
     """
-    # See README: "The ReAct Loop" — this is the Action step; the result is the Observation
+    # See docs: "The ReAct Loop" — this is the Action step; the result is the Observation
     logger.debug("github_read_repo called: repo_url=%r, max_depth=%d", repo_url, max_depth)
     try:
         slug = _parse_repo(repo_url)
@@ -344,7 +344,7 @@ def github_read_readme(repo_url: str) -> str:
 # Plain functions (not @tool) the standup collector calls directly. They return
 # structured data and degrade gracefully to [] on any error/missing repo — a
 # standup must never crash because GitHub is unreachable.
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 
 
 def _since_dt(days: int, since=None):

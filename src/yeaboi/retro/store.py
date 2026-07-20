@@ -8,7 +8,7 @@ store class opening its own connection to the same DB, autocommit mode, context
 manager support, idempotent CREATE-IF-NOT-EXISTS schema. The schema constant is
 also referenced by sessions.py's v7 migration so an existing DB gets the table.
 
-# See README: "Session Management" — SQLite persistence, schema versioning
+# See docs: "Session Management" — SQLite persistence, schema versioning
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ class RetroStore:
     ``retro_history`` table. Follows the same patterns: autocommit mode,
     context-manager support, explicit close.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -207,7 +207,7 @@ class RetroStore:
 
     # ── Team-wide (cross-session) reads — used by ceremony_history to feed
     #    Planning / Analysis with the team's recent retros regardless of which
-    #    session they ran under. See README: "Session Management".
+    #    session they ran under. See docs: "Session Management".
 
     def get_recent_reports(self, limit: int = 5, project_name: str = "") -> list[RetroReport]:
         """Return recent RetroReports across ALL sessions, newest first.

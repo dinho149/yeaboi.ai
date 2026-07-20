@@ -1,6 +1,6 @@
 """Configuration persistence for the provider selection wizard.
 
-# See README: "Architecture" — saves collected provider settings
+# See docs: "Architecture" — saves collected provider settings
 # incrementally to ~/.scrum-agent/.env during the setup wizard.
 """
 

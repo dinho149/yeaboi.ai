@@ -11,8 +11,8 @@ Pipelines:
   complete_one_on_one(engineer, transcript) → LLM → OneOnOneRecord → email (SMTP) → store
   run_six_month_review(engineer)  → gather 1:1s + delivery + ceremony + notes → LLM → SixMonthReview
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the performance prompts
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the performance prompts
 """
 
 from __future__ import annotations

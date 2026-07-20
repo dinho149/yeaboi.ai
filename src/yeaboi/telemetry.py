@@ -7,7 +7,7 @@ patterns (tech stacks, story counts, point distributions, accept/edit rates).
 Disabled by default. Enable via:
   YEABOI_TELEMETRY=true   (legacy SCRUM_AGENT_TELEMETRY still honoured)
 
-# See README: "Architecture" — telemetry layer (opt-in)
+# See docs: "Architecture" — telemetry layer (opt-in)
 """
 
 from __future__ import annotations

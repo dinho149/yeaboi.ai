@@ -1,6 +1,6 @@
 """Issue tracking (Jira / Azure DevOps Boards) phase of the provider selection wizard.
 
-# See README: "Architecture" — this module handles the issue tracker
+# See docs: "Architecture" — this module handles the issue tracker
 # multi-field form input with verification and animated feedback.
 # Supports both Jira (Atlassian) and Azure DevOps Boards as tracker backends.
 """

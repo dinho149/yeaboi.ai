@@ -1,6 +1,6 @@
 """Generic multi-line buffer editor core.
 
-# See README: "Architecture" — shared editor loop used by all artifact editors.
+# See docs: "Architecture" — shared editor loop used by all artifact editors.
 # Provides standard key bindings (cursor movement, text editing, word boundaries)
 # with a pluggable `editable_start_fn` callback to protect field labels.
 #

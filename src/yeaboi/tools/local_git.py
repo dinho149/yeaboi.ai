@@ -7,7 +7,7 @@ to round out the activity picture when the team's code lives in a local clone.
 Plain functions (not @tool) — the standup collector calls them directly. They
 degrade gracefully to [] on any error so a standup never crashes.
 
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 """
 
 from __future__ import annotations

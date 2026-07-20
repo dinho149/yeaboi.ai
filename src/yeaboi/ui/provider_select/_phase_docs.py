@@ -1,6 +1,6 @@
 """Docs phase of the provider selection wizard — a single Notion / Confluence / Skip picker.
 
-# See README: "Architecture" — the Docs step lets the user pick one documentation
+# See docs: "Architecture" — the Docs step lets the user pick one documentation
 # provider, mirroring the Issue Tracking step's Jira / Azure DevOps / Skip picker
 # (_phase_issue_tracking). It replaces the previous two sequential sub-pickers
 # (Notion, then a Jira-gated Confluence) with one unified picker so Confluence is a

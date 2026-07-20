@@ -1,6 +1,6 @@
 """Notion (Docs) phase of the provider selection wizard.
 
-# See README: "Architecture" — this module handles the standalone Notion
+# See docs: "Architecture" — this module handles the standalone Notion
 # credential step. Unlike Confluence (which rides on Jira's Atlassian auth in the
 # Issue Tracking form), Notion is an independent doc tool with its own integration
 # token, so it gets its own optional wizard step.

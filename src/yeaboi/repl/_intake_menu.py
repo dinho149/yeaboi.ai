@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def _render_intake_mode_menu(console: Console) -> None:
     """Print the intake mode selection menu with numbered options.
 
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     #
     # Shown once at startup when no CLI flag (--quick) was given.
     # The user picks 1/2 (Smart / Offline) before the conversational opener.

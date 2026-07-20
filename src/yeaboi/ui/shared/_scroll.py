@@ -1,6 +1,6 @@
 """Shared scroll-offset helpers for the full-screen TUI.
 
-# See README: "Architecture" — the TUI is a hand-rolled scroller on rich.Live.
+# See docs: "Architecture" — the TUI is a hand-rolled scroller on rich.Live.
 # Each screen renders content to text lines and slices lines[offset:offset+h].
 
 Historically every scroll loop tracked its own offset and let the *screen

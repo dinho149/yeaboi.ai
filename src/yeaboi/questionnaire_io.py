@@ -1,6 +1,6 @@
 """Import/export the intake questionnaire as a Markdown file.
 
-# See README: "Project Intake Questionnaire" — offline workflow
+# See docs: "Project Intake Questionnaire" — offline workflow
 #
 # This module handles serialization of the 30-question questionnaire to/from
 # Markdown format. Users can export a blank template (or current answers),
@@ -175,7 +175,7 @@ def build_questionnaire_from_answers(parsed_answers: dict[int, str]) -> Question
     The resulting state has `awaiting_confirmation=True` and `current_question`
     set past the last question, so the intake node will show the summary.
 
-    # See README: "Project Intake Questionnaire" — confirmation gate
+    # See docs: "Project Intake Questionnaire" — confirmation gate
     """
     qs = QuestionnaireState()
     qs.current_question = TOTAL_QUESTIONS + 1

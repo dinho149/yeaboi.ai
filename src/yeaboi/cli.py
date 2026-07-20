@@ -66,7 +66,7 @@ def _summarise_scrum_md(console: Console, path: Path) -> None:
 def _build_welcome_panel() -> Panel:
     """Build the branded welcome panel with version and quick-start hint.
 
-    # See README: "Architecture" — the CLI layer is the outermost layer,
+    # See docs: "Architecture" — the CLI layer is the outermost layer,
     # responsible for user-facing chrome like the welcome screen.
     """
     body = Text.from_markup(
@@ -187,7 +187,7 @@ def _resolve_resume(console: Console, resume_arg: str) -> tuple[dict | None, str
     Returns:
         (graph_state, session_id) on success, (None, None) on failure/cancel.
 
-    # See README: "Memory & State" — session persistence, --resume
+    # See docs: "Memory & State" — session persistence, --resume
     """
     _SESSIONS_DB_DIR.mkdir(parents=True, exist_ok=True)
     db_path = _SESSIONS_DB_DIR / "sessions.db"
@@ -323,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Intake mode flags — mutually exclusive.
     # Smart mode is the default when neither flag is given.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     # The legacy --full-intake (30-question "standard" mode) has been removed —
     # smart intake is the single interactive path. --quick remains for power users.
     intake_group = parser.add_mutually_exclusive_group()
@@ -426,7 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── Daily Standup flags ───────────────────────────────────────────────
     # --standup-run is what the OS scheduler (launchd/cron) invokes: it runs a
-    # standup headlessly and delivers it. See README: "Daily Standup".
+    # standup headlessly and delivers it. See docs: "Daily Standup".
     parser.add_argument(
         "--standup-run",
         action="store_true",
@@ -692,7 +692,7 @@ def _run_headless(args: argparse.Namespace) -> None:
     When --output json, Rich console output goes to stderr so only
     JSON is written to stdout.
 
-    # See README: "Architecture" — headless mode for CI/CD pipelines
+    # See docs: "Architecture" — headless mode for CI/CD pipelines
     """
     from yeaboi.formatters import build_theme
 
@@ -755,7 +755,7 @@ def _run_standup(args: argparse.Namespace) -> int:
 
     Exit codes: 0 = delivered, 2 = no session found, 1 = unexpected error.
 
-    # See README: "Daily Standup" — scheduling, headless run
+    # See docs: "Daily Standup" — scheduling, headless run
     """
     from yeaboi.logging_setup import attach_mode_handler, configure_logging
     from yeaboi.paths import get_db_path
@@ -1695,10 +1695,10 @@ def main(argv: list[str] | None = None) -> None:
     console = Console(theme=build_theme(args.theme))
 
     # Rename legacy history file (~/.scrum-agent/history → repl-history).
-    # See README: "Memory & State" — clearer naming for the REPL history file.
+    # See docs: "Memory & State" — clearer naming for the REPL history file.
     migrate_history_file()
 
-    # See README: "Architecture" — splash replaces the static welcome panel.
+    # See docs: "Architecture" — splash replaces the static welcome panel.
     # The animated intro runs before any interactive UI (wizard / mode select).
     show_splash(console)
 
@@ -1778,7 +1778,7 @@ def main(argv: list[str] | None = None) -> None:
     # Phase 8B: when --resume is passed, load the saved state and go directly
     # to run_repl() with the resume_state — no mode selection needed since
     # resumed sessions are always project-planning.
-    # See README: "Memory & State" — session persistence, --resume
+    # See docs: "Memory & State" — session persistence, --resume
     if args.resume is not None:
         resume_state, resume_session_id = _resolve_resume(console, args.resume)
         if resume_state is None:
@@ -1810,7 +1810,7 @@ def main(argv: list[str] | None = None) -> None:
     # Determine intake mode from flags.
     # Default is None — triggers the interactive mode selection menu in the REPL.
     # CLI flags bypass the menu for power users who know what they want.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     if args.quick:
         intake_mode = "quick"
     else:
@@ -1832,7 +1832,7 @@ def main(argv: list[str] | None = None) -> None:
     #   3. Interactive → full-screen TUI mode selector, which launches the TUI
     #      session (run_session) for smart intake inside its Live context
     #
-    # See README: "Architecture" — mode selection is a CLI-layer concern.
+    # See docs: "Architecture" — mode selection is a CLI-layer concern.
     if use_old_repl:
         startup_mode = args.mode or "project-planning"
         if startup_mode == "project-planning":

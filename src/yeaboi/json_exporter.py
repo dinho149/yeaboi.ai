@@ -6,7 +6,7 @@ schema suitable for piping into other tools or CI workflows.
 Uses dataclasses.asdict() — same proven pattern as sessions.py and
 persistence.py for serializing frozen dataclasses.
 
-# See README: "Architecture" — export layer
+# See docs: "Architecture" — export layer
 """
 
 from __future__ import annotations

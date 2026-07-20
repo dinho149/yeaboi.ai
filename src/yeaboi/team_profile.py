@@ -1,6 +1,6 @@
 """Team profile — data model and SQLite store for team learning calibration.
 
-# See README: "Scrum Standards" — team learning, self-calibrating estimates
+# See docs: "Scrum Standards" — team learning, self-calibrating estimates
 #
 # Stores historical analysis of a team's actual sprint data (from Jira or AzDO)
 # so that future plans can be calibrated to how THIS team actually works.
@@ -35,7 +35,7 @@ class StoryPointCalibration:
     historical sprint data: average cycle time, common patterns, and
     how often stories at this size overshoot their estimate.
 
-    # See README: "Scrum Standards" — story points, team learning
+    # See docs: "Scrum Standards" — story points, team learning
     """
 
     point_value: int  # 1, 2, 3, 5, or 8
@@ -50,7 +50,7 @@ class StoryPointCalibration:
 class StoryShapePattern:
     """Average story shape for a given discipline (frontend, backend, etc.).
 
-    # See README: "Scrum Standards" — discipline tagging, team learning
+    # See docs: "Scrum Standards" — discipline tagging, team learning
     """
 
     discipline: str  # "frontend", "backend", "fullstack", etc.
@@ -64,7 +64,7 @@ class StoryShapePattern:
 class EpicPattern:
     """Typical epic sizing based on historical data.
 
-    # See README: "Scrum Standards" — team learning
+    # See docs: "Scrum Standards" — team learning
     """
 
     avg_stories_per_epic: float = 0.0
@@ -119,7 +119,7 @@ class WritingPatterns:
 class ScopeChangeEvent:
     """A single scope change within a sprint (story added, removed, or re-estimated).
 
-    # See README: "Scrum Standards" — scope tracking, velocity accuracy
+    # See docs: "Scrum Standards" — scope tracking, velocity accuracy
     """
 
     date: str = ""  # ISO date of the change
@@ -136,7 +136,7 @@ class ScopeChangeEvent:
 class DailyScopeSnapshot:
     """Sprint scope on a single day — which stories were in scope and total points.
 
-    # See README: "Scrum Standards" — daily scope tracking
+    # See docs: "Scrum Standards" — daily scope tracking
     """
 
     date: str = ""  # ISO date
@@ -151,7 +151,7 @@ class SprintScopeTimeline:
     Tracks committed scope (day 1), final scope, delivered points,
     and every scope change event in between.
 
-    # See README: "Scrum Standards" — scope tracking, velocity accuracy
+    # See docs: "Scrum Standards" — scope tracking, velocity accuracy
     """
 
     sprint_name: str = ""
@@ -238,7 +238,7 @@ class TeamProfile:
     to SQLite so future planning sessions can use team-specific calibration
     instead of generic Fibonacci rules.
 
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     """
 
     team_id: str  # Unique identifier (e.g. "jira-PROJ-20260401" or "azdevops-MyProject-20260401")
@@ -668,7 +668,7 @@ class TeamProfileStore:
     ``team_profiles`` table. Follows the same patterns: autocommit mode,
     context manager support, explicit close.
 
-    # See README: "Memory & State" — session persistence
+    # See docs: "Memory & State" — session persistence
     """
 
     def __init__(self, db_path: Path) -> None:

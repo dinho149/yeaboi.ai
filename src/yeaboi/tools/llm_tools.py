@@ -1,7 +1,7 @@
 """LLM-powered tools for the Scrum Agent ReAct loop.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
-# See README: "The ReAct Loop" — Thought → Action → Observation pattern
+# See docs: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "The ReAct Loop" — Thought → Action → Observation pattern
 #
 # These tools make a focused, single-purpose LLM call inside a @tool function.
 # The agent invokes them during the ReAct loop when it needs complexity
@@ -47,8 +47,8 @@ def estimate_complexity(
     tech_stack: Optional comma-separated list of technologies (e.g. "React, FastAPI, PostgreSQL").
     team_calibration: Optional team-specific calibration data to replace generic rules.
     """
-    # See README: "Tools" — LLM-powered tool pattern
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Tools" — LLM-powered tool pattern
+    # See docs: "Prompt Construction" — ARC framework
     stack_line = f"\nTech stack: {tech_stack}" if tech_stack.strip() else ""
 
     # When team calibration data is available, use team-specific rules instead
@@ -93,7 +93,7 @@ def estimate_complexity(
     )
 
     # temperature=0.2 — slight warmth for nuanced reasoning, still mostly deterministic.
-    # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+    # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
     logger.debug("estimate_complexity called: description length=%d chars", len(description))
     try:
         response = get_llm(temperature=0.2).invoke([HumanMessage(content=prompt)])
@@ -124,8 +124,8 @@ def generate_acceptance_criteria(
     story: The user story text (e.g. "As a user, I want to reset my password...").
     context: Optional extra context — tech stack, constraints, or related stories.
     """
-    # See README: "Scrum Standards" — story format, acceptance criteria
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Scrum Standards" — story format, acceptance criteria
+    # See docs: "Prompt Construction" — ARC framework
     context_line = f"\n\nAdditional context:\n{context}" if context.strip() else ""
     prompt = (
         "You are a Senior Scrum Master writing acceptance criteria.\n\n"

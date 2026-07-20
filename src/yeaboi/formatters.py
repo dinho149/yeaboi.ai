@@ -1,6 +1,6 @@
 """Rich formatters for structured pipeline output.
 
-# See README: "Architecture" — REPL-side formatter layer
+# See docs: "Architecture" — REPL-side formatter layer
 #
 # Nodes produce markdown AIMessages (needed for LLM conversation history).
 # This module provides Rich Table/Panel renderers that the REPL uses when
@@ -48,7 +48,7 @@ from yeaboi.prompts.intake import PHASE_LABELS, QUESTION_SHORT_LABELS
 # Dark theme = current colors (no visual change for existing users).
 # Light theme swaps to colors readable on white/cream backgrounds.
 #
-# See README: "Architecture" — REPL-side UI layer
+# See docs: "Architecture" — REPL-side UI layer
 
 DARK_STYLES: dict[str, str] = {
     "command": "cyan",
@@ -130,7 +130,7 @@ def _styled_priority(priority: Priority) -> Text:
 
 # Task label colour map — visual distinction for task types in REPL tables.
 # Uses the same "consistent colour vocabulary" as priority colours.
-# See README: "Scrum Standards" — task decomposition, task labels
+# See docs: "Scrum Standards" — task decomposition, task labels
 _TASK_LABEL_STYLES: dict[str, str] = {
     "Code": "bold cyan",
     "Documentation": "bold magenta",
@@ -538,7 +538,7 @@ def render_sprint_plan(
 # ---------------------------------------------------------------------------
 # Intake Summary (questionnaire answers as compact tables)
 # ---------------------------------------------------------------------------
-# See README: "Architecture" — REPL-side formatter layer
+# See docs: "Architecture" — REPL-side formatter layer
 #
 # The markdown summary (_build_intake_summary in nodes.py) stays in the
 # message history for the LLM. This function provides a REPL-only Rich

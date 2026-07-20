@@ -1,7 +1,7 @@
 """Prompt template for the task_decomposer node.
 
-# See README: "Prompt Construction" — ARC framework
-# See README: "Scrum Standards" — task decomposition
+# See docs: "Prompt Construction" — ARC framework
+# See docs: "Scrum Standards" — task decomposition
 #
 # The task decomposer prompt takes the ProjectAnalysis fields + formatted story list
 # and asks the LLM to break each user story into 2-5 concrete implementation tasks.
@@ -52,7 +52,7 @@ def get_task_decomposer_prompt(
 ) -> str:
     """Build the task decomposer prompt with injected project context and story list.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     #
     # The prompt uses the ARC pattern:
     # - Actor: "Senior Technical Lead" with task decomposition expertise

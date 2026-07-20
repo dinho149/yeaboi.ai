@@ -1,6 +1,6 @@
 """Shared screen infrastructure and summary screen for the TUI session.
 
-# See README: "Architecture" — pure functions that build Rich Panel screens.
+# See docs: "Architecture" — pure functions that build Rich Panel screens.
 # Contains shared constants, action bar builder, and the intake summary screen.
 # Input screens are in _screens_input.py, pipeline screens in _screens_pipeline.py.
 """
@@ -56,7 +56,7 @@ def _build_action_bar(
 ) -> tuple[Text, Text, Text]:
     """Build three Text lines (top/mid/bot) for rounded action buttons.
 
-    # See README: "Architecture" — button rendering matches project dashboard style
+    # See docs: "Architecture" — button rendering matches project dashboard style
     # from mode_select/_project_cards.py. Uses Unicode box-drawing characters
     # (╭╮│╰╯─) to create rounded-corner button appearance.
     # fades: per-button 0.0–1.0 interpolation from grey to accent colour.

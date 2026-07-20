@@ -1,6 +1,6 @@
 """Secondary screen builders for mode selection: intake, offline, export, import, team analysis.
 
-# See README: "Architecture" — this module contains rendering functions
+# See docs: "Architecture" — this module contains rendering functions
 # for the intake mode selection, offline sub-menu, export success,
 # import file path input, project export success, and team analysis screens.
 # These are pure functions that return Rich Panel renderables — no I/O or state.
@@ -2051,7 +2051,7 @@ def _build_standup_screen(
     (dict), report (StandupReport|None), message (str, transient status line),
     team_expanded (bool, inline Team-row expansion).
 
-    # See README: "Daily Standup" — TUI page
+    # See docs: "Daily Standup" — TUI page
     """
     from yeaboi.ui.mode_select.screens._standup_sections import (
         _confidence_style,
@@ -2917,7 +2917,7 @@ def _build_performance_screen(
 
     Uses PERFORMANCE_THEME (coral) with shared buttons, scrollbar, and viewport.
 
-    # See README: "Performance Mode" — TUI page
+    # See docs: "Performance Mode" — TUI page
     """
     from yeaboi.ui.mode_select.screens._screens import _build_mode_row
     from yeaboi.ui.shared._components import PERFORMANCE_THEME, build_reveal_subtitle, performance_title
@@ -3103,7 +3103,7 @@ def _build_reporting_screen(
 
     Uses REPORTING_THEME (indigo) with shared buttons, scrollbar, and viewport.
 
-    # See README: "Reporting Mode" — TUI page
+    # See docs: "Reporting Mode" — TUI page
     """
     from yeaboi.ui.shared._components import REPORTING_THEME, build_reveal_subtitle, reporting_title
 
@@ -3615,7 +3615,7 @@ def _build_retro_screen(
     grids (dict[grid_key -> list[RetroCard]]), public_url (optional remote tunnel
     URL), actions (optional button-label list).
 
-    # See README: "Retro" — TUI page
+    # See docs: "Retro" — TUI page
     """
     from yeaboi.retro.board import CARRIED_STATUS_LABELS, RETRO_GRID_LABELS, RETRO_GRIDS
     from yeaboi.ui.shared._components import RETRO_THEME, build_reveal_subtitle, retro_title
@@ -3865,8 +3865,8 @@ def _build_standup_input_screen(
     Alt+Enter; the cursor row always stays visible) for longer free-text
     answers like standup updates — Enter confirms.
 
-    # See README: "Daily Standup" — TUI page
-    # See README: "TUI system" — voice input overlay
+    # See docs: "Daily Standup" — TUI page
+    # See docs: "TUI system" — voice input overlay
     """
     from yeaboi.ui.session.screens._screens_input import _image_hint, _voice_hint
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
@@ -4237,7 +4237,7 @@ def _build_settings_screen(
 
     # ── Voice Input ───────────────────────────────────────────────
     # Local, offline dictation (double-tap Space in any text field) — works with every
-    # LLM provider, no API key. See README: "Voice Input".
+    # LLM provider, no API key. See docs: "Voice Input".
     _heading("Voice Input")
     from yeaboi.voice import backend_label, is_voice_available
 

@@ -9,7 +9,7 @@ Uses the ARC framework (Ask · Requirements · Context) like every other prompt 
 this package. The draft is end-user free text, so the prompt frames it
 explicitly as DATA to rewrite, never as instructions to follow.
 
-# See README: "Prompt Construction" — ARC framework, JSON output
+# See docs: "Prompt Construction" — ARC framework, JSON output
 """
 
 from __future__ import annotations

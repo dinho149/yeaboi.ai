@@ -1,6 +1,6 @@
 """Full-screen TUI session — replaces the prompt_toolkit REPL for Smart/Full intake.
 
-# See README: "Architecture" — this is a UI component in the CLI layer.
+# See docs: "Architecture" — this is a UI component in the CLI layer.
 # It reuses the same Rich Live context from mode_select.py so there's no
 # jarring screen-clear/re-render gap between mode selection and the first question.
 #
@@ -101,7 +101,7 @@ def run_session(
 ) -> None:
     """Drive the full TUI session inside an existing Live context.
 
-    # See README: "Architecture" — this replaces run_repl() for Smart/Full intake.
+    # See docs: "Architecture" — this replaces run_repl() for Smart/Full intake.
     # Called from mode_select.py after the user picks Smart or Full, inside the
     # same `with Live(...)` block so there's no screen-clearing gap.
 
@@ -135,7 +135,7 @@ def run_session(
         return rk(timeout=timeout) if _supports_timeout else rk()
 
     # Use existing project ID when resuming, otherwise generate a new one.
-    # See README: "Memory & State" — each session gets a UUID so snapshots
+    # See docs: "Memory & State" — each session gets a UUID so snapshots
     # can be upserted by ID across save points.
     project_id = resume_project_id or create_project_id()
     logger.info("Session %s: project_id=%s", "resumed" if resume_project_id else "started", project_id)
@@ -185,7 +185,7 @@ def _run_session_body(
 ):
     """Session body — extracted so run_session can use try/finally for log cleanup."""
     # Compile graph once for the session (skipped in dry-run — no LLM calls)
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     graph = None if dry_run else create_graph()
 
     # When resuming an in-progress project, use the saved graph state.
@@ -338,10 +338,10 @@ def _run_session_body(
     # Phases B→D run in a loop so a Small project → Large switch (chosen at
     # the analysis review) can re-run intake for the extra Large-mode questions with
     # the user's answers preserved. Normal runs execute the body exactly once.
-    # See README: "Guardrails" — human-in-the-loop (advisory).
+    # See docs: "Guardrails" — human-in-the-loop (advisory).
     while True:
         # Determine resume point — skip phases that are already complete.
-        # See README: "Memory & State" — when resuming a saved session, we jump
+        # See docs: "Memory & State" — when resuming a saved session, we jump
         # to the earliest incomplete phase rather than replaying from the start.
         qs = graph_state.get("questionnaire")
         _intake_done = qs is not None and hasattr(qs, "completed") and qs.completed

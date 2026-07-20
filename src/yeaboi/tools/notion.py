@@ -1,6 +1,6 @@
 """Notion tools — 3 read-only + 2 write (with user-confirmation guard in docstrings).
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # This module mirrors tools/confluence.py exactly — same 5-tool shape (search,
 # read page, list a container, create, update) plus a recent-activity helper for
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 _MISSING_CONFIG_MSG = "Error: Notion is not configured. Ensure NOTION_TOKEN is set in your .env file."
 
 # Truncate page content at this many characters to avoid flooding the LLM context.
-# See README: "Tools" — scoping tool output for LLM relevance
+# See docs: "Tools" — scoping tool output for LLM relevance
 _MAX_CONTENT_CHARS = 8_000
 
 # Block types whose rich_text we render as readable plain text. Notion pages are a
@@ -170,7 +170,7 @@ def notion_search_pages(query: str, limit: int = 10) -> str:
     integration has been granted access to. Returns title, page ID, and URL for
     each result.
     """
-    # See README: "The ReAct Loop" — this is the Action step; the result is the Observation
+    # See docs: "The ReAct Loop" — this is the Action step; the result is the Observation
     logger.debug("notion_search_pages called: query=%r, limit=%d", query, limit)
     client = _make_notion_client()
     if client is None:
@@ -404,7 +404,7 @@ def notion_update_page(page_id: str, body: str, title: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Plain function (not @tool) the standup collector calls directly. Returns
 # structured data and degrades gracefully to [] on error/missing config.
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 
 
 def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[dict]:

@@ -1,6 +1,6 @@
 """Tools module — factory that returns all available tools.
 
-# See README: "Tools" — tool registration pattern
+# See docs: "Tools" — tool registration pattern
 """
 
 from langchain_core.tools import BaseTool
@@ -48,7 +48,7 @@ def get_tools() -> list[BaseTool]:
     resolve). Lazy import inside the function means `from yeaboi.tools import
     get_tools` always succeeds, and the ImportError surfaces only when get_tools()
     is called.
-    # See README: "Tools" — tool types, @tool decorator
+    # See docs: "Tools" — tool types, @tool decorator
     """
     from yeaboi.tools.azure_devops import (
         azdevops_create_epic,

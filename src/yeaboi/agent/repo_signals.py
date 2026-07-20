@@ -1,7 +1,7 @@
 """Deterministic repository / tech signals for the smart intake.
 
-# See README: "Tools" — read-only tool pattern
-# See README: "Project Intake Questionnaire" — smart intake
+# See docs: "Tools" — read-only tool pattern
+# See docs: "Project Intake Questionnaire" — smart intake
 
 The `project_analyzer` node already scans a repository (the URL from Q17) and
 feeds the raw text to the LLM to ground `tech_stack` / `project_type`. This
@@ -438,7 +438,7 @@ def scan_repo_signals(questionnaire) -> tuple[str | None, RepoSignals, dict]:
     when nothing is scanned, description-based low-code markers are still applied
     so a "Zapier + Webflow" project is flagged without any repo.
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     """
     description = questionnaire.answers.get(1, "") or ""
     tech_stack = questionnaire.answers.get(11, "") or ""

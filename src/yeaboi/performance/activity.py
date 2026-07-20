@@ -10,7 +10,7 @@ evidence the 1:1-prep prompt reasons over.
 Tool helpers are imported lazily (optional SDKs), same convention as
 performance/roster.py. Degrades to an empty EngineerActivity on missing config.
 
-# See README: "Daily Standup" — recent-activity collection, sprint context
+# See docs: "Daily Standup" — recent-activity collection, sprint context
 """
 
 from __future__ import annotations

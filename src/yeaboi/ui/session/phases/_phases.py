@@ -1,6 +1,6 @@
 """Pipeline and chat phase orchestration for the TUI session.
 
-# See README: "Architecture" — phase functions drive the interactive flow.
+# See docs: "Architecture" — phase functions drive the interactive flow.
 # Contains the pipeline stage loop (Phase D) and post-pipeline chat (Phase E),
 # plus helper functions for story selection and pipeline choice screens.
 #
@@ -194,7 +194,7 @@ def _pipeline_choice_screen(
 ) -> int | None:
     """Show a simple choice picker during the pipeline flow.
 
-    # See README: "Architecture" — intermediate pipeline questions.
+    # See docs: "Architecture" — intermediate pipeline questions.
     # Used for sprint selector and capacity warning intercepts.
 
     Returns the 0-based index of the selected option, or None on Esc.
@@ -329,7 +329,7 @@ def _handle_tracker_sync(
     Returns updated graph_state on success, or None on cancel/failure.
 
     tracker: "jira" or "azdevops" — determines which sync module to use.
-    # See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+    # See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
     """
     tracker_label = "Jira" if tracker == "jira" else "Azure DevOps"
 
@@ -1119,7 +1119,7 @@ def _phase_pipeline(
         # returns a warning with capacity_override_target < -1.
         # Show a choice popup BEFORE generating sprints so the user can
         # decide whether to extend or keep the original target.
-        # See README: "Guardrails" — human-in-the-loop pattern
+        # See docs: "Guardrails" — human-in-the-loop pattern
         _cap_sel = graph_state.get("capacity_override_target", 0)
         if _cap_sel < -1 and not dry_run:
             recommended = abs(_cap_sel)
@@ -1135,7 +1135,7 @@ def _phase_pipeline(
             # Options 1 and 2 are both viable — only option 3 is flagged as not recommended.
             # When team is already at the Jira org cap, the "increase team" option is
             # replaced with a disabled note explaining why it's unavailable.
-            # See README: "Guardrails" — human-in-the-loop pattern
+            # See docs: "Guardrails" — human-in-the-loop pattern
             options = [
                 f"Extend to {recommended} sprints",
             ]
@@ -1187,7 +1187,7 @@ def _phase_pipeline(
         # scrolling is preserved but the story closest to the viewport center
         # is highlighted with a white border. The selected_story index is
         # recomputed from scroll_offset on every frame.
-        # See README: "Architecture" — story highlighting in pipeline review
+        # See docs: "Architecture" — story highlighting in pipeline review
         is_story_stage = pending == "story_writer"
         story_count = len(graph_state.get("stories", [])) if is_story_stage else 0
         selected_story = 0 if is_story_stage and story_count > 0 else None
@@ -1224,7 +1224,7 @@ def _phase_pipeline(
         # When the user chose a preferred tracker at intake (both were configured),
         # only show that tracker's button. Otherwise show all configured trackers.
         # Feature stage does NOT get sync buttons — features map to labels/tags, not issues.
-        # See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+        # See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
         _active_trackers = _get_active_trackers()
         _qs = graph_state.get("questionnaire")
         _pref = getattr(_qs, "_preferred_tracker", "") if _qs else ""
@@ -1233,7 +1233,7 @@ def _phase_pipeline(
             _active_trackers = [_pref] if _pref in _active_trackers else _active_trackers
 
         # Anonymize state for the sprint stage: None = real plan; set = mask in place.
-        # See README: "Guardrails" — output masking for public sharing
+        # See docs: "Guardrails" — output masking for public sharing
         anon = None
         anon_instruction = ""
 

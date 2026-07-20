@@ -1,6 +1,6 @@
 """Pure-Python tool for scanning a local repository.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # read_codebase is a read-only, zero-network tool — it uses only pathlib and
 # the standard library to walk a local directory. No credentials or tokens
@@ -291,7 +291,7 @@ def read_codebase(path: str, max_depth: int = 4) -> str:
     path: Absolute or relative path to the repository root directory.
     max_depth: How many directory levels deep to scan (default 4).
     """
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     root = pathlib.Path(path).expanduser().resolve()
 
     if not root.exists():
@@ -410,7 +410,7 @@ def read_local_file(repo_path: str, file_path: str) -> str:
     repo_path: Absolute or relative path to the repository root directory.
     file_path: Path to the file relative to the repo root (e.g. "src/main.py").
     """
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     root = pathlib.Path(repo_path).expanduser().resolve()
     target = (root / file_path).resolve()
 
@@ -497,7 +497,7 @@ def load_project_context(path: str = "", docs_dir: str = "") -> str:
     Returns a JSON string with keys: context (string or null), status (dict with
     name/status/detail). Returns an error JSON on unexpected failure.
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     """
     sections: list[str] = []
     loaded_names: list[str] = []

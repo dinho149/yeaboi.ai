@@ -1,6 +1,6 @@
 """Top-level agent mode selection menu rendering and resolution.
 
-# See README: "Architecture" — the CLI layer handles mode selection before
+# See docs: "Architecture" — the CLI layer handles mode selection before
 # any REPL loop starts. This module provides stateless render/resolve helpers
 # that cli.main() calls directly, mirroring the _intake_menu.py pattern.
 #
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def _render_startup_mode_menu(console: Console) -> None:
     """Print the top-level mode selection menu with numbered options.
 
-    # See README: "Architecture" — four layers. Mode selection is CLI-layer
+    # See docs: "Architecture" — four layers. Mode selection is CLI-layer
     # chrome, shown once before any REPL loop starts.
     #
     # Styled identically to _render_intake_mode_menu() so the two menus feel

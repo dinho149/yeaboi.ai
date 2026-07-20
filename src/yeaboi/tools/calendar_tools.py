@@ -1,6 +1,6 @@
 """Calendar tools — bank/public holiday detection by country.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # The `holidays` Python package provides bank/public holiday data for 100+
 # countries (ISO 3166-1 alpha-2 codes). This tool wraps it so the agent can

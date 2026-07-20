@@ -1,6 +1,6 @@
 """Screen builders for version control and issue tracking wizard steps.
 
-# See README: "Architecture" — UI rendering layer for the setup wizard.
+# See docs: "Architecture" — UI rendering layer for the setup wizard.
 # Each function builds a Rich renderable for a specific wizard screen.
 # These are pure rendering functions with no side effects.
 """

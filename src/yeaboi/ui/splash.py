@@ -1,6 +1,6 @@
 """Startup splash animation — "YEABOI" fades in then out.
 
-# See README: "Architecture" — the splash is a CLI-layer component shown
+# See docs: "Architecture" — the splash is a CLI-layer component shown
 # before the setup wizard or mode selection screen. It replaces the static
 # welcome panel as the first branded intro users see.
 
@@ -269,7 +269,7 @@ def _run_wordmark_animation(
 def show_splash(console: Console) -> None:
     """Show the startup splash animation (~2s). Non-interactive, timed.
 
-    # See README: "Architecture" — this replaces _build_welcome_panel() as
+    # See docs: "Architecture" — this replaces _build_welcome_panel() as
     # the first thing users see. "YEABOI" fades in from nothing, a diagonal
     # glint sweeps across it, then it fades back out to nothing.
 

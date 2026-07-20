@@ -1,7 +1,7 @@
 """LangGraph node functions for the Scrum Agent.
 
-# See README: "Agentic Blueprint Reference" — two core nodes (call_model + tool_node)
-# See README: "The ReAct Loop" — Thought → Action → Observation pattern
+# See docs: "Agentic Blueprint Reference" — two core nodes (call_model + tool_node)
+# See docs: "The ReAct Loop" — Thought → Action → Observation pattern
 
 Node functions are the building blocks of a LangGraph graph. Each node is a
 plain Python function that takes the current state and returns a partial state
@@ -305,7 +305,7 @@ def _invoke_json(prompt: str, *, image_paths=None):
     one-shot "fix your JSON" re-ask + track_usage) while routing model creation
     through THIS module's ``get_llm`` reference — the lambda resolves it at call
     time, so tests that patch ``yeaboi.agent.nodes.get_llm`` keep working.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     """
     return invoke_json(prompt, image_paths=image_paths, get_llm_fn=lambda **kw: get_llm(**kw))
 
@@ -317,7 +317,7 @@ def _invoke_json(prompt: str, *, image_paths=None):
 # These are write operations that modify external systems (Jira, Confluence, Notion).
 # They require explicit user confirmation before execution — the agent must ask
 # and receive a "yes" before the graph routes to the ToolNode.
-# See README: "Guardrails" — human-in-the-loop pattern (Tool layer)
+# See docs: "Guardrails" — human-in-the-loop pattern (Tool layer)
 _HIGH_RISK_TOOLS: frozenset[str] = frozenset(
     {
         "jira_create_epic",
@@ -372,7 +372,7 @@ def _attach_chat_images(state: ScrumState, all_messages: list[BaseMessage]) -> l
 def _trim_history_for_local(messages: list[BaseMessage]) -> list[BaseMessage]:
     """Trim chat history to fit a local model's context window. No-op for cloud.
 
-    # See README: "Local Mode (Ollama)" — context window reliability
+    # See docs: "Local Mode (Ollama)" — context window reliability
     Cloud windows are 200k+ tokens, but Ollama silently LEFT-truncates anything
     beyond num_ctx − num_predict — which eats the *system prompt* first, the
     worst possible loss. Instead, drop the OLDEST turns explicitly: keep the
@@ -428,8 +428,8 @@ def _trim_history_for_local(messages: list[BaseMessage]) -> list[BaseMessage]:
 def make_call_model(tools: list[BaseTool]) -> Callable[[ScrumState], dict[str, list[BaseMessage]]]:
     """Return a call_model node function with the given tools bound to the LLM.
 
-    # See README: "Agentic Blueprint Reference" — bind_tools wires tools into the LLM
-    # See README: "Tools" — tool types, @tool decorator
+    # See docs: "Agentic Blueprint Reference" — bind_tools wires tools into the LLM
+    # See docs: "Tools" — tool types, @tool decorator
     #
     # bind_tools() is a LangChain method on ChatModels. It takes a list of
     # tool definitions (functions decorated with @tool) and returns a new Runnable
@@ -526,8 +526,8 @@ def _strip_response_think_tags(response) -> None:
 def call_model(state: ScrumState) -> dict[str, list[BaseMessage]]:
     """LangGraph node: invoke the LLM with the current conversation.
 
-    # See README: "Agentic Blueprint Reference" — this is the "agent" node
-    # See README: "The ReAct Loop" — this node is the "Thought" step
+    # See docs: "Agentic Blueprint Reference" — this is the "agent" node
+    # See docs: "The ReAct Loop" — this node is the "Thought" step
     #
     # How this works:
     # 1. Build a SystemMessage from the Scrum Master prompt — this sets the
@@ -573,7 +573,7 @@ def call_model(state: ScrumState) -> dict[str, list[BaseMessage]]:
 
     # Return single-item list — the add_messages reducer on ScrumState["messages"]
     # will append this response to the existing conversation history.
-    # See README: "Agentic Blueprint Reference" — node return format
+    # See docs: "Agentic Blueprint Reference" — node return format
     out: dict = {"messages": [response]}
     if state.get("chat_images"):
         out["chat_images"] = []  # consumed — clear so later turns don't re-send
@@ -583,9 +583,9 @@ def call_model(state: ScrumState) -> dict[str, list[BaseMessage]]:
 def should_continue(state: ScrumState) -> str:
     """Route after call_model: continue to tools, request human review, or end.
 
-    # See README: "Agentic Blueprint Reference" — conditional edges
-    # See README: "The ReAct Loop" — this is the decision point
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Agentic Blueprint Reference" — conditional edges
+    # See docs: "The ReAct Loop" — this is the decision point
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # Three-way routing:
     #   no tool_calls        → END             (LLM is done; return response)
@@ -634,7 +634,7 @@ def should_continue(state: ScrumState) -> str:
 def human_review(state: ScrumState) -> dict[str, list[BaseMessage]]:
     """LangGraph node: pause before high-risk write operations for user confirmation.
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # This node is reached when should_continue detects a high-risk tool call
     # (Jira/Confluence write). It replaces the tool_calls AIMessage with a
@@ -666,7 +666,7 @@ def human_review(state: ScrumState) -> dict[str, list[BaseMessage]]:
 
     # Replace the tool_calls AIMessage with a plain confirmation request.
     # Same ID → add_messages replaces; None ID → add_messages appends (safe fallback).
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     replacement = AIMessage(id=last_message.id, content="\n".join(lines))
     return {"messages": [replacement]}
 
@@ -674,7 +674,7 @@ def human_review(state: ScrumState) -> dict[str, list[BaseMessage]]:
 # ── Intake questionnaire ─────────────────────────────────────────────
 
 # ── Adaptive skip helpers ────────────────────────────────────────────
-# See README: "Project Intake Questionnaire" — adaptive skip logic
+# See docs: "Project Intake Questionnaire" — adaptive skip logic
 #
 # When the user's initial description (typed at scrum> before Q1) already
 # answers some intake questions, these helpers extract those answers and
@@ -730,7 +730,7 @@ def _extract_answers_from_description(description: str) -> dict[int, str]:
 
     try:
         # Single LLM call with low temperature for deterministic extraction.
-        # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+        # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt)
         raw = response.content
 
@@ -774,7 +774,7 @@ def _extract_answers_from_description(description: str) -> dict[int, str]:
 def _keyword_extract_fallback(description: str, extracted: dict[int, str]) -> dict[int, str]:
     """Deterministic keyword-based extraction fallback after LLM extraction.
 
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     #
     # Scans the description for strong keyword signals for Q2 (project type),
     # Q12 (integrations), and Q13 (architectural constraints). Only fills
@@ -854,7 +854,7 @@ def _build_extraction_summary(extracted: dict[int, str]) -> str:
 
 
 # ── Skip intent detection ────────────────────────────────────────────
-# See README: "Project Intake Questionnaire" — adaptive behavior
+# See docs: "Project Intake Questionnaire" — adaptive behavior
 #
 # Deterministic keyword matching for "skip" / "I don't know" responses.
 # No LLM call needed — these are unambiguous user signals. Exact matches
@@ -897,7 +897,7 @@ def _is_skip_intent(message: str) -> bool:
 
 
 # ── Defaults intent detection ────────────────────────────────────────
-# See README: "Project Intake Questionnaire" — batch defaults
+# See docs: "Project Intake Questionnaire" — batch defaults
 #
 # When the user types "defaults" during the questionnaire, all remaining
 # questions in the current phase are answered with their defaults (from
@@ -925,7 +925,7 @@ def _is_defaults_intent(message: str) -> bool:
 def _batch_defaults_for_phase(questionnaire: QuestionnaireState) -> tuple[list[str], int]:
     """Apply defaults to all remaining questions in the current phase.
 
-    # See README: "Project Intake Questionnaire" — batch defaults
+    # See docs: "Project Intake Questionnaire" — batch defaults
     #
     # Iterates from current_question through the end of the current phase.
     # For each question:
@@ -977,7 +977,7 @@ def _batch_defaults_for_phase(questionnaire: QuestionnaireState) -> tuple[list[s
 
 
 # ── Confirm intent detection ─────────────────────────────────────────
-# See README: "Project Intake Questionnaire" — confirmation gate
+# See docs: "Project Intake Questionnaire" — confirmation gate
 #
 # After the last question is answered, the intake node shows a summary and
 # asks the user to confirm before proceeding to the main agent. This helper
@@ -1018,7 +1018,7 @@ def _is_confirm_intent(text: str) -> bool:
 
 
 # ── Edit intent detection ─────────────────────────────────────────
-# See README: "Project Intake Questionnaire" — edit flow
+# See docs: "Project Intake Questionnaire" — edit flow
 #
 # During the confirmation gate the user can reference a question by
 # number to revise their answer. Two modes:
@@ -1080,7 +1080,7 @@ _EDIT_HELP = (
 
 
 # ── Velocity extraction helpers ──────────────────────────────────────
-# See README: "Scrum Standards" — velocity and capacity planning
+# See docs: "Scrum Standards" — velocity and capacity planning
 #
 # After the user confirms the intake summary, we parse team size (Q6)
 # and velocity (Q9) into typed ScrumState fields. Downstream nodes
@@ -1139,7 +1139,7 @@ def _parse_jira_team_size(questionnaire: QuestionnaireState) -> int | None:
 def _extract_team_and_velocity(questionnaire: QuestionnaireState) -> dict:
     """Parse team size and velocity from intake answers, calculating defaults.
 
-    # See README: "Scrum Standards" — velocity and capacity planning
+    # See docs: "Scrum Standards" — velocity and capacity planning
     #
     # The system prompt documents the rule: "When team velocity is unknown,
     # use 5 story points per engineer per sprint as the baseline estimate."
@@ -1172,7 +1172,7 @@ def _extract_team_and_velocity(questionnaire: QuestionnaireState) -> dict:
     # from the stored per-dev rate × current Q6 team size. This handles the
     # case where the user edits Q6 at the confirmation gate — the velocity
     # automatically adjusts to the new team size.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     if questionnaire._jira_per_dev_velocity is not None:
         velocity = round(questionnaire._jira_per_dev_velocity * team_size)
         if velocity <= 0:
@@ -1207,7 +1207,7 @@ def _extract_team_and_velocity(questionnaire: QuestionnaireState) -> dict:
 def _is_jira_configured() -> bool:
     """Check whether all 4 Jira environment variables are set.
 
-    # See README: "Tools" — tool types, Jira integration
+    # See docs: "Tools" — tool types, Jira integration
     #
     # Returns True only when JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN,
     # and JIRA_PROJECT_KEY are all non-empty. Used by the intake node
@@ -1243,7 +1243,7 @@ def _is_tracker_configured() -> bool:
 def _fetch_jira_velocity() -> dict | None:
     """Fetch avg velocity AND team size from last 3 closed sprints in Jira.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Thin wrapper around the jira_fetch_velocity @tool in tools/jira.py.
     # The tool handles all Jira connection logic and returns a JSON string;
@@ -1276,7 +1276,7 @@ def _fetch_jira_velocity() -> dict | None:
 def _fetch_azdevops_velocity() -> dict | None:
     """Fetch avg velocity AND team size from Azure DevOps iterations.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Fallback when Jira is not configured. Uses the azdevops_fetch_velocity
     # @tool which returns a plain-text summary. We parse the key numbers out.
@@ -1332,7 +1332,7 @@ def _fetch_tracker_velocity(preferred: str = "") -> dict | None:
 def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | None, str]:
     """Connect to the configured tracker and return the current active sprint/iteration.
 
-    # See README: "Scrum Standards" — sprint planning
+    # See docs: "Scrum Standards" — sprint planning
     #
     # When preferred is set ("jira" or "azdevops"), uses that tracker.
     # Otherwise tries Jira first, then falls back to Azure DevOps active iteration.
@@ -1389,7 +1389,7 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
 
 # ---------------------------------------------------------------------------
 # Intake-mode helpers — Small project / Large / Offline.
-# See README: "Project Intake Questionnaire" — intake modes.
+# See docs: "Project Intake Questionnaire" — intake modes.
 #
 # "small_project" is a lightweight mode for 1-2 tickets in one quick sprint.
 # It reuses the smart-intake extraction engine but asks fewer questions
@@ -1419,7 +1419,7 @@ def _is_small_project_mode(intake_mode: str | None) -> bool:
 def _extract_capacity_deductions(questionnaire: QuestionnaireState) -> dict:
     """Parse all capacity questions (Q27-Q30) from intake answers.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # All capacity questions are now collected during intake (Phase 6).
     # Q27 (sprint selection) determines which sprint to plan for.
@@ -1466,7 +1466,7 @@ def _extract_capacity_deductions(questionnaire: QuestionnaireState) -> dict:
 
     # Planned leave — sum of working days from per-person leave entries
     # collected in the PTO sub-loop after Q28. Defaults to 0 if no entries.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     planned_leave = sum(e.get("working_days", 0) for e in questionnaire._planned_leave_entries)
 
     return {
@@ -1493,7 +1493,7 @@ def _compute_net_velocity(
 ) -> int:
     """Compute net velocity per sprint after capacity deductions.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Formula:
     #   gross_days = team_size × sprint_length_days × num_sprints
@@ -1536,7 +1536,7 @@ def _assign_holidays_to_sprints(
 ) -> dict[int, list[dict]]:
     """Map each bank holiday to its 0-based sprint index.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Each holiday dict has {"date": date, "name": str, "weekday": str}
     # from get_bank_holidays_structured(). We compute which sprint window
@@ -1582,7 +1582,7 @@ def _assign_holidays_to_sprints(
 def _parse_date_dmy(text: str):
     """Parse a user-entered date in DD/MM/YYYY, DD/MM/YY, DD-MM-YYYY, or DD-MM-YY format.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Users enter leave dates in day-first format (common in UK/EU).
     # Two-digit years assume 2000s (e.g. 26 → 2026).
@@ -1613,7 +1613,7 @@ def _parse_date_dmy(text: str):
 def _count_working_days(start_date, end_date) -> int:
     """Count weekdays (Mon–Fri) between two dates, inclusive.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Used to compute working days lost per leave entry. Only counts
     # Mon(0)–Fri(4); Sat(5) and Sun(6) are excluded.
@@ -1642,7 +1642,7 @@ def _assign_leave_to_sprints(
 ) -> dict[int, list[dict]]:
     """Map each PTO leave entry to sprint windows, handling multi-sprint spans.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Similar to _assign_holidays_to_sprints but:
     # - Each entry can span multiple sprints (clipped to sprint boundaries)
@@ -1705,7 +1705,7 @@ def _compute_per_sprint_velocities(
 ) -> list[dict]:
     """Compute per-sprint velocities with sprint-specific bank holiday and PTO deductions.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Unlike _compute_net_velocity (which spreads bank holidays evenly),
     # this function only reduces velocity for sprints that actually contain
@@ -1798,7 +1798,7 @@ def _build_velocity_breakdown(
 ) -> tuple[int, str]:
     """Compute net velocity and build a transparent markdown breakdown.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Shows the user exactly how the recommended velocity was calculated,
     # converting each deduction into points-per-sprint so the impact is
@@ -1922,7 +1922,7 @@ def _build_suggestion_line(questionnaire: QuestionnaireState, q_num: int) -> str
 
 
 # ── Smart / quick intake helpers ──────────────────────────────────────
-# See README: "Project Intake Questionnaire" — smart intake
+# See docs: "Project Intake Questionnaire" — smart intake
 #
 # These helpers implement the three-mode intake system. Smart mode auto-
 # applies LLM-extracted answers and defaults, only asking unfilled essential
@@ -1933,7 +1933,7 @@ def _build_suggestion_line(questionnaire: QuestionnaireState, q_num: int) -> str
 def _load_user_context(path: str | None = None, docs_dir: str | None = None) -> tuple[str | None, dict]:
     """Read SCRUM.md and scrum-docs/ from the working directory and return combined content + status.
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     #
     # Thin wrapper around the load_project_context @tool in tools/codebase.py.
     # The tool handles all filesystem I/O and returns a JSON string; this wrapper
@@ -2219,7 +2219,7 @@ def _calculate_velocity_for_members(member_names: list[str], examples: dict | No
 def _extract_confluence_page_ids(text: str) -> list[str]:
     """Extract Confluence page IDs from URLs found in free-form text (e.g. SCRUM.md).
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     #
     # Confluence Cloud URLs embed the numeric page ID in the path, e.g.:
     #   https://example.atlassian.net/wiki/spaces/SPACE/pages/1234567890/Page+Title
@@ -2236,7 +2236,7 @@ def _fetch_confluence_context(
 ) -> tuple[str | None, dict]:
     """Search Confluence for docs related to the project and return combined context + status.
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     #
     # Two strategies are used to find relevant Confluence pages:
     # 1. Keyword search using the project name (Q1) — broad discovery.
@@ -2323,7 +2323,7 @@ def _fetch_confluence_context(
 def _extract_notion_page_ids(text: str) -> list[str]:
     """Extract Notion page IDs from URLs found in free-form text (e.g. SCRUM.md).
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     #
     # Notion URLs end with a 32-hex-character page ID (optionally dash-formatted),
     # usually appended to a slugified title, e.g.:
@@ -2347,7 +2347,7 @@ def _fetch_notion_context(
 ) -> tuple[str | None, dict]:
     """Search Notion for docs related to the project and return combined context + status.
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     #
     # Mirrors _fetch_confluence_context exactly, with two strategies:
     # 1. Keyword search using the project name (Q1) — broad discovery.
@@ -2434,7 +2434,7 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
     Returns:
         Tuple of (context string or None, status dict with name/status/detail).
 
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     """
     url = questionnaire.answers.get(17, "")
     if not url or url == QUESTION_DEFAULTS.get(17):
@@ -2498,7 +2498,7 @@ def _apply_repo_signals(qs: QuestionnaireState) -> None:
     - **Q12 (integrations)** — manifest-detected SDKs, auto-applied so they
       surface (editable) in the confirmation summary. Only when Q12 is unanswered.
 
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     """
     try:
         raw_context, signals, _status = scan_repo_signals(qs)
@@ -2557,7 +2557,7 @@ def _auto_default_remaining(
 ) -> None:
     """Apply defaults to all non-essential, non-answered questions.
 
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     #
     # In smart/quick mode, optional questions are auto-defaulted so only
     # essential gaps remain. This is the mechanism that reduces 26 questions
@@ -2653,7 +2653,7 @@ def _detect_bank_holidays_for_window(
 ) -> tuple[int, str]:
     """Auto-detect bank holidays from system locale for a sprint planning window.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # Uses get_bank_holidays_structured with locale auto-detection to count
     # weekday bank holidays in the planning window.
@@ -2708,7 +2708,7 @@ def _detect_bank_holidays_for_window(
 def _derive_q27_from_locale(questionnaire: QuestionnaireState) -> None:
     """Auto-default Q27 (sprint selection) when Jira is unavailable.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # In smart/quick mode without Jira (or when Jira fetch fails), Q27 is
     # auto-defaulted to "Fresh start (today)". Bank holiday detection is
@@ -2729,7 +2729,7 @@ def _derive_q27_from_locale(questionnaire: QuestionnaireState) -> None:
 def _resolve_sprint_start_date(questionnaire: QuestionnaireState) -> str:
     """Derive the sprint start date from Q27's answer.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # When Jira is configured and the user selects a future sprint (e.g. Sprint 107
     # when active is Sprint 104), compute the start date by adding the sprint offset:
@@ -2792,8 +2792,8 @@ def _get_planning_window(questionnaire: QuestionnaireState):
 def _prepare_bank_holiday_choices(questionnaire: QuestionnaireState) -> None:
     """Detect bank holidays using the detect_bank_holidays @tool.
 
-    # See README: "Scrum Standards" — capacity planning
-    # See README: "Tools" — tool types, @tool decorator
+    # See docs: "Scrum Standards" — capacity planning
+    # See docs: "Tools" — tool types, @tool decorator
     #
     # Called after Q27 (sprint selection) is resolved — regardless of whether
     # Jira is configured. Uses the actual sprint window dates:
@@ -2927,7 +2927,7 @@ def _prepare_bank_holiday_choices(questionnaire: QuestionnaireState) -> None:
 def _find_essential_gaps(questionnaire: QuestionnaireState, essential_set: frozenset[int]) -> list[int]:
     """Return sorted list of essential question numbers that are still unanswered.
 
-    # See README: "Project Intake Questionnaire" — conditional essentials
+    # See docs: "Project Intake Questionnaire" — conditional essentials
     #
     # In addition to the static essential set, CONDITIONAL_ESSENTIALS maps
     # questions to their prerequisites. A conditional question becomes a gap
@@ -2961,7 +2961,7 @@ def _find_essential_gaps(questionnaire: QuestionnaireState, essential_set: froze
 def _resolve_adaptive_text(q_num: int, questionnaire: QuestionnaireState) -> str:
     """Return personalized question text if a template exists and dependencies are met.
 
-    # See README: "Project Intake Questionnaire" — adaptive question text
+    # See docs: "Project Intake Questionnaire" — adaptive question text
     #
     # Checks ADAPTIVE_QUESTION_TEMPLATES for q_num. If all referenced prior
     # answers are available (and not defaulted), formats the template with
@@ -3055,7 +3055,7 @@ def _build_skip_acknowledgment(question_num: int, *, during_probe: bool, default
 def _check_vague_answer(question: str, answer: str, q_num: int = 0) -> tuple[str, tuple[str, ...]] | None:
     """Use the LLM to judge whether an intake answer is too vague.
 
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     #
     # Why LLM detection (not heuristics)?
     # "React" is specific for Q11 (tech stack) but vague for Q1 (project
@@ -3213,7 +3213,7 @@ def _parse_follow_up_choices(raw_choices: object) -> tuple[str, ...]:
 def _validate_cross_questions(answers: dict[int, str]) -> list[ValidationWarning]:
     """Run deterministic cross-question validation rules on completed answers.
 
-    # See README: "Project Intake Questionnaire" — cross-question validation
+    # See docs: "Project Intake Questionnaire" — cross-question validation
     #
     # Three rules (no LLM call):
     # 1. Greenfield + repo URL → contradiction
@@ -3365,7 +3365,7 @@ def _build_intake_summary(questionnaire: QuestionnaireState) -> str:
         result = header + body
 
     # Append velocity breakdown section if team size is available.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     extracted = _extract_team_and_velocity(questionnaire)
     if extracted:
         ts = extracted["team_size"]
@@ -3477,7 +3477,7 @@ _CONFIRM_PROMPT = (
 
 
 # ── Review intent detection ─────────────────────────────────────────
-# See README: "Guardrails" — human-in-the-loop pattern
+# See docs: "Guardrails" — human-in-the-loop pattern
 #
 # After each generation node (feature_generator, story_writer, task_decomposer,
 # sprint_planner), the user reviews the output and chooses Accept / Edit / Reject.
@@ -3517,7 +3517,7 @@ _EDIT_PREFIXES: tuple[str, ...] = (
 def _parse_review_intent(text: str) -> tuple[ReviewDecision, str]:
     """Detect the user's review intent from their input text.
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # Three possible outcomes:
     # - ACCEPT: user approves the output, pipeline continues
@@ -3568,7 +3568,7 @@ def _parse_review_intent(text: str) -> tuple[ReviewDecision, str]:
 def route_entry(state: ScrumState) -> str:
     """Route from START: seven-way branch based on pipeline progress.
 
-    # See README: "Agentic Blueprint Reference" — conditional edges
+    # See docs: "Agentic Blueprint Reference" — conditional edges
     #
     # This is a conditional edge function that runs at the START of every
     # graph invocation. It checks questionnaire, analysis, feature, story,
@@ -3593,7 +3593,7 @@ def route_entry(state: ScrumState) -> str:
     if not state.get("features"):
         # When the analyzer determined the project is too small for features,
         # skip feature generation and use a sentinel feature instead.
-        # See README: "Scrum Standards" — feature generation
+        # See docs: "Scrum Standards" — feature generation
         analysis = state.get("project_analysis")
         if analysis and analysis.skip_features:
             return "feature_skip"
@@ -3610,7 +3610,7 @@ def route_entry(state: ScrumState) -> str:
 def _show_summary_or_pto(questionnaire: QuestionnaireState, prefix: str = "") -> dict:
     """Show the confirmation summary OR trigger the PTO sub-loop first.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # In smart and standard modes, PTO is always asked interactively before the
     # confirmation summary because it's per-person knowledge the system can't
@@ -3732,8 +3732,8 @@ def _reopen_intake_for_epic(state: ScrumState, questionnaire: QuestionnaireState
 def project_intake(state: ScrumState) -> dict:
     """LangGraph node: ask one intake question per graph invocation.
 
-    # See README: "Scrum Standards" — questionnaire phases
-    # See README: "Agentic Blueprint Reference" — node return format
+    # See docs: "Scrum Standards" — questionnaire phases
+    # See docs: "Agentic Blueprint Reference" — node return format
     #
     # How this works:
     # 1. First call (no questionnaire in state) → initialize QuestionnaireState,
@@ -3783,7 +3783,7 @@ def project_intake(state: ScrumState) -> dict:
         _pending_tracker_pref = ""
 
     # ── Small project → Large switch re-entry ────────────────────────
-    # See README: "Guardrails" — human-in-the-loop (advisory)
+    # See docs: "Guardrails" — human-in-the-loop (advisory)
     #
     # When the user switched modes at the analysis review, the questionnaire is
     # re-opened in Epic (smart) mode with all Small-project answers preserved.
@@ -3794,7 +3794,7 @@ def project_intake(state: ScrumState) -> dict:
 
     if questionnaire is None:
         # First call — initialize questionnaire and attempt adaptive skip.
-        # See README: "Project Intake Questionnaire" — adaptive skip logic
+        # See docs: "Project Intake Questionnaire" — adaptive skip logic
         #
         # If the user typed a project description at the scrum> prompt before
         # Q1, we send it to the LLM to extract any answers it can find. This
@@ -3834,7 +3834,7 @@ def project_intake(state: ScrumState) -> dict:
         # Load SCRUM.md early so its content can pre-fill intake answers,
         # avoiding duplicate data entry when the user has already documented
         # project context in the file.
-        # See README: "Tools" — read-only tool pattern
+        # See docs: "Tools" — read-only tool pattern
         scrum_md_context, _scrum_status = _load_user_context()
         scrum_extracted: dict[int, str] = {}
         _scrum_md_contributed: set[int] = set()
@@ -3894,7 +3894,7 @@ def project_intake(state: ScrumState) -> dict:
                         logger.info("Q6 set up as team member multi-select: %d members", len(_member_labels))
 
         # ── Smart / quick mode first-invocation ──────────────────────
-        # See README: "Project Intake Questionnaire" — smart intake
+        # See docs: "Project Intake Questionnaire" — smart intake
         #
         # In smart/quick mode, extracted answers are auto-accepted (not
         # shown for confirmation). Defaults are auto-applied to all
@@ -3943,7 +3943,7 @@ def project_intake(state: ScrumState) -> dict:
             # applies description-based low-code markers. Runs once here at first
             # invocation; the raw scan + verdict are stashed on the questionnaire
             # for project_analyzer to reuse (avoids a second live scan).
-            # See README: "Project Intake Questionnaire" — smart intake
+            # See docs: "Project Intake Questionnaire" — smart intake
             _apply_repo_signals(qs)
 
             # Derive Q15 from Q2 if available
@@ -3953,7 +3953,7 @@ def project_intake(state: ScrumState) -> dict:
             # Q27 is in SMART_ESSENTIALS, but auto-deriving fills the answer so it
             # won't appear as a gap when Jira is absent.
             # Q28 (bank holidays) choices are prepared so the user sees a confirmation.
-            # See README: "Scrum Standards" — capacity planning
+            # See docs: "Scrum Standards" — capacity planning
             # ── Derive tracker preference from analysis profile if selected ──
             _ap_id = state.get("analysis_profile_id", "")
             if _ap_id and not qs._preferred_tracker:
@@ -3984,7 +3984,7 @@ def project_intake(state: ScrumState) -> dict:
             if _is_tracker_configured():
                 # Fire both tracker calls concurrently — they are independent HTTP
                 # requests and running them in parallel halves the wait time.
-                # See README: "Scrum Standards" — capacity planning
+                # See docs: "Scrum Standards" — capacity planning
                 from concurrent.futures import ThreadPoolExecutor
 
                 need_velocity = 9 not in qs.answers or 9 in qs.defaulted_questions
@@ -4136,7 +4136,7 @@ def project_intake(state: ScrumState) -> dict:
     )
 
     # ── Edit re-ask handler ──────────────────────────────────────────
-    # See README: "Project Intake Questionnaire" — edit flow
+    # See docs: "Project Intake Questionnaire" — edit flow
     #
     # When editing_question is set, the user is answering a re-asked
     # question from the confirmation summary. Record their new answer
@@ -4162,7 +4162,7 @@ def project_intake(state: ScrumState) -> dict:
         }
 
     # ── Smart / quick mode gap-filling ──────────────────────────────
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     #
     # In smart/quick mode, after the first invocation, the user is
     # answering essential gap questions one at a time. Record the
@@ -4329,7 +4329,7 @@ def project_intake(state: ScrumState) -> dict:
                 }
 
             # ── Vague answer probing ──────────────────────────────
-            # See README: "Project Intake Questionnaire" — follow-up probing
+            # See docs: "Project Intake Questionnaire" — follow-up probing
             #
             # Same vagueness check as standard mode — even in smart mode,
             # a vague answer to an essential question defeats the purpose.
@@ -4479,7 +4479,7 @@ def project_intake(state: ScrumState) -> dict:
         }
 
     # ── Confirmation gate ────────────────────────────────────────────
-    # See README: "Project Intake Questionnaire" — confirmation gate
+    # See docs: "Project Intake Questionnaire" — confirmation gate
     #
     # After the last question is answered the summary is shown and
     # awaiting_confirmation is set. On the NEXT invocation, check here:
@@ -4509,7 +4509,7 @@ def project_intake(state: ScrumState) -> dict:
                 }
 
         # ── PTO leave sub-loop handler ────────────────────────────────
-        # See README: "Scrum Standards" — capacity planning
+        # See docs: "Scrum Standards" — capacity planning
         #
         # After bank holidays (Q28) are resolved, the PTO sub-loop collects
         # per-person leave entries. This mirrors the _awaiting_velocity_input
@@ -4743,7 +4743,7 @@ def project_intake(state: ScrumState) -> dict:
         velocity_was_calculated = extracted.pop("_velocity_was_calculated", False)
 
         # Extract all capacity deductions (Q27-Q30).
-        # See README: "Scrum Standards" — capacity planning
+        # See docs: "Scrum Standards" — capacity planning
         capacity = _extract_capacity_deductions(questionnaire)
 
         # Determine velocity source
@@ -4874,7 +4874,7 @@ def project_intake(state: ScrumState) -> dict:
         }
 
     # ── Defaults command handling ─────────────────────────────────────
-    # See README: "Project Intake Questionnaire" — batch defaults
+    # See docs: "Project Intake Questionnaire" — batch defaults
     #
     # When the user types "defaults", apply defaults to all remaining
     # questions in the current phase and advance past it. This lets users
@@ -4918,7 +4918,7 @@ def project_intake(state: ScrumState) -> dict:
         }
 
     # ── Skip / "I don't know" handling ───────────────────────────────
-    # See README: "Project Intake Questionnaire" — adaptive behavior
+    # See docs: "Project Intake Questionnaire" — adaptive behavior
     #
     # Check for skip intent BEFORE the probed_questions check. This ensures
     # "skip" during a follow-up probe is handled correctly (keeps original
@@ -4966,7 +4966,7 @@ def project_intake(state: ScrumState) -> dict:
         }
 
     # ── Follow-up probing logic ──────────────────────────────────────
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     #
     # After each answer, the LLM judges whether it's specific enough.
     # If vague, one targeted follow-up is asked before moving on.
@@ -5149,7 +5149,7 @@ def project_intake(state: ScrumState) -> dict:
             }
 
     # ── Q27 sprint selection handling (standard mode) ────────────────
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # When Q27 is the current question and the user just answered it:
     # If Jira configured, the answer is a sprint selection (1/2/3/custom).
@@ -5232,7 +5232,7 @@ def project_intake(state: ScrumState) -> dict:
     questionnaire.current_question = next_q
 
     # ── Q27 sprint selection auto-handling when advancing ─────────────
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # When advancing to Q27 in standard mode:
     # - No Jira: auto-fill with bank holiday detection and skip to Q28
@@ -5320,8 +5320,8 @@ def project_intake(state: ScrumState) -> dict:
 
 
 # ── Project analyzer ────────────────────────────────────────────────
-# See README: "Architecture" — project_analyzer sits between intake and agent
-# See README: "Scrum Standards" — project analysis
+# See docs: "Architecture" — project_analyzer sits between intake and agent
+# See docs: "Scrum Standards" — project analysis
 #
 # After the user confirms the 26-question intake questionnaire, this node
 # synthesizes all answers into a structured ProjectAnalysis dataclass.
@@ -5618,7 +5618,7 @@ def _format_analysis(
 # ---------------------------------------------------------------------------
 # Prompt quality scoring — deterministic rating from QuestionnaireState
 # ---------------------------------------------------------------------------
-# See README: "Scrum Standards" — prompt quality rating
+# See docs: "Scrum Standards" — prompt quality rating
 #
 # Pure function: computes a quality score from the questionnaire tracking sets
 # (answered, extracted, defaulted, skipped, probed). No LLM call. Used by
@@ -5774,8 +5774,8 @@ def _gather_performance_summary() -> str:
 def project_analyzer(state: ScrumState) -> dict:
     """LangGraph node: synthesize intake answers into a structured ProjectAnalysis.
 
-    # See README: "Agentic Blueprint Reference" — node return format
-    # See README: "Architecture" — project_analyzer node
+    # See docs: "Agentic Blueprint Reference" — node return format
+    # See docs: "Architecture" — project_analyzer node
     #
     # How this works:
     # 1. Read the confirmed questionnaire answers + team_size + velocity from state.
@@ -5801,7 +5801,7 @@ def project_analyzer(state: ScrumState) -> dict:
     team_size = state.get("team_size", 1)
     velocity = state.get("velocity_per_sprint", team_size * _VELOCITY_PER_ENGINEER)
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     # Read review state from previous edit decision. When present, the
     # REPL has cleared the old analysis and set last_review_decision/feedback
     # so this node regenerates with user feedback injected into the prompt.
@@ -5822,7 +5822,7 @@ def project_analyzer(state: ScrumState) -> dict:
     # the repo twice, reuse the raw scan stashed by project_intake if present;
     # either way analyze_context re-derives the structured signals (cheap, pure)
     # from the current questionnaire answers.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     _stashed_repo_context = getattr(questionnaire, "_repo_context", "")
     if _stashed_repo_context:
         repo_context = _stashed_repo_context
@@ -5849,7 +5849,7 @@ def project_analyzer(state: ScrumState) -> dict:
     # linked directly in SCRUM.md (e.g. RunBook URLs). Passing user_context allows
     # _fetch_confluence_context to extract page IDs from Confluence URLs.
     # Returns (None, status) gracefully when Confluence is not configured or no docs found.
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     logger.debug(
         "CONFLUENCE: passing user_context=%s to _fetch_confluence_context", "present" if user_context else "None"
     )
@@ -5861,13 +5861,13 @@ def project_analyzer(state: ScrumState) -> dict:
     # Same two-strategy discovery for Notion (keyword search + direct page fetch
     # from URLs in SCRUM.md). Notion is an independent doc source with its own
     # token — graceful (None, status) when it's not configured or no docs found.
-    # See README: "Tools" — read-only tool pattern
+    # See docs: "Tools" — read-only tool pattern
     notion_context, notion_status = _fetch_notion_context(questionnaire, user_context=user_context)
     logger.debug("NOTION: result status=%s detail=%s", notion_status.get("status"), notion_status.get("detail"))
 
     # Load team profile for calibration-aware analysis.
     # Non-fatal — if no profile exists, the prompt runs without calibration context.
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
     team_calibration_text = _format_team_calibration(
         team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
@@ -5878,7 +5878,7 @@ def project_analyzer(state: ScrumState) -> dict:
     # empty context when nothing has run). Recency-dominant here: pre-analysis we
     # have no reliable project name to match on, so we pass "" and let the most
     # recent ceremonies inform the plan. Action items are stashed for story_writer.
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     ceremony = gather_ceremony_context()
 
     # Gather per-engineer Performance signal (open 1:1 action items + review focus
@@ -5915,7 +5915,7 @@ def project_analyzer(state: ScrumState) -> dict:
 
     try:
         # Single LLM call with low temperature for deterministic JSON extraction.
-        # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+        # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=images)
         analysis = _parse_analysis_response(response.content, questionnaire, team_size, velocity)
     except Exception as exc:
@@ -5946,7 +5946,7 @@ def project_analyzer(state: ScrumState) -> dict:
         logger.info("project_analyzer: low-code project detected (reason: %s)", analysis.low_code_reason or det_reason)
 
     # ── Small-project scope detection & coercion ─────────────────────────
-    # See README: "Guardrails" — human-in-the-loop (advisory)
+    # See docs: "Guardrails" — human-in-the-loop (advisory)
     #
     # In Small-project mode the plan is always kept flat: a single implicit epic
     # (skip_features) and 1-2 sprints max. We coerce the analysis so the
@@ -6028,8 +6028,8 @@ def project_analyzer(state: ScrumState) -> dict:
 # ---------------------------------------------------------------------------
 # Feature generator node — decomposes ProjectAnalysis into 3-6 Feature dataclasses
 # ---------------------------------------------------------------------------
-# See README: "Architecture" — feature_generator sits between analyzer and agent
-# See README: "Scrum Standards" — feature decomposition
+# See docs: "Architecture" — feature_generator sits between analyzer and agent
+# See docs: "Scrum Standards" — feature decomposition
 #
 # Same pattern as project_analyzer: extract from state → build prompt →
 # LLM call → parse JSON → fallback → format display → return state update.
@@ -6055,7 +6055,7 @@ def _format_epic_list(items: tuple[str, ...]) -> str:
 def _parse_features_response(raw: str, analysis: ProjectAnalysis) -> list[Feature]:
     """Parse the LLM's JSON response into a list of Feature dataclasses.
 
-    # See README: "Scrum Standards" — feature format
+    # See docs: "Scrum Standards" — feature format
     #
     # Strips markdown code fences, parses JSON array, validates priority
     # against the Priority enum, and falls back to _build_fallback_features
@@ -6112,7 +6112,7 @@ def _parse_features_response(raw: str, analysis: ProjectAnalysis) -> list[Featur
 def _build_fallback_features(analysis: ProjectAnalysis) -> list[Feature]:
     """Build 3 deterministic fallback features from ProjectAnalysis fields.
 
-    # See README: "Scrum Standards" — feature decomposition
+    # See docs: "Scrum Standards" — feature decomposition
     #
     # When the LLM fails to produce valid JSON, this function creates 3
     # generic features that give downstream nodes something to work with:
@@ -6187,7 +6187,7 @@ def _format_features(features: list[Feature], project_name: str) -> str:
 def feature_skip(state: ScrumState) -> dict:
     """LangGraph node: create a single feature for small projects.
 
-    # See README: "Scrum Standards" — feature generation
+    # See docs: "Scrum Standards" — feature generation
     #
     # When the analyzer sets skip_features=True, this node runs instead of
     # feature_generator. It creates a single feature (id=F1) named after the project
@@ -6229,9 +6229,9 @@ def feature_skip(state: ScrumState) -> dict:
 def feature_generator(state: ScrumState) -> dict:
     """LangGraph node: decompose ProjectAnalysis into 3-6 features.
 
-    # See README: "Agentic Blueprint Reference" — node return format
-    # See README: "Architecture" — feature_generator node
-    # See README: "Scrum Standards" — feature decomposition
+    # See docs: "Agentic Blueprint Reference" — node return format
+    # See docs: "Architecture" — feature_generator node
+    # See docs: "Scrum Standards" — feature decomposition
     #
     # How this works:
     # 1. Read the ProjectAnalysis from state.
@@ -6256,7 +6256,7 @@ def feature_generator(state: ScrumState) -> dict:
     # in real directory structure and README goals vs. user descriptions only.
     repo_context: str | None = state.get("repo_context")
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     # Read review state from previous reject/edit decision. When present, the
     # REPL has cleared the old artifacts and set last_review_decision/feedback
     # so this node regenerates with user feedback injected into the prompt.
@@ -6301,7 +6301,7 @@ def feature_generator(state: ScrumState) -> dict:
 
     try:
         # Single LLM call with low temperature for deterministic JSON output.
-        # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+        # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
         features = _parse_features_response(response.content, analysis)
     except Exception as exc:
@@ -6326,8 +6326,8 @@ def feature_generator(state: ScrumState) -> dict:
 # ---------------------------------------------------------------------------
 # Story writer node — decomposes Features into UserStory dataclasses
 # ---------------------------------------------------------------------------
-# See README: "Architecture" — story_writer sits between feature_generator and agent
-# See README: "Scrum Standards" — story format, acceptance criteria, story points
+# See docs: "Architecture" — story_writer sits between feature_generator and agent
+# See docs: "Scrum Standards" — story format, acceptance criteria, story points
 #
 # Same pattern as feature_generator: extract from state → build prompt →
 # LLM call → parse JSON → fallback → format display → return state update.
@@ -6359,7 +6359,7 @@ def _format_features_for_prompt(features: list[Feature]) -> str:
 def _format_team_calibration(profile: object, *, examples: dict | None = None) -> str:
     """Render a TeamProfile into prompt-ready calibration text.
 
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     #
     # Injected into story_writer and sprint_planner prompts so the LLM uses
     # team-specific patterns instead of generic Fibonacci rules. The profile
@@ -6752,7 +6752,7 @@ def _format_team_calibration(profile: object, *, examples: dict | None = None) -
 def _snap_to_fibonacci(value: int) -> StoryPointValue:
     """Clamp an integer to [1, 8] and snap to the nearest Fibonacci story point.
 
-    # See README: "Scrum Standards" — story points on Fibonacci scale
+    # See docs: "Scrum Standards" — story points on Fibonacci scale
     #
     # The LLM may return non-Fibonacci values (e.g. 4, 6, 10). This helper
     # ensures all story points are valid StoryPointValue members:
@@ -6773,7 +6773,7 @@ def _snap_to_fibonacci(value: int) -> StoryPointValue:
 
 
 # ── Discipline inference ──────────────────────────────────────────────
-# See README: "Scrum Standards" — discipline tagging
+# See docs: "Scrum Standards" — discipline tagging
 #
 # Keyword-based discipline inference. The LLM prompt asks for a discipline
 # field in the JSON, but if the LLM omits it or gives a bad value, this
@@ -6864,7 +6864,7 @@ def _infer_discipline(story: UserStory) -> Discipline:
 
 
 # ── Story validation ──────────────────────────────────────────────────
-# See README: "Scrum Standards" — Story Checklist
+# See docs: "Scrum Standards" — Story Checklist
 #
 # Deterministic post-processing after LLM parsing. Checks acceptance criteria
 # count (>= 3), non-empty required fields, and per-feature story counts. Auto-fixes
@@ -6893,7 +6893,7 @@ _GENERIC_ACS = (
 def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tuple[list[UserStory], list[str]]:
     """Validate stories against the Story Checklist and auto-fix where possible.
 
-    # See README: "Scrum Standards" — Story Checklist
+    # See docs: "Scrum Standards" — Story Checklist
     #
     # Checks:
     # 1. AC count >= 3 — pads with generic ACs if fewer.
@@ -6999,7 +6999,7 @@ def _validate_stories(stories: list[UserStory], features: list[Feature]) -> tupl
 def _parse_stories_response(raw: str, features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
     """Parse the LLM's JSON response into a list of UserStory dataclasses.
 
-    # See README: "Scrum Standards" — story format, acceptance criteria
+    # See docs: "Scrum Standards" — story format, acceptance criteria
     #
     # Strips markdown code fences, parses JSON array, validates priorities
     # and story points, parses nested acceptance criteria, generates IDs
@@ -7064,7 +7064,7 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
             priority = Priority(raw_priority) if raw_priority in valid_priorities else Priority.MEDIUM
 
             # Parse discipline — fall back to inference if missing or invalid.
-            # See README: "Scrum Standards" — discipline tagging
+            # See docs: "Scrum Standards" — discipline tagging
             valid_disciplines = {d.value for d in Discipline}
             raw_discipline = str(item.get("discipline", "")).lower().strip()
             discipline = Discipline(raw_discipline) if raw_discipline in valid_disciplines else None
@@ -7140,7 +7140,7 @@ def _parse_stories_response(raw: str, features: list[Feature], analysis: Project
 def _build_fallback_stories(features: list[Feature], analysis: ProjectAnalysis) -> list[UserStory]:
     """Build deterministic fallback stories per feature.
 
-    # See README: "Scrum Standards" — story format
+    # See docs: "Scrum Standards" — story format
     #
     # When the LLM fails to produce valid JSON, this function creates generic
     # stories that give downstream nodes something to work with.
@@ -7274,9 +7274,9 @@ def _format_stories(
 def story_writer(state: ScrumState) -> dict:
     """LangGraph node: decompose features into user stories with ACs and points.
 
-    # See README: "Agentic Blueprint Reference" — node return format
-    # See README: "Architecture" — story_writer sits between feature_generator and agent
-    # See README: "Scrum Standards" — story format, acceptance criteria, story points
+    # See docs: "Agentic Blueprint Reference" — node return format
+    # See docs: "Architecture" — story_writer sits between feature_generator and agent
+    # See docs: "Scrum Standards" — story format, acceptance criteria, story points
     #
     # How this works:
     # 1. Read the ProjectAnalysis and features from state.
@@ -7319,11 +7319,11 @@ def story_writer(state: ScrumState) -> dict:
     # Format ProjectAnalysis fields and features into strings for the prompt.
     # This avoids passing dataclasses directly, keeping the prompt module
     # free of imports from agent.state (avoiding circular imports).
-    # See README: "Prompt Construction" — pre-formatted strings pattern
+    # See docs: "Prompt Construction" — pre-formatted strings pattern
     features_block = _format_features_for_prompt(features)
 
     # Load team calibration for team-specific estimation rules.
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
     team_calibration_text = _format_team_calibration(
         team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
@@ -7358,7 +7358,7 @@ def story_writer(state: ScrumState) -> dict:
 
     try:
         # Single LLM call with low temperature for deterministic JSON output.
-        # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+        # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
         stories = _parse_stories_response(response.content, features, analysis)
     except Exception as exc:
@@ -7370,7 +7370,7 @@ def story_writer(state: ScrumState) -> dict:
 
     # Validate stories against the Story Checklist — auto-fix where possible
     # and collect warnings for the user. Deterministic post-processing, no LLM.
-    # See README: "Scrum Standards" — Story Checklist
+    # See docs: "Scrum Standards" — Story Checklist
     stories, warnings = _validate_stories(stories, features)
 
     # Format the stories for display (with warnings if any)
@@ -7386,8 +7386,8 @@ def story_writer(state: ScrumState) -> dict:
 # ---------------------------------------------------------------------------
 # Task decomposer node — breaks UserStories into Task dataclasses
 # ---------------------------------------------------------------------------
-# See README: "Architecture" — task_decomposer sits between story_writer and agent
-# See README: "Scrum Standards" — task decomposition
+# See docs: "Architecture" — task_decomposer sits between story_writer and agent
+# See docs: "Scrum Standards" — task decomposition
 #
 # Same pattern as story_writer: extract from state → build prompt →
 # LLM call → parse JSON → fallback → format display → return state update.
@@ -7407,8 +7407,8 @@ def _build_doc_context(state: ScrumState) -> str | None:
     Returns a formatted string for injection into the task decomposer prompt,
     or None if no documentation context is available.
 
-    # See README: "Tools" — read-only tool pattern
-    # See README: "Prompt Construction" — context injection
+    # See docs: "Tools" — read-only tool pattern
+    # See docs: "Prompt Construction" — context injection
     """
     parts: list[str] = []
 
@@ -7474,7 +7474,7 @@ def _format_stories_for_prompt(stories: list[UserStory], features: list[Feature]
             # Check if Documentation (index 1 in DOD_ITEMS) is applicable for this story.
             # When True, the prompt instructs the LLM to generate a dedicated documentation
             # sub-task that consolidates all doc work for the story.
-            # See README: "Scrum Standards" — Definition of Done
+            # See docs: "Scrum Standards" — Definition of Done
             doc_in_dod = len(story.dod_applicable) > 1 and story.dod_applicable[1]
             dod_tag = " [Documentation in DoD]" if doc_in_dod else ""
 
@@ -7492,7 +7492,7 @@ def _format_stories_for_prompt(stories: list[UserStory], features: list[Feature]
 def _parse_tasks_response(raw: str, stories: list[UserStory]) -> list[Task]:
     """Parse the LLM's JSON response into a list of Task dataclasses.
 
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     #
     # Strips markdown code fences, parses JSON array, validates story_id
     # against known story IDs, auto-generates IDs when missing, and falls
@@ -7553,7 +7553,7 @@ def _parse_tasks_response(raw: str, stories: list[UserStory]) -> list[Task]:
 
             # Parse label — default to CODE if missing or invalid.
             # The LLM is prompted to return one of: Code, Documentation, Infrastructure, Testing.
-            # See README: "Scrum Standards" — task decomposition, task labels
+            # See docs: "Scrum Standards" — task decomposition, task labels
             raw_label = str(item.get("label", "")).strip()
             try:
                 label = TaskLabel(raw_label)
@@ -7592,7 +7592,7 @@ def _parse_tasks_response(raw: str, stories: list[UserStory]) -> list[Task]:
 def _build_fallback_tasks(stories: list[UserStory]) -> list[Task]:
     """Build 2 deterministic fallback tasks per story.
 
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     #
     # When the LLM fails to produce valid JSON, this function creates 2
     # generic tasks per story that give downstream nodes something to work with:
@@ -7710,7 +7710,7 @@ def _parallel_task_decompose(
 ) -> list[Task]:
     """Decompose stories into tasks with parallel LLM calls per feature.
 
-    # See README: "Architecture" — task_decomposer parallelisation
+    # See docs: "Architecture" — task_decomposer parallelisation
     #
     # Groups stories by feature, sends one LLM call per feature concurrently
     # (max 4 workers to stay within Bedrock concurrency limits), then merges
@@ -7795,9 +7795,9 @@ def _parallel_task_decompose(
 def task_decomposer(state: ScrumState) -> dict:
     """LangGraph node: decompose user stories into concrete implementation tasks.
 
-    # See README: "Agentic Blueprint Reference" — node return format
-    # See README: "Architecture" — task_decomposer sits between story_writer and agent
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Agentic Blueprint Reference" — node return format
+    # See docs: "Architecture" — task_decomposer sits between story_writer and agent
+    # See docs: "Scrum Standards" — task decomposition
     #
     # How this works:
     # 1. Read the ProjectAnalysis, features, and stories from state.
@@ -7843,7 +7843,7 @@ def task_decomposer(state: ScrumState) -> dict:
     tech_stack_str = _format_epic_list(analysis.tech_stack)
 
     # Load team calibration for team-specific task patterns.
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
     team_calibration_text = _format_team_calibration(
         team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
@@ -7857,7 +7857,7 @@ def task_decomposer(state: ScrumState) -> dict:
     #
     # When in review mode (edit/reject), fall back to the original single
     # call since the user's feedback may reference cross-feature concerns.
-    # See README: "Architecture" — task_decomposer parallelisation
+    # See docs: "Architecture" — task_decomposer parallelisation
 
     if review_mode:
         # Review mode: single call with all stories (user feedback may span features)
@@ -7910,8 +7910,8 @@ def task_decomposer(state: ScrumState) -> dict:
 # ---------------------------------------------------------------------------
 # Sprint planner node — allocates stories to sprints based on velocity
 # ---------------------------------------------------------------------------
-# See README: "Architecture" — sprint_planner sits between task_decomposer and agent
-# See README: "Scrum Standards" — sprint planning, capacity allocation
+# See docs: "Architecture" — sprint_planner sits between task_decomposer and agent
+# See docs: "Scrum Standards" — sprint planning, capacity allocation
 #
 # Hybrid approach: LLM allocates stories and writes natural-language sprint goals,
 # then a deterministic validator ensures no sprint exceeds velocity, no stories are
@@ -7937,7 +7937,7 @@ _PRIORITY_SORT_ORDER = {
 def _format_stories_for_sprint_planner(stories: list[UserStory], features: list[Feature]) -> str:
     """Format stories in a compact layout for the sprint planner prompt.
 
-    # See README: "Prompt Construction" — pre-formatted strings pattern
+    # See docs: "Prompt Construction" — pre-formatted strings pattern
     #
     # Unlike _format_stories_for_prompt (used by task_decomposer), this format
     # omits acceptance criteria — the sprint planner only needs ID, points,
@@ -7981,7 +7981,7 @@ def _validate_sprint_capacity(
 ) -> list[Sprint]:
     """Post-parse validation: fix capacity math, redistribute over-packed sprints, handle orphans.
 
-    # See README: "Scrum Standards" — sprint capacity validation
+    # See docs: "Scrum Standards" — sprint capacity validation
     #
     # The LLM is good at allocating stories but sometimes gets the math wrong.
     # This function corrects three classes of errors:
@@ -8130,7 +8130,7 @@ def _parse_sprints_response(
 ) -> list[Sprint]:
     """Parse the LLM's JSON response into a list of Sprint dataclasses.
 
-    # See README: "Scrum Standards" — sprint format
+    # See docs: "Scrum Standards" — sprint format
     #
     # Strips markdown code fences, parses JSON array, validates story_ids
     # against known story IDs, auto-generates IDs when missing, and calls
@@ -8212,7 +8212,7 @@ def _parse_sprints_response(
 def _build_fallback_sprints(stories: list[UserStory], velocity: int, starting_sprint_number: int = 0) -> list[Sprint]:
     """Greedy bin-packing fallback when the LLM fails to produce valid sprint JSON.
 
-    # See README: "Scrum Standards" — sprint planning fallback
+    # See docs: "Scrum Standards" — sprint planning fallback
     #
     # Sorts stories by priority (Critical first), then packs them into sprints
     # greedily: fill the current sprint until adding the next story would exceed
@@ -8290,7 +8290,7 @@ def _merge_sprints_to_target(
 ) -> list[Sprint]:
     """Merge sprints down to a target count when the user enforced a deadline.
 
-    # See README: "Scrum Standards" — sprint planning, capacity allocation
+    # See docs: "Scrum Standards" — sprint planning, capacity allocation
     #
     # When the user rejects the capacity recommendation and keeps their original
     # target, the LLM may still produce more sprints than requested. This function
@@ -8418,7 +8418,7 @@ def _format_sprints(
 def resolve_sprint_selection(user_input: str, current_sprint_number: int) -> int | None:
     """Resolve the user's sprint selection input into a starting sprint number.
 
-    # See README: "Scrum Standards" — sprint planning
+    # See docs: "Scrum Standards" — sprint planning
     #
     # Used by the intake node when processing Q27 (sprint selection) with Jira,
     # and by the REPL for backwards compatibility.
@@ -8453,9 +8453,9 @@ def resolve_sprint_selection(user_input: str, current_sprint_number: int) -> int
 def sprint_planner(state: ScrumState) -> dict:
     """LangGraph node: allocate stories to sprints based on team velocity.
 
-    # See README: "Agentic Blueprint Reference" — node return format
-    # See README: "Architecture" — sprint_planner sits between task_decomposer and agent
-    # See README: "Scrum Standards" — sprint planning, capacity allocation
+    # See docs: "Agentic Blueprint Reference" — node return format
+    # See docs: "Architecture" — sprint_planner sits between task_decomposer and agent
+    # See docs: "Scrum Standards" — sprint planning, capacity allocation
     #
     # How this works:
     # 1. Read the ProjectAnalysis, features, stories, velocity, and target_sprints from state.
@@ -8497,7 +8497,7 @@ def sprint_planner(state: ScrumState) -> dict:
 
     # Extract velocity — prefer net velocity (after capacity deductions) when available.
     # Falls back to gross velocity, then to default calculation.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     team_size = state.get("team_size", 1)
     original_team_size = team_size  # Save before potential team override
     gross_velocity = state.get("velocity_per_sprint", team_size * _VELOCITY_PER_ENGINEER)
@@ -8519,7 +8519,7 @@ def sprint_planner(state: ScrumState) -> dict:
         target_sprints_raw = qs.answers.get(10, "")
 
     # ── Capacity check ────────────────────────────────────────────────
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # Before calling the LLM, verify that the user's sprint target can
     # actually hold all the story points. If total points exceed
@@ -8547,7 +8547,7 @@ def sprint_planner(state: ScrumState) -> dict:
     elif capacity_override == -1 and state.get("_capacity_team_override", 0) > 0:
         # User chose to increase team size — recalculate velocity to fit scope
         # in the original sprint count without using enforce_target.
-        # See README: "Guardrails" — human-in-the-loop pattern
+        # See docs: "Guardrails" — human-in-the-loop pattern
         new_team = state["_capacity_team_override"]
         velocity_per_engineer = gross_velocity // team_size if team_size > 0 else gross_velocity
         gross_velocity = velocity_per_engineer * new_team
@@ -8604,7 +8604,7 @@ def sprint_planner(state: ScrumState) -> dict:
             # Scope overflow — warn the user and return early (no LLM call yet).
             # Compute alternative: minimum team size to fit scope in original sprints.
             # Velocity scales linearly with team size (velocity_per_engineer × team_size).
-            # See README: "Guardrails" — human-in-the-loop pattern
+            # See docs: "Guardrails" — human-in-the-loop pattern
             velocity_per_engineer = velocity // team_size if team_size > 0 else velocity
             min_team_size = (
                 math.ceil(total_points / (velocity_per_engineer * target_sprints))
@@ -8636,7 +8636,7 @@ def sprint_planner(state: ScrumState) -> dict:
     stories_block = _format_stories_for_sprint_planner(stories, features)
 
     # Load team calibration for velocity-aware sprint planning.
-    # See README: "Scrum Standards" — team learning, self-calibrating estimates
+    # See docs: "Scrum Standards" — team learning, self-calibrating estimates
     team_profile = _load_team_profile(state.get("analysis_profile_id", ""))
     team_calibration_text = _format_team_calibration(
         team_profile, examples=_load_team_examples(state.get("analysis_profile_id", ""))
@@ -8666,7 +8666,7 @@ def sprint_planner(state: ScrumState) -> dict:
 
     try:
         # Single LLM call with low temperature for deterministic JSON output.
-        # See README: "Agentic Blueprint Reference" — using the LLM outside the main graph
+        # See docs: "Agentic Blueprint Reference" — using the LLM outside the main graph
         response = _invoke_json(prompt, image_paths=review_images)
         sprints = _parse_sprints_response(response.content, stories, velocity, starting_sprint_number)
     except Exception as exc:

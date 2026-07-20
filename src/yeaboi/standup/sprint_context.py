@@ -8,7 +8,7 @@ confidence degrades to "sprint day only / insufficient data".
 
 Tool helpers are imported lazily (optional SDKs), same convention as collector.py.
 
-# See README: "Daily Standup" — sprint-day & confidence
+# See docs: "Daily Standup" — sprint-day & confidence
 """
 
 from __future__ import annotations

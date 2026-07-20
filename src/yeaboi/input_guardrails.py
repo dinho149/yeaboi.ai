@@ -1,6 +1,6 @@
 """Input guardrails — validate and sanitize user input before it reaches the agent.
 
-# See README: "Guardrails" — three lines of defence (Input layer)
+# See docs: "Guardrails" — three lines of defence (Input layer)
 
 Four-layer input validation, cheapest first:
 

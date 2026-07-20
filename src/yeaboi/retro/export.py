@@ -10,7 +10,7 @@ added it), so the HTML escapes every field with ``html.escape`` — the same
 defense the standup exporter uses. The HTML reuses the plan report's stylesheet
 (``html_exporter._CSS``) so retro pages look consistent with the rest of the app.
 
-# See README: "Export Formats" — Markdown, HTML
+# See docs: "Export Formats" — Markdown, HTML
 """
 
 from __future__ import annotations

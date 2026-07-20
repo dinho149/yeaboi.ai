@@ -6,7 +6,7 @@ webhook via urllib, email uses smtplib, desktop shells out to osascript
 deliver() fans out across channels and never lets one failure block the others —
 partial delivery is reported, not raised.
 
-# See README: "Daily Standup" — delivery
+# See docs: "Daily Standup" — delivery
 """
 
 from __future__ import annotations

@@ -15,8 +15,8 @@ inert — the same XSS defense the retro page uses.
 
 This module is E501-exempt in pyproject.toml (embedded asset).
 
-# See README: "Reporting Mode" — presentation output
-# See README: "Retro Mode" — self-contained embedded HTML page pattern
+# See docs: "Reporting Mode" — presentation output
+# See docs: "Retro Mode" — self-contained embedded HTML page pattern
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Project history persistence — save/load project metadata to ~/.scrum-agent/projects.json.
 
-# See README: "Memory & State" — this is the first step toward session persistence.
+# See docs: "Memory & State" — this is the first step toward session persistence.
 # Each project gets a UUID and a snapshot of pipeline progress, artifact counts,
 # and Jira sync status. The file is a simple JSON array — no database needed yet.
 
@@ -118,7 +118,7 @@ def save_project_snapshot(project_id: str, graph_state: dict[str, Any]) -> None:
 def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
     """Persist the full graph state to disk so the session can be resumed later.
 
-    # See README: "Memory & State" — full graph state serialization.
+    # See docs: "Memory & State" — full graph state serialization.
     # Uses LangChain's message serialization for BaseMessage objects and
     # dataclasses.asdict() for frozen dataclass artifacts.
 

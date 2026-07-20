@@ -1,6 +1,6 @@
 """Screen builder functions for the mode selection flow.
 
-# See README: "Architecture" — this module contains the rendering functions
+# See docs: "Architecture" — this module contains the rendering functions
 # for the mode selection, intake, offline, export, import, and delete screens.
 # These are pure functions that return Rich Panel renderables — no I/O or state.
 """

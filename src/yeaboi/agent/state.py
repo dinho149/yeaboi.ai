@@ -41,7 +41,7 @@ class StoryPointValue(IntEnum):
 class Discipline(StrEnum):
     """Discipline tag for stories — indicates which team skillset owns the story.
 
-    # See README: "Scrum Standards" — discipline tagging
+    # See docs: "Scrum Standards" — discipline tagging
     #
     # Used to classify each story by the primary skillset needed to implement it.
     # The LLM prompt asks for a discipline field; if missing or invalid,
@@ -62,7 +62,7 @@ class QuestionnairePhase(StrEnum):
 
     Seven phases matching the intake questionnaire design in the README.
     Each phase groups related questions to create a natural conversation flow.
-    # See README: "Scrum Standards" → questionnaire phases
+    # See docs: "Scrum Standards" → questionnaire phases
     """
 
     PROJECT_CONTEXT = "project_context"  # Q1–Q5: project name, description, goals, users, scope
@@ -79,7 +79,7 @@ class TaskLabel(StrEnum):
 
     Auto-assigned by the task decomposer prompt based on task content.
     Used in REPL tables and TUI renderers to visually distinguish task types.
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     """
 
     CODE = "Code"
@@ -147,7 +147,7 @@ class Feature:
 # Definition of Done — standard checklist applied to every user story.
 # The LLM evaluates which items apply to each story and marks the rest as N/A.
 # Rendered in the story table with strikethrough for non-applicable items.
-# See README: "Scrum Standards" — Definition of Done
+# See docs: "Scrum Standards" — Definition of Done
 DOD_ITEMS: tuple[str, ...] = (
     "Acceptance Criteria Met",
     "Documentation",
@@ -204,7 +204,7 @@ class UserStory:
     title: str = ""
     # Discipline tag — which team skillset owns this story.
     # Default is FULLSTACK so existing code (and fallback stories) work without changes.
-    # See README: "Scrum Standards" — discipline tagging
+    # See docs: "Scrum Standards" — discipline tagging
     discipline: Discipline = Discipline.FULLSTACK
     # Definition of Done flags — one bool per DOD_ITEMS entry.
     # True = applies to this story, False = not applicable (shown with strikethrough).
@@ -235,17 +235,17 @@ class Task:
     # Auto-assigned by the task decomposer based on task content.
     # Default is CODE — the most common task type. The LLM picks the label
     # from the TaskLabel enum; the parser falls back to CODE if invalid.
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     label: TaskLabel = TaskLabel.CODE
     # Auto-generated test plan for tasks labelled Code or Infrastructure.
     # Lists what to test (unit, integration, edge cases) so developers know
     # what verification is expected. Empty string for non-code tasks.
-    # See README: "Scrum Standards" — task decomposition, testing
+    # See docs: "Scrum Standards" — task decomposition, testing
     test_plan: str = ""
     # Self-contained instruction for AI coding assistants (Cursor, Claude Code,
     # GitHub Copilot). Includes project context, tech stack, and specific guidance
     # so a developer can paste it directly into an AI tool and start working.
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     ai_prompt: str = ""
 
 
@@ -260,7 +260,7 @@ class Sprint:
     story_ids: tuple[str, ...]
 
 
-# See README: "Session Management" — Daily Standup mode artifacts
+# See docs: "Session Management" — Daily Standup mode artifacts
 #
 # The Daily Standup mode produces a StandupReport for a given day: one
 # MemberUpdate per team member (either self-reported by the person or inferred
@@ -319,7 +319,7 @@ class StandupReport:
     images: tuple[str, ...] = ()  # screenshot paths pasted into "My Update" — embedded in exports
 
 
-# See README: "Session Management" — Retro mode artifacts
+# See docs: "Session Management" — Retro mode artifacts
 #
 # The Retro (retrospective) mode produces a RetroReport: every sticky card the
 # team added to the four-grid board (What went well / What didn't go well /
@@ -388,7 +388,7 @@ class RetroReport:
         return out
 
 
-# See README: "Session Management" — Performance mode artifacts
+# See docs: "Session Management" — Performance mode artifacts
 #
 # The Performance mode helps a team lead manage each engineer's growth. It has
 # three connected workflows — 1:1 Prep, 1:1 Completion, and a 6-Month Review —
@@ -618,7 +618,7 @@ class RoadmapAnalysis:
     generated_at: str = ""  # ISO timestamp
 
 
-# See README: "Scrum Standards" — prompt quality rating
+# See docs: "Scrum Standards" — prompt quality rating
 @dataclass(frozen=True)
 class PromptQualityRating:
     """Deterministic quality score for the user's intake questionnaire input.
@@ -642,7 +642,7 @@ class PromptQualityRating:
     low_confidence_areas: tuple[str, ...] = ()  # QUESTION_SHORT_LABELS for defaulted essentials
 
 
-# See README: "Scrum Standards" — project analysis
+# See docs: "Scrum Standards" — project analysis
 @dataclass(frozen=True)
 class ProjectAnalysis:
     """Structured synthesis of all 30 intake answers.
@@ -672,14 +672,14 @@ class ProjectAnalysis:
     # When True, the project is small enough for a single feature instead of 3-6.
     # The analyzer LLM sets this based on project scope (guideline: target_sprints ≤ 2
     # AND goals ≤ 3). Default False so existing projects are unaffected.
-    # See README: "Scrum Standards" — feature generation
+    # See docs: "Scrum Standards" — feature generation
     skip_features: bool = False
     # When True, the project is mostly configuration / content / no-code-platform
     # work rather than engineering. Set by reconciling the deterministic
     # repo_signals scan with the analyzer LLM's own read; drives lighter estimation
     # and config-oriented task decomposition downstream. Default False so ordinary
     # engineering projects are unaffected (and old saved sessions still deserialize).
-    # See README: "Scrum Standards" — estimation
+    # See docs: "Scrum Standards" — estimation
     is_low_code: bool = False
     low_code_reason: str = ""  # human-readable why, shown in the analysis panel
     scrum_md_contributions: tuple[str, ...] = ()  # JSON field names enriched by SCRUM.md
@@ -717,29 +717,29 @@ class QuestionnaireState:
     # confirmable suggestions. Instead of silently skipping extracted questions,
     # each is presented with its suggestion so the user can press Enter/Y to
     # confirm or type a different answer. Cleared per-question once confirmed.
-    # See README: "Project Intake Questionnaire" — adaptive skip logic
+    # See docs: "Project Intake Questionnaire" — adaptive skip logic
     suggested_answers: dict[int, str] = field(default_factory=dict)
     # Tracks which questions have already been probed with a follow-up.
     # Max 1 follow-up per question — if the answer is still vague after
     # probing, accept it and move on.
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     probed_questions: set[int] = field(default_factory=set)
     # Tracks which questions used a sensible default (user said "skip" / "I don't
     # know"). Needed to flag assumptions in the intake summary. Defaulted questions
     # have an entry in `answers` (the default value) so they don't affect progress
     # calculation — progress counts answer keys and skipped questions as usual.
-    # See README: "Project Intake Questionnaire" — adaptive behavior
+    # See docs: "Project Intake Questionnaire" — adaptive behavior
     defaulted_questions: set[int] = field(default_factory=set)
     completed: bool = False
     # True after the last question is answered but before the user confirms
     # the summary. The intake node re-shows the summary until the user types
     # "confirm" (or similar). Only then does completed flip to True.
-    # See README: "Project Intake Questionnaire" — confirmation gate
+    # See docs: "Project Intake Questionnaire" — confirmation gate
     awaiting_confirmation: bool = False
     # Tracks which question the user is currently editing (via "Q6" or "edit Q6"
     # from the confirmation summary). Separate from current_question to avoid
     # corrupting the forward-progress model. None when not editing.
-    # See README: "Project Intake Questionnaire" — edit flow
+    # See docs: "Project Intake Questionnaire" — edit flow
     editing_question: int | None = None
     # Intake mode — controls how many questions are shown interactively.
     # The legacy 30-question "standard" flow has been retired as a user-facing
@@ -747,7 +747,7 @@ class QuestionnaireState:
     # invocation. The dataclass default is left as "standard" only so directly
     # constructed states (in tests / shared subsequent-call helpers) keep their
     # historical value; production always sets this from _intake_mode.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     intake_mode: str = "standard"  # coerced to "smart" | "quick" | "small_project"
     # Transient: set when the user switches Small project → Large at the
     # analysis review. On the next project_intake pass we skip answer-recording
@@ -757,7 +757,7 @@ class QuestionnaireState:
     # at first invocation (broadened to configured repos) and stashes the raw
     # scan + deterministic low-code verdict here; project_analyzer reuses them so
     # the repo isn't scanned twice. Not serialized — a resumed session re-scans.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     _repo_context: str = ""
     _repo_low_code: bool = False
     _repo_low_code_reason: str = ""
@@ -773,12 +773,12 @@ class QuestionnaireState:
     # Maps question number → tuple of 2-4 option strings. The REPL renders
     # these as a numbered menu so the user can pick instead of typing.
     # Cleared after the follow-up answer is recorded (same lifecycle as probed_questions).
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     _follow_up_choices: dict[int, tuple[str, ...]] = field(default_factory=dict)
     # Transient: bank holiday count auto-detected during Q27 processing.
     # Stored here so _extract_capacity_deductions can read it at confirmation time
     # and populate capacity_bank_holiday_days in ScrumState.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     _detected_bank_holiday_days: int = 0
     # Transient: structured holiday data from get_bank_holidays_structured().
     # Each dict has {"date": date, "name": str, "weekday": str}.
@@ -787,7 +787,7 @@ class QuestionnaireState:
     _detected_bank_holidays: list[dict] = field(default_factory=list)
     # Transient: user's velocity override from the confirmation gate velocity
     # accept/override choice menu. None means the computed velocity was accepted.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     _velocity_override: int | None = None
     # Transient: True when the user picked "Override" from the velocity choice
     # menu and we're waiting for them to enter a custom number.
@@ -795,12 +795,12 @@ class QuestionnaireState:
     # Transient: per-developer velocity from Jira (team avg / team size).
     # Stored so that Q6 changes at the confirmation gate trigger recomputation
     # of the feature velocity (per_dev × feature_team_size).
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     _jira_per_dev_velocity: float | None = None
     # Transient: PTO/planned leave entries collected via the leave sub-loop.
     # Each entry: {"person": str, "start_date": str (ISO), "end_date": str (ISO), "working_days": int}
     # PTO is per-person (unlike bank holidays which affect the whole team).
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     _planned_leave_entries: list[dict] = field(default_factory=list)
     # Transient: True when in the PTO collection sub-loop after Q28.
     _awaiting_leave_input: bool = False
@@ -831,7 +831,7 @@ class QuestionnaireState:
     # Unified answer provenance — maps question number to AnswerSource value.
     # Populated alongside the existing tracking sets (extracted_questions,
     # defaulted_questions, probed_questions) for backward compatibility.
-    # See README: "Project Intake Questionnaire" — answer confidence signalling
+    # See docs: "Project Intake Questionnaire" — answer confidence signalling
     answer_sources: dict[int, str] = field(default_factory=dict)
     # Transient: preferred tracker for velocity/sprint data when both Jira and
     # Azure DevOps are configured. Set by the user at the start of intake via
@@ -879,7 +879,7 @@ def _merge_dicts(a: dict, b: dict) -> dict:
     node can return only the new mappings it created (a partial dict) and
     LangGraph merges them into the running total — the same append-semantics
     pattern that operator.add provides for list fields like `features` and `stories`.
-    # See README: "Memory & State" — reducers, Annotated fields
+    # See docs: "Memory & State" — reducers, Annotated fields
     """
     return {**a, **b}
 
@@ -905,7 +905,7 @@ class ScrumState(_RequiredState, total=False):
     questionnaire: QuestionnaireState
     # Intake mode — passed from REPL to the intake node on first invocation.
     # Stored as a ScrumState field so LangGraph doesn't strip it.
-    # See README: "Project Intake Questionnaire" — smart intake
+    # See docs: "Project Intake Questionnaire" — smart intake
     _intake_mode: str
 
     # Project analysis — structured synthesis of intake answers.
@@ -940,12 +940,12 @@ class ScrumState(_RequiredState, total=False):
     # the active Jira sprint and asking the user which sprint to plan for.
     # e.g. if active sprint is "Sprint 104" and user picks next → 105.
     # When 0 (default), sprint_planner uses generic "Sprint 1, Sprint 2, ...".
-    # See README: "Scrum Standards" — sprint planning
+    # See docs: "Scrum Standards" — sprint planning
     starting_sprint_number: int
 
     # Capacity override — set by sprint_planner when total story points exceed
     # what fits in the user's target sprint range (Q10).
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #   0       → not yet checked (default)
     #   < -1    → capacity warning pending; abs(value) = recommended sprint count
     #   -1      → user rejected recommendation; proceed with original target
@@ -960,39 +960,39 @@ class ScrumState(_RequiredState, total=False):
     # Recommended team size to fit scope in original sprint count — computed
     # during capacity overflow detection: ceil(total_points / (vel_per_eng × target)).
     # Displayed as option 2 in the capacity overflow choice screen.
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     _recommended_team_size: int
 
     # Team size override chosen by the user via the capacity overflow screen.
     # When > 0, sprint_planner recalculates velocity = vel_per_eng × this value
     # instead of using enforce_target. 0 = not set (default).
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     _capacity_team_override: int
 
     # Small-project scope advisory. Set True by project_analyzer when the intake
     # ran in "small_project" mode but the analyzer judged the project bigger than
     # 1-2 tickets (needs feature grouping, > 2 sprints, or many goals). The
     # analysis review surfaces a "Switch to Large" action when this is True.
-    # See README: "Guardrails" — human-in-the-loop (advisory)
+    # See docs: "Guardrails" — human-in-the-loop (advisory)
     _small_project_oversized: bool
 
     # Team ceremony (Standup + Retro) history gathered by project_analyzer and
     # reused downstream: _ceremony_action_items seeds story_writer's backlog
     # ([Retro] stories); _ceremony_history is the markdown block reused by
     # sprint_planner. Transient; serialize harmlessly across --resume.
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     _ceremony_action_items: tuple[str, ...]
     _ceremony_history: str
     # Per-engineer Performance signal (open 1:1 actions + review focus areas)
     # gathered by project_analyzer and reused by sprint_planner. Transient markdown.
-    # See README: "Performance Mode"
+    # See docs: "Performance Mode"
     _performance_context: str
 
     # Capacity deductions — all collected during intake (Phase 6: Capacity Planning).
     # Q27 (sprint selection / bank holidays auto-detected), Q28 (planned leave),
     # Q29 (unplanned %), Q30 (onboarding). Net velocity computed at intake confirmation.
     # Used by sprint_planner to compute net feature capacity (gross - deductions).
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     capacity_bank_holiday_days: int  # Total bank/public holiday days in planning window
     capacity_planned_leave_days: int  # Total planned leave days (vacation, training)
     capacity_unplanned_leave_pct: int  # Percentage lost to unplanned absences (0–100)
@@ -1007,7 +1007,7 @@ class ScrumState(_RequiredState, total=False):
     # reduced capacity. Each entry is a dict with keys: sprint_index (0-based),
     # bank_holiday_days, bank_holiday_names (list[str]), pto_days, pto_entries,
     # net_velocity. When empty, the flat net_velocity_per_sprint is used everywhere.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     sprint_capacities: list[dict]
 
     # Structured per-person leave entries — persisted for rendering in exports
@@ -1024,14 +1024,14 @@ class ScrumState(_RequiredState, total=False):
     # and confluence_read_page tool calls during the intake phase. Populated by the
     # agent as it reads relevant docs; surfaced in the project_analyzer prompt alongside
     # repo context. Empty string if no Confluence tools were called.
-    # See README: "Tools" — tool types, read-only tool pattern
+    # See docs: "Tools" — tool types, read-only tool pattern
     confluence_context: str
 
     # Notion context — concatenated plain-text content from notion_search_pages and
     # notion_read_page tool calls during the intake phase. Notion is an independent
     # doc source (its own integration token); surfaced in the project_analyzer prompt
     # alongside repo and Confluence context. Empty string if no Notion tools were called.
-    # See README: "Tools" — tool types, read-only tool pattern
+    # See docs: "Tools" — tool types, read-only tool pattern
     notion_context: str
 
     # User-provided context from SCRUM.md — free-form markdown the user places in
@@ -1059,7 +1059,7 @@ class ScrumState(_RequiredState, total=False):
     chat_images: list[str]
 
     # Review loop
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     # pending_review holds the name of the generation node awaiting user review
     # (e.g. "feature_generator"). When set, the REPL intercepts user input and
     # routes it through the [Accept / Edit / Reject] flow instead of invoking
@@ -1085,7 +1085,7 @@ class ScrumState(_RequiredState, total=False):
     # jira_epic_key: single project-level Epic key (e.g. "PROJ-42").
     # The _merge_dicts reducer appends new entries without overwriting existing ones,
     # so each node/tool call can return only the mappings it just created.
-    # See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+    # See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
     jira_feature_keys: Annotated[dict[str, str], _merge_dicts]
     jira_story_keys: Annotated[dict[str, str], _merge_dicts]
     jira_task_keys: Annotated[dict[str, str], _merge_dicts]
@@ -1099,7 +1099,7 @@ class ScrumState(_RequiredState, total=False):
     # azdevops_iteration_keys: maps internal sprint IDs → AzDO iteration paths.
     # The _merge_dicts reducer appends new entries without overwriting existing ones,
     # so each node/tool call can return only the mappings it just created.
-    # See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+    # See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
     azdevops_epic_id: str
     azdevops_story_keys: Annotated[dict[str, str], _merge_dicts]
     azdevops_task_keys: Annotated[dict[str, str], _merge_dicts]

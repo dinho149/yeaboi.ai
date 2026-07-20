@@ -15,9 +15,9 @@ Pipeline (run_standup):
     attribution); a typed self-report rides alongside as supporting context
   → assemble StandupReport → deliver → record run
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the standup summary prompt
-# See README: "Daily Standup" — engine
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the standup summary prompt
+# See docs: "Daily Standup" — engine
 """
 
 from __future__ import annotations

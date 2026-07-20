@@ -9,7 +9,7 @@ and actionable — never vague praise. Transcripts and tickets are framed as
 UNTRUSTED DATA so a stray "ignore your instructions" line in a pasted transcript
 can't hijack the summary.
 
-# See README: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
+# See docs: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
 """
 
 from __future__ import annotations

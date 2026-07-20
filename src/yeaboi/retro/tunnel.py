@@ -17,7 +17,7 @@ Everything here is best-effort and never raises into the TUI: a failed download
 or tunnel start returns ``None`` / a status string, and the retro keeps working
 on the LAN.
 
-# See README: "Retro" — remote joining via Cloudflare tunnel
+# See docs: "Retro" — remote joining via Cloudflare tunnel
 """
 
 from __future__ import annotations

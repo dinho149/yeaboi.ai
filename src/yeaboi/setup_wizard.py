@@ -1,6 +1,6 @@
 """First-run setup wizard for yeaboi.ai credentials.
 
-# See README: "Architecture" — the CLI layer is responsible for user-facing
+# See docs: "Architecture" — the CLI layer is responsible for user-facing
 # chrome. The wizard runs once before any REPL loop starts, collecting
 # credentials and storing them in ~/.yeaboi/.env for future sessions.
 """
@@ -152,7 +152,7 @@ def _read_existing_config(config_file: Path) -> dict[str, str]:
 def _collect_provider(console: Console) -> dict[str, str]:
     """Show full-screen provider selection and return the chosen provider info dict.
 
-    # See README: "Architecture" — the CLI layer owns user-facing chrome.
+    # See docs: "Architecture" — the CLI layer owns user-facing chrome.
     # This delegates to the full-screen Rich Live provider selector for an
     # interactive arrow-key selection experience.
 

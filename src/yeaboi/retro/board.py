@@ -17,7 +17,7 @@ The frozen, serializable artifacts (``RetroCard``, ``RetroReport``) live in
 agent/state.py alongside StandupReport; this module owns only the mutable live
 object and the board → report snapshot.
 
-# See README: "Session Management" — Retro mode artifacts
+# See docs: "Session Management" — Retro mode artifacts
 """
 
 from __future__ import annotations

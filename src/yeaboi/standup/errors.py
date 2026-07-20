@@ -6,7 +6,7 @@ empty result looks identical to "no activity", hiding a misconfigured token from
 the user. So the helpers raise ``StandupSourceError`` on auth failures; the
 collector catches it and records a warning that ends up on the StandupReport.
 
-# See README: "Daily Standup" — recent-activity collection, warnings
+# See docs: "Daily Standup" — recent-activity collection, warnings
 """
 
 from __future__ import annotations

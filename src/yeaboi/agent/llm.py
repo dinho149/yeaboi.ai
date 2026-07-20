@@ -1,7 +1,7 @@
 """LLM instance factory for the Scrum Agent.
 
-# See README: "Architecture" — Model layer
-# See README: "Agentic Blueprint Reference" — Core Graph Setup
+# See docs: "Architecture" — Model layer
+# See docs: "Agentic Blueprint Reference" — Core Graph Setup
 
 Provider-agnostic LLM factory. The active provider is selected at runtime via
 the LLM_PROVIDER env var (default: "anthropic"). This means the agent works
@@ -250,7 +250,7 @@ def _supports_temperature(model: str) -> bool:
 def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool = False) -> BaseChatModel:
     """Create an LLM instance for the configured provider.
 
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     # BaseChatModel is LangChain's common interface for all chat LLMs.
     # Every provider wrapper (ChatAnthropic, ChatOpenAI, ChatGoogleGenerativeAI)
     # implements BaseChatModel, so the rest of the agent — nodes, bind_tools(),
@@ -348,7 +348,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 
     if provider == "bedrock":
         # langchain-aws is an optional dependency (install with: uv sync --extra bedrock)
-        # # See README: "Deploy on AWS Lightsail (OpenClaw)" — Bedrock uses IAM credentials
+        # # See docs: "Deploy on AWS Lightsail (OpenClaw)" — Bedrock uses IAM credentials
         # from the instance role, ~/.aws/credentials, or AWS_ACCESS_KEY_ID env vars.
         # No API key needed on Lightsail — the IAM role is attached automatically.
         try:
@@ -442,7 +442,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 # Multimodal (vision) helpers — pasted screenshot support
 # ---------------------------------------------------------------------------
 #
-# # See README: "Prompt Construction" — multimodal content blocks
+# # See docs: "Prompt Construction" — multimodal content blocks
 # LangChain message content is either a plain string OR a list of typed
 # "content blocks". The portable block shape
 #   {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": ...}
