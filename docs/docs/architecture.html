@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Architecture & Concepts — yeaboi docs</title>
+<meta name="description" content="The four architectural layers, the LangGraph agent graph and node responsibilities, prompt construction, guardrails, multi-provider LLM support, and a condensed LangGraph/LangChain API reference." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Architecture &amp; Concepts</h1>
+      <p class="lede">How yeaboi is built — the four architectural layers, the LangGraph agent graph, prompt construction, guardrails, multi-provider LLM support, and a condensed reference for the underlying LangGraph/LangChain APIs.</p>
+
+      <h2 id="four-layers">Four Layers</h2>
+      <table>
+        <thead><tr><th>Layer</th><th>Implementation</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Interface</strong></td><td>Full-screen TUI with animated splash, mode selection, session editor, pipeline progress, streaming output, and dark/light themes</td></tr>
+          <tr><td><strong>Prompt Construction</strong></td><td>Scrum Master persona, ARC-structured prompts per node, few-shot examples, adaptive question templates</td></tr>
+          <tr><td><strong>Model</strong></td><td>Anthropic Claude (primary), OpenAI GPT, Google Gemini — swappable via <code>LLM_PROVIDER</code> env var</td></tr>
+          <tr><td><strong>Data &amp; Storage</strong></td><td>SQLite session store (<code>~/.yeaboi/data/sessions.db</code>) with team analysis profiles, token usage tracking, optional Jira/Confluence/Azure DevOps integration</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="design-principles">Design Principles</h2>
+      <p>Three design principles guide the codebase:</p>
+      <ol>
+        <li><strong>Robust Infrastructure</strong> — agent frameworks (LangChain, LangGraph), graceful rate-limit retry with exponential backoff, crash-safe session persistence</li>
+        <li><strong>Modularity</strong> — decoupled CLI/TUI/REPL/agent/tools/prompts, one concern per module, UI system with 4 subsystems</li>
+        <li><strong>Continuous Evaluation</strong> — golden dataset evaluators, contract tests with VCR cassettes, token budget monitoring</li>
+      </ol>
+
+      <h2 id="agent-graph">Agent Graph (LangGraph)</h2>
+      <p>Auto-generated via <code>make graph</code>:</p>
+      <img src="/graph.png" alt="Agent Graph" />
+      <pre><code class="language-mermaid">graph TD
+    START([START]) --> intake[project_intake]
+    intake --> |questionnaire loop| intake
+    intake --> analyzer[project_analyzer]
+    analyzer --> features[feature_generator]
+    features --> |human review| features
+    features --> stories[story_writer]
+    stories --> |human review| stories
+    stories --> tasks[task_decomposer]
+    tasks --> |human review| tasks
+    tasks --> sprints[sprint_planner]
+    sprints --> |human review| sprints
+    sprints --> sync[jira_sync]
+    sync --> END([END])</code></pre>
+
+      <h2 id="node-descriptions">Node Descriptions</h2>
+      <table>
+        <thead><tr><th>Node</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Project Intake</strong></td><td>Runs the discovery questionnaire (smart/standard/quick mode) to gather all project context</td></tr>
+          <tr><td><strong>Project Analyzer</strong></td><td>Synthesizes questionnaire answers into a structured <code>ProjectAnalysis</code> with name, type, goals, tech stack, constraints, and risks</td></tr>
+          <tr><td><strong>Feature Generator</strong></td><td>Decomposes the analysis into high-level features with priority levels. For small projects (&le;2 sprints, &le;3 goals), creates a single sentinel epic instead</td></tr>
+          <tr><td><strong>Story Writer</strong></td><td>Breaks features into user stories with persona/goal/benefit, short titles, Given/When/Then acceptance criteria, Fibonacci story points (auto-split &gt;8), discipline tagging, DoD flags, and points rationale</td></tr>
+          <tr><td><strong>Task Decomposer</strong></td><td>Breaks stories into concrete tasks with auto-tagged labels (Code/Documentation/Infrastructure/Testing), test plans for code tasks, AI coding prompts, and dedicated documentation sub-tasks</td></tr>
+          <tr><td><strong>Sprint Planner</strong></td><td>Allocates stories to sprints using per-sprint net velocity (bank holidays, PTO, unplanned %, onboarding, KTLO deducted). Handles capacity overflow with 3 options. Highlights impacted sprints</td></tr>
+          <tr><td><strong>Jira Sync</strong></td><td>Pushes the finalized plan to Jira with idempotent batch creation: Features &rarr; Labels, Stories &rarr; linked to Epic, Tasks &rarr; Sub-tasks, Sprints &rarr; created and assigned</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="the-react-loop">The ReAct Loop</h3>
+      <p>The foundational reasoning pattern:</p>
+      <pre><code>Thought → Action → Observation → (repeat until done)</code></pre>
+      <ol>
+        <li><strong>Thought</strong> — reason about the current state and what to do next</li>
+        <li><strong>Action</strong> — call a tool or take a step</li>
+        <li><strong>Observation</strong> — see the result, decide whether to continue or answer</li>
+      </ol>
+
+      <h3 id="tui-system">TUI System</h3>
+      <p>The <code>ui/</code> package provides a full-screen terminal UI with four subsystems:</p>
+      <table>
+        <thead><tr><th>Subsystem</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>mode_select/</code></td><td>Full-screen mode selection with ASCII art titles, project cards with pipeline progress indicators, project list with half-card peek stubs at viewport edges. Includes Analysis, Planning, Usage, and Settings pages</td></tr>
+          <tr><td><code>provider_select/</code></td><td>LLM and tool provider selection (block-character logos for Claude/GPT/Gemini), issue tracking setup, verification flow</td></tr>
+          <tr><td><code>session/</code></td><td>Main session UI — description input, intake questions, summary review, pipeline stages with artifact editing, epic review, calibration banners, Jira/Azure DevOps export, chat. Dry-run mode with mock data</td></tr>
+          <tr><td><code>shared/</code></td><td>Animations (typewriter, pulse), ASCII font rendering, reusable components (Theme, buttons, scrollbar, progress dots, viewport), mouse scroll handling</td></tr>
+        </tbody>
+      </table>
+      <p>Visual features:</p>
+      <ul>
+        <li><strong>Rounded borders</strong> with consistent padding and arrow-key navigation</li>
+        <li><strong>Sticky group headers</strong> — epic titles pin at top when scrolling, with decryption-style morph animation between sections</li>
+        <li><strong>Scrollbar</strong> — vertical <code>│</code> track with <code>┃</code> thumb for pipeline stages and summary review</li>
+        <li><strong>Capacity bars</strong> — per-sprint with reduced velocity for bank-holiday/PTO-impacted sprints (amber border + annotations)</li>
+        <li><strong>Project cards</strong> — one-shot white pulse animation on Enter, pipeline progress badges</li>
+      </ul>
+      <p>The <code>repl/</code> package is the legacy REPL kept for backwards compatibility and CLI-flag-driven flows (<code>--quick</code>, <code>--full-intake</code>, <code>--questionnaire</code>, <code>--mode</code>).</p>
+
+      <h3 id="state-schema">State Schema</h3>
+      <ul>
+        <li><strong>ScrumState</strong> is a <code>TypedDict</code> (LangGraph convention for graph state)</li>
+        <li><code>messages</code> uses <code>Annotated[list[BaseMessage], add_messages]</code> for append semantics</li>
+        <li><strong>Frozen dataclasses</strong> for artifacts — <code>Feature</code>, <code>UserStory</code>, <code>Task</code>, <code>Sprint</code>, <code>ProjectAnalysis</code> (immutable once created, serializable via <code>asdict()</code>)</li>
+        <li><strong>Mutable dataclass</strong> for <code>QuestionnaireState</code> — updated incrementally by the intake node</li>
+        <li>Artifact lists use <code>Annotated[list[...], operator.add]</code> so nodes can return items that get appended</li>
+      </ul>
+
+      <h3 id="agent-classification">Agent Classification</h3>
+      <table>
+        <thead><tr><th>Property</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Agency Level</strong></td><td>Level 3–4 (self-looping + multi-agent coordination)</td></tr>
+          <tr><td><strong>Reasoning Pattern</strong></td><td>ReAct (Thought → Action → Observation → repeat)</td></tr>
+          <tr><td><strong>Interface</strong></td><td>Terminal CLI (full-screen TUI + legacy REPL)</td></tr>
+          <tr><td><strong>Domain</strong></td><td>Scrum project management</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="prompt-construction">Prompt Construction</h2>
+
+      <h3 id="system-prompt-persona">System Prompt Persona</h3>
+      <p>The agent operates as a <strong>senior Scrum Master</strong> and enforces all standards defined in the <a href="/docs/scrum-standards.html">Scrum Standards</a> section.</p>
+      <p>Core constraints:</p>
+      <ul>
+        <li>User stories follow the format: <em>"As a [persona], I want to [goal], so that [benefit]"</em></li>
+        <li>Every story includes acceptance criteria in <strong>Given/When/Then</strong> format covering happy path, negative path, and edge cases</li>
+        <li>Story points use the Fibonacci scale (1, 2, 3, 5, 8)</li>
+        <li><strong>Maximum 8 points per story</strong> — auto-split if exceeded</li>
+        <li>Issue hierarchy enforced: Epic → Feature → User Story → Sub-Task (plus Spikes)</li>
+        <li>Definition of Done validated against checklists</li>
+        <li>Sprint capacity respected — no overloading</li>
+      </ul>
+
+      <h3 id="prompting-techniques">Prompting Techniques</h3>
+      <table>
+        <thead><tr><th>Technique</th><th>Where Applied</th></tr></thead>
+        <tbody>
+          <tr><td><strong>ARC Framework</strong></td><td>Every node prompt — Ask (what), Requirements (constraints), Context (background)</td></tr>
+          <tr><td><strong>Few-Shot Prompting</strong></td><td>Story Writer node — examples of well-written user stories</td></tr>
+          <tr><td><strong>Chain-of-Thought</strong></td><td>Feature Generator — step-by-step reasoning about scope decomposition</td></tr>
+          <tr><td><strong>The Flipped Prompt</strong></td><td>Project Intake — agent asks the user what information it needs before proceeding</td></tr>
+          <tr><td><strong>Iterative Prompting</strong></td><td>Refinement loop — output improves with each round of user feedback</td></tr>
+          <tr><td><strong>Neutral Prompts</strong></td><td>Evaluation — avoid leading phrasing that biases the LLM</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="multimodal-content-blocks">Multimodal Content Blocks (Screenshot Paste)</h3>
+      <p>LangChain message <code>content</code> is either a plain string or a <strong>list of typed content blocks</strong>. When the user pastes a screenshot with <code>Ctrl+V</code>, the prompt is sent as:</p>
+      <pre><code>HumanMessage(content=[
+    {"type": "text", "text": prompt},
+    {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": "&lt;b64&gt;"},
+])</code></pre>
+      <p>This is LangChain's <em>portable</em> block shape — <code>langchain-core</code> translates it into each provider's native format, so the same code works for Anthropic, OpenAI, Google, and Bedrock. Three design rules keep it robust (<code>agent/llm.py</code>):</p>
+      <ul>
+        <li><strong>Paths, not bytes, in state</strong> — pasted images are saved as PNG files under <code>~/.yeaboi/attachments/&lt;scope&gt;/</code>; graph state carries only the file paths (<code>pasted_images</code>, <code>review_feedback_images</code>, <code>chat_images</code>), so sessions stay small and screenshots survive <code>--resume</code>. Base64 encoding happens only at the moment of the LLM call (<code>invoke_with_images</code>).</li>
+        <li><strong><code>state["messages"]</code> stays text-only</strong> — many nodes do string operations on message content, so images are attached to the outgoing message list at invoke time and never stored in history.</li>
+        <li><strong>Graceful degradation</strong> — a deleted file is skipped with a warning; a non-vision model that rejects image blocks triggers one text-only retry. The pipeline never fails because of a screenshot.</li>
+      </ul>
+      <p>Deleting an <code>[image #N]</code> chip from the textbox detaches that screenshot before send (<code>ui/shared/_attachments.py:referenced_images</code>).</p>
+
+      <h2 id="guardrails">Guardrails</h2>
+
+      <h3 id="input-guardrails">Input Guardrails (4 layers)</h3>
+      <table>
+        <thead><tr><th>Layer</th><th>Method</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Length cap</strong></td><td>Regex (instant)</td><td>Max 5,000 characters — prevents accidental file pastes</td></tr>
+          <tr><td><strong>Prompt injection</strong></td><td>Regex (instant)</td><td>10+ patterns: "ignore previous instructions", "you are now", "act as", "override", etc.</td></tr>
+          <tr><td><strong>Profanity filter</strong></td><td>Regex (instant)</td><td>Catches obvious abuse and low-quality inputs</td></tr>
+          <tr><td><strong>Relevance classifier</strong></td><td>LLM (cheap)</td><td>Allowlist passes known-good inputs; unknowns go to a cheap classifier (Haiku/gpt-4o-mini) to check RELEVANT vs OFF_TOPIC. Falls back to allowing on failure.</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="output-guardrails">Output Guardrails (4 layers)</h3>
+      <table>
+        <thead><tr><th>Layer</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Story format</strong></td><td>Validates all stories have non-trivial persona, goal, and benefit (&gt;=2 chars each)</td></tr>
+          <tr><td><strong>AC coverage</strong></td><td>Each story should have &gt;=2 acceptance criteria, with at least one covering negative/edge/error scenarios</td></tr>
+          <tr><td><strong>Sprint capacity</strong></td><td>No sprint exceeds team velocity</td></tr>
+          <tr><td><strong>Unrealistic loads</strong></td><td>Flags sprints packed to the limit</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="human-in-the-loop">Human-in-the-Loop</h3>
+      <p>Every pipeline stage has an accept/edit/reject checkpoint. High-risk tool calls (Jira writes, Confluence writes) require explicit user confirmation.</p>
+
+      <h2 id="multi-provider-llm-support">Multi-Provider LLM Support</h2>
+      <p>The agent supports four LLM providers. Set via <code>LLM_PROVIDER</code> in <code>.env</code>:</p>
+      <table>
+        <thead><tr><th>Provider</th><th>Env Var</th><th>Key Format</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>Anthropic (default)</td><td><code>ANTHROPIC_API_KEY</code></td><td><code>sk-ant-...</code></td><td><code>anthropic</code></td></tr>
+          <tr><td>OpenAI</td><td><code>OPENAI_API_KEY</code></td><td><code>sk-...</code></td><td><code>openai</code></td></tr>
+          <tr><td>Google</td><td><code>GOOGLE_API_KEY</code></td><td><code>AIza...</code></td><td><code>google</code></td></tr>
+          <tr><td>AWS Bedrock</td><td><code>AWS_REGION</code></td><td>IAM credentials (no key)</td><td><code>bedrock</code></td></tr>
+        </tbody>
+      </table>
+      <p>OpenAI, Google, and Bedrock are lazy-imported — install with <code>uv sync --extra all-providers</code> or individually with <code>--extra openai</code> / <code>--extra google</code> / <code>--extra bedrock</code>.</p>
+      <p>Bedrock uses IAM credentials automatically (instance role, <code>~/.aws/credentials</code>, or env vars). On Lightsail/EC2, the AWS profile is auto-detected from <code>~/.aws/config</code>. No API key required.</p>
+
+      <h2 id="agentic-blueprint-reference">Agentic Blueprint Reference</h2>
+      <p>Condensed technical reference for the LangGraph patterns and LangChain APIs used.</p>
+
+      <h3 id="core-graph-setup">Core Graph Setup</h3>
+      <pre><code>from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+model_with_tools = llm.bind_tools(tools)
+
+graph = StateGraph(MessagesState)</code></pre>
+
+      <h3 id="the-two-core-nodes">The Two Core Nodes</h3>
+      <pre><code>def call_model(state: MessagesState):
+    """Call the LLM with current messages."""
+    response = model_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+def should_continue(state: MessagesState):
+    """Route: tools if tool_calls present, otherwise END."""
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        return "tools"
+    return END</code></pre>
+
+      <h3 id="wiring-the-graph">Wiring the Graph</h3>
+      <pre><code>tool_node = ToolNode(tools)
+
+graph.add_node("agent", call_model)
+graph.add_node("tools", tool_node)
+
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", should_continue, ["tools", END])
+graph.add_edge("tools", "agent")
+
+app = graph.compile()</code></pre>
+      <pre><code>    START → agent ──should_continue?──→ END
+               ▲          │
+               │       "tools"
+               │          ▼
+               └─────── tools</code></pre>
+
+      <h3 id="creating-tools">Creating Tools</h3>
+      <pre><code>from langchain_core.tools import tool
+
+@tool
+def search_database(query: str) -> str:
+    """Search the product database for items matching the query."""
+    return results</code></pre>
+      <p>The <strong>docstring is critical</strong> — the LLM reads it to decide when to use the tool.</p>
+
+      <h3 id="memory">Memory</h3>
+      <pre><code>from langgraph.checkpoint.memory import MemorySaver
+
+memory = MemorySaver()
+app = graph.compile(checkpointer=memory)
+
+config = {"configurable": {"thread_id": "user-123"}}
+app.invoke({"messages": [("human", "My name is Omar")]}, config)</code></pre>
+
+      <h3 id="streaming">Streaming</h3>
+      <pre><code>from langchain_core.messages import AIMessageChunk, HumanMessage
+
+for chunk, metadata in app.stream(
+    {"messages": [HumanMessage(content="Plan my project")]},
+    config,
+    stream_mode="messages",
+):
+    if isinstance(chunk, AIMessageChunk) and chunk.content:
+        print(chunk.content, end="", flush=True)</code></pre>
+
+      <h3 id="quick-reference-all-apis">Quick Reference — All APIs</h3>
+      <p><strong>Prompting:</strong> <code>ChatPromptTemplate</code> | <code>FewShotPromptTemplate</code> | ARC framework | pipe operator <code>|</code> | <code>StrOutputParser</code> | sequential chains</p>
+      <p><strong>Graph:</strong> <code>StateGraph</code> | <code>MessagesState</code> | <code>START</code> / <code>END</code> | <code>.add_node()</code> | <code>.add_edge()</code> | <code>.add_conditional_edges()</code> | <code>.compile()</code></p>
+      <p><strong>Tools:</strong> <code>@tool</code> decorator | <code>ToolNode</code> | <code>.bind_tools()</code> | <code>create_react_agent</code></p>
+      <p><strong>Memory:</strong> <code>MemorySaver</code> | <code>checkpointer</code> | <code>thread_id</code></p>
+      <p><strong>Streaming:</strong> <code>app.stream()</code> | <code>stream_mode="messages"</code> | <code>AIMessageChunk</code></p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
