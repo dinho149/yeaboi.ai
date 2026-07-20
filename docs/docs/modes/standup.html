@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Daily Standup — yeaboi docs</title>
+<meta name="description" content="yeaboi's Daily Standup mode: detects team activity, scores sprint progress, and delivers a summary — even on a schedule when the app is closed." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Daily Standup</h1>
+      <p class="lede">A first-class TUI mode (peer to Analysis and Planning) that runs your team's daily scrum — detecting what everyone did since the last standup, estimating sprint progress, and delivering a summary. It can run on a schedule even when yeaboi is closed, so a 09:50 standup lands before your 10:00 call.</p>
+      <p>Open it from the mode-selection screen (the magenta <strong>Standup</strong> card) or run it headlessly with <code>--standup-run</code>.</p>
+
+      <h2 id="what-it-does">What it does</h2>
+      <ol>
+        <li><strong>Detects recent activity</strong> across every configured source — Jira issues, Azure DevOps work items, GitHub commits + PRs, recently-updated Confluence pages, recently-edited Notion pages, and a local git log. Each source is best-effort: an unconfigured or failing source is skipped, never fatal. An authentication failure (401/403) surfaces as a Notice, not silence.</li>
+        <li><strong>Asks for your own update first</strong>, then infers everyone else. Press <strong>Generate</strong> and it prompts for your update (Enter to skip); people without a self-report get an inferred summary from a single LLM call.</li>
+        <li><strong>Computes sprint day + confidence</strong> deterministically (no LLM): which working day of the sprint you're on (weekends and bank holidays excluded), and how actual "Done" points compare to the ideal linear burn-down → On track / At risk / Behind.</li>
+        <li><strong>Delivers</strong> the summary to any combination of terminal, desktop notification, Slack, and email.</li>
+        <li><strong>Never shows blank content</strong> — if the LLM has no API key or a source returns 401/403, a ⚠ Notices section tells you exactly what to fix.</li>
+      </ol>
+
+      <h2 id="scheduling">Scheduling (runs when the app is closed)</h2>
+      <p>Press <strong>Configure</strong> on the Standup page to set the standup time (e.g. <code>10:00</code>), how many minutes early to run (default 10), weekdays, and delivery channels. You enter when the meeting <em>happens</em> — the job fires a few minutes before (10:00 → runs 09:50), so the summary lands before you start.</p>
+      <p>Enabling a schedule installs an OS-native job — a <code>launchd</code> agent on macOS (<code>~/Library/LaunchAgents/</code>) or a <code>crontab</code> entry on Linux. On macOS it opens a Terminal at run time and gives you a short, timed window to type your update and confirm (auto-proceeds if you don't respond); on a headless Linux run it just generates and delivers. Under the hood the job runs:</p>
+      <pre><code>yeaboi --standup-run --standup-interactive --standup-session &lt;id&gt;</code></pre>
+      <p>No background daemon is kept alive; the operating system fires the job, so it works even with yeaboi fully quit and survives reboots.</p>
+
+      <h2 id="delivery-configuration">Delivery configuration</h2>
+      <p>Non-secret settings (time, channels) live per-session in SQLite. Secrets/creds go in <code>~/.yeaboi/.env</code> (see <code>.env.example</code>):</p>
+      <ul>
+        <li><strong>Slack</strong> — <code>SLACK_WEBHOOK_URL</code> (an <a href="https://api.slack.com/messaging/webhooks">incoming webhook</a>)</li>
+        <li><strong>Email</strong> — <code>STANDUP_SMTP_HOST/PORT/USER/PASSWORD</code>, <code>STANDUP_SMTP_SENDER</code>, <code>STANDUP_EMAIL_RECIPIENTS</code></li>
+        <li><strong>GitHub activity</strong> — <code>STANDUP_GITHUB_REPO</code> (owner/repo)</li>
+        <li><strong>Desktop / Terminal</strong> — no configuration required</li>
+      </ul>
+      <p>Everything uses the Python standard library (Slack via <code>urllib</code>, email via <code>smtplib</code>, desktop via <code>osascript</code>/<code>notify-send</code>) — no new dependencies.</p>
+
+      <h2 id="exports">Exports</h2>
+      <p>Every standup — generated in the TUI, run headlessly, or fired on a schedule — is auto-saved as Markdown and self-contained HTML under <code>~/.yeaboi/exports/standup/&lt;project&gt;/</code> (dated <code>standup-YYYY-MM-DD.md</code> / <code>.html</code>), so the output is a shareable document rather than something you reconstruct from logs. The <strong>Export</strong> button on the page re-writes the latest report on demand, just like the Analysis and Planning pages.</p>
+
+      <h2 id="try-it">Try it</h2>
+      <pre><code>yeaboi                                                        # open the Standup card, press Generate
+yeaboi --standup-run --standup-session latest --standup-output terminal</code></pre>
+      <p>Standup runs are logged to <code>~/.yeaboi/logs/standup/</code>, exported to <code>~/.yeaboi/exports/standup/</code>, and persisted to the <code>standup_history</code> table.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
