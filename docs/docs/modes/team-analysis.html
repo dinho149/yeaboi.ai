@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Team Analysis — yeaboi docs</title>
+<meta name="description" content="yeaboi's Team Analysis mode: connect a Jira or Azure DevOps board, produce a reusable delivery profile, and calibrate planning to your team's real patterns." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Team Analysis</h1>
+      <p class="lede">Team Analysis connects to your Jira or Azure DevOps board and produces a comprehensive analysis of your team's real delivery patterns. The analysis becomes a reusable <strong>profile</strong> that calibrates future planning sessions.</p>
+
+      <h2 id="what-gets-analyzed">What gets analyzed</h2>
+      <table>
+        <thead><tr><th>Category</th><th>Details</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Velocity</strong></td><td>Per-sprint velocity, team average, per-developer breakdown with delivery vs KTLO split</td></tr>
+          <tr><td><strong>Sprint Cadence</strong></td><td>Sprint length, seasonal patterns, velocity trends over time</td></tr>
+          <tr><td><strong>Story Structure</strong></td><td>Average stories per epic, story point distribution, typical story size</td></tr>
+          <tr><td><strong>Task Patterns</strong></td><td>Average tasks per story, type distribution (Development %, Testing %, Deploy %)</td></tr>
+          <tr><td><strong>Acceptance Criteria</strong></td><td>AC count per story, writing style (Given/When/Then vs flexible), coverage patterns</td></tr>
+          <tr><td><strong>Definition of Done</strong></td><td>Team's actual DoD items extracted from completed stories</td></tr>
+          <tr><td><strong>Naming Conventions</strong></td><td>Epic naming style (quarter-scoped, feature-based), ticket organization patterns</td></tr>
+          <tr><td><strong>Team Members</strong></td><td>Per-contributor analysis with velocity, discipline (backend/frontend/etc.), stories completed, sprint participation</td></tr>
+          <tr><td><strong>Estimation Bias</strong></td><td>Whether the team tends to over- or under-estimate</td></tr>
+          <tr><td><strong>Board Workflow</strong></td><td>Column workflow analysis showing how work items flow through states</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="how-it-works">How it works</h2>
+      <ol>
+        <li><strong>Select a board</strong> — pick your Jira project or Azure DevOps team board</li>
+        <li><strong>Choose sprint scope</strong> — analyze last 3, 5, 10, or all sprints</li>
+        <li><strong>Review the analysis</strong> — 6-page walkthrough: Instructions, Sample Epic, Sample Stories, Sample Tasks, Sample Sprint Plan, Analysis Report</li>
+        <li><strong>Save as a profile</strong> — stored in SQLite, reusable across planning sessions</li>
+      </ol>
+
+      <h2 id="per-developer-breakdown">Per-developer breakdown</h2>
+      <p>Each team member gets individual analysis:</p>
+      <table>
+        <thead><tr><th>Metric</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Velocity</strong></td><td>Individual points per sprint average</td></tr>
+          <tr><td><strong>Discipline</strong></td><td>Primary skill area (backend, frontend, fullstack, infrastructure, etc.) — LLM-classified from actual work</td></tr>
+          <tr><td><strong>Stories completed</strong></td><td>Total stories delivered in the analysis window</td></tr>
+          <tr><td><strong>Sprint participation</strong></td><td>Number of sprints active</td></tr>
+          <tr><td><strong>Delivery vs KTLO</strong></td><td>Split between feature delivery and keeping-the-lights-on work</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="analysis-exports">Analysis exports</h2>
+      <p>Analysis results can be exported as HTML or Markdown reports. Both formats include all analysis sections plus a Team Members table. When an analysis profile is used during planning, the export includes a provenance note linking back to the analysis.</p>
+
+      <h2 id="analysis-calibrated-planning">Analysis-Calibrated Planning</h2>
+      <p>When you start a planning session, you can select a saved analysis profile. This calibrates the entire planning pipeline to match your team's real patterns.</p>
+
+      <h3 id="intake-auto-fill">Intake auto-fill</h3>
+      <p>The analysis profile auto-fills intake questions so you don't have to answer them manually:</p>
+      <table>
+        <thead><tr><th>Question</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Q6 — Team size</strong></td><td>Replaced with a team member multi-select picker showing each developer's velocity and discipline</td></tr>
+          <tr><td><strong>Q7 — Team roles</strong></td><td>Auto-filled from selected members' disciplines</td></tr>
+          <tr><td><strong>Q8 — Sprint length</strong></td><td>Derived from sprint date ranges in the analysis</td></tr>
+          <tr><td><strong>Q9 — Velocity</strong></td><td>Calculated from selected team members' individual per-sprint averages</td></tr>
+          <tr><td><strong>Q11 — Tech stack</strong></td><td>Auto-filled from the analysis profile's tech stack (shown as suggestion, user can override)</td></tr>
+          <tr><td><strong>Q12 — Integrations</strong></td><td>Auto-filled from the analysis profile's integrations list</td></tr>
+          <tr><td><strong>Q27 — Sprint selection</strong></td><td>Falls back to analysis sprint data when live tracker is unavailable</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="team-member-multi-select">Team member multi-select</h3>
+      <p>When an analysis profile has contributor data, Q6 (team size) becomes a multi-select picker instead of a free-text number:</p>
+      <ul>
+        <li>Each member shows their velocity (pts/sprint) and discipline</li>
+        <li>Select specific developers for this project with Space, confirm with Enter</li>
+        <li>Velocity is calculated from the selected members' individual averages</li>
+        <li>Team roles (Q7) auto-populated from selected members' disciplines</li>
+      </ul>
+
+      <h3 id="calibration-banners">Calibration banners</h3>
+      <p>Each pipeline stage shows a calibration banner explaining what analysis data influenced the output:</p>
+      <table>
+        <thead><tr><th>Stage</th><th>Banner shows</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Project Analyzer</strong></td><td>Selected profile name and source board</td></tr>
+          <tr><td><strong>Story Writer</strong></td><td>Target stories/epic, AC count, points scale, DoD source</td></tr>
+          <tr><td><strong>Task Decomposer</strong></td><td>Target tasks/story, type distribution (Dev/Test/Deploy %)</td></tr>
+          <tr><td><strong>Sprint Planner</strong></td><td>Selected team members with individual velocities, total team velocity</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="what-gets-calibrated">What gets calibrated</h3>
+      <table>
+        <thead><tr><th>Artifact</th><th>Calibration</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Epics</strong></td><td>LLM-reformatted to match team's naming convention (quarter-scoped, feature-based, etc.) and template sections</td></tr>
+          <tr><td><strong>Stories per feature</strong></td><td>Matches team's historical average stories per epic</td></tr>
+          <tr><td><strong>AC count</strong></td><td>Enforces team's median acceptance criteria count per story</td></tr>
+          <tr><td><strong>AC format</strong></td><td>Respects team's writing style (Given/When/Then or flexible)</td></tr>
+          <tr><td><strong>Definition of Done</strong></td><td>Uses team's actual DoD items instead of generic checklist</td></tr>
+          <tr><td><strong>Story points</strong></td><td>Includes confidence scoring and references to similar stories from the analysis</td></tr>
+          <tr><td><strong>Tasks per story</strong></td><td>Matches team's average task count</td></tr>
+          <tr><td><strong>Task type distribution</strong></td><td>Matches team's Development/Testing/Deploy percentages</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="epic-review">Epic review</h3>
+      <p>Before the feature generator runs, an <strong>epic review page</strong> lets you review and edit the project epic. When an analysis profile is active, the epic is LLM-reformatted to match your team's style:</p>
+      <ul>
+        <li>Quarter-scoped naming when the team uses that convention (e.g., "Q2 2026 — Customer Portal")</li>
+        <li>Template sections matching the team's epic structure</li>
+        <li>Sync to Jira or Azure DevOps directly from the review page</li>
+      </ul>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
