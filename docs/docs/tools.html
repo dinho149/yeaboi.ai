@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tools — yeaboi docs</title>
+<meta name="description" content="Every tool available to the yeaboi agent, organized by integration, and how risk levels gate read vs write operations." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Tools</h1>
+      <p class="lede">The agent has access to 30 tools, organized by integration.</p>
+
+      <h2 id="github">GitHub (4 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>github_read_repo</code></td><td>Fetch repo metadata, languages, and file tree</td></tr>
+          <tr><td><code>github_read_file</code></td><td>Read a single file from a GitHub repo</td></tr>
+          <tr><td><code>github_list_issues</code></td><td>List open issues with labels</td></tr>
+          <tr><td><code>github_read_readme</code></td><td>Extract README content</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="azure-devops">Azure DevOps (9 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td><code>azdevops_read_repo</code></td><td>Fetch repo metadata and file tree</td><td>Low</td></tr>
+          <tr><td><code>azdevops_read_file</code></td><td>Read a single file from a repo</td><td>Low</td></tr>
+          <tr><td><code>azdevops_list_work_items</code></td><td>List work items (backlog, active, etc.)</td><td>Low</td></tr>
+          <tr><td><code>azdevops_read_board</code></td><td>Board info, active iteration, average velocity</td><td>Low</td></tr>
+          <tr><td><code>azdevops_fetch_velocity</code></td><td>Team velocity, team size, per-developer velocity</td><td>Low</td></tr>
+          <tr><td><code>azdevops_fetch_active_iteration</code></td><td>Current sprint name, number, start date</td><td>Low</td></tr>
+          <tr><td><code>azdevops_create_epic</code></td><td>Create an Epic work item</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>azdevops_create_story</code></td><td>Create a User Story linked to Epic, with story points and priority</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>azdevops_create_iteration</code></td><td>Create an iteration (sprint) with optional start/finish dates</td><td>High (requires confirmation)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="jira">Jira (6 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td><code>jira_read_board</code></td><td>Fetch board metadata and configuration</td><td>Low</td></tr>
+          <tr><td><code>jira_fetch_velocity</code></td><td>Get team velocity history (rolling average of last 3–5 sprints, with JQL fallback for team-managed boards)</td><td>Low</td></tr>
+          <tr><td><code>jira_fetch_active_sprint</code></td><td>Get current sprint info for sprint selection (Q27)</td><td>Low</td></tr>
+          <tr><td><code>jira_create_epic</code></td><td>Create an epic</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>jira_create_story</code></td><td>Create a story with ACs and story points</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>jira_create_sprint</code></td><td>Create and configure a sprint</td><td>High (requires confirmation)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="confluence">Confluence (5 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td><code>confluence_search_docs</code></td><td>Search documentation by keyword</td><td>Low</td></tr>
+          <tr><td><code>confluence_read_page</code></td><td>Read a wiki page by ID</td><td>Low</td></tr>
+          <tr><td><code>confluence_read_space</code></td><td>Read space metadata and page list</td><td>Low</td></tr>
+          <tr><td><code>confluence_create_page</code></td><td>Create a new page</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>confluence_update_page</code></td><td>Update an existing page</td><td>High (requires confirmation)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="notion">Notion (5 tools)</h2>
+      <p>Notion is an independent doc tool with its <strong>own</strong> integration token (<code>NOTION_TOKEN</code>) — it does not share Atlassian auth like Confluence. It feeds the same analysis / planning / standup workflows.</p>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td><code>notion_search_pages</code></td><td>Search pages by keyword across granted pages</td><td>Low</td></tr>
+          <tr><td><code>notion_read_page</code></td><td>Read a page (blocks flattened to text) by ID</td><td>Low</td></tr>
+          <tr><td><code>notion_read_database</code></td><td>List entries in a database / data source</td><td>Low</td></tr>
+          <tr><td><code>notion_create_page</code></td><td>Create a new page</td><td>High (requires confirmation)</td></tr>
+          <tr><td><code>notion_update_page</code></td><td>Append content to a page (and optionally rename)</td><td>High (requires confirmation)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="local-codebase">Local codebase (3 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>read_codebase</code></td><td>Scan entire local repo — language detection, file tree (budget-limited, auto-collapses large dirs), skips binaries and build artifacts</td></tr>
+          <tr><td><code>read_local_file</code></td><td>Read a specific file from disk (targeted retrieval when the LLM needs to inspect particular files)</td></tr>
+          <tr><td><code>load_project_context</code></td><td>High-level codebase overview including <code>scrum-docs/</code> PRD/design doc ingestion</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="calendar">Calendar (1 tool)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>detect_bank_holidays</code></td><td>Detect public holidays in the planning window (auto-fills Q28)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="llm-powered">LLM-powered (2 tools)</h2>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>estimate_complexity</code></td><td>Analyze code/requirements for story point estimation</td></tr>
+          <tr><td><code>generate_acceptance_criteria</code></td><td>Generate Given/When/Then acceptance criteria</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="tool-risk-levels">Tool risk levels</h2>
+      <table>
+        <thead><tr><th>Risk</th><th>Guardrail</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Low</strong> (read-only)</td><td>Auto-execute</td></tr>
+          <tr><td><strong>Medium</strong> (LLM-powered)</td><td>Log and display to user</td></tr>
+          <tr><td><strong>High</strong> (write operations)</td><td>Requires explicit user confirmation</td></tr>
+        </tbody>
+      </table>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
