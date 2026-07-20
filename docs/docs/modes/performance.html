@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Performance — yeaboi docs</title>
+<meta name="description" content="yeaboi's Performance mode: 1:1 prep, 1:1 completion, and six-month reviews for a lead managing each engineer." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Performance</h1>
+      <p class="lede">Three connected workflows for managing each engineer — 1:1 prep, 1:1 completion, and six-month reviews.</p>
+
+      <h2 id="roster">Roster</h2>
+      <p>Performance mode's roster of engineers isn't a headcount number typed in during setup — it's derived from who actually did work in Jira or Azure DevOps. That keeps the list of people you're managing through the mode in sync with who's genuinely shipping, rather than an org chart that can drift out of date.</p>
+
+      <h2 id="one-on-one-prep">1:1 Prep</h2>
+      <p>1:1 Prep pulls an engineer's current and prior-sprint tickets plus any open action items left over from their last 1:1, and turns that into a set of talking points, feedback, goals, and gaps to walk into the conversation with. Because it draws on real delivery history and the outstanding actions from the previous 1:1, prep for each conversation builds on the last one instead of starting from a blank page.</p>
+
+      <h2 id="one-on-one-completion">1:1 Completion</h2>
+      <p>1:1 Completion takes a transcript of the conversation — either imported from a file or pasted in directly — and produces an email summary plus a set of tracked action items. Those action items don't just get recorded once and forgotten: they feed back into the <em>next</em> 1:1 Prep, closing the loop between what was agreed and what gets followed up on.</p>
+
+      <h2 id="six-month-review">6-Month Review</h2>
+      <p>The 6-Month Review synthesizes past 1:1s, delivery history pulled from Jira or Azure DevOps, and a competency framework into a structured review. The framework used is a bundled default, or a lead can supply their own via <code>PERFORMANCE_FRAMEWORK_PATH</code> if their organization has its own competency model to review against.</p>
+
+      <h2 id="exports">Exports</h2>
+      <p>Every artifact produced by Performance mode — 1:1 preps, 1:1 completions, and six-month reviews — auto-exports to Markdown and HTML in <code>~/.yeaboi/exports/performance/&lt;engineer&gt;/</code>, so the record of each conversation and review is a shareable document rather than something only visible inside the TUI. 1:1 summaries can also be emailed directly via SMTP.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
