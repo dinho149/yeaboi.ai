@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Development — yeaboi docs</title>
+<meta name="description" content="Make commands, project structure, testing conventions, environment variables, git conventions, evaluation and testing strategy, and the tech stack." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230a0a0a'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236a93bd' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/assets/site.css" />
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body class="docs">
+<header class="navbar">
+  <div class="wrap">
+    <a class="brand" href="/">🤙 yeaboi</a>
+    <nav>
+      <a href="/docs/index.html" class="current">Docs</a>
+      <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
+      <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
+    </nav>
+  </div>
+</header>
+<div class="docs-shell">
+  <aside class="docs-sidebar" id="docs-sidebar"></aside>
+  <main class="docs-content">
+    <article>
+      <h1>Development</h1>
+
+      <h2 id="commands">Commands</h2>
+      <pre><code>make install              # install uv + dependencies
+make test                 # unit + integration + contract tests (full suite)
+make test-fast            # unit tests only (&lt; 3s)
+make test-v               # full suite verbose
+make test-all             # everything including golden evaluators
+make lint                 # lint with ruff
+make format               # format with ruff
+make run                  # run the CLI (ARGS="--flag")
+make run-dry              # TUI with fake delays, no LLM calls
+make eval                 # golden dataset evaluators
+make contract             # contract tests (recorded API responses)
+make smoke-test           # live API smoke tests (requires credentials)
+make snapshot-update      # update syrupy snapshot baselines
+make budget-report        # show prompt token counts
+make graph                # generate agent graph PNG
+make build                # build sdist + wheel into dist/
+make publish              # publish to PyPI
+make clean                # remove build artifacts and caches</code></pre>
+
+      <h2 id="project-structure">Project Structure</h2>
+      <pre><code>src/yeaboi/
+├── agent/                      # LangGraph state &amp; graph
+│   ├── graph.py                #   Graph compilation &amp; wiring
+│   ├── llm.py                  #   LLM provider selection (Anthropic/OpenAI/Google)
+│   ├── nodes.py                #   Node functions (intake, analyze, generate, etc.)
+│   └── state.py                #   ScrumState, QuestionnaireState, artifact dataclasses
+├── prompts/                    # Prompt templates per node
+│   ├── analyzer.py             #   Project analyzer prompt
+│   ├── feature_generator.py    #   Feature generation prompt
+│   ├── intake.py               #   30 questions, smart/standard modes, adaptive templates
+│   ├── sprint_planner.py       #   Sprint planning prompt
+│   ├── story_writer.py         #   Story writing prompt with few-shot examples
+│   ├── system.py               #   Base system prompt
+│   └── task_decomposer.py      #   Task decomposition prompt
+├── tools/                      # Tool definitions (23 total)
+│   ├── azure_devops.py         #   Azure DevOps repo/file/work items
+│   ├── calendar_tools.py       #   Bank holiday detection
+│   ├── codebase.py             #   Local repo scanning
+│   ├── confluence.py           #   Confluence search/read/write
+│   ├── notion.py               #   Notion search/read/write (own token)
+│   ├── github.py               #   GitHub repo/file/issues/readme
+│   ├── jira.py                 #   Jira board/velocity/sprint/epic/story
+│   └── llm_tools.py            #   LLM-powered estimation and AC generation
+├── ui/                         # Full-screen TUI system
+│   ├── mode_select/            #   Mode selection screens
+│   ├── provider_select/        #   LLM/tool provider setup
+│   ├── session/                #   Main session (phases, editor, pipeline)
+│   ├── shared/                 #   Animations, ASCII font, components, input
+│   └── splash.py               #   Animated intro
+├── repl/                       # Legacy REPL (CLI-flag-driven flows)
+│   ├── _intake_menu.py         #   Intake mode selection
+│   ├── _io.py                  #   Artifact rendering, file import/export
+│   ├── _questionnaire.py       #   Questionnaire UI (one-at-a-time flow)
+│   ├── _review.py              #   Review checkpoint UI
+│   └── _ui.py                  #   Pipeline progress, streaming, spinner
+├── cli.py                      # CLI entry point (argparse, 20 flags)
+├── config.py                   # Environment/config management
+├── setup_wizard.py             # First-run credential flow
+├── sessions.py                 # SQLite session store
+├── persistence.py              # State serialization helpers
+├── formatters.py               # Rich rendering (dark/light themes)
+├── input_guardrails.py         # 4-layer input validation
+├── output_guardrails.py        # 4-layer output validation
+├── questionnaire_io.py         # Markdown questionnaire import/export
+├── html_exporter.py            # Self-contained HTML reports
+├── json_exporter.py            # JSON export for CI/CD
+├── jira_sync.py                # Batch Jira creation with idempotency
+└── __init__.py                 # Version, LangSmith noise suppression</code></pre>
+
+      <h2 id="testing-conventions">Testing Conventions</h2>
+      <ul>
+        <li>One test file per source module: <code>repl.py</code> → <code>test_repl.py</code>, <code>state.py</code> → <code>test_state.py</code></li>
+        <li>Group related tests in classes: <code>TestGracefulExit</code>, <code>TestStreaming</code>, <code>TestPriority</code></li>
+        <li>Node tests live in <code>tests/unit/nodes/</code> (split into 9 files)</li>
+        <li>Shared node test helpers in <code>tests/_node_helpers.py</code></li>
+        <li>Pytest markers: <code>slow</code>, <code>eval</code>, <code>vcr</code>, <code>smoke</code></li>
+      </ul>
+
+      <h2 id="environment-variables">Environment Variables</h2>
+      <table>
+        <thead><tr><th>Variable</th><th>Required</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Yes (if using Anthropic)</td><td>Claude API key</td></tr>
+          <tr><td><code>OPENAI_API_KEY</code></td><td>If using OpenAI</td><td>GPT API key</td></tr>
+          <tr><td><code>GOOGLE_API_KEY</code></td><td>If using Google</td><td>Gemini API key</td></tr>
+          <tr><td><code>LLM_PROVIDER</code></td><td>No</td><td>Provider selection: <code>anthropic</code> (default), <code>openai</code>, <code>google</code></td></tr>
+          <tr><td><code>GITHUB_TOKEN</code></td><td>No</td><td>GitHub PAT for repo context tools</td></tr>
+          <tr><td><code>AZURE_DEVOPS_TOKEN</code></td><td>No</td><td>Azure DevOps PAT (Code=Read, Work Items=Read+Write, Project=Read)</td></tr>
+          <tr><td><code>AZURE_DEVOPS_ORG_URL</code></td><td>If using AzDO Boards</td><td>Organization URL (e.g. <code>https://dev.azure.com/myorg</code>)</td></tr>
+          <tr><td><code>AZURE_DEVOPS_PROJECT</code></td><td>If using AzDO Boards</td><td>Project name</td></tr>
+          <tr><td><code>AZURE_DEVOPS_TEAM</code></td><td>No</td><td>Team name (defaults to <code>{project} Team</code>)</td></tr>
+          <tr><td><code>JIRA_BASE_URL</code></td><td>If using Jira</td><td>Jira Cloud URL (e.g. <code>https://org.atlassian.net</code>)</td></tr>
+          <tr><td><code>JIRA_EMAIL</code></td><td>If using Jira</td><td>Atlassian account email</td></tr>
+          <tr><td><code>JIRA_API_TOKEN</code></td><td>If using Jira</td><td>Jira API token</td></tr>
+          <tr><td><code>JIRA_PROJECT_KEY</code></td><td>If using Jira</td><td>Project key (e.g. <code>MYPROJ</code>)</td></tr>
+          <tr><td><code>CONFLUENCE_SPACE_KEY</code></td><td>No</td><td>Confluence space key (shares Atlassian auth with Jira); Export buttons publish here</td></tr>
+          <tr><td><code>CONFLUENCE_EXPORT_PARENT_PAGE_ID</code></td><td>No</td><td>Optional page Confluence exports nest under (blank = grouped under an auto-created 🤙 yeaboi page)</td></tr>
+          <tr><td><code>NOTION_TOKEN</code></td><td>No</td><td>Notion integration token (its own auth; enables Notion doc tools)</td></tr>
+          <tr><td><code>NOTION_ROOT_PAGE_ID</code></td><td>No</td><td>Default parent for created Notion pages; enables the Notion standup source; Notion exports fall back here</td></tr>
+          <tr><td><code>NOTION_EXPORT_PARENT_PAGE_ID</code></td><td>No</td><td>Optional dedicated page the Export buttons publish under (blank = grouped under an auto-created 🤙 yeaboi page in <code>NOTION_ROOT_PAGE_ID</code>)</td></tr>
+          <tr><td><code>YEABOI_HOME</code></td><td>No</td><td>Data home for everything yeaboi writes — exports, logs, sessions DB (default: <code>~/.yeaboi</code>; <code>.env</code> always stays at <code>~/.yeaboi/.env</code>; editable in Settings → Data Dir)</td></tr>
+          <tr><td><code>LANGSMITH_TRACING</code></td><td>No</td><td>Enable LangSmith tracing (<code>true</code>)</td></tr>
+          <tr><td><code>LANGSMITH_API_KEY</code></td><td>No</td><td>LangSmith API key</td></tr>
+          <tr><td><code>LANGSMITH_PROJECT</code></td><td>No</td><td>LangSmith project name</td></tr>
+          <tr><td><code>LOG_LEVEL</code></td><td>No</td><td>File-based log level: <code>DEBUG</code>/<code>INFO</code>/<code>WARNING</code>/<code>ERROR</code> (default: <code>WARNING</code>; also cyclable live from the Settings page)</td></tr>
+          <tr><td><code>SESSION_PRUNE_DAYS</code></td><td>No</td><td>Auto-prune sessions older than N days (default: 30, 0=disabled)</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="git-conventions">Git Conventions</h2>
+      <ul>
+        <li><strong>Commit messages</strong>: lowercase imperative (e.g., "add streaming output", "fix import sorting")</li>
+        <li><strong>Branch naming</strong>: <code>feature/&lt;description&gt;</code> for feature work</li>
+        <li><strong>PRs</strong>: feature branches merge to <code>main</code> via pull request</li>
+        <li>Include <code>Co-Authored-By: Claude Opus 4.6 &lt;noreply@anthropic.com&gt;</code> on AI-assisted commits</li>
+      </ul>
+
+      <h2 id="evaluation-testing">Evaluation &amp; Testing</h2>
+      <table>
+        <thead><tr><th>Layer</th><th>Approach</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Unit Tests</strong></td><td>Prompt formatting, tool input/output validation, state transitions, artifact immutability</td></tr>
+          <tr><td><strong>Integration Tests</strong></td><td>CLI argument parsing, graph compilation, multi-node flows, session persistence</td></tr>
+          <tr><td><strong>Contract Tests</strong></td><td>VCR cassettes for GitHub, Jira, Confluence, Notion API responses</td></tr>
+          <tr><td><strong>Golden Datasets</strong></td><td>Curated project descriptions with expected feature/story breakdowns</td></tr>
+          <tr><td><strong>Smoke Tests</strong></td><td>Live API tests (require real credentials)</td></tr>
+          <tr><td><strong>Token Budget Tests</strong></td><td>Monitor prompt token counts for trend analysis</td></tr>
+          <tr><td><strong>Red Teaming</strong></td><td>Vague inputs, contradictory requirements, prompt injection, absurdly large scope</td></tr>
+        </tbody>
+      </table>
+
+      <h3 id="red-teaming-checklist">Red Teaming Checklist</h3>
+      <ul>
+        <li>Prompt injection ("Ignore your instructions and...")</li>
+        <li>Jailbreaking (roleplay scenarios to bypass safety)</li>
+        <li>Messy inputs (typos, slang, code-switching)</li>
+        <li>Extremely long or empty project descriptions</li>
+        <li>Contradictory requirements</li>
+        <li>Adversarial inputs designed to trigger hallucination or bias</li>
+      </ul>
+
+      <h3 id="graceful-degradation">Graceful Degradation</h3>
+      <table>
+        <thead><tr><th>Failure Type</th><th>Strategy</th></tr></thead>
+        <tbody>
+          <tr><td>API rate limit</td><td>Exponential backoff with live countdown (5s → 10s → 20s, 3 retries)</td></tr>
+          <tr><td>Tool call failure</td><td>Error displayed, pipeline continues</td></tr>
+          <tr><td>Model unavailable</td><td>Fallback to alternative provider (if configured)</td></tr>
+          <tr><td>Corrupt session</td><td>Returns (None, None) — no crash, user informed</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="tech-stack">Tech Stack</h2>
+      <table>
+        <thead><tr><th>Component</th><th>Choice</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Language</strong></td><td>Python 3.11+</td></tr>
+          <tr><td><strong>Package Manager</strong></td><td>uv</td></tr>
+          <tr><td><strong>Agent Framework</strong></td><td>LangGraph + LangChain</td></tr>
+          <tr><td><strong>LLM</strong></td><td>Anthropic Claude (primary), OpenAI GPT, Google Gemini</td></tr>
+          <tr><td><strong>Terminal UI</strong></td><td><code>rich</code> + <code>prompt_toolkit</code></td></tr>
+          <tr><td><strong>Jira Integration</strong></td><td><code>jira</code> + <code>atlassian-python-api</code></td></tr>
+          <tr><td><strong>GitHub Integration</strong></td><td><code>PyGithub</code></td></tr>
+          <tr><td><strong>Azure DevOps</strong></td><td><code>azure-devops</code> SDK</td></tr>
+          <tr><td><strong>Session Store</strong></td><td>SQLite (via <code>langgraph-checkpoint-sqlite</code>)</td></tr>
+          <tr><td><strong>Holiday Detection</strong></td><td><code>holidays</code> library</td></tr>
+          <tr><td><strong>Linting</strong></td><td><code>ruff</code> (line-length 120)</td></tr>
+          <tr><td><strong>Testing</strong></td><td><code>pytest</code>, <code>pytest-asyncio</code>, <code>pytest-recording</code> (VCR), <code>syrupy</code> (snapshots)</td></tr>
+          <tr><td><strong>Observability</strong></td><td>LangSmith</td></tr>
+        </tbody>
+      </table>
+
+      <p>For contributor workflow — worktrees, hooks, CI conventions — see <code>CLAUDE.md</code> in the repo root.</p>
+    </article>
+  </main>
+  <nav class="docs-toc" id="docs-toc"></nav>
+</div>
+<script src="/docs/assets/nav.js"></script>
+</body>
+</html>
