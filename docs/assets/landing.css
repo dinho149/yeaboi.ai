@@ -1,0 +1,420 @@
+/* yeaboi.ai landing page — extracted from index.html so it can be
+   universally loaded (needed for client-side nav to/from the landing page). */
+  /* Landing-page layout. Colors route through site.css tokens. */
+
+  /* ---------- hero — the headline owns the first viewport; product below the fold ---------- */
+  /* overflow:clip, NOT hidden — hidden would make .hero the scrollport that
+     position:sticky resolves against (it never scrolls, so the pinned
+     terminal in .scrolly-sticky would never stick); clip just clips. */
+  .hero{padding:0 0 110px; position:relative; overflow:clip}
+  .hero > .wrap{
+    width:100%; max-width:1120px;
+    /* body is inset by the fixed rail, so "centered" lands right of the true
+       viewport centre — pull back by up to rail/2, clamped so the content
+       never slides under the rail on narrower windows */
+    transform:translateX(calc(-1 * min(var(--rail) / 2, max(0px, (100vw - var(--rail) - 1120px) / 2))));
+  }
+  .hero-copy{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; min-height:100vh; position:relative; padding:40px 0;
+  }
+  .scroll-hint{
+    /* centered via inset+margin, not transform — the entrance animation's
+       end state (transform:none) would cancel a translateX(-50%) */
+    position:absolute; bottom:30px; left:0; right:0; margin:0 auto; width:max-content;
+    font-family:var(--mono); font-size:.74rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--text-dim); display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  .scroll-hint::after{content:"↓"; font-size:1rem; animation:hint-bob 2s ease-in-out infinite}
+  @keyframes hint-bob{50%{transform:translateY(5px)}}
+  @media (prefers-reduced-motion:reduce){.scroll-hint::after{animation:none}}
+  .tagline{
+    margin:26px 0 0; font-family:var(--display); font-weight:640;
+    font-size:clamp(2.7rem,5.8vw,4.4rem); letter-spacing:-.032em; line-height:1.04;
+  }
+  .tagline em{font-style:normal; color:var(--accent-bright); font-weight:640}
+  .lede{margin:24px 0 36px; max-width:56ch; color:var(--text-muted); font-size:1.14rem; line-height:1.7}
+  .lede strong{color:var(--text); font-weight:600}
+  .hero-cta{display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center}
+  .hero-cta .codeblock{min-width:360px}
+  .subnote{margin:16px 0 0; font-family:var(--mono); font-size:.8rem; color:var(--text-dim)}
+  .subnote a{color:var(--text-muted)} .subnote a:hover{color:var(--accent)}
+
+  /* staggered hero entrance */
+  @keyframes rise{from{opacity:0; transform:translateY(22px)} to{opacity:1; transform:none}}
+  .hero-copy > *{animation:rise .8s cubic-bezier(.2,.6,.2,1) both}
+  .hero-copy > *:nth-child(1){animation-delay:.05s}
+  .hero-copy > *:nth-child(2){animation-delay:.14s}
+  .hero-copy > *:nth-child(3){animation-delay:.23s}
+  .hero-copy > *:nth-child(4){animation-delay:.32s}
+  .hero-copy > *:nth-child(5){animation-delay:.4s}
+  .hero-demo{animation:rise 1s cubic-bezier(.2,.6,.2,1) .35s both}
+  @media (prefers-reduced-motion:reduce){.hero-copy > *,.hero-demo{animation:none}}
+
+  /* the product, front and centre, floating on a glow — below the fold. */
+  .hero-demo{position:relative; margin-top:8vh; padding-bottom:60px}
+
+  /* ---- scrollytelling: pinned terminal + a step rail at the side.
+     The terminal column is sticky (centred in the viewport) while the steps
+     scroll past; site.js watches each .scrolly-step cross the viewport's
+     middle and drives the TUI's real selection — the same show() the
+     arrow-key auto-cycle used. Pure CSS sticky + IntersectionObserver,
+     no scroll library. ---- */
+  .scrolly{
+    display:grid; grid-template-columns:minmax(0,1fr) 320px;
+    gap:56px; align-items:start;
+  }
+  .scrolly-sticky{
+    position:sticky; top:max(28px, calc(50vh - 340px));
+    z-index:1;
+  }
+  .scrolly-sticky::before{
+    /* the frame's glow, moved here so it travels with the pinned terminal */
+    content:""; position:absolute; inset:-12% -10%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(50% 60% at 50% 22%, var(--accent-glow), transparent 72%),
+      radial-gradient(38% 42% at 22% 70%, rgba(80,150,210,.16), transparent 74%);
+    filter:blur(36px); opacity:.62;
+  }
+  .scrolly-steps{display:flex; flex-direction:column; padding:4vh 0 8vh}
+  .scrolly-step{
+    min-height:62vh; display:flex; flex-direction:column; justify-content:center;
+    gap:14px; opacity:.25; transition:opacity .45s ease;
+  }
+  .scrolly-step.is-active{opacity:1}
+  .step-k{
+    margin:0; font-family:var(--mono); font-size:.78rem; font-weight:600;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--sh);
+  }
+  .scrolly-step h3{
+    margin:0; font-family:var(--display); font-weight:620; font-size:1.35rem;
+    letter-spacing:-.02em; line-height:1.25; color:var(--text);
+  }
+  .scrolly-step > p:not(.step-k){
+    margin:0; color:var(--text-muted); font-size:.98rem; line-height:1.65;
+  }
+  @media (max-width:900px){
+    /* single column: terminal first, then the steps as a plain readable list —
+       no pinning, every step at full opacity */
+    .scrolly{grid-template-columns:1fr; gap:36px}
+    .scrolly-sticky{position:static}
+    .scrolly-steps{padding:0}
+    .scrolly-step{min-height:0; padding:20px 0; opacity:1}
+  }
+  .app-frame{
+    /* A real terminal WINDOW, not a floating panel: chrome bar, solid deep
+       ground, heavy soft shadow. The one place on the page allowed to be
+       fully opaque — it's the product. Sized for the app's real 80-column
+       frame at a 14px cell. */
+    position:relative; z-index:1; width:100%; max-width:780px; margin:0 auto;
+    background:#0a0b0d; border:1px solid var(--border-strong);
+    border-radius:var(--radius-lg); overflow:hidden;
+    box-shadow:var(--shadow-term), 0 0 0 1px rgba(0,0,0,.4);
+  }
+  .tui-bar{
+    display:flex; align-items:center; gap:7px; padding:12px 16px;
+    background:linear-gradient(180deg,#15171b,#0f1114);
+    border-bottom:1px solid var(--border);
+  }
+  .tui-bar .dot{width:11px; height:11px; border-radius:50%}
+  .tui-bar .dot:nth-child(1){background:#ec6a5e}
+  .tui-bar .dot:nth-child(2){background:#f4bf4f}
+  .tui-bar .dot:nth-child(3){background:#61c554}
+  .tui-bar-title{
+    margin:0 auto; transform:translateX(-20px);
+    font-family:var(--mono); font-size:.74rem; color:var(--text-dim); white-space:nowrap;
+  }
+
+  /* HTML recreation of the real app STARTUP — src/yeaboi/ui/splash.py's
+     wordmark fade/shine/fade, then the actual mode-select screen
+     (src/yeaboi/ui/mode_select/screens/_screens.py:_build_mode_screen).
+     One terminal cell size everywhere (a real terminal has exactly one
+     grid); the app's own rounded white Panel border drawn inside. */
+  .tui{
+    --t-text:#e4e6e8;          /* rich "white" */
+    --t-muted:#787890;         /* theme.muted rgb(120,120,140) */
+    --t-dim:#62676f;           /* theme.dim */
+    color:var(--t-text); font-family:var(--mono);
+    font-size:13.5px; line-height:1.5; padding:12px 14px 16px;
+    /* faint phosphor scanlines — the texture that says "terminal", too
+       subtle to read as an effect, just enough to not read as a flat div */
+    background-image:repeating-linear-gradient(0deg,
+      rgba(255,255,255,.012) 0px, rgba(255,255,255,.012) 1px,
+      transparent 1px, transparent 3px);
+  }
+  /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
+  .tui-panel{
+    position:relative; border:1px solid rgba(228,230,232,.45);
+    border-radius:10px; padding:20px 24px 14px;
+  }
+
+  .tui-splash{
+    /* min-height = the drawn menu's exact height (590px panel − 34px panel
+       padding − 2px border) so the Panel doesn't resize by a single pixel
+       when the splash hands over to the mode screen */
+    display:flex; align-items:center; justify-content:center; min-height:554px;
+    animation:tui-splash-fade 2.4s ease forwards;
+  }
+  .tui-splash-word{
+    margin:0; font-size:13px; line-height:1.2; letter-spacing:0; text-align:center;
+    color:#4664b4; text-shadow:0 0 16px var(--accent-glow);
+  }
+  @keyframes tui-splash-fade{
+    0%{opacity:0} 18%{opacity:1} 72%{opacity:1} 100%{opacity:0}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .tui-splash{animation:none; opacity:0}
+  }
+
+  .tui-menu{display:flex; flex-direction:column; gap:20px; animation:tui-fade .5s ease both}
+  /* the hidden attribute must actually hide: this class's display:flex is an
+     author rule, so it silently overrides the UA's [hidden]{display:none} —
+     without this, the "hidden" menu renders UNDER the splash during startup,
+     stacking the two and inflating the terminal until the splash is removed */
+  .tui-menu[hidden]{display:none}
+  @keyframes tui-fade{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){.tui-menu{animation:none}}
+
+  .tui-mode{
+    -webkit-appearance:none; appearance:none; background:none; border:none; padding:0;
+    display:block; width:100%; text-align:left; cursor:pointer;
+    padding-left:4ch; /* the app's PAD = "    " before every title/desc row */
+    font-size:inherit; font-family:inherit;
+  }
+  .tui-mode-title{
+    /* zero letter-spacing, tight line-height — these ▀▄█░ block glyphs are
+       designed to tile edge-to-edge with no gap, exactly like a real
+       terminal's character grid; any spacing breaks them into a dotted
+       mess instead of solid letterforms. Same cell size as every other row —
+       a terminal has exactly one grid. */
+    margin:0; font-size:inherit; line-height:1.1; letter-spacing:0;
+    /* unselected: the app's exact dim — each channel halved, floored at 40
+       (see _build_mode_row's _unsel_style), baked into --mcd per mode */
+    color:rgb(var(--mcd)); transition:color .35s;
+  }
+  .tui-mode.is-active .tui-mode-title{
+    /* selected: full accent with the app's traveling white shimmer hotspot
+       (shimmer_style: 0.6 sweeps/sec) — a narrow white band crossing the
+       block letters, painted via background-clip:text */
+    color:transparent;
+    background-image:linear-gradient(90deg,
+      rgb(var(--mc)) 0%, rgb(var(--mc)) 42%,
+      rgb(255,255,255) 50%,
+      rgb(var(--mc)) 58%, rgb(var(--mc)) 100%);
+    background-size:300% 100%;
+    -webkit-background-clip:text; background-clip:text;
+    animation:tui-shimmer 1.67s linear infinite;
+  }
+  @keyframes tui-shimmer{from{background-position:100% 0} to{background-position:0% 0}}
+  @media (prefers-reduced-motion:reduce){
+    .tui-mode.is-active .tui-mode-title{
+      color:rgb(var(--mc)); background-image:none; animation:none;
+      -webkit-background-clip:border-box; background-clip:border-box;
+    }
+  }
+  .tui-mode-desc{
+    /* only the selected item's description takes up space, same as the
+       real arrow-key list — one blank row then the typewritten desc in
+       white (matches _build_mode_row's style="white"). The open slot is a
+       FIXED two-row height (the real builder reserves desc space in body_h
+       and the Panel is terminal-fixed) so the frame never wobbles as
+       different-length descriptions cycle. */
+    margin:0; height:0; overflow:hidden; line-height:1.5; color:var(--t-text);
+    opacity:0; transition:opacity .2s, height .25s ease, margin .25s ease;
+  }
+  .tui-mode.is-active .tui-mode-desc{opacity:1; height:42px; margin:14px 0 0}
+  @media (hover:hover){
+    .tui-mode:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px; border-radius:2px}
+  }
+
+  /* bottom furniture — the app's tip block + version row (_build_tip_rows /
+     _build_version_row), pinned under the centred mode list */
+  .tui-foot{margin-top:26px; display:flex; flex-direction:column; gap:4px}
+  .tui-tip{
+    margin:0; text-align:center; color:rgb(198,198,208);
+    transition:opacity .9s ease; /* cross-fade stand-in for tip_brightness lerp */
+  }
+  .tui-tip.fading{opacity:0}
+  .tui-tip-dots{margin:0; text-align:center; color:rgb(70,70,82)}
+  .tui-tip-dots .on{color:rgb(226,186,96)}
+  .tui-tip-hint{margin-left:2.5em}
+  .tui-tip-hint b{font-weight:700; color:rgb(210,210,220)}
+  .tui-version{margin:6px 0 0; color:rgb(70,70,82)}
+  .tui-version .v{color:rgb(120,120,140)}
+  .tui-version b{font-weight:700; color:rgb(210,210,220)}
+  .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
+  /* music status stamped on the Panel's bottom BORDER, right-aligned
+     (MusicLive sets Panel.subtitle) — masks the border behind it */
+  .tui-music{
+    position:absolute; right:22px; bottom:0; transform:translateY(50%);
+    background:#0a0b0d; padding:0 8px; white-space:pre;
+    font-size:.92em; color:var(--t-muted);
+  }
+  .tui-music .hint{color:var(--t-dim)}
+
+  /* ---------- shared section furniture ---------- */
+  section{padding:84px 0; position:relative}
+  .eyebrow{
+    font-family:var(--mono); font-size:.76rem; color:var(--accent); margin:0 0 14px;
+    letter-spacing:.16em; text-transform:uppercase; font-weight:500;
+  }
+  h2{
+    margin:0 0 12px; font-family:var(--display); font-weight:620;
+    font-size:clamp(1.7rem,3.4vw,2.35rem); letter-spacing:-.025em; line-height:1.15;
+  }
+  h2 em{font-style:normal; color:var(--accent-bright); font-weight:620}
+  .section-lede{margin:0 0 44px; color:var(--text-muted); max-width:58ch; font-size:1.05rem}
+  .rule{border:none; border-top:1px solid var(--border); margin:0}
+
+  /* ---------- stack / integrations (plain left-aligned text, on-theme) ---------- */
+  .stack{padding:40px 0}
+  .stack .eyebrow{margin-bottom:18px}
+  .stack-list{
+    display:flex; flex-wrap:wrap; gap:12px 30px; max-width:680px;
+    font-family:var(--mono); font-size:.92rem; font-weight:500;
+  }
+  .stack-list span{color:var(--text-muted); transition:color .2s}
+  .stack-list span:hover{color:var(--text)}
+  .stack-list .self{color:var(--accent-bright); font-weight:700}
+
+  /* ---------- modes — one connected panel, hairline-divided, each cell
+     carrying its own TUI accent (--mh, set inline in the HTML from the
+     per-mode tokens). Grid rows share track height so cells always align;
+     copy is never clamped — the cell grows to fit and the mono tag line
+     pins to the bottom so there's no dead space, only structure. ---------- */
+  .modes{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--border);
+    border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden;
+    /* Scopes each card's backdrop-filter to blur only what's inside .modes —
+       without this, the cards' glassy blur reaches straight through to the
+       page's fixed, scroll-linked .scroll-aura glow behind everything and
+       shows it as a smeared colored haze once you're scrolled far enough
+       down for its opacity to have built up. */
+    isolation:isolate;
+  }
+  .mode-card{
+    position:relative; min-height:225px;
+    background:rgba(255,255,255,.022); isolation:isolate;
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+    border:none; border-radius:0;
+    padding:28px 26px 24px; display:flex; flex-direction:column; gap:12px;
+    transition:background .25s;
+  }
+  /* mode-colored hairline along the top edge, lit on hover — the cell's
+     accent identity without painting the whole card */
+  .mode-card::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:2px;
+    background:linear-gradient(90deg, var(--mh), transparent 75%);
+    opacity:.28; transition:opacity .25s;
+  }
+  .mode-card:hover::before{opacity:.9}
+  .mode-card:hover{background:color-mix(in srgb, var(--mh) 4.5%, rgba(255,255,255,.015))}
+  .mode-head{display:flex; align-items:baseline; gap:12px}
+  .mode-head .num{font-family:var(--mono); font-size:.76rem; color:var(--mh); font-weight:600; letter-spacing:.04em}
+  .mode-head h3{margin:0; font-size:1.08rem; color:var(--text); font-weight:600; letter-spacing:-.01em}
+  .mode-card > p{margin:0; color:var(--text-muted); font-size:.93rem; line-height:1.62; max-width:44ch; flex:1}
+  .mode-tag{
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  .mode-tag::before{content:"→ "; color:var(--mh)}
+
+  /* ---------- pipeline — a real flow diagram: numbered rings sitting on a
+     connecting line, each stage a step off it. Mirrors the hero demo above,
+     which cycles through these exact same five stages. ---------- */
+  .pipeline{
+    display:grid; grid-template-columns:repeat(5,1fr); gap:0; counter-reset:stage;
+    border:1px solid var(--border); border-radius:var(--radius-lg); overflow:hidden;
+    background:linear-gradient(180deg, var(--bg-raised-2), var(--bg-raised)); box-shadow:var(--shadow-card);
+    position:relative;
+  }
+  .pipeline::before{
+    content:""; position:absolute; left:44px; right:44px; top:47px; height:1px;
+    background:linear-gradient(90deg, transparent, var(--border-strong) 6%, var(--border-strong) 94%, transparent);
+    z-index:0;
+  }
+  .stage{
+    padding:26px 22px 24px; border-left:1px solid var(--border); position:relative;
+    transition:background .2s;
+  }
+  .stage:first-child{border-left:none}
+  .stage:hover{background:rgba(255,255,255,.02)}
+  .stage::before{
+    counter-increment:stage; content:counter(stage,decimal-leading-zero);
+    position:relative; z-index:1; display:flex; align-items:center; justify-content:center;
+    width:30px; height:30px; border-radius:50%;
+    border:1px solid var(--border-strong); background:var(--bg-raised);
+    font-family:var(--mono); font-size:.7rem; color:var(--accent); letter-spacing:.02em;
+    transition:border-color .2s, color .2s, box-shadow .2s;
+  }
+  .stage:hover::before{border-color:var(--accent); color:var(--accent-bright); box-shadow:0 0 0 3px var(--accent-dim)}
+  .stage h3{margin:14px 0 8px; font-size:1rem; font-weight:600; letter-spacing:-.01em}
+  .stage p{margin:0; color:var(--text-muted); font-size:.85rem; line-height:1.6}
+  .pipe-note{
+    margin:26px 0 0; display:flex; gap:14px; align-items:baseline; max-width:64ch;
+    color:var(--text-muted); font-size:.95rem;
+  }
+  .pipe-note .k{font-family:var(--mono); font-size:.8rem; color:var(--accent); white-space:nowrap}
+  .pipe-note code{color:var(--text); font-size:.85em; background:var(--bg-raised);
+    border:1px solid var(--border); border-radius:5px; padding:1px 6px}
+
+  /* ---------- get started ---------- */
+  .start-grid{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:start}
+  .steps{display:grid; gap:14px}
+  .step{
+    display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:baseline;
+    padding:18px 22px; transition:border-color .2s;
+  }
+  .step:hover{border-color:var(--border-strong)}
+  .step .k{font-family:var(--mono); color:var(--accent); font-size:.9rem; font-weight:500}
+  .step .d{color:var(--text-muted); font-size:.94rem}
+  .step .d code{color:var(--text); background:var(--bg-sunken); border:1px solid var(--border);
+    border-radius:5px; padding:2px 7px; font-size:.88em}
+  .dim{color:var(--text-dim)}
+  .note{margin-top:18px; color:var(--text-muted); font-size:.92rem}
+  .note code{color:var(--text); font-size:.86em}
+
+  .cta-panel h2{margin-bottom:16px}
+  .cta-panel .lede2{color:var(--text-muted); margin:0 0 30px; max-width:40ch; font-size:1.05rem}
+  .cta-panel .codeblock{max-width:430px}
+  .cta-links{margin-top:22px; display:flex; gap:12px; flex-wrap:wrap}
+
+  /* ---------- footer (left-aligned, on-theme) ---------- */
+  footer{border-top:1px solid var(--border); padding:48px 0 80px; position:relative; z-index:1}
+  .foot{display:flex; flex-direction:column; align-items:flex-start; gap:24px}
+  .foot .brandline{font-family:var(--mono); font-weight:800; font-size:1.3rem;
+    letter-spacing:.08em; text-transform:uppercase; color:var(--text)}
+  .foot .brandline .sub{display:block; margin-top:8px; font-weight:400; font-size:.8rem;
+    letter-spacing:0; text-transform:none; color:var(--text-dim)}
+  .foot .links{display:flex; flex-wrap:wrap; gap:10px 28px; font-family:var(--mono); font-size:.88rem}
+  .foot .links a{color:var(--text-muted); transition:color .2s} .foot .links a:hover{color:var(--accent)}
+  .foot .meta{font-family:var(--mono); font-size:.78rem; color:var(--text-dim); line-height:1.9; text-align:left}
+  .foot .meta code{color:var(--text-muted)}
+
+  @media (max-width:980px){
+    .modes{grid-template-columns:1fr 1fr}
+    .pipeline{grid-template-columns:1fr 1fr}
+    .pipeline::before{display:none}
+    .stage{border-top:1px solid var(--border)}
+    .stage:nth-child(-n+2){border-top:none}
+    .stage:nth-child(odd){border-left:none}
+    .start-grid{grid-template-columns:1fr; gap:48px}
+  }
+  @media (max-width:860px){
+    .hero{padding:64px 0 72px}
+    .hero-cta .codeblock{min-width:0; width:100%}
+    .tui{font-size:9.5px; padding:8px 8px 12px}
+    .tui-panel{padding:14px 14px 10px}
+    .tui-splash{min-height:380px}
+    .tui-splash-word{font-size:8px}
+  }
+  @media (max-width:600px){
+    section{padding:60px 0}
+    .tui{font-size:7px}
+    .tui-splash{min-height:280px}
+    .modes{grid-template-columns:1fr}
+    .mode-card{min-height:0}
+    .pipeline{grid-template-columns:1fr}
+    .stage{border-left:none; border-top:1px solid var(--border)}
+    .stage:first-child{border-top:none}
+  }
