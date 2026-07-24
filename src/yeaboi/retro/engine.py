@@ -10,8 +10,8 @@ An LLM auth/billing error is NOT re-raised — it is turned into a user-facing
 status message and the deterministic fallback is used, so the retro never
 crashes over a missing key (same policy as standup/engine.py).
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the retro action-items prompt
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the retro action-items prompt
 """
 
 from __future__ import annotations
@@ -175,7 +175,7 @@ def generate_action_items(board: RetroBoard) -> str:
         return f"AI unavailable ({why}) — added {added} basic action item(s)."
 
     # invoke_json tracks usage + turns on JSON mode + re-asks once on bad JSON.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.llm import invoke_json
     from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
     from yeaboi.prompts.retro import get_retro_action_items_prompt

@@ -1,6 +1,6 @@
 """Voice-input overlay for the TUI text-entry loops.
 
-# See README: "TUI system" — shared component used by every text entry point
+# See docs: "TUI system" — shared component used by every text entry point
 # (project description, intake answers, artifact editor). It drives the
 # record → transcribe flow.
 
@@ -120,7 +120,7 @@ def record_voice_input(live: Live, console: Console, _key, render_status=None) -
 
     # Silence any background music so it doesn't bleed into the recording. Resumed
     # the moment recording stops (below), including on the mic-failure path.
-    # # See README: "Music (ffplay)"
+    # # See docs: "Music (ffplay)"
     from yeaboi import music
 
     music.pause_for_voice()

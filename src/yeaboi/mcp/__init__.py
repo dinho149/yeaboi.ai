@@ -1,6 +1,6 @@
 """MCP server package — expose yeaboi's modes as tools to AI coding agents.
 
-# See README: "MCP Server"
+# See docs: "MCP Server"
 
 The Model Context Protocol (MCP) is the standard through which AI coding
 tools (Claude Code, Cursor, Codex CLI, VS Code, Windsurf, …) call external

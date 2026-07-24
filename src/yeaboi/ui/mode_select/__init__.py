@@ -1,6 +1,6 @@
 """Full-screen mode selection screen using Rich Live + raw terminal input.
 
-# See README: "Architecture" — this is a UI component in the CLI layer.
+# See docs: "Architecture" — this is a UI component in the CLI layer.
 # Shown after the setup wizard completes (or on subsequent launches).
 # The user picks which agent mode to run: Project Planning, Code Review, etc.
 # After selecting Planning, the title slides up and the project list fades in.
@@ -1658,7 +1658,7 @@ def _run_anonymize_pass(
     (the caller applies its ``.replacements`` to the native data) or None on failure —
     never raises, never crashes the TUI.
 
-    # See README: "Guardrails" — output masking for public sharing
+    # See docs: "Guardrails" — output masking for public sharing
     """
     import threading
 
@@ -5232,7 +5232,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     an AI action switches to "detail" showing the artifact. In "detail": Up/Down
     scroll, Export re-writes the artifact, Back returns to the roster.
 
-    # See README: "Performance Mode" — TUI page
+    # See docs: "Performance Mode" — TUI page
     """
     from yeaboi.performance.render import (
         format_completion_lines,
@@ -5610,7 +5610,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     "detail" shows the report: Up/Down scroll, Export re-writes files, Theme cycles the
     slide-deck palette, Back returns to the picker.
 
-    # See README: "Reporting Mode" — TUI page
+    # See docs: "Reporting Mode" — TUI page
     """
     from datetime import date as _date
 
@@ -6167,7 +6167,7 @@ def _run_roadmap_page(
       None   — backed out of the source view before anything was saved (or the
                open_roadmap_id row is gone); the caller stays where it was.
 
-    # See README: "Roadmap Intake" — TUI page
+    # See docs: "Roadmap Intake" — TUI page
     """
     from yeaboi.roadmap.engine import intake_mode_for, run_roadmap_analysis
     from yeaboi.roadmap.ingest import RoadmapSource, parse_confluence_locator, parse_notion_locator
@@ -6616,7 +6616,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     Enter activates. On exit the board is flushed to RetroStore and the server is
     torn down (in a finally, so Ctrl-C/exception still persists + stops it).
 
-    # See README: "Retro" — TUI page, LAN collaboration
+    # See docs: "Retro" — TUI page, LAN collaboration
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_retro_screen
 
@@ -7964,7 +7964,7 @@ def select_mode(
                 continue
 
             # 2d: Smooth fade-in — all cards appear together, opacity 0→1
-            # See README: "Memory & State" — load persisted project history
+            # See docs: "Memory & State" — load persisted project history
             # (planning projects + saved roadmaps in one merged list)
             projects = _load_planning_rows()
             proj_selected = 0
@@ -8629,7 +8629,7 @@ def select_mode(
 
                             # Resume an existing project — load its saved graph state
                             # so the session can skip already-completed phases.
-                            # See README: "Memory & State" — session persistence.
+                            # See docs: "Memory & State" — session persistence.
                             from langchain_core.messages import HumanMessage
 
                             from yeaboi.persistence import load_graph_state

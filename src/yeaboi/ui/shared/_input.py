@@ -1,6 +1,6 @@
 """Terminal input reading — raw keypress handling and bracketed paste mode.
 
-# See README: "Architecture" — shared UI utility for reading raw keypresses.
+# See docs: "Architecture" — shared UI utility for reading raw keypresses.
 # Used by mode_select, session, and provider_select screens. Reads single
 # keypresses in cbreak mode, handles escape sequences (arrows, paste), and
 # returns standardised key names ("up", "down", "enter", "esc", etc.).

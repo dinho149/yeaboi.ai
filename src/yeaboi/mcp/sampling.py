@@ -1,6 +1,6 @@
 """MCP sampling bridge — a LangChain chat model backed by the client's LLM.
 
-# See README: "MCP Server" — sampling (host-model) mode
+# See docs: "MCP Server" — sampling (host-model) mode
 
 MCP "sampling" lets a server ask the *client* to run an LLM completion with
 the client's own model and billing (`ctx.session.create_message`). This

@@ -5,7 +5,7 @@ REST API responses. They verify that our tool functions correctly parse the
 response shapes — catching SDK upgrades, schema changes, and HTML-stripping
 regressions without requiring live Confluence credentials.
 
-# See README: "Testing — Contract Tests" for background on VCR.py replay.
+# See docs: "Testing — Contract Tests" for background on VCR.py replay.
 
 Each test is marked with @pytest.mark.vcr so pytest-recording loads the
 matching cassette from tests/contract/cassettes/test_confluence_contract/.

@@ -9,7 +9,7 @@ Phase 8B adds full state serialisation for --resume: questionnaire answers,
 project analysis, features, stories, tasks, sprints, and all scalar fields are
 persisted as JSON so interrupted sessions can be resumed from where they left off.
 
-# See README: "Memory & State" — MemorySaver, thread_id, session persistence
+# See docs: "Memory & State" — MemorySaver, thread_id, session persistence
 """
 
 from __future__ import annotations
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored > current → schema_mismatch=True (newer DB, older code)
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
-# See README: "Memory & State" — session persistence
+# See docs: "Memory & State" — session persistence
 CURRENT_SCHEMA_VERSION = 17  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope  # noqa: E501
 
 _SCHEMA_INFO = """\
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS schema_info (
 # - Tuples (story_ids, goals, etc.) → lists in JSON, reconstructed as tuples
 # - QuestionnaireState (mutable dataclass with sets and dicts)
 #
-# See README: "Memory & State" — session persistence, state serialisation
+# See docs: "Memory & State" — session persistence, state serialisation
 
 
 # Keys to skip during serialisation — messages are reconstructed on resume,
@@ -181,7 +181,7 @@ _SCALAR_KEYS = {
 class _StateEncoder(json.JSONEncoder):
     """JSON encoder that handles dataclasses, enums, and sets.
 
-    # See README: "Memory & State" — session persistence
+    # See docs: "Memory & State" — session persistence
     # Custom encoder so we don't need to manually convert every nested
     # structure before calling json.dumps(). The decoder side uses explicit
     # reconstruction helpers since JSON→Python needs type awareness.
@@ -425,7 +425,7 @@ class SessionStore:
         finally:
             store.close()
 
-    # See README: "Memory & State" — MemorySaver, thread_id, session persistence
+    # See docs: "Memory & State" — MemorySaver, thread_id, session persistence
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -452,7 +452,7 @@ class SessionStore:
         # against CURRENT_SCHEMA_VERSION. Pre-8C databases will have no row —
         # we stamp the current version. If stored > current, set schema_mismatch
         # so callers can warn the user (newer DB opened by older code).
-        # See README: "Memory & State" — session persistence
+        # See docs: "Memory & State" — session persistence
         self._conn.execute(_SCHEMA_INFO)
         row = self._conn.execute("SELECT schema_version FROM schema_info").fetchone()
         if row is None:
@@ -838,7 +838,7 @@ class SessionStore:
         Called after each successful graph.invoke(). Replaces the previous
         snapshot entirely — the latest state is always the full picture.
 
-        # See README: "Memory & State" — session persistence
+        # See docs: "Memory & State" — session persistence
         """
         json_str = _serialize_state(graph_state)
         self._conn.execute(
@@ -920,7 +920,7 @@ class SessionStore:
         or None if the session doesn't exist, has no saved state, or the
         state is corrupt (malformed JSON, missing fields, etc.).
 
-        # See README: "Memory & State" — session persistence, --resume
+        # See docs: "Memory & State" — session persistence, --resume
         """
         meta = self.get_session(session_id)
         if not meta or not meta.get("session_state_raw"):
@@ -970,7 +970,7 @@ class SessionStore:
         Returns:
             Number of sessions deleted.
 
-        # See README: "Memory & State" — session persistence
+        # See docs: "Memory & State" — session persistence
         """
         if max_age_days <= 0:
             return 0

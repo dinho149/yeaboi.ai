@@ -1,7 +1,7 @@
 """Team ceremony history (Daily Standup + Retro) for Planning & Analysis.
 
-# See README: "Session Management" — SQLite persistence
-# See README: "Prompt Construction" — ARC framework (optional context sections)
+# See docs: "Session Management" — SQLite persistence
+# See docs: "Prompt Construction" — ARC framework (optional context sections)
 
 Standup and Retro modes each persist a report per run to the shared
 ``~/.scrum-agent/sessions.db``. This module reads that history back **team-wide**
@@ -239,7 +239,7 @@ def gather_ceremony_context(
     Graceful: a missing DB / empty tables / any error yields an empty context —
     planning/analysis then behave exactly as before.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
     try:
         from yeaboi.config import get_sessions_db

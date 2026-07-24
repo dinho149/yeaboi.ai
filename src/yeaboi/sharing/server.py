@@ -5,7 +5,7 @@ tunnel forwards the public HTTPS URL to it while the TUI's sharing view is open.
 The public root initially serves a harmless code gate; the artifact is returned
 only when the browser presents the strong token obtained from ``/api/join``.
 
-# See README: "Guardrails" — access control and untrusted browser input
+# See docs: "Guardrails" — access control and untrusted browser input
 """
 
 from __future__ import annotations

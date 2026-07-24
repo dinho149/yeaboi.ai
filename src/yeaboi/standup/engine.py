@@ -15,9 +15,9 @@ Pipeline (run_standup):
     attribution); a typed self-report rides alongside as supporting context
   → assemble StandupReport → deliver → record run
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the standup summary prompt
-# See README: "Daily Standup" — engine
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the standup summary prompt
+# See docs: "Daily Standup" — engine
 """
 
 from __future__ import annotations
@@ -653,7 +653,7 @@ def _summarize_members(
         return _fallback([f"AI summary unavailable — {why}."])
 
     # invoke_json tracks usage + turns on JSON mode + re-asks once on bad JSON.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.llm import invoke_json
     from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
     from yeaboi.prompts.standup import get_standup_summary_prompt

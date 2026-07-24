@@ -100,7 +100,7 @@ def _render_resume_summary(console: Console, graph_state: dict) -> None:
 def _render_artifacts(console: Console, result: dict, *, compact: bool = False) -> None:
     """Render structured artifacts with Rich formatters instead of streaming markdown.
 
-    # See README: "Architecture" — REPL-side formatter layer
+    # See docs: "Architecture" — REPL-side formatter layer
     #
     # When the graph produces structured artifacts (epics, stories, tasks, sprints,
     # project analysis, or the intake summary), this function renders them as Rich
@@ -207,7 +207,7 @@ def _import_questionnaire_file(console: Console, path: Path, graph_state: dict) 
     summary, and injects it as an AIMessage into the conversation. Returns
     the updated graph_state.
 
-    # See README: "Project Intake Questionnaire" — offline workflow
+    # See docs: "Project Intake Questionnaire" — offline workflow
     """
     from yeaboi.agent.nodes import _build_intake_summary
 

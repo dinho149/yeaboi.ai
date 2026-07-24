@@ -10,7 +10,7 @@ Best-effort: a missing SMTP host / recipients returns False (the engine surfaces
 that as a "not sent" warning); a transport error is logged and returns False. It
 never raises.
 
-# See README: "Daily Standup" — delivery
+# See docs: "Daily Standup" — delivery
 """
 
 from __future__ import annotations

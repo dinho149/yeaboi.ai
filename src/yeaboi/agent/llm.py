@@ -1,7 +1,7 @@
 """LLM instance factory for the Scrum Agent.
 
-# See README: "Architecture" — Model layer
-# See README: "Agentic Blueprint Reference" — Core Graph Setup
+# See docs: "Architecture" — Model layer
+# See docs: "Agentic Blueprint Reference" — Core Graph Setup
 
 Provider-agnostic LLM factory. The active provider is selected at runtime via
 the LLM_PROVIDER env var (default: "anthropic"). This means the agent works
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # LLM override — inject a caller-supplied model into every get_llm() call
 # ---------------------------------------------------------------------------
 #
-# # See README: "MCP Server" — sampling (host-model) mode
+# # See docs: "MCP Server" — sampling (host-model) mode
 # The MCP server can route yeaboi's LLM calls through the *client's* model
 # (MCP "sampling") instead of the user's own API key. Engines and nodes all
 # obtain their model via get_llm(), so the override must live here — modules
@@ -250,7 +250,7 @@ def _supports_temperature(model: str) -> bool:
 def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool = False) -> BaseChatModel:
     """Create an LLM instance for the configured provider.
 
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     # BaseChatModel is LangChain's common interface for all chat LLMs.
     # Every provider wrapper (ChatAnthropic, ChatOpenAI, ChatGoogleGenerativeAI)
     # implements BaseChatModel, so the rest of the agent — nodes, bind_tools(),
@@ -348,7 +348,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 
     if provider == "bedrock":
         # langchain-aws is an optional dependency (install with: uv sync --extra bedrock)
-        # # See README: "Deploy on AWS Lightsail (OpenClaw)" — Bedrock uses IAM credentials
+        # # See docs: "Deploy on AWS Lightsail (OpenClaw)" — Bedrock uses IAM credentials
         # from the instance role, ~/.aws/credentials, or AWS_ACCESS_KEY_ID env vars.
         # No API key needed on Lightsail — the IAM role is attached automatically.
         try:
@@ -386,7 +386,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 
     if provider == "ollama":
         # langchain-ollama is an optional dependency (install with: uv sync --extra ollama)
-        # # See README: "Local Mode (Ollama)" — keyless local provider. The model
+        # # See docs: "Local Mode (Ollama)" — keyless local provider. The model
         # runs entirely on the user's machine via the Ollama server; there are no
         # credentials, so get_llm() never raises OSError for this provider.
         try:
@@ -442,7 +442,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 # Multimodal (vision) helpers — pasted screenshot support
 # ---------------------------------------------------------------------------
 #
-# # See README: "Prompt Construction" — multimodal content blocks
+# # See docs: "Prompt Construction" — multimodal content blocks
 # LangChain message content is either a plain string OR a list of typed
 # "content blocks". The portable block shape
 #   {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": ...}
@@ -521,7 +521,7 @@ def invoke_with_images(llm: BaseChatModel, prompt: str, image_paths=None):
 # Reliable JSON invocation — constrained decoding + one-shot repair loop
 # ---------------------------------------------------------------------------
 #
-# # See README: "Local Mode (Ollama)" — how reliability is achieved
+# # See docs: "Local Mode (Ollama)" — how reliability is achieved
 # The planning pipeline and the mode engines all parse the model's reply as
 # JSON, and every parser falls back to a deterministic artifact when parsing
 # fails. That fallback never crashes — but it silently downgrades quality.

@@ -9,7 +9,7 @@ Public API is re-exported here; submodules lazy-import their optional/heavy deps
 (LLM, tracker SDKs) inside functions, so importing this package is always cheap and
 safe — mirrors the standup / retro packages.
 
-# See README: "Performance Mode"
+# See docs: "Performance Mode"
 """
 
 from __future__ import annotations

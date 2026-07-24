@@ -9,7 +9,7 @@ Everything is stdlib + subprocess (no APScheduler dependency). Platform is
 dispatched on ``sys.platform``. Windows is unsupported (returns a clear message)
 — on-demand runs from the TUI still work everywhere.
 
-# See README: "Daily Standup" — scheduling
+# See docs: "Daily Standup" — scheduling
 """
 
 from __future__ import annotations

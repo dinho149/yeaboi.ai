@@ -8,7 +8,7 @@ Uses the ARC framework (Ask · Requirements · Context) like every other prompt 
 this package. Card text comes from untrusted LAN participants, so the prompt
 frames it explicitly as DATA to reason over, never as instructions to follow.
 
-# See README: "Prompt Construction" — ARC framework, JSON output
+# See docs: "Prompt Construction" — ARC framework, JSON output
 """
 
 from __future__ import annotations

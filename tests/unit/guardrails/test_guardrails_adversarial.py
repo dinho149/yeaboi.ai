@@ -1,6 +1,6 @@
 """Adversarial input coverage for the guardrail stack.
 
-# See README: "Guardrails" — three lines of defence, human-in-the-loop pattern
+# See docs: "Guardrails" — three lines of defence, human-in-the-loop pattern
 
 Extension of test_input_guardrails.py focused on realistic attack scenarios
 rather than individual function contracts.
@@ -46,7 +46,7 @@ _PROVIDER_PATCH = "yeaboi.config.get_llm_provider"
 class TestPromptInjectionAttacks:
     """Real-world jailbreak variants beyond the per-pattern unit tests.
 
-    # See README: "Guardrails" — prompt injection detection
+    # See docs: "Guardrails" — prompt injection detection
     #
     # The unit tests cover each regex pattern once. This class covers realistic
     # attack strings with different capitalisations, whitespace, and combined
@@ -144,7 +144,7 @@ class TestPromptInjectionAttacks:
 class TestLengthAttackScenarios:
     """Realistic over-length inputs are all rejected.
 
-    # See README: "Guardrails" — Input layer length cap
+    # See docs: "Guardrails" — Input layer length cap
     #
     # The unit tests verify boundary behaviour (at/over 5 000). These tests
     # verify realistic *accident* and *attack* scenarios beyond synthetic padding.
@@ -188,7 +188,7 @@ class TestLengthAttackScenarios:
 class TestGibberishAndNonEnglishInputs:
     """Inputs with no project vocabulary are handled correctly.
 
-    # See README: "Guardrails" — allowlist + LLM classifier
+    # See docs: "Guardrails" — allowlist + LLM classifier
     #
     # test_input_guardrails.py covers basic allowlist hits and a few off-topic
     # cases. This class adds parametrized gibberish, non-English script inputs,

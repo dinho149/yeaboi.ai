@@ -1,6 +1,6 @@
 """Configuration data for provider selection screens.
 
-# See README: "Architecture" — constants for the setup wizard UI.
+# See docs: "Architecture" — constants for the setup wizard UI.
 # Defines LLM providers, version control options, and issue tracking fields.
 """
 

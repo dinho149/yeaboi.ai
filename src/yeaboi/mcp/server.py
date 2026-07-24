@@ -1,6 +1,6 @@
 """yeaboi MCP server — stdio entry point (`yeaboi-mcp`).
 
-# See README: "MCP Server"
+# See docs: "MCP Server"
 
 Runs a Model Context Protocol server over stdio so AI coding agents
 (Claude Code, Cursor, Codex CLI, VS Code, …) can call yeaboi's planning

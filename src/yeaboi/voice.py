@@ -4,7 +4,7 @@ This module lets users *speak* their answers instead of typing them. It is used
 by the TUI text-entry loops (project description, intake question answers, and
 the artifact editor) which trigger recording on Ctrl+R.
 
-# See README: "Voice Input" — voice is an optional, provider-agnostic helper.
+# See docs: "Voice Input" — voice is an optional, provider-agnostic helper.
 # It does NOT go through the LangGraph agent or the get_llm() provider factory.
 
 Design notes / architectural decisions:

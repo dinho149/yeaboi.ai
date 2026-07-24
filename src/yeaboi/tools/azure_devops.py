@@ -1,6 +1,6 @@
 """Azure DevOps tools for fetching repo context and creating work items.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # Read tools (low risk) — fetch data from the Azure DevOps REST API and return
 # it as a string for the LLM to reason about. Write tools (high risk) — create
@@ -67,7 +67,7 @@ def _normalize_work_item_state(state: str) -> str:
 
 
 # Key config/manifest files to highlight in the repo tree summary.
-# See README: "Tools" — scoping tool output for LLM relevance
+# See docs: "Tools" — scoping tool output for LLM relevance
 _KEY_FILES = {
     "package.json",
     "pyproject.toml",
@@ -159,7 +159,7 @@ def _make_connection(org_url: str, token: str | None):
     token the connection is unauthenticated — private projects return 401/403,
     caught by the caller's error handler.
 
-    # See README: "Tools" — authentication pattern
+    # See docs: "Tools" — authentication pattern
     """
     from azure.devops.connection import Connection
     from msrest.authentication import BasicAuthentication
@@ -179,7 +179,7 @@ def azdevops_read_repo(repo_url: str, max_depth: int = 2) -> str:
     files (package.json, pyproject.toml, Dockerfile, etc.), and repo stats.
     Use this first to understand a project's structure before reading individual files.
     """
-    # See README: "The ReAct Loop" — this is the Action step; the result is the Observation
+    # See docs: "The ReAct Loop" — this is the Action step; the result is the Observation
     logger.debug("azdevops_read_repo called: repo_url=%r, max_depth=%d", repo_url, max_depth)
     try:
         org_url, project, repo = _parse_azdo_url(repo_url)
@@ -287,7 +287,7 @@ def azdevops_list_work_items(repo_url: str, max_items: int = 20, state: str = "A
     try:
         # Wiql is the Azure DevOps query language — SQL-like syntax for querying work items.
         # Imported here (lazy) to follow the same pattern as other tool imports.
-        # See README: "Tools" — tool types, read-only tool pattern
+        # See docs: "Tools" — tool types, read-only tool pattern
         from azure.devops.v7_1.work_item_tracking.models import Wiql
 
         org_url, project, _ = _parse_azdo_url(repo_url)
@@ -369,7 +369,7 @@ def _make_azdo_clients(org_url: str | None = None, token: str | None = None):
     """Create authenticated WIT and Work clients from a single connection.
 
     Returns (wit_client, work_client). Uses config defaults when args are None.
-    # See README: "Tools" — authentication pattern
+    # See docs: "Tools" — authentication pattern
     """
     org_url = org_url or get_azure_devops_org_url()
     token = token or get_azure_devops_token()
@@ -849,7 +849,7 @@ def add_work_items_to_iteration(work_item_ids: list[str], iteration_path: str, p
 # ---------------------------------------------------------------------------
 # Plain function (not @tool) the standup collector calls directly. Returns
 # structured data and degrades gracefully to [] on error/missing config.
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 
 
 def _identity_fields(raw) -> tuple[str, str]:

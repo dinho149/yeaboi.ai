@@ -1,6 +1,6 @@
 """Project card rendering and viewport scrolling for the project list screen.
 
-# See README: "Architecture" — this module builds the project list UI:
+# See docs: "Architecture" — this module builds the project list UI:
 # project cards with metadata, action buttons (Delete/Export), viewport
 # scrolling with peek stubs, and the "+ New Project" button.
 """
@@ -92,7 +92,7 @@ class ProfileSummary:
 _PAD = PAD  # alias for backward compatibility within this module
 
 # Viewport scrolling constants for the project list.
-# See README: "Architecture" — when more cards exist than fit on screen,
+# See docs: "Architecture" — when more cards exist than fit on screen,
 # the list scrolls to keep the selected card visible. Cards just outside
 # the viewport show a 2-row "peek" stub (top half above, bottom half below).
 _CARD_H = 5  # standard card height (border + up to 3 content + border)
@@ -125,7 +125,7 @@ def _build_button_row(
 ) -> tuple[Text, Text, Text]:
     """Build three Text lines (top/mid/bot) for a pair of equal-width rounded buttons.
 
-    # See README: "Architecture" — button rendering for project card actions.
+    # See docs: "Architecture" — button rendering for project card actions.
     # Each button is drawn with Unicode box-drawing characters to
     # create a rounded-corner box appearance in the terminal.
 
@@ -288,7 +288,7 @@ def _build_action_button(
 ) -> Panel:
     """Build a tall action button Panel placed to the right of a project card.
 
-    # See README: "Architecture" — action buttons sit beside each project card.
+    # See docs: "Architecture" — action buttons sit beside each project card.
     # Buttons are the same height as the card (_CARD_H) so they form a clean row.
     # The 'focused' state is reached by pressing right-arrow from the card.
 
@@ -519,7 +519,7 @@ def _compute_viewport(
 ) -> tuple[int, int, bool, bool]:
     """Compute visible window for scrolling project list.
 
-    # See README: "Architecture" — viewport scrolling for the project list.
+    # See docs: "Architecture" — viewport scrolling for the project list.
     # When more project cards exist than fit on screen, the list scrolls to
     # keep the selected card visible. Cards just outside the viewport show
     # a single-line border "peek" that connects directly to the adjacent

@@ -8,7 +8,7 @@ class opening its own connection to the same DB, autocommit mode, context-manage
 support, idempotent CREATE-IF-NOT-EXISTS schema. The ``_REPORTING_SCHEMA`` constant
 is also referenced by sessions.py's v9 migration so an existing DB gets the table.
 
-# See README: "Session Management" — SQLite persistence, schema versioning
+# See docs: "Session Management" — SQLite persistence, schema versioning
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class ReportingStore:
     ``reporting_history`` table. Follows the same patterns as RetroStore:
     autocommit mode, context-manager support, explicit close.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
 
     def __init__(self, db_path: Path) -> None:

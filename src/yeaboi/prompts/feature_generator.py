@@ -1,7 +1,7 @@
 """Prompt template for the feature_generator node.
 
-# See README: "Prompt Construction" — ARC framework
-# See README: "Scrum Standards" — feature decomposition
+# See docs: "Prompt Construction" — ARC framework
+# See docs: "Scrum Standards" — feature decomposition
 #
 # The feature generator prompt takes the structured ProjectAnalysis fields and asks
 # the LLM to decompose the project scope into 3-6 features. Same pattern as the
@@ -59,7 +59,7 @@ def get_feature_generator_prompt(
 ) -> str:
     """Build the feature generator prompt with injected project analysis fields.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     #
     # The prompt uses the ARC pattern:
     # - Actor: "Senior Scrum Master" with feature decomposition expertise
@@ -144,7 +144,7 @@ def get_feature_generator_prompt(
         "Return ONLY the JSON array, no other text."
     )
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     # Append review feedback section when the user rejected or requested edits.
     # This gives the LLM explicit instructions about what to change.
     return base + _build_review_section(review_feedback, review_mode, previous_output)

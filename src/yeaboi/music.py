@@ -5,7 +5,7 @@ This module lets users play focus music while planning. It shells out to
 :mod:`yeaboi.voice`: an optional, provider-agnostic helper that talks to an
 external binary.
 
-# See README: "Music (ffplay)" — like voice input, background music does NOT go
+# See docs: "Music (ffplay)" — like voice input, background music does NOT go
 # through the LangGraph agent or the get_llm() provider factory. It is a pure
 # terminal-UX helper.
 

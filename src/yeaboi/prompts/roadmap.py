@@ -9,7 +9,7 @@ The roadmap document is external text the user pointed us at (a Confluence or
 Notion page, a Word/PowerPoint file...) — it is framed as UNTRUSTED DATA so a
 stray "ignore your instructions" line inside it can't hijack the analysis.
 
-# See README: "Prompt Construction" — ARC framework, flipped prompt, JSON output
+# See docs: "Prompt Construction" — ARC framework, flipped prompt, JSON output
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """Transition animations for the provider selection wizard.
 
-# See README: "Architecture" — UI animation layer for the setup wizard.
+# See docs: "Architecture" — UI animation layer for the setup wizard.
 # Handles the crossfade from provider selection to API key input.
 """
 

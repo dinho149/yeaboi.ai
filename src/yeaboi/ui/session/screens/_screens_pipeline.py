@@ -1,6 +1,6 @@
 """Pipeline, chat, and edit prompt screen builders for the TUI session.
 
-# See README: "Architecture" — pure functions that build Rich Panel screens.
+# See docs: "Architecture" — pure functions that build Rich Panel screens.
 # Each function takes state and returns a Panel renderable. No side effects.
 """
 

@@ -3,297 +3,329 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0b0c0e" />
+<style>html,body{background:#0b0c0e}</style>
 <title>yeaboi — a team lead's best friend</title>
 <meta name="description" content="yeaboi is a terminal AI agent for team leads. It decomposes projects into epics, stories, tasks, and sprint plans — then runs the standups, retros, 1:1s, and delivery reports around them." />
 <meta property="og:title" content="yeaboi — a team lead's best friend" />
 <meta property="og:description" content="A terminal AI agent that plans your sprints and runs the ceremonies around them." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://yeaboi.ai" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d1117'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%236e8cdc' font-family='monospace'%3EY%3C/text%3E%3C/svg%3E" />
-<style>
-  :root{
-    --bg:#0b0e14; --bg2:#0d1117; --panel:#12171f; --panel2:#161b22;
-    --line:#232a34; --text:#e6edf3; --muted:#8b949e; --dim:#5b6472;
-    --brand:#4664b4; --brand-bright:#6e8cdc;
-    --m-plan:#6e8cdc; --m-analysis:#64b464; --m-standup:#c864b4;
-    --m-retro:#50bebe; --m-perf:#dc6e5a; --m-report:#8c78e6;
-    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    --maxw:1080px;
-  }
-  *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{
-    margin:0; background:var(--bg); color:var(--text);
-    font-family:var(--sans); line-height:1.6;
-    -webkit-font-smoothing:antialiased;
-    background-image:
-      radial-gradient(60rem 40rem at 72% -8%, rgba(70,100,180,.20), transparent 60%),
-      radial-gradient(50rem 40rem at 8% 6%, rgba(80,190,190,.08), transparent 55%);
-    background-attachment:fixed;
-  }
-  a{color:var(--brand-bright); text-decoration:none}
-  a:hover{text-decoration:underline}
-  ::selection{background:rgba(110,140,220,.35)}
-
-  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 20px}
-
-  /* ---- terminal window chrome ---- */
-  .term{
-    background:linear-gradient(180deg,var(--panel),var(--bg2));
-    border:1px solid var(--line); border-radius:12px; overflow:hidden;
-    box-shadow:0 24px 60px -28px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.02) inset;
-  }
-  .term-bar{
-    display:flex; align-items:center; gap:8px;
-    padding:11px 14px; background:rgba(255,255,255,.02);
-    border-bottom:1px solid var(--line);
-  }
-  .dot{width:12px;height:12px;border-radius:50%}
-  .dot.r{background:#e0625b}.dot.y{background:#e0b24a}.dot.g{background:#5db06a}
-  .term-title{
-    margin-left:8px; font-family:var(--mono); font-size:.8rem; color:var(--dim);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .term-body{padding:26px clamp(16px,4vw,40px) 30px}
-
-  /* ---- hero ---- */
-  header.hero{padding:64px 0 40px}
-  .prompt{font-family:var(--mono); color:var(--muted); font-size:.9rem; margin:0 0 14px}
-  .prompt b{color:var(--m-analysis); font-weight:600}
-  .prompt .cmd{color:var(--text)}
-
-  .wordmark-scroll{overflow-x:auto; scrollbar-width:none}
-  .wordmark-scroll::-webkit-scrollbar{display:none}
-  pre.wordmark{
-    margin:0; font-family:var(--mono); font-weight:700;
-    font-size:clamp(.42rem,2.35vw,1.02rem); line-height:1.04; letter-spacing:0;
-    width:max-content; min-width:100%;
-    background:linear-gradient(110deg,var(--brand) 20%,#a9c0ff 46%,#ffffff 50%,#a9c0ff 54%,var(--brand) 80%);
-    background-size:280% 100%;
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    animation:shine 5.5s ease-in-out infinite;
-    text-shadow:0 0 34px rgba(70,100,180,.28);
-  }
-  @keyframes shine{0%{background-position:120% 0}55%{background-position:-20% 0}100%{background-position:-20% 0}}
-
-  .tagline{
-    margin:22px 0 0; font-size:clamp(1.4rem,3.6vw,2.15rem); font-weight:700;
-    letter-spacing:-.02em; line-height:1.15;
-  }
-  .tagline .cursor{
-    display:inline-block; width:.62ch; height:1.05em; margin-left:.12em;
-    background:var(--m-retro); vertical-align:-.16em; animation:blink 1.15s steps(1) infinite;
-  }
-  @keyframes blink{50%{opacity:0}}
-  .lede{margin:16px 0 0; max-width:60ch; color:var(--muted); font-size:1.06rem}
-
-  /* ---- copy command line ---- */
-  .install{margin:28px 0 6px; display:flex; flex-wrap:wrap; gap:10px; align-items:center}
-  .cmdbox{
-    display:flex; align-items:center; gap:12px;
-    background:#0a0d13; border:1px solid var(--line); border-radius:9px;
-    padding:12px 12px 12px 16px; font-family:var(--mono); font-size:.98rem;
-    box-shadow:0 0 0 1px rgba(110,140,220,.10);
-  }
-  .cmdbox .sigil{color:var(--m-retro)}
-  .cmdbox code{color:var(--text)}
-  .copy{
-    border:1px solid var(--line); background:var(--panel2); color:var(--muted);
-    font-family:var(--mono); font-size:.78rem; border-radius:6px; padding:6px 10px;
-    cursor:pointer; transition:.15s; white-space:nowrap;
-  }
-  .copy:hover{color:var(--text); border-color:var(--brand); background:rgba(70,100,180,.14)}
-  .copy.done{color:var(--m-analysis); border-color:var(--m-analysis)}
-  .subnote{font-family:var(--mono); font-size:.8rem; color:var(--dim)}
-  .subnote a{color:var(--muted)}
-
-  /* ---- section headers as prompt lines ---- */
-  section{padding:52px 0}
-  .eyebrow{
-    font-family:var(--mono); font-size:.82rem; color:var(--m-retro);
-    margin:0 0 10px; letter-spacing:.02em;
-  }
-  .eyebrow .path{color:var(--dim)}
-  h2{margin:0 0 8px; font-size:clamp(1.5rem,3.2vw,2rem); letter-spacing:-.02em; line-height:1.2}
-  .section-lede{margin:0 0 30px; color:var(--muted); max-width:58ch}
-
-  /* ---- modes grid ---- */
-  .modes{display:grid; grid-template-columns:repeat(2,1fr); gap:16px}
-  .mode{
-    --c:var(--brand);
-    background:linear-gradient(180deg,var(--panel),var(--bg2));
-    border:1px solid var(--line); border-left:3px solid var(--c);
-    border-radius:10px; padding:20px 22px; transition:.18s;
-  }
-  .mode:hover{transform:translateY(-3px); border-color:var(--c); box-shadow:0 16px 40px -26px var(--c)}
-  .mode .mhead{display:flex; align-items:baseline; gap:12px; margin-bottom:8px}
-  .mode .num{font-family:var(--mono); font-size:.8rem; color:var(--c); opacity:.85}
-  .mode h3{margin:0; font-size:1.12rem; color:var(--text)}
-  .mode p{margin:0; color:var(--muted); font-size:.96rem}
-  .m1{--c:var(--m-plan)}.m2{--c:var(--m-analysis)}.m3{--c:var(--m-standup)}
-  .m4{--c:var(--m-retro)}.m5{--c:var(--m-perf)}.m6{--c:var(--m-report)}
-
-  /* ---- demo ---- */
-  .demo-frame img{display:block; width:100%; height:auto; border-radius:0 0 12px 12px}
-  .demo-cap{font-family:var(--mono); font-size:.82rem; color:var(--dim); margin:14px 2px 0}
-
-  /* ---- quickstart steps ---- */
-  .steps{display:grid; gap:12px; max-width:640px}
-  .step{
-    display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:center;
-    background:#0a0d13; border:1px solid var(--line); border-radius:9px; padding:14px 16px;
-  }
-  .step .k{font-family:var(--mono); color:var(--m-retro); font-size:.95rem}
-  .step .d{color:var(--muted); font-size:.92rem}
-  .step code{font-family:var(--mono); color:var(--text)}
-
-  /* ---- callout ---- */
-  .note{
-    margin-top:26px; border:1px solid var(--line); border-radius:9px;
-    background:rgba(70,100,180,.07); padding:14px 18px; color:var(--muted);
-    font-size:.92rem; max-width:640px;
-  }
-  .note code{font-family:var(--mono); color:var(--text)}
-
-  /* ---- footer ---- */
-  footer{border-top:1px solid var(--line); padding:34px 0 60px; margin-top:20px}
-  .foot{display:flex; flex-wrap:wrap; gap:10px 26px; align-items:center; justify-content:space-between}
-  .foot .links{display:flex; flex-wrap:wrap; gap:8px 22px; font-family:var(--mono); font-size:.88rem}
-  .foot .meta{font-family:var(--mono); font-size:.8rem; color:var(--dim)}
-
-  @media (max-width:640px){
-    .modes{grid-template-columns:1fr}
-    header.hero{padding:40px 0 20px}
-    .cmdbox{width:100%}
-  }
-  @media (prefers-reduced-motion:reduce){
-    pre.wordmark{animation:none; background-position:40% 0}
-    .tagline .cursor{animation:none}
-    .mode:hover{transform:none}
-  }
-</style>
+<link rel="icon" type="image/png" href="/assets/duck-favicon.png" />
+<link rel="apple-touch-icon" href="/assets/duck-touch.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:wght@400..800&display=swap" />
+<link rel="stylesheet" href="/assets/site.css?v=132" />
+<link rel="stylesheet" href="/assets/landing.css?v=132" />
+<link rel="stylesheet" href="/docs/assets/docs.css?v=132" />
 </head>
 <body>
 
-<header class="hero">
+<header class="navbar">
+  <div class="wrap rail" id="rail">
+    <a class="brand" href="/">yeaboi</a>
+    <nav class="rail-nav">
+      <button type="button" class="rail-toggle" id="rail-docs" aria-expanded="false" aria-controls="rail-menu" data-ascii="DOCS">DOCS</button>
+      <div class="rail-menu" id="rail-menu"><div class="rail-menu-inner"></div></div>
+    </nav>
+  </div>
+</header>
+
+<main id="page-content">
+<section class="hero" id="top">
   <div class="wrap">
-    <div class="term">
-      <div class="term-bar">
-        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-        <span class="term-title">~ — yeaboi — 96×32</span>
+    <div class="hero-copy">
+      <p class="badge">AI agent for team leads · in your terminal</p>
+      <h1 class="tagline">A team lead's <em>best&nbsp;friend</em>.</h1>
+      <p class="lede">yeaboi turns a project description into <strong>epics, stories, tasks, and a sprint plan</strong> — then runs the standups, retros, 1:1s, and delivery reports around them. No browser tabs. No ceremony overhead. Just your terminal.</p>
+      <div class="hero-cta">
+        <div class="codeblock">
+          <code>uv tool install yeaboi</code>
+          <button class="copy" data-copy="uv tool install yeaboi" aria-label="Copy install command">copy</button>
+        </div>
+        <a class="btn btn-primary" href="/docs/getting-started.html">Get started →</a>
       </div>
-      <div class="term-body">
-        <p class="prompt"><b>you@team</b> <span style="color:var(--dim)">~</span> $ <span class="cmd">yeaboi</span></p>
-        <div class="wordmark-scroll">
-<pre class="wordmark" aria-label="yeaboi">██╗   ██╗███████╗ █████╗ ██████╗  ██████╗ ██╗
+      <p class="subnote">or <a href="https://pypi.org/project/yeaboi/"><code>pipx install yeaboi</code></a> · Python 3.11+ · MIT</p>
+      <span class="scroll-hint">see it in action</span>
+    </div>
+    <div class="hero-demo">
+      <!-- Scrollytelling: the terminal pins while the step rail at the side
+           walks through each mode; each step scrolled into the middle of the
+           viewport drives the REAL selection in the TUI (site.js observes
+           .scrolly-step and calls the same show() the arrow keys would). -->
+      <div class="scrolly">
+        <div class="scrolly-sticky">
+      <div class="app-frame">
+        <div class="tui-bar" aria-hidden="true">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="tui-bar-title">yeaboi — v1.2.0</span>
+        </div>
+        <div class="tui" id="hero-demo">
+          <!-- Faithful recreation of the real app startup: the splash wordmark
+               (src/yeaboi/ui/splash.py) fades in/out, then the actual mode-select
+               screen (_screens.py:_build_mode_screen) — a rounded white Panel
+               holding all EIGHT modes in the app's real order (Analysis first,
+               selected=0), each a real render_ascii_text() 2-row block title in
+               its mode's exact accent; unselected rows use the app's exact
+               half-RGB dim (min 40/channel). Below the list: the rotating 💡 tip
+               block with position dots, the version row, and the music status
+               stamped on the Panel's bottom border — all mirrored from
+               _build_tip_rows / _build_version_row / _music_bar.py. -->
+          <div class="tui-panel">
+            <div class="tui-splash" id="tui-splash" aria-hidden="true">
+<pre class="tui-splash-word">██╗   ██╗███████╗ █████╗ ██████╗  ██████╗ ██╗
 ╚██╗ ██╔╝██╔════╝██╔══██╗██╔══██╗██╔═══██╗██║
  ╚████╔╝ █████╗  ███████║██████╔╝██║   ██║██║
   ╚██╔╝  ██╔══╝  ██╔══██║██╔══██╗██║   ██║██║
    ██║   ███████╗██║  ██║██████╔╝╚██████╔╝██║
    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝</pre>
-        </div>
-        <p class="tagline">A team lead's best friend.<span class="cursor"></span></p>
-        <p class="lede">yeaboi decomposes a project into epics, stories, tasks, and a sprint plan — then runs the standups, retros, 1:1s, and delivery reports around them. All from your terminal.</p>
+            </div>
 
-        <div class="install">
-          <div class="cmdbox">
-            <span class="sigil">$</span><code id="install-cmd">uv tool install yeaboi</code>
-            <button class="copy" data-copy="uv tool install yeaboi" aria-label="Copy install command">copy</button>
+            <div class="tui-menu" id="tui-menu" hidden>
+              <button type="button" class="tui-mode" data-mode="0" style="--mc:100,180,100; --mcd:50,90,50" data-desc="Analyse your team's board to learn velocity, estimation patterns, and delivery signals." aria-label="Analysis — analyse your team's board to learn velocity, estimation patterns, and delivery signals.">
+<pre class="tui-mode-title" aria-hidden="true">▄▀█ █▄░█ ▄▀█ █░░ █▄█ █▀ █ █▀
+█▀█ █░▀█ █▀█ █▄▄ ░█░ ▄█ █ ▄█</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="1" style="--mc:110,140,220; --mcd:55,70,110" data-desc="Decompose your project into epics, user stories, tasks, and a sprint plan." aria-label="Planning — decompose your project into epics, user stories, tasks, and a sprint plan.">
+<pre class="tui-mode-title" aria-hidden="true">█▀█ █░░ ▄▀█ █▄░█ █▄░█ █ █▄░█ █▀▀
+█▀▀ █▄▄ █▀█ █░▀█ █░▀█ █ █░▀█ █▄█</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="2" style="--mc:200,100,180; --mcd:100,50,90" data-desc="Run a daily standup: detect team activity, sprint-day confidence, and deliver a summary." aria-label="Standup — run a daily standup: detect team activity, sprint-day confidence, and deliver a summary.">
+<pre class="tui-mode-title" aria-hidden="true">█▀ ▀█▀ ▄▀█ █▄░█ █▀▄ █░█ █▀█
+▄█ ░█░ █▀█ █░▀█ █▄▀ █▄█ █▀▀</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="3" style="--mc:80,190,190; --mcd:40,95,95" data-desc="Run a collaborative sprint retro: teammates add cards from a browser, then AI drafts actions." aria-label="Retro — run a collaborative sprint retro: teammates add cards from a browser, then AI drafts actions.">
+<pre class="tui-mode-title" aria-hidden="true">█▀█ █▀▀ ▀█▀ █▀█ █▀█
+█▀▄ ██▄ ░█░ █▀▄ █▄█</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="4" style="--mc:220,110,90; --mcd:110,55,45" data-desc="Manage each engineer: 1:1 prep, 1:1 summaries, and 6-month reviews from real delivery data." aria-label="Performance — manage each engineer: 1:1 prep, 1:1 summaries, and 6-month reviews from real delivery data.">
+<pre class="tui-mode-title" aria-hidden="true">█▀█ █▀▀ █▀█ █▀▀ █▀█ █▀█ █▀▄▀█ ▄▀█ █▄░█ █▀▀ █▀▀
+█▀▀ ██▄ █▀▄ █▀░ █▄█ █▀▄ █░▀░█ █▀█ █░▀█ █▄▄ ██▄</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="5" style="--mc:140,120,230; --mcd:70,60,115" data-desc="Summarise delivered work for the business — last sprint or last month, as slides, HTML or MD." aria-label="Reporting — summarise delivered work for the business, last sprint or last month, as slides, HTML or MD.">
+<pre class="tui-mode-title" aria-hidden="true">█▀█ █▀▀ █▀█ █▀█ █▀█ ▀█▀ █ █▄░█ █▀▀
+█▀▄ ██▄ █▀▀ █▄█ █▀▄ ░█░ █ █░▀█ █▄█</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="6" style="--mc:220,160,60; --mcd:110,80,40" data-desc="View API token usage, session history, and cost estimates." aria-label="Usage — view API token usage, session history, and cost estimates.">
+<pre class="tui-mode-title" aria-hidden="true">█░█ █▀ ▄▀█ █▀▀ █▀▀
+█▄█ ▄█ █▀█ █▄█ ██▄</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+              <button type="button" class="tui-mode" data-mode="7" style="--mc:160,160,180; --mcd:80,80,90" data-desc="Manage API keys, LLM provider, and board configuration." aria-label="Settings — manage API keys, LLM provider, and board configuration.">
+<pre class="tui-mode-title" aria-hidden="true">█▀ █▀▀ ▀█▀ ▀█▀ █ █▄░█ █▀▀ █▀
+▄█ ██▄ ░█░ ░█░ █ █░▀█ █▄█ ▄█</pre>
+                <p class="tui-mode-desc" aria-hidden="true"></p>
+              </button>
+
+              <div class="tui-foot" aria-hidden="true">
+                <p class="tui-tip" id="tui-tip">💡 Tip: resume your last session any time with --resume</p>
+                <p class="tui-tip-dots"><span id="tui-tip-dots"></span><span class="tui-tip-hint">press <b>t</b> to hide</span></p>
+                <p class="tui-version"><span class="v">v1.2.0</span><span class="sep">  ·  </span><b>c</b><span class="lbl"> changelog</span><span class="sep">  ·  </span><b>f</b><span class="lbl"> feedback</span></p>
+              </div>
+            </div>
+            <span class="tui-music" aria-hidden="true"><span class="off">♪ off</span>  <span class="hint">^P play · ^O channel</span></span>
           </div>
-          <span class="subnote">or <a href="https://pypi.org/project/yeaboi/"><code>pipx install yeaboi</code></a></span>
+        </div>
+      </div>
+        </div>
+
+        <div class="scrolly-steps" id="mode-steps">
+          <div class="scrolly-step" data-step="0" style="--sh:rgb(100,180,100)">
+            <p class="step-k">01 / analysis</p>
+            <h3>Know how your team actually delivers.</h3>
+            <p>Reads your Jira or Azure DevOps history — velocity, estimation accuracy, churn — and builds a team profile that calibrates every plan yeaboi makes after it.</p>
+          </div>
+          <div class="scrolly-step" data-step="1" style="--sh:rgb(110,140,220)">
+            <p class="step-k">02 / planning</p>
+            <h3>Description in, sprint plan out.</h3>
+            <p>A five-stage pipeline — analysis, features, stories, tasks, sprints — with a review checkpoint after every stage. Accept, edit, or reject; then push to your board.</p>
+          </div>
+          <div class="scrolly-step" data-step="2" style="--sh:rgb(200,100,180)">
+            <p class="step-k">03 / standup</p>
+            <h3>The daily that runs itself.</h3>
+            <p>Detects what everyone shipped from commits and tickets, scores sprint-day confidence, and delivers the summary to terminal, Slack, or email — on an OS schedule, even with yeaboi closed.</p>
+          </div>
+          <div class="scrolly-step" data-step="3" style="--sh:rgb(80,190,190)">
+            <p class="step-k">04 / retro</p>
+            <h3>A board the whole team joins.</h3>
+            <p>Spins up a live board any browser on the network can join — cards, reactions, a shared timer. When the talking's done, AI drafts the action items.</p>
+          </div>
+          <div class="scrolly-step" data-step="4" style="--sh:rgb(220,110,90)">
+            <p class="step-k">05 / performance</p>
+            <h3>1:1s backed by real work.</h3>
+            <p>Preps each 1:1 from the engineer's actual delivery and last meeting's open actions, writes up the summary after, and synthesizes six-month reviews when they're due.</p>
+          </div>
+          <div class="scrolly-step" data-step="5" style="--sh:rgb(140,120,230)">
+            <p class="step-k">06 / reporting</p>
+            <h3>Tell the business what shipped.</h3>
+            <p>Turns a sprint, a month, or a whole quarter of delivered work into an executive summary — as a slide deck, HTML, or Markdown.</p>
+          </div>
+          <div class="scrolly-step" data-step="6" style="--sh:rgb(220,160,60)">
+            <p class="step-k">07 / usage</p>
+            <h3>Costs, in the open.</h3>
+            <p>Token usage, session history, and cost estimates for every LLM call — tracked per session, right in the app.</p>
+          </div>
+          <div class="scrolly-step" data-step="7" style="--sh:rgb(160,160,180)">
+            <p class="step-k">08 / settings</p>
+            <h3>Configured without leaving the terminal.</h3>
+            <p>API keys, LLM provider, board connections, log level, data directory — all managed in-app, validated as you go.</p>
+          </div>
         </div>
       </div>
     </div>
   </div>
-</header>
+</section>
+
+<section class="stack" id="stack" data-reveal>
+  <div class="wrap">
+    <p class="eyebrow">plugs into your stack</p>
+    <div class="stack-group">
+      <span class="stack-cat">boards &amp; sources</span>
+      <div class="stack-list">
+        <span>Jira</span>
+        <span>Azure DevOps</span>
+        <span>GitHub</span>
+        <span>Notion</span>
+        <span>Confluence</span>
+        <span>Slack</span>
+      </div>
+    </div>
+    <div class="stack-group">
+      <span class="stack-cat">LLM providers</span>
+      <div class="stack-list">
+        <span>Claude</span>
+        <span>OpenAI</span>
+        <span>Gemini</span>
+        <span>Bedrock</span>
+        <span>Ollama</span>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section id="modes">
   <div class="wrap">
-    <p class="eyebrow">$ yeaboi <span class="path"># pick a mode</span></p>
-    <h2>Six modes, one command</h2>
-    <p class="section-lede">Everything a lead does between planning and delivery, each its own screen in the TUI. Read-only sources plug in when you have them; skip anything you don't.</p>
+    <p class="eyebrow" data-reveal>$ yeaboi — pick a mode</p>
+    <h2 data-reveal>Six modes. <em>One command.</em></h2>
+    <p class="section-lede" data-reveal>Everything a lead does between planning and delivery, each its own screen in the TUI. Read-only sources plug in when you have them; skip anything you don't — and every generated step pauses for your review, so nothing lands without your <code>[1] Accept</code>.</p>
     <div class="modes">
-      <div class="mode m1">
-        <div class="mhead"><span class="num">01</span><h3>Planning</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-planning)">
+        <div class="mode-head"><span class="num">01</span><h3>Planning</h3></div>
         <p>Turn a project description into epics, stories, tasks, and a sprint plan — then push straight to Jira or Azure DevOps.</p>
+        <span class="mode-tag">jira · azure devops</span>
       </div>
-      <div class="mode m2">
-        <div class="mhead"><span class="num">02</span><h3>Analysis</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-analysis)">
+        <div class="mode-head"><span class="num">02</span><h3>Analysis</h3></div>
         <p>Read your team's real velocity and history first, so estimates and capacity are calibrated to how you actually deliver.</p>
+        <span class="mode-tag">velocity · estimation · churn</span>
       </div>
-      <div class="mode m3">
-        <div class="mhead"><span class="num">03</span><h3>Standup</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-standup)">
+        <div class="mode-head"><span class="num">03</span><h3>Standup</h3></div>
         <p>Detect what everyone shipped, score sprint progress, and deliver the summary — on a schedule, even when yeaboi is closed.</p>
+        <span class="mode-tag">scheduled · slack · email</span>
       </div>
-      <div class="mode m4">
-        <div class="mhead"><span class="num">04</span><h3>Retro</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-retro)">
+        <div class="mode-head"><span class="num">04</span><h3>Retro</h3></div>
         <p>Open a board your whole team joins from any browser on the network. Cards, reactions, a shared timer — then AI action items.</p>
+        <span class="mode-tag">live board · lan + tunnel</span>
       </div>
-      <div class="mode m5">
-        <div class="mhead"><span class="num">05</span><h3>Performance</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-performance)">
+        <div class="mode-head"><span class="num">05</span><h3>Performance</h3></div>
         <p>Prep and write up 1:1s, and synthesize six-month reviews from each engineer's real delivery history.</p>
+        <span class="mode-tag">1:1s · six-month reviews</span>
       </div>
-      <div class="mode m6">
-        <div class="mhead"><span class="num">06</span><h3>Reporting</h3></div>
+      <div class="mode-card" data-reveal style="--mh:var(--m-reporting)">
+        <div class="mode-head"><span class="num">06</span><h3>Reporting</h3></div>
         <p>Turn a sprint or a whole quarter of delivered work into a business-ready summary and a slide deck for stakeholders.</p>
+        <span class="mode-tag">slides · html · markdown</span>
       </div>
     </div>
   </div>
 </section>
 
-<section id="demo">
-  <div class="wrap">
-    <p class="eyebrow">$ yeaboi --dry-run <span class="path"># from description to sprint plan</span></p>
-    <h2>See it run</h2>
-    <p class="section-lede">A full-screen terminal UI — no browser tab, no web app. Plan, edit stories, adjust sprints, and push to your tracker without leaving the shell.</p>
-    <div class="term demo-frame">
-      <div class="term-bar">
-        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-        <span class="term-title">~ — yeaboi --dry-run</span>
-      </div>
-      <img src="demo.gif" alt="yeaboi turning a project description into a sprint plan in the terminal" loading="lazy" width="1000" height="600" />
-    </div>
-    <p class="demo-cap">From project description to sprint plan in under a minute.</p>
-  </div>
-</section>
 
 <section id="start">
-  <div class="wrap">
-    <p class="eyebrow">$ <span class="path"># three lines to your first plan</span></p>
-    <h2>Get started</h2>
-    <p class="section-lede">Installs in its own isolated environment and pulls the full dependency tree from PyPI. Python 3.11+.</p>
-    <div class="steps">
-      <div class="step"><span class="k">1 · install</span><span class="d"><code>uv tool install yeaboi</code> &nbsp;<span style="color:var(--dim)">— or <code>pipx install yeaboi</code></span></span></div>
-      <div class="step"><span class="k">2 · configure</span><span class="d"><code>yeaboi --setup</code> &nbsp;<span style="color:var(--dim)">— add your API key</span></span></div>
-      <div class="step"><span class="k">3 · run</span><span class="d"><code>yeaboi</code> &nbsp;<span style="color:var(--dim)">— launch the interactive TUI</span></span></div>
+  <div class="wrap start-grid">
+    <div class="cta-panel" data-reveal>
+      <p class="eyebrow">three lines to your first plan</p>
+      <h2>Plan your next sprint <em>tonight.</em></h2>
+      <p class="lede2">Installs in its own isolated environment. Works with Anthropic Claude by default — plus OpenAI, Google, and AWS Bedrock.</p>
+      <div class="codeblock">
+        <code>uv tool install yeaboi</code>
+        <button class="copy" data-copy="uv tool install yeaboi" aria-label="Copy install command">copy</button>
+      </div>
+      <div class="cta-links">
+        <a class="btn btn-primary" href="/docs/getting-started.html">Get started →</a>
+        <a class="btn" href="/docs/index.html">Read the docs</a>
+      </div>
     </div>
-    <p class="note">Works with Anthropic Claude by default, plus OpenAI, Google, and AWS Bedrock. Optional extras: <code>uv tool install "yeaboi[voice]"</code> for offline voice input, or <code>"yeaboi[all-providers]"</code>.</p>
+    <div data-reveal>
+      <div class="steps">
+        <div class="card step step-2row">
+          <p class="step-k"><span class="n">1</span> install</p>
+          <code class="step-cmd">uv tool install yeaboi</code>
+          <p class="step-note">or <code>pipx install yeaboi</code></p>
+        </div>
+        <div class="card step">
+          <p class="step-k"><span class="n">2</span> configure</p>
+          <code class="step-cmd">yeaboi --setup</code>
+          <p class="step-note">adds your API key</p>
+        </div>
+        <div class="card step">
+          <p class="step-k"><span class="n">3</span> run</p>
+          <code class="step-cmd">yeaboi</code>
+          <p class="step-note">launches the interactive TUI</p>
+        </div>
+      </div>
+      <p class="note">Optional extras: <code>uv tool install "yeaboi[voice]"</code> for offline voice input, or <code>"yeaboi[all-providers]"</code> for every LLM provider.</p>
+      <p class="note">yeaboi also ships as an <strong>MCP server</strong> and a Claude Code plugin — run every mode straight from Claude Code, Cursor, or any MCP client.</p>
+    </div>
   </div>
 </section>
 
 <footer>
-  <div class="wrap foot">
+  <div class="wrap foot" data-reveal>
+    <div class="brandline">yeaboi
+      <span class="sub">a team lead's best friend</span>
+    </div>
     <div class="links">
+      <a href="/docs/index.html">Docs</a>
+      <a href="/docs/getting-started.html">Getting Started</a>
+      <a href="/docs/cli-reference.html">CLI Reference</a>
       <a href="https://github.com/omardin14/yeaboi.ai">GitHub ↗</a>
       <a href="https://pypi.org/project/yeaboi/">PyPI ↗</a>
-      <a href="https://github.com/omardin14/yeaboi.ai#readme">Docs ↗</a>
     </div>
-    <div class="meta">Renamed from <code style="color:var(--dim)">scrum-agent</code> · MIT · built on Claude + LangGraph</div>
+    <div class="meta">
+      <span>MIT license</span><br />
+      <span>Built on Claude + LangGraph</span>
+    </div>
   </div>
 </footer>
 
-<script>
-  document.querySelectorAll('.copy').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var text = btn.getAttribute('data-copy');
-      navigator.clipboard.writeText(text).then(function(){
-        var prev = btn.textContent;
-        btn.textContent = 'copied ✓'; btn.classList.add('done');
-        setTimeout(function(){ btn.textContent = prev; btn.classList.remove('done'); }, 1600);
-      });
-    });
-  });
-</script>
+<!-- the mascot: walks along the bottom of the viewport as you scroll —
+     position driven from scroll progress in site.js, waddle while moving,
+     flips to face its direction of travel. Three aligned sprite layers cut
+     from the source art so the wing flaps and the sunglasses bob on their
+     own timelines. -->
+<div class="duck-walker unloaded" id="duck-walker" aria-hidden="true">
+  <div class="duck-rig">
+    <img class="d-base" src="/assets/duck-base.png" alt="" />
+    <img class="d-wing" src="/assets/duck-wing.png" alt="" />
+    <img class="d-glasses2" src="/assets/duck-glasses.png" alt="" />
+    <img class="d-glasses" src="/assets/duck-glasses.png" alt="" />
+  </div>
+</div>
+</main>
+
+<script src="https://unpkg.com/lenis@1.3.4/dist/lenis.min.js"></script>
+<script src="/assets/site.js?v=132"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@ code paths used during a real agent run:
   SCRUM.md                      → _load_user_context() → analyzer prompt injection
   scrum-questionnaire-answers.md → parse_questionnaire_md() → build_questionnaire_from_answers()
 
-# See README: "Project Intake Questionnaire" — offline workflow
+# See docs: "Project Intake Questionnaire" — offline workflow
 """
 
 from pathlib import Path

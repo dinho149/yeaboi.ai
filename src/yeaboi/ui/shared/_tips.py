@@ -4,7 +4,7 @@ Single source of truth for the tip list and the (pure) rotation math. Kept out o
 the screen builders so it can be unit-tested without a Rich Console and reused if
 other screens want to surface a tip.
 
-# See README: "Architecture" — pure helpers with no side effects; the screen
+# See docs: "Architecture" — pure helpers with no side effects; the screen
 # builder decides how to render them.
 
 Design notes:

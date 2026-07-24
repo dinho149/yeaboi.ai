@@ -7,7 +7,7 @@ to four grids (What went well / What didn't go well / Action items / Demos) in
 real time. The host can then generate AI action items from the feedback and
 export a Markdown + HTML summary.
 
-# See README: "Retro" — board, LAN server, AI action items, export
+# See docs: "Retro" — board, LAN server, AI action items, export
 
 Public API is re-exported here so callers can import the common pieces without
 knowing the module layout. The mutable ``RetroBoard`` and the frozen artifacts

@@ -1,6 +1,6 @@
 """Persistent music status bar — rendered on every screen's bottom border.
 
-# See README: "Music (ffplay)" and "TUI system" — this is the whole-app view for
+# See docs: "Music (ffplay)" and "TUI system" — this is the whole-app view for
 # the optional background-music feature in :mod:`yeaboi.music`.
 
 Two chokepoints let a single, always-visible music indicator cover the entire app

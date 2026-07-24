@@ -1,6 +1,6 @@
 """Artifact editors for tasks, sprints, epics, and project analysis.
 
-# See README: "Architecture" — each editor converts a frozen dataclass to
+# See docs: "Architecture" — each editor converts a frozen dataclass to
 # editable text, opens the generic buffer editor loop, then parses the
 # result back into a new dataclass instance.
 """

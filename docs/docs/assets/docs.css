@@ -1,0 +1,273 @@
+/* Docs-only layer: sidebar + TOC + article typography + code blocks.
+   Loaded after /assets/site.css on every docs page. */
+body.docs{ margin:0 }
+/* Nav lives in the left rail's DOCS dropdown (built in site.js) — the docs
+   shell is just article + on-page TOC. */
+.docs-shell{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 210px;
+  gap:60px;
+  max-width:1080px;
+  margin:0 auto;
+  padding:112px 40px 120px;
+  position:relative; z-index:1;
+}
+.docs-sidebar{ display:none }   /* replaced by the rail dropdown */
+
+/* ---- article ---- */
+.docs-content{ min-width:0 }
+.docs-content article{ max-width:76ch }
+.docs-content h1{
+  font-family:var(--display); font-weight:640; font-size:clamp(2rem,4vw,2.55rem);
+  letter-spacing:-.03em; line-height:1.1; margin:0 0 14px;
+}
+.docs-content p.lede{ color:var(--text-muted); font-size:1.08rem; line-height:1.7; margin:0 0 10px }
+.docs-content h2{
+  font-family:var(--display); font-weight:620; font-size:1.5rem; letter-spacing:-.02em;
+  margin:52px 0 14px; padding-top:26px; border-top:1px solid var(--border);
+}
+.docs-content h2:first-of-type{ border-top:none; padding-top:0; margin-top:36px }
+.docs-content h3{ font-size:1.06rem; font-weight:600; margin:30px 0 10px; letter-spacing:-.005em }
+.docs-content h2 code,.docs-content h3 code{ font-size:.85em }
+.docs-content p{ color:var(--text); margin:0 0 15px }
+.docs-content ul,.docs-content ol{ color:var(--text); padding-left:1.35em; margin:0 0 15px }
+.docs-content li{ margin:5px 0 }
+.docs-content li::marker{ color:var(--text-dim) }
+.docs-content strong{ font-weight:600 }
+.docs-content code{
+  background:var(--bg-raised); border:1px solid var(--border); border-radius:5px;
+  padding:1px 6px; font-size:.85em; color:var(--accent-bright);
+}
+.docs-content a code{ color:inherit }
+.docs-content pre{
+  background:var(--bg-sunken); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 18px; overflow-x:auto; margin:0 0 18px;
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset;
+}
+.docs-content pre code{ background:none; border:none; padding:0; font-size:.85rem; color:var(--text); line-height:1.7 }
+.docs-content table{ width:100%; border-collapse:collapse; margin:0 0 22px; font-size:.9rem }
+.docs-content th,.docs-content td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top }
+.docs-content th{
+  color:var(--text-dim); font-weight:500; font-family:var(--mono); font-size:.72rem;
+  text-transform:uppercase; letter-spacing:.1em; border-bottom:1px solid var(--border-strong);
+}
+.docs-content tr:hover td{ background:rgba(255,255,255,.015) }
+.docs-content img{ max-width:100%; border-radius:var(--radius); border:1px solid var(--border) }
+.docs-content blockquote{
+  margin:0 0 15px; padding:2px 0 2px 18px; border-left:2px solid var(--accent);
+  color:var(--text-muted);
+}
+.docs-content hr{ border:none; border-top:1px solid var(--border); margin:32px 0 }
+
+/* heading anchor affordance */
+.docs-content h2[id],.docs-content h3[id]{ scroll-margin-top:40px }
+
+/* ---- toc ---- */
+.docs-toc{ position:sticky; top:56px; align-self:start; font-size:.9rem; max-height:calc(100vh - 80px); overflow-y:auto }
+.docs-toc .toc-label{
+  color:var(--text-dim); font-family:var(--mono); text-transform:uppercase;
+  letter-spacing:.16em; font-size:.72rem; margin:0 0 14px; font-weight:500;
+}
+.docs-toc ul{ list-style:none; margin:0; padding:0; border-left:1px solid var(--border) }
+.docs-toc li{ margin:0 }
+.docs-toc li.toc-sub a{ padding-left:26px }
+.docs-toc a{
+  display:block; padding:6px 0 6px 16px; color:var(--text-dim); margin-left:-1px;
+  border-left:1px solid transparent; transition:color .15s, border-color .15s; line-height:1.5;
+}
+.docs-toc a:hover{ color:var(--text); text-decoration:none; border-left-color:var(--border-strong) }
+.docs-toc a.active{ color:var(--accent-bright); border-left-color:var(--accent) }
+
+@media (max-width:1100px){
+  .docs-shell{ grid-template-columns:minmax(0,1fr); gap:40px }
+  .docs-toc{ display:none }
+}
+@media (max-width:900px){
+  .docs-shell{ padding-top:32px; padding-left:24px; padding-right:24px }
+}
+
+/* ============================================================================
+   Docs duck — a bare duck sprite bottom-right that answers questions from the
+   docs. Click it and it slides LEFT, flips to face the console, and the chat
+   console expands outward from the corner (all CSS transforms).
+   ============================================================================ */
+#docs-duck{
+  position:fixed; right:26px; bottom:26px; z-index:60;
+  --dd-w:340px;          /* console width — also the duck's leftward slide */
+  --dd-duck-w:56px;
+}
+
+/* the bare duck — no circle, no chrome, just the sprite, gently bobbing */
+.dd-duck{
+  position:relative; z-index:2; display:block; padding:0; cursor:pointer;
+  width:var(--dd-duck-w); height:var(--dd-duck-w);
+  border:none; background:none; -webkit-tap-highlight-color:transparent;
+  transition:transform .5s cubic-bezier(.34,1.32,.42,1), filter .2s;
+  filter:drop-shadow(0 6px 10px rgba(0,0,0,.5));
+}
+.dd-duck:hover{ filter:drop-shadow(0 8px 14px rgba(0,0,0,.6)) brightness(1.05) }
+.dd-duck-rig{ position:absolute; inset:0 }
+.dd-duck-rig img{
+  position:absolute; top:0; left:0; width:100%; height:auto;
+  image-rendering:pixelated; user-select:none; -webkit-user-drag:none;
+}
+.dd-duck-rig .d-base{ animation:dd-bob 2.6s ease-in-out infinite }
+.dd-duck-rig .d-wing{ animation:dd-bob 2.6s ease-in-out infinite, dd-flap 1.4s ease-in-out infinite }
+.dd-duck-rig .d-glasses{ animation:dd-bob 2.6s ease-in-out infinite }
+@keyframes dd-bob{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-4px) } }
+@keyframes dd-flap{ 0%,100%{ margin-top:0 } 50%{ margin-top:-1.5px } }
+/* open: slide OUT past the left edge of the console (clear of the messages),
+   lift up to the input row, then flip to face it (the sprite faces left by
+   default, so scaleX(-1) turns it to face the content/console) */
+#docs-duck.open .dd-duck{
+  transform:translate(calc(-1 * (var(--dd-w) + 14px)), -70px) scaleX(-1);
+}
+
+/* idle-prompt bubble: pops from the duck while closed, inviting a click. Sits
+   just above-left of the duck with a tail pointing down at it. */
+.dd-prompt{
+  position:absolute; right:calc(var(--dd-duck-w) - 8px); bottom:calc(var(--dd-duck-w) - 6px);
+  z-index:3; pointer-events:none; white-space:nowrap;
+  background:var(--bg-raised); color:var(--text);
+  border:1px solid var(--border-strong); border-radius:12px;
+  padding:8px 13px; font-family:var(--mono); font-size:.8rem;
+  box-shadow:0 8px 22px rgba(0,0,0,.5);
+  opacity:0; visibility:hidden; transform:translateY(8px) scale(.9);
+  transform-origin:bottom right;
+  transition:opacity .28s ease, transform .32s cubic-bezier(.2,1.3,.4,1), visibility 0s .3s;
+}
+.dd-prompt.show{ opacity:1; visibility:visible; transform:translateY(0) scale(1); transition-delay:0s }
+.dd-prompt.say{ animation:dd-prompt-pop .34s ease }
+@keyframes dd-prompt-pop{ 0%{ transform:translateY(0) scale(.9) } 60%{ transform:translateY(0) scale(1.04) } 100%{ transform:translateY(0) scale(1) } }
+.dd-prompt::after{
+  content:""; position:absolute; bottom:-6px; right:18px;
+  width:11px; height:11px; background:var(--bg-raised);
+  border-right:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong);
+  transform:rotate(45deg);
+}
+#docs-duck.open .dd-prompt{ opacity:0; visibility:hidden }
+
+/* blur/dim ONLY the content directly behind the chat console (not the whole
+   screen) — keeps the page text from showing through the free-floating bubbles
+   while leaving the rest of the page crisp. Matches the console's footprint,
+   with a little padding, and fades in with it. */
+.dd-backdrop{
+  position:absolute; right:-14px; bottom:-14px; z-index:0; pointer-events:none;
+  width:calc(var(--dd-w) + 28px); height:min(474px, calc(100vh - 136px));
+  border-radius:20px;
+  background:rgba(8,9,11,.34); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  -webkit-mask-image:radial-gradient(120% 120% at 82% 78%, #000 62%, transparent 100%);
+  mask-image:radial-gradient(120% 120% at 82% 78%, #000 62%, transparent 100%);
+  opacity:0; visibility:hidden;
+  transform-origin:bottom right; transform:scale(.9);
+  transition:opacity .3s ease, transform .34s cubic-bezier(.2,1.08,.32,1), visibility 0s .34s;
+}
+#docs-duck.open .dd-backdrop{
+  opacity:1; visibility:visible; transform:scale(1);
+  transition:opacity .3s ease, transform .34s cubic-bezier(.2,1.08,.32,1), visibility 0s;
+}
+
+/* the console is NOT a panel — no background, no border. The chat log and the
+   input pill are their own free-floating entities; the container just lays
+   them out and drives the expand-from-corner animation. */
+.dd-console{
+  position:absolute; right:0; bottom:0;
+  width:var(--dd-w); height:min(460px, calc(100vh - 150px));
+  display:flex; flex-direction:column;
+  background:none; border:none; box-shadow:none;
+  transform-origin:bottom right;
+  transform:scale(.16); opacity:0; visibility:hidden; pointer-events:none;
+  transition:transform .42s cubic-bezier(.2,1.08,.32,1), opacity .28s ease, visibility 0s .42s;
+}
+#docs-duck.open .dd-console{
+  transform:scale(1); opacity:1; visibility:visible; pointer-events:auto;
+  transition:transform .42s cubic-bezier(.2,1.08,.32,1), opacity .28s ease .06s, visibility 0s;
+}
+
+.dd-log{
+  flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  padding:16px 14px 6px; display:flex; flex-direction:column; gap:12px;
+  -webkit-overflow-scrolling:touch;
+  /* scrolls without showing a scrollbar — same convention as the page's
+     hidden global scrollbar */
+  scrollbar-width:none; -ms-overflow-style:none;
+}
+.dd-log::-webkit-scrollbar{ width:0; height:0; display:none }
+.dd-msg{ display:flex; transition:opacity .34s ease, transform .38s cubic-bezier(.2,1.1,.4,1) }
+/* messages scroll/slide in: bot from the left, user from the right */
+.dd-msg.dd-enter{ opacity:0 }
+.dd-bot.dd-enter{ transform:translate(-14px, 8px) }
+.dd-user.dd-enter{ transform:translate(14px, 8px) }
+.dd-user{ justify-content:flex-end }
+.dd-bot{ justify-content:flex-start; flex-direction:column; align-items:flex-start }
+.dd-text{
+  margin:0; max-width:88%; padding:10px 13px; border-radius:14px; line-height:1.55;
+  font-size:.88rem; color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.4);
+}
+.dd-user .dd-text{ background:var(--accent); color:#0b0c0e; border-bottom-right-radius:4px; font-weight:500 }
+/* bot bubbles have a little tail on the lower-left — reads as coming from the duck */
+.dd-bot .dd-text{
+  position:relative; background:var(--bg-sunken); border:1px solid var(--border);
+  border-bottom-left-radius:4px;
+}
+.dd-typing{ color:var(--text-muted); font-style:italic }
+
+/* source label + link chips under a composed answer */
+.dd-src-label{
+  display:block; margin:9px 0 2px; font-family:var(--mono); font-size:.62rem;
+  text-transform:uppercase; letter-spacing:.14em; color:var(--text-dim);
+}
+.dd-card{
+  display:block; width:100%; margin-top:6px; padding:8px 11px;
+  background:var(--bg-sunken); border:1px solid var(--border); border-radius:9px;
+  text-decoration:none; transition:border-color .15s, transform .15s, background .15s;
+}
+.dd-card:hover{ border-color:var(--accent); transform:translateX(2px); background:rgba(255,255,255,.02) }
+.dd-card-h{ display:block; font-weight:600; font-size:.82rem; color:var(--accent-bright) }
+.dd-card-page{
+  display:block; font-family:var(--mono); font-size:.62rem; text-transform:uppercase;
+  letter-spacing:.1em; color:var(--text-dim); margin-top:2px;
+}
+
+/* the input is its OWN entity — a floating pill, no bar behind it */
+.dd-form{ display:flex; gap:8px; padding:12px 2px 2px; background:none; border:none }
+.dd-input{
+  flex:1; min-width:0; padding:11px 14px; border-radius:11px;
+  border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text);
+  font-family:inherit; font-size:.88rem; outline:none;
+  box-shadow:0 6px 18px rgba(0,0,0,.4); transition:border-color .15s;
+}
+.dd-input:focus{ border-color:var(--accent) }
+.dd-input::placeholder{ color:var(--text-dim) }
+.dd-send{
+  flex:none; width:44px; border-radius:11px; cursor:pointer;
+  border:1px solid var(--border-strong); background:var(--accent); color:#0b0c0e;
+  font-size:1rem; font-weight:700; box-shadow:0 6px 18px rgba(0,0,0,.4);
+  transition:transform .12s, filter .15s;
+}
+.dd-send:hover{ filter:brightness(1.08) } .dd-send:active{ transform:scale(.94) }
+
+@media (prefers-reduced-motion:reduce){
+  .dd-duck-rig img{ animation:none }
+  .dd-duck, .dd-console{ transition:opacity .2s }
+  #docs-duck.open .dd-duck{ transform:scaleX(-1) }
+}
+@media (max-width:900px){
+  /* mobile: the console goes FULL WIDTH, pinned to both edges, so the chat
+     uses the whole screen instead of a narrow floating column */
+  #docs-duck{ right:12px; bottom:12px; left:12px; z-index:70; --dd-w:auto }
+  .dd-console{
+    position:fixed; left:12px; right:12px; bottom:12px; width:auto;
+    height:min(72vh, calc(100vh - 96px));
+  }
+  .dd-backdrop{ position:fixed; inset:0; width:auto; height:auto; border-radius:0;
+    -webkit-mask-image:none; mask-image:none; background:rgba(8,9,11,.5) }
+  /* keep a big, obvious tap target and make sure nothing steals the tap */
+  .dd-duck{ position:fixed; right:12px; bottom:12px; width:60px; height:60px; touch-action:manipulation }
+  /* open: lift the duck to sit just above the full-width input, near the right
+     edge. The conversation is to its LEFT, and the sprite already faces left by
+     default — so NO flip here (a scaleX(-1) would turn it away from the chat). */
+  #docs-duck.open .dd-duck{
+    transform:translateY(calc(-1 * min(72vh, 100vh - 96px) + 8px));
+  }
+}

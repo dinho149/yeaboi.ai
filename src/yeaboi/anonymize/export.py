@@ -10,7 +10,7 @@ Export document), so this module carries a small, defensive Markdown→HTML rend
 rather than building HTML from a dataclass. It never emits the raw sensitive
 originals — only the already-masked text is written.
 
-# See README: "Export Formats" — Markdown, HTML
+# See docs: "Export Formats" — Markdown, HTML
 """
 
 from __future__ import annotations

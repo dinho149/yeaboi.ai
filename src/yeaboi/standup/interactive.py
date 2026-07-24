@@ -11,7 +11,7 @@ Timed input uses ``select.select`` on stdin (POSIX) so the countdown can expire
 without a keypress — there's no cross-platform way to do this on Windows, but
 scheduling is unsupported there anyway.
 
-# See README: "Daily Standup" — scheduling, interactive run
+# See docs: "Daily Standup" — scheduling, interactive run
 """
 
 from __future__ import annotations

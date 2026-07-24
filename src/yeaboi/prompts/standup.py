@@ -10,7 +10,7 @@ learns what their activity shows even when they typed an update themselves.
 Uses the ARC framework (Ask · Requirements · Context) like every other prompt in
 this package.
 
-# See README: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
+# See docs: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
 """
 
 from __future__ import annotations

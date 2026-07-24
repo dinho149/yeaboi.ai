@@ -9,7 +9,7 @@ the team shipped and why it matters, not ticket mechanics. The completed-ticket
 list is framed as UNTRUSTED DATA so a stray "ignore your instructions" line in a
 ticket title can't hijack the report.
 
-# See README: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
+# See docs: "Prompt Construction" — ARC framework, chain-of-thought, JSON output
 """
 
 from __future__ import annotations

@@ -11,8 +11,8 @@ already literal-replaced the known company terms (Jira project key, team/org nam
 etc.) in a deterministic seed pass; this call generalizes the masking to catch the
 PII the seed list can't know (people's names, other project names, internal tools).
 
-# See README: "Prompt Construction" — ARC framework, JSON output
-# See README: "Guardrails" — output guardrails (untrusted-data framing)
+# See docs: "Prompt Construction" — ARC framework, JSON output
+# See docs: "Guardrails" — output guardrails (untrusted-data framing)
 """
 
 from __future__ import annotations

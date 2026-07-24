@@ -1,6 +1,6 @@
 """Shared UI constants and reusable components for the TUI screens.
 
-# See README: "Architecture" — shared UI component layer.
+# See docs: "Architecture" — shared UI component layer.
 # Provides Theme dataclass, action buttons, scrollbar, progress dots,
 # viewport helpers, and popup builder — used across all TUI screens
 # for visual consistency. Think of these as React-like primitives.
@@ -232,7 +232,7 @@ def build_reveal_subtitle(
 def planning_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Planning ASCII title (brand blue). Optionally shimmering.
 
-    # See README: "Architecture" — the "Planning" header is pinned at the
+    # See docs: "Architecture" — the "Planning" header is pinned at the
     # top of every screen in the planning flow.
 
     Pass ``width`` (the panel width) so wide wordmarks can use the tall ANSI

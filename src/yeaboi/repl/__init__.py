@@ -106,7 +106,7 @@ Type a project description or question to get started.\
 # ---------------------------------------------------------------------------
 # Rate-limit retry with exponential backoff
 # ---------------------------------------------------------------------------
-# See README: "Guardrails" — graceful degradation on API errors
+# See docs: "Guardrails" — graceful degradation on API errors
 #
 # When the Anthropic API returns a 429 (rate limit), we retry up to 3 times
 # with exponential backoff (5s → 10s → 20s) and show a live countdown so
@@ -149,7 +149,7 @@ def _handle_rate_limit(console: Console, graph, invoke_state: dict) -> dict | No
 def _display_tool_activity(console: Console, old_messages: list, new_messages: list) -> None:
     """Show a dim summary of tool calls that ran during a graph invocation.
 
-    # See README: "Guardrails" — tool layer transparency
+    # See docs: "Guardrails" — tool layer transparency
     # Scans for ToolMessages that appeared in new_messages but not in old_messages.
     # Displays tool name + a brief status so the user can see what the agent did.
     """
@@ -204,7 +204,7 @@ def run_repl(
         resume_state: Pre-loaded graph state from a saved session (--resume).
             When provided, skips the intake mode menu and conversational opener,
             and picks up from where the previous session left off.
-            # See README: "Memory & State" — session persistence, --resume
+            # See docs: "Memory & State" — session persistence, --resume
         resume_session_id: Session ID of the session being resumed. Used so
             subsequent save_state() calls update the same row.
         non_interactive: When True, skip all interactive prompts. The
@@ -226,7 +226,7 @@ def run_repl(
     # Phase 8A/8B: session persistence — db sits alongside the history file so
     # the existing HISTORY_DIR monkeypatch in tests automatically redirects
     # the db to tmp_path, keeping tests isolated from ~/.scrum-agent/.
-    # See README: "Memory & State" — session persistence
+    # See docs: "Memory & State" — session persistence
     from yeaboi.paths import get_db_path
 
     _session_id = resume_session_id or make_session_id()
@@ -243,7 +243,7 @@ def run_repl(
 
     # Phase 8C: auto-prune old sessions at startup to prevent unbounded growth.
     # Configurable via SESSION_PRUNE_DAYS env var (default 30, 0=disabled).
-    # See README: "Memory & State" — session persistence
+    # See docs: "Memory & State" — session persistence
     _prune_days = get_session_prune_days()
     if _prune_days > 0:
         try:
@@ -261,7 +261,7 @@ def run_repl(
     _session_has_data: bool = resume_state is not None
     _project_name_recorded: bool = False
 
-    # See README: "Architecture" — REPL-side UI layer
+    # See docs: "Architecture" — REPL-side UI layer
     # bottom_toolbar uses a callable closure so the toolbar re-reads the
     # mutable graph_state dict on each prompt repaint. Python closures
     # capture variables by reference, so reassignment at line ~1460
@@ -272,7 +272,7 @@ def run_repl(
         bottom_toolbar=lambda: _build_toolbar(graph_state),
     )
 
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     # Compile the graph once outside the loop for efficiency. create_graph()
     # validates the topology and returns a CompiledStateGraph; doing this once
     # avoids re-compiling on every user message.
@@ -280,7 +280,7 @@ def run_repl(
     graph = create_graph()
     logger.info("Graph compiled for REPL session")
 
-    # See README: "Memory & State" — stateless invocation requires manual history
+    # See docs: "Memory & State" — stateless invocation requires manual history
     # Without a checkpointer (Phase 7), we must manually pass all prior messages
     # AND questionnaire state on each invocation. We track the full graph state
     # dict (not just messages) so that questionnaire progress persists across
@@ -308,7 +308,7 @@ def run_repl(
     # conversational opener entirely. The existing route_entry conditional
     # router handles the routing — if state has epics but no stories, the
     # next graph.invoke() routes to story_writer automatically.
-    # See README: "Memory & State" — session persistence, --resume
+    # See docs: "Memory & State" — session persistence, --resume
     if resume_state is not None:
         logger.info("Resuming session: id=%s", resume_session_id)
         graph_state = resume_state
@@ -356,7 +356,7 @@ def run_repl(
 
     # If a pre-populated questionnaire was provided (via --questionnaire flag),
     # show the intake summary immediately so the user can confirm or edit.
-    # See README: "Project Intake Questionnaire" — offline workflow
+    # See docs: "Project Intake Questionnaire" — offline workflow
     elif questionnaire is not None:
         questionnaire.intake_mode = intake_mode or "smart"
         summary = _build_intake_summary(questionnaire)
@@ -557,7 +557,7 @@ def run_repl(
             continue
 
         # ── Input guardrails ──────────────────────────────────────────
-        # See README: "Guardrails" — three lines of defence (Input layer)
+        # See docs: "Guardrails" — three lines of defence (Input layer)
         # Skip validation for short commands (exit, help, slash commands)
         # which can't trigger guardrails anyway.
         # Also skip when the user is answering a follow-up probe with
@@ -600,7 +600,7 @@ def run_repl(
         # Reuses the same _store that's already open for this REPL session.
         # Lazy-imports _build_sessions_table from cli to avoid a circular
         # import (cli imports run_repl from this module).
-        # See README: "Memory & State" — session persistence
+        # See docs: "Memory & State" — session persistence
         if stripped.lower() == "/resume":
             from yeaboi.cli import _build_sessions_table
 
@@ -794,7 +794,7 @@ def run_repl(
                 continue
 
         # ── Review / intake confirmation checkpoint intercept ──────────
-        # See README: "Guardrails" — human-in-the-loop pattern
+        # See docs: "Guardrails" — human-in-the-loop pattern
         #
         # When pending_review is set, the REPL intercepts the user's input
         # for the [Accept / Edit / Reject / Export] flow before invoking the
@@ -813,7 +813,7 @@ def run_repl(
 
             if pending_node == "project_intake":
                 # ── Intake confirmation gate ────────────────────────────
-                # See README: "Project Intake Questionnaire" — confirmation gate
+                # See docs: "Project Intake Questionnaire" — confirmation gate
                 #
                 # _awaiting_edit_q_num: user picked [2] Edit last turn and we
                 # showed "Which question?". Normalize the bare number to Q<N>
@@ -954,7 +954,7 @@ def run_repl(
         # When capacity_override_target is negative (< -1), the sprint_planner
         # detected that total story points exceed the user's sprint target.
         # The user picks: [1] Accept recommended target, [2] Keep original.
-        # See README: "Guardrails" — human-in-the-loop pattern
+        # See docs: "Guardrails" — human-in-the-loop pattern
         _cap_sel = graph_state.get("capacity_override_target", 0)
         if _cap_sel < -1:
             _recommended = abs(_cap_sel)
@@ -1066,7 +1066,7 @@ def run_repl(
         if _confirm_msg:
             console.print(f"\n{AI_LABEL} {_confirm_msg}")
 
-        # See README: "The ReAct Loop" — Thought → Action → Observation
+        # See docs: "The ReAct Loop" — Thought → Action → Observation
         # Wrap the user's input as a HumanMessage (LangChain's representation
         # of a user turn) and pass the full state (messages + questionnaire)
         # to the graph. The graph returns updated state with the AI's response.
@@ -1163,7 +1163,7 @@ def run_repl(
                     console.bell()
 
             # Show tool activity — dim summary of any tools the agent called.
-            # See README: "Guardrails" — tool layer transparency
+            # See docs: "Guardrails" — tool layer transparency
             _display_tool_activity(console, invoke_state.get("messages", []), result.get("messages", []))
 
             # Detect phase transitions — show a styled divider when the
@@ -1215,7 +1215,7 @@ def run_repl(
                     _render_artifacts(console, result, compact=compact_mode)
 
                     # Run output guardrails on generated artifacts.
-                    # See README: "Guardrails" — output layer (programmatic checks)
+                    # See docs: "Guardrails" — output layer (programmatic checks)
                     _out_warnings = validate_output(
                         stories=result.get("stories"),
                         sprints=result.get("sprints"),
@@ -1278,7 +1278,7 @@ def run_repl(
             # so --resume can pick up from where the user left off. The session
             # row is created eagerly (on first invoke) so partial questionnaire
             # sessions are also resumable. Project name is set once known.
-            # See README: "Memory & State" — session persistence
+            # See docs: "Memory & State" — session persistence
             _session_has_data = True
             try:
                 if not _session_created:

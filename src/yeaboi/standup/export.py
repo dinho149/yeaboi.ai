@@ -10,8 +10,8 @@ The HTML reuses the plan report's stylesheet (``html_exporter._CSS``) so standup
 pages look consistent with the rest of the app, plus a small supplementary style
 for the confidence badge and notices.
 
-# See README: "Export Formats" — Markdown, HTML
-# See README: "Daily Standup" — exports
+# See docs: "Export Formats" — Markdown, HTML
+# See docs: "Daily Standup" — exports
 """
 
 from __future__ import annotations

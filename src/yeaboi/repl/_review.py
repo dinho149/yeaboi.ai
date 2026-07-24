@@ -6,7 +6,7 @@ from yeaboi.agent.state import ReviewDecision
 
 logger = logging.getLogger(__name__)
 
-# See README: "Guardrails" — human-in-the-loop pattern
+# See docs: "Guardrails" — human-in-the-loop pattern
 #
 # After each generation node (feature_generator, story_writer, task_decomposer,
 # sprint_planner), the REPL intercepts the next user input for the
@@ -51,7 +51,7 @@ _REVIEW_MENU_ORDER: tuple[str, ...] = ("accept", "edit", "export")
 def _clear_downstream_artifacts(graph_state: dict, node_name: str) -> None:
     """Clear artifacts from all nodes downstream of (and including) the given node.
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # When the user rejects features, stories/tasks/sprints derived from those
     # features are stale and must be cleared. This function clears the artifact

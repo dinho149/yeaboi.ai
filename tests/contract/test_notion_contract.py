@@ -5,7 +5,7 @@ responses. They verify that our tool functions correctly parse the response shap
 — catching SDK upgrades, schema changes, and block→text regressions without
 requiring live Notion credentials. Mirrors test_confluence_contract.py.
 
-# See README: "Testing — Contract Tests" for background on VCR.py replay.
+# See docs: "Testing — Contract Tests" for background on VCR.py replay.
 
 Each test is marked with @pytest.mark.vcr so pytest-recording loads the matching
 cassette from tests/contract/cassettes/test_notion_contract/.

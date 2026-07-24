@@ -1,4 +1,4 @@
-# See README: "Architecture" — shared UI utilities re-exported for convenience.
+# See docs: "Architecture" — shared UI utilities re-exported for convenience.
 # Internal modules can also import directly from the submodule files.
 
 from yeaboi.ui.shared._animations import (  # noqa: F401

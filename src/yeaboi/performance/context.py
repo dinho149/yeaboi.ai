@@ -11,8 +11,8 @@ Only lightweight, already-summarised signals are surfaced (open actions + review
 strengths/growth areas) — never raw transcripts — so nothing sensitive leaks into
 a planning prompt.
 
-# See README: "Session Management" — SQLite persistence
-# See README: "Prompt Construction" — ARC framework (optional context sections)
+# See docs: "Session Management" — SQLite persistence
+# See docs: "Prompt Construction" — ARC framework (optional context sections)
 """
 
 from __future__ import annotations

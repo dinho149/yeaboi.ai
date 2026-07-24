@@ -13,8 +13,8 @@ Model:
   At risk / Behind. A dead-quiet sprint (no recent activity past day 1) is
   nudged down because silence usually means stalled work.
 
-# See README: "Daily Standup" — sprint-day & confidence
-# See README: "Scrum Standards" — capacity planning, velocity
+# See docs: "Daily Standup" — sprint-day & confidence
+# See docs: "Scrum Standards" — capacity planning, velocity
 """
 
 from __future__ import annotations

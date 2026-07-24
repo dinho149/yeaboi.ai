@@ -10,7 +10,7 @@ store class opening its own connection to the same DB, autocommit mode, context
 manager support, idempotent CREATE-IF-NOT-EXISTS schema. The schema constant is
 also referenced by sessions.py's v6 migration so an existing DB gets the tables.
 
-# See README: "Session Management" — SQLite persistence, schema versioning
+# See docs: "Session Management" — SQLite persistence, schema versioning
 """
 
 from __future__ import annotations
@@ -160,7 +160,7 @@ class StandupStore:
     tables. Follows the same patterns: autocommit mode, context-manager support,
     explicit close.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
 
     def __init__(self, db_path: Path) -> None:

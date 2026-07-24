@@ -1,7 +1,7 @@
 """Team learning tools — analyse historical sprint data and compare plans to actuals.
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
-# See README: "Scrum Standards" — team learning, self-calibrating estimates
+# See docs: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Scrum Standards" — team learning, self-calibrating estimates
 #
 # These tools connect to Jira or Azure DevOps to pull historical sprint data,
 # compute team calibration metrics, and compare generated plans against actual
@@ -50,7 +50,7 @@ def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
 
     Every caller of this wrapper parses the response as JSON, so it routes
     through invoke_json — JSON mode on Ollama plus a one-shot repair re-ask.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     """
     from yeaboi.agent.llm import invoke_json
 
@@ -2084,7 +2084,7 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
     ex = examples or {}
     digest = _build_narrative_digest(profile, ex)
 
-    # See README: "Prompt Construction" — ARC framework: Ask (coach the lead),
+    # See docs: "Prompt Construction" — ARC framework: Ask (coach the lead),
     # Requirements (categories, item shape, evidence), Context (metrics digest).
     prompt = (
         "You are an experienced agile coach. A team's sprint history was analysed; "
@@ -4640,7 +4640,7 @@ def analyze_team_history(
     source: "jira" or "azdevops". Auto-detected if only one is configured.
     sprint_count: Number of closed sprints to analyse (default 8, range 3-12).
     """
-    # See README: "Tools" — tool types, risk levels
+    # See docs: "Tools" — tool types, risk levels
     logger.debug(
         "analyze_team_history called: project_key=%r, source=%r, sprint_count=%d", project_key, source, sprint_count
     )
@@ -6347,7 +6347,7 @@ def compare_plan_to_actuals(
     source: "jira" or "azdevops". Auto-detected if only one is configured.
     project_key: Jira project key or AzDO project name.
     """
-    # See README: "Tools" — tool types, risk levels
+    # See docs: "Tools" — tool types, risk levels
     logger.debug("compare_plan_to_actuals called: session_id=%r, source=%r", session_id, source)
     from pathlib import Path
 

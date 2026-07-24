@@ -12,7 +12,7 @@ autocommit mode, context-manager support, idempotent CREATE-IF-NOT-EXISTS schema
 The ``_PERFORMANCE_SCHEMA`` constant is also referenced by sessions.py's v8
 migration so an existing DB gets the tables.
 
-# See README: "Session Management" — SQLite persistence, schema versioning
+# See docs: "Session Management" — SQLite persistence, schema versioning
 """
 
 from __future__ import annotations
@@ -138,7 +138,7 @@ class PerformanceStore:
     performance tables. Follows the same patterns as StandupStore / RetroStore:
     autocommit mode, context-manager support, explicit close.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
 
     def __init__(self, db_path: Path) -> None:

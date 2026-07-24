@@ -1,7 +1,7 @@
 """Prompt template for the project_analyzer node.
 
-# See README: "Prompt Construction" — ARC framework
-# See README: "Scrum Standards" — project analysis
+# See docs: "Prompt Construction" — ARC framework
+# See docs: "Scrum Standards" — project analysis
 #
 # The analyzer prompt takes the confirmed 30 Q&A pairs and asks the LLM to
 # extract a structured ProjectAnalysis JSON object. This is a single LLM call
@@ -66,7 +66,7 @@ def get_analyzer_prompt(
 ) -> str:
     """Build the analyzer prompt with injected Q&A pairs and team metrics.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     #
     # The prompt uses the ARC pattern:
     # - Actor: "You are a project analyst"

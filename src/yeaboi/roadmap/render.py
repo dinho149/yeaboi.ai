@@ -5,7 +5,7 @@ builder styles the cursor row itself), so this module renders the per-project
 body lines plus the summary/notices blocks as plain text — one source of truth
 for the layout (mirrors reporting/render.py).
 
-# See README: "Roadmap Intake" — TUI page
+# See docs: "Roadmap Intake" — TUI page
 """
 
 from __future__ import annotations

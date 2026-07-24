@@ -4,7 +4,7 @@ Plaintext is used by Slack/email/desktop delivery; the Rich form is used by the
 terminal delivery channel and the TUI standup page. Keeping both here means the
 report looks consistent everywhere and no surface re-implements the layout.
 
-# See README: "Daily Standup" — delivery, TUI page
+# See docs: "Daily Standup" — delivery, TUI page
 """
 
 from __future__ import annotations

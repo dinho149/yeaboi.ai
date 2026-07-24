@@ -10,7 +10,7 @@ from yeaboi.prompts.intake import INTAKE_QUESTIONS, QUESTION_METADATA, is_choice
 
 logger = logging.getLogger(__name__)
 
-# See README: "Scrum Standards" — questionnaire phases
+# See docs: "Scrum Standards" — questionnaire phases
 # UI-only hint shown below each intake question so users know they can skip.
 SKIP_HINT = "[hint](type 'skip' or 'I don't know' to skip this question)[/hint]"
 
@@ -56,11 +56,11 @@ def _warm_confirm(text: str) -> str:
 
 
 # Shown when the user is re-answering a question via the edit flow.
-# See README: "Project Intake Questionnaire" — edit flow
+# See docs: "Project Intake Questionnaire" — edit flow
 EDIT_HINT = "[hint](enter your new answer, or type 'skip' to keep the current one)[/hint]"
 
 # Shown below dynamic follow-up choices so the user knows they can type freely.
-# See README: "Project Intake Questionnaire" — follow-up probing
+# See docs: "Project Intake Questionnaire" — follow-up probing
 FOLLOW_UP_CHOICE_HINT = "[hint](pick a number, or type your own answer)[/hint]"
 
 # Hint shown below sprint selection options.
@@ -112,7 +112,7 @@ def _split_intake_preamble(content: str) -> tuple[list[str], str]:
 def _render_choice_options(console: Console, q_num: int, *, option_labels: tuple[str, ...] | None = None) -> None:
     """Render a numbered option menu for a single-choice question.
 
-    # See README: "Project Intake Questionnaire" — selection menus
+    # See docs: "Project Intake Questionnaire" — selection menus
     #
     # Shows options like:  [1] Greenfield  [2] Existing codebase  [3] Hybrid
     # The default option (if any) gets a *(default)* suffix.
@@ -169,7 +169,7 @@ def _resolve_choice_input(user_input: str, q_num: int) -> str:
 def _render_dynamic_choices(console: Console, choices: tuple[str, ...]) -> None:
     """Render LLM-generated follow-up choices as a numbered menu.
 
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     #
     # When a vague answer triggers a follow-up probe, the LLM provides 2-4
     # contextual options. This renders them identically to static choice menus
@@ -330,7 +330,7 @@ def _render_questionnaire_ui(console: Console, questionnaire: QuestionnaireState
 
     # Show dynamic choices — follow-up probes or node-generated options (e.g. Q27 sprint selection).
     # The user picks a number or types freely.
-    # See README: "Project Intake Questionnaire" — follow-up probing
+    # See docs: "Project Intake Questionnaire" — follow-up probing
     follow_up_choices = questionnaire._follow_up_choices.get(current_q)
     if follow_up_choices:
         _render_dynamic_choices(console, follow_up_choices)

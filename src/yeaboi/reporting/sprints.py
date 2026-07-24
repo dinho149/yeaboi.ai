@@ -11,7 +11,7 @@ confirm which sprints make up a quarter:
 
 ``SprintRef`` is internal-only (never persisted), so this adds no schema change.
 
-# See README: "Reporting Mode" — quarter report
+# See docs: "Reporting Mode" — quarter report
 """
 
 from __future__ import annotations

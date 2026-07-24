@@ -67,19 +67,19 @@ When driving multiple features at once, work as an **orchestrator**: one main se
 
 This is the developer's first AI agent. These are NOT optional — follow them on every implementation task.
 
-1. **ALWAYS add `# See README: <section name>` comments** when introducing a LangGraph or LangChain concept for the first time in a file. Cross-reference the relevant README section so the developer can look up the theory.
+1. **ALWAYS add `# See docs: <section name>` comments** when introducing a LangGraph or LangChain concept for the first time in a file. Cross-reference the relevant page at https://yeaboi.ai/docs/ (or the local `docs/docs/` source) so the developer can look up the theory.
 2. **ALWAYS explain LangGraph/LangChain concepts in code comments** on first use — what a reducer does, why `add_messages` exists, what `StateGraph` expects, what `bind_tools` does, etc. Do NOT assume familiarity with these frameworks.
 3. **ALWAYS explain architectural decisions** in your response — when choosing between approaches, state the trade-offs and why this approach was chosen.
 
-Key README sections to reference:
-- "Architecture" — four layers, three design principles, agent graph, TUI system
-- "The ReAct Loop" — Thought → Action → Observation pattern
-- "Agentic Blueprint Reference" — core graph setup, two core nodes, wiring, tools, memory, streaming
-- "Prompt Construction" — ARC framework, few-shot, chain-of-thought, flipped prompt
-- "Session Management" — SQLite persistence, --resume, session IDs
-- "Guardrails" — input guardrails (4 layers), output guardrails (4 layers), human-in-the-loop
-- "Tools" — 30 tools, tool types, risk levels
-- "Scrum Standards" — story format, acceptance criteria, story points, DoD, discipline tagging
+Key docs sections to reference:
+- "Architecture" (`architecture.html`) — four layers, three design principles, agent graph, TUI system
+- "The ReAct Loop" (`architecture.html`) — Thought → Action → Observation pattern
+- "Agentic Blueprint Reference" (`architecture.html`) — core graph setup, two core nodes, wiring, tools, memory, streaming
+- "Prompt Construction" (`architecture.html`) — ARC framework, few-shot, chain-of-thought, flipped prompt
+- "Session Management" (`session-management.html`) — SQLite persistence, --resume, session IDs
+- "Guardrails" (`architecture.html`) — input guardrails (4 layers), output guardrails (4 layers), human-in-the-loop
+- "Tools" (`tools.html`) — 35 tools, tool types, risk levels
+- "Scrum Standards" (`scrum-standards.html`) — story format, acceptance criteria, story points, DoD, discipline tagging
 
 ## REQUIRED: Verification
 

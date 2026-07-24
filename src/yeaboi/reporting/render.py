@@ -5,7 +5,7 @@ form is available for any console surface. Keeping both here means the report lo
 consistent everywhere and no surface re-implements the layout (mirrors
 performance/render.py).
 
-# See README: "Reporting Mode" — TUI page
+# See docs: "Reporting Mode" — TUI page
 """
 
 from __future__ import annotations

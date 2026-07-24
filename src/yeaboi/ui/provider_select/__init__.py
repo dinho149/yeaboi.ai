@@ -1,6 +1,6 @@
 """Full-screen provider selection screen using Rich Live + raw terminal input.
 
-# See README: "Architecture" — this is a UI component in the CLI layer.
+# See docs: "Architecture" — this is a UI component in the CLI layer.
 # It uses Rich's Live display to redraw the full screen on each keypress,
 # and reads raw keypresses via sys.stdin in cbreak/raw mode.
 

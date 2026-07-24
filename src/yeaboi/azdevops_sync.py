@@ -1,6 +1,6 @@
 """Batch Azure DevOps creation with idempotency, progress callbacks, and error accumulation.
 
-# See README: "Tools" — tool types, write tools, human-in-the-loop pattern
+# See docs: "Tools" — tool types, write tools, human-in-the-loop pattern
 #
 # This module orchestrates creating Azure DevOps resources (Epic, User Stories,
 # Tasks, Iterations) from the scrum agent's generated artifacts. It is called by

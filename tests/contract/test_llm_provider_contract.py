@@ -9,7 +9,7 @@ must handle all variants.
 Also tests the off-topic classifier with each provider's cheap model and
 provider-specific error types (401, 429, 529).
 
-# See README: "Testing — Contract Tests" for background.
+# See docs: "Testing — Contract Tests" for background.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 """TUI-specific artifact renderers for the pipeline review screen.
 
-# See README: "Architecture" — these renderers produce clean text-block layouts
+# See docs: "Architecture" — these renderers produce clean text-block layouts
 # for the scrollable viewport, as opposed to the REPL formatters which use
 # Rich Tables and Panels with borders.
 """
@@ -718,7 +718,7 @@ def _render_tui_sprint_plan(
 
     # Build per-sprint capacity lookup (0-based index → capacity dict).
     # Each dict has: sprint_index, bank_holiday_days, bank_holiday_names, net_velocity.
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     cap_by_idx: dict[int, dict] = {}
     if sprint_capacities:
         for sc in sprint_capacities:

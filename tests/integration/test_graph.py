@@ -271,7 +271,7 @@ class TestCreateGraphImports:
 # ── Feature generation scenario tests ─────────────────────────────────
 # These tests validate the full pipeline with a realistic scenario:
 # project description → system prompt injection → LLM → structured feature output.
-# See README: "The ReAct Loop" — this tests the Thought step with realistic content.
+# See docs: "The ReAct Loop" — this tests the Thought step with realistic content.
 
 
 def _dummy_analysis() -> ProjectAnalysis:
@@ -485,7 +485,7 @@ class TestMultiTurnFeatureConversation:
 
         # Turn 2: user answers, providing accumulated history + new message
         # Without a checkpointer, we must pass the full conversation manually.
-        # See README: "Memory & State" — stateless invocation requires manual history.
+        # See docs: "Memory & State" — stateless invocation requires manual history.
         user_followup = HumanMessage(content="About 100 users initially. No WebSockets needed. Use OAuth with Google.")
         accumulated = [*turn1["messages"], user_followup]
 

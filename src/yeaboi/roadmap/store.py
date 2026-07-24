@@ -16,7 +16,7 @@ mode, context-manager support, idempotent CREATE-IF-NOT-EXISTS schema. The
 ``_ROADMAP_SCHEMA`` constant is also referenced by sessions.py's v10/v11
 migrations so an existing DB gets the tables.
 
-# See README: "Session Management" — SQLite persistence, schema versioning
+# See docs: "Session Management" — SQLite persistence, schema versioning
 """
 
 from __future__ import annotations
@@ -155,7 +155,7 @@ class RoadmapStore:
     ``roadmap_config`` / ``roadmap_history`` tables. Follows the same patterns
     as ReportingStore: autocommit mode, context-manager support, explicit close.
 
-    # See README: "Session Management" — SQLite persistence
+    # See docs: "Session Management" — SQLite persistence
     """
 
     def __init__(self, db_path: Path) -> None:

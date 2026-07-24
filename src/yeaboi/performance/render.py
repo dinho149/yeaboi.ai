@@ -4,7 +4,7 @@ Plaintext is used by the email delivery; the Rich form is used by the TUI
 Performance page. Keeping both here means the artifacts look consistent everywhere
 and no surface re-implements the layout (mirrors standup/render.py).
 
-# See README: "Daily Standup" — delivery, TUI page
+# See docs: "Daily Standup" — delivery, TUI page
 """
 
 from __future__ import annotations

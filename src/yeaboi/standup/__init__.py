@@ -6,7 +6,7 @@ plus a confidence score, and delivers a summary to configured channels. It can
 run headlessly on an OS schedule (launchd/cron) so it fires even when the main
 app is closed.
 
-# See README: "Daily Standup" — engine, collector, confidence, delivery, scheduling
+# See docs: "Daily Standup" — engine, collector, confidence, delivery, scheduling
 
 Public API is re-exported here so callers can do
 ``from yeaboi.standup import run_standup`` without knowing the module layout.

@@ -1,6 +1,6 @@
 """Jira Cloud tools — 1 read-only + 3 write (with user-confirmation guard in docstrings).
 
-# See README: "Tools" — tool types, @tool decorator, risk levels
+# See docs: "Tools" — tool types, @tool decorator, risk levels
 #
 # Why jira (PyJira) instead of raw requests?
 # PyJira wraps the REST API with typed objects and raises structured JIRAError
@@ -13,7 +13,7 @@
 # Write tools carry a "only call after user confirms" note in their docstrings.
 # The agent's ReAct loop reads these docstrings via bind_tools, so the agent
 # knows to ask the user for confirmation before invoking any write operation.
-# See README: "Guardrails" — human-in-the-loop pattern
+# See docs: "Guardrails" — human-in-the-loop pattern
 """
 
 import json
@@ -124,7 +124,7 @@ def create_subtask(
     issue_type_name defaults to "Sub-task" but can be overridden for
     projects that use "Subtask" or other names (discovered at runtime).
 
-    # See README: "Tools" — tool types, write tools
+    # See docs: "Tools" — tool types, write tools
     """
     key = project_key.strip() or (get_jira_project_key() or "")
     fields: dict = {
@@ -147,7 +147,7 @@ def add_issues_to_sprint(jira: JIRA, sprint_id: int, issue_keys: list[str]) -> N
     Calls the Jira Agile REST API to assign existing issues to a sprint.
     Used by the batch sync module to populate sprints after creation.
 
-    # See README: "Tools" — tool types, write tools
+    # See docs: "Tools" — tool types, write tools
     """
     if not issue_keys:
         return
@@ -164,7 +164,7 @@ def jira_read_board(project_key: str = "") -> str:
     formatted summary with board name, active sprint, backlog count, and
     average velocity from the last 3 closed sprints.
     """
-    # See README: "The ReAct Loop" — this is the Action step; the result is the Observation
+    # See docs: "The ReAct Loop" — this is the Action step; the result is the Observation
     logger.debug("jira_read_board called with project_key=%r", project_key)
     jira = _make_jira_client()
     if jira is None:
@@ -444,7 +444,7 @@ def jira_fetch_velocity(project_key: str = "") -> str:
     Returns a JSON string with keys: team_velocity, jira_team_size, per_dev_velocity.
     Returns an error string starting with "Error:" on failure.
 
-    # See README: "Scrum Standards" — capacity planning
+    # See docs: "Scrum Standards" — capacity planning
     #
     # The whole-team velocity from Jira must be normalised to per-developer
     # because the feature team may be a subset of the full Jira team.
@@ -607,7 +607,7 @@ def jira_fetch_active_sprint(project_key: str = "") -> str:
     Returns a JSON string with keys: sprint_number, sprint_name.
     Returns an error string starting with "Error:" on failure.
 
-    # See README: "Scrum Standards" — sprint planning
+    # See docs: "Scrum Standards" — sprint planning
     """
     logger.debug("jira_fetch_active_sprint called with project_key=%r", project_key)
     jira = _make_jira_client()
@@ -666,7 +666,7 @@ def jira_fetch_active_sprint(project_key: str = "") -> str:
 # directly. It returns structured data (list of dicts) and degrades gracefully:
 # missing config or an API error yields [] plus a warning — a standup must never
 # crash because one source is unavailable.
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 
 
 def _raise_if_auth_error(e: JIRAError, source: str) -> None:

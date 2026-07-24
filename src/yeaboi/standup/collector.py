@@ -10,8 +10,8 @@ The per-source tool helpers are imported LAZILY inside each branch — their SDK
 installed, exactly like tools/__init__.py:get_tools(). A missing SDK degrades
 that one source to empty, same as a missing credential.
 
-# See README: "Daily Standup" — recent-activity collection
-# See README: "Tools" — lazy imports for optional integration SDKs
+# See docs: "Daily Standup" — recent-activity collection
+# See docs: "Tools" — lazy imports for optional integration SDKs
 """
 
 from __future__ import annotations

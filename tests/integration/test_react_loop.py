@@ -1,7 +1,7 @@
 """Integration tests for the ReAct (Reason + Act) loop in the agent graph.
 
-# See README: "The ReAct Loop" — Thought → Action → Observation pattern
-# See README: "Guardrails" — human-in-the-loop pattern (human_review node)
+# See docs: "The ReAct Loop" — Thought → Action → Observation pattern
+# See docs: "Guardrails" — human-in-the-loop pattern (human_review node)
 
 These tests cover the critical LLM → tool → LLM feedback loop that has no
 dedicated test elsewhere:
@@ -102,7 +102,7 @@ def _make_dummy_analysis() -> ProjectAnalysis:
 def _pipeline_complete_state() -> dict:
     """Return a ScrumState that passes all route_entry checks and routes to 'agent'.
 
-    # See README: "Architecture" — route_entry checks questionnaire → analysis →
+    # See docs: "Architecture" — route_entry checks questionnaire → analysis →
     # epics → stories → tasks → sprints in order. Only when ALL are populated
     # does it route to the 'agent' (ReAct) node.
     #
@@ -138,7 +138,7 @@ def _pipeline_complete_state() -> dict:
 def _make_llm_mock(*responses):
     """Return ``(mock_llm, bound)`` where ``bound.invoke()`` yields *responses* in order.
 
-    # See README: "Agentic Blueprint Reference" — bind_tools wires tools into the LLM
+    # See docs: "Agentic Blueprint Reference" — bind_tools wires tools into the LLM
     #
     # make_call_model() calls ``get_llm().bind_tools(tools)`` lazily on its first
     # invocation, then stores the result in a closure variable (_bound_llm).
@@ -161,7 +161,7 @@ def _make_llm_mock(*responses):
 def _tc(name: str, args: dict, call_id: str = "call_1") -> dict:
     """Build a ``tool_calls`` entry compatible with ``AIMessage.tool_calls``.
 
-    # See README: "The ReAct Loop" — tool_calls is the structured payload the
+    # See docs: "The ReAct Loop" — tool_calls is the structured payload the
     # LLM returns when it wants to invoke a tool. ToolNode reads ``name`` and
     # ``args`` to dispatch to the correct function and pass the right arguments.
     """
@@ -176,7 +176,7 @@ def _tc(name: str, args: dict, call_id: str = "call_1") -> dict:
 class TestReActSingleTool:
     """LLM requests one tool → ToolNode executes it → result fed back → final answer.
 
-    # See README: "The ReAct Loop" — Thought → Action → Observation
+    # See docs: "The ReAct Loop" — Thought → Action → Observation
     #
     # Simplest ReAct cycle:
     #   agent call 1: LLM returns AIMessage(tool_calls=[echo_tool])
@@ -229,7 +229,7 @@ class TestReActSingleTool:
 class TestReActMultipleTools:
     """LLM calls multiple tools — parallel (one response) and sequential (multi-turn).
 
-    # See README: "The ReAct Loop" — real agents often call multiple tools per run.
+    # See docs: "The ReAct Loop" — real agents often call multiple tools per run.
     #
     # Two patterns:
     # Parallel — one AIMessage carries two tool_calls; ToolNode executes both
@@ -294,7 +294,7 @@ class TestReActMultipleTools:
 class TestReActToolError:
     """Tool raises an error → ToolNode returns error ToolMessage → LLM responds gracefully.
 
-    # See README: "The ReAct Loop" — tool errors must not crash the graph.
+    # See docs: "The ReAct Loop" — tool errors must not crash the graph.
     #
     # ToolNode's default ``handle_tool_errors`` catches exceptions and converts
     # them to ToolMessages so the LLM can acknowledge the failure. Without this,
@@ -360,7 +360,7 @@ class TestReActToolError:
 class TestHumanReview:
     """High-risk write tools pause for user confirmation before executing.
 
-    # See README: "Guardrails" — human-in-the-loop pattern
+    # See docs: "Guardrails" — human-in-the-loop pattern
     #
     # should_continue routes to human_review when the LLM requests a tool
     # whose name is in _HIGH_RISK_TOOLS (jira_create_epic, confluence_create_page,

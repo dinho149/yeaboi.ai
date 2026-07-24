@@ -11,8 +11,8 @@ standup/collector.py and standup/sprint_context.py. Everything degrades to an
 empty roster on missing config / auth failure — the page then shows a clear
 "connect Jira or Azure DevOps" hint instead of crashing.
 
-# See README: "Daily Standup" — recent-activity collection
-# See README: "Tools" — Jira, Azure DevOps
+# See docs: "Daily Standup" — recent-activity collection
+# See docs: "Tools" — Jira, Azure DevOps
 """
 
 from __future__ import annotations

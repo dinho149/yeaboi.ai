@@ -1,6 +1,6 @@
 """Schema validation for contract test cassettes and LLM JSON outputs.
 
-# See README: "Testing — Contract Tests" for background on VCR.py cassettes.
+# See docs: "Testing — Contract Tests" for background on VCR.py cassettes.
 
 Why this file exists
 --------------------
@@ -175,7 +175,7 @@ _JIRA_ISSUE_DETAIL_SCHEMA = {
 class TestJiraCassetteSchemas:
     """Validate Jira cassette response bodies against expected API schemas.
 
-    # See README: "Testing — Contract Tests"
+    # See docs: "Testing — Contract Tests"
     #
     # Each cassette interaction is parsed and validated against the schema for
     # its endpoint. This catches silent API changes where a field is removed or
@@ -383,7 +383,7 @@ class TestGithubCassetteSchemas:
 # prompt builder in src/yeaboi/prompts/. Keeping them in sync ensures the
 # prompt documentation and the parse logic agree on the expected structure.
 #
-# See README: "Prompt Construction" — JSON schema in each prompt
+# See docs: "Prompt Construction" — JSON schema in each prompt
 
 _LLM_ANALYSIS_SCHEMA = {
     "project_name": str,
@@ -495,7 +495,7 @@ _CANONICAL_SPRINT = {
 class TestLlmOutputSchemas:
     """Validate that LLM JSON output matches the schemas defined in the prompt builders.
 
-    # See README: "Prompt Construction" — embedded JSON schema in each prompt
+    # See docs: "Prompt Construction" — embedded JSON schema in each prompt
     #
     # The prompt builders embed _JSON_SCHEMA strings that tell the LLM what
     # fields to return. These tests verify that canonical examples of those

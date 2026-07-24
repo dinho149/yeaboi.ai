@@ -1,6 +1,6 @@
 """Project list screen and project row composition.
 
-# See README: "Architecture" — this module composes project cards with
+# See docs: "Architecture" — this module composes project cards with
 # action buttons into rows, and builds the full project list screen
 # with viewport scrolling, delete popup overlay, team analysis section,
 # and "+ New Project" / "+ New Analysis" buttons.
@@ -61,7 +61,7 @@ def _build_project_row(
 ) -> Table:
     """Build a project card with optional Delete/Export buttons to its right.
 
-    # See README: "Architecture" — each project row is a horizontal grid:
+    # See docs: "Architecture" — each project row is a horizontal grid:
     # [project card] [Delete btn] [Export btn], all the same height.
     # Buttons only appear on the selected row and stagger in one by one.
     # When Export is activated, three sub-buttons [HTML] [Markdown] [Jira]

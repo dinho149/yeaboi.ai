@@ -30,7 +30,7 @@ warnings.filterwarnings("ignore", message="Core Pydantic V1 functionality", cate
 # never run.  _SilentHandler inherits the base Handler.handle() which calls
 # self.filter() before emit(), giving us the interception point we need.
 #
-# # See README: "Architecture" — the CLI layer manages all user-facing chrome,
+# # See docs: "Architecture" — the CLI layer manages all user-facing chrome,
 # # including suppressing third-party noise that would confuse the user.
 # ---------------------------------------------------------------------------
 

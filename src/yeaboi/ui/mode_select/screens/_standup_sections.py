@@ -19,7 +19,7 @@ the analysis module's height-aware packer. Cards may span more than one row
 (the summary teaser wraps to two); ``_StandupCtx.card_rows`` records each
 card's first row so the auto-scroll never assumes one row per card.
 
-# See README: "Daily Standup" — TUI page
+# See docs: "Daily Standup" — TUI page
 """
 
 from __future__ import annotations

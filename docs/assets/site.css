@@ -1,0 +1,430 @@
+/* ============================================================
+   yeaboi.ai — design system
+   Mirrors the yeaboi TUI: cool near-black, muted green accent,
+   quiet grays, mono details. Fraunces display serif for editorial
+   headlines, JetBrains Mono for everything terminal.
+   Nav is a fixed, vertically-centered, left-aligned rail with no
+   background — the same posture as the TUI's main menu.
+   ============================================================ */
+
+:root{
+  /* surfaces — cool near-black */
+  --bg:#0b0c0e;
+  --bg-raised:#111317;
+  --bg-raised-2:#15181d;
+  --bg-sunken:#08090a;
+  --bg-translucent:rgba(11,12,14,.82);
+
+  /* type */
+  --text:#e4e6e8;
+  --text-muted:#9aa0a8;
+  --text-dim:#62676f;
+
+  /* accent — the TUI's Planning-theme blue (rgb 110,140,220 / 140,170,255) */
+  --accent:#6e8cdc;
+  --accent-bright:#8caaff;
+  --accent-dim:rgba(110,140,220,.14);
+  --accent-glow:rgba(110,140,220,.5);
+
+  /* authentic TUI secondaries */
+  --success:#59c07e;      /* velocity / accept / done */
+  --warn:#dcab4a;         /* churn / section markers / notices */
+
+  /* per-mode hues (exact TUI theme accents) */
+  --m-planning:#6e8cdc;
+  --m-analysis:#64b464;
+  --m-standup:#c864b4;
+  --m-retro:#50bebe;
+  --m-performance:#dc6e5a;
+  --m-reporting:#8c78e6;
+
+  --border:rgba(228,230,232,.07);
+  --border-strong:rgba(228,230,232,.14);
+
+  --display:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+
+  --radius:8px;
+  --radius-lg:14px;
+  --maxw:1080px;
+  --rail:264px;   /* left nav rail width */
+
+  --shadow-card:0 1px 0 rgba(255,255,255,.03) inset, 0 20px 50px -24px rgba(0,0,0,.7);
+  --shadow-term:0 1px 0 rgba(255,255,255,.04) inset, 0 40px 90px -30px rgba(0,0,0,.85);
+}
+
+*{box-sizing:border-box}
+/* Dark bg on <html> too — kills the white flash between page loads.
+   Hide the global scrollbar (scrolling stays fully functional). */
+html{-webkit-text-size-adjust:100%; background:var(--bg); scrollbar-width:none; -ms-overflow-style:none}
+html::-webkit-scrollbar, body::-webkit-scrollbar{width:0; height:0; display:none}
+
+/* Cross-document page transitions fade the CONTENT (root) only — the rail is its
+   own transition group so it never fades on navigation (sidebar = motion, not fade). */
+.navbar{view-transition-name:rail}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:16px; line-height:1.65;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  padding-left:var(--rail);
+}
+
+/* Soft cross-document page transitions — a gentle crossfade instead of a hard
+   repaint when navigating between docs pages (Chrome/Edge/Safari TP). */
+@view-transition{ navigation:auto }
+/* content (root) crossfades... */
+::view-transition-old(root){ animation:vt-out .22s cubic-bezier(.4,0,.2,1) both }
+::view-transition-new(root){ animation:vt-in .34s cubic-bezier(.2,.6,.2,1) both }
+@keyframes vt-out{ to{opacity:0} }
+@keyframes vt-in{ from{opacity:0} to{opacity:1} }
+/* ...but the rail never fades — it cuts straight to its new state */
+::view-transition-old(rail){ animation:none; opacity:0 }
+::view-transition-new(rail){ animation:none }
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-old(root),::view-transition-new(root){ animation:none }
+}
+
+/* atmosphere: barely-there cool wash + film grain */
+body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(1100px 540px at 75% -10%, rgba(110,140,220,.06), transparent 60%),
+    radial-gradient(900px 620px at -8% 8%, rgba(140,170,255,.035), transparent 55%);
+}
+body::after{
+  content:""; position:fixed; inset:0; z-index:60; pointer-events:none; opacity:.045;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Grain-textured aura that slowly reveals as you scroll. A soft colour glow
+   rises from the bottom, masked by fine noise so it reads as granular rather
+   than a flat wash. Opacity + drift are driven by scroll position. */
+.scroll-aura{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:0;
+  background:
+    radial-gradient(135% 95% at 50% 116%, rgba(110,140,220,.44), transparent 60%),
+    radial-gradient(95% 75% at 80% 106%, rgba(140,170,255,.30), transparent 62%),
+    radial-gradient(80% 60% at 18% 110%, rgba(90,150,220,.22), transparent 60%),
+    linear-gradient(to top, rgba(110,140,220,.12), transparent 46%);
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+          mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  -webkit-mask-size:140px 140px; mask-size:140px 140px;
+  /* opacity + transform are driven by site.js from scroll progress */
+  will-change:opacity;
+}
+@media (prefers-reduced-motion:reduce){
+  .scroll-aura{opacity:.32; transform:none}
+}
+
+a{color:var(--accent); text-decoration:none}
+a:hover{color:var(--accent-bright)}
+::selection{background:rgba(110,140,220,.3)}
+code,pre,kbd{font-family:var(--mono)}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 40px; position:relative; z-index:1}
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0}
+
+/* ---- left nav rail (TUI posture: vertically centered, left aligned, no background) ---- */
+.navbar{
+  position:fixed; top:0; left:0; bottom:0; width:var(--rail); z-index:50;
+  display:flex; align-items:center;           /* vertical centering */
+  pointer-events:none;                         /* only the controls catch clicks */
+}
+.navbar::before{
+  /* thin accent edge anchoring the rail as its own zone — still no filled
+     background panel, just enough to read as a distinct nav strip. */
+  content:""; position:absolute; top:0; bottom:0; left:0; width:2px;
+  background:linear-gradient(180deg, transparent, var(--border-strong) 15%, var(--border-strong) 85%, transparent);
+}
+.rail{
+  display:flex; flex-direction:column; align-items:flex-start; gap:38px;
+  padding:0 22px 0 44px; margin:0; max-width:none; width:100%; pointer-events:auto;
+}
+.rail-nav{display:flex; flex-direction:column; align-items:flex-start; gap:0; width:100%}
+
+
+/* Brand + section toggle share ONE style: big, thick, tracked mono. */
+.rail .brand,
+.rail-toggle{
+  background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
+  display:inline-flex; align-items:center;
+  font-family:var(--mono); font-weight:800; font-size:2.35rem;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--text);
+  transition:color .25s ease;
+}
+.rail .brand:hover,
+.rail-toggle:hover{color:var(--accent-bright)}
+/* no ugly click box; keep a clean keyboard-only focus ring — a soft glow,
+   not a hard rectangle */
+.rail .brand:focus,
+.rail-toggle:focus{outline:none}
+.rail .brand:focus-visible,
+.rail-toggle:focus-visible{
+  outline:none; border-radius:7px;
+  box-shadow:0 0 0 3px rgba(110,140,220,.32);
+}
+.rail-toggle.active{color:var(--text)}
+.rail.expanded .rail-toggle{color:var(--accent-bright)}
+
+/* click feedback: a slow colour + opacity pulse (JS toggles .rail-pulse) */
+@keyframes rail-pulse{
+  0%{opacity:1}
+  45%{opacity:.4; color:var(--accent-bright)}
+  100%{opacity:1}
+}
+.rail-pulse{animation:rail-pulse 1s ease-in-out}
+@media (prefers-reduced-motion:reduce){ .rail-pulse{animation:none} }
+
+/* slide-up + fade: menu height animates (grid-rows), navbar re-centres so the
+   toggle rises; menu fades in beneath it. */
+/* Sidebar = MOTION ONLY: the menu opens by animating its height (clipped by the
+   grid), never by fading. */
+/* Closed state is enforced THREE independent ways at once (grid-rows AND
+   max-height AND visibility) — not just the fr-unit grid trick alone. That
+   trick depends on the browser freshly computing an intrinsic-size target,
+   which (as with the item-wraps earlier) can silently fail to apply in some
+   render paths; stacking hard, unambiguous fallbacks means the menu physically
+   cannot show content unless .expanded is genuinely present, regardless of
+   whether the grid computation itself behaves. */
+.rail-menu{
+  display:grid; grid-template-rows:0fr; width:100%; margin-top:0;
+  overflow:hidden; max-height:0; visibility:hidden; pointer-events:none;
+  transition:grid-template-rows .55s cubic-bezier(.2,.6,.2,1),
+             margin-top .55s cubic-bezier(.2,.6,.2,1),
+             max-height .55s cubic-bezier(.2,.6,.2,1),
+             visibility 0s .55s;
+}
+.rail.expanded .rail-menu{
+  grid-template-rows:1fr; margin-top:22px; max-height:80vh;
+  visibility:visible; pointer-events:auto; transition-delay:0s;
+}
+/* Search header is a FIXED block, structurally outside the scrolling list —
+   not position:sticky (a mask-image on an ancestor would still paint over a
+   sticky descendant, which was fading/clipping the search box).
+   Deliberately plain BLOCK layout, not flex: .rail-menu-inner's own height
+   already comes from an ancestor 0fr/1fr grid trick (see .rail-menu below);
+   stacking a flex column with a flex:1 auto child on TOP of that created a
+   circular indefinite-size situation where the child (and everything inside
+   it, including each item's own 0fr/1fr reveal) collapsed to zero. Giving
+   .nav-scroll its own EXPLICIT max-height sidesteps that entirely. */
+.rail-menu-inner{ max-height:66vh }
+.nav-scroll{
+  max-height:calc(66vh - 66px); min-height:0; overflow:hidden; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border-strong) transparent;
+  padding-right:6px; margin-right:-6px; /* scrollbar sits inside the panel, not on its edge */
+  /* fade both scroll edges only where there's more content — --ft/--fb set by JS */
+  --ft:0px; --fb:28px;
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
+          mask-image:linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
+}
+.nav-scroll::-webkit-scrollbar{width:4px}
+.nav-scroll::-webkit-scrollbar-thumb{background:var(--border-strong); border-radius:2px}
+
+/* Each top-level nav item reveals independently via its own height, staggered
+   by JS (transition-delay set per item). Motion only, no opacity.
+   Uses max-height (a generous fixed cap, not the 0fr/1fr grid-intrinsic-size
+   trick): that trick requires the browser to freshly measure each item's
+   natural content size at the exact moment the class toggles, and nesting it
+   two levels deep (outer .rail-menu + inner .item-wrap, with a scrolling
+   max-height region in between) turned out to reliably resolve to 0 whenever
+   triggered in the same tick as the unrelated #page-content swap elsewhere on
+   the page (a large outerHTML replacement interrupts that measurement) — even
+   though the exact same code worked fine on a plain direct page load. A fixed
+   max-height cap doesn't depend on that measurement at all, so it's immune. */
+.item-wrap{
+  max-height:0; overflow:hidden;
+  transition:max-height .34s cubic-bezier(.2,.6,.2,1);
+}
+.rail-menu-inner.items-open .item-wrap{max-height:340px} /* comfortably covers even "Overview" (~272px with all 6 children) */
+.item-inner{overflow:hidden; min-height:0}
+
+/* ---- shared docs-nav component (rail dropdown + docs-shell sidebar) ---- */
+/* Anchored: a plain fixed header above the scrolling list (see .nav-scroll
+   above) — not position:sticky, so nothing can ever paint through/behind it. */
+.nav-search-wrap{
+  flex:0 0 auto; padding-bottom:14px;
+}
+.nav-search{
+  width:100%; background:var(--bg-raised); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text); font-family:var(--sans);
+  font-size:.9rem; padding:9px 12px; transition:border-color .2s;
+}
+.nav-search::placeholder{color:var(--text-dim)}
+.nav-search:focus{outline:none; border-color:var(--accent)}
+.nav-group{margin:0 0 24px}
+.nav-group:last-child{margin-bottom:4px}
+.nav-group-label{
+  font-family:var(--mono); font-size:.74rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--text-dim); margin:0 0 10px; padding:0 4px; font-weight:500;
+}
+ul.nav-tree{list-style:none; margin:0; padding:0; font-size:1.02rem}
+ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--border); padding-left:8px; font-size:.98rem}
+.nav-tree li{margin:2px 0}
+.nav-tree a{
+  display:block; padding:7px 11px; border-radius:6px; color:var(--text); font-weight:500;
+  transition:color .15s, background .15s, backdrop-filter .15s; line-height:1.4;
+}
+.nav-tree ul.nav-tree a{color:var(--text-muted); font-weight:450}  /* nested: a touch softer */
+/* frosted glass: translucent white + blur, not a flat fill. isolation:isolate
+   scopes the blur to what's actually behind these links — without it, the
+   fixed full-page .scroll-aura glow (see site.css's .scroll-aura) bleeds
+   straight through and shows as a smeared colored haze once scrolled. */
+.nav-tree a:hover{
+  color:var(--text); text-decoration:none;
+  background:rgba(255,255,255,.07); isolation:isolate;
+  -webkit-backdrop-filter:blur(10px) saturate(1.4);
+          backdrop-filter:blur(10px) saturate(1.4);
+}
+.nav-tree a.current{
+  color:var(--accent-bright); font-weight:600;
+  background:rgba(255,255,255,.1); isolation:isolate;
+  -webkit-backdrop-filter:blur(10px) saturate(1.4);
+          backdrop-filter:blur(10px) saturate(1.4);
+  box-shadow:0 0 0 1px rgba(255,255,255,.08) inset;
+}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex; align-items:center; gap:9px; border-radius:var(--radius);
+  border:1px solid var(--border-strong); padding:11px 20px; font-size:.94rem; font-weight:600;
+  font-family:var(--sans); cursor:pointer; background:transparent; color:var(--text);
+  transition:border-color .2s, color .2s, background .2s, transform .2s;
+}
+.btn:hover{border-color:var(--accent); color:var(--accent-bright); transform:translateY(-1px)}
+.btn-primary{background:var(--text); color:var(--bg); border-color:var(--text)}
+.btn-primary:hover{background:var(--accent-bright); border-color:var(--accent-bright); color:var(--bg)}
+
+/* ---- cards ---- */
+.card{
+  background:rgba(255,255,255,.018); isolation:isolate;
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+  border:1px solid var(--border); border-radius:var(--radius-lg);
+  padding:24px 26px;
+}
+.badge{
+  display:inline-flex; align-items:center; gap:10px;
+  font-family:var(--mono); font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--text-muted); font-weight:500;
+  border:1px solid var(--border-strong);
+  border-radius:999px; padding:5px 14px;
+}
+.badge::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--success);
+  box-shadow:0 0 8px var(--success)}
+
+/* ---- terminal window chrome ---- */
+.term{
+  background:#0a0b0c; border:1px solid var(--border-strong); border-radius:var(--radius-lg);
+  overflow:hidden; box-shadow:var(--shadow-term);
+}
+.term-bar{
+  display:flex; align-items:center; gap:7px; padding:12px 16px;
+  background:linear-gradient(180deg,#15171b,#101215); border-bottom:1px solid var(--border);
+}
+.dot{width:11px;height:11px;border-radius:50%; background:var(--border-strong)}
+.app-bar .dot:nth-child(1){background:#ec6a5e}
+.app-bar .dot:nth-child(2){background:#f4bf4f}
+.app-bar .dot:nth-child(3){background:#61c554}
+.term-title{
+  margin:0 auto; transform:translateX(-20px);
+  font-family:var(--mono); font-size:.76rem; color:var(--text-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.term-body{padding:20px clamp(16px,3vw,26px) 24px; font-family:var(--mono); font-size:.83rem; line-height:1.75}
+
+/* ---- code blocks + copy button ---- */
+.codeblock{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:var(--bg-sunken); border:1px solid var(--border-strong); border-radius:var(--radius);
+  padding:13px 13px 13px 18px; font-family:var(--mono); font-size:.94rem;
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset;
+}
+.codeblock code{color:var(--text)}
+.codeblock code::before{content:"$ "; color:var(--accent)}
+.copy{
+  border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-muted);
+  font-family:var(--mono); font-size:.74rem; border-radius:6px; padding:7px 12px;
+  cursor:pointer; transition:.18s; white-space:nowrap;
+}
+.copy:hover{color:var(--text); border-color:var(--accent)}
+.copy.done{color:var(--bg); background:var(--accent); border-color:var(--accent)}
+
+/* ---- scroll-reveal: content side = pure FADE (no motion) ---- */
+[data-reveal]{opacity:0; transition:opacity .8s cubic-bezier(.2,.6,.2,1)}
+[data-reveal].is-visible{opacity:1}
+
+@media (prefers-reduced-motion:reduce){
+  [data-reveal]{opacity:1; transition:none}
+  body{animation:none}
+}
+
+/* ---- mobile: NOT the desktop sidebar in a row — a compact sticky top bar.
+   Small brand left, a bordered "docs" pill right, and the docs menu opening
+   as a full-width sheet UNDER the bar (absolute, overlaying content) instead
+   of the rail's giant type pushing the page around. ---- */
+@media (max-width:900px){
+  body{padding-left:0}
+  /* invisible at the top of the page — just the wordmark on the page bg;
+     the frosted band + hairline only appear once you scroll (site.js
+     toggles .scrolled), so the bar never reads as a stamped-on grey strip */
+  .navbar{
+    position:sticky; top:0; bottom:auto; width:auto; z-index:50;
+    display:block; pointer-events:auto;
+    background:transparent; border-bottom:1px solid transparent;
+    transition:background .3s ease, border-color .3s ease;
+  }
+  .navbar.scrolled{
+    background:var(--bg-translucent);
+    -webkit-backdrop-filter:blur(16px) saturate(1.3);
+            backdrop-filter:blur(16px) saturate(1.3);
+    border-bottom-color:var(--border);
+  }
+  /* sheet open: bar and sheet must read as ONE surface — same solid fill as
+     the sheet (no translucent frost against its opaque bg), no divider */
+  .navbar:has(.rail.expanded),
+  .navbar.scrolled:has(.rail.expanded){
+    background:var(--bg);
+    -webkit-backdrop-filter:none; backdrop-filter:none;
+    border-bottom-color:transparent;
+  }
+  /* ...and the page recedes behind it: blurred, dimmed, and inert (tapping
+     the blurred area closes the sheet — handled in site.js). Safe to filter
+     here: on mobile nothing inside #page-content is sticky/fixed. */
+  #page-content{transition:filter .3s ease}
+  body:has(.rail.expanded) #page-content{
+    filter:blur(10px) brightness(.55);
+    pointer-events:none;
+  }
+  .navbar::before{display:none}   /* the vertical accent edge is desktop-only */
+  /* .navbar .rail, not .rail — the element is `.wrap.rail`, and the generic
+     .wrap{padding:0 24px} later in this block would zero the vertical padding
+     at equal specificity */
+  .navbar .rail{
+    flex-direction:row; align-items:center; justify-content:space-between;
+    gap:16px; padding:20px 24px;
+  }
+  /* brand + toggle share one typographic voice (same as desktop) — the
+     toggle is just the smaller, quieter sibling, not a pill component */
+  .rail .brand{font-size:1.1rem; letter-spacing:.14em}
+  .rail-toggle{
+    font-size:.82rem; letter-spacing:.22em; color:var(--text-muted);
+    padding:6px 0; transition:color .2s;
+  }
+  .rail-toggle:hover{color:var(--text)}
+  .rail.expanded .rail-toggle{color:var(--accent-bright)}
+  .rail-nav{width:auto; position:static}
+  /* the menu becomes a full-bleed sheet anchored to the bar's bottom edge —
+     same 0fr/1fr open animation, but overlaying the page, not reflowing it.
+     SOLID background, no backdrop-filter: a blur here nests inside the bar's
+     own backdrop-filter, and Chrome's nested-backdrop compositing lets the
+     blurred page bleed through even a 97%-alpha fill (ghost text over the
+     menu). Solid is also simply correct for a full-bleed sheet. */
+  .rail-menu{
+    position:absolute; top:100%; left:0; right:0; width:auto;
+    background:var(--bg);
+    border-bottom:1px solid var(--border-strong);
+  }
+  .rail.expanded .rail-menu{margin-top:0}
+  .rail-menu-inner{max-height:none; padding:16px 20px 20px}
+  .nav-scroll{max-height:60vh}
+  .wrap{padding:0 24px}
+}

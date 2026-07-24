@@ -1,6 +1,6 @@
 """Validation and API verification for provider setup.
 
-# See README: "Architecture" — verification layer for the setup wizard.
+# See docs: "Architecture" — verification layer for the setup wizard.
 # Handles format validation of API keys and live verification via API calls.
 """
 

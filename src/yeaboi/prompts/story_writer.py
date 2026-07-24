@@ -1,7 +1,7 @@
 """Prompt template for the story_writer node.
 
-# See README: "Prompt Construction" — ARC framework
-# See README: "Scrum Standards" — story format, acceptance criteria, story points
+# See docs: "Prompt Construction" — ARC framework
+# See docs: "Scrum Standards" — story format, acceptance criteria, story points
 #
 # The story writer prompt takes the ProjectAnalysis fields + formatted feature list
 # and asks the LLM to decompose each feature into 2-5 user stories with acceptance
@@ -156,7 +156,7 @@ def get_story_writer_prompt(
 ) -> str:
     """Build the story writer prompt with injected project analysis and feature fields.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     #
     # The prompt uses the ARC pattern:
     # - Actor: "Senior Scrum Master" with user story decomposition expertise

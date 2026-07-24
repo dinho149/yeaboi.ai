@@ -1,6 +1,6 @@
 """Shared animation and colour utilities for the TUI screens.
 
-# See README: "Architecture" — shared UI utility layer for visual effects.
+# See docs: "Architecture" — shared UI utility layer for visual effects.
 # Provides colour interpolation, shimmer highlights, fade transitions, and
 # easing functions used across mode_select, session, and provider_select.
 """

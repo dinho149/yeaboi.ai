@@ -1,7 +1,7 @@
 """Prompt template for the sprint_planner node.
 
-# See README: "Prompt Construction" — ARC framework
-# See README: "Scrum Standards" — sprint planning, capacity allocation
+# See docs: "Prompt Construction" — ARC framework
+# See docs: "Scrum Standards" — sprint planning, capacity allocation
 #
 # The sprint planner prompt takes the ProjectAnalysis fields + formatted story list
 # and asks the LLM to allocate stories to sprints without exceeding velocity capacity.
@@ -56,7 +56,7 @@ def get_sprint_planner_prompt(
 ) -> str:
     """Build the sprint planner prompt with injected project context and story list.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     #
     # The prompt uses the ARC pattern:
     # - Actor: "Senior Scrum Master" with sprint planning expertise

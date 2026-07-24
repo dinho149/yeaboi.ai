@@ -1,6 +1,6 @@
 """Accordion-style intake question screen.
 
-# See README: "Architecture" — replaces the single-question-at-a-time screen
+# See docs: "Architecture" — replaces the single-question-at-a-time screen
 # with a vertically scrollable accordion showing all 26 questions at once.
 #
 # Visual states:

@@ -10,7 +10,7 @@ Tool helpers are imported lazily (optional SDKs), same convention as
 performance/activity.py. Degrades to an empty list on missing config — the engine
 turns that into a warning, never a crash.
 
-# See README: "Daily Standup" — recent-activity collection, sprint context
+# See docs: "Daily Standup" — recent-activity collection, sprint context
 """
 
 from __future__ import annotations

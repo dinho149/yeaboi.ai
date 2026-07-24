@@ -1,6 +1,6 @@
 """Surface-parity registry — every capability must ship on every surface (or be exempted).
 
-# See README: "MCP Server" — the six delivery surfaces
+# See docs: "MCP Server" — the six delivery surfaces
 
 yeaboi has six delivery surfaces: the TUI, CLI flags/subcommands, the Python
 engines, the MCP server, the Claude Code plugin skills, and the OpenClaw skill.

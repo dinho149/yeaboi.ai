@@ -24,7 +24,7 @@ in the title prefix (``[Bug] …``) and type+area are the first body line. The
 maintainer should still pre-create ``type:bug|feature|improvement|other`` and
 ``area:<the 9 areas>`` on the repo so maintainer-filed feedback auto-labels.
 
-# See README: "Prompt Construction" — the AI Polish prompt (ARC framework)
+# See docs: "Prompt Construction" — the AI Polish prompt (ARC framework)
 """
 
 from __future__ import annotations
@@ -252,7 +252,7 @@ def polish_feedback(
     try:
         # invoke_with_images sends the pasted screenshots as image blocks so they
         # can inform the rewrite; non-vision models auto-retry text-only inside it.
-        # See README: "Agentic Blueprint Reference" — invoking the LLM directly
+        # See docs: "Agentic Blueprint Reference" — invoking the LLM directly
         response = invoke_with_images(get_llm(temperature=0.2), prompt, image_paths)
         track_usage(response)
         polished = _parse_polish_response(response.content)

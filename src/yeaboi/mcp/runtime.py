@@ -1,6 +1,6 @@
 """Shared runtime for MCP tool handlers — result envelope + engine dispatch.
 
-# See README: "MCP Server" — result envelope and LLM modes
+# See docs: "MCP Server" — result envelope and LLM modes
 
 Every yeaboi MCP tool returns the same JSON envelope so host agents can
 handle results uniformly:

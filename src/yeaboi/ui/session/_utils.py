@@ -1,6 +1,6 @@
 """Text rendering and threading utilities for the TUI session.
 
-# See README: "Architecture" — utility layer supporting session screens and phases.
+# See docs: "Architecture" — utility layer supporting session screens and phases.
 # Contains text wrapping, Rich-to-lines rendering, graph invocation threading,
 # and rate-limit retry logic.
 """
@@ -129,7 +129,7 @@ def _render_tui_intake_summary(qs, table_width: int) -> Group:
 def _render_to_lines(console: Console, renderable, width: int) -> list[str]:
     """Render a Rich renderable to plain text lines for scrollable viewport.
 
-    # See README: "Architecture" — scrollable viewport pattern from provider_select.py
+    # See docs: "Architecture" — scrollable viewport pattern from provider_select.py
     # Renders to a string buffer console, then splits into lines.
     """
     buf = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
@@ -181,7 +181,7 @@ def _classify_api_error(err: Exception) -> str:
     # Local Ollama first — its failures carry generic shapes (httpx.ConnectError,
     # a 404 ResponseError) that the branches below would mis-classify. The hint
     # helper is provider-gated, so this is a no-op for every cloud provider.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.nodes import _local_llm_hint
 
     local_hint = _local_llm_hint(err)

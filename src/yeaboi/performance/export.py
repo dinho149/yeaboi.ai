@@ -6,7 +6,7 @@ or a 6-month review persists as a shareable document, not just in the logs. The
 HTML reuses the plan report's stylesheet (``html_exporter._CSS``) for a consistent
 look. Every engine run auto-exports; the TUI Export button re-writes on demand.
 
-# See README: "Export Formats" — Markdown, HTML
+# See docs: "Export Formats" — Markdown, HTML
 """
 
 from __future__ import annotations

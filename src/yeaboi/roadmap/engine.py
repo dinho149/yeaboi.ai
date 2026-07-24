@@ -12,8 +12,8 @@ Pipeline:
                                → LLM extracts + ranks + sizes projects
                                → RoadmapAnalysis → RoadmapStore.record_run
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the roadmap prompt
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the roadmap prompt
 """
 
 from __future__ import annotations
