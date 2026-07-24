@@ -92,6 +92,10 @@ document.addEventListener('DOMContentLoaded', function () {
   function updateScrollProgress() {
     var doc = document.documentElement;
     var st = window.scrollY || doc.scrollTop || 0;
+    // mobile top bar: transparent at rest, frosted once scrolled (no-op on
+    // desktop — the .scrolled styles live inside the 900px media query)
+    var navbar = document.querySelector('.navbar');
+    if (navbar) navbar.classList.toggle('scrolled', st > 8);
     var max = doc.scrollHeight - window.innerHeight;
     var p = max > 0 ? Math.min(1, Math.max(0, st / max)) : 0;
     if (auraEl && !reducedMotion) {

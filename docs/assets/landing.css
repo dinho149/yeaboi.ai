@@ -468,12 +468,15 @@
     }
     .pipeline.at-end{-webkit-mask-image:none; mask-image:none}
     .pipe-dots{
-      display:flex; align-items:center; justify-content:center; gap:9px;
+      position:relative; display:flex; align-items:center; justify-content:center; gap:9px;
       margin-top:16px; font-family:var(--mono); font-size:.72rem; color:rgb(70,70,82);
     }
     .pipe-dots .on{color:var(--accent)}
+    /* absolute so the hint never shifts the dot cluster off true centre —
+       as a flex sibling it kept occupying space even at opacity 0 */
     .pipe-dots .pipe-hint{
-      margin-left:12px; font-size:.66rem; letter-spacing:.14em; text-transform:uppercase;
+      position:absolute; left:50%; margin-left:56px; top:50%; transform:translateY(-50%);
+      font-size:.66rem; letter-spacing:.14em; text-transform:uppercase;
       color:var(--text-dim); transition:opacity .5s;
     }
     .pipe-dots.swiped .pipe-hint{opacity:0}
