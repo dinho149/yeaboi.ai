@@ -761,6 +761,15 @@ function buildRail() {
     });
   }
 
+  // Mobile: tapping anywhere outside the open sheet (the blurred, inert page
+  // area) closes it — the bar's own controls are excluded.
+  document.addEventListener("click", function (e) {
+    if (!_isMobileNav() || !rail.classList.contains("expanded")) return;
+    var t = e.target;
+    if (t.closest && (t.closest("#rail-menu") || t.closest("#rail-docs") || t.closest(".brand"))) return;
+    setOpen(false, false);
+  });
+
   // The dropdown's CONTENTS are page-independent (the same tree everywhere) —
   // build it once. Only which link is "current" changes, per navigation.
   if (inner) {

@@ -386,6 +386,14 @@ ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--borde
     -webkit-backdrop-filter:none; backdrop-filter:none;
     border-bottom-color:transparent;
   }
+  /* ...and the page recedes behind it: blurred, dimmed, and inert (tapping
+     the blurred area closes the sheet — handled in site.js). Safe to filter
+     here: on mobile nothing inside #page-content is sticky/fixed. */
+  #page-content{transition:filter .3s ease}
+  body:has(.rail.expanded) #page-content{
+    filter:blur(10px) brightness(.55);
+    pointer-events:none;
+  }
   .navbar::before{display:none}   /* the vertical accent edge is desktop-only */
   /* .navbar .rail, not .rail — the element is `.wrap.rail`, and the generic
      .wrap{padding:0 24px} later in this block would zero the vertical padding
