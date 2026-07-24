@@ -275,6 +275,7 @@ var _heroRevealTimer = null;
 var _heroTipTimer = null;
 var _heroTipSwapTimer = null;
 var _heroStepIO = null;
+var _heroSizeHandler = null;
 
 // The real welcome-screen tip rotation (src/yeaboi/ui/shared/_tips.py):
 // voice tip first, the general tips, music tip last; one rotates in every
@@ -304,6 +305,28 @@ function initHeroDemo() {
   var menu = document.getElementById('tui-menu');
   var modes = Array.prototype.slice.call(root.querySelectorAll('.tui-mode'));
   if (!modes.length) return;
+
+  // Phone single-mode showcase: scale each block title to fill the panel
+  // width. Titles range 18–46 columns, so one shared font-size leaves the
+  // short ones lost in the space sized for the longest; per-title sizing
+  // (panel width / columns / 0.6em char width, clamped) fills the frame.
+  function sizePhoneTitles() {
+    var phone = window.matchMedia && window.matchMedia('(max-width:600px)').matches;
+    var panel = root.querySelector('.tui-panel');
+    var w = panel ? panel.clientWidth - 32 : 300;
+    modes.forEach(function (m) {
+      var pre = m.querySelector('.tui-mode-title');
+      if (!phone) { pre.style.fontSize = ''; return; }
+      var cols = Math.max.apply(null, pre.textContent.split('\n').map(function (l) { return l.length; }));
+      pre.style.fontSize = Math.max(10, Math.min(16, w / (cols * 0.6))) + 'px';
+    });
+  }
+  sizePhoneTitles();
+  // re-size on viewport changes (e.g. phone rotation) — the 900px matchMedia
+  // re-init doesn't fire for width changes that stay on one side of it
+  if (_heroSizeHandler) window.removeEventListener('resize', _heroSizeHandler);
+  _heroSizeHandler = sizePhoneTitles;
+  window.addEventListener('resize', _heroSizeHandler, { passive: true });
 
   var current = 0;
 
