@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
   renderTOC();
   rescanReveals();
   initHeroDemo();
+  initPipeCarousel();
 
   // give the current history entry a state object so the first Back works
   try { history.replaceState({}, '', window.location.href); } catch (e) {}
@@ -164,6 +165,7 @@ function navigateTo(url, push) {
       renderTOC();
       rescanReveals();
       initHeroDemo();
+      initPipeCarousel();
       if (window.YB && window.YB.setCurrent) window.YB.setCurrent(target.pathname);
       syncRailToPage();
 
@@ -442,6 +444,44 @@ function initHeroDemo() {
   } else {
     _heroRevealTimer = setTimeout(revealMenu, 2300); // matches splash.py's ~2.4s fade in/shine/fade out
   }
+}
+
+// ---- mobile pipeline carousel indicator -----------------------------------
+// Position dots (the TUI's ● ○ language) + a "swipe →" hint under the
+// horizontally-scrolling pipeline, and an .at-end class that drops the
+// right-edge fade once fully scrolled. Listeners live on the elements
+// themselves, which are replaced on client-side nav — no leak.
+function initPipeCarousel() {
+  var pipe = document.querySelector('.pipeline');
+  var dots = document.querySelector('.pipe-dots');
+  if (!pipe || !dots) return;
+  var stages = pipe.querySelectorAll('.stage');
+  dots.textContent = '';
+  var spans = [];
+  for (var i = 0; i < stages.length; i++) {
+    var s = document.createElement('span');
+    s.textContent = i === 0 ? '●' : '○';
+    if (i === 0) s.className = 'on';
+    dots.appendChild(s);
+    spans.push(s);
+  }
+  var hint = document.createElement('span');
+  hint.className = 'pipe-hint';
+  hint.textContent = 'swipe →';
+  dots.appendChild(hint);
+  function update() {
+    var max = pipe.scrollWidth - pipe.clientWidth;
+    pipe.classList.toggle('at-end', max <= 0 || max - pipe.scrollLeft < 8);
+    if (max <= 0) return;
+    if (pipe.scrollLeft > 20) dots.classList.add('swiped');
+    var idx = Math.min(spans.length - 1, Math.round((pipe.scrollLeft / max) * (spans.length - 1)));
+    spans.forEach(function (sp, j) {
+      sp.textContent = j === idx ? '●' : '○';
+      sp.classList.toggle('on', j === idx);
+    });
+  }
+  pipe.addEventListener('scroll', update, { passive: true });
+  update();
 }
 
 // Re-evaluate the hero demo's driving mode when the layout crosses the mobile

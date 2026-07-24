@@ -355,6 +355,7 @@
     margin:26px 0 0; display:flex; gap:14px; align-items:baseline; max-width:64ch;
     color:var(--text-muted); font-size:.95rem;
   }
+  .pipe-dots{display:none}  /* phone-only carousel indicator (see 600px block) */
   .pipe-note .k{font-family:var(--mono); font-size:.8rem; color:var(--accent); white-space:nowrap}
   .pipe-note code{color:var(--text); font-size:.85em; background:var(--bg-raised);
     border:1px solid var(--border); border-radius:5px; padding:1px 6px}
@@ -406,7 +407,9 @@
     /* no 100vh centering on mobile — it strands the copy mid-screen with a
        huge dead band above it; just pad it like a normal section */
     .hero-copy{min-height:0; padding:64px 0 8px}
-    .scroll-hint{position:static; margin-top:40px}
+    /* the hint exists to point below the fold on the full-height desktop
+       hero; on mobile the terminal is directly beneath the CTA */
+    .scroll-hint{display:none}
     .hero-cta .codeblock{min-width:0; width:100%}
     .tui{font-size:9.5px; padding:8px 8px 12px}
     .tui-panel{padding:14px 14px 10px}
@@ -456,4 +459,22 @@
     .stage:first-child{border-left:none}
     /* label stacks above the text — the two-column note is too cramped here */
     .pipe-note{flex-direction:column; gap:8px}
+    /* carousel affordances: content fades out at the right edge while there's
+       more to scroll (site.js drops .at-end's mask when you reach the end),
+       plus position dots + a swipe hint in the TUI's ● ○ language */
+    .pipeline{
+      -webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 56px), rgba(0,0,0,.15));
+              mask-image:linear-gradient(90deg, #000 calc(100% - 56px), rgba(0,0,0,.15));
+    }
+    .pipeline.at-end{-webkit-mask-image:none; mask-image:none}
+    .pipe-dots{
+      display:flex; align-items:center; justify-content:center; gap:9px;
+      margin-top:16px; font-family:var(--mono); font-size:.72rem; color:rgb(70,70,82);
+    }
+    .pipe-dots .on{color:var(--accent)}
+    .pipe-dots .pipe-hint{
+      margin-left:12px; font-size:.66rem; letter-spacing:.14em; text-transform:uppercase;
+      color:var(--text-dim); transition:opacity .5s;
+    }
+    .pipe-dots.swiped .pipe-hint{opacity:0}
   }
