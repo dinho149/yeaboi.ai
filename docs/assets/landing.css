@@ -398,6 +398,9 @@
   .step-note{margin:0; color:var(--text-muted); font-size:.86rem}
   .step-note code{color:var(--text); background:var(--bg-sunken); border:1px solid var(--border);
     border-radius:5px; padding:2px 7px; font-size:.88em}
+  /* step 1's alternative is wide (a whole command) — drop it to a second row
+     under the command chip instead of cramming the note column */
+  .step-2row .step-note{grid-column:2 / -1; grid-row:2}
   .dim{color:var(--text-dim)}
   .note{margin-top:18px; color:var(--text-muted); font-size:.92rem}
   .note code{color:var(--text); font-size:.86em}
