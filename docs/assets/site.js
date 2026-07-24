@@ -155,15 +155,12 @@ document.addEventListener('DOMContentLoaded', function () {
       } else {
         var spots = [];
         var sc = rectOf('.scrolly'), fb = rectOf('.app-frame');
-        var termStart = sc ? sc.top + st - vh * 0.5 : 1;
-        // hero: grounded on the viewport's bottom edge — walks from the left
-        // margin toward the terminal's left edge as you scroll the hero, so
-        // it arrives ON ITS MARK and the hop onto the frame is a straight
-        // vertical teleport, not a sideways jump
+        // hero: standing just LEFT of the install codeblock, feet level
+        // with its bottom edge, riding with it
+        var cb = rectOf('.hero-cta .codeblock');
         spots.push({ s: -1e9, pos: function () {
-          var hx = 0.07 * (vw - dw);
-          if (fb && termStart > 1) hx = lerp(hx, fb.left + 6, st / termStart);
-          return [hx, vh - dh - 8];
+          if (cb) return [cb.left - dw - 12, cb.bottom - dh + 2];
+          return [0.07 * (vw - dw), vh - dh - 8]; // fallback: grounded left margin
         } });
         // terminal: stands on the pinned frame's chrome and walks LEFT→RIGHT
         // across it as the scrollytelling steps go by
@@ -173,7 +170,7 @@ document.addEventListener('DOMContentLoaded', function () {
               var q = (st - s0) / span;
               return [lerp(fb.left + 6, fb.right - dw - 6, q), fb.top - dh + 9];
             } });
-          })(termStart, Math.max(1, sc.height - vh * 0.55));
+          })(sc.top + st - vh * 0.5, Math.max(1, sc.height - vh * 0.55));
         }
         // modes grid: walks its top edge RIGHT→LEFT as the grid rides up
         var mg = rectOf('.modes');
@@ -286,6 +283,10 @@ document.addEventListener('DOMContentLoaded', function () {
   }, { passive: true });
   if (lenis) lenis.on('scroll', updateScrollProgress);
   updateScrollProgress();
+  // re-render once the hero's staggered entrance animations finish — rects
+  // measured mid-entrance (content rises 22px) would leave the duck perched
+  // slightly below its surface until the first scroll/mouse event
+  setTimeout(updateScrollProgress, 1500);
 
   // ---- persistent rail shell ----
   buildRail();
