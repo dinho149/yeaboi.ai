@@ -415,8 +415,22 @@
   }
   @media (max-width:600px){
     section{padding:60px 0}
-    .tui{font-size:7px}
-    .tui-splash{min-height:280px}
+    /* phone: the full 8-row menu is a 7px unreadable wall — show a
+       single-mode showcase instead: only the active mode renders, at a
+       legible size, cycling with its typed description. Tip block, version
+       row, and music bar are noise at this scale and are dropped. */
+    .tui{font-size:11px}
+    .tui-panel{padding:16px 16px 14px}
+    .tui-splash{min-height:118px}
+    .tui-splash-word{font-size:7px}
+    .tui-menu{gap:0}
+    .tui-mode{display:none; padding-left:0}
+    .tui-mode.is-active{display:block}
+    .tui-mode.is-active .tui-mode-desc{height:52px; margin:10px 0 0}
+    .tui-foot,.tui-music{display:none}
+    /* the compact frame doesn't need the desktop demo's breathing room */
+    .hero{padding-bottom:36px}
+    .hero-demo{margin-top:20px; padding-bottom:0}
     .modes{grid-template-columns:1fr}
     .mode-card{min-height:0; padding:22px 20px 20px}
     /* pipeline: a horizontal snap carousel instead of five stacked cards —
