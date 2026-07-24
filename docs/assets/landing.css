@@ -423,6 +423,23 @@
     0%,100%{transform:translateY(0)}
     50%{transform:translateY(1.5%)}
   }
+  /* startled (cursor touch → jump): the shades fly high up the forehead,
+     hang there through the whole flight, and drop back with an overshoot */
+  .duck-walker.startled .d-glasses{animation:glasses-pop .95s cubic-bezier(.3,1.3,.4,1) both}
+  @keyframes glasses-pop{
+    0%{transform:translateY(0)}
+    14%{transform:translateY(-10%)}
+    68%{transform:translateY(-8.5%)}
+    85%{transform:translateY(1.4%)}
+    100%{transform:translateY(0)}
+  }
+  /* airborne: the wings work hard — much faster, deeper flap while the
+     physics floats it back down to the ground */
+  .duck-walker.airborne .d-wing{animation:wing-flap-hard .3s ease-in-out infinite}
+  @keyframes wing-flap-hard{
+    0%,100%{transform:translateY(0) rotate(0deg)}
+    50%{transform:translateY(-4.5%) rotate(-6deg)}
+  }
   .duck-walker.walking .duck-rig{animation:duck-waddle .38s ease-in-out infinite}
   @keyframes duck-waddle{
     0%,100%{transform:rotate(0deg) translateY(0)}

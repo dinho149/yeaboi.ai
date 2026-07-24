@@ -31,6 +31,9 @@ var _mY = -1;
 var _mmPend = false;
 var _duckFlee = 0;
 var _duckVel = 0;
+var _duckAirY = 0;   // vertical offset while jumping (negative = airborne)
+var _duckAirV = 0;   // vertical velocity
+var _duckJumpCd = 0; // no re-launch before this timestamp (full animation plays out)
 var _duckPoof = false;
 var _duckChase = false;
 var _duckPhysOn = false;
@@ -50,7 +53,7 @@ function _duckPhysicsStep() {
   if (!duck || _duckPoof || _duckTp) return;
   var g = _duckFootGeom;
   var x = g.base + _duckFlee;
-  var cx = x + 32, cy = g.y + 35;
+  var cx = x + 32, cy = g.y + _duckAirY + 35;
   if (_mX >= 0) {
     var ddx = cx - _mX, ddy = cy - _mY;
     var dist = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
@@ -58,9 +61,34 @@ function _duckPhysicsStep() {
       var s = (170 - dist) / 170;            // 0 at the radius edge → 1 on contact
       _duckVel += (ddx >= 0 ? 1 : -1) * (0.4 + 4.8 * s * s);
     }
+    // an actual TOUCH (cursor inside the body) startles it into ONE full
+    // jump sequence — leap, then a slow FLOAT back down with fast wing
+    // flapping (.airborne) and the shades popped up its forehead
+    // (.startled). A cooldown guarantees the whole animation plays out
+    // instead of re-triggering every frame the cursor stays inside.
+    var nowT = performance.now();
+    if (Math.abs(cx - _mX) < 38 && Math.abs(cy - _mY) < 42 &&
+        _duckAirY === 0 && _duckAirV === 0 && nowT > _duckJumpCd) {
+      _duckJumpCd = nowT + 1700;
+      _duckAirV = -11;
+      _duckVel += (cx >= _mX ? 1 : -1) * 6;
+      duck.classList.add('startled', 'airborne');
+      setTimeout(function () { duck.classList.remove('startled'); }, 950);
+    }
+  }
+  // vertical: snappy rise, then a gentle parachute descent — weak gravity
+  // while falling, capped terminal velocity, wings doing the work
+  if (_duckAirV !== 0 || _duckAirY !== 0) {
+    _duckAirV += _duckAirV < 0 ? 0.9 : 0.22;
+    if (_duckAirV > 2.2) _duckAirV = 2.2;
+    _duckAirY += _duckAirV;
+    if (_duckAirY >= 0) {                                  // touchdown
+      _duckAirY = 0; _duckAirV = 0;
+      duck.classList.remove('airborne');
+    }
   }
   _duckVel *= 0.86;                          // friction
-  if (Math.abs(_duckVel) < 0.05) return;     // at rest
+  if (Math.abs(_duckVel) < 0.05 && _duckAirY === 0 && _duckAirV === 0) return;  // at rest
   _duckFlee += _duckVel;
   x = g.base + _duckFlee;
   if (x < g.minX || x > g.maxX) {
@@ -93,8 +121,9 @@ function _duckPhysicsStep() {
     clearTimeout(_duckIdleT);
     _duckIdleT = setTimeout(function () { duck.classList.remove('walking'); }, 180);
   }
-  _duckX = x; _duckY = g.y; _duckLandX = x; _duckLandY = g.y;
-  duck.style.transform = 'translate(' + x.toFixed(1) + 'px,' + g.y.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+  var ry = g.y + _duckAirY;
+  _duckX = x; _duckY = ry; _duckLandX = x; _duckLandY = ry;
+  duck.style.transform = 'translate(' + x.toFixed(1) + 'px,' + ry.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
 }
 
 // Reveal the duck only after the hero's staggered entrance has finished
@@ -302,9 +331,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // area change → teleport: fade out here, reappear there
         _duckTp = true;
         _duckSpot = spotIdx;
-        _duckFlee = 0; _duckVel = 0; // fresh perch, no leftover chase state
+        _duckFlee = 0; _duckVel = 0; _duckAirY = 0; _duckAirV = 0; // fresh perch, no leftover chase state
         duck.classList.add('teleporting');
         duck.classList.remove('walking');
+        duck.classList.remove('airborne');
         setTimeout(function () {
           // land at the CURRENT position for the new spot (recomputed by the
           // next scroll frame; use last computed as the landing point),
