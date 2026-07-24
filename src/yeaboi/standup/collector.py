@@ -17,6 +17,9 @@ that one source to empty, same as a missing credential.
 from __future__ import annotations
 
 import logging
+import threading
+import time as time_module
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
@@ -40,6 +43,16 @@ ALL_SOURCES = (
     SOURCE_CONFLUENCE,
     SOURCE_NOTION,
 )
+
+_SOURCE_LABELS = {
+    SOURCE_JIRA: "Jira",
+    SOURCE_AZDO: "Azure DevOps tickets",
+    SOURCE_AZDO_REPOS: "Azure DevOps code",
+    SOURCE_GITHUB: "GitHub",
+    SOURCE_LOCAL_GIT: "Local Git",
+    SOURCE_CONFLUENCE: "Confluence",
+    SOURCE_NOTION: "Notion",
+}
 
 # Human-readable reason shown when a source is auto-disabled (config missing).
 _SKIP_REASONS = {
@@ -77,6 +90,8 @@ class ActivityBundle:
     counts: (source, count) pairs for every source that was attempted.
     errors: (source, message) pairs for auth/other failures the user must see
         (e.g. a 401/403 that would otherwise look like "no activity").
+    partial_sources: (source, message) pairs for a source whose authoritative
+        base activity succeeded but optional enrichment was incomplete.
     skipped: (source, reason) pairs for sources that were NOT attempted — missing
         config or SDK — so absent coverage is visible instead of silent.
     """
@@ -84,6 +99,7 @@ class ActivityBundle:
     items: list[dict] = field(default_factory=list)
     counts: list[tuple[str, int]] = field(default_factory=list)
     errors: list[tuple[str, str]] = field(default_factory=list)
+    partial_sources: list[tuple[str, str]] = field(default_factory=list)
     skipped: list[tuple[str, str]] = field(default_factory=list)
 
     def total(self, *, exclude_kinds: tuple[str, ...] = ()) -> int:
@@ -143,9 +159,14 @@ def collect_recent_activity(
     jira_project: str = "",
     azdo_project: str = "",
     github_repo: str = "",
+    github_repositories: list[str] | None = None,
+    azdo_projects: list[str] | None = None,
+    azdo_repositories: list[str] | None = None,
     local_repo_path: str = "",
     confluence_space: str = "",
     notion_root: str = "",
+    on_progress=None,
+    cache_db_path=None,
 ) -> ActivityBundle:
     """Gather and normalize recent activity from all enabled sources.
 
@@ -174,6 +195,14 @@ def collect_recent_activity(
     )
 
     bundle = ActivityBundle()
+    metadata_cache = None
+    if cache_db_path is not None:
+        try:
+            from yeaboi.standup.cache import StandupMetadataCache
+
+            metadata_cache = StandupMetadataCache(cache_db_path)
+        except Exception:
+            logger.warning("standup metadata cache unavailable", exc_info=True)
     if sources is None:
         # Record WHY each source was auto-disabled so the report can show what
         # wasn't covered (a silently-skipped source reads as "no activity").
@@ -182,29 +211,78 @@ def collect_recent_activity(
                 continue  # azdo_repos shares azure_devops config — one skip line, not two
             bundle.skipped.append((src, _SKIP_REASONS.get(src, "not configured")))
 
+    bundle_lock = threading.Lock()
+    completed_sources = 0
+    total_sources = 0
+
+    def _progress(message: str) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(message)
+        except Exception:
+            logger.debug("standup collector progress callback failed", exc_info=True)
+
+    def _source_label(source: str) -> str:
+        return _SOURCE_LABELS.get(source, source.replace("_", " ").title())
+
     def _run(source: str, fetcher) -> None:
-        """Call one source's fetcher, tag+append items, record the count."""
+        """Call one source fetcher with bounded retry, then merge atomically."""
         from yeaboi.standup.errors import StandupSourceError
 
+        nonlocal completed_sources
+
+        def _finished(detail: str) -> None:
+            nonlocal completed_sources
+            with bundle_lock:
+                completed_sources += 1
+                completed = completed_sources
+            _progress(f"Sources {completed}/{total_sources} · {_source_label(source)} {detail}")
+
+        started = time_module.monotonic()
         try:
-            raw = fetcher()
+            raw = None
+            for attempt in range(3):
+                try:
+                    raw = fetcher()
+                    break
+                except StandupSourceError:
+                    raise
+                except Exception as exc:
+                    status = int(getattr(exc, "status", 0) or getattr(getattr(exc, "response", None), "status_code", 0))
+                    if status not in (429, 500, 502, 503, 504) or attempt == 2:
+                        raise
+                    delay = 0.25 * (2**attempt)
+                    logger.warning("Source %s transient error %s; retrying in %.2fs", source, status, delay)
+                    time_module.sleep(delay)
+            raw = raw or []
         except StandupSourceError as e:
             # Auth/other failure the user must see — record it as a warning.
             logger.warning("Source %s error surfaced: %s", source, e.message)
-            bundle.errors.append((e.source, e.message))
+            with bundle_lock:
+                bundle.errors.append((e.source, e.message))
+            _finished("failed")
             return
         except ImportError as e:
             logger.warning("Source %s skipped — SDK not installed: %s", source, e)
-            bundle.skipped.append((source, "SDK not installed"))
+            with bundle_lock:
+                bundle.skipped.append((source, "SDK not installed"))
+            _finished("skipped")
             return
         except Exception as e:  # defensive — helpers already guard, but never let one source abort
             logger.warning("Source %s failed unexpectedly: %s", source, e)
+            _finished("failed")
             return
         for item in raw:
             item["source"] = source
-            bundle.items.append(item)
-        bundle.counts.append((source, len(raw)))
-        logger.info("Source %s contributed %d item(s)", source, len(raw))
+        with bundle_lock:
+            bundle.items.extend(raw)
+            bundle.counts.append((source, len(raw)))
+        elapsed = time_module.monotonic() - started
+        logger.info("Source %s contributed %d item(s) in %.2fs", source, len(raw), elapsed)
+        _finished(f"complete ({len(raw)})")
+
+    fetchers: dict[str, object] = {}
 
     if SOURCE_JIRA in enabled:
 
@@ -213,7 +291,7 @@ def collect_recent_activity(
 
             return jira_recent_activity(jira_project, days=days, since=since)
 
-        _run(SOURCE_JIRA, _jira)
+        fetchers[SOURCE_JIRA] = _jira
 
     if SOURCE_AZDO in enabled:
 
@@ -222,29 +300,136 @@ def collect_recent_activity(
 
             return azdevops_recent_activity(azdo_project, days=days, since=since)
 
-        _run(SOURCE_AZDO, _azdo)
+        fetchers[SOURCE_AZDO] = _azdo
 
     if SOURCE_AZDO_REPOS in enabled:
 
         def _azdo_repos() -> list[dict]:
-            from yeaboi.tools.azure_devops import azdevops_recent_commits, azdevops_recent_prs
+            from concurrent.futures import ThreadPoolExecutor
 
-            return azdevops_recent_commits(azdo_project, days=days, since=since) + azdevops_recent_prs(
-                azdo_project, days=days, since=since
+            from yeaboi.standup.errors import StandupSourceError
+            from yeaboi.tools.azure_devops import (
+                azdevops_recent_commits,
+                azdevops_recent_prs,
+                azdevops_recent_reviews,
             )
 
-        _run(SOURCE_AZDO_REPOS, _azdo_repos)
+            source_errors: list[tuple[str, str]] = []
+
+            def _safe(call) -> list[dict]:
+                try:
+                    return call()
+                except StandupSourceError as exc:
+                    source_errors.append((exc.source, exc.message))
+                    return []
+
+            projects = list(dict.fromkeys(azdo_projects or ()))
+            repository_kwargs = {} if azdo_repositories is None else {"repositories": azdo_repositories}
+            cache_kwargs = {"metadata_cache": metadata_cache} if metadata_cache is not None else {}
+
+            selected_projects = projects or [azdo_project]
+            calls = []
+            for project in selected_projects:
+                kwargs = repository_kwargs if not projects else {}
+                calls.extend(
+                    (
+                        lambda project=project, kwargs=kwargs: azdevops_recent_commits(
+                            project, days=days, since=since, **cache_kwargs, **kwargs
+                        ),
+                        lambda project=project, kwargs=kwargs: azdevops_recent_prs(
+                            project, days=days, since=since, **cache_kwargs, **kwargs
+                        ),
+                        lambda project=project, kwargs=kwargs: azdevops_recent_reviews(
+                            project, days=days, since=since, **cache_kwargs, **kwargs
+                        ),
+                    )
+                )
+            stage_names = ("commits", "pull requests", "reviews") * len(selected_projects)
+            with ThreadPoolExecutor(
+                max_workers=min(6, max(1, len(calls))), thread_name_prefix="standup-azdo-code"
+            ) as pool:
+                stage_futures = {
+                    pool.submit(_safe, call): stage for call, stage in zip(calls, stage_names, strict=True)
+                }
+                items = []
+                completed_stages = 0
+                for stage_future in as_completed(stage_futures):
+                    items.extend(stage_future.result())
+                    completed_stages += 1
+                    _progress(
+                        "Azure DevOps code · "
+                        f"{stage_futures[stage_future]} complete "
+                        f"({completed_stages}/{len(stage_futures)})"
+                    )
+            with bundle_lock:
+                bundle.errors.extend(error for error in dict.fromkeys(source_errors) if error not in bundle.errors)
+            return items
+
+        fetchers[SOURCE_AZDO_REPOS] = _azdo_repos
 
     if SOURCE_GITHUB in enabled:
 
         def _github() -> list[dict]:
-            from yeaboi.tools.github import github_recent_commits, github_recent_prs
+            from concurrent.futures import ThreadPoolExecutor
 
-            return github_recent_commits(github_repo, days=days, since=since) + github_recent_prs(
-                github_repo, days=days, since=since
-            )
+            from yeaboi.standup.errors import StandupSourceError
+            from yeaboi.tools.github import github_recent_commits, github_recent_prs, github_recent_reviews
 
-        _run(SOURCE_GITHUB, _github)
+            source_errors: list[tuple[str, str]] = []
+
+            def _safe(call) -> list[dict]:
+                try:
+                    return call()
+                except StandupSourceError as exc:
+                    source_errors.append((exc.source, exc.message))
+                    return []
+
+            repositories = [
+                repo for repo in (github_repositories if github_repositories is not None else [github_repo]) if repo
+            ]
+            cache_kwargs = {"metadata_cache": metadata_cache} if metadata_cache is not None else {}
+
+            calls = []
+            for repository in repositories:
+                calls.extend(
+                    (
+                        (
+                            repository,
+                            lambda repository=repository: github_recent_commits(
+                                repository, days=days, since=since, **cache_kwargs
+                            ),
+                        ),
+                        (
+                            repository,
+                            lambda repository=repository: github_recent_prs(
+                                repository, days=days, since=since, **cache_kwargs
+                            ),
+                        ),
+                        (
+                            repository,
+                            lambda repository=repository: github_recent_reviews(
+                                repository, days=days, since=since, **cache_kwargs
+                            ),
+                        ),
+                    )
+                )
+
+            def _fetch(call) -> list[dict]:
+                repository, fetch = call
+                items = _safe(fetch)
+                for item in items:
+                    item.setdefault("repository", repository)
+                return items
+
+            with ThreadPoolExecutor(
+                max_workers=min(4, max(1, len(calls))), thread_name_prefix="standup-github"
+            ) as pool:
+                items = [item for batch in pool.map(_fetch, calls) for item in batch]
+            with bundle_lock:
+                bundle.errors.extend(error for error in dict.fromkeys(source_errors) if error not in bundle.errors)
+            return items
+
+        fetchers[SOURCE_GITHUB] = _github
 
     if SOURCE_LOCAL_GIT in enabled:
 
@@ -253,16 +438,30 @@ def collect_recent_activity(
 
             return local_git_recent_commits(local_repo_path, days=days, since=since)
 
-        _run(SOURCE_LOCAL_GIT, _local)
+        fetchers[SOURCE_LOCAL_GIT] = _local
 
     if SOURCE_CONFLUENCE in enabled:
 
         def _conf() -> list[dict]:
             from yeaboi.tools.confluence import confluence_recent_pages
 
-            return confluence_recent_pages(confluence_space, days=days, since=since)
+            cache_kwargs = {"metadata_cache": metadata_cache} if metadata_cache is not None else {}
 
-        _run(SOURCE_CONFLUENCE, _conf)
+            def _partial(message: str) -> None:
+                with bundle_lock:
+                    notice = (SOURCE_CONFLUENCE, message)
+                    if notice not in bundle.partial_sources:
+                        bundle.partial_sources.append(notice)
+
+            return confluence_recent_pages(
+                confluence_space,
+                days=days,
+                since=since,
+                on_partial=_partial,
+                **cache_kwargs,
+            )
+
+        fetchers[SOURCE_CONFLUENCE] = _conf
 
     if SOURCE_NOTION in enabled:
 
@@ -271,10 +470,51 @@ def collect_recent_activity(
 
             return notion_recent_pages(notion_root, days=days, since=since)
 
-        _run(SOURCE_NOTION, _notion)
+        fetchers[SOURCE_NOTION] = _notion
 
+    collection_started = time_module.monotonic()
+    total_sources = len(fetchers)
+    running_labels = ", ".join(_source_label(source) for source in fetchers)
+    _progress(f"Running concurrently · {running_labels}")
+    with ThreadPoolExecutor(
+        max_workers=min(7, max(1, len(fetchers))),
+        thread_name_prefix="standup-source",
+    ) as pool:
+        futures = {pool.submit(_run, source, fetcher): source for source, fetcher in fetchers.items()}
+        pending_sources = set(fetchers)
+        for future in as_completed(futures):
+            future.result()
+            pending_sources.discard(futures[future])
+            if pending_sources:
+                pending = ", ".join(_source_label(source) for source in fetchers if source in pending_sources)
+                _progress(f"Still running · {pending}")
+    if metadata_cache is not None:
+        metadata_cache.close()
+
+    source_order = {source: index for index, source in enumerate(ALL_SOURCES)}
+    bundle.items.sort(
+        key=lambda item: (
+            str(item.get("timestamp", "")),
+            source_order.get(str(item.get("source", "")), len(source_order)),
+            str(item.get("kind", "")),
+            str(item.get("key", "")),
+            str(item.get("title", "")),
+        )
+    )
+    bundle.counts.sort(key=lambda pair: source_order.get(pair[0], len(source_order)))
+    bundle.errors[:] = list(dict.fromkeys(bundle.errors))
+    bundle.partial_sources[:] = list(dict.fromkeys(bundle.partial_sources))
+    bundle.skipped[:] = list(dict.fromkeys(bundle.skipped))
+    bundle.errors.sort(key=lambda pair: (source_order.get(pair[0], len(source_order)), pair[1]))
+    bundle.partial_sources.sort(key=lambda pair: (source_order.get(pair[0], len(source_order)), pair[1]))
+    bundle.skipped.sort(key=lambda pair: (source_order.get(pair[0], len(source_order)), pair[1]))
     _dedupe_items(bundle)
-    logger.info("collect_recent_activity: %d total item(s) across %d source(s)", bundle.total(), len(bundle.counts))
+    logger.info(
+        "collect_recent_activity: %d total item(s) across %d source(s) in %.2fs",
+        bundle.total(),
+        len(bundle.counts),
+        time_module.monotonic() - collection_started,
+    )
     return bundle
 
 

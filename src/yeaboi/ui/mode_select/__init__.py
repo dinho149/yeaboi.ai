@@ -2039,17 +2039,58 @@ def _standup_export(session_id: str, data: dict) -> str:
 def _standup_generate_flow(
     console: Console, live, read_key, frame_time, supports_timeout, session_id: str
 ) -> str | None:
-    """Ask the user for their own update, save it, then generate the standup.
+    """Confirm sources/team, ask for the user's update, then generate.
 
     Returns a status message on success, or None if the user pressed Esc at the
-    update prompt (cancel — no run). Pressing Enter with an empty update skips the
-    self-report and generates with inference.
+    update prompt (cancel — no run). Source/member cancellation returns its
+    explanatory message and also prevents a run. Pressing Enter with an empty
+    update skips the self-report and generates with inference.
     """
     from datetime import date
 
     from yeaboi.config import get_standup_user_name
     from yeaboi.standup.store import StandupStore
     from yeaboi.ui.shared._attachments import referenced_images
+
+    # Mirror Analysis mode on every interactive run: confirm tracker sources,
+    # discover their roster, then confirm the authoritative member subset.
+    # Confirmed choices are persisted immediately, so cancelling the later
+    # My Update prompt still leaves the new defaults ready for scheduled runs.
+    team_ok, team_message = _standup_team_configure(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        session_id,
+    )
+    if not team_ok:
+        logger.info("standup generate: stopped during team selection (session=%s)", session_id)
+        return team_message
+
+    code_ok, code_message = _standup_code_configure(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        session_id,
+    )
+    if not code_ok:
+        logger.info("standup generate: stopped during repository selection (session=%s)", session_id)
+        return code_message
+
+    documentation_ok, documentation_message = _standup_documentation_configure(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        session_id,
+    )
+    if not documentation_ok:
+        logger.info("standup generate: stopped during documentation selection (session=%s)", session_id)
+        return documentation_message
 
     attachments: list[str] = []
     update = _standup_read_line(
@@ -2277,6 +2318,513 @@ def _standup_read_line(
         _render(status=notice)
 
 
+def _run_standup_source_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    sources: list[tuple[str, str]],
+    initial: list[str],
+    *,
+    heading: str = "Choose update sources",
+    allow_empty: bool = False,
+    select_first_if_empty: bool = True,
+):
+    """Analysis-style tracker multi-select for the Standup Team flow."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_team_source_screen
+
+    checked = {idx for idx, (key, _label) in enumerate(sources) if key in initial}
+    if not checked and sources and select_first_if_empty:
+        checked = {0}
+    cursor = 0
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_team_source_screen(
+                sources,
+                checked,
+                cursor,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+                heading=heading,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up") and sources:
+            cursor = (cursor - 1) % len(sources)
+        elif key in ("down", "scroll_down") and sources:
+            cursor = (cursor + 1) % len(sources)
+        elif key == " " and sources:
+            checked.symmetric_difference_update({cursor})
+            message = ""
+        elif key == "enter":
+            if not checked and not allow_empty:
+                message = "Select at least one update source."
+                continue
+            return [sources[idx][0] for idx in sorted(checked)]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _run_standup_member_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    roster: list[str],
+    initial: list[str] | None,
+    *,
+    heading: str = "Choose team members",
+    empty_message: str = "No members found in the selected tracker(s).",
+):
+    """Analysis-style member multi-select, preselected from saved Standup config."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_team_member_screen
+
+    checked = (
+        {idx for idx, name in enumerate(roster) if name in initial} if initial is not None else set(range(len(roster)))
+    )
+    cursor = 0
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_team_member_screen(
+                roster,
+                checked,
+                cursor,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+                heading=heading,
+                empty_message=empty_message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up") and roster:
+            cursor = (cursor - 1) % len(roster)
+        elif key in ("down", "scroll_down") and roster:
+            cursor = (cursor + 1) % len(roster)
+        elif key == " " and roster:
+            checked.symmetric_difference_update({cursor})
+            message = ""
+        elif key in ("a", "A") and roster:
+            checked = set() if len(checked) == len(roster) else set(range(len(roster)))
+        elif key == "enter":
+            if roster and not checked:
+                message = "Select at least one team member."
+                continue
+            return [roster[idx] for idx in sorted(checked)]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _standup_team_configure(
+    console: Console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    session_id: str,
+) -> tuple[bool, str]:
+    """Choose tracker sources and persist an authoritative Standup roster.
+
+    Returns ``(True, message)`` only after both picker steps were confirmed and
+    saved. Cancellation/setup errors return ``(False, message)`` so Generate
+    can stop before prompting for the user's update or running the engine.
+    """
+    import threading
+
+    from yeaboi.config import get_azure_devops_project, get_jira_project_key
+    from yeaboi.standup.roster import default_tracker_sources, discover_team_members
+    from yeaboi.standup.store import StandupStore
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+
+    jira_project = get_jira_project_key() or ""
+    azdo_project = get_azure_devops_project() or ""
+    sources: list[tuple[str, str]] = []
+    if jira_project:
+        sources.append(("jira", "Jira"))
+    if azdo_project:
+        sources.append(("azure_devops", "Azure DevOps"))
+    if not sources:
+        return False, "No Jira or Azure DevOps tracker configured — open Settings first."
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+    initial_sources = (
+        existing.get("tracker_sources", [])
+        if existing.get("roster_configured")
+        else default_tracker_sources(jira_project=jira_project, azdo_project=azdo_project)
+    )
+    selected_sources = _run_standup_source_select(
+        live,
+        console,
+        read_key,
+        frame_time,
+        supports_timeout,
+        sources,
+        initial_sources,
+    )
+    if selected_sources == "cancel":
+        logger.info("standup team: source selection cancelled (session=%s)", session_id)
+        return False, "Team selection cancelled."
+
+    result_box: list = [None]
+    done = threading.Event()
+
+    def _discover() -> None:
+        try:
+            result_box[0] = discover_team_members(
+                selected_sources,
+                jira_project=jira_project,
+                azdo_project=azdo_project,
+            )
+        except Exception as exc:
+            logger.warning("standup team: roster discovery failed: %s", exc)
+            result_box[0] = []
+        finally:
+            done.set()
+
+    started = time.monotonic()
+    threading.Thread(target=_discover, daemon=True, name="standup-roster").start()
+    tick = 0.0
+    while not done.is_set():
+        tick += frame_time
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                ["Discovering team members"],
+                width=w,
+                height=max(10, h - 1),
+                elapsed=time.monotonic() - started,
+                anim_tick=tick,
+                label="Loading selected trackers",
+            )
+        )
+        time.sleep(frame_time)
+
+    discovered = result_box[0] or []
+    saved_members = list(existing.get("team_members", ())) if existing.get("roster_configured") else []
+    plan_members: list[str] = []
+    try:
+        from yeaboi.sessions import SessionStore
+
+        with SessionStore(_ana_dbp) as sessions:
+            state = sessions.load_state(session_id) or {}
+        plan_members = [str(name).strip() for name in state.get("selected_team_members", ()) if str(name).strip()]
+    except Exception:
+        logger.warning("standup team: could not load planning members", exc_info=True)
+    roster = sorted(dict.fromkeys([*discovered, *saved_members, *plan_members]), key=str.lower)
+    initial_members = (
+        saved_members if existing.get("roster_configured") else (discovered if discovered else plan_members)
+    )
+    selected_members = _run_standup_member_select(
+        live,
+        console,
+        read_key,
+        frame_time,
+        supports_timeout,
+        roster,
+        initial_members,
+    )
+    if selected_members == "cancel":
+        logger.info("standup team: member selection cancelled (session=%s)", session_id)
+        return False, "Team selection cancelled."
+
+    defaults = {
+        "enabled": False,
+        "time": "10:00",
+        "weekdays": "1-5",
+        "delivery_channels": ["terminal"],
+        "lead_minutes": 10,
+        "timezone": "",
+        "repo_path": "",
+        "my_aliases": "",
+    }
+    merged = {**defaults, **existing}
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=merged["enabled"],
+            time=merged["time"],
+            weekdays=merged["weekdays"],
+            delivery_channels=merged["delivery_channels"],
+            lead_minutes=merged["lead_minutes"],
+            timezone=merged["timezone"],
+            repo_path=merged["repo_path"],
+            my_aliases=merged["my_aliases"],
+            tracker_sources=selected_sources,
+            team_members=selected_members,
+            roster_configured=True,
+            code_sources=merged.get("code_sources", []),
+            github_repositories=merged.get("github_repositories", []),
+            azdo_projects=merged.get("azdo_projects", []),
+            azdo_repositories=merged.get("azdo_repositories", []),
+            code_scope_configured=merged.get("code_scope_configured", False),
+            documentation_sources=merged.get("documentation_sources", []),
+            documentation_scope_configured=merged.get("documentation_scope_configured", False),
+        )
+    logger.info(
+        "standup team: saved session=%s sources=%s members=%d",
+        session_id,
+        selected_sources,
+        len(selected_members),
+    )
+    return True, f"Team saved — {len(selected_members)} member(s) from {len(selected_sources)} tracker(s)."
+
+
+def _standup_code_configure(
+    console: Console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    session_id: str,
+) -> tuple[bool, str]:
+    """Choose GitHub repositories/Azure projects and persist the code scope."""
+    import threading
+
+    from yeaboi.config import (
+        get_azure_devops_org_url,
+        get_github_token,
+        get_standup_github_repo,
+    )
+    from yeaboi.standup.code_scope import default_code_scope, discover_code_repositories
+    from yeaboi.standup.store import StandupStore
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+    available: list[tuple[str, str]] = []
+    if get_github_token() or get_standup_github_repo():
+        available.append(("github", "GitHub"))
+    if get_azure_devops_org_url():
+        available.append(("azure_devops", "Azure Repos"))
+    if not available:
+        return True, "No GitHub or Azure Repos integration configured — continuing without code coverage."
+
+    default_sources, default_github, _default_azdo = default_code_scope()
+    initial_sources = existing.get("code_sources", []) if existing.get("code_scope_configured") else default_sources
+    selected_sources = _run_standup_source_select(
+        live,
+        console,
+        read_key,
+        frame_time,
+        supports_timeout,
+        available,
+        initial_sources,
+        heading="Choose code sources",
+    )
+    if selected_sources == "cancel":
+        return False, "Repository selection cancelled."
+
+    result_box: list = [None]
+    done = threading.Event()
+
+    def _discover() -> None:
+        try:
+            result_box[0] = discover_code_repositories(selected_sources)
+        except Exception as exc:
+            logger.warning("standup code: repository discovery failed: %s", exc)
+            result_box[0] = {}
+        finally:
+            done.set()
+
+    started = time.monotonic()
+    threading.Thread(target=_discover, daemon=True, name="standup-code-repositories").start()
+    tick = 0.0
+    while not done.is_set():
+        tick += frame_time
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                ["Discovering repositories"],
+                width=w,
+                height=max(10, h - 1),
+                elapsed=time.monotonic() - started,
+                anim_tick=tick,
+                label="Loading selected code sources",
+            )
+        )
+        time.sleep(frame_time)
+
+    discovered = result_box[0] or {}
+    github_choices = list(discovered.get("github", ()))
+    azdo_project_choices = list(discovered.get("azure_devops", ()))
+    github_labels = {f"GitHub · {repo}": repo for repo in github_choices}
+    azdo_labels = {f"Azure DevOps · {project}": project for project in azdo_project_choices}
+    choices = [*github_labels, *azdo_labels]
+    saved_github = list(existing.get("github_repositories", ()))
+    saved_azdo_projects = list(existing.get("azdo_projects", ()))
+    if existing.get("code_scope_configured"):
+        initial_repositories = [
+            *(label for label, repo in github_labels.items() if repo in saved_github),
+            *(label for label, project in azdo_labels.items() if project in saved_azdo_projects),
+        ]
+    else:
+        from yeaboi.config import get_azure_devops_project
+
+        legacy_project = (get_azure_devops_project() or "").lower()
+        initial_repositories = [
+            *(label for label, repo in github_labels.items() if repo in default_github),
+            *(label for label, project in azdo_labels.items() if project.lower() == legacy_project),
+        ]
+    selected_repositories = _run_standup_member_select(
+        live,
+        console,
+        read_key,
+        frame_time,
+        supports_timeout,
+        choices,
+        initial_repositories,
+        heading="Choose GitHub repositories and Azure projects",
+        empty_message="No accessible repositories or projects found for the selected code source(s).",
+    )
+    if selected_repositories == "cancel":
+        return False, "Code scope selection cancelled."
+    if not selected_repositories:
+        return False, "No accessible repositories or projects found — check integration permissions."
+
+    selected_set = set(selected_repositories)
+    selected_github = [repo for label, repo in github_labels.items() if label in selected_set]
+    selected_azdo_projects = [project for label, project in azdo_labels.items() if label in selected_set]
+    defaults = {
+        "enabled": False,
+        "time": "10:00",
+        "weekdays": "1-5",
+        "delivery_channels": ["terminal"],
+        "lead_minutes": 10,
+        "timezone": "",
+        "repo_path": "",
+        "my_aliases": "",
+        "tracker_sources": ["jira"],
+        "team_members": [],
+        "roster_configured": False,
+    }
+    merged = {**defaults, **existing}
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=merged["enabled"],
+            time=merged["time"],
+            weekdays=merged["weekdays"],
+            delivery_channels=merged["delivery_channels"],
+            lead_minutes=merged["lead_minutes"],
+            timezone=merged["timezone"],
+            repo_path=merged["repo_path"],
+            my_aliases=merged["my_aliases"],
+            tracker_sources=merged["tracker_sources"],
+            team_members=merged["team_members"],
+            roster_configured=merged["roster_configured"],
+            code_sources=selected_sources,
+            github_repositories=selected_github,
+            azdo_projects=selected_azdo_projects,
+            azdo_repositories=[],
+            code_scope_configured=True,
+            documentation_sources=merged.get("documentation_sources", []),
+            documentation_scope_configured=merged.get("documentation_scope_configured", False),
+        )
+    return True, (
+        f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
+    )
+
+
+def _standup_documentation_configure(
+    console: Console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    session_id: str,
+) -> tuple[bool, str]:
+    """Choose Confluence/Notion providers; repository documentation is automatic."""
+    from yeaboi.config import get_confluence_space_key, get_notion_root_page_id, get_notion_token
+    from yeaboi.standup.documentation_scope import default_documentation_sources
+    from yeaboi.standup.store import StandupStore
+
+    confluence_space = get_confluence_space_key() or ""
+    notion_root = get_notion_root_page_id() or ("workspace" if get_notion_token() else "")
+    available: list[tuple[str, str]] = []
+    if confluence_space:
+        available.append(("confluence", "Confluence"))
+    if notion_root:
+        available.append(("notion", "Notion"))
+    if not available:
+        return True, "No Confluence or Notion integration configured — repository documentation is still included."
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+
+    initial = (
+        existing.get("documentation_sources", [])
+        if existing.get("documentation_scope_configured")
+        else default_documentation_sources(
+            confluence_space=confluence_space,
+            notion_root=notion_root,
+        )
+    )
+    selected = _run_standup_source_select(
+        live,
+        console,
+        read_key,
+        frame_time,
+        supports_timeout,
+        available,
+        initial,
+        heading="Choose documentation sources",
+        allow_empty=True,
+        select_first_if_empty=False,
+    )
+    if selected == "cancel":
+        return False, "Documentation selection cancelled."
+
+    defaults = {
+        "enabled": False,
+        "time": "10:00",
+        "weekdays": "1-5",
+        "delivery_channels": ["terminal"],
+        "lead_minutes": 10,
+        "timezone": "",
+        "repo_path": "",
+        "my_aliases": "",
+        "tracker_sources": ["jira"],
+        "team_members": [],
+        "roster_configured": False,
+        "code_sources": [],
+        "github_repositories": [],
+        "azdo_projects": [],
+        "azdo_repositories": [],
+        "code_scope_configured": False,
+    }
+    merged = {**defaults, **existing}
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=merged["enabled"],
+            time=merged["time"],
+            weekdays=merged["weekdays"],
+            delivery_channels=merged["delivery_channels"],
+            lead_minutes=merged["lead_minutes"],
+            timezone=merged["timezone"],
+            repo_path=merged["repo_path"],
+            my_aliases=merged["my_aliases"],
+            tracker_sources=merged["tracker_sources"],
+            team_members=merged["team_members"],
+            roster_configured=merged["roster_configured"],
+            code_sources=merged["code_sources"],
+            github_repositories=merged["github_repositories"],
+            azdo_projects=merged["azdo_projects"],
+            azdo_repositories=merged["azdo_repositories"],
+            code_scope_configured=merged["code_scope_configured"],
+            documentation_sources=selected,
+            documentation_scope_configured=True,
+        )
+    return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
+
+
 def _standup_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
     """Collect schedule/delivery settings in-TUI, persist them, and (un)install the OS schedule.
 
@@ -2351,6 +2899,16 @@ def _standup_configure(console: Console, live, read_key, frame_time, supports_ti
             delivery_channels=channels,
             repo_path=repo_in,
             my_aliases=aliases_in.strip(),
+            tracker_sources=existing.get("tracker_sources", ["jira"]),
+            team_members=existing.get("team_members", []),
+            roster_configured=existing.get("roster_configured", False),
+            code_sources=existing.get("code_sources", []),
+            github_repositories=existing.get("github_repositories", []),
+            azdo_projects=existing.get("azdo_projects", []),
+            azdo_repositories=existing.get("azdo_repositories", []),
+            code_scope_configured=existing.get("code_scope_configured", False),
+            documentation_sources=existing.get("documentation_sources", []),
+            documentation_scope_configured=existing.get("documentation_scope_configured", False),
         )
 
     msg = install_schedule(session_id, time_in, days_in, lead_minutes) if enabled else remove_schedule(session_id)
@@ -3579,7 +4137,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
     Schedule, Notices) with a two-zone focus model: Up/Down focuses the list
     and moves the selection, Enter opens the selected section directly —
     except the Team row, where Enter toggles the inline member sub-rows;
-    Left/Right moves focus to the button row (Generate / Configure / Back),
+    Left/Right moves focus to the button row (Generate / Team / Configure / Back),
     where Enter presses the highlighted button. A detail view free-scrolls
     with Up/Down; Back/Esc returns to the overview. Generate/Configure open
     themed in-TUI input screens (driven by read_key, so no raw prompt and no
@@ -3593,7 +4151,8 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
     data = _collect_standup_data()
     data["team_expanded"] = team_expanded
     view = "overview"
-    focus = "sections"  # overview focus zone: "sections" | "buttons"
+    # Generate is the primary landing action; Up/Down still moves into sections.
+    focus = "buttons"  # overview focus zone: "sections" | "buttons"
     card_idx, scroll, sel = 0, 0, 0
     _scroll_meta: dict = {}
     anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
@@ -3603,7 +4162,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Anonymize", "Configure", "Back"]
+            base = ["Generate", "Team", "Anonymize", "Configure", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
         if data.get("report") is not None:
@@ -3834,7 +4393,23 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                             anon = res
             elif act == "Revert":  # restore the real names (no LLM call)
                 anon, anon_instruction = None, ""
-            else:  # Configure — in-TUI themed input (stays inside Live)
+            elif act == "Team":
+                try:
+                    logger.info("standup: Team pressed (session=%s)", session_id)
+                    _saved, msg = _standup_team_configure(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        session_id,
+                    )
+                except Exception as e:
+                    logger.error("standup team selection failed: %s", e, exc_info=True)
+                    msg = f"Team selection failed: {e}"
+                data = _collect_standup_data(message=msg)
+                _reset_to_overview()
+            elif act == "Configure":  # in-TUI themed input (stays inside Live)
                 try:
                     logger.info("standup: Configure pressed (session=%s)", session_id)
                     msg = _standup_configure(console, live, read_key, frame_time, supports_timeout, session_id)

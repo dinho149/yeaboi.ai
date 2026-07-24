@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS standup_config (
     delivery_channels TEXT NOT NULL DEFAULT '["terminal"]',
     repo_path         TEXT NOT NULL DEFAULT '',
     my_aliases        TEXT NOT NULL DEFAULT '',
+    tracker_sources   TEXT NOT NULL DEFAULT '["jira"]',
+    team_members      TEXT NOT NULL DEFAULT '[]',
+    roster_configured INTEGER NOT NULL DEFAULT 0,
+    code_sources      TEXT NOT NULL DEFAULT '[]',
+    github_repositories TEXT NOT NULL DEFAULT '[]',
+    azdo_projects     TEXT NOT NULL DEFAULT '[]',
+    azdo_repositories TEXT NOT NULL DEFAULT '[]',
+    code_scope_configured INTEGER NOT NULL DEFAULT 0,
+    documentation_sources TEXT NOT NULL DEFAULT '[]',
+    documentation_scope_configured INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -99,12 +109,24 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
             # JSON turned each (label, url) tuple into a list — rebuild tuples.
             links=tuple((str(li[0]), str(li[1])) for li in m.get("links", ()) if len(li) == 2),
             activity_count=int(m.get("activity_count", 0)),
+            code_summary=m.get("code_summary", ""),
+            code_links=tuple((str(li[0]), str(li[1])) for li in m.get("code_links", ()) if len(li) == 2),
+            code_activity_count=int(m.get("code_activity_count", 0)),
+            documentation_summary=m.get("documentation_summary", ""),
+            documentation_links=tuple(
+                (str(li[0]), str(li[1])) for li in m.get("documentation_links", ()) if len(li) == 2
+            ),
+            documentation_activity_count=int(m.get("documentation_activity_count", 0)),
+            ticketing_summary=m.get("ticketing_summary", ""),
+            ticketing_links=tuple((str(li[0]), str(li[1])) for li in m.get("ticketing_links", ()) if len(li) == 2),
+            ticketing_activity_count=int(m.get("ticketing_activity_count", 0)),
         )
         for m in d.get("member_updates", ())
     )
     # JSON turned each (source, count) tuple into a [source, count] list — rebuild tuples.
     counts = tuple((str(c[0]), int(c[1])) for c in d.get("activity_counts", ()) if len(c) == 2)
     skipped = tuple((str(s[0]), str(s[1])) for s in d.get("skipped_sources", ()) if len(s) == 2)
+    category_coverage = tuple((str(item[0]), str(item[1])) for item in d.get("category_coverage", ()) if len(item) == 2)
     return StandupReport(
         date=d.get("date", ""),
         session_id=d.get("session_id", ""),
@@ -119,6 +141,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         activity_counts=counts,
         activity_window=d.get("activity_window", ""),
         skipped_sources=skipped,
+        category_coverage=category_coverage,
         my_name=d.get("my_name", ""),
         warnings=tuple(d.get("warnings", ())),
         images=tuple(d.get("images", ())),
@@ -164,6 +187,35 @@ class StandupStore:
             self._conn.execute("ALTER TABLE standup_config ADD COLUMN my_aliases TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass  # column already exists
+        # Idempotent migration: Standup owns an explicit tracker/member scope.
+        # The configured bit distinguishes "not chosen yet" from a deliberate
+        # self-only roster (an empty team_members list).
+        for statement in (
+            """ALTER TABLE standup_config
+               ADD COLUMN tracker_sources TEXT NOT NULL DEFAULT '["jira"]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN team_members TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN roster_configured INTEGER NOT NULL DEFAULT 0""",
+            """ALTER TABLE standup_config
+               ADD COLUMN code_sources TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN github_repositories TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN azdo_projects TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN azdo_repositories TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN code_scope_configured INTEGER NOT NULL DEFAULT 0""",
+            """ALTER TABLE standup_config
+               ADD COLUMN documentation_sources TEXT NOT NULL DEFAULT '[]'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN documentation_scope_configured INTEGER NOT NULL DEFAULT 0""",
+        ):
+            try:
+                self._conn.execute(statement)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -200,6 +252,16 @@ class StandupStore:
         timezone: str = "",
         repo_path: str = "",
         my_aliases: str = "",
+        tracker_sources: list[str] | None = None,
+        team_members: list[str] | None = None,
+        roster_configured: bool = False,
+        code_sources: list[str] | None = None,
+        github_repositories: list[str] | None = None,
+        azdo_projects: list[str] | None = None,
+        azdo_repositories: list[str] | None = None,
+        code_scope_configured: bool = False,
+        documentation_sources: list[str] | None = None,
+        documentation_scope_configured: bool = False,
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
@@ -210,6 +272,13 @@ class StandupStore:
         """
         now = self._now()
         channels_json = json.dumps(delivery_channels)
+        tracker_sources_json = json.dumps(tracker_sources or ["jira"])
+        team_members_json = json.dumps(team_members or [])
+        code_sources_json = json.dumps(code_sources or [])
+        github_repositories_json = json.dumps(github_repositories or [])
+        azdo_projects_json = json.dumps(azdo_projects or [])
+        azdo_repositories_json = json.dumps(azdo_repositories or [])
+        documentation_sources_json = json.dumps(documentation_sources or [])
         logger.info(
             "Saving standup config: session=%s enabled=%s standup_time=%s lead=%d channels=%s",
             session_id,
@@ -221,8 +290,10 @@ class StandupStore:
         self._conn.execute(
             """INSERT INTO standup_config
                    (session_id, enabled, time, lead_minutes, timezone, weekdays, delivery_channels,
-                    repo_path, my_aliases, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    repo_path, my_aliases, tracker_sources, team_members, roster_configured,
+                    code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured,
+                    documentation_sources, documentation_scope_configured, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -232,6 +303,16 @@ class StandupStore:
                    delivery_channels = excluded.delivery_channels,
                    repo_path = excluded.repo_path,
                    my_aliases = excluded.my_aliases,
+                   tracker_sources = excluded.tracker_sources,
+                   team_members = excluded.team_members,
+                   roster_configured = excluded.roster_configured,
+                   code_sources = excluded.code_sources,
+                   github_repositories = excluded.github_repositories,
+                   azdo_projects = excluded.azdo_projects,
+                   azdo_repositories = excluded.azdo_repositories,
+                   code_scope_configured = excluded.code_scope_configured,
+                   documentation_sources = excluded.documentation_sources,
+                   documentation_scope_configured = excluded.documentation_scope_configured,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -243,6 +324,16 @@ class StandupStore:
                 channels_json,
                 repo_path,
                 my_aliases,
+                tracker_sources_json,
+                team_members_json,
+                int(roster_configured),
+                code_sources_json,
+                github_repositories_json,
+                azdo_projects_json,
+                azdo_repositories_json,
+                int(code_scope_configured),
+                documentation_sources_json,
+                int(documentation_scope_configured),
                 now,
                 now,
             ),
@@ -252,7 +343,10 @@ class StandupStore:
         """Return the standup config for a session as a dict, or None if unset."""
         row = self._conn.execute(
             "SELECT session_id, enabled, time, timezone, weekdays, delivery_channels, repo_path, lead_minutes, "
-            "my_aliases FROM standup_config WHERE session_id = ?",
+            "my_aliases, tracker_sources, team_members, roster_configured, "
+            "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
+            "documentation_sources, documentation_scope_configured "
+            "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if row is None:
@@ -261,6 +355,34 @@ class StandupStore:
             channels = json.loads(row[5]) if row[5] else ["terminal"]
         except (json.JSONDecodeError, TypeError):
             channels = ["terminal"]
+        try:
+            tracker_sources = json.loads(row[9]) if row[9] else ["jira"]
+        except (json.JSONDecodeError, TypeError):
+            tracker_sources = ["jira"]
+        try:
+            team_members = json.loads(row[10]) if row[10] else []
+        except (json.JSONDecodeError, TypeError):
+            team_members = []
+
+        def _json_list(value) -> list:
+            try:
+                parsed = json.loads(value) if value else []
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                return []
+
+        azdo_projects = _json_list(row[14])
+        legacy_azdo_repositories = _json_list(row[15])
+        if not azdo_projects and legacy_azdo_repositories:
+            azdo_projects = list(
+                dict.fromkeys(
+                    project
+                    for repository in legacy_azdo_repositories
+                    for project, separator, _name in [str(repository).partition("/")]
+                    if separator and project
+                )
+            )
+
         return {
             "session_id": row[0],
             "enabled": bool(row[1]),
@@ -271,6 +393,16 @@ class StandupStore:
             "repo_path": row[6],
             "lead_minutes": row[7] if row[7] is not None else 10,
             "my_aliases": row[8] or "",
+            "tracker_sources": tracker_sources,
+            "team_members": team_members,
+            "roster_configured": bool(row[11]),
+            "code_sources": _json_list(row[12]),
+            "github_repositories": _json_list(row[13]),
+            "azdo_projects": azdo_projects,
+            "azdo_repositories": legacy_azdo_repositories,
+            "code_scope_configured": bool(row[16]),
+            "documentation_sources": _json_list(row[17]),
+            "documentation_scope_configured": bool(row[18]),
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────

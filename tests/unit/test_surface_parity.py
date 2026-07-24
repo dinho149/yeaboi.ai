@@ -92,7 +92,14 @@ CAPABILITIES: dict[str, dict] = {
     },
     "standup": {
         "engines": {("yeaboi.standup.engine", "run_standup")},
-        "mcp_tools": {"standup_run", "standup_history", "standup_config_get", "standup_config_set"},
+        "mcp_tools": {
+            "standup_run",
+            "standup_history",
+            "standup_config_get",
+            "standup_config_set",
+            "standup_members",
+            "standup_repositories",
+        },
         "tui_mode": "daily-standup",
         "cli": {"standup", "--standup-run", "--standup-session", "--standup-output", "--standup-interactive"},
         "skill": "standup",
@@ -282,7 +289,12 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
 # CLI dests with no engine counterpart — output/dispatch concerns.
 CLI_ONLY_DESTS: dict[str, set[str]] = {
     "report": {"format", "strict"},
-    "standup": {"format", "strict", "schedule"},  # --schedule drives standup/scheduler.py, not run_standup
+    "standup": {
+        "format",
+        "strict",
+        "schedule",
+        "list_members",
+    },  # schedule/list-members are adapters, not run_standup params
     "perf prep": {"strict"},
     "perf complete": {"strict"},
     "perf review": {"strict"},

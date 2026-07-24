@@ -8,7 +8,7 @@ Sprint planning, daily standups, stakeholder delivery reports, and engineer
 - **MCP server** (started automatically via `uvx`): 25 tools — `plan_generate`,
   `plan_get`/`plan_export`/`plan_publish`/`plan_sync`, `intake_questions`,
   `sessions_list`/`session_get`/`session_delete`, `usage_get`,
-  `standup_run`/`standup_history`/`standup_config_get`/`standup_config_set`,
+  `standup_run`/`standup_history`/`standup_members`/`standup_repositories`/`standup_config_get`/`standup_config_set`,
   `report_delivery`, `perf_roster`,
   `perf_one_on_one_prep`/`perf_one_on_one_complete`/`perf_six_month_review`/
   `perf_note_add`, `retro_history`/`retro_export`, `team_analyze`,

@@ -151,7 +151,7 @@ class TestRunStandup:
         alice = next(m for m in report.member_updates if m.name == "Alice")
         assert alice.source == "self-reported"
         assert alice.self_report == "Interviews all day."
-        assert alice.summary == "No activity detected."
+        assert alice.summary == "Interviews all day."
 
     def test_pasted_update_images_reach_llm(self, monkeypatch, db_path, seeded_session, tmp_path):
         """Screenshots saved with 'My Update' become image blocks on the summary call."""
@@ -194,7 +194,7 @@ class TestRunStandup:
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         # Fallback: Alice's summary is her activity title.
         alice = next(m for m in report.member_updates if m.name == "Alice")
-        assert "did work" in alice.summary
+        assert "did work" in alice.code_summary
         assert report.team_summary  # deterministic team summary present
 
     def test_auth_error_becomes_warning(self, monkeypatch, db_path, seeded_session):
@@ -214,7 +214,7 @@ class TestRunStandup:
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         assert any("API key invalid" in w for w in report.warnings)
         alice = next(m for m in report.member_updates if m.name == "Alice")
-        assert "x" in alice.summary  # deterministic fallback used
+        assert "x" in alice.code_summary  # deterministic fallback used
 
     def test_ollama_model_missing_becomes_pull_hint_warning(self, monkeypatch, db_path, seeded_session):
         _patch_common(
@@ -232,7 +232,7 @@ class TestRunStandup:
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         assert any("ollama pull qwen3:8b" in w for w in report.warnings)
         alice = next(m for m in report.member_updates if m.name == "Alice")
-        assert "x" in alice.summary  # deterministic fallback still used
+        assert "x" in alice.code_summary  # deterministic fallback still used
 
     def test_no_api_key_warns(self, monkeypatch, db_path, seeded_session):
         _patch_common(
@@ -424,8 +424,8 @@ class TestRosterMerge:
             lambda **k: type("L", (), {"invoke": lambda self, m: _FakeResp(llm_json)})(),
         )
 
-    def test_unmatched_authors_become_members(self, monkeypatch, db_path, seeded_session):
-        """Activity by someone outside the plan roster is never silently dropped."""
+    def test_unmatched_authors_are_excluded(self, monkeypatch, db_path, seeded_session):
+        """The authoritative roster excludes outsider cards and activity totals."""
         _patch_common(
             monkeypatch,
             items=[
@@ -437,8 +437,53 @@ class TestRosterMerge:
         self._llm(monkeypatch, [{"name": "Alice", "summary": "login"}, {"name": "charlie-dev", "summary": "refactor"}])
         report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
         names = [m.name for m in report.member_updates]
-        assert "charlie-dev" in names  # not in selected_team_members, still present
+        assert "charlie-dev" not in names
+        assert report.activity_counts == (("github", 1),)
         assert "Alice" in names and "Bob" in names
+
+    def test_saved_tracker_and_member_scope_drive_collection(self, monkeypatch, db_path, seeded_session):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                tracker_sources=["jira"],
+                team_members=["Alice"],
+                roster_configured=True,
+            )
+            store.save_my_update(seeded_session, "2026-07-10", "Bob", "This must stay outside the selected team.")
+        items = [
+            {"author": "Alice", "kind": "issue", "title": "login", "source": "jira"},
+            {"author": "Bob", "kind": "issue", "title": "outsider", "source": "azure_devops"},
+        ]
+        _patch_common(monkeypatch, items=items, counts=[("jira", 1), ("azure_devops", 1)])
+        monkeypatch.setattr(
+            engine,
+            "_resolve_source_params",
+            lambda config: {
+                "jira_project": "PSOT",
+                "azdo_project": "Core",
+                "github_repo": "",
+                "local_repo_path": "",
+                "confluence_space": "",
+                "notion_root": "",
+            },
+        )
+        captured = {}
+
+        def _collect(**kwargs):
+            captured["sources"] = kwargs["sources"]
+            return ActivityBundle(items=items, counts=[("jira", 1)])
+
+        monkeypatch.setattr(engine.collector, "collect_recent_activity", _collect)
+        self._llm(monkeypatch, [{"name": "Alice", "summary": "login"}])
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert engine.collector.SOURCE_JIRA in captured["sources"]
+        assert engine.collector.SOURCE_AZDO not in captured["sources"]
+        assert [member.name for member in report.member_updates] == ["Me", "Alice"]
+        assert report.activity_counts == (("jira", 1),)
 
     def test_my_activity_attaches_via_configured_alias(self, monkeypatch, db_path, seeded_session):
         """Aliased GitHub commits fold into the standup user's card, not a stranger card."""
@@ -594,15 +639,10 @@ class TestIdentityResolution:
             counts=[("jira", 1)],
         )
         monkeypatch.setattr(engine, "_detect_tracker_identity", lambda: ("Omar Din", ["Omar Din"]))
-        from yeaboi.agent.state import EngineerRef
 
         monkeypatch.setattr(
-            "yeaboi.performance.roster.fetch_roster",
-            lambda **kw: [
-                EngineerRef(name="James", source="jira"),
-                EngineerRef(name="Omar Din", source="jira"),
-                EngineerRef(name="Sarah", source="jira"),
-            ],
+            "yeaboi.standup.roster.discover_team_members",
+            lambda *a, **kw: ["James", "Omar Din", "Sarah"],
         )
         llm_json = json.dumps(
             {"members": [{"name": "Sarah", "summary": "Moved YEA-42 into review."}], "team_summary": "ok"}
@@ -739,7 +779,7 @@ class TestWipFlow:
         monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **kw: object())
         engine.run_standup(seeded_session, db_path=db_path, dry_run=True, deliver=False)
         alice = next(m for m in captured["members"] if m["name"] == "Alice")
-        assert [a["title"] for a in alice["activity"]] == ["login page"]
+        assert [a["title"] for a in alice["code_activity"]] == ["login page"]
         assert [a["title"] for a in alice["in_progress"]] == ["Ship exports"]
 
     def test_llm_payload_strips_urls_and_keys(self, monkeypatch, db_path, seeded_session):
@@ -767,7 +807,7 @@ class TestWipFlow:
         monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **kw: object())
         engine.run_standup(seeded_session, db_path=db_path, dry_run=True, deliver=False)
         alice = next(m for m in captured["members"] if m["name"] == "Alice")
-        assert "url" not in alice["activity"][0] and "key" not in alice["activity"][0]
+        assert "url" not in alice["code_activity"][0] and "key" not in alice["code_activity"][0]
 
     def test_confidence_excludes_wip_from_activity_count(self, monkeypatch, db_path, seeded_session):
         items = [

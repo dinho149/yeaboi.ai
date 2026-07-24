@@ -5,6 +5,8 @@ normalizes into the shared {author, kind, title, timestamp, key} shape.
 """
 
 import subprocess
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -92,6 +94,7 @@ class TestGithubRecentActivity:
     def test_commits_normalized(self, monkeypatch):
         commit_obj = SimpleNamespace(
             sha="abcdef1234",
+            files=[SimpleNamespace(filename="docs/guide.md"), SimpleNamespace(filename="src/app.py")],
             commit=SimpleNamespace(
                 author=SimpleNamespace(name="Bob", date=datetime(2026, 7, 10, 8, 0, tzinfo=UTC)),
                 message="Add feature\n\nbody",
@@ -108,6 +111,7 @@ class TestGithubRecentActivity:
         assert items[0]["kind"] == "commit"
         assert items[0]["title"] == "Add feature"
         assert items[0]["key"] == "abcdef12"
+        assert items[0]["changed_files"] == ["docs/guide.md", "src/app.py"]
 
     def test_commits_error_returns_empty(self, monkeypatch):
         client = MagicMock()
@@ -125,6 +129,7 @@ class TestGithubRecentActivity:
             # Relative to now so the PR always falls inside the days=1 window —
             # a fixed date made this test fail once the clock passed it.
             updated_at=datetime.now(UTC) - timedelta(hours=1),
+            get_files=lambda: [SimpleNamespace(filename="README.md")],
         )
         repo = MagicMock()
         repo.get_pulls.return_value = [pr]
@@ -136,6 +141,7 @@ class TestGithubRecentActivity:
         assert items[0]["status"] == "merged"
         assert items[0]["key"] == "#42"
         assert items[0]["author"] == "carol"
+        assert items[0]["changed_files"] == ["README.md"]
 
 
 class TestAzdoRecentActivity:
@@ -656,6 +662,9 @@ class TestAzdoRepoActivity:
                 author=SimpleNamespace(name="Gina", email="gina@corp.com", date="2026-07-17T08:00:00Z"),
             )
         ]
+        git.get_changes.return_value = SimpleNamespace(
+            changes=[SimpleNamespace(item=SimpleNamespace(path="/docs/api.md"))]
+        )
         items = azdevops_recent_commits("Proj", days=1)
         assert items == [
             {
@@ -667,6 +676,8 @@ class TestAzdoRepoActivity:
                 "timestamp": "2026-07-17T08:00:00",
                 "key": "abcdef12",
                 "url": "https://dev.azure.com/org/Proj/_git/api/commit/abcdef1234567890",
+                "repository": "Proj/api",
+                "changed_files": ["/docs/api.md"],
             }
         ]
         criteria = git.get_commits.call_args.kwargs["search_criteria"]
@@ -700,9 +711,13 @@ class TestAzdoRepoActivity:
 
         repo = SimpleNamespace(id="r1", name="api")
         git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.get_azure_devops_org_url",
+            lambda: "https://dev.azure.com/acme",
+        )
         recent = datetime.now(UTC) - timedelta(hours=2)
         old = datetime.now(UTC) - timedelta(days=30)
-        git.get_pull_requests.return_value = [
+        git.get_pull_requests_by_project.return_value = [
             SimpleNamespace(
                 pull_request_id=1,
                 title="New PR",
@@ -710,6 +725,7 @@ class TestAzdoRepoActivity:
                 created_by=SimpleNamespace(display_name="Ivy", unique_name="ivy@corp.com"),
                 creation_date=recent,
                 closed_date=None,
+                repository=repo,
             ),
             SimpleNamespace(
                 pull_request_id=2,
@@ -718,6 +734,7 @@ class TestAzdoRepoActivity:
                 created_by=SimpleNamespace(display_name="Jon", unique_name=""),
                 creation_date=old,
                 closed_date=recent,
+                repository=repo,
             ),
             SimpleNamespace(
                 pull_request_id=3,
@@ -726,12 +743,98 @@ class TestAzdoRepoActivity:
                 created_by=SimpleNamespace(display_name="Kim", unique_name=""),
                 creation_date=old,
                 closed_date=old,
+                repository=repo,
             ),
         ]
         items = azdevops_recent_prs("Proj", days=1)
         assert [i["key"] for i in items] == ["!1", "!2"]
         assert items[0]["author"] == "Ivy"
         assert items[1]["status"] == "merged"  # completed → merged label
+        assert items[0]["url"] == "https://dev.azure.com/acme/Proj/_git/api/pullrequest/1"
+        assert items[1]["url"] == "https://dev.azure.com/acme/Proj/_git/api/pullrequest/2"
+        git.get_pull_requests_by_project.assert_called_once()
+        git.get_pull_requests.assert_not_called()
+        git.get_repository.assert_not_called()
+
+    def test_reviews_only_fetch_threads_for_recent_or_active_prs(self, monkeypatch):
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        old = datetime.now(UTC) - timedelta(days=30)
+        git.get_pull_requests_by_project.return_value = [
+            SimpleNamespace(
+                pull_request_id=1,
+                title="Active",
+                status="active",
+                creation_date=old,
+                closed_date=None,
+                repository=repo,
+            ),
+            SimpleNamespace(
+                pull_request_id=2,
+                title="Recently merged",
+                status="completed",
+                creation_date=old,
+                closed_date=recent,
+                repository=repo,
+            ),
+            SimpleNamespace(
+                pull_request_id=3,
+                title="Ancient",
+                status="completed",
+                creation_date=old,
+                closed_date=old,
+                repository=repo,
+            ),
+        ]
+        git.get_threads.return_value = []
+
+        assert azdevops_recent_reviews("Proj", days=1) == []
+
+        fetched_prs = {call.args[1] for call in git.get_threads.call_args_list}
+        assert fetched_prs == {1, 2}
+
+    def test_review_builds_link_from_partial_project_repo_reference(self, monkeypatch):
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="API Service", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.get_azure_devops_org_url",
+            lambda: "https://acme.visualstudio.com",
+        )
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        git.get_pull_requests_by_project.return_value = [
+            SimpleNamespace(
+                pull_request_id=42,
+                title="Review me",
+                status="active",
+                creation_date=recent,
+                closed_date=None,
+                repository=repo,
+            )
+        ]
+        git.get_threads.return_value = [
+            SimpleNamespace(
+                comments=(
+                    SimpleNamespace(
+                        id=7,
+                        published_date=recent,
+                        author=SimpleNamespace(display_name="Rae", unique_name="rae@example.com"),
+                        content="Looks good",
+                    ),
+                )
+            )
+        ]
+
+        items = azdevops_recent_reviews("Project Space", days=1)
+
+        assert len(items) == 1
+        assert items[0]["url"] == ("https://acme.visualstudio.com/Project%20Space/_git/API%20Service/pullrequest/42")
+        git.get_repository.assert_not_called()
 
     def test_auth_error_raises_source_error(self, monkeypatch):
         from azure.devops.exceptions import AzureDevOpsServiceError
@@ -835,6 +938,111 @@ class TestConfluenceMultiEditor:
         monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
         items = confluence_recent_pages("SPACE", days=1)
         assert [i["author"] for i in items] == ["Eve"]  # base item still present
+
+    def test_first_revision_skips_version_lookup(self, monkeypatch):
+        conf = MagicMock()
+        page = self._page()
+        page["content"]["history"]["lastUpdated"]["number"] = 1
+        conf.cql.return_value = {"results": [page]}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+
+        items = confluence_recent_pages("SPACE", days=1)
+
+        assert [item["author"] for item in items] == ["Eve"]
+        conf.get.assert_not_called()
+
+    def test_only_five_newest_cache_misses_are_fetched_and_partial_is_reported(self, monkeypatch):
+        conf = MagicMock()
+        pages = []
+        for index in range(8):
+            page = self._page(editors_last=f"Editor {index}")
+            page["content"]["id"] = str(index)
+            page["content"]["history"]["lastUpdated"]["number"] = 2
+            pages.append(page)
+        conf.cql.return_value = {"results": pages}
+        conf.get.return_value = {"results": []}
+        notices = []
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+
+        items = confluence_recent_pages("SPACE", days=1, on_partial=notices.append)
+
+        assert len(items) == 8
+        assert conf.get.call_count == 5
+        assert notices == ["latest editors captured; earlier-editor enrichment incomplete for 3 page(s)"]
+
+    def test_version_history_cache_is_reused_across_activity_windows(self, monkeypatch, tmp_path):
+        from yeaboi.standup.cache import StandupMetadataCache
+
+        conf = MagicMock()
+        page = self._page()
+        page["content"]["history"]["lastUpdated"]["number"] = 2
+        conf.cql.return_value = {"results": [page]}
+        conf.get.return_value = {"results": [{"by": {"displayName": "Omar"}, "when": self._NOW_ISO, "number": 1}]}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+        cache = StandupMetadataCache(tmp_path / "standup.db")
+        try:
+            first = confluence_recent_pages(
+                "SPACE",
+                since=datetime.now(UTC) - timedelta(days=1),
+                metadata_cache=cache,
+            )
+            second = confluence_recent_pages(
+                "SPACE",
+                since=datetime.now(UTC) - timedelta(hours=1),
+                metadata_cache=cache,
+            )
+        finally:
+            cache.close()
+
+        assert [item["author"] for item in first] == ["Eve", "Omar"]
+        assert [item["author"] for item in second] == ["Eve", "Omar"]
+        assert conf.get.call_count == 1
+
+    def test_slow_history_does_not_hold_up_base_activity(self, monkeypatch):
+        conf = MagicMock()
+        page = self._page()
+        page["content"]["history"]["lastUpdated"]["number"] = 2
+        conf.cql.return_value = {"results": [page]}
+        release = threading.Event()
+
+        def slow_history(*_args, **_kwargs):
+            release.wait(timeout=1)
+            return {"results": []}
+
+        conf.get.side_effect = slow_history
+        notices = []
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+
+        started = time.monotonic()
+        items = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            enrichment_budget_seconds=0.03,
+            on_partial=notices.append,
+        )
+        elapsed = time.monotonic() - started
+        release.set()
+
+        assert elapsed < 0.2
+        assert [item["author"] for item in items] == ["Eve"]
+        assert notices == ["latest editors captured; earlier-editor enrichment incomplete for 1 page(s)"]
+
+    def test_cql_timeout_is_a_source_failure_not_an_empty_success(self, monkeypatch):
+        from requests.exceptions import Timeout
+
+        from yeaboi.standup.errors import StandupSourceError
+
+        conf = MagicMock()
+        conf.cql.side_effect = Timeout("slow")
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+
+        with pytest.raises(StandupSourceError, match="timed out after 8 seconds"):
+            confluence_recent_pages("SPACE", days=1)
 
 
 class TestGithubPrBranchCommits:

@@ -31,11 +31,13 @@ def get_standup_summary_prompt(
     """Build the standup-summary prompt.
 
     Args:
-        members: [{"name": str, "activity": [ {kind,title,status,source}, ... ],
+        members: [{"name": str,
+            "ticketing_activity": [ {kind,title,status,source}, ... ],
+            "code_activity": [ {kind,title,status,source,repository}, ... ],
+            "documentation_activity": [ {kind,title,status,source,repository}, ... ],
             "in_progress": [ {kind,title,status,source}, ... ],
-            "self_report": str}] — one entry per team member. "activity" holds
-            their tracked items across all sources (commits, PRs, ticket
-            updates, comments, page edits); "in_progress" holds tickets
+            "self_report": str, "coverage": dict}] — one entry per team member.
+            The three activity lists are already classified; "in_progress" holds tickets
             currently assigned to them and in progress (possibly untouched in
             the window); "self_report" is their own typed update ("" when they
             didn't type one), used as supporting context, never as a
@@ -56,8 +58,19 @@ def get_standup_summary_prompt(
     # ARC: Requirements
     requirements = (
         "Requirements:\n"
-        "- For EACH person in MEMBERS, write a one- to two-sentence 'summary' of what they "
-        "worked on, grounded in their listed activity. Do not invent work that isn't in the data.\n"
+        "- For EACH person in MEMBERS, write a one- to two-sentence 'summary' as a General Overview "
+        "synthesizing their ticketing, code, documentation, in-progress, and self-reported evidence. "
+        "Do not invent work that isn't in the data.\n"
+        "- Write a separate one-sentence 'ticketing_summary' grounded only in 'ticketing_activity' "
+        "and 'in_progress'. Describe ticket movement and continuing work accurately.\n"
+        "- Also write a separate one-sentence 'code_summary' grounded only in 'code_activity'. "
+        "Describe concrete outcomes from commits, pull requests, and reviews; never score productivity "
+        "or imply that event volume measures effort. If it is empty, use exactly "
+        "'No code activity detected in the selected repositories.'\n"
+        "- Write a separate one-sentence 'documentation_summary' grounded only in "
+        "'documentation_activity'. This includes Confluence/Notion pages and repository documentation changes.\n"
+        "- When a category has no evidence, copy the explicit empty-state wording implied by its "
+        "'coverage' value: do not claim no activity when the source was unconfigured or failed.\n"
         "- When a person has a non-empty 'self_report', treat it as supporting context: "
         "cross-reference it with their activity, still describe what their activity shows, and fold in "
         "anything the self-report adds (intent, progress, blockers). Do NOT simply repeat the "
@@ -68,8 +81,8 @@ def get_standup_summary_prompt(
         "'issue'/'work_item' (a ticket assigned to them was updated).\n"
         "- 'in_progress' lists tickets currently assigned to the person. Distinguish completed vs "
         "ongoing work: fold in-progress tickets into the summary as what they are (still) working on.\n"
-        "- If a person has activity but no self_report, infer their summary from the activity alone. "
-        "If a person has NO activity and NO self_report but has 'in_progress' items, summarize them as "
+        "- If a person has tracked activity but no self_report, infer their overview from that activity alone. "
+        "If a person has NO fresh activity and NO self_report but has 'in_progress' items, summarize them as "
         'continuing work on those tickets (e.g. "Continuing work on X") — never say \'No activity '
         "detected' for them. Only when all three are empty use 'No activity detected.' as the summary.\n"
         "- If their activity or self-report suggests a blocker (e.g. a PR stuck in review, a ticket "
@@ -78,7 +91,9 @@ def get_standup_summary_prompt(
         f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}).\n"
         "- Be concrete and concise. No filler, no preamble.\n"
         "- Return ONLY a JSON object, no markdown fences, of the exact shape:\n"
-        '  {"members": [{"name": "...", "summary": "...", "blockers": "..."}], "team_summary": "..."}'
+        '  {"members": [{"name": "...", "summary": "...", "ticketing_summary": "...", '
+        '"code_summary": "...", "documentation_summary": "...", '
+        '"blockers": "..."}], "team_summary": "..."}'
     )
 
     # ARC: Context

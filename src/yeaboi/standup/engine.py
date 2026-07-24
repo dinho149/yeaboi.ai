@@ -27,7 +27,7 @@ import logging
 from datetime import date
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
-from yeaboi.standup import collector, confidence, sprint_context
+from yeaboi.standup import categories, collector, confidence, sprint_context
 from yeaboi.standup.store import StandupStore
 
 logger = logging.getLogger(__name__)
@@ -49,15 +49,16 @@ def _resolve_source_params(config: dict | None) -> dict:
         get_confluence_space_key,
         get_jira_project_key,
         get_notion_root_page_id,
+        get_notion_token,
     )
 
     params = {
         "jira_project": get_jira_project_key() or "",
         "azdo_project": get_azure_devops_project() or "",
         "confluence_space": get_confluence_space_key() or "",
-        # Notion's standup source is enabled by NOTION_ROOT_PAGE_ID — the same
-        # "identifying parameter" gate Confluence uses with its space key.
-        "notion_root": get_notion_root_page_id() or "",
+        # Recent-page search is workspace-wide within the integration grants;
+        # a root page is only needed for publishing.
+        "notion_root": get_notion_root_page_id() or ("workspace" if get_notion_token() else ""),
         "github_repo": "",
         "local_repo_path": (config or {}).get("repo_path", "") or "",
     }
@@ -69,6 +70,134 @@ def _resolve_source_params(config: dict | None) -> dict:
     except Exception:
         logger.debug("standup: could not resolve GitHub repo config — skipping", exc_info=True)
     return params
+
+
+def _resolve_tracker_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
+    """Resolve the selected delivery tracker(s), with a safe first-run default."""
+    from yeaboi.standup.roster import default_tracker_sources, validate_tracker_sources
+
+    if override is not None:
+        return validate_tracker_sources(override)
+    if config and config.get("roster_configured") and config.get("tracker_sources"):
+        return validate_tracker_sources(config["tracker_sources"])
+    return default_tracker_sources(
+        jira_project=source_params["jira_project"],
+        azdo_project=source_params["azdo_project"],
+    )
+
+
+def _collector_sources(
+    source_params: dict,
+    tracker_sources: list[str],
+    code_sources: list[str] | None = None,
+    documentation_sources: list[str] | None = None,
+) -> set[str]:
+    """Build the exact activity-source set for this standup.
+
+    Jira/Azure Boards follow the Team picker. Code and documentation sources
+    remain independently useful, including Azure Repos when Azure Boards is not
+    selected; the authoritative member filter below keeps their authors scoped.
+    """
+    enabled: set[str] = set()
+    if "jira" in tracker_sources and source_params["jira_project"]:
+        enabled.add(collector.SOURCE_JIRA)
+    if "azure_devops" in tracker_sources and source_params["azdo_project"]:
+        enabled.add(collector.SOURCE_AZDO)
+    selected_code = set(code_sources or ())
+    if "azure_devops" in selected_code and (
+        source_params["azdo_project"] or source_params.get("azdo_projects") or source_params.get("azdo_repositories")
+    ):
+        enabled.add(collector.SOURCE_AZDO_REPOS)
+    if "github" in selected_code:
+        enabled.add(collector.SOURCE_GITHUB)
+    if source_params["local_repo_path"]:
+        enabled.add(collector.SOURCE_LOCAL_GIT)
+    selected_docs = set(documentation_sources or ())
+    if "confluence" in selected_docs and source_params["confluence_space"]:
+        enabled.add(collector.SOURCE_CONFLUENCE)
+    if "notion" in selected_docs and source_params["notion_root"]:
+        enabled.add(collector.SOURCE_NOTION)
+    return enabled
+
+
+def _resolve_code_scope(
+    config: dict | None,
+    code_sources: list[str] | None,
+    github_repositories: list[str] | None,
+    azdo_projects: list[str] | None,
+    azdo_repositories: list[str] | None,
+) -> tuple[list[str], list[str], list[str], list[str] | None]:
+    """Resolve GitHub repositories and Azure project scope."""
+    from yeaboi.standup.code_scope import default_code_scope, validate_code_sources
+
+    default_sources, default_github, default_azdo_projects = default_code_scope()
+    configured = bool((config or {}).get("code_scope_configured"))
+    sources = validate_code_sources(
+        code_sources
+        if code_sources is not None
+        else ((config or {}).get("code_sources", []) if configured else default_sources)
+    )
+    github = list(
+        dict.fromkeys(
+            github_repositories
+            if github_repositories is not None
+            else ((config or {}).get("github_repositories", []) if configured else default_github)
+        )
+    )
+    legacy_repositories = list(
+        dict.fromkeys(
+            azdo_repositories
+            if azdo_repositories is not None
+            else ((config or {}).get("azdo_repositories", []) if configured else [])
+        )
+    )
+    projects = (
+        []
+        if azdo_repositories is not None and azdo_projects is None
+        else list(
+            dict.fromkeys(
+                azdo_projects
+                if azdo_projects is not None
+                else ((config or {}).get("azdo_projects", []) if configured else default_azdo_projects)
+            )
+        )
+    )
+    if azdo_projects is None and not projects and legacy_repositories:
+        projects = list(
+            dict.fromkeys(
+                project
+                for repository in legacy_repositories
+                for project, separator, _name in [str(repository).partition("/")]
+                if separator and project
+            )
+        )
+    if configured:
+        if "github" in sources and not github:
+            sources.remove("github")
+        if "azure_devops" in sources and not projects and not legacy_repositories:
+            sources.remove("azure_devops")
+    # Explicit project scope wins. Legacy repositories remain available only
+    # when callers supply them and do not supply projects.
+    if azdo_projects is not None or projects:
+        legacy_repositories = None
+    return sources, github, projects, legacy_repositories
+
+
+def _resolve_documentation_sources(config: dict | None, override: list[str] | None, source_params: dict) -> list[str]:
+    """Resolve explicit documentation providers, defaulting to configured integrations."""
+    from yeaboi.standup.documentation_scope import (
+        default_documentation_sources,
+        validate_documentation_sources,
+    )
+
+    if override is not None:
+        return validate_documentation_sources(override)
+    if config and config.get("documentation_scope_configured"):
+        return validate_documentation_sources(config.get("documentation_sources", []))
+    return default_documentation_sources(
+        confluence_space=source_params["confluence_space"],
+        notion_root=source_params["notion_root"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,9 +389,36 @@ def _group_activity_by_author(
                     "source": item.get("source", ""),
                     "key": item.get("key", ""),
                     "url": item.get("url", ""),
+                    "repository": item.get("repository", ""),
                 }
             )
     return grouped
+
+
+def _filter_bundle_to_members(
+    bundle: collector.ActivityBundle,
+    alias_map: dict[str, set[str]],
+) -> collector.ActivityBundle:
+    """Return only activity attributable to the authoritative saved roster."""
+    known_aliases: set[str] = set().union(*alias_map.values()) if alias_map else set()
+    items = [item for item in bundle.items if _normalize_author(item.get("author", "")) & known_aliases]
+    per_source: dict[str, int] = {}
+    for item in items:
+        source = item.get("source", "")
+        per_source[source] = per_source.get(source, 0) + 1
+    counts = [(source, per_source.get(source, 0)) for source, _count in bundle.counts]
+    logger.info(
+        "standup: roster filter retained %d/%d activity item(s) for %d member(s)",
+        len(items),
+        len(bundle.items),
+        len(alias_map),
+    )
+    return collector.ActivityBundle(
+        items=items,
+        counts=counts,
+        errors=list(bundle.errors),
+        skipped=list(bundle.skipped),
+    )
 
 
 def _member_links(acts: list[dict]) -> tuple[tuple[str, str], ...]:
@@ -293,6 +449,32 @@ def _member_source(has_self_report: bool, has_activity: bool) -> str:
     return "inferred"
 
 
+def _is_code_activity(item: dict) -> bool:
+    """Backward-compatible wrapper for tests and callers."""
+    return categories.is_code_activity(item)
+
+
+def _fallback_code_summary(acts: list[dict], coverage: str = categories.COVERED) -> str:
+    """Concise evidence summary without equating event volume with productivity."""
+    code = [a for a in acts if _is_code_activity(a)]
+    if not code:
+        return categories.empty_summary(categories.CATEGORY_CODE, coverage)
+    titles = "; ".join(str(a.get("title") or "") for a in code if a.get("title"))[:400]
+    return titles or "Code activity detected in the selected repositories."
+
+
+def _fallback_category_summary(category: str, acts: list[dict], coverage: str) -> str:
+    if category == categories.CATEGORY_CODE:
+        return _fallback_code_summary(acts, coverage)
+    if not acts:
+        return categories.empty_summary(category, coverage)
+    fresh = "; ".join(str(a.get("title") or "") for a in acts if a.get("title") and a.get("kind") != "wip")[:400]
+    if fresh:
+        return fresh
+    wip = "; ".join(str(a.get("title") or "") for a in acts if a.get("title") and a.get("kind") == "wip")[:400]
+    return f"Continuing work on: {wip}"[:400] if wip else categories.empty_summary(category, coverage)
+
+
 def _fallback_summary(acts: list[dict]) -> str:
     """Deterministic summary from grouped items: fresh activity first, then WIP.
 
@@ -309,7 +491,11 @@ def _fallback_summary(acts: list[dict]) -> str:
     return "No activity detected."
 
 
-def _build_fallback_member_updates(grouped: dict[str, list[dict]], self_reported: dict[str, str]) -> list[MemberUpdate]:
+def _build_fallback_member_updates(
+    grouped: dict[str, list[dict]],
+    self_reported: dict[str, str],
+    coverage: dict[str, str] | None = None,
+) -> list[MemberUpdate]:
     """Deterministic per-member updates when the LLM is unavailable.
 
     Every member gets an activity-derived summary (a plain join of their
@@ -317,8 +503,12 @@ def _build_fallback_member_updates(grouped: dict[str, list[dict]], self_reported
     never replacing the activity view.
     """
     updates: list[MemberUpdate] = []
+    coverage = coverage or {category: categories.COVERED for category in categories.CATEGORIES}
     for name, acts in grouped.items():
+        split = categories.split_activity(acts)
         summary = _fallback_summary(acts)
+        if summary == "No activity detected." and self_reported.get(name):
+            summary = self_reported[name]
         updates.append(
             MemberUpdate(
                 name=name,
@@ -327,6 +517,25 @@ def _build_fallback_member_updates(grouped: dict[str, list[dict]], self_reported
                 source=_member_source(name in self_reported, bool(acts)),
                 links=_member_links(acts),
                 activity_count=len(acts),
+                code_summary=_fallback_category_summary(
+                    categories.CATEGORY_CODE, split[categories.CATEGORY_CODE], coverage[categories.CATEGORY_CODE]
+                ),
+                code_links=_member_links(split[categories.CATEGORY_CODE]),
+                code_activity_count=len(split[categories.CATEGORY_CODE]),
+                documentation_summary=_fallback_category_summary(
+                    categories.CATEGORY_DOCUMENTATION,
+                    split[categories.CATEGORY_DOCUMENTATION],
+                    coverage[categories.CATEGORY_DOCUMENTATION],
+                ),
+                documentation_links=_member_links(split[categories.CATEGORY_DOCUMENTATION]),
+                documentation_activity_count=len(split[categories.CATEGORY_DOCUMENTATION]),
+                ticketing_summary=_fallback_category_summary(
+                    categories.CATEGORY_TICKETING,
+                    split[categories.CATEGORY_TICKETING],
+                    coverage[categories.CATEGORY_TICKETING],
+                ),
+                ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
+                ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
             )
         )
     # Self-reporters missing from the grouping (shouldn't happen — run_standup
@@ -334,7 +543,19 @@ def _build_fallback_member_updates(grouped: dict[str, list[dict]], self_reported
     for name, text in self_reported.items():
         if name not in grouped:
             updates.append(
-                MemberUpdate(name=name, summary="No activity detected.", self_report=text, source="self-reported")
+                MemberUpdate(
+                    name=name,
+                    summary=text or "No activity detected.",
+                    self_report=text,
+                    source="self-reported",
+                    code_summary=categories.empty_summary(categories.CATEGORY_CODE, coverage[categories.CATEGORY_CODE]),
+                    documentation_summary=categories.empty_summary(
+                        categories.CATEGORY_DOCUMENTATION, coverage[categories.CATEGORY_DOCUMENTATION]
+                    ),
+                    ticketing_summary=categories.empty_summary(
+                        categories.CATEGORY_TICKETING, coverage[categories.CATEGORY_TICKETING]
+                    ),
+                )
             )
     return updates
 
@@ -357,6 +578,7 @@ def _summarize_members(
     sprint_name: str,
     self_reported_images: dict[str, list[str]] | None = None,
     alias_map: dict[str, set[str]] | None = None,
+    category_coverage: tuple[tuple[str, str], ...] = (),
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
 
@@ -374,6 +596,7 @@ def _summarize_members(
         the model can fold what they show into the team summary.
     """
     grouped = _group_activity_by_author(bundle.items, members, alias_map)
+    coverage = dict(category_coverage) or {category: categories.COVERED for category in categories.CATEGORIES}
 
     def _for_llm(acts: list[dict]) -> list[dict]:
         # URLs (and the keys they duplicate — titles already carry ticket ids)
@@ -385,16 +608,33 @@ def _summarize_members(
     member_payload = [
         {
             "name": name,
-            "activity": _for_llm([a for a in grouped.get(name, []) if a.get("kind") != "wip"]),
-            "in_progress": _for_llm([a for a in grouped.get(name, []) if a.get("kind") == "wip"]),
+            "ticketing_activity": _for_llm(
+                [
+                    a
+                    for a in categories.split_activity(grouped.get(name, []))[categories.CATEGORY_TICKETING]
+                    if a.get("kind") != "wip"
+                ]
+            ),
+            "code_activity": _for_llm(categories.split_activity(grouped.get(name, []))[categories.CATEGORY_CODE]),
+            "documentation_activity": _for_llm(
+                categories.split_activity(grouped.get(name, []))[categories.CATEGORY_DOCUMENTATION]
+            ),
+            "in_progress": _for_llm(
+                [
+                    a
+                    for a in categories.split_activity(grouped.get(name, []))[categories.CATEGORY_TICKETING]
+                    if a.get("kind") == "wip"
+                ]
+            ),
             "self_report": self_reported.get(name, ""),
+            "coverage": coverage,
         }
         for name in members
     ]
 
     def _fallback(extra_warnings: list[str]) -> tuple[list[MemberUpdate], str, list[str]]:
         return (
-            _build_fallback_member_updates(grouped, self_reported),
+            _build_fallback_member_updates(grouped, self_reported, coverage),
             _build_fallback_team_summary(bundle, progress),
             extra_warnings,
         )
@@ -459,9 +699,23 @@ def _summarize_members(
         m = llm_members.get(name, {})
         summary = (m.get("summary") or "").strip()
         acts = grouped.get(name, [])
+        split = categories.split_activity(acts)
         if not summary:
-            # LLM omitted this member — fall back to their activity/WIP titles.
             summary = _fallback_summary(acts)
+            if summary == "No activity detected." and self_reported.get(name):
+                summary = self_reported[name]
+
+        def _structured_summary(category: str, field: str) -> str:
+            evidence = split[category]
+            # The model is never allowed to turn absent/unavailable evidence
+            # into claimed work; deterministic coverage wording wins when empty.
+            if not evidence:
+                return _fallback_category_summary(category, evidence, coverage[category])
+            return (m.get(field) or "").strip() or _fallback_category_summary(category, evidence, coverage[category])
+
+        code_summary = _structured_summary(categories.CATEGORY_CODE, "code_summary")
+        documentation_summary = _structured_summary(categories.CATEGORY_DOCUMENTATION, "documentation_summary")
+        ticketing_summary = _structured_summary(categories.CATEGORY_TICKETING, "ticketing_summary")
         updates.append(
             MemberUpdate(
                 name=name,
@@ -471,6 +725,15 @@ def _summarize_members(
                 source=_member_source(name in self_reported, bool(acts)),
                 links=_member_links(acts),
                 activity_count=len(acts),
+                code_summary=code_summary,
+                code_links=_member_links(split[categories.CATEGORY_CODE]),
+                code_activity_count=len(split[categories.CATEGORY_CODE]),
+                documentation_summary=documentation_summary,
+                documentation_links=_member_links(split[categories.CATEGORY_DOCUMENTATION]),
+                documentation_activity_count=len(split[categories.CATEGORY_DOCUMENTATION]),
+                ticketing_summary=ticketing_summary,
+                ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
+                ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
             )
         )
 
@@ -488,6 +751,13 @@ def run_standup(
     *,
     channels: list[str] | None = None,
     days: int | None = None,
+    tracker_sources: list[str] | None = None,
+    team_members: list[str] | None = None,
+    code_sources: list[str] | None = None,
+    github_repositories: list[str] | None = None,
+    azdo_projects: list[str] | None = None,
+    azdo_repositories: list[str] | None = None,
+    documentation_sources: list[str] | None = None,
     deliver: bool = True,
     dry_run: bool = False,
     db_path=None,
@@ -502,6 +772,14 @@ def run_standup(
             working-day window instead: previous working day 00:00 → now, so a
             weekend/Monday run still captures Friday and a midweek run covers
             the FULL previous day plus today so far.
+        tracker_sources: Jira/Azure DevOps delivery tracker override. ``None``
+            uses the saved Team selection.
+        team_members: authoritative member-name override. ``None`` uses the
+            saved Team selection; an explicit empty list makes a self-only run.
+        code_sources/repositories: optional code-scope overrides; GitHub is
+            repository-scoped and Azure Repos is project-scoped.
+        documentation_sources: optional Confluence/Notion provider override;
+            repository documentation follows the selected code repositories.
         deliver: when True, fan out to delivery channels (skipped if dry_run).
         dry_run: build the report but do not deliver (used by the TUI "Generate" preview).
         db_path: override sessions.db path (tests); defaults to paths.get_db_path().
@@ -536,35 +814,54 @@ def run_standup(
 
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
+    selected_trackers = _resolve_tracker_sources(config, tracker_sources, source_params)
+    selected_code_sources, selected_github_repos, selected_azdo_projects, selected_azdo_repos = _resolve_code_scope(
+        config, code_sources, github_repositories, azdo_projects, azdo_repositories
+    )
+    source_params["github_repositories"] = selected_github_repos
+    source_params["azdo_projects"] = selected_azdo_projects
+    source_params["azdo_repositories"] = selected_azdo_repos
+    selected_documentation_sources = _resolve_documentation_sources(config, documentation_sources, source_params)
+    enabled_sources = _collector_sources(
+        source_params,
+        selected_trackers,
+        selected_code_sources,
+        selected_documentation_sources,
+    )
 
     # 2. Collect recent activity across all resolved sources. Window: start of
     #    the previous working day → now (or an explicit now − days override).
     _notify("Collecting recent activity")
+
+    def collection_progress(message: str) -> None:
+        _notify(f"Collecting · {message}")
+
     if days is None:
         since = collector.previous_working_day_start(today)
         activity_window = f"{since:%a %Y-%m-%d} 00:00 → now"
-        bundle = collector.collect_recent_activity(since=since, **source_params)
+        bundle = collector.collect_recent_activity(
+            since=since,
+            sources=enabled_sources,
+            on_progress=collection_progress,
+            cache_db_path=db_path,
+            **source_params,
+        )
     else:
         activity_window = f"last {days} day(s)"
-        bundle = collector.collect_recent_activity(days=days, **source_params)
+        bundle = collector.collect_recent_activity(
+            days=days,
+            sources=enabled_sources,
+            on_progress=collection_progress,
+            cache_db_path=db_path,
+            **source_params,
+        )
 
     # 3. Sprint context + deterministic confidence.
     _notify("Reading sprint progress")
     ctx = sprint_context.gather(
         state,
-        jira_project=source_params["jira_project"],
-        azdo_project=source_params["azdo_project"],
-    )
-    progress = confidence.compute(
-        sprint_name=ctx.sprint_name,
-        start_date=ctx.start_date,
-        sprint_length_weeks=ctx.sprint_length_weeks,
-        capacity_points=ctx.capacity_points if ctx.have_burn else 0.0,
-        completed_points=ctx.completed_points,
-        # WIP items are standing state (tickets that exist regardless of the
-        # window) — they must not defeat the silence penalty for a quiet day.
-        activity_count=bundle.total(exclude_kinds=("wip",)),
-        today=today,
+        jira_project=source_params["jira_project"] if "jira" in selected_trackers else "",
+        azdo_project=source_params["azdo_project"] if "azure_devops" in selected_trackers else "",
     )
 
     # 4. Team members & identity.
@@ -593,27 +890,32 @@ def run_standup(
         my_name = display_name
         logger.info("standup: resolved standup user to %r via tracker identity", my_name)
 
-    plan_members = list(state.get("selected_team_members") or ())
-    roster_members: list[str] = []
-    if not plan_members:
+    plan_members = [str(name).strip() for name in (state.get("selected_team_members") or ()) if str(name).strip()]
+    roster_configured = bool((config or {}).get("roster_configured"))
+    if team_members is not None:
+        roster_members = list(dict.fromkeys(str(name).strip() for name in team_members if str(name).strip()))
+        roster_configured = True
+    elif roster_configured:
+        roster_members = list(
+            dict.fromkeys(str(name).strip() for name in (config or {}).get("team_members", ()) if str(name).strip())
+        )
+    else:
+        roster_members = []
         try:
-            from yeaboi.performance.roster import fetch_roster
+            from yeaboi.standup.roster import discover_team_members
 
-            roster_members = [
-                ref.name
-                for ref in fetch_roster(
-                    jira_project=source_params["jira_project"],
-                    azdo_project=source_params["azdo_project"],
-                )
-            ]
+            roster_members = discover_team_members(
+                selected_trackers,
+                jira_project=source_params["jira_project"],
+                azdo_project=source_params["azdo_project"],
+            )
         except Exception as e:  # roster is best-effort — never blocks the standup
             logger.warning("standup: tracker roster lookup failed: %s", e)
+        if not roster_members:
+            roster_members = plan_members
 
     # The user's card first, then the rest of the team.
-    members = [my_name] + [m for m in (plan_members or roster_members) if m != my_name]
-    for name in self_reported:
-        if name not in members:
-            members.append(name)
+    members = [my_name] + [m for m in roster_members if m != my_name]
     alias_map = _build_alias_map(
         members,
         my_name=my_name,
@@ -633,14 +935,25 @@ def run_standup(
         members.remove(dupe)
         alias_map.pop(dupe, None)
         logger.info("standup: merged roster entry %r into the standup user's card", dupe)
-    known_aliases: set[str] = set().union(*alias_map.values()) if alias_map else set()
-    for author in bundle.authors():
-        author_aliases = _normalize_author(author)
-        if author_aliases & known_aliases:
-            continue  # already attributed to a member
-        members.append(author)
-        alias_map[author] = author_aliases
-        known_aliases |= author_aliases
+    selected_names = set(members)
+    self_reported = {name: text for name, text in self_reported.items() if name in selected_names}
+    self_reported_images = {name: paths for name, paths in self_reported_images.items() if name in selected_names}
+    # The Team selection is authoritative. Unlike the legacy behavior, an
+    # unmatched activity author is never promoted into a new standup member.
+    bundle = _filter_bundle_to_members(bundle, alias_map)
+    category_coverage = categories.coverage_states(enabled_sources, bundle)
+
+    # Confidence must use the roster-filtered activity, otherwise work by an
+    # excluded outsider can make this team's sprint appear healthier.
+    progress = confidence.compute(
+        sprint_name=ctx.sprint_name,
+        start_date=ctx.start_date,
+        sprint_length_weeks=ctx.sprint_length_weeks,
+        capacity_points=ctx.capacity_points if ctx.have_burn else 0.0,
+        completed_points=ctx.completed_points,
+        activity_count=bundle.total(exclude_kinds=("wip",)),
+        today=today,
+    )
 
     # 5. Per-member + team summary (one LLM call, deterministic fallback).
     _notify("Writing summaries with AI")
@@ -652,11 +965,14 @@ def run_standup(
         sprint_name=ctx.sprint_name,
         self_reported_images=self_reported_images,
         alias_map=alias_map,
+        category_coverage=category_coverage,
     )
 
     # Warnings the user must see: source auth failures (from the collector) first,
     # then any LLM/config issue. These render as a "Notices" section, never silent.
-    warnings = [f"{src.replace('_', ' ').title()}: {msg}" for src, msg in bundle.errors] + llm_warnings
+    warnings = [
+        f"{src.replace('_', ' ').title()}: {msg}" for src, msg in (*bundle.errors, *bundle.partial_sources)
+    ] + llm_warnings
     if not bundle.counts and not bundle.errors:
         warnings.insert(
             0,
@@ -683,6 +999,7 @@ def run_standup(
         activity_counts=tuple(bundle.counts),
         activity_window=activity_window,
         skipped_sources=tuple(bundle.skipped),
+        category_coverage=category_coverage,
         my_name=my_name,
         warnings=tuple(warnings),
         # Screenshots pasted into "My Update" — carried on the report so the

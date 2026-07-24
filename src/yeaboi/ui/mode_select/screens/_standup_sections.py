@@ -24,8 +24,14 @@ card's first row so the auto-scroll never assumes one row per card.
 
 from __future__ import annotations
 
+import io
 import textwrap
 
+import rich.box
+from rich.console import Console, Group
+from rich.padding import Padding
+from rich.panel import Panel
+from rich.table import Table as RichTable
 from rich.text import Text
 
 from yeaboi.ui.shared._components import PAD, Theme
@@ -35,40 +41,52 @@ _TITLE_W = 22  # section-title column width — teasers align to it, as does the
 
 
 class _StandupCtx:
-    """Tiny line accumulator for standup screens (all rows are height 1).
+    """Renderable accumulator for Standup overview and detail screens.
 
-    Tracks ``card_rows`` (the body-row index where each overview card starts)
-    so the auto-scroll can bring a selected card fully into view even when a
-    card spans more than one row (the summary teaser wraps to two).
+    Overview rows remain height-one Text values. Detail pages may also contain
+    Rich panels and tables, so ``item_heights`` records their measured terminal
+    height for the same height-aware viewport packing used by Analysis mode.
+    ``card_rows`` stores overview item indexes for selection auto-scroll.
     """
 
     def __init__(self, theme: Theme, width: int) -> None:
-        self.lines: list[Text] = []
+        self.lines: list = []
+        self.item_heights: list[int] = []
         self.theme = theme
         self.width = width
         self.card_rows: list[int] = []
 
-    def add(self, line: Text) -> None:
+    def add(self, line, rendered_h: int = 1) -> None:
         self.lines.append(line)
+        self.item_heights.append(rendered_h)
+
+    def add_renderable(self, renderable) -> None:
+        """Add a padded Rich renderable with its actual terminal height."""
+        padded = Padding(renderable, (0, 1, 0, len(PAD)))
+        console = Console(width=max(10, self.width - 7), file=io.StringIO(), legacy_windows=False)
+        self.add(padded, max(1, len(console.render_lines(padded, pad=False))))
+
+    def add_table(self, table: RichTable) -> None:
+        self.add_renderable(table)
 
     def blank(self) -> None:
-        self.lines.append(Text(""))
+        self.add(Text(""))
 
     def heading(self, text: str) -> None:
         self.blank()
         h = Text(PAD + "  ", justify="left")
         h.append(text, style=f"bold {self.theme.accent}")
-        self.lines.append(h)
-        self.lines.append(Text(PAD + "  " + "─" * min(len(text), 40), style=self.theme.sep, justify="left"))
+        self.add(h)
+        self.add(Text(PAD + "  " + "─" * min(len(text), 40), style=self.theme.sep, justify="left"))
 
     def row(self, label: str, value: str, value_style: str = "") -> None:
         r = Text(PAD + "    ", justify="left")
         r.append(f"{label}:  ", style=self.theme.muted)
         r.append(str(value), style=value_style or self.theme.value)
-        self.lines.append(r)
+        self.add(r)
 
     def line(self, text: str, style: str = "") -> None:
-        self.lines.append(Text(PAD + "    " + text, style=style or self.theme.value, justify="left"))
+        self.add(Text(PAD + "    " + text, style=style or self.theme.value, justify="left"))
 
     def wrapped(self, text: str, style: str, *, indent: str = "    ", preserve_newlines: bool = False) -> None:
         """Append word-wrapped lines; optionally honour explicit newlines.
@@ -82,7 +100,7 @@ class _StandupCtx:
         paragraphs = text.splitlines() if preserve_newlines else [text]
         for para in paragraphs or [""]:
             for chunk in textwrap.wrap(para, width=wrap_w) or [""]:
-                self.lines.append(Text(PAD + indent + chunk, style=style, justify="left"))
+                self.add(Text(PAD + indent + chunk, style=style, justify="left"))
 
 
 # ---------------------------------------------------------------------------
@@ -215,23 +233,104 @@ def standup_card_teaser(key: str, data: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _link_row(ctx: _StandupCtx, label: str, url: str) -> None:
-    """One height-1 link row: clickable label (OSC-8 hyperlink) + truncated dim URL.
-
-    The URL is truncated to keep the row a single terminal line — the detail
-    viewport slices height-1 Text rows, so a wrapped line would break the
-    scroll math. Both segments carry the ``link`` style, so terminals that
-    support hyperlinks make them clickable; others still show the address.
-    """
-    theme = ctx.theme
-    row = Text(PAD + "      ", justify="left")
+def _member_link(label: str, url: str, theme: Theme) -> Text:
+    """Build a compact evidence link for use inside a member category panel."""
+    row = Text(no_wrap=True, overflow="ellipsis")
     row.append("↗ ", style=theme.dim)
     row.append(label or url, style=f"underline {theme.accent_bright} link {url}")
-    room = ctx.width - len(PAD) - 10 - len(label or url)
-    if room > 16:
-        shown = url if len(url) <= room else url[: room - 1] + "…"
-        row.append(f"  {shown}", style=f"{theme.dim} link {url}")
-    ctx.add(row)
+    if label and url:
+        row.append(f"  {url}", style=f"{theme.dim} link {url}")
+    return row
+
+
+def _member_metric_tiles(ctx: _StandupCtx, member) -> None:
+    """Analysis-style activity tiles for the member dashboard."""
+    theme = ctx.theme
+    ticketing = int(getattr(member, "ticketing_activity_count", 0) or 0)
+    code = int(getattr(member, "code_activity_count", 0) or 0)
+    docs = int(getattr(member, "documentation_activity_count", 0) or 0)
+    total = max(int(getattr(member, "activity_count", 0) or 0), ticketing + code + docs)
+    tiles = (
+        ("TOTAL", total, "tracked updates", theme.accent_bright),
+        ("TICKETING", ticketing, "Jira / Boards", theme.accent),
+        ("CODE", code, "commits / PRs", theme.good),
+        ("DOCUMENTATION", docs, "Confluence / Notion", theme.warn),
+    )
+    if ctx.width < 68:
+        # Four stacked tiles are taller than the entire viewport on a compact
+        # terminal. Preserve the same dashboard information in a 2×2 compact
+        # card so it remains visible and scrollable.
+        rows = []
+        for start in (0, 2):
+            row = Text()
+            for idx, (label, value, _hint, colour) in enumerate(tiles[start : start + 2]):
+                if idx:
+                    row.append("    ")
+                row.append(f"{label} ", style=theme.dim)
+                row.append(str(value), style=f"bold {colour}")
+            rows.append(row)
+        ctx.add_renderable(
+            Panel(
+                Group(*rows),
+                box=rich.box.ROUNDED,
+                border_style=theme.sep,
+                padding=(0, 1),
+            )
+        )
+        return
+
+    columns = 4 if ctx.width >= 112 else 2
+    grid = RichTable.grid(expand=True, padding=(0, 1))
+    for _ in range(columns):
+        grid.add_column(ratio=1)
+    for start in range(0, len(tiles), columns):
+        cells = []
+        for label, value, hint, colour in tiles[start : start + columns]:
+            cells.append(
+                Panel(
+                    Group(
+                        Text(label, style=theme.dim),
+                        Text(str(value), style=f"bold {colour}"),
+                        Text(hint, style=theme.muted, no_wrap=True, overflow="ellipsis"),
+                    ),
+                    box=rich.box.ROUNDED,
+                    border_style=theme.sep,
+                    padding=(0, 1),
+                )
+            )
+        cells.extend(Text("") for _ in range(columns - len(cells)))
+        grid.add_row(*cells)
+    ctx.add_table(grid)
+
+
+def _member_panel(
+    ctx: _StandupCtx,
+    title: str,
+    summary: str,
+    *,
+    empty: str,
+    links: tuple[tuple[str, str], ...] = (),
+    colour: str = "",
+) -> None:
+    """Render one full-width category card with its evidence kept in context."""
+    theme = ctx.theme
+    body: list = [Text(summary or empty, style=theme.desc if summary else theme.muted)]
+    if links:
+        body.append(Text(""))
+        evidence = Text("EVIDENCE", style=f"bold {theme.accent_bright}")
+        evidence.append(f"  {len(links)} link{'s' if len(links) != 1 else ''}", style=theme.dim)
+        body.append(evidence)
+        body.extend(_member_link(label, url, theme) for label, url in links)
+    ctx.add_renderable(
+        Panel(
+            Group(*body),
+            title=f"[bold {colour or theme.accent}]{title}[/]",
+            title_align="left",
+            box=rich.box.ROUNDED,
+            border_style=colour or theme.sep,
+            padding=(0, 1),
+        )
+    )
 
 
 def _detail_summary(ctx: _StandupCtx, data: dict) -> None:
@@ -255,28 +354,104 @@ def _detail_member(ctx: _StandupCtx, data: dict, name: str) -> None:
     if m is None:
         ctx.line("No update found for this member.", theme.muted)
         return
+
+    active = _member_is_active(m)
+    source_label = {
+        "combined": "SELF-REPORT + TRACKED",
+        "self-reported": "SELF-REPORTED",
+        "inferred": "TRACKED ACTIVITY",
+    }.get(m.source, (m.source or "UNKNOWN").upper())
+    status = Text(PAD + "    ")
+    status_style = f"bold black on {theme.good if active else theme.muted}"
+    status.append(f" {'ACTIVE' if active else 'QUIET'} ", style=status_style)
+    status.append("  ")
+    status.append(f" {source_label} ", style=f"bold {theme.accent_bright} on rgb(48,38,52)")
+    ctx.add(status)
+    ctx.blank()
+    _member_metric_tiles(ctx, m)
+    ctx.blank()
+
     if m.self_report:
-        ctx.line("✍ In their words", theme.accent_bright)
-        # preserve_newlines: multi-line updates typed with Alt+Enter keep their breaks.
-        ctx.wrapped(m.self_report, theme.value, indent="      ", preserve_newlines=True)
+        ctx.add_renderable(
+            Panel(
+                Text(m.self_report, style=theme.value),
+                title=f"[bold {theme.accent_bright}]✍ In their words[/]",
+                title_align="left",
+                box=rich.box.ROUNDED,
+                border_style=theme.accent,
+                padding=(0, 1),
+            )
+        )
         ctx.blank()
-    ctx.line("Activity analysis", theme.accent_bright)
-    ctx.wrapped(m.summary or "No activity detected.", theme.desc, indent="      ")
+
+    _member_panel(
+        ctx,
+        "General overview",
+        m.summary,
+        empty="No activity was detected for this member.",
+        colour=theme.accent,
+    )
+    ctx.blank()
+    _member_panel(
+        ctx,
+        "Ticketing",
+        m.ticketing_summary,
+        empty="No ticketing activity detected in the selected Jira or Azure Boards scope.",
+        links=tuple(getattr(m, "ticketing_links", ()) or ()),
+        colour=theme.accent,
+    )
+    ctx.blank()
+    _member_panel(
+        ctx,
+        "Code",
+        m.code_summary,
+        empty="No code activity detected in the selected repositories.",
+        links=tuple(getattr(m, "code_links", ()) or ()),
+        colour=theme.good,
+    )
+    ctx.blank()
+    _member_panel(
+        ctx,
+        "Documentation",
+        m.documentation_summary,
+        empty="No documentation activity detected in the selected sources.",
+        links=tuple(getattr(m, "documentation_links", ()) or ()),
+        colour=theme.warn,
+    )
     if m.blockers:
         ctx.blank()
-        ctx.wrapped(f"⚠ Blocker: {m.blockers}", theme.warn, indent="      ")
-    if getattr(m, "links", ()):
+        ctx.add_renderable(
+            Panel(
+                Text(m.blockers, style=theme.value),
+                title=f"[bold {theme.warn}]⚠ Blocker[/]",
+                title_align="left",
+                box=rich.box.ROUNDED,
+                border_style=theme.warn,
+                padding=(0, 1),
+            )
+        )
+    category_links = (
+        *getattr(m, "ticketing_links", ()),
+        *getattr(m, "code_links", ()),
+        *getattr(m, "documentation_links", ()),
+    )
+    if getattr(m, "links", ()) and not category_links:
         ctx.blank()
-        ctx.line("Links", theme.accent_bright)
-        for label, url in m.links:
-            _link_row(ctx, label, url)
+        _member_panel(
+            ctx,
+            "Evidence",
+            "",
+            empty="Links captured by an earlier Standup report.",
+            links=tuple(m.links),
+            colour=theme.accent_bright,
+        )
     ctx.blank()
-    source_label = {
+    based_on = {
         "combined": "self-report + tracked activity",
         "self-reported": "self-reported (no tracked activity)",
         "inferred": "inferred from tracked activity",
     }.get(m.source, m.source)
-    ctx.row("Based on", source_label, theme.dim)
+    ctx.row("Based on", based_on, theme.dim)
 
 
 def _detail_activity(ctx: _StandupCtx, data: dict) -> None:
@@ -301,6 +476,11 @@ def _detail_activity(ctx: _StandupCtx, data: dict) -> None:
             "GitHub/Jira/Azure DevOps/Confluence/Notion in .env to infer updates from real activity.",
             theme.muted,
         )
+    if getattr(report, "category_coverage", ()):
+        ctx.blank()
+        ctx.heading("Category coverage")
+        for category, status in report.category_coverage:
+            ctx.row(category.title(), status.replace("_", " "), theme.dim)
     if getattr(report, "skipped_sources", ()):
         ctx.blank()
         ctx.heading("Not scanned")

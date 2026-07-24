@@ -33,6 +33,8 @@ EXPECTED_TOOLS = {
     "usage_get",
     "standup_run",
     "standup_history",
+    "standup_members",
+    "standup_repositories",
     "standup_config_get",
     "standup_config_set",
     "report_delivery",
@@ -363,6 +365,18 @@ class TestEngineTools:
         payload = call_tool("standup_run", {"channels": ["slack", "email"]})
         assert payload["ok"] is True
         assert captured["channels"] == ["slack", "email"]
+
+    def test_standup_run_documentation_sources_passthrough(self, seeded_session, provider_mode, monkeypatch):
+        captured: dict = {}
+
+        def fake_run_standup(session_id, *, deliver, days=None, documentation_sources=None, **kwargs):
+            captured["documentation_sources"] = documentation_sources
+            return {"team_summary": "ok", "warnings": []}
+
+        monkeypatch.setattr("yeaboi.standup.engine.run_standup", fake_run_standup)
+        payload = call_tool("standup_run", {"documentation_sources": ["confluence", "notion"]})
+        assert payload["ok"] is True
+        assert captured["documentation_sources"] == ["confluence", "notion"]
 
     def test_standup_run_rejects_bad_channel(self, seeded_session, provider_mode):
         payload = call_tool("standup_run", {"channels": ["pager"]})
@@ -769,6 +783,31 @@ class TestStandupConfigTools:
         assert config["enabled"] is True
         assert config["time"] == "09:15"  # earlier value preserved
         assert config["delivery_channels"] == ["slack"]
+
+    def test_config_set_saves_authoritative_team_scope(self, seeded_session):
+        payload = call_tool(
+            "standup_config_set",
+            {
+                "tracker_sources": ["jira", "azure_devops"],
+                "team_members": ["Alice", "Bob", "Alice"],
+            },
+        )
+        config = payload["data"]["config"]
+        assert config["tracker_sources"] == ["jira", "azure_devops"]
+        assert config["team_members"] == ["Alice", "Bob"]
+        assert config["roster_configured"] is True
+
+    def test_members_previews_selected_trackers(self, seeded_session, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "PSOT")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "Core")
+        monkeypatch.setattr(
+            "yeaboi.standup.roster.discover_team_members",
+            lambda sources, **kwargs: ["Alice", "Bob"],
+        )
+        payload = call_tool("standup_members", {"tracker_sources": ["jira"]})
+        assert payload["ok"] is True
+        assert payload["data"]["tracker_sources"] == ["jira"]
+        assert payload["data"]["members"] == ["Alice", "Bob"]
 
     def test_config_set_rejects_bad_time(self, seeded_session):
         payload = call_tool("standup_config_set", {"time": "quarter past nine"})

@@ -140,7 +140,7 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 
 📄 **SCRUM.md Context** — Drop a `SCRUM.md` in your project directory; the agent reads it to pre-fill answers and ground output
 
-☀️ **Daily Standup** — Detects team activity (Jira/AzDO/GitHub/Confluence/Notion/git), infers per-person updates or takes your own, scores sprint-day confidence, and delivers to terminal/desktop/Slack/email — on an OS schedule that runs even when the app is closed
+☀️ **Daily Standup** — Detects team activity (Jira/AzDO/GitHub/Confluence/Notion/git), splits every engineer's update into General Overview, Ticketing, Code, and Documentation summaries, infers updates or takes your own, scores sprint-day confidence, and delivers to terminal/desktop/Slack/email — on an OS schedule that runs even when the app is closed
 
 🔬 **Team Analysis Mode** — Connect your Jira or Azure DevOps board to analyze your team's real patterns: velocity, sprint cadence, story structure, acceptance criteria style, naming conventions, and per-developer breakdown
 
@@ -628,7 +628,7 @@ Every TUI mode has a headless CLI path over the same engine:
 | Command | Description |
 |---------|-------------|
 | `yeaboi report [--period last_sprint\|last_month\|quarter] [--window-start/--window-end YYYY-MM-DD] [--sprint-names A,B] [--label "Q3 2026"] [--format json]` | Stakeholder delivery report from the tracker (quarter reports take explicit sprint windowing) |
-| `yeaboi standup [--deliver] [--channels slack email ...] [--days N] [--schedule install\|remove\|status] [--format json]` | Run a Daily Standup (print/deliver), or manage the OS schedule that runs it daily |
+| `yeaboi standup [--deliver] [--channels slack email ...] [--days N] [--code-sources ...] [--github-repositories ...] [--azdo-projects ...] [--documentation-sources ...] [--schedule install\|remove\|status] [--format json]` | Run a Daily Standup with optional GitHub repository, Azure project, and documentation-scope overrides, or manage its OS schedule |
 | `yeaboi perf roster` | List the engineer roster from recent tracker assignees |
 | `yeaboi perf prep <engineer>` | 1:1 prep — talking points from real delivery data |
 | `yeaboi perf complete <engineer> --transcript @notes.txt [--images ...] [--deliver]` | Turn a held 1:1 into a summary + tracked action items |
@@ -948,11 +948,13 @@ Open it from the mode-selection screen (the magenta **Standup** card) or run it 
 
 ### What it does
 
-1. **Detects recent activity** across every configured source — Jira issues, Azure DevOps work items, GitHub commits + PRs, recently-updated Confluence pages, recently-edited Notion pages, and a local git log. Each source is best-effort: an unconfigured or failing source is skipped, never fatal. An **authentication failure (401/403) surfaces as a Notice**, not silence.
-2. **Asks for your own update first**, then infers everyone else. Press **Generate** and it prompts for your update (Enter to skip); people without a self-report get an inferred summary from a single LLM call.
-3. **Computes sprint day + confidence** deterministically (no LLM): which working day of the sprint you're on (weekends and bank holidays excluded), and how actual "Done" points compare to the ideal linear burn-down → **On track / At risk / Behind**.
-4. **Delivers** the summary to any combination of **terminal, desktop notification, Slack, and email**.
-5. **Never shows blank content** — if the LLM has no API key or a source returns 401/403, a **⚠ Notices** section tells you exactly what to fix.
+1. **Detects recent activity** across every selected source — Jira issues, Azure DevOps work items, GitHub/Azure Repos commits + PRs + reviews, recently-updated Confluence pages, recently-edited Notion pages, and a local git log. Repository file changes identify documentation-only and mixed code/docs work. Each source is best-effort: an unconfigured or failing source is skipped, never fatal. An **authentication failure (401/403) surfaces as a Notice**, not silence.
+   Collection uses bounded provider workers: independent sources run concurrently, repository/project signals fan out within provider rate limits, and PR/version metadata is reused across summary categories. Live activity is always fetched fresh; only immutable changed-file metadata and short-lived repository discovery are cached.
+2. **Confirms the scope before generation** — board sources, team members, code providers, GitHub repositories, Azure DevOps projects, and documentation providers (Confluence/Notion), then asks for your own update. Every selected Azure project covers all of its accessible repositories.
+3. **Structures every member update** as a General Overview plus separate Ticketing, Code, and Documentation summaries. Empty sections explicitly distinguish no detected activity from unconfigured, partially scanned, or failed sources.
+4. **Computes sprint day + confidence** deterministically (no LLM): which working day of the sprint you're on (weekends and bank holidays excluded), and how actual "Done" points compare to the ideal linear burn-down → **On track / At risk / Behind**.
+5. **Delivers** the summary to any combination of **terminal, desktop notification, Slack, and email**.
+6. **Never shows blank content** — if the LLM has no API key or a source returns 401/403, a **⚠ Notices** section tells you exactly what to fix.
 
 ### Scheduling (runs when the app is closed)
 
@@ -1078,7 +1080,7 @@ claude mcp add yeaboi-dev -- uv run --project /path/to/yeaboi.ai --extra mcp yea
 | `plan_sync` | Push a plan into the tracker — creates the real epic/stories/tasks/sprints in Jira or Azure DevOps (idempotent; the tool docstring requires user confirmation) | — |
 | `sessions_list` / `session_get` / `session_delete` | Browse saved sessions and artifact progress; delete one by exact id (destructive, confirmation required) | — |
 | `usage_get` | Lifetime LLM token usage recorded by yeaboi (sampling-mode calls are host-billed and not counted) | — |
-| `standup_run` / `standup_history` | Daily standup (activity + confidence + summaries, per-run channel override); past runs | ✅ / — |
+| `standup_run` / `standup_history` / `standup_repositories` | Structured daily standup (overview + ticketing + code + documentation + confidence); past runs; accessible repository discovery | ✅ / — / — |
 | `standup_config_get` / `standup_config_set` | Read/update the standup config (time, weekdays, channels, aliases) | — |
 | `report_delivery` | Stakeholder delivery report for last sprint / month / quarter (with explicit sprint windowing) | ✅ |
 | `perf_roster`, `perf_one_on_one_prep`, `perf_one_on_one_complete`, `perf_six_month_review`, `perf_note_add` | Performance mode workflows + engineer notes | ✅ (roster/notes: —) |
@@ -2359,7 +2361,7 @@ src/yeaboi/
 | `CONFLUENCE_SPACE_KEY` | No | Confluence space key (shares Atlassian auth with Jira); Export buttons publish here |
 | `CONFLUENCE_EXPORT_PARENT_PAGE_ID` | No | Optional page Confluence exports nest under (blank = grouped under an auto-created 🤙 yeaboi page) |
 | `NOTION_TOKEN` | No | Notion integration token (its own auth; enables Notion doc tools) |
-| `NOTION_ROOT_PAGE_ID` | No | Default parent for created Notion pages; enables the Notion standup source; Notion exports fall back here |
+| `NOTION_ROOT_PAGE_ID` | No | Default parent for created Notion pages; Notion exports fall back here (Standup discovery only requires `NOTION_TOKEN`) |
 | `NOTION_EXPORT_PARENT_PAGE_ID` | No | Optional dedicated page the Export buttons publish under (blank = grouped under an auto-created 🤙 yeaboi page in `NOTION_ROOT_PAGE_ID`) |
 | `ANONYMIZE_MASK_TERMS` | No | Comma-separated company terms the Anonymize action always masks (e.g. `YouLend,YL`); redacted even without an AI provider |
 | `CLOUDFLARED_PATH` | No | Path to an existing `cloudflared` binary used by Retro and temporary output sharing (otherwise a pinned copy is downloaded and cached) |

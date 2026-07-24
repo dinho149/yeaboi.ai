@@ -83,16 +83,36 @@ def build_standup_markdown(report: StandupReport) -> str:
         # export and renders as a native table on Notion/Confluence.
         from yeaboi.markdown_convert import md_table_cell as _cell
 
-        lines += ["| Member | Update | Blocker |", "|--------|--------|---------|"]
+        lines += [
+            "| Member | General Overview | Ticketing | Code | Documentation | Blocker |",
+            "|--------|------------------|-----------|------|---------------|---------|",
+        ]
         for m in report.member_updates:
             is_own = bool(m.self_report) or m.source == "self-reported"
             name = f"**{_cell(m.name)}** _(you)_" if is_own else f"**{_cell(m.name)}**"
             summary = _cell(m.summary) if m.summary else "_No activity detected._"
-            if getattr(m, "links", ()):
-                link_text = " · ".join(f"[{_cell(label)}]({url})" for label, url in m.links)
-                summary = f"{summary} **Links:** {link_text}"
+
+            def _category_cell(text: str, links) -> str:
+                value = _cell(text) if text else "—"
+                if links:
+                    refs = " · ".join(f"[{_cell(label)}]({url})" for label, url in links)
+                    value = f"{value}<br>{refs}"
+                return value
+
+            ticketing = _category_cell(m.ticketing_summary, getattr(m, "ticketing_links", ()))
+            code = _category_cell(m.code_summary, getattr(m, "code_links", ()))
+            documentation = _category_cell(m.documentation_summary, getattr(m, "documentation_links", ()))
+            if not any(
+                (
+                    getattr(m, "ticketing_links", ()),
+                    getattr(m, "code_links", ()),
+                    getattr(m, "documentation_links", ()),
+                )
+            ) and getattr(m, "links", ()):
+                refs = " · ".join(f"[{_cell(label)}]({url})" for label, url in m.links)
+                summary = f"{summary}<br>**Links:** {refs}"
             blocker = _cell(m.blockers) if m.blockers else "—"
-            lines.append(f"| {name} | {summary} | {blocker} |")
+            lines.append(f"| {name} | {summary} | {ticketing} | {code} | {documentation} | {blocker} |")
         lines.append("")
     else:
         lines.append("_No individual updates._")
@@ -106,6 +126,9 @@ def build_standup_markdown(report: StandupReport) -> str:
         counts = ", ".join(f"{src}: {n}" for src, n in report.activity_counts)
         window = f" ({report.activity_window})" if report.activity_window else ""
         lines += ["", "---", "", f"_Activity examined — {counts}{window}_"]
+    if report.category_coverage:
+        coverage = ", ".join(f"{category}: {status.replace('_', ' ')}" for category, status in report.category_coverage)
+        lines += ["", f"_Coverage — {coverage}_"]
     if report.skipped_sources:
         skipped = ", ".join(f"{src} ({reason})" for src, reason in report.skipped_sources)
         lines += ["", f"_Sources skipped — {skipped}_"]
@@ -153,7 +176,8 @@ def build_standup_html(report: StandupReport) -> str:
     parts.append("<h2>Updates</h2>")
     if report.member_updates:
         parts.append(
-            "<table class='data-table'><thead><tr><th>Member</th><th>Update</th><th>Blocker</th></tr></thead><tbody>"
+            "<table class='data-table'><thead><tr><th>Member</th><th>General Overview</th>"
+            "<th>Ticketing</th><th>Code</th><th>Documentation</th><th>Blocker</th></tr></thead><tbody>"
         )
         for m in report.member_updates:
             tag = " <em style='color:var(--text-muted)'>(✍ own update)</em>" if m.self_report else ""
@@ -162,13 +186,33 @@ def build_standup_html(report: StandupReport) -> str:
             if m.self_report:
                 sr_html = _e(m.self_report).replace("\n", "<br>")
                 update_cell += f"<br><em style='color:var(--text-muted)'>✍ In their words: {sr_html}</em>"
-            if getattr(m, "links", ()):
+            category_links = (
+                *getattr(m, "ticketing_links", ()),
+                *getattr(m, "code_links", ()),
+                *getattr(m, "documentation_links", ()),
+            )
+            if getattr(m, "links", ()) and not category_links:
                 anchors = " · ".join(
                     f"<a href='{_e(url, quote=True)}' target='_blank'>{_e(label or url)}</a>" for label, url in m.links
                 )
                 update_cell += f"<br><span style='font-size:.85rem'>🔗 {anchors}</span>"
+
+            def _category_html(text: str, links) -> str:
+                value = _e(text or "Summary unavailable.")
+                if links:
+                    anchors = " · ".join(
+                        f"<a href='{_e(url, quote=True)}' target='_blank'>{_e(label or url)}</a>"
+                        for label, url in links
+                    )
+                    value += f"<br><span style='font-size:.85rem'>🔗 {anchors}</span>"
+                return value
+
+            ticketing = _category_html(m.ticketing_summary, getattr(m, "ticketing_links", ()))
+            code = _category_html(m.code_summary, getattr(m, "code_links", ()))
+            documentation = _category_html(m.documentation_summary, getattr(m, "documentation_links", ()))
             parts.append(
-                f"<tr><td><strong>{_e(m.name)}</strong>{tag}</td><td>{update_cell}</td><td>{blocker}</td></tr>"
+                f"<tr><td><strong>{_e(m.name)}</strong>{tag}</td><td>{update_cell}</td>"
+                f"<td>{ticketing}</td><td>{code}</td><td>{documentation}</td><td>{blocker}</td></tr>"
             )
         parts.append("</tbody></table>")
     else:
@@ -184,6 +228,11 @@ def build_standup_html(report: StandupReport) -> str:
     if report.activity_counts:
         counts = ", ".join(f"{_e(src)}: {n}" for src, n in report.activity_counts)
         parts.append(f"<p style='color:var(--text-muted);font-size:.85rem'>Activity examined — {counts}</p>")
+    if report.category_coverage:
+        coverage = ", ".join(
+            f"{_e(category)}: {_e(status.replace('_', ' '))}" for category, status in report.category_coverage
+        )
+        parts.append(f"<p style='color:var(--text-muted);font-size:.85rem'>Coverage — {coverage}</p>")
     if report.skipped_sources:
         skipped = ", ".join(f"{_e(src)} ({_e(reason)})" for src, reason in report.skipped_sources)
         parts.append(f"<p style='color:var(--text-muted);font-size:.85rem'>Sources skipped — {skipped}</p>")

@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.35.0",
+      "date": "2026-07-24",
+      "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan — letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",
+      "highlights": [
+        {"text": "Explicit source selection grid before standup generation — pick trackers, repos, and docs to scan", "areas": ["standup"]},
+        {"text": "Member updates split by source with separate summaries and evidence links for each tracker, repo, and docs platform", "areas": ["standup"]},
+        {"text": "Parallel source collection with live progress and partial-coverage notices", "areas": ["standup"]},
+        {"text": "Metadata caching and bounded network work for faster, more reliable runs", "areas": ["standup"]},
+        {"text": "Redesigned results as responsive Analysis-style dashboards; saved runs render identically when reopened", "areas": ["standup"]}
+      ]
+    },
+    {
       "version": "2.34.0",
       "date": "2026-07-24",
       "summary": "Team analysis now offers two speed tiers. Quick mode runs instantly with deterministic summaries and no LLM calls—perfect for fast iterations during planning sessions. Deep mode activates AI-enriched analysis with larger ticket batches and parallel processing of all three analysis components (delivery, code, and documentation) for comprehensive insights. The Quick/Deep choice appears right before analysis starts in both the TUI workflow and CLI, with mode details and stage timings visible throughout the run. All three components now run concurrently instead of serially, cutting analysis wall-clock time significantly. The choice is exposed through CLI flags and MCP tools so teammates and AI agents can pick the right depth for their workflow.",
