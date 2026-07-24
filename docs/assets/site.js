@@ -154,18 +154,26 @@ document.addEventListener('DOMContentLoaded', function () {
         dy = vh - dh - 6;
       } else {
         var spots = [];
-        // hero: grounded on the viewport's bottom edge, empty left margin
-        spots.push({ s: -1e9, pos: function () { return [0.07 * (vw - dw), vh - dh - 8]; } });
+        var sc = rectOf('.scrolly'), fb = rectOf('.app-frame');
+        var termStart = sc ? sc.top + st - vh * 0.5 : 1;
+        // hero: grounded on the viewport's bottom edge — walks from the left
+        // margin toward the terminal's left edge as you scroll the hero, so
+        // it arrives ON ITS MARK and the hop onto the frame is a straight
+        // vertical teleport, not a sideways jump
+        spots.push({ s: -1e9, pos: function () {
+          var hx = 0.07 * (vw - dw);
+          if (fb && termStart > 1) hx = lerp(hx, fb.left + 6, st / termStart);
+          return [hx, vh - dh - 8];
+        } });
         // terminal: stands on the pinned frame's chrome and walks LEFT→RIGHT
         // across it as the scrollytelling steps go by
-        var sc = rectOf('.scrolly'), fb = rectOf('.app-frame');
         if (sc && fb) {
           (function (s0, span) {
             spots.push({ s: s0, pos: function () {
               var q = (st - s0) / span;
               return [lerp(fb.left + 6, fb.right - dw - 6, q), fb.top - dh + 9];
             } });
-          })(sc.top + st - vh * 0.5, Math.max(1, sc.height - vh * 0.55));
+          })(termStart, Math.max(1, sc.height - vh * 0.55));
         }
         // modes grid: walks its top edge RIGHT→LEFT as the grid rides up
         var mg = rectOf('.modes');
