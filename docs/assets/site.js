@@ -340,11 +340,17 @@ function initHeroDemo() {
     });
   });
 
-  // Scrollytelling: when the step rail is present, scrolling a step into the
-  // middle of the viewport selects its mode — the selection is scroll-driven,
-  // so the auto-advance timer stays off entirely.
+  // Scrollytelling: when the step rail is present AND visible (it's
+  // display:none on mobile, where the terminal auto-cycles instead),
+  // scrolling a step into the middle of the viewport selects its mode —
+  // the selection is scroll-driven, so the auto-advance timer stays off.
   var steps = Array.prototype.slice.call(document.querySelectorAll('.scrolly-step'));
-  var scrollDriven = steps.length > 0 && 'IntersectionObserver' in window;
+  // getClientRects, not computed display: the mobile breakpoint hides the
+  // PARENT rail (.scrolly-steps), and a child of a display:none ancestor
+  // still reports its own specified display value.
+  var scrollDriven = steps.length > 0 &&
+    steps[0].getClientRects().length > 0 &&
+    'IntersectionObserver' in window;
 
   // Auto-advance through the modes so the demo has life at rest — paused on
   // hover/focus, and off when the scroll rail is driving selection or under
@@ -413,6 +419,16 @@ function initHeroDemo() {
   } else {
     _heroRevealTimer = setTimeout(revealMenu, 2300); // matches splash.py's ~2.4s fade in/shine/fade out
   }
+}
+
+// Re-evaluate the hero demo's driving mode when the layout crosses the mobile
+// breakpoint — the step rail is display:none there, so the demo must switch
+// between scroll-driven selection and the self-running auto-cycle.
+if (window.matchMedia) {
+  var _heroMQ = window.matchMedia('(max-width:900px)');
+  var _heroMQHandler = function () { initHeroDemo(); };
+  if (_heroMQ.addEventListener) _heroMQ.addEventListener('change', _heroMQHandler);
+  else if (_heroMQ.addListener) _heroMQ.addListener(_heroMQHandler);
 }
 
 // ---- shared docs navigation ------------------------------------------------

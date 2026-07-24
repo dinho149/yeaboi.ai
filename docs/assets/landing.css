@@ -94,12 +94,13 @@
     margin:0; color:var(--text-muted); font-size:.98rem; line-height:1.65;
   }
   @media (max-width:900px){
-    /* single column: terminal first, then the steps as a plain readable list —
-       no pinning, every step at full opacity */
-    .scrolly{grid-template-columns:1fr; gap:36px}
+    /* mobile: the step rail goes away entirely — as a flat list it just
+       duplicated the modes grid below and doubled the page length. The
+       terminal stands alone and auto-cycles through the modes itself
+       (site.js re-enables the auto-advance when the rail is hidden). */
+    .scrolly{grid-template-columns:1fr}
     .scrolly-sticky{position:static}
-    .scrolly-steps{padding:0}
-    .scrolly-step{min-height:0; padding:20px 0; opacity:1}
+    .scrolly-steps{display:none}
   }
   .app-frame{
     /* A real terminal WINDOW, not a floating panel: chrome bar, solid deep
@@ -417,8 +418,20 @@
     .tui{font-size:7px}
     .tui-splash{min-height:280px}
     .modes{grid-template-columns:1fr}
-    .mode-card{min-height:0}
-    .pipeline{grid-template-columns:1fr}
-    .stage{border-left:none; border-top:1px solid var(--border)}
-    .stage:first-child{border-top:none}
+    .mode-card{min-height:0; padding:22px 20px 20px}
+    /* pipeline: a horizontal snap carousel instead of five stacked cards —
+       one swipe-height instead of ~5 screens; the 76% column leaves the next
+       stage peeking in as the scroll affordance */
+    .pipeline{
+      grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:76%;
+      overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;
+    }
+    .pipeline::-webkit-scrollbar{display:none}
+    .pipeline::before{display:none}
+    .stage{scroll-snap-align:start; border-top:none; border-left:1px solid var(--border)}
+    /* re-assert over the 980px two-column rules' higher-specificity selectors */
+    .stage:nth-child(-n+2){border-top:none}
+    .stage:nth-child(odd){border-left:1px solid var(--border)}
+    .stage:first-child{border-left:none}
   }
