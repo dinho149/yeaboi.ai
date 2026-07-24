@@ -241,6 +241,43 @@ function scheduleDuckReveal() {
   }, 900);
 }
 
+// Tap/click the mascot anywhere → the same startle jump it does when the cursor
+// catches it on the footer. On the footer perch we drive it through the physics
+// loop (real leap + parachute); everywhere else the physics loop is idle, so we
+// play a self-contained CSS hop on the .duck-rig (doesn't fight the wrapper's
+// position transform). A cooldown lets the whole animation finish.
+var _duckHopCd = 0;
+function _duckTapJump() {
+  if (reducedMotion) return;
+  var duck = document.getElementById('duck-walker');
+  if (!duck || _duckPoof || _duckTp) return;
+  var nowT = performance.now();
+  if (nowT < _duckHopCd) return;
+  _duckHopCd = nowT + 1400;
+  duck.classList.add('startled');
+  _duckJumpSay();                          // reaction line if the bubble's up
+  if (_duckChase && _duckPhysOn) {
+    // footer: hand off to the physics leap (parachute float back down)
+    if (_duckAirY === 0 && _duckAirV === 0) { _duckAirV = -12; duck.classList.add('airborne'); }
+  } else {
+    // anywhere else: a quick CSS hop on the inner rig
+    var rig = duck.querySelector('.duck-rig');
+    if (rig) {
+      rig.classList.remove('hop'); void rig.offsetWidth; rig.classList.add('hop');
+      rig.addEventListener('animationend', function h() { rig.classList.remove('hop'); rig.removeEventListener('animationend', h); });
+    }
+  }
+  setTimeout(function () { duck.classList.remove('startled'); }, 1350);
+}
+// bind once (document-level, survives content swaps that replace the sprite)
+if (!window.__duckTapBound) {
+  window.__duckTapBound = true;
+  document.addEventListener('click', function (e) {
+    var rig = e.target.closest && e.target.closest('#duck-walker .duck-rig');
+    if (rig) _duckTapJump();
+  });
+}
+
 // ============================================================================
 // Docs duck — a small chatbot perched bottom-right of every docs page. The
 // site is fully static (GitHub Pages, no backend), so it answers by SIFTING
@@ -329,13 +366,39 @@ function _searchDocs(query) {
   return scored.slice(0, 4).map(function (r) { return r.sec; });
 }
 
-// Split a block of text into sentences (naive but good enough for docs prose).
+// Split a block of text into readable prose sentences. Splits on sentence-
+// ending punctuation, then drops anything that reads like a command list / code
+// dump (several "make/uv/pip/git" verbs or shell symbols) so the answer stays
+// conversational instead of regurgitating a whole Makefile as one giant line.
 function _splitSentences(text) {
-  return (text || '')
-    .replace(/([.!?])\s+(?=[A-Z0-9])/g, '$1')
-    .split('')
+  var raw = (text || '').replace(/\s+/g, ' ').trim();
+  // protect abbreviation dots (e.g. i.e. etc. vs.) so they aren't read as
+  // sentence ends — swap EVERY dot in them for \x01 (never in docs prose),
+  // split, then restore.
+  raw = raw.replace(/\b(e\.g\.|i\.e\.|etc\.|vs\.|approx\.|no\.)/gi, function (m) {
+    return m.replace(/\./g, '\x01');
+  });
+  var parts = (raw.match(/[^.!?]+[.!?]+/g) || []).map(function (s) {
+    return s.replace(/\x01/g, '.');
+  });   // COMPLETE sentences only —
+  // dropping the trailing "[^.!?]+$" alternative means a section truncated
+  // mid-sentence by the 900-char cap never surfaces a "…observab." fragment
+  return parts
     .map(function (s) { return s.trim(); })
-    .filter(function (s) { return s.length > 25; });
+    .filter(function (s) {
+      if (s.length < 30 || s.length > 260) return false;     // too short / runaway
+      // must READ like prose: begin with a capital letter or digit (not a comma,
+      // dash, closing bracket, or lower-case scrap left over from splitting a
+      // list) so leads never start mid-fragment like ", Anthropic keys start…"
+      if (!/^[A-Z0-9"“]/.test(s)) return false;
+      // command/code smell: several shell verbs or symbols, or many " x — y"
+      // list separators packed together (a definition list, not a sentence)
+      var codey = (s.match(/(^|\s)(make|uv|pip|npm|git|yeaboi)\s|[#|$`=]/g) || []).length;
+      if (codey >= 2) return false;
+      var seps = (s.match(/—|\bor skip\b|\bwith\b.*\bor\b/g) || []).length;
+      if (seps >= 3) return false;                            // packed list row
+      return true;
+    });
 }
 
 // Conversational small-talk / meta handling — greetings, thanks, capability
@@ -373,54 +436,66 @@ function _smallTalk(query) {
 function _composeAnswer(query, hits) {
   var qtok = _contentTokens(query);
   var qset = {}; qtok.forEach(function (t) { qset[t] = 1; });
+  var top = hits[0];
 
-  // gather candidate sentences from the top few sections, scored by overlap
-  var cand = [];
-  hits.slice(0, 3).forEach(function (sec, hi) {
-    _splitSentences(sec.text).forEach(function (sent) {
-      var toks = _contentTokens(sent), sc = 0;
-      toks.forEach(function (t) { if (qset[t]) sc += 1; else { for (var k in qset) { if (t.indexOf(k) === 0 || k.indexOf(t) === 0) { sc += 0.3; break; } } } });
-      if (sc > 0) cand.push({ sent: sent, score: sc - hi * 0.15, sec: sec });
+  // Anchor on the single best-matching section (search already weights heading
+  // + title matches heavily, so hits[0] is the most on-topic). Read that
+  // section's sentences IN DOCUMENT ORDER — coherent prose, not scattered
+  // keyword fragments. Take the opening 1–2 sentences (they introduce the
+  // topic) and, if a later sentence matches the query better, append it.
+  function scoreSent(sent) {
+    var toks = _contentTokens(sent), sc = 0;
+    toks.forEach(function (t) {
+      if (qset[t]) sc += 1;
+      else { for (var k in qset) { if (t.indexOf(k) === 0 || k.indexOf(t) === 0) { sc += 0.3; break; } } }
     });
-  });
-  cand.sort(function (a, b) { return b.score - a.score; });
-
-  // de-dupe near-identical sentences, keep the best 2–3
-  var picked = [], seen = {};
-  for (var i = 0; i < cand.length && picked.length < 3; i++) {
-    var key = cand[i].sent.slice(0, 40).toLowerCase();
-    if (seen[key]) continue;
-    seen[key] = 1; picked.push(cand[i]);
+    return sc;
   }
-
-  var lead;
-  if (/^(how|how do|how can|how to)\b/i.test(query.trim())) lead = "🦆 Here's how:";
-  else if (/^(what|what's|whats|which)\b/i.test(query.trim())) lead = "🦆 ";
-  else if (/^(can|does|do|is|are|will)\b/i.test(query.trim())) lead = "🦆 ";
-  else if (/^(why)\b/i.test(query.trim())) lead = "🦆 ";
-  else lead = "🦆 ";
+  // pick the first hit that actually yields usable prose sentences (some
+  // sections are just link lists / tables with nothing quotable)
+  var anchor = null, sents = [];
+  for (var h = 0; h < Math.min(hits.length, 3); h++) {
+    var ss = _splitSentences(hits[h].text);
+    if (ss.length) { anchor = hits[h]; sents = ss; break; }
+  }
+  if (!anchor) anchor = top;
 
   var body;
-  if (picked.length) {
-    body = picked.map(function (p) {
-      var s = p.sent;
-      if (!/[.!?]$/.test(s)) s += '.';
-      return s;
-    }).join(' ');
+  if (sents.length) {
+    var chosen = sents.slice(0, 2);                 // lead sentences, in order
+    // find the best query-matching sentence beyond the lead and fold it in
+    var best = null, bestSc = 0;
+    for (var i = 2; i < sents.length; i++) {
+      var sc = scoreSent(sents[i]);
+      if (sc > bestSc) { bestSc = sc; best = sents[i]; }
+    }
+    if (best && bestSc >= 1 && chosen.indexOf(best) === -1) chosen.push(best);
+    body = chosen.map(function (s) { return /[.!?]$/.test(s) ? s : s + '.'; }).join(' ');
   } else {
-    // matched a section by heading but no strong sentence — summarise the top
-    body = "The docs cover this under “" + hits[0].heading + "” on the " + hits[0].pageTitle + " page.";
+    // nothing quotable anywhere — point at the best section by name
+    body = "The docs cover this under “" + top.heading + "” on the " + top.pageTitle + " page — tap below to jump straight there.";
   }
 
-  // sources: the distinct sections behind the answer, as deep links
+  // question-shaped lead-in (note the trailing space — the join fix)
+  var q = query.trim();
+  var lead = "🦆 ";
+  if (/^(how\b|how do|how can|how to)/i.test(q)) lead = "🦆 Here's how: ";
+  else if (/^(where)/i.test(q)) lead = "🦆 ";
+  else if (/^(why)/i.test(q)) lead = "🦆 ";
+
+  // sources: lead with the section we actually quoted, then other top hits
   var srcSecs = [], srcSeen = {};
-  (picked.length ? picked.map(function (p) { return p.sec; }) : hits.slice(0, 2)).forEach(function (sec) {
+  [anchor].concat(hits.slice(0, 3)).forEach(function (sec) {
     var href = sec.path + (sec.id ? '#' + sec.id : '');
     if (srcSeen[href]) return; srcSeen[href] = 1;
     srcSecs.push({ title: sec.heading, page: sec.pageTitle, href: href });
   });
 
-  return { text: (lead + body).replace(/🦆\s+\./, '🦆 '), cards: srcSecs.slice(0, 3), sources: true };
+  return {
+    text: (lead + body).replace(/\s{2,}/g, ' ').trim(),
+    cards: srcSecs.slice(0, 3),
+    sources: true,
+  };
 }
 
 function _docsDuckReply(query) {
@@ -451,6 +526,11 @@ function initDocsDuck() {
   var onDocs = document.body.classList.contains('docs');
   var existing = document.getElementById('docs-duck');
   if (!onDocs) { if (existing) existing.remove(); _docsDuckBuilt = false; return; }
+  // arriving on docs: the landing mascot's speech bubble lives on <body>
+  // (outside the swapped #page-content), so tear it down and stop its timer
+  // — otherwise its "catch me" line lingers over the docs.
+  _hideDuckBubble();
+  if (_duckBubbleEl) { _duckBubbleEl.remove(); _duckBubbleEl = null; }
   if (existing) return;             // already present, survives content swaps
   _docsDuckBuilt = true;
 
@@ -460,6 +540,7 @@ function initDocsDuck() {
   // other way, the conversation console expands outward from it (CSS transform)
   // and a greeting bubble pops from the duck.
   root.innerHTML =
+    '<div class="dd-backdrop" aria-hidden="true"></div>' +
     '<div class="dd-console" role="dialog" aria-label="Ask the docs">' +
       '<div class="dd-log" id="dd-log" data-lenis-prevent></div>' +
       '<form class="dd-form" id="dd-form">' +
@@ -488,7 +569,7 @@ function initDocsDuck() {
   // idle-prompt bubble: the duck spits out an inviting line while it's closed,
   // rotating through a few. Hidden the moment the console opens; resumes if
   // the user closes it again without ever asking.
-  var DD_PROMPTS = ['Any questions? 🦆', 'Ask me about yeaboi!', 'Need a hand? Quack.', 'Stuck? Ask the duck →'];
+  var DD_PROMPTS = ['Ask me about yeaboi 🦆', 'Curious how it works?', 'Need a hand? Quack.', 'Ask the docs →', 'What can I help with?'];
   var _promptIdx = 0, _promptTimer = null;
   function showPrompt() {
     if (root.classList.contains('open')) return;
@@ -525,6 +606,9 @@ function initDocsDuck() {
         a.innerHTML = '<span class="dd-card-h"></span><span class="dd-card-page"></span>';
         a.querySelector('.dd-card-h').textContent = c.title;
         a.querySelector('.dd-card-page').textContent = c.page;
+        // tapping a source jumps to that section → close the chat so it doesn't
+        // sit over the page you asked to see (esp. the full-screen mobile panel)
+        a.addEventListener('click', function () { closePanel(); });
         wrap.appendChild(a);
       });
     }
@@ -540,9 +624,13 @@ function initDocsDuck() {
     typing.className = 'dd-text dd-typing';
     typing.textContent = '🦆 sifting the docs…';
     var trow = _appendDocsMsg(log, 'bot', typing);
+    var t0 = performance.now();
     _buildDocsIndex().then(function () {
-      trow.remove();
-      renderReply(_docsDuckReply(q));
+      var reply = _docsDuckReply(q);
+      // keep the "sifting…" beat visible for a moment so the answer doesn't
+      // pop instantly (feels more like the duck is reading the docs)
+      var wait = Math.max(0, 650 - (performance.now() - t0));
+      setTimeout(function () { trow.remove(); renderReply(reply); }, wait);
     });
   }
 
@@ -569,10 +657,16 @@ function initDocsDuck() {
   duck.addEventListener('click', function () {
     if (root.classList.contains('open')) closePanel(); else openPanel();
   });
+  // capture-phase so that when the chat is open, Esc closes ONLY the chat —
+  // stopping the event before the rail's own Esc handler collapses the sidebar
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && root.classList.contains('open')) closePanel();
-  });
-  // click outside the console (and not on the duck) closes it
+    if (e.key === 'Escape' && root.classList.contains('open')) {
+      e.stopImmediatePropagation();
+      closePanel();
+    }
+  }, true);
+  // clicking the blurred backdrop, or anywhere outside the widget, closes it
+  root.querySelector('.dd-backdrop').addEventListener('click', closePanel);
   document.addEventListener('click', function (e) {
     if (!root.classList.contains('open')) return;
     if (e.target.closest && e.target.closest('#docs-duck')) return;

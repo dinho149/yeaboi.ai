@@ -403,6 +403,10 @@
     will-change:transform;
     transition:opacity .15s ease;
   }
+  /* the sprite itself IS tappable (the wrapper stays click-through so it never
+     blocks links behind it) — a tap makes it jump, same startle as the footer
+     cursor-dodge. */
+  .duck-rig{pointer-events:auto; cursor:pointer; touch-action:manipulation}
   /* between areas the duck TELEPORTS — fades out here, pops in there
      (site.js swaps the position while this class holds opacity at 0) */
   .duck-walker.teleporting{opacity:0}
@@ -464,6 +468,18 @@
     25%{transform:rotate(-4deg) translateY(-2px)}
     75%{transform:rotate(4deg) translateY(-2px)}
   }
+  /* tap-jump: a self-contained hop played when the mascot is clicked/tapped
+     away from the footer (the footer perch uses the physics leap instead). The
+     .hop class wins over .walking since it's applied last / one-shot. */
+  .duck-walker .duck-rig.hop{animation:duck-hop .62s cubic-bezier(.3,1.1,.4,1) 1}
+  @keyframes duck-hop{
+    0%{transform:translateY(0) rotate(0deg)}
+    28%{transform:translateY(-34px) rotate(-4deg)}
+    46%{transform:translateY(-38px) rotate(0deg)}
+    70%{transform:translateY(0) rotate(0deg)}
+    82%{transform:translateY(-5px) rotate(0deg)}
+    100%{transform:translateY(0) rotate(0deg)}
+  }
   /* its whole purpose is motion — hide under reduced motion */
   @media (prefers-reduced-motion:reduce){.duck-walker{display:none}}
 
@@ -517,12 +533,16 @@
     .stage:nth-child(-n+2){border-top:none}
     .stage:nth-child(odd){border-left:none}
     .start-grid{grid-template-columns:1fr; gap:48px}
+    /* drop the full-height hero centering as soon as we're off the wide
+       layout — the 100vh min + justify-center strands the copy mid-screen with
+       a big dead band above it once the demo stacks below rather than beside.
+       Top-align it and sit it just under the (sticky) nav. */
+    .hero-copy{min-height:0; justify-content:flex-start; padding:20px 0 8px}
+    .scroll-hint{display:none}
   }
   @media (max-width:860px){
     .hero{padding:0 0 72px}
-    /* no 100vh centering on mobile — it strands the copy mid-screen with a
-       huge dead band above it; just pad it like a normal section */
-    .hero-copy{min-height:0; padding:64px 0 8px}
+    .hero-copy{min-height:0; justify-content:flex-start; padding:16px 0 8px}
     /* the hint exists to point below the fold on the full-height desktop
        hero; on mobile the terminal is directly beneath the CTA */
     .scroll-hint{display:none}

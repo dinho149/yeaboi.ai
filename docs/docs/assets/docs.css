@@ -147,6 +147,26 @@ body.docs{ margin:0 }
 }
 #docs-duck.open .dd-prompt{ opacity:0; visibility:hidden }
 
+/* blur/dim ONLY the content directly behind the chat console (not the whole
+   screen) — keeps the page text from showing through the free-floating bubbles
+   while leaving the rest of the page crisp. Matches the console's footprint,
+   with a little padding, and fades in with it. */
+.dd-backdrop{
+  position:absolute; right:-14px; bottom:-14px; z-index:0; pointer-events:none;
+  width:calc(var(--dd-w) + 28px); height:min(474px, calc(100vh - 136px));
+  border-radius:20px;
+  background:rgba(8,9,11,.34); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  -webkit-mask-image:radial-gradient(120% 120% at 82% 78%, #000 62%, transparent 100%);
+  mask-image:radial-gradient(120% 120% at 82% 78%, #000 62%, transparent 100%);
+  opacity:0; visibility:hidden;
+  transform-origin:bottom right; transform:scale(.9);
+  transition:opacity .3s ease, transform .34s cubic-bezier(.2,1.08,.32,1), visibility 0s .34s;
+}
+#docs-duck.open .dd-backdrop{
+  opacity:1; visibility:visible; transform:scale(1);
+  transition:opacity .3s ease, transform .34s cubic-bezier(.2,1.08,.32,1), visibility 0s;
+}
+
 /* the console is NOT a panel — no background, no border. The chat log and the
    input pill are their own free-floating entities; the container just lays
    them out and drives the expand-from-corner animation. */
@@ -229,6 +249,21 @@ body.docs{ margin:0 }
   #docs-duck.open .dd-duck{ transform:scaleX(-1) }
 }
 @media (max-width:900px){
-  #docs-duck{ right:16px; bottom:16px; --dd-w:min(340px, calc(100vw - 32px)) }
-  .dd-console{ height:min(60vh, calc(100vh - 130px)) }
+  /* mobile: the console goes FULL WIDTH, pinned to both edges, so the chat
+     uses the whole screen instead of a narrow floating column */
+  #docs-duck{ right:12px; bottom:12px; left:12px; z-index:70; --dd-w:auto }
+  .dd-console{
+    position:fixed; left:12px; right:12px; bottom:12px; width:auto;
+    height:min(72vh, calc(100vh - 96px));
+  }
+  .dd-backdrop{ position:fixed; inset:0; width:auto; height:auto; border-radius:0;
+    -webkit-mask-image:none; mask-image:none; background:rgba(8,9,11,.5) }
+  /* keep a big, obvious tap target and make sure nothing steals the tap */
+  .dd-duck{ position:fixed; right:12px; bottom:12px; width:60px; height:60px; touch-action:manipulation }
+  /* open: lift the duck to sit just above the full-width input, near the right
+     edge. The conversation is to its LEFT, and the sprite already faces left by
+     default — so NO flip here (a scaleX(-1) would turn it away from the chat). */
+  #docs-duck.open .dd-duck{
+    transform:translateY(calc(-1 * min(72vh, 100vh - 96px) + 8px));
+  }
 }
