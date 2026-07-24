@@ -385,27 +385,42 @@
   footer{border-top:1px solid var(--border); padding:48px 0 80px; position:relative; z-index:1}
   .foot{display:flex; flex-direction:column; align-items:flex-start; gap:24px}
 
-  /* the mascot: crisp pixels (never smoothed), idle bob at rest, a happy hop
-     on hover; grounded by its own little shadow */
-  .mascot{
+  /* the mascot: walks the bottom edge of the viewport, x driven from scroll
+     progress (site.js). Transform layering, outermost → innermost:
+       .duck-walker  — JS translateX + direction flip
+       .duck-rig     — waddle while scrolling
+       .d-wing       — continuous gentle flap (own timeline)
+       .d-glasses    — slow sunglasses bob (own timeline)
+     Separate elements per transform so none of them ever fight. */
+  .duck-walker{
+    position:fixed; bottom:2px; left:0; z-index:40; pointer-events:none;
+    will-change:transform;
+  }
+  .duck-rig{position:relative; width:64px}
+  .duck-rig img{
+    display:block; width:100%; height:auto;
     image-rendering:pixelated; user-select:none; -webkit-user-drag:none;
-    transform-origin:50% 100%;
-    animation:mascot-bob 3.4s ease-in-out infinite;
-    filter:drop-shadow(0 10px 8px rgba(0,0,0,.45));
   }
-  @keyframes mascot-bob{
+  .duck-rig .d-base{filter:drop-shadow(0 5px 4px rgba(0,0,0,.45))}
+  .duck-rig .d-wing,.duck-rig .d-glasses{position:absolute; top:0; left:0}
+  .d-wing{transform-origin:42% 55%; animation:wing-flap 1.4s ease-in-out infinite}
+  @keyframes wing-flap{
     0%,100%{transform:translateY(0) rotate(0deg)}
-    50%{transform:translateY(-6px) rotate(-2deg)}
+    50%{transform:translateY(-2.2%) rotate(-2.5deg)}
   }
-  .mascot:hover{animation:mascot-hop .7s cubic-bezier(.3,1.4,.4,1)}
-  @keyframes mascot-hop{
-    0%{transform:translateY(0)}
-    30%{transform:translateY(-18px) rotate(-5deg)}
-    55%{transform:translateY(0) rotate(0deg)}
-    75%{transform:translateY(-7px)}
-    100%{transform:translateY(0)}
+  .d-glasses{animation:glasses-bob 2.6s ease-in-out infinite}
+  @keyframes glasses-bob{
+    0%,100%{transform:translateY(0)}
+    50%{transform:translateY(1.5%)}
   }
-  @media (prefers-reduced-motion:reduce){.mascot{animation:none}}
+  .duck-walker.walking .duck-rig{animation:duck-waddle .38s ease-in-out infinite}
+  @keyframes duck-waddle{
+    0%,100%{transform:rotate(0deg) translateY(0)}
+    25%{transform:rotate(-4deg) translateY(-2px)}
+    75%{transform:rotate(4deg) translateY(-2px)}
+  }
+  /* its whole purpose is motion — hide under reduced motion */
+  @media (prefers-reduced-motion:reduce){.duck-walker{display:none}}
   .foot .brandline{font-family:var(--mono); font-weight:800; font-size:1.3rem;
     letter-spacing:.08em; text-transform:uppercase; color:var(--text)}
   .foot .brandline .sub{display:block; margin-top:8px; font-weight:400; font-size:.8rem;

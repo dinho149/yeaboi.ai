@@ -14,6 +14,12 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 var reducedMotion = false;
 var lenis = null;
 
+// duck walker state: last x, facing direction (sprite faces LEFT, so moving
+// right = flipped), and the idle timer that ends the waddle
+var _duckX = -1;
+var _duckDir = -1;
+var _duckIdleT = null;
+
 document.addEventListener('DOMContentLoaded', function () {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -115,6 +121,22 @@ document.addEventListener('DOMContentLoaded', function () {
         hint.style.opacity = (1 - hp).toFixed(3);
         hint.style.filter = hp > 0.01 ? 'blur(' + (hp * 16).toFixed(1) + 'px)' : 'none';
       }
+    }
+    // duck walker: strolls the bottom edge, x = scroll progress across the
+    // viewport; waddles while the position is actually changing and faces
+    // its direction of travel (sprite art faces left → flip to walk right)
+    var duck = document.getElementById('duck-walker');
+    if (duck) {
+      var range = Math.max(0, window.innerWidth - 64 - 24);
+      var dx = 12 + p * range;
+      if (_duckX >= 0 && Math.abs(dx - _duckX) > 0.5) {
+        _duckDir = dx > _duckX ? -1 : 1;
+        duck.classList.add('walking');
+        clearTimeout(_duckIdleT);
+        _duckIdleT = setTimeout(function () { duck.classList.remove('walking'); }, 180);
+      }
+      _duckX = dx;
+      duck.style.transform = 'translateX(' + dx + 'px) scaleX(' + _duckDir + ')';
     }
   }
   window.addEventListener('scroll', updateScrollProgress, { passive: true });
