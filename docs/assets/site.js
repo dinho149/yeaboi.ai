@@ -230,6 +230,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // first paint: place directly; mid-teleport: hold until it lands
         if (_duckSpot === null) {
           _duckSpot = spotIdx; _duckX = dx; _duckY = dy;
+          _duckDir = dx + dw / 2 < vw / 2 ? -1 : 1; // face away from the near edge
           duck.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
         }
       } else if (spotIdx !== _duckSpot) {
@@ -241,7 +242,10 @@ document.addEventListener('DOMContentLoaded', function () {
         duck.classList.remove('walking');
         setTimeout(function () {
           // land at the CURRENT position for the new spot (recomputed by the
-          // next scroll frame; use last computed as the landing point)
+          // next scroll frame; use last computed as the landing point),
+          // facing away from the nearest viewport edge — never staring
+          // off-page with a stale direction from the previous walk
+          _duckDir = _duckLandX + dw / 2 < vw / 2 ? -1 : 1;
           duck.style.transform = 'translate(' + _duckLandX.toFixed(1) + 'px,' + _duckLandY.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
           _duckX = _duckLandX; _duckY = _duckLandY;
           duck.classList.remove('teleporting');
