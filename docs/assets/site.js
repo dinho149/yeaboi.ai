@@ -24,6 +24,13 @@ var _duckDir = -1;
 var _duckSpot = null;
 var _duckTp = false;
 var _duckIdleT = null;
+// chase state: cursor position, flee offset along the footer hairline, and
+// a lock while the cornered-escape poof is in flight
+var _mX = -1;
+var _mY = -1;
+var _mmPend = false;
+var _duckFlee = 0;
+var _duckPoof = false;
 
 document.addEventListener('DOMContentLoaded', function () {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -176,11 +183,40 @@ document.addEventListener('DOMContentLoaded', function () {
             return [lerp(pl.left + 8, pl.right - dw - 8, q), pl.top - dh + 13];
           } });
         }
-        // footer: stands on the footer's top hairline, in the empty right half
+        // footer: stands on the footer's top hairline — and FLEES the cursor
+        // along it. Chase it to a viewport edge and it poofs to the far side.
         var ft = rectOf('footer');
         if (ft) {
           spots.push({ s: ft.top + st - vh * 0.85, pos: function () {
-            return [0.74 * (vw - dw), ft.top - dh + 4];
+            var base = 0.74 * (vw - dw);
+            var fy = ft.top - dh + 4;
+            var fx = base + _duckFlee;
+            var minX = 10, maxX = vw - dw - 10;
+            if (_mX >= 0 && !_duckPoof) {
+              var cx = fx + dw / 2, cy = fy + dh / 2;
+              var ddx = cx - _mX, ddy = cy - _mY;
+              var dist = Math.sqrt(ddx * ddx + ddy * ddy);
+              if (dist < 150) {
+                _duckFlee += (ddx >= 0 ? 1 : -1) * (150 - dist) * 0.4;
+                fx = Math.min(maxX, Math.max(minX, base + _duckFlee));
+                _duckFlee = fx - base;
+                // cornered with the cursor still closing in → escape poof
+                if ((fx === minX || fx === maxX) && dist < 85) {
+                  _duckPoof = true;
+                  var el = document.getElementById('duck-walker');
+                  if (el) el.classList.add('teleporting');
+                  (function (corneredLeft) {
+                    setTimeout(function () {
+                      _duckFlee = (corneredLeft ? maxX : minX) - base;
+                      if (el) el.classList.remove('teleporting');
+                      _duckPoof = false;
+                      updateScrollProgress();
+                    }, 160);
+                  })(fx === minX);
+                }
+              }
+            }
+            return [fx, fy];
           } });
         }
         spots.sort(function (a, b) { return a.s - b.s; });
@@ -200,6 +236,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // area change → teleport: fade out here, reappear there
         _duckTp = true;
         _duckSpot = spotIdx;
+        _duckFlee = 0; // fresh perch, no leftover chase offset
         duck.classList.add('teleporting');
         duck.classList.remove('walking');
         setTimeout(function () {
@@ -226,6 +263,15 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   window.addEventListener('scroll', updateScrollProgress, { passive: true });
   window.addEventListener('resize', updateScrollProgress, { passive: true });
+  // cursor tracking for the footer chase — rAF-throttled re-render so the
+  // duck reacts while the page itself isn't scrolling
+  window.addEventListener('mousemove', function (e) {
+    _mX = e.clientX; _mY = e.clientY;
+    if (!_mmPend) {
+      _mmPend = true;
+      requestAnimationFrame(function () { _mmPend = false; updateScrollProgress(); });
+    }
+  }, { passive: true });
   if (lenis) lenis.on('scroll', updateScrollProgress);
   updateScrollProgress();
 
