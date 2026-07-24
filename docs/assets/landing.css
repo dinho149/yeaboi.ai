@@ -412,7 +412,18 @@
     image-rendering:pixelated; user-select:none; -webkit-user-drag:none;
   }
   .duck-rig .d-base{filter:drop-shadow(0 5px 4px rgba(0,0,0,.45))}
-  .duck-rig .d-wing,.duck-rig .d-glasses{position:absolute; top:0; left:0}
+  .duck-rig .d-wing,.duck-rig .d-glasses,.duck-rig .d-glasses2{position:absolute; top:0; left:0}
+  /* the SECOND pair of shades — hidden until a startle jump reveals it at
+     eye level while the first pair is up the forehead (DOM-ordered under
+     .d-glasses so the returning pair lands on top of it) */
+  .duck-rig .d-glasses2{opacity:0}
+  .duck-walker.startled .d-glasses2{animation:glasses2-reveal 1.35s linear both}
+  @keyframes glasses2-reveal{
+    0%,7%{opacity:0}
+    13%{opacity:1}
+    82%{opacity:1}
+    90%,100%{opacity:0}
+  }
   .d-wing{transform-origin:42% 55%; animation:wing-flap 1.4s ease-in-out infinite}
   @keyframes wing-flap{
     0%,100%{transform:translateY(0) rotate(0deg)}
@@ -425,12 +436,12 @@
   }
   /* startled (cursor touch → jump): the shades fly high up the forehead,
      hang there through the whole flight, and drop back with an overshoot */
-  .duck-walker.startled .d-glasses{animation:glasses-pop .95s cubic-bezier(.3,1.3,.4,1) both}
+  .duck-walker.startled .d-glasses{animation:glasses-pop 1.35s cubic-bezier(.3,1.3,.4,1) both}
   @keyframes glasses-pop{
     0%{transform:translateY(0)}
-    14%{transform:translateY(-10%)}
-    68%{transform:translateY(-8.5%)}
-    85%{transform:translateY(1.4%)}
+    10%{transform:translateY(-10%)}
+    76%{transform:translateY(-8.5%)}
+    89%{transform:translateY(1.4%)}
     100%{transform:translateY(0)}
   }
   /* airborne: the wings work hard — much faster, deeper flap while the

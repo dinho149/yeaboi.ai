@@ -69,18 +69,18 @@ function _duckPhysicsStep() {
     var nowT = performance.now();
     if (Math.abs(cx - _mX) < 38 && Math.abs(cy - _mY) < 42 &&
         _duckAirY === 0 && _duckAirV === 0 && nowT > _duckJumpCd) {
-      _duckJumpCd = nowT + 1700;
-      _duckAirV = -11;
+      _duckJumpCd = nowT + 2300;
+      _duckAirV = -12;
       _duckVel += (cx >= _mX ? 1 : -1) * 6;
       duck.classList.add('startled', 'airborne');
-      setTimeout(function () { duck.classList.remove('startled'); }, 950);
+      setTimeout(function () { duck.classList.remove('startled'); }, 1350);
     }
   }
-  // vertical: snappy rise, then a gentle parachute descent — weak gravity
-  // while falling, capped terminal velocity, wings doing the work
+  // vertical: snappy rise, then a properly FLOATY parachute descent — barely
+  // any gravity while falling, low terminal velocity, wings doing the work
   if (_duckAirV !== 0 || _duckAirY !== 0) {
-    _duckAirV += _duckAirV < 0 ? 0.9 : 0.22;
-    if (_duckAirV > 2.2) _duckAirV = 2.2;
+    _duckAirV += _duckAirV < 0 ? 0.9 : 0.12;
+    if (_duckAirV > 1.4) _duckAirV = 1.4;
     _duckAirY += _duckAirV;
     if (_duckAirY >= 0) {                                  // touchdown
       _duckAirY = 0; _duckAirV = 0;
@@ -104,9 +104,10 @@ function _duckPhysicsStep() {
         setTimeout(function () {
           _duckFlee = (atLeft ? g.maxX : g.minX) - g.base;
           var nx = g.base + _duckFlee;
+          var ny = g.y + _duckAirY;     // keep altitude if it poofed mid-jump
           _duckDir = atLeft ? 1 : -1;   // face back toward the page
-          _duckX = nx; _duckY = g.y; _duckLandX = nx; _duckLandY = g.y;
-          duck.style.transform = 'translate(' + nx.toFixed(1) + 'px,' + g.y.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+          _duckX = nx; _duckY = ny; _duckLandX = nx; _duckLandY = ny;
+          duck.style.transform = 'translate(' + nx.toFixed(1) + 'px,' + ny.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
           duck.classList.remove('teleporting');
           _duckPoof = false;
         }, 160);
@@ -346,8 +347,11 @@ document.addEventListener('DOMContentLoaded', function () {
           duck.classList.remove('teleporting');
           _duckTp = false;
         }, 160);
-      } else {
-        // in-spot movement: walk the surface, waddling while moving
+      } else if (!(_duckChase && _duckPhysOn)) {
+        // in-spot movement: walk the surface, waddling while moving.
+        // While the chase physics loop is live it is the ONLY writer —
+        // writing here too would stamp the grounded position over the
+        // airborne one every mousemove and split the duck in two.
         if (Math.abs(dx - _duckX) > 0.5) _duckDir = dx > _duckX ? -1 : 1;
         if (Math.abs(dx - _duckX) > 0.5 || Math.abs(dy - _duckY) > 0.5) {
           duck.classList.add('walking');
