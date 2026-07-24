@@ -378,6 +378,14 @@ ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--borde
             backdrop-filter:blur(16px) saturate(1.3);
     border-bottom-color:var(--border);
   }
+  /* sheet open: bar and sheet must read as ONE surface — same solid fill as
+     the sheet (no translucent frost against its opaque bg), no divider */
+  .navbar:has(.rail.expanded),
+  .navbar.scrolled:has(.rail.expanded){
+    background:var(--bg);
+    -webkit-backdrop-filter:none; backdrop-filter:none;
+    border-bottom-color:transparent;
+  }
   .navbar::before{display:none}   /* the vertical accent edge is desktop-only */
   /* .navbar .rail, not .rail — the element is `.wrap.rail`, and the generic
      .wrap{padding:0 24px} later in this block would zero the vertical padding

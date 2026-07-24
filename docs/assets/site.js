@@ -652,6 +652,14 @@ function railPulse(el) {
 
 var _railSetOpen = null;
 
+// Mobile = the rail renders as the compact top bar + full-bleed sheet. The
+// sheet behaves like a menu (opens on demand, closes on selection), unlike
+// the desktop rail, which is a persistent sidebar that stays open while
+// browsing docs.
+function _isMobileNav() {
+  return window.matchMedia && window.matchMedia("(max-width:900px)").matches;
+}
+
 // Re-sync the rail's "active" state + dropdown default-open behaviour to
 // whichever page is CURRENTLY showing — called after every client-side nav.
 function syncRailToPage() {
@@ -663,7 +671,7 @@ function syncRailToPage() {
   // Arriving at ANY docs page via ANY link (not just the DOCS button) opens
   // the sidebar by default — same rule as the initial direct-load check:
   // open unless the user has explicitly closed it earlier this session.
-  if (onDocs && !rail.classList.contains("expanded")) {
+  if (onDocs && !rail.classList.contains("expanded") && !_isMobileNav()) {
     try {
       var pref = sessionStorage.getItem("yb-rail-open");
       if (pref === null || pref === "1") {
@@ -743,6 +751,16 @@ function buildRail() {
     if (e.key === "Escape" && rail.classList.contains("expanded")) setOpen(false, true);
   });
 
+  // Mobile: selecting a page collapses the sheet (not remembered as a
+  // user-close — the desktop pref is untouched).
+  if (menu) {
+    menu.addEventListener("click", function (e) {
+      if (_isMobileNav() && e.target.closest && e.target.closest("a")) {
+        setOpen(false, false);
+      }
+    });
+  }
+
   // The dropdown's CONTENTS are page-independent (the same tree everywhere) —
   // build it once. Only which link is "current" changes, per navigation.
   if (inner) {
@@ -770,8 +788,9 @@ function buildRail() {
   // On a fresh direct load of a docs URL (bookmark, search engine, refresh),
   // the sidebar opens by default and plays its stagger-in — but this initial
   // check only ever runs once, here; subsequent client-side navigation is
-  // governed by syncRailToPage()'s stricter check instead.
-  if (document.body.classList.contains("docs")) {
+  // governed by syncRailToPage()'s stricter check instead. Mobile skips it:
+  // the sheet is a menu, not a persistent sidebar.
+  if (document.body.classList.contains("docs") && !_isMobileNav()) {
     try {
       var pref = sessionStorage.getItem("yb-rail-open");
       if (pref === null || pref === "1") setOpen(true, false);
