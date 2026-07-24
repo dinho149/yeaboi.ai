@@ -112,6 +112,7 @@ class TestCollect:
             "yeaboi.tools.github.github_recent_prs",
             lambda repo, days=1, since=None: [{"author": "A", "kind": "pr", "title": "p"}],
         )
+        monkeypatch.setattr("yeaboi.tools.github.github_recent_reviews", lambda repo, days=1, since=None: [])
         bundle = collect_recent_activity(sources={SOURCE_GITHUB}, github_repo="owner/repo")
         assert dict(bundle.counts) == {SOURCE_GITHUB: 2}
         assert {i["kind"] for i in bundle.items} == {"commit", "pr"}
@@ -126,6 +127,27 @@ class TestCollect:
         bundle = collect_recent_activity(sources={SOURCE_NOTION}, notion_root="root123")
         assert dict(bundle.counts) == {SOURCE_NOTION: 1}
         assert bundle.items[0]["source"] == SOURCE_NOTION
+
+    def test_confluence_partial_enrichment_is_preserved(self, monkeypatch):
+        def partial_confluence(_space, days=1, since=None, on_partial=None, **_kwargs):
+            on_partial("latest editors captured; earlier-editor enrichment incomplete for 2 page(s)")
+            return [{"author": "Alice", "kind": "page", "title": "Runbook"}]
+
+        monkeypatch.setattr("yeaboi.tools.confluence.confluence_recent_pages", partial_confluence)
+
+        bundle = collect_recent_activity(
+            sources={collector.SOURCE_CONFLUENCE},
+            confluence_space="ENG",
+        )
+
+        assert dict(bundle.counts) == {collector.SOURCE_CONFLUENCE: 1}
+        assert bundle.partial_sources == [
+            (
+                collector.SOURCE_CONFLUENCE,
+                "latest editors captured; earlier-editor enrichment incomplete for 2 page(s)",
+            )
+        ]
+        assert bundle.errors == []
 
     def test_no_sources_enabled_is_empty(self):
         bundle = collect_recent_activity(sources=set())
@@ -259,6 +281,7 @@ class TestAzdoReposSource:
             "yeaboi.tools.azure_devops.azdevops_recent_prs",
             lambda project, days=1, since=None: [{"author": "A", "kind": "pr", "title": "p", "key": "!1"}],
         )
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_recent_reviews", lambda project, days=1, since=None: [])
         bundle = collect_recent_activity(sources={collector.SOURCE_AZDO_REPOS}, azdo_project="Proj")
         assert dict(bundle.counts) == {collector.SOURCE_AZDO_REPOS: 2}
         assert {i["kind"] for i in bundle.items} == {"commit", "pr"}
@@ -278,6 +301,7 @@ class TestDedupe:
                 {"author": "A", "kind": "commit", "title": "fix bug (PR #7)", "key": "abc12345"},
             ],
         )
+        monkeypatch.setattr("yeaboi.tools.github.github_recent_reviews", lambda repo, days=1, since=None: [])
         bundle = collect_recent_activity(sources={SOURCE_GITHUB}, github_repo="owner/repo")
         kinds = [i["kind"] for i in bundle.items]
         assert kinds.count("commit") == 1

@@ -92,6 +92,46 @@ class TestConfig:
             cfg = store.load_config("s1")
         assert cfg["my_aliases"] == ""
 
+    def test_team_scope_round_trip(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                tracker_sources=["jira", "azure_devops"],
+                team_members=["Alice", "Bob"],
+                roster_configured=True,
+            )
+            cfg = store.load_config("s1")
+        assert cfg["tracker_sources"] == ["jira", "azure_devops"]
+        assert cfg["team_members"] == ["Alice", "Bob"]
+        assert cfg["roster_configured"] is True
+
+    def test_team_scope_defaults_to_unconfigured_jira(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config("s1", enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            cfg = store.load_config("s1")
+        assert cfg["tracker_sources"] == ["jira"]
+        assert cfg["team_members"] == []
+        assert cfg["roster_configured"] is False
+
+    def test_documentation_scope_round_trip(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                documentation_sources=["confluence", "notion"],
+                documentation_scope_configured=True,
+            )
+            cfg = store.load_config("s1")
+        assert cfg["documentation_sources"] == ["confluence", "notion"]
+        assert cfg["documentation_scope_configured"] is True
+
     def test_my_aliases_column_migrates_old_db(self, db_path):
         """A standup_config table created before my_aliases existed gains the column on open."""
         import sqlite3
@@ -117,6 +157,9 @@ class TestConfig:
             cfg = store.load_config("s1")
         assert cfg is not None
         assert cfg["my_aliases"] == ""
+        assert cfg["tracker_sources"] == ["jira"]
+        assert cfg["team_members"] == []
+        assert cfg["roster_configured"] is False
 
 
 class TestSelfUpdates:
@@ -339,6 +382,31 @@ class TestMemberLinksRoundTrip:
             store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
             latest = store.get_latest_report("s1")
         assert latest.member_updates[0].links == ()
+
+    def test_structured_summaries_and_coverage_round_trip(self, db_path):
+        member = MemberUpdate(
+            name="Alice",
+            summary="Delivered authentication and its runbook.",
+            ticketing_summary="Moved PSOT-1 to Done.",
+            ticketing_links=(("PSOT-1", "https://j/browse/PSOT-1"),),
+            code_summary="Merged authentication.",
+            code_links=(("#12", "https://github/pull/12"),),
+            documentation_summary="Updated the authentication runbook.",
+            documentation_links=(("Runbook", "https://wiki/runbook"),),
+        )
+        report = _make_report(
+            member_updates=(member,),
+            category_coverage=(
+                ("ticketing", "covered"),
+                ("code", "covered"),
+                ("documentation", "partial"),
+            ),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest.member_updates[0] == member
+        assert latest.category_coverage == report.category_coverage
 
 
 class TestActivityCountRoundTrip:

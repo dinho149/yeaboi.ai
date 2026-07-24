@@ -44,7 +44,7 @@ class TestSchemaVersion:
         # list; v12 added the token_usage performance columns (duration_ms /
         # eval_duration_ms / load_duration_ms / tokens_per_sec) for local metrics;
         # v13 added the Deep-analysis ticket parse cache.
-        assert CURRENT_SCHEMA_VERSION == 13
+        assert CURRENT_SCHEMA_VERSION == 17
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""
@@ -77,6 +77,53 @@ class TestSchemaVersion:
             version = migrated._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
 
         assert row == ("analysis_ticket_cache",)
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_v15_db_migrates_documentation_scope(self, tmp_path: Path):
+        import sqlite3
+
+        db_path = tmp_path / "v15.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_info (schema_version INT NOT NULL)")
+        conn.execute("INSERT INTO schema_info (schema_version) VALUES (15)")
+        conn.execute("CREATE TABLE standup_config (session_id TEXT PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+
+        with SessionStore(db_path) as migrated:
+            columns = {row[1] for row in migrated._conn.execute("PRAGMA table_info(standup_config)").fetchall()}
+            version = migrated._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
+
+        assert {"documentation_sources", "documentation_scope_configured"} <= columns
+        assert version == CURRENT_SCHEMA_VERSION
+
+    def test_v16_db_migrates_azure_repository_scope_to_projects(self, tmp_path: Path):
+        import sqlite3
+
+        db_path = tmp_path / "v16.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE schema_info (schema_version INT NOT NULL)")
+        conn.execute("INSERT INTO schema_info (schema_version) VALUES (16)")
+        conn.execute(
+            """CREATE TABLE standup_config (
+                   session_id TEXT PRIMARY KEY,
+                   azdo_repositories TEXT NOT NULL DEFAULT '[]'
+               )"""
+        )
+        conn.execute(
+            "INSERT INTO standup_config (session_id, azdo_repositories) VALUES (?, ?)",
+            ("s1", '["Core/api", "Core/web", "Platform/service"]'),
+        )
+        conn.commit()
+        conn.close()
+
+        with SessionStore(db_path) as migrated:
+            projects = migrated._conn.execute(
+                "SELECT azdo_projects FROM standup_config WHERE session_id = 's1'"
+            ).fetchone()[0]
+            version = migrated._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
+
+        assert projects == '["Core", "Platform"]'
         assert version == CURRENT_SCHEMA_VERSION
 
 

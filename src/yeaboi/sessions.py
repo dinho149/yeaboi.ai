@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See README: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 13  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache  # noqa: E501
+CURRENT_SCHEMA_VERSION = 17  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -593,6 +593,87 @@ class SessionStore:
 
             self._conn.execute(_ANALYSIS_TICKET_CACHE_SCHEMA)
             logger.info("Migration v13: created analysis ticket parse cache")
+
+        if from_version < 14:
+            for statement in (
+                """ALTER TABLE standup_config
+                   ADD COLUMN tracker_sources TEXT NOT NULL DEFAULT '["jira"]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN team_members TEXT NOT NULL DEFAULT '[]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN roster_configured INTEGER NOT NULL DEFAULT 0""",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+            logger.info("Migration v14: added standup tracker and roster scope")
+
+        if from_version < 15:
+            for statement in (
+                """ALTER TABLE standup_config
+                   ADD COLUMN code_sources TEXT NOT NULL DEFAULT '[]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN github_repositories TEXT NOT NULL DEFAULT '[]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN azdo_repositories TEXT NOT NULL DEFAULT '[]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN code_scope_configured INTEGER NOT NULL DEFAULT 0""",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+            logger.info("Migration v15: added standup code repository scope")
+
+        if from_version < 16:
+            for statement in (
+                """ALTER TABLE standup_config
+                   ADD COLUMN documentation_sources TEXT NOT NULL DEFAULT '[]'""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN documentation_scope_configured INTEGER NOT NULL DEFAULT 0""",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass
+            logger.info("Migration v16: added standup documentation scope")
+
+        if from_version < 17:
+            try:
+                self._conn.execute(
+                    """ALTER TABLE standup_config
+                       ADD COLUMN azdo_projects TEXT NOT NULL DEFAULT '[]'"""
+                )
+            except sqlite3.OperationalError:
+                pass
+            columns = {row[1] for row in self._conn.execute("PRAGMA table_info(standup_config)").fetchall()}
+            rows = (
+                self._conn.execute(
+                    "SELECT session_id, azdo_repositories FROM standup_config WHERE azdo_projects = '[]'"
+                ).fetchall()
+                if {"session_id", "azdo_projects", "azdo_repositories"} <= columns
+                else []
+            )
+            for session_id, repositories_json in rows:
+                try:
+                    repositories = json.loads(repositories_json or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    repositories = []
+                projects = list(
+                    dict.fromkeys(
+                        project
+                        for repository in repositories
+                        for project, separator, _name in [str(repository).partition("/")]
+                        if separator and project
+                    )
+                )
+                if projects:
+                    self._conn.execute(
+                        "UPDATE standup_config SET azdo_projects = ? WHERE session_id = ?",
+                        (json.dumps(projects), session_id),
+                    )
+            logger.info("Migration v17: added standup Azure project scope")
 
     # ── Token usage persistence ──────────────────────────────────────────
 

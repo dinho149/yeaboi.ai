@@ -1,10 +1,16 @@
 """Render tests for the Daily Standup TUI screen builder and helpers."""
 
 from rich.panel import Panel
+from rich.text import Text
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.ui import mode_select
 from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
-from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_screen
+from yeaboi.ui.mode_select.screens._screens_secondary import (
+    _build_standup_screen,
+    _build_standup_team_member_screen,
+    _build_standup_team_source_screen,
+)
 from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
 
@@ -46,6 +52,35 @@ class TestComponents:
 
 
 class TestBuildStandupScreen:
+    def test_live_page_initially_focuses_generate(self, monkeypatch):
+        captured = []
+        monkeypatch.setattr(
+            mode_select,
+            "_collect_standup_data",
+            lambda: {
+                "session_id": "s1",
+                "session_name": "Demo",
+                "report": None,
+                "config": None,
+                "schedule": {},
+                "message": "",
+            },
+        )
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select.screens._screens_secondary._build_standup_screen",
+            lambda *args, **kwargs: captured.append(kwargs["action_sel"]) or Text("standup"),
+        )
+
+        mode_select._run_standup_page(
+            type("Console", (), {"size": (100, 36)})(),
+            type("Live", (), {"update": lambda self, renderable: None})(),
+            lambda **kwargs: "q",
+            0.001,
+            True,
+        )
+
+        assert captured[0] == 0
+
     def test_returns_panel_with_report(self):
         data = {
             "session_name": "demo-2026-07-10",
@@ -74,8 +109,39 @@ class TestBuildStandupScreen:
 
     def test_action_selection_variants(self):
         data = {"report": _report(), "schedule": {}}
-        for sel in range(3):  # Generate, Configure, Back
+        for sel in range(4):  # Generate, Team, Configure, Back
             assert isinstance(_build_standup_screen(data, width=80, height=24, action_sel=sel), Panel)
+
+    def test_team_source_picker_renders_saved_selection(self):
+        panel = _build_standup_team_source_screen(
+            [("jira", "Jira"), ("azure_devops", "Azure DevOps")],
+            {0},
+            0,
+            width=90,
+            height=28,
+        )
+        assert isinstance(panel, Panel)
+        from rich.console import Console
+
+        console = Console(width=100, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Choose update sources" in out
+        assert "Jira" in out and "Azure DevOps" in out
+
+    def test_team_member_picker_renders_checked_members_and_scrollbar(self):
+        roster = [f"Engineer {idx}" for idx in range(20)]
+        panel = _build_standup_team_member_screen(roster, {0, 3}, 3, width=80, height=28)
+        assert isinstance(panel, Panel)
+        from rich.console import Console
+
+        console = Console(width=90, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Choose team members" in out
+        assert "2 of 20 selected" in out
 
     def test_report_renders_as_themed_rows_not_emoji(self):
         # The dashboard should use the status strip (meters) and clean rows,
@@ -260,7 +326,7 @@ class TestBuildStandupScreen:
                 ),
             ),
         )
-        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=60, view="member:Bob")
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=100, view="member:Bob")
         console = Console(width=110, file=open("/dev/null", "w"))
         with console.capture() as cap:
             console.print(panel)
@@ -268,9 +334,81 @@ class TestBuildStandupScreen:
         assert "In their words" in out
         assert "Paired with Alice." in out
         assert "Starting on tokens next." in out  # Alt+Enter paragraph break preserved
-        assert "Activity analysis" in out
+        assert "General overview" in out
+        assert "Ticketing" in out
+        assert "Code" in out
+        assert "Documentation" in out
         assert "Merged the auth PR." in out
-        assert "Blocker: waiting on review" in out
+        assert "Blocker" in out
+        assert "waiting on review" in out
+
+    def test_member_detail_uses_dashboard_tiles_and_category_evidence(self):
+        from rich.console import Console
+
+        rep = StandupReport(
+            member_updates=(
+                MemberUpdate(
+                    name="Ada",
+                    summary="Moved authentication rollout forward.",
+                    source="inferred",
+                    activity_count=7,
+                    ticketing_activity_count=3,
+                    code_activity_count=2,
+                    documentation_activity_count=2,
+                    ticketing_summary="Closed PSOT-9.",
+                    code_summary="Reviewed the token PR.",
+                    documentation_summary="Updated the rollout guide.",
+                    ticketing_links=(("PSOT-9", "https://x/browse/PSOT-9"),),
+                    code_links=(("PR 42", "https://x/pull/42"),),
+                    documentation_links=(("Rollout guide", "https://x/wiki/rollout"),),
+                ),
+            )
+        )
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=120, height=100, view="member:Ada")
+        console = Console(width=130, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "ACTIVE" in out and "TRACKED ACTIVITY" in out
+        assert "TOTAL" in out and "TICKETING" in out and "CODE" in out and "DOCUMENTATION" in out
+        assert "tracked updates" in out and "Jira / Boards" in out and "commits / PRs" in out
+        assert "↗ PSOT-9" in out
+        assert "↗ PR 42" in out
+        assert "↗ Rollout guide" in out
+
+    def test_member_detail_empty_states_and_short_terminal_are_safe(self):
+        from rich.console import Console
+
+        rep = StandupReport(member_updates=(MemberUpdate(name="Quiet", summary=""),))
+        data = {"report": rep, "schedule": {}}
+        panel = _build_standup_screen(data, width=56, height=18, view="member:Quiet")
+        assert isinstance(panel, Panel)
+
+        # Scroll through the atomic dashboard renderables and verify category
+        # empty states remain reachable on a narrow terminal.
+        rendered = []
+        for offset in range(20):
+            meta = {}
+            panel = _build_standup_screen(
+                data,
+                width=56,
+                height=32,
+                view="member:Quiet",
+                scroll_offset=offset,
+                scroll_meta=meta,
+            )
+            console = Console(width=60, file=open("/dev/null", "w"))
+            with console.capture() as cap:
+                console.print(panel)
+            rendered.append(cap.get())
+            if offset >= meta.get("max_offset", 0):
+                break
+        out = "\n".join(rendered)
+        assert "QUIET" in out
+        assert "No activity" in out and "detected for this member." in out
+        assert "No ticketing activity detected" in out
+        assert "No code activity detected" in out
+        assert "No documentation activity detected" in out
 
     def test_detail_views_all_build(self):
         from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
@@ -399,14 +537,14 @@ class TestBuildStandupScreen:
                 ),
             ),
         )
-        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=110, height=40, view="member:Bob")
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=110, height=100, view="member:Bob")
         console = Console(width=120, file=open("/dev/null", "w"))
         with console.capture() as cap:
             console.print(panel)
         out = cap.get()
-        assert "Links" in out
+        assert "Evidence" in out
         assert "↗ PSOT-1" in out
-        assert "browse/PSOT-1" in out  # truncated URL shown alongside the label
+        assert "browse/PSOT-1" in out
 
     def test_my_update_detail_renders_my_member_card(self):
         from rich.console import Console
@@ -416,7 +554,7 @@ class TestBuildStandupScreen:
             member_updates=(MemberUpdate(name="Bob", summary="Merged auth.", self_report="hi", source="combined"),),
         )
         panel = _build_standup_screen(
-            {"report": rep, "schedule": {}, "my_name": "Bob"}, width=100, height=40, view="my_update"
+            {"report": rep, "schedule": {}, "my_name": "Bob"}, width=100, height=60, view="my_update"
         )
         console = Console(width=110, file=open("/dev/null", "w"))
         with console.capture() as cap:

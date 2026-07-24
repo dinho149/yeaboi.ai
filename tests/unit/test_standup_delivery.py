@@ -40,7 +40,11 @@ class TestRender:
         assert "Daily Standup — 2026-07-10" in text
         assert "day 3 of 10" in text
         assert "At risk" in text
-        assert "Alice: login page" in text
+        assert "Alice" in text
+        assert "General overview: login page" in text
+        assert "Ticketing:" in text
+        assert "Code:" in text
+        assert "Documentation:" in text
         assert "Blocker: waiting on review" in text
 
     def test_rich_returns_group(self):

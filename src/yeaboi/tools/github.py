@@ -14,6 +14,8 @@
 """
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import github
 from langchain_core.tools import tool
@@ -21,6 +23,7 @@ from langchain_core.tools import tool
 from yeaboi.config import get_github_token
 
 logger = logging.getLogger(__name__)
+_GITHUB_DETAIL_SEMAPHORE = threading.BoundedSemaphore(4)
 
 # Truncate file/README content at this many characters to avoid flooding the LLM context.
 _MAX_CONTENT_CHARS = 8_000
@@ -370,7 +373,47 @@ def _raise_if_github_auth(e: Exception) -> None:
         raise StandupSourceError("github", "authentication failed — check GITHUB_TOKEN")
 
 
-def github_recent_commits(repo_url: str, days: int = 1, since=None) -> list[dict]:
+def _github_changed_files(
+    value,
+    *,
+    metadata_cache=None,
+    object_key: str = "",
+    revision: str = "",
+) -> list[str]:
+    """Best-effort changed paths for a commit or PR; never hides its activity."""
+
+    def _fetch() -> list[str]:
+        try:
+            with _GITHUB_DETAIL_SEMAPHORE:
+                files = value.get_files() if hasattr(value, "get_files") else getattr(value, "files", ())
+            return [
+                str(getattr(file, "filename", "") or "")
+                for file in list(files or ())[:100]
+                if getattr(file, "filename", "")
+            ]
+        except Exception as exc:
+            logger.debug("github changed-file lookup failed: %s", exc)
+            return []
+
+    if metadata_cache is not None and object_key and revision:
+        return list(
+            metadata_cache.get_or_compute(
+                "github",
+                "changed_files",
+                object_key,
+                revision,
+                _fetch,
+                cache_empty=False,
+                replace_revisions=object_key.rpartition(":")[2].startswith("#"),
+            )
+        )
+    return _fetch()
+
+
+_MAX_CHANGED_FILE_LOOKUPS = 25
+
+
+def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cache=None) -> list[dict]:
     """Return commits pushed to the default branch since the window start.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
@@ -385,7 +428,7 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None) -> list[dict
         repo = _get_github_client().get_repo(slug)
         commits = repo.get_commits(since=_since_dt(days, since))
         items: list[dict] = []
-        for c in commits[:100]:
+        for index, c in enumerate(commits[:100]):
             commit = c.commit
             author = commit.author.name if commit.author else ""
             email = (getattr(commit.author, "email", "") or "") if commit.author else ""
@@ -404,6 +447,16 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None) -> list[dict
                     "timestamp": ts,
                     "key": c.sha[:8],
                     "url": getattr(c, "html_url", "") or "",
+                    "changed_files": (
+                        _github_changed_files(
+                            c,
+                            metadata_cache=metadata_cache,
+                            object_key=f"{slug}:{c.sha}",
+                            revision=c.sha,
+                        )
+                        if index < _MAX_CHANGED_FILE_LOOKUPS
+                        else []
+                    ),
                 }
             )
         logger.info("github_recent_commits: %d commit(s) in last %d day(s)", len(items), days)
@@ -455,12 +508,15 @@ def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
                 "timestamp": commit.author.date.isoformat()[:19],
                 "key": c.sha[:8],
                 "url": getattr(c, "html_url", "") or "",
+                # The parent PR event carries its complete changed-file scope;
+                # avoid an API call for every branch commit.
+                "changed_files": [],
             }
         )
     return items
 
 
-def github_recent_prs(repo_url: str, days: int = 1, since=None) -> list[dict]:
+def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=None) -> list[dict]:
     """Return pull requests updated since the window start, plus their branch commits.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
@@ -476,16 +532,37 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None) -> list[dict]:
         slug = _parse_repo(repo_url)
         repo = _get_github_client().get_repo(slug)
         cutoff = _since_dt(days, since)
-        prs = repo.get_pulls(state="all", sort="updated", direction="desc")
+
+        def _list_prs():
+            return list(repo.get_pulls(state="all", sort="updated", direction="desc")[:100])
+
+        prs = (
+            metadata_cache.memoize(("github", "pull_requests", slug), _list_prs)
+            if metadata_cache is not None
+            else _list_prs()
+        )
         items: list[dict] = []
         commit_lookups = 0
-        for pr in prs[:100]:
+        file_lookups = 0
+        for pr in prs:
             updated = pr.updated_at
             # updated_at may be naive; compare in UTC terms defensively.
             if updated is not None and updated.tzinfo is not None and updated < cutoff:
                 break
             status = "merged" if pr.merged else pr.state
             ts = updated.isoformat()[:19] if updated else ""
+            revision = updated.isoformat() if updated else str(getattr(pr, "head", "") or "")
+            changed_files = (
+                _github_changed_files(
+                    pr,
+                    metadata_cache=metadata_cache,
+                    object_key=f"{slug}:#{pr.number}",
+                    revision=revision,
+                )
+                if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
+                else []
+            )
+            file_lookups += 1
             items.append(
                 {
                     "author": pr.user.login if pr.user else "",
@@ -496,6 +573,7 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None) -> list[dict]:
                     "timestamp": ts,
                     "key": f"#{pr.number}",
                     "url": getattr(pr, "html_url", "") or "",
+                    "changed_files": changed_files,
                 }
             )
             if status in ("open", "merged") and commit_lookups < _MAX_PR_COMMIT_LOOKUPS:
@@ -509,4 +587,102 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None) -> list[dict]:
     except Exception as e:
         _raise_if_github_auth(e)
         logger.warning("github_recent_prs failed: %s", e)
+        return []
+
+
+def github_recent_reviews(repo_url: str, days: int = 1, since=None, metadata_cache=None) -> list[dict]:
+    """Return timestamped PR reviews and inline review comments in the window."""
+    logger.info("github_recent_reviews: repo=%r days=%d since=%s", repo_url, days, since)
+    try:
+        slug = _parse_repo(repo_url)
+        repo = _get_github_client().get_repo(slug)
+        cutoff = _since_dt(days, since)
+
+        def _list_prs():
+            return list(repo.get_pulls(state="all", sort="updated", direction="desc")[:100])
+
+        prs = (
+            metadata_cache.memoize(("github", "pull_requests", slug), _list_prs)
+            if metadata_cache is not None
+            else _list_prs()
+        )
+        recent_prs = []
+        for pr in prs:
+            updated = pr.updated_at
+            if updated is not None and updated.tzinfo is not None and updated < cutoff:
+                break
+            recent_prs.append(pr)
+
+        def _reviews_for_pr(index_pr) -> list[dict]:
+            index, pr = index_pr
+            updated = pr.updated_at
+            out: list[dict] = []
+            try:
+                revision = updated.isoformat() if updated else str(getattr(pr, "head", "") or "")
+                changed_files = (
+                    _github_changed_files(
+                        pr,
+                        metadata_cache=metadata_cache,
+                        object_key=f"{slug}:#{pr.number}",
+                        revision=revision,
+                    )
+                    if index < _MAX_CHANGED_FILE_LOOKUPS
+                    else []
+                )
+                with _GITHUB_DETAIL_SEMAPHORE:
+                    reviews = list(pr.get_reviews())
+                for review in reviews:
+                    submitted = getattr(review, "submitted_at", None)
+                    if submitted is None or submitted.tzinfo is None or submitted < cutoff:
+                        continue
+                    user = getattr(review, "user", None)
+                    state = (getattr(review, "state", "") or "reviewed").lower()
+                    out.append(
+                        {
+                            "author": getattr(user, "login", "") or "",
+                            "kind": "review",
+                            "title": f"{state} PR #{pr.number}: {pr.title or ''}",
+                            "body": getattr(review, "body", "") or "",
+                            "status": state,
+                            "timestamp": submitted.isoformat()[:19],
+                            "key": f"review-{getattr(review, 'id', '')}",
+                            "url": getattr(review, "html_url", "") or getattr(pr, "html_url", "") or "",
+                            "changed_files": changed_files,
+                        }
+                    )
+                for comment in pr.get_review_comments():
+                    created = getattr(comment, "created_at", None)
+                    if created is None or created.tzinfo is None or created < cutoff:
+                        continue
+                    user = getattr(comment, "user", None)
+                    items.append(
+                        {
+                            "author": getattr(user, "login", "") or "",
+                            "kind": "review",
+                            "title": f"reviewed code on PR #{pr.number}: {pr.title or ''}",
+                            "body": getattr(comment, "body", "") or "",
+                            "status": "commented",
+                            "timestamp": created.isoformat()[:19],
+                            "key": f"review-comment-{getattr(comment, 'id', '')}",
+                            "url": getattr(comment, "html_url", "") or getattr(pr, "html_url", "") or "",
+                            "changed_files": changed_files,
+                        }
+                    )
+            except Exception as exc:
+                logger.warning("github_recent_reviews: PR #%s failed: %s", getattr(pr, "number", "?"), exc)
+            return out
+
+        with ThreadPoolExecutor(
+            max_workers=min(4, max(1, len(recent_prs))),
+            thread_name_prefix="standup-github-reviews",
+        ) as pool:
+            items = [item for batch in pool.map(_reviews_for_pr, enumerate(recent_prs)) for item in batch]
+        logger.info("github_recent_reviews: %d review event(s)", len(items))
+        return items
+    except github.RateLimitExceededException:
+        logger.warning("github_recent_reviews skipped — rate limit reached")
+        return []
+    except Exception as exc:
+        _raise_if_github_auth(exc)
+        logger.warning("github_recent_reviews failed: %s", exc)
         return []

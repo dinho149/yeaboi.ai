@@ -218,15 +218,52 @@ class TestStandupCommand:
     def test_runs_engine_with_overrides(self, monkeypatch):
         captured: dict = {}
 
-        def fake_run(session_id, *, deliver, days, channels):
-            captured.update(session_id=session_id, deliver=deliver, days=days, channels=channels)
+        def fake_run(
+            session_id,
+            *,
+            deliver,
+            days,
+            channels,
+            tracker_sources,
+            team_members,
+            code_sources,
+            github_repositories,
+            azdo_projects,
+            azdo_repositories,
+            documentation_sources,
+        ):
+            captured.update(
+                session_id=session_id,
+                deliver=deliver,
+                days=days,
+                channels=channels,
+                tracker_sources=tracker_sources,
+                team_members=team_members,
+                code_sources=code_sources,
+                github_repositories=github_repositories,
+                azdo_projects=azdo_projects,
+                azdo_repositories=azdo_repositories,
+                documentation_sources=documentation_sources,
+            )
             return StandupReport(team_summary="fine")
 
         monkeypatch.setattr("yeaboi.standup.engine.run_standup", fake_run)
         monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
         args = build_parser().parse_args(["standup", "--deliver", "--channels", "slack", "--days", "2"])
         assert _cmd_standup(args, _console()) == 0
-        assert captured == {"session_id": "sid", "deliver": True, "days": 2, "channels": ["slack"]}
+        assert captured == {
+            "session_id": "sid",
+            "deliver": True,
+            "days": 2,
+            "channels": ["slack"],
+            "tracker_sources": None,
+            "team_members": None,
+            "code_sources": None,
+            "github_repositories": None,
+            "azdo_projects": None,
+            "azdo_repositories": None,
+            "documentation_sources": None,
+        }
 
 
 class TestStandupSchedule:

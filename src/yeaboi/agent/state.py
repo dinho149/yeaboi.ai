@@ -275,12 +275,21 @@ class MemberUpdate:
     """One team member's standup update for a given day."""
 
     name: str = ""
-    summary: str = ""  # what they did — the activity-derived analysis (LLM or fallback)
+    summary: str = ""  # general overview synthesizing all category evidence + self-report
     blockers: str = ""  # anything blocking them (empty if none)
     source: str = "inferred"  # "inferred" (activity only) | "self-reported" (typed, no activity) | "combined" (both)
     self_report: str = ""  # the member's own typed update, kept verbatim as supporting context
     links: tuple[tuple[str, str], ...] = ()  # (label, url) refs from their activity — tuple-of-pairs stays frozen
     activity_count: int = 0  # attributed activity items today — drives the ●/○ active/quiet glyphs in the TUI
+    code_summary: str = ""  # separate outcome-oriented summary of commits, PRs, and reviews
+    code_links: tuple[tuple[str, str], ...] = ()  # repository evidence links, kept separate from tracker/docs links
+    code_activity_count: int = 0  # attributed code events; never presented as a productivity score
+    documentation_summary: str = ""  # Confluence/Notion and repository documentation outcomes
+    documentation_links: tuple[tuple[str, str], ...] = ()
+    documentation_activity_count: int = 0
+    ticketing_summary: str = ""  # Jira/Azure Boards progress, including assigned in-progress work
+    ticketing_links: tuple[tuple[str, str], ...] = ()
+    ticketing_activity_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -304,6 +313,7 @@ class StandupReport:
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
     activity_window: str = ""  # human-readable look-back window, e.g. "Fri 2026-07-17 00:00 → now"
     skipped_sources: tuple[tuple[str, str], ...] = ()  # (source, reason) for sources NOT scanned — visible, not silent
+    category_coverage: tuple[tuple[str, str], ...] = ()  # category -> covered/partial/failed/not_configured
     my_name: str = ""  # the standup user's resolved display name (drives the "My Update" row)
     warnings: tuple[str, ...] = ()  # surfaced problems (missing API key, source 401/403) — shown, never silent
     images: tuple[str, ...] = ()  # screenshot paths pasted into "My Update" — embedded in exports

@@ -24,6 +24,16 @@ _CONFIG_DEFAULTS = {
     "timezone": "",
     "repo_path": "",
     "my_aliases": "",
+    "tracker_sources": ["jira"],
+    "team_members": [],
+    "roster_configured": False,
+    "code_sources": [],
+    "github_repositories": [],
+    "azdo_projects": [],
+    "azdo_repositories": [],
+    "code_scope_configured": False,
+    "documentation_sources": [],
+    "documentation_scope_configured": False,
 }
 
 
@@ -38,12 +48,60 @@ def _validated_channels(channels: list | None) -> list[str] | None:
     return list(channels)
 
 
-def _standup_run(session_id: str, deliver: bool, days: int, channels: list | None):
+def _standup_run(
+    session_id: str,
+    deliver: bool,
+    days: int,
+    channels: list | None,
+    tracker_sources: list | None,
+    team_members: list | None,
+    code_sources: list | None,
+    github_repositories: list | None,
+    azdo_projects: list | None,
+    azdo_repositories: list | None,
+    documentation_sources: list | None,
+):
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.standup.engine import run_standup
 
     resolved = resolve_session_id(session_id)
-    return run_standup(resolved, deliver=deliver, days=days or None, channels=_validated_channels(channels))
+    return run_standup(
+        resolved,
+        deliver=deliver,
+        days=days or None,
+        channels=_validated_channels(channels),
+        tracker_sources=tracker_sources,
+        team_members=team_members,
+        code_sources=code_sources,
+        github_repositories=github_repositories,
+        azdo_projects=azdo_projects,
+        azdo_repositories=azdo_repositories,
+        documentation_sources=documentation_sources,
+    )
+
+
+def _standup_members(session_id: str, tracker_sources: list | None) -> dict:
+    from yeaboi.config import get_azure_devops_project, get_jira_project_key
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.roster import default_tracker_sources, discover_team_members, validate_tracker_sources
+    from yeaboi.standup.store import StandupStore
+
+    resolved = resolve_session_id(session_id)
+    jira_project = get_jira_project_key() or ""
+    azdo_project = get_azure_devops_project() or ""
+    with StandupStore(get_db_path()) as store:
+        config = store.load_config(resolved) or {}
+    selected = tracker_sources or (config.get("tracker_sources") if config.get("roster_configured") else None)
+    if not selected:
+        selected = default_tracker_sources(jira_project=jira_project, azdo_project=azdo_project)
+    selected = validate_tracker_sources(selected)
+    members = discover_team_members(
+        selected,
+        jira_project=jira_project,
+        azdo_project=azdo_project,
+    )
+    return {"session_id": resolved, "tracker_sources": selected, "members": members}
 
 
 def _standup_history(session_id: str, limit: int) -> dict:
@@ -56,6 +114,18 @@ def _standup_history(session_id: str, limit: int) -> dict:
         history = store.get_history(resolved, limit=limit)
         latest = store.get_latest_report(resolved)
     return {"session_id": resolved, "history": history, "latest_report": latest}
+
+
+def _standup_repositories(code_sources: list | None) -> dict:
+    from yeaboi.standup.code_scope import CODE_SOURCES, discover_code_repositories, validate_code_sources
+
+    selected = validate_code_sources(code_sources or list(CODE_SOURCES))
+    discovered = discover_code_repositories(selected)
+    return {
+        "code_sources": selected,
+        "github_repositories": discovered.get("github", []),
+        "azdo_projects": discovered.get("azure_devops", []),
+    }
 
 
 def _standup_config_get(session_id: str) -> dict:
@@ -79,9 +149,19 @@ def _standup_config_set(
     lead_minutes: int,
     repo_path: str | None,
     my_aliases: str | None,
+    tracker_sources: list | None,
+    team_members: list | None,
+    code_sources: list | None,
+    github_repositories: list | None,
+    azdo_projects: list | None,
+    azdo_repositories: list | None,
+    documentation_sources: list | None,
 ) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
+    from yeaboi.standup.code_scope import validate_code_sources
+    from yeaboi.standup.documentation_scope import validate_documentation_sources
+    from yeaboi.standup.roster import validate_tracker_sources
     from yeaboi.standup.store import StandupStore
 
     if time and not re.fullmatch(r"\d{1,2}:\d{2}", time):
@@ -98,6 +178,48 @@ def _standup_config_set(
             "timezone": current.get("timezone", ""),
             "repo_path": current.get("repo_path", "") if repo_path is None else repo_path,
             "my_aliases": current.get("my_aliases", "") if my_aliases is None else my_aliases,
+            "tracker_sources": (
+                current.get("tracker_sources", ["jira"])
+                if tracker_sources is None
+                else validate_tracker_sources(tracker_sources)
+            ),
+            "team_members": (
+                current.get("team_members", []) if team_members is None else list(dict.fromkeys(team_members))
+            ),
+            "roster_configured": (
+                current.get("roster_configured", False) or tracker_sources is not None or team_members is not None
+            ),
+            "code_sources": (
+                current.get("code_sources", []) if code_sources is None else validate_code_sources(code_sources)
+            ),
+            "github_repositories": (
+                current.get("github_repositories", [])
+                if github_repositories is None
+                else list(dict.fromkeys(github_repositories))
+            ),
+            "azdo_projects": (
+                current.get("azdo_projects", []) if azdo_projects is None else list(dict.fromkeys(azdo_projects))
+            ),
+            "azdo_repositories": (
+                current.get("azdo_repositories", [])
+                if azdo_repositories is None
+                else list(dict.fromkeys(azdo_repositories))
+            ),
+            "code_scope_configured": (
+                current.get("code_scope_configured", False)
+                or code_sources is not None
+                or github_repositories is not None
+                or azdo_projects is not None
+                or azdo_repositories is not None
+            ),
+            "documentation_sources": (
+                current.get("documentation_sources", [])
+                if documentation_sources is None
+                else validate_documentation_sources(documentation_sources)
+            ),
+            "documentation_scope_configured": (
+                current.get("documentation_scope_configured", False) or documentation_sources is not None
+            ),
         }
         store.save_config(resolved, **merged)
     logger.info("Standup config updated via MCP: session=%s enabled=%s", resolved, merged["enabled"])
@@ -114,14 +236,50 @@ def register(app) -> None:
         deliver: bool = False,
         days: int = 0,
         channels: list[str] | None = None,
+        tracker_sources: list[str] | None = None,
+        team_members: list[str] | None = None,
+        code_sources: list[str] | None = None,
+        github_repositories: list[str] | None = None,
+        azdo_projects: list[str] | None = None,
+        azdo_repositories: list[str] | None = None,
+        documentation_sources: list[str] | None = None,
     ) -> dict:
         """Run a Daily Standup: collect team activity (Jira/AzDO/GitHub/git/docs), score sprint
         confidence, and summarize per member. Returns the report for you to present; deliver=true
         additionally sends it to the session's configured channels (Slack/email/desktop) — ask the
         user before enabling. channels overrides the saved channels for this run (terminal,
-        desktop, slack, email). days overrides the activity look-back window. Blank session_id =
-        most recent session."""
-        return await run_engine(ctx, _standup_run, session_id, deliver, days, channels)
+        desktop, slack, email). tracker_sources/team_members override the saved Team scope;
+        code_sources, github_repositories (owner/repo), and azdo_projects override the saved
+        code scope without changing it. azdo_repositories is a legacy compatibility override.
+        documentation_sources selects
+        Confluence/Notion providers without changing saved config. days overrides the activity look-back
+        window. Blank session_id = most recent session."""
+        return await run_engine(
+            ctx,
+            _standup_run,
+            session_id,
+            deliver,
+            days,
+            channels,
+            tracker_sources,
+            team_members,
+            code_sources,
+            github_repositories,
+            azdo_projects,
+            azdo_repositories,
+            documentation_sources,
+        )
+
+    @app.tool()
+    async def standup_members(session_id: str = "", tracker_sources: list[str] | None = None) -> dict:
+        """Preview standup team candidates from Jira, Azure DevOps, or both. Valid source
+        names are jira and azure_devops; omitted sources use the saved/default selection."""
+        return await run_readonly(_standup_members, session_id, tracker_sources)
+
+    @app.tool()
+    async def standup_repositories(code_sources: list[str] | None = None) -> dict:
+        """Discover accessible GitHub repositories and Azure DevOps projects for Standup code scope."""
+        return await run_readonly(_standup_repositories, code_sources)
 
     @app.tool()
     async def standup_history(session_id: str = "", limit: int = 30) -> dict:
@@ -145,10 +303,21 @@ def register(app) -> None:
         lead_minutes: int = -1,
         repo_path: str | None = None,
         my_aliases: str | None = None,
+        tracker_sources: list[str] | None = None,
+        team_members: list[str] | None = None,
+        code_sources: list[str] | None = None,
+        github_repositories: list[str] | None = None,
+        azdo_projects: list[str] | None = None,
+        azdo_repositories: list[str] | None = None,
+        documentation_sources: list[str] | None = None,
     ) -> dict:
         """Update a session's standup configuration; omitted fields keep their current value.
         time is HH:MM (the meeting time), weekdays like '1-5' or '1,3,5', delivery_channels from
-        terminal/desktop/slack/email, my_aliases a comma-separated identity list across tools.
+        terminal/desktop/slack/email, my_aliases a comma-separated identity list across tools,
+        tracker_sources a subset of jira/azure_devops, team_members the authoritative roster,
+        code_sources a subset of github/azure_devops, github_repositories and azdo_projects
+        define the explicit code scope,
+        and documentation_sources a subset of confluence/notion.
         NOTE: this saves the config only — installing the OS schedule (launchd/cron) is
         machine-local and done from the yeaboi TUI. Blank session_id = most recent session."""
         return await run_readonly(
@@ -161,4 +330,11 @@ def register(app) -> None:
             lead_minutes,
             repo_path,
             my_aliases,
+            tracker_sources,
+            team_members,
+            code_sources,
+            github_repositories,
+            azdo_projects,
+            azdo_repositories,
+            documentation_sources,
         )

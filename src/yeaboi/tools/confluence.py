@@ -22,11 +22,14 @@
 """
 
 import logging
+import math
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from atlassian import Confluence
 from langchain_core.tools import tool
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, Timeout
 
 from yeaboi.config import (
     get_confluence_base_url,
@@ -400,10 +403,11 @@ def confluence_update_page(
 # See README: "Daily Standup" — recent-activity collection
 
 
-# Cap on per-page version-history lookups (1 extra API call each) so a busy
-# space can't stall the standup; pages arrive newest-first so the cap keeps
-# the most recently edited ones.
-_MAX_VERSION_LOOKUPS = 25
+# The CQL search is the required source of latest-editor/creator activity.
+# Version history is optional enrichment for earlier co-editors, so it gets a
+# strict wall-clock budget and only the newest cache misses go to the network.
+_STANDUP_COLLECTION_BUDGET_SECONDS = 8.0
+_MAX_LIVE_VERSION_LOOKUPS = 5
 
 
 def _iso_to_dt(ts: str):
@@ -452,18 +456,21 @@ def _display_name(by) -> str:
     return by.get("displayName", "") or ""
 
 
-def _version_editor_items(conf, page_id: str, title: str, cutoff, exclude: set[str], url: str = "") -> list[dict]:
-    """One item per DISTINCT in-window editor of a page beyond those already credited.
+def _fetch_version_history(conf, page_id: str) -> list[dict]:
+    """Fetch raw page versions so they can be cached independently of the date window."""
+    data = conf.get(f"rest/api/content/{page_id}/version", params={"limit": 50})
+    return data.get("results", []) if isinstance(data, dict) else []
 
-    The CQL result only exposes the LAST editor; the version history exposes
-    every editor. Best-effort raw REST call — any failure skips the page.
-    """
-    try:
-        data = conf.get(f"rest/api/content/{page_id}/version", params={"limit": 50})
-    except Exception as e:
-        logger.debug("confluence version lookup failed for %s: %s", page_id, e)
-        return []
-    versions = data.get("results", []) if isinstance(data, dict) else []
+
+def _version_editor_items(
+    versions: list[dict],
+    page_id: str,
+    title: str,
+    cutoff,
+    exclude: set[str],
+    url: str = "",
+) -> list[dict]:
+    """One item per distinct in-window editor beyond those already credited."""
     out: list[dict] = []
     seen = set(exclude)
     for version in versions:
@@ -491,7 +498,15 @@ def _version_editor_items(conf, page_id: str, title: str, cutoff, exclude: set[s
     return out
 
 
-def confluence_recent_pages(space_key: str = "", days: int = 1, since=None) -> list[dict]:
+def confluence_recent_pages(
+    space_key: str = "",
+    days: int = 1,
+    since=None,
+    metadata_cache=None,
+    *,
+    enrichment_budget_seconds: float = _STANDUP_COLLECTION_BUDGET_SECONDS,
+    on_partial=None,
+) -> list[dict]:
     """Return Confluence page activity since the window start — every editor, not just the last.
 
     The window is ``since → now`` when ``since`` (a datetime — always a midnight
@@ -499,8 +514,7 @@ def confluence_recent_pages(space_key: str = "", days: int = 1, since=None) -> l
     ``days`` days. Emitted kinds:
 
     - ``page``         — one item per distinct in-window editor of each modified page
-                         (the last editor from the CQL result + earlier editors from
-                         the page's version history, capped at _MAX_VERSION_LOOKUPS pages)
+                         (the last editor from CQL plus cached/live version enrichment)
     - ``page-created`` — the creator of a page created in-window (no extra call)
 
     Each item: {author, author_email?, kind, title, timestamp, key(id)}.
@@ -511,6 +525,14 @@ def confluence_recent_pages(space_key: str = "", days: int = 1, since=None) -> l
     if conf is None:
         logger.warning("confluence_recent_pages skipped — Confluence not configured")
         return []
+
+    budget = max(0.0, float(enrichment_budget_seconds))
+    started = time.monotonic()
+    deadline = started + budget
+    # atlassian-python-api stores the requests timeout on the client. Bounding
+    # each request prevents abandoned enrichment workers from lingering.
+    if hasattr(conf, "timeout"):
+        conf.timeout = max(1, math.ceil(budget))
 
     key = space_key.strip() or (get_confluence_space_key() or "")
     space_filter = f' AND space = "{key}"' if key else ""
@@ -524,7 +546,7 @@ def confluence_recent_pages(space_key: str = "", days: int = 1, since=None) -> l
         results = conf.cql(cql, limit=50, expand="history.lastUpdated,history.createdBy,history.createdDate")
         pages = results.get("results", []) if isinstance(results, dict) else []
         items: list[dict] = []
-        version_lookups = 0
+        version_candidates: list[dict] = []
         for page in pages:
             content = page.get("content", page)  # cql may nest the page under "content"
             history = content.get("history", {}) if isinstance(content, dict) else {}
@@ -564,12 +586,116 @@ def confluence_recent_pages(space_key: str = "", days: int = 1, since=None) -> l
                         }
                     )
                 credited.add(creator)
-            # Earlier in-window editors hidden behind the last modifier.
-            if page_id and version_lookups < _MAX_VERSION_LOOKUPS:
-                version_lookups += 1
-                items.extend(_version_editor_items(conf, page_id, title, cutoff, credited, url=page_url))
-        logger.info("confluence_recent_pages: %d item(s) from %d page(s)", len(items), len(pages))
+            # A first revision cannot have an earlier editor. A missing revision
+            # number remains eligible because older Confluence responses omit it.
+            page_number = last_updated.get("number") if isinstance(last_updated, dict) else None
+            if page_id and page_number != 1:
+                page_revision = str(last_updated.get("number") or last_updated.get("when") or "current")
+                version_candidates.append(
+                    {
+                        "page_id": page_id,
+                        "title": title,
+                        "credited": credited,
+                        "url": page_url,
+                        "revision": page_revision,
+                    }
+                )
+
+        # Cache hits are effectively free and are applied for every candidate.
+        live_candidates: list[dict] = []
+        enriched_pages = 0
+        for candidate in version_candidates:
+            cached = (
+                metadata_cache.get(
+                    "confluence",
+                    "version_history",
+                    candidate["page_id"],
+                    candidate["revision"],
+                )
+                if metadata_cache is not None
+                else None
+            )
+            if isinstance(cached, list):
+                items.extend(
+                    _version_editor_items(
+                        cached,
+                        candidate["page_id"],
+                        candidate["title"],
+                        cutoff,
+                        candidate["credited"],
+                        url=candidate["url"],
+                    )
+                )
+                enriched_pages += 1
+            else:
+                live_candidates.append(candidate)
+
+        # Only the newest misses are fetched. Futures that have not finished at
+        # the deadline are left to their request timeout; their results are not
+        # allowed to hold up or mutate the completed standup run.
+        selected_live = live_candidates[:_MAX_LIVE_VERSION_LOOKUPS]
+        remaining = max(0.0, deadline - time.monotonic())
+        if selected_live and remaining > 0:
+            if hasattr(conf, "timeout"):
+                conf.timeout = max(1, math.ceil(remaining))
+            pool = ThreadPoolExecutor(
+                max_workers=len(selected_live),
+                thread_name_prefix="standup-confluence",
+            )
+            future_candidates = {
+                pool.submit(_fetch_version_history, conf, candidate["page_id"]): candidate
+                for candidate in selected_live
+            }
+            done, _pending = wait(future_candidates, timeout=remaining)
+            for future in done:
+                candidate = future_candidates[future]
+                try:
+                    versions = future.result()
+                except Exception as e:
+                    logger.debug("confluence version lookup failed for %s: %s", candidate["page_id"], e)
+                    continue
+                if metadata_cache is not None:
+                    metadata_cache.set(
+                        "confluence",
+                        "version_history",
+                        candidate["page_id"],
+                        candidate["revision"],
+                        versions,
+                        replace_revisions=True,
+                    )
+                items.extend(
+                    _version_editor_items(
+                        versions,
+                        candidate["page_id"],
+                        candidate["title"],
+                        cutoff,
+                        candidate["credited"],
+                        url=candidate["url"],
+                    )
+                )
+                enriched_pages += 1
+            pool.shutdown(wait=False, cancel_futures=True)
+
+        incomplete_pages = len(version_candidates) - enriched_pages
+        if incomplete_pages:
+            message = f"latest editors captured; earlier-editor enrichment incomplete for {incomplete_pages} page(s)"
+            logger.warning("confluence_recent_pages partial: %s", message)
+            if on_partial is not None:
+                try:
+                    on_partial(message)
+                except Exception:
+                    logger.debug("confluence partial callback failed", exc_info=True)
+        logger.info(
+            "confluence_recent_pages: %d item(s) from %d page(s) in %.2fs",
+            len(items),
+            len(pages),
+            time.monotonic() - started,
+        )
         return items
+    except Timeout as e:
+        from yeaboi.standup.errors import StandupSourceError
+
+        raise StandupSourceError("confluence", f"request timed out after {budget:g} seconds") from e
     except HTTPError as e:
         code = getattr(getattr(e, "response", None), "status_code", 0)
         if code in (401, 403):

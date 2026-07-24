@@ -2139,29 +2139,45 @@ def _build_standup_screen(
         banner = None
         header_h = 10
     viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
-    total_lines = len(body_lines)
-    max_scroll = max(0, total_lines - viewport_h)
-    # On the overview, keep the selected card fully visible (auto-scroll). A
-    # card may span more than one row (summary), so scroll its last row into
-    # view first, then let its first row win.
+    total_items = len(body_lines)
+    total_rendered = sum(ctx.item_heights)
+    # Scroll offsets identify renderable items, not terminal rows. Find the
+    # earliest trailing item from which the report's tail fits in the viewport.
+    tail_h = 0
+    max_scroll = max(0, total_items - 1)
+    for i in range(total_items - 1, -1, -1):
+        item_h = ctx.item_heights[i] if i < len(ctx.item_heights) else 1
+        if tail_h and tail_h + item_h > viewport_h:
+            break
+        tail_h += item_h
+        max_scroll = i
+    # On the overview every item remains a one-row Text value. Keep the whole
+    # selected card visible, including a wrapped summary teaser.
     if view == "overview" and ctx.card_rows and selected_card < len(ctx.card_rows):
         row_top = ctx.card_rows[selected_card]
-        row_bot = ctx.card_rows[selected_card + 1] - 1 if selected_card + 1 < len(ctx.card_rows) else total_lines - 1
+        row_bot = ctx.card_rows[selected_card + 1] - 1 if selected_card + 1 < len(ctx.card_rows) else total_items - 1
         if row_bot + 1 > scroll_offset + viewport_h:
             scroll_offset = row_bot + 1 - viewport_h
         if row_top < scroll_offset:
             scroll_offset = row_top
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, viewport_h)
-    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+    visible: list = []
+    visible_h = 0
+    for i in range(actual_scroll, total_items):
+        item_h = ctx.item_heights[i] if i < len(ctx.item_heights) else 1
+        if visible_h + item_h > viewport_h:
+            break
+        visible.append(body_lines[i])
+        visible_h += item_h
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    _sb_text = build_scrollbar(viewport_h, total_rendered, actual_scroll, max_scroll, always_show=True)
     padded_lines: list = list(visible)
-    for _ in range(max(0, viewport_h - len(visible))):
+    for _ in range(max(0, viewport_h - visible_h)):
         padded_lines.append(Text(""))
 
     if actions is None:
-        actions = ["Generate", "Configure", "Back"] if view == "overview" else ["Back", "Export"]
+        actions = ["Generate", "Team", "Configure", "Back"] if view == "overview" else ["Back", "Export"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
     if _sb_text is not None:
@@ -2207,6 +2223,114 @@ def _build_standup_screen(
         height=height,
         padding=(1, 2),
     )
+
+
+def _build_standup_team_source_screen(
+    sources: list[tuple[str, str]],
+    checked: set[int],
+    cursor: int,
+    *,
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+    heading: str = "Choose update sources",
+) -> Panel:
+    """Build the first Team step: Jira/Azure DevOps tracker multi-select."""
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    rows: list[Text] = []
+    if message:
+        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+    rows.append(Text(_PAD + f"{len(checked)} of {len(sources)} selected", style=theme.muted))
+    rows.append(Text(""))
+    for idx, (_key, label) in enumerate(sources):
+        selected = idx in checked
+        active = idx == cursor
+        row = Text(_PAD + "  ")
+        row.append("‹ " if active else "  ", style=theme.accent_bright)
+        row.append("●" if selected else "○", style=theme.accent_bright if selected else theme.dim)
+        row.append(f" {label}", style="bold white" if active else (theme.accent if selected else theme.desc))
+        if active:
+            row.append(" ›", style=theme.accent_bright)
+        rows.append(row)
+    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    rows.extend(Text("") for _ in range(max(0, viewport_h - len(rows))))
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + heading, style="bold white"),
+        Text(_PAD + "↑/↓ move · Space toggle · Enter continue · Esc cancel", style=theme.muted),
+        Text(""),
+        Group(*rows[:viewport_h]),
+    )
+    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+
+
+def _build_standup_team_member_screen(
+    roster: list[str],
+    checked: set[int],
+    cursor: int,
+    *,
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+    heading: str = "Choose team members",
+    empty_message: str = "No members found in the selected tracker(s).",
+) -> Panel:
+    """Build the second Team step: authoritative member multi-select."""
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    rows: list[Text] = []
+    if message:
+        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+    rows.extend(
+        (
+            Text(_PAD + f"{len(checked)} of {len(roster)} selected", style=theme.muted),
+            Text(""),
+        )
+    )
+    for idx, name in enumerate(roster):
+        selected = idx in checked
+        active = idx == cursor
+        row = Text(_PAD + "  ")
+        row.append("‹ " if active else "  ", style=theme.accent_bright)
+        row.append("●" if selected else "○", style=theme.accent_bright if selected else theme.dim)
+        row.append(f" {name}", style="bold white" if active else (theme.accent if selected else theme.desc))
+        if active:
+            row.append(" ›", style=theme.accent_bright)
+        rows.append(row)
+    if not roster:
+        rows.append(Text(_PAD + empty_message, style=theme.muted))
+
+    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    total = len(rows)
+    max_scroll = max(0, total - viewport_h)
+    start = min(max(0, cursor - viewport_h // 2 + 2), max_scroll) if roster else 0
+    visible = rows[start : start + viewport_h]
+    visible.extend(Text("") for _ in range(max(0, viewport_h - len(visible))))
+    scrollbar = build_scrollbar(viewport_h, total, start, max_scroll, always_show=True)
+    if scrollbar is not None:
+        from rich.table import Table
+
+        viewport = Table(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True)
+        viewport.add_column(ratio=1)
+        viewport.add_column(width=1)
+        viewport.add_row(Group(*visible), scrollbar)
+    else:
+        viewport = Group(*visible)
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + heading, style="bold white"),
+        Text(_PAD + "↑/↓ move · Space toggle · A toggle all · Enter save · Esc cancel", style=theme.muted),
+        Text(""),
+        viewport,
+    )
+    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
 
 
 def _build_changelog_screen(
@@ -3685,7 +3809,11 @@ def _build_standup_progress_screen(
     ]
 
     # Completed phases get a check; the current phase gets animated dots.
-    done_steps = progress[:-1] if len(progress) > 1 else []
+    # Source-level collection can emit many completions; keep the latest rows
+    # visible instead of letting an ever-growing history push the current task
+    # below the fixed-height panel.
+    max_visible_steps = max(2, height - 15)
+    done_steps = progress[:-1][-max_visible_steps:] if len(progress) > 1 else []
     current = progress[-1] if progress else ""
     for step in done_steps:
         body.append(Text(_PAD + f"  ✓ {step}", style=theme.good, justify="left"))

@@ -859,6 +859,15 @@ class TestMemberUpdate:
             "self_report": "shipped it",
             "links": (),
             "activity_count": 0,
+            "code_summary": "",
+            "code_links": (),
+            "code_activity_count": 0,
+            "documentation_summary": "",
+            "documentation_links": (),
+            "documentation_activity_count": 0,
+            "ticketing_summary": "",
+            "ticketing_links": (),
+            "ticketing_activity_count": 0,
         }
 
     def test_self_report_defaults_empty(self):

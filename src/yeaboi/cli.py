@@ -508,6 +508,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     standup_p.add_argument("--days", type=int, default=0, help="Activity look-back window override")
     standup_p.add_argument(
+        "--tracker-sources",
+        nargs="+",
+        choices=["jira", "azure_devops"],
+        help="Override saved standup tracker sources",
+    )
+    standup_p.add_argument(
+        "--team-members",
+        nargs="+",
+        metavar="NAME",
+        help="Override the saved authoritative team roster for this run",
+    )
+    standup_p.add_argument(
+        "--code-sources",
+        nargs="+",
+        choices=["github", "azure_devops"],
+        help="Override saved code providers for this run",
+    )
+    standup_p.add_argument(
+        "--github-repositories",
+        nargs="+",
+        metavar="OWNER/REPO",
+        help="Override saved GitHub repository scope",
+    )
+    standup_p.add_argument(
+        "--azdo-projects",
+        nargs="+",
+        metavar="PROJECT",
+        help="Override saved Azure DevOps project scope (all repositories in each project)",
+    )
+    standup_p.add_argument(
+        "--azdo-repositories",
+        nargs="+",
+        metavar="PROJECT/REPO",
+        help="Legacy Azure Repos override",
+    )
+    standup_p.add_argument(
+        "--documentation-sources",
+        nargs="+",
+        choices=["confluence", "notion"],
+        help="Override saved documentation providers for this run",
+    )
+    standup_p.add_argument(
+        "--list-members",
+        action="store_true",
+        help="List discovered members for the selected/saved tracker sources and exit",
+    )
+    standup_p.add_argument(
         "--schedule",
         choices=["install", "remove", "status"],
         help="Manage the OS schedule (launchd/cron) that runs the standup daily, instead of running one now",
@@ -1130,7 +1177,44 @@ def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
         return 2
     if args.schedule:
         return _cmd_standup_schedule(args, console, session_id)
-    report = run_standup(session_id, deliver=args.deliver, days=args.days or None, channels=args.channels)
+    if args.list_members:
+        from yeaboi.config import get_azure_devops_project, get_jira_project_key
+        from yeaboi.paths import get_db_path
+        from yeaboi.standup.roster import default_tracker_sources, discover_team_members
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(get_db_path()) as store:
+            config = store.load_config(session_id) or {}
+        jira_project = get_jira_project_key() or ""
+        azdo_project = get_azure_devops_project() or ""
+        sources = (
+            args.tracker_sources
+            or (config.get("tracker_sources") if config.get("roster_configured") else None)
+            or default_tracker_sources(
+                jira_project=jira_project,
+                azdo_project=azdo_project,
+            )
+        )
+        for member in discover_team_members(
+            sources,
+            jira_project=jira_project,
+            azdo_project=azdo_project,
+        ):
+            console.print(member)
+        return 0
+    report = run_standup(
+        session_id,
+        deliver=args.deliver,
+        days=args.days or None,
+        channels=args.channels,
+        tracker_sources=args.tracker_sources,
+        team_members=args.team_members,
+        code_sources=args.code_sources,
+        github_repositories=args.github_repositories,
+        azdo_projects=args.azdo_projects,
+        azdo_repositories=args.azdo_repositories,
+        documentation_sources=args.documentation_sources,
+    )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
     if args.format == "json":

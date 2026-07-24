@@ -16,7 +16,10 @@
 """
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC
+from urllib.parse import quote
 
 from azure.devops.exceptions import AzureDevOpsServiceError
 from langchain_core.tools import tool
@@ -29,6 +32,7 @@ from yeaboi.config import (
 )
 
 logger = logging.getLogger(__name__)
+_AZDO_DETAIL_SEMAPHORE = threading.BoundedSemaphore(6)
 
 # Truncate file content at this many characters to avoid flooding the LLM context.
 _MAX_CONTENT_CHARS = 8_000
@@ -1020,6 +1024,9 @@ def _azdo_wip_items(wit_client, project: str, safe_project: str, seen_ids: set[s
 _MAX_ACTIVITY_REPOS = 10
 _MAX_REPO_COMMITS = 100
 _MAX_REPO_PRS = 100
+_MAX_CHANGED_FILE_LOOKUPS = 25
+_MAX_REVIEW_THREAD_LOOKUPS = 25
+_AZDO_REQUEST_TIMEOUT_SECONDS = 5
 
 
 def _make_git_client(org_url: str | None = None, token: str | None = None):
@@ -1028,7 +1035,11 @@ def _make_git_client(org_url: str | None = None, token: str | None = None):
     token = token or get_azure_devops_token()
     if not org_url:
         raise ValueError("AZURE_DEVOPS_ORG_URL is not set. Add it to your .env file.")
-    return _make_connection(org_url, token).clients.get_git_client()
+    client = _make_connection(org_url, token).clients.get_git_client()
+    # msrest defaults to 100 seconds per request. A dead DNS route or stale
+    # repository must not hold a daily standup for several minutes.
+    client.config.connection.timeout = _AZDO_REQUEST_TIMEOUT_SECONDS
+    return client
 
 
 def _repo_activity_cutoff(days: int, since):
@@ -1049,19 +1060,226 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
-def azdevops_recent_commits(project: str = "", days: int = 1, since=None) -> list[dict]:
+def _activity_repo_web_url(repo, project: str) -> str:
+    """Return a browser URL for an Azure repository reference.
+
+    Project-wide PR endpoints commonly return a lightweight repository
+    reference with ``id`` and ``name`` but no ``web_url``. Build the canonical
+    browser URL from the configured organization instead of dropping the
+    Standup evidence link or hydrating every repository with another request.
+    """
+    web_url = str(getattr(repo, "web_url", "") or "").rstrip("/")
+    if web_url:
+        return web_url
+    org_url = str(get_azure_devops_org_url() or "").rstrip("/")
+    repo_name = str(getattr(repo, "name", "") or "")
+    if not org_url or not project or not repo_name:
+        return ""
+    return f"{org_url}/{quote(str(project), safe='')}/_git/{quote(repo_name, safe='')}"
+
+
+def _activity_repositories(git_client, project: str, repositories: list[str] | None, metadata_cache=None):
+    """Resolve explicit ``project/repo`` identifiers or the legacy project scan."""
+    if repositories is None:
+
+        def _discover():
+            return [
+                {
+                    "id": getattr(repo, "id", ""),
+                    "name": getattr(repo, "name", ""),
+                    "web_url": getattr(repo, "web_url", ""),
+                }
+                for repo in (git_client.get_repositories(project) or [])
+            ]
+
+        rows = (
+            metadata_cache.get_or_compute(
+                "azure_devops",
+                "repositories",
+                project,
+                "v1",
+                _discover,
+                ttl_seconds=600,
+            )
+            if metadata_cache is not None
+            else _discover()
+        )
+        from types import SimpleNamespace
+
+        return [(project, SimpleNamespace(**row)) for row in rows]
+    resolved = []
+    for spec in repositories:
+        selected_project, sep, repo_name = str(spec).partition("/")
+        if not sep or not selected_project or not repo_name:
+            logger.warning("standup: invalid Azure repository selection %r", spec)
+            continue
+        try:
+            resolved.append((selected_project, git_client.get_repository(repo_name, project=selected_project)))
+        except Exception as exc:
+            logger.warning("standup: Azure repository %s unavailable: %s", spec, exc)
+    return resolved
+
+
+def _activity_pull_requests(git_client, project: str, repositories: list[str] | None, criteria, metadata_cache=None):
+    """Return ``(project, repository, PR)`` rows with one project-wide request when possible.
+
+    Azure DevOps exposes a project-level pull-request endpoint. Using it avoids
+    one list request for every repository in large projects and also avoids
+    repeatedly touching stale repository IDs returned by discovery.
+    """
+    if repositories is None:
+
+        def _list_project_prs():
+            return list(git_client.get_pull_requests_by_project(project, criteria, top=_MAX_REPO_PRS) or [])
+
+        prs = (
+            metadata_cache.memoize(
+                ("azure_devops", "project_pull_requests", project),
+                _list_project_prs,
+            )
+            if metadata_cache is not None
+            else _list_project_prs()
+        )
+        rows = []
+        for pr in prs:
+            repo = getattr(pr, "repository", None)
+            if repo is None or not getattr(repo, "id", ""):
+                logger.debug("azdevops: project PR %s has no repository metadata", getattr(pr, "pull_request_id", ""))
+                continue
+            rows.append((project, repo, pr))
+        return rows
+
+    rows = []
+    for selected_project, repo in _activity_repositories(git_client, project, repositories, metadata_cache):
+        try:
+
+            def _list_repo_prs():
+                return list(git_client.get_pull_requests(repo.id, criteria, project=selected_project, top=25) or [])
+
+            prs = (
+                metadata_cache.memoize(
+                    ("azure_devops", "pull_requests", selected_project, str(repo.id)),
+                    _list_repo_prs,
+                )
+                if metadata_cache is not None
+                else _list_repo_prs()
+            )
+        except Exception as exc:
+            logger.warning("azdevops: repo %s PR listing failed: %s", getattr(repo, "name", "?"), exc)
+            continue
+        rows.extend((selected_project, repo, pr) for pr in prs)
+    return rows
+
+
+def _azdo_commit_changed_files(
+    git_client,
+    *,
+    project: str,
+    repository_id: str,
+    commit_id: str,
+    metadata_cache=None,
+) -> list[str]:
+    """Best-effort changed paths for one Azure Repos commit."""
+    if not commit_id:
+        return []
+
+    def _fetch() -> list[str]:
+        try:
+            with _AZDO_DETAIL_SEMAPHORE:
+                changes = git_client.get_changes(
+                    commit_id=commit_id,
+                    repository_id=repository_id,
+                    project=project,
+                    top=100,
+                )
+            return [
+                str(getattr(getattr(change, "item", None), "path", "") or "")
+                for change in list(getattr(changes, "changes", changes) or ())[:100]
+                if getattr(getattr(change, "item", None), "path", "")
+            ]
+        except Exception as exc:
+            logger.debug("azdevops commit changed-file lookup failed for %s: %s", commit_id[:8], exc)
+            return []
+
+    if metadata_cache is not None:
+        return list(
+            metadata_cache.get_or_compute(
+                "azure_devops",
+                "changed_files",
+                f"{project}:{repository_id}:{commit_id}",
+                commit_id,
+                _fetch,
+                cache_empty=False,
+            )
+        )
+    return _fetch()
+
+
+def _azdo_pr_changed_files(
+    git_client,
+    *,
+    project: str,
+    repository_id: str,
+    pr_id,
+    metadata_cache=None,
+) -> list[str]:
+    """Best-effort changed paths for the newest iteration of an Azure Repos PR."""
+    try:
+        with _AZDO_DETAIL_SEMAPHORE:
+            iterations = list(git_client.get_pull_request_iterations(repository_id, pr_id, project=project) or ())
+        if not iterations:
+            return []
+        iteration_id = getattr(iterations[-1], "id", None)
+
+        def _fetch() -> list[str]:
+            with _AZDO_DETAIL_SEMAPHORE:
+                changes = git_client.get_pull_request_iteration_changes(
+                    repository_id,
+                    pr_id,
+                    iteration_id,
+                    project=project,
+                    top=100,
+                )
+            entries = getattr(changes, "change_entries", ()) or ()
+            return [
+                str(getattr(getattr(change, "item", None), "path", "") or "")
+                for change in list(entries)[:100]
+                if getattr(getattr(change, "item", None), "path", "")
+            ]
+
+        if metadata_cache is not None:
+            return list(
+                metadata_cache.get_or_compute(
+                    "azure_devops",
+                    "pr_changed_files",
+                    f"{project}:{repository_id}:{pr_id}",
+                    str(iteration_id),
+                    _fetch,
+                    cache_empty=False,
+                    replace_revisions=True,
+                )
+            )
+        return _fetch()
+    except Exception as exc:
+        logger.debug("azdevops PR changed-file lookup failed for %s: %s", pr_id, exc)
+        return []
+
+
+def azdevops_recent_commits(
+    project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
+) -> list[dict]:
     """Return commits pushed to the project's repos since the window start.
 
-    Scans up to the first _MAX_ACTIVITY_REPOS repositories in the project (all
-    branches are NOT walked — the commit search covers the default branch per
-    repo, which is where merged work lands). Each item: {author, author_email,
+    Scans every accessible repository in the project (all branches are NOT
+    walked — the commit search covers the default branch per repo, which is
+    where merged work lands). Each item: {author, author_email,
     kind='commit', title(first line + repo name), body, timestamp, key(sha[:8])}.
     ``body`` is the commit message body (Co-Authored-By / AI-tool trailers).
     Returns [] when Azure DevOps is unconfigured or the API fails.
     """
     project = project or get_azure_devops_project() or ""
     logger.info("azdevops_recent_commits: project=%r days=%d since=%s", project, days, since)
-    if not project:
+    if not project and not repositories:
         return []
     try:
         from azure.devops.v7_1.git.models import GitQueryCommitsCriteria
@@ -1070,15 +1288,19 @@ def azdevops_recent_commits(project: str = "", days: int = 1, since=None) -> lis
         cutoff = _repo_activity_cutoff(days, since)
         criteria = GitQueryCommitsCriteria(from_date=cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"), top=50)
         items: list[dict] = []
-        for repo in (git_client.get_repositories(project) or [])[:_MAX_ACTIVITY_REPOS]:
-            if len(items) >= _MAX_REPO_COMMITS:
-                break
+        file_lookups = 0
+        for selected_project, repo in _activity_repositories(git_client, project, repositories, metadata_cache):
             try:
-                commits = git_client.get_commits(repository_id=repo.id, search_criteria=criteria, project=project)
+                commits = git_client.get_commits(
+                    repository_id=repo.id, search_criteria=criteria, project=selected_project
+                )
             except Exception as e:  # one bad/empty repo must not hide the others
                 logger.warning("azdevops_recent_commits: repo %s failed: %s", getattr(repo, "name", "?"), e)
                 continue
-            repo_web = (getattr(repo, "web_url", "") or "").rstrip("/")
+            # Query every repository for coverage, while bounding the report payload.
+            if len(items) >= _MAX_REPO_COMMITS:
+                continue
+            repo_web = _activity_repo_web_url(repo, selected_project)
             for commit in commits or []:
                 author = getattr(commit, "author", None)
                 message = (getattr(commit, "comment", "") or "").splitlines()
@@ -1094,8 +1316,21 @@ def azdevops_recent_commits(project: str = "", days: int = 1, since=None) -> lis
                         "timestamp": str(getattr(author, "date", "") or "")[:19],
                         "key": sha[:8],
                         "url": f"{repo_web}/commit/{sha}" if repo_web and sha else "",
+                        "repository": f"{selected_project}/{repo.name}",
+                        "changed_files": (
+                            _azdo_commit_changed_files(
+                                git_client,
+                                project=selected_project,
+                                repository_id=repo.id,
+                                commit_id=sha,
+                                metadata_cache=metadata_cache,
+                            )
+                            if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
+                            else []
+                        ),
                     }
                 )
+                file_lookups += 1
                 if len(items) >= _MAX_REPO_COMMITS:
                     break
         logger.info("azdevops_recent_commits: %d commit(s)", len(items))
@@ -1112,7 +1347,9 @@ def azdevops_recent_commits(project: str = "", days: int = 1, since=None) -> lis
         return []
 
 
-def azdevops_recent_prs(project: str = "", days: int = 1, since=None) -> list[dict]:
+def azdevops_recent_prs(
+    project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
+) -> list[dict]:
     """Return pull requests created or closed in the project's repos since the window start.
 
     The v7_1 PR search criteria has no time filters, so PRs are fetched
@@ -1123,7 +1360,7 @@ def azdevops_recent_prs(project: str = "", days: int = 1, since=None) -> list[di
     """
     project = project or get_azure_devops_project() or ""
     logger.info("azdevops_recent_prs: project=%r days=%d since=%s", project, days, since)
-    if not project:
+    if not project and not repositories:
         return []
     try:
         from azure.devops.v7_1.git.models import GitPullRequestSearchCriteria
@@ -1132,38 +1369,50 @@ def azdevops_recent_prs(project: str = "", days: int = 1, since=None) -> list[di
         cutoff = _repo_activity_cutoff(days, since)
         criteria = GitPullRequestSearchCriteria(status="all")
         items: list[dict] = []
-        for repo in (git_client.get_repositories(project) or [])[:_MAX_ACTIVITY_REPOS]:
+        file_lookups = 0
+        for selected_project, repo, pr in _activity_pull_requests(
+            git_client,
+            project,
+            repositories,
+            criteria,
+            metadata_cache,
+        ):
             if len(items) >= _MAX_REPO_PRS:
                 break
-            try:
-                prs = git_client.get_pull_requests(repo.id, criteria, project=project, top=25)
-            except Exception as e:
-                logger.warning("azdevops_recent_prs: repo %s failed: %s", getattr(repo, "name", "?"), e)
+            created = _aware(getattr(pr, "creation_date", None))
+            closed = _aware(getattr(pr, "closed_date", None))
+            if not ((created and created >= cutoff) or (closed and closed >= cutoff)):
                 continue
-            for pr in prs or []:
-                created = _aware(getattr(pr, "creation_date", None))
-                closed = _aware(getattr(pr, "closed_date", None))
-                if not ((created and created >= cutoff) or (closed and closed >= cutoff)):
-                    continue
-                creator = getattr(pr, "created_by", None)
-                status = getattr(pr, "status", "") or ""
-                pr_id = getattr(pr, "pull_request_id", "")
-                repo_web = (getattr(repo, "web_url", "") or "").rstrip("/")
-                items.append(
-                    {
-                        "author": getattr(creator, "display_name", "") or "",
-                        "author_email": getattr(creator, "unique_name", "") or "",
-                        "kind": "pr",
-                        "title": f"{getattr(pr, 'title', '') or ''} ({repo.name})",
-                        "body": getattr(pr, "description", "") or "",  # PR description
-                        "status": "merged" if status == "completed" else status,
-                        "timestamp": str(closed or created or "")[:19],
-                        "key": f"!{pr_id}",
-                        "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
-                    }
-                )
-                if len(items) >= _MAX_REPO_PRS:
-                    break
+            creator = getattr(pr, "created_by", None)
+            status = getattr(pr, "status", "") or ""
+            pr_id = getattr(pr, "pull_request_id", "")
+            repo_web = _activity_repo_web_url(repo, selected_project)
+            items.append(
+                {
+                    "author": getattr(creator, "display_name", "") or "",
+                    "author_email": getattr(creator, "unique_name", "") or "",
+                    "kind": "pr",
+                    "title": f"{getattr(pr, 'title', '') or ''} ({repo.name})",
+                    "body": getattr(pr, "description", "") or "",  # PR description
+                    "status": "merged" if status == "completed" else status,
+                    "timestamp": str(closed or created or "")[:19],
+                    "key": f"!{pr_id}",
+                    "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                    "repository": f"{selected_project}/{repo.name}",
+                    "changed_files": (
+                        _azdo_pr_changed_files(
+                            git_client,
+                            project=selected_project,
+                            repository_id=repo.id,
+                            pr_id=pr_id,
+                            metadata_cache=metadata_cache,
+                        )
+                        if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
+                        else []
+                    ),
+                }
+            )
+            file_lookups += 1
         logger.info("azdevops_recent_prs: %d PR(s)", len(items))
         return items
     except ValueError as e:
@@ -1175,6 +1424,103 @@ def azdevops_recent_prs(project: str = "", days: int = 1, since=None) -> list[di
         return []
     except Exception as e:
         logger.warning("azdevops_recent_prs unexpected error: %s", e)
+        return []
+
+
+def azdevops_recent_reviews(
+    project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
+) -> list[dict]:
+    """Return timestamped Azure Repos PR review comments for selected repositories.
+
+    Azure reviewer votes do not expose a reliable event timestamp through this
+    API, so approvals are reported only when represented by a timestamped
+    thread/comment. This avoids assigning old approvals to today's standup.
+    """
+    project = project or get_azure_devops_project() or ""
+    if not project and not repositories:
+        return []
+    try:
+        from azure.devops.v7_1.git.models import GitPullRequestSearchCriteria
+
+        git_client = _make_git_client()
+        cutoff = _repo_activity_cutoff(days, since)
+        criteria = GitPullRequestSearchCriteria(status="all")
+        items: list[dict] = []
+        rows = _activity_pull_requests(git_client, project, repositories, criteria, metadata_cache)
+        # Old completed PRs cannot acquire new review comments. Keep recently
+        # created/closed PRs plus active PRs, then bound the expensive thread
+        # lookups across the whole project rather than 25 per repository.
+        eligible_rows = []
+        for selected_project, repo, pr in rows:
+            created = _aware(getattr(pr, "creation_date", None))
+            closed = _aware(getattr(pr, "closed_date", None))
+            status = str(getattr(pr, "status", "") or "").lower()
+            if status == "active" or (created and created >= cutoff) or (closed and closed >= cutoff):
+                eligible_rows.append((selected_project, repo, pr))
+        eligible_rows = eligible_rows[:_MAX_REVIEW_THREAD_LOOKUPS]
+
+        def _reviews_for_pr(index_row) -> list[dict]:
+            index, (selected_project, repo, pr) = index_row
+            out: list[dict] = []
+            pr_id = getattr(pr, "pull_request_id", "")
+            changed_files = (
+                _azdo_pr_changed_files(
+                    git_client,
+                    project=selected_project,
+                    repository_id=repo.id,
+                    pr_id=pr_id,
+                    metadata_cache=metadata_cache,
+                )
+                if index < _MAX_CHANGED_FILE_LOOKUPS
+                else []
+            )
+            try:
+                with _AZDO_DETAIL_SEMAPHORE:
+                    threads = git_client.get_threads(repo.id, pr_id, project=selected_project) or []
+            except Exception as exc:
+                logger.warning("azdevops_recent_reviews: PR %s threads failed: %s", pr_id, exc)
+                return []
+            for thread in threads:
+                for comment in getattr(thread, "comments", ()) or ():
+                    published = _aware(getattr(comment, "published_date", None))
+                    if published is None or published < cutoff:
+                        continue
+                    author = getattr(comment, "author", None)
+                    comment_id = getattr(comment, "id", "")
+                    repo_web = _activity_repo_web_url(repo, selected_project)
+                    out.append(
+                        {
+                            "author": getattr(author, "display_name", "") or "",
+                            "author_email": getattr(author, "unique_name", "") or "",
+                            "kind": "review",
+                            "title": f"reviewed PR !{pr_id}: {getattr(pr, 'title', '') or ''} ({repo.name})",
+                            "body": getattr(comment, "content", "") or "",
+                            "status": "commented",
+                            "timestamp": str(published)[:19],
+                            "key": f"review-comment-{comment_id}",
+                            "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                            "repository": f"{selected_project}/{repo.name}",
+                            "changed_files": changed_files,
+                        }
+                    )
+            return out
+
+        with ThreadPoolExecutor(
+            max_workers=min(6, max(1, len(eligible_rows))),
+            thread_name_prefix="standup-azdo-reviews",
+        ) as pool:
+            items.extend(item for batch in pool.map(_reviews_for_pr, enumerate(eligible_rows)) for item in batch)
+        logger.info("azdevops_recent_reviews: %d review event(s)", len(items))
+        return items
+    except ValueError as exc:
+        logger.warning("azdevops_recent_reviews skipped: %s", exc)
+        return []
+    except AzureDevOpsServiceError as exc:
+        _raise_if_azdo_auth(exc)
+        logger.warning("azdevops_recent_reviews failed: %s", _azdo_error_msg(exc))
+        return []
+    except Exception as exc:
+        logger.warning("azdevops_recent_reviews unexpected error: %s", exc)
         return []
 
 
