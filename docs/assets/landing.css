@@ -555,6 +555,8 @@
   @media (max-width:860px){
     .hero{padding:0 0 72px}
     .hero-copy{min-height:0; justify-content:flex-start; padding:16px 0 8px}
+    /* the "AI agent…" pill wraps to two lines and crowds the hero on phones */
+    .hero-copy .badge{display:none}
     /* the hint exists to point below the fold on the full-height desktop
        hero; on mobile the terminal is directly beneath the CTA */
     .scroll-hint{display:none}

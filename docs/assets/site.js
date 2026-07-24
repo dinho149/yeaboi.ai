@@ -451,37 +451,42 @@ function _composeAnswer(query, hits) {
     });
     return sc;
   }
-  // pick the first hit that actually yields usable prose sentences (some
-  // sections are just link lists / tables with nothing quotable)
-  var anchor = null, sents = [];
+  // Gather candidate sentences from the top sections and rank them by how
+  // well they answer the QUESTION — NOT by document position. Leading with a
+  // section's intro sentence is exactly what produced answers unrelated to
+  // the query (e.g. "how do I get started" → the Quick-mode intro blurb).
+  var cands = [];
   for (var h = 0; h < Math.min(hits.length, 3); h++) {
-    var ss = _splitSentences(hits[h].text);
-    if (ss.length) { anchor = hits[h]; sents = ss; break; }
+    _splitSentences(hits[h].text).forEach(function (s) {
+      cands.push({ s: s, sec: hits[h], sc: scoreSent(s) });
+    });
   }
-  if (!anchor) anchor = top;
+  cands.sort(function (a, b) { return b.sc - a.sc; });
 
-  var body;
-  if (sents.length) {
-    var chosen = sents.slice(0, 2);                 // lead sentences, in order
-    // find the best query-matching sentence beyond the lead and fold it in
-    var best = null, bestSc = 0;
-    for (var i = 2; i < sents.length; i++) {
-      var sc = scoreSent(sents[i]);
-      if (sc > bestSc) { bestSc = sc; best = sents[i]; }
+  var anchor, body, weak = false;
+  if (cands.length && cands[0].sc >= 1.5) {
+    // a sentence genuinely matches the question — quote it (plus one more
+    // strong, non-duplicate sentence for a fuller answer)
+    anchor = cands[0].sec;
+    var picked = [cands[0].s];
+    for (var i = 1; i < cands.length && picked.length < 2; i++) {
+      if (cands[i].sc >= 1 && picked.indexOf(cands[i].s) === -1) picked.push(cands[i].s);
     }
-    if (best && bestSc >= 1 && chosen.indexOf(best) === -1) chosen.push(best);
-    body = chosen.map(function (s) { return /[.!?]$/.test(s) ? s : s + '.'; }).join(' ');
+    body = picked.map(function (s) { return /[.!?]$/.test(s) ? s : s + '.'; }).join(' ');
   } else {
-    // nothing quotable anywhere — point at the best section by name
-    body = "The docs cover this under “" + top.heading + "” on the " + top.pageTitle + " page — tap below to jump straight there.";
+    // nothing clearly answers the question — DON'T fabricate a prose reply
+    // from an off-topic lead sentence; point at the best section honestly and
+    // let the source card do the work.
+    anchor = top;
+    weak = true;
+    body = "the " + top.pageTitle + " page covers this, under “" + top.heading + "” — tap below to jump straight there.";
   }
 
-  // question-shaped lead-in (note the trailing space — the join fix)
+  // question-shaped lead-in (note the trailing space — the join fix). A weak
+  // answer always uses the neutral lead so it never over-promises.
   var q = query.trim();
   var lead = "🦆 ";
-  if (/^(how\b|how do|how can|how to)/i.test(q)) lead = "🦆 Here's how: ";
-  else if (/^(where)/i.test(q)) lead = "🦆 ";
-  else if (/^(why)/i.test(q)) lead = "🦆 ";
+  if (!weak && /^(how\b|how do|how can|how to)/i.test(q)) lead = "🦆 Here's how: ";
 
   // sources: lead with the section we actually quoted, then other top hits
   var srcSecs = [], srcSeen = {};
