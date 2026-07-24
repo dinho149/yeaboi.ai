@@ -384,6 +384,28 @@
   /* ---------- footer (left-aligned, on-theme) ---------- */
   footer{border-top:1px solid var(--border); padding:48px 0 80px; position:relative; z-index:1}
   .foot{display:flex; flex-direction:column; align-items:flex-start; gap:24px}
+
+  /* the mascot: crisp pixels (never smoothed), idle bob at rest, a happy hop
+     on hover; grounded by its own little shadow */
+  .mascot{
+    image-rendering:pixelated; user-select:none; -webkit-user-drag:none;
+    transform-origin:50% 100%;
+    animation:mascot-bob 3.4s ease-in-out infinite;
+    filter:drop-shadow(0 10px 8px rgba(0,0,0,.45));
+  }
+  @keyframes mascot-bob{
+    0%,100%{transform:translateY(0) rotate(0deg)}
+    50%{transform:translateY(-6px) rotate(-2deg)}
+  }
+  .mascot:hover{animation:mascot-hop .7s cubic-bezier(.3,1.4,.4,1)}
+  @keyframes mascot-hop{
+    0%{transform:translateY(0)}
+    30%{transform:translateY(-18px) rotate(-5deg)}
+    55%{transform:translateY(0) rotate(0deg)}
+    75%{transform:translateY(-7px)}
+    100%{transform:translateY(0)}
+  }
+  @media (prefers-reduced-motion:reduce){.mascot{animation:none}}
   .foot .brandline{font-family:var(--mono); font-weight:800; font-size:1.3rem;
     letter-spacing:.08em; text-transform:uppercase; color:var(--text)}
   .foot .brandline .sub{display:block; margin-top:8px; font-weight:400; font-size:.8rem;
