@@ -17,9 +17,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:wght@400..800&display=swap" />
-<link rel="stylesheet" href="/assets/site.css?v=129" />
-<link rel="stylesheet" href="/assets/landing.css?v=129" />
-<link rel="stylesheet" href="/docs/assets/docs.css?v=129" />
+<link rel="stylesheet" href="/assets/site.css?v=130" />
+<link rel="stylesheet" href="/assets/landing.css?v=130" />
+<link rel="stylesheet" href="/docs/assets/docs.css?v=130" />
 </head>
 <body>
 
@@ -269,9 +269,21 @@
     </div>
     <div data-reveal>
       <div class="steps">
-        <div class="card step"><span class="k">1 · install</span><span class="d"><code>uv tool install yeaboi</code> <span class="dim">— or <code>pipx install yeaboi</code></span></span></div>
-        <div class="card step"><span class="k">2 · configure</span><span class="d"><code>yeaboi --setup</code> <span class="dim">— add your API key</span></span></div>
-        <div class="card step"><span class="k">3 · run</span><span class="d"><code>yeaboi</code> <span class="dim">— launch the interactive TUI</span></span></div>
+        <div class="card step">
+          <p class="step-k"><span class="n">1</span> install</p>
+          <code class="step-cmd">uv tool install yeaboi</code>
+          <p class="step-note">or <code>pipx install yeaboi</code></p>
+        </div>
+        <div class="card step">
+          <p class="step-k"><span class="n">2</span> configure</p>
+          <code class="step-cmd">yeaboi --setup</code>
+          <p class="step-note">adds your API key</p>
+        </div>
+        <div class="card step">
+          <p class="step-k"><span class="n">3</span> run</p>
+          <code class="step-cmd">yeaboi</code>
+          <p class="step-note">launches the interactive TUI</p>
+        </div>
       </div>
       <p class="note">Optional extras: <code>uv tool install "yeaboi[voice]"</code> for offline voice input, or <code>"yeaboi[all-providers]"</code> for every LLM provider.</p>
       <p class="note">yeaboi also ships as an <strong>MCP server</strong> and a Claude Code plugin — run every mode straight from Claude Code, Cursor, or any MCP client.</p>
@@ -314,6 +326,6 @@
 </main>
 
 <script src="https://unpkg.com/lenis@1.3.4/dist/lenis.min.js"></script>
-<script src="/assets/site.js?v=129"></script>
+<script src="/assets/site.js?v=130"></script>
 </body>
 </html>

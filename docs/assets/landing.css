@@ -374,15 +374,28 @@
 
   /* ---------- get started ---------- */
   .start-grid{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:start}
-  .steps{display:grid; gap:14px}
+  /* each step stacks cleanly: label → command chip → note, so nothing
+     wraps mid-line (the old single-line label|code|dim layout wrapped badly
+     on narrow columns and on mobile) */
+  .steps{display:grid; gap:12px}
   .step{
-    display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:baseline;
-    padding:18px 22px; transition:border-color .2s;
+    display:flex; flex-direction:column; align-items:flex-start; gap:9px;
+    padding:16px 20px; transition:border-color .2s;
   }
   .step:hover{border-color:var(--border-strong)}
-  .step .k{font-family:var(--mono); color:var(--accent); font-size:.9rem; font-weight:500}
-  .step .d{color:var(--text-muted); font-size:.94rem}
-  .step .d code{color:var(--text); background:var(--bg-sunken); border:1px solid var(--border);
+  .step-k{
+    margin:0; font-family:var(--mono); font-size:.74rem; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--text-dim); font-weight:500;
+  }
+  .step-k .n{color:var(--accent); font-weight:700; margin-right:8px}
+  .step-cmd{
+    font-family:var(--mono); font-size:.92rem; color:var(--text);
+    background:var(--bg-sunken); border:1px solid var(--border); border-radius:6px;
+    padding:7px 12px; max-width:100%; overflow-x:auto; white-space:nowrap;
+  }
+  .step-cmd::before{content:"$ "; color:var(--accent)}
+  .step-note{margin:0; color:var(--text-muted); font-size:.86rem}
+  .step-note code{color:var(--text); background:var(--bg-sunken); border:1px solid var(--border);
     border-radius:5px; padding:2px 7px; font-size:.88em}
   .dim{color:var(--text-dim)}
   .note{margin-top:18px; color:var(--text-muted); font-size:.92rem}
