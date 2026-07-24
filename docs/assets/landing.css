@@ -448,4 +448,6 @@
     .stage:nth-child(-n+2){border-top:none}
     .stage:nth-child(odd){border-left:1px solid var(--border)}
     .stage:first-child{border-left:none}
+    /* label stacks above the text — the two-column note is too cramped here */
+    .pipe-note{flex-direction:column; gap:8px}
   }
