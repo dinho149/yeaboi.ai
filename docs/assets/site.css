@@ -379,9 +379,12 @@ ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--borde
     border-bottom-color:var(--border);
   }
   .navbar::before{display:none}   /* the vertical accent edge is desktop-only */
-  .rail{
+  /* .navbar .rail, not .rail — the element is `.wrap.rail`, and the generic
+     .wrap{padding:0 24px} later in this block would zero the vertical padding
+     at equal specificity */
+  .navbar .rail{
     flex-direction:row; align-items:center; justify-content:space-between;
-    gap:16px; padding:12px 20px;
+    gap:16px; padding:20px 24px;
   }
   /* brand + toggle share one typographic voice (same as desktop) — the
      toggle is just the smaller, quieter sibling, not a pill component */
