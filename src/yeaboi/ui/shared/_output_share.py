@@ -36,7 +36,7 @@ def _build_output_share_screen(
 ) -> Panel:
     """Render the shared output-sharing lifecycle screen.
 
-    # See README: "Architecture" — shared TUI components and fixed page structure
+    # See docs: "Architecture" — shared TUI components and fixed page structure
     """
     actions = actions or ["Back"]
     try:
