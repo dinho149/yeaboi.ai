@@ -137,7 +137,7 @@ function scheduleDuckReveal() {
   _duckRevealT = setTimeout(function () {
     var el = document.getElementById('duck-walker');
     if (el) { el.classList.remove('unloaded'); el.classList.add('hatch'); }
-  }, 1500);
+  }, 900);
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // measured mid-entrance (content rises 22px) would leave the duck perched
   // slightly below its surface until the first scroll/mouse event — then
   // fade the duck in (it positions while still invisible)
-  setTimeout(updateScrollProgress, 1450);
+  setTimeout(updateScrollProgress, 860);
   scheduleDuckReveal();
 
   // ---- persistent rail shell ----
