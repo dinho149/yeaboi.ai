@@ -188,7 +188,11 @@ body.docs{ margin:0 }
   flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain;
   padding:16px 14px 6px; display:flex; flex-direction:column; gap:12px;
   -webkit-overflow-scrolling:touch;
+  /* scrolls without showing a scrollbar — same convention as the page's
+     hidden global scrollbar */
+  scrollbar-width:none; -ms-overflow-style:none;
 }
+.dd-log::-webkit-scrollbar{ width:0; height:0; display:none }
 .dd-msg{ display:flex; transition:opacity .34s ease, transform .38s cubic-bezier(.2,1.1,.4,1) }
 /* messages scroll/slide in: bot from the left, user from the right */
 .dd-msg.dd-enter{ opacity:0 }
