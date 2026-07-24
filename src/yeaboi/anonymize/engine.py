@@ -16,8 +16,8 @@ Why seed first, then LLM: the seed pass guarantees the obvious company identifie
 even offline; the LLM then catches the PII a static list can't know (people's names,
 other project names, internal tools).
 
-# See README: "The ReAct Loop" — using the LLM outside the main graph
-# See README: "Prompt Construction" — the anonymize prompt (untrusted-data framing)
+# See docs: "The ReAct Loop" — using the LLM outside the main graph
+# See docs: "Prompt Construction" — the anonymize prompt (untrusted-data framing)
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _invoke_llm(prompt: str) -> tuple[dict, list[str]]:
         return {}, [f"AI masking unavailable — {why}. Only known company terms were masked; review manually."]
 
     # invoke_json tracks usage + turns on JSON mode + re-asks once on bad JSON.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.llm import invoke_json
     from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
 

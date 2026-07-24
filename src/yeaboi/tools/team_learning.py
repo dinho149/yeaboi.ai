@@ -50,7 +50,7 @@ def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
 
     Every caller of this wrapper parses the response as JSON, so it routes
     through invoke_json — JSON mode on Ollama plus a one-shot repair re-ask.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     """
     from yeaboi.agent.llm import invoke_json
 

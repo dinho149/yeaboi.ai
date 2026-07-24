@@ -181,7 +181,7 @@ def _classify_api_error(err: Exception) -> str:
     # Local Ollama first — its failures carry generic shapes (httpx.ConnectError,
     # a 404 ResponseError) that the branches below would mis-classify. The hint
     # helper is provider-gated, so this is a no-op for every cloud provider.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.nodes import _local_llm_hint
 
     local_hint = _local_llm_hint(err)

@@ -12,7 +12,7 @@ deps (LLM, atlassian/notion SDKs, python-docx/pptx) inside functions, so
 importing this package is always cheap and safe — mirrors the standup / retro /
 performance / reporting packages.
 
-# See README: "Roadmap Intake"
+# See docs: "Roadmap Intake"
 """
 
 from __future__ import annotations

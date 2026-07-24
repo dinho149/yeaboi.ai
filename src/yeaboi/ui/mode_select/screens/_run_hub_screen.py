@@ -15,7 +15,7 @@ run card renders identically to a planning/analysis card. Export offers HTML + M
 only (no tracker sync for a point-in-time snapshot), so ``_build_project_row`` is called
 with ``jira_enabled=False, azdevops_enabled=False``.
 
-# See README: "Architecture" — TUI system, shared Panel page structure
+# See docs: "Architecture" — TUI system, shared Panel page structure
 """
 
 from __future__ import annotations

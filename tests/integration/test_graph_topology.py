@@ -1,6 +1,6 @@
 """Graph topology validation — structural integrity checks for the agent graph.
 
-# See README: "Agentic Blueprint Reference" — Core Graph Setup, Wiring
+# See docs: "Agentic Blueprint Reference" — Core Graph Setup, Wiring
 
 These tests catch wiring mistakes (orphan nodes, dead ends, dangling edge targets)
 that would break the agent at runtime but are not always caught by LangGraph's
@@ -54,7 +54,7 @@ def graph():
 class TestNodeReachability:
     """Every registered node must be reachable from __start__ via BFS.
 
-    # See README: "Agentic Blueprint Reference" — Wiring
+    # See docs: "Agentic Blueprint Reference" — Wiring
     #
     # An unreachable node can never be invoked, so any code it contains is
     # dead code. This test catches the common mistake of adding a node but
@@ -109,7 +109,7 @@ class TestNodeReachability:
 class TestNodeOutgoingEdges:
     """Every registered node must have at least one outgoing edge.
 
-    # See README: "Agentic Blueprint Reference" — Wiring
+    # See docs: "Agentic Blueprint Reference" — Wiring
     #
     # A node with no outgoing edges is a silent dead end: graph.invoke()
     # would hang or behave unexpectedly after executing it. Nodes that
@@ -152,7 +152,7 @@ class TestNodeOutgoingEdges:
 class TestConditionalEdges:
     """All destinations declared in conditional edges must be registered nodes.
 
-    # See README: "Agentic Blueprint Reference" — conditional edges
+    # See docs: "Agentic Blueprint Reference" — conditional edges
     #
     # LangGraph validates edge *sources* at add_conditional_edges() time but
     # destinations in the ``ends`` dict can be silently wrong if a node is
@@ -220,7 +220,7 @@ class TestConditionalEdges:
 class TestCompileTimeGuardrails:
     """Document LangGraph's own compile-time validation boundaries.
 
-    # See README: "Agentic Blueprint Reference" — Core Graph Setup
+    # See docs: "Agentic Blueprint Reference" — Core Graph Setup
     #
     # LangGraph enforces referential integrity for explicit edge targets —
     # an edge pointing to a node that was never registered raises ValueError

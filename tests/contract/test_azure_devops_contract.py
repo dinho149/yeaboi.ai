@@ -11,7 +11,7 @@ These tests still have contract-test value:
 - They catch SDK attribute renames, type changes, and model restructuring
 - They verify our tool code handles the actual SDK types correctly
 
-# See README: "Testing — Contract Tests" for background.
+# See docs: "Testing — Contract Tests" for background.
 """
 
 from __future__ import annotations

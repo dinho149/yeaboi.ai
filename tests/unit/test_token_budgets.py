@@ -1,6 +1,6 @@
 """Token budget assertions — catch prompt size regressions that inflate LLM cost.
 
-# See README: "Prompt Construction" — ARC framework, chain-of-thought, few-shot
+# See docs: "Prompt Construction" — ARC framework, chain-of-thought, few-shot
 
 Why character budgets and not token budgets?
 --------------------------------------------
@@ -143,7 +143,7 @@ class TestSystemPromptBudget:
     """System prompt is injected in every single LLM call — even 1 KB extra
     multiplies across thousands of turns.
 
-    # See README: "Prompt Construction" — ARC framework, persona
+    # See docs: "Prompt Construction" — ARC framework, persona
     """
 
     def test_system_prompt_under_budget(self):
@@ -157,7 +157,7 @@ class TestAnalyzerPromptBudget:
     """Analyzer prompt contains all 26 Q&A pairs — the largest non-optional block
     in the pipeline.
 
-    # See README: "Prompt Construction" — ARC framework
+    # See docs: "Prompt Construction" — ARC framework
     """
 
     def test_typical_questionnaire_under_budget(self):
@@ -198,7 +198,7 @@ class TestAnalyzerPromptBudget:
 class TestFeatureGeneratorPromptBudget:
     """Feature generator receives only project analysis fields — the smallest pipeline prompt.
 
-    # See README: "Scrum Standards" — feature decomposition
+    # See docs: "Scrum Standards" — feature decomposition
     """
 
     def test_typical_project_under_budget(self):
@@ -223,7 +223,7 @@ class TestFeatureGeneratorPromptBudget:
 class TestStoryWriterPromptBudget:
     """Story writer receives project analysis + all features — grows with feature count.
 
-    # See README: "Scrum Standards" — user story format, acceptance criteria
+    # See docs: "Scrum Standards" — user story format, acceptance criteria
     """
 
     def test_typical_features_under_budget(self):
@@ -268,7 +268,7 @@ class TestStoryWriterPromptBudget:
 class TestSprintPlannerPromptBudget:
     """Sprint planner receives all stories — grows O(n) with story count.
 
-    # See README: "Scrum Standards" — sprint planning, capacity allocation
+    # See docs: "Scrum Standards" — sprint planning, capacity allocation
     """
 
     def test_typical_stories_under_budget(self):

@@ -1,7 +1,7 @@
 """Headless planning-pipeline driver — run the full plan generation without a UI.
 
-# See README: "Agentic Blueprint Reference" — Core Graph Setup
-# See README: "MCP Server" — how external coding agents invoke this pipeline
+# See docs: "Agentic Blueprint Reference" — Core Graph Setup
+# See docs: "MCP Server" — how external coding agents invoke this pipeline
 
 The interactive REPL drives the LangGraph graph by prompting the user at every
 review checkpoint. ``--export-only`` mode already auto-drives those checkpoints
@@ -20,7 +20,7 @@ export-only branch exactly:
   - anything else mid-pipeline           → inject "continue"
   - next node would be "agent"           → pipeline complete, stop
 
-# See README: "Memory & State" — stateless invocation requires manual history
+# See docs: "Memory & State" — stateless invocation requires manual history
 # The graph is compiled without a checkpointer, so we thread the full state
 # dict (messages + questionnaire + artifacts) between invoke() calls manually,
 # just like the REPL does.

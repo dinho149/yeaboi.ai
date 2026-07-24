@@ -1,7 +1,7 @@
 """Adversarial LLM-output coverage for the parser and validation stack.
 
-# See README: "Architecture" — four layers, three design principles
-# See README: "Scrum Standards" — story points, priority, feature decomposition
+# See docs: "Architecture" — four layers, three design principles
+# See docs: "Scrum Standards" — story points, priority, feature decomposition
 
 Extension of the per-node parser tests focused on scenarios not already covered
 in test_analyzer.py / test_feature_generator.py / test_story_writer.py /
@@ -67,7 +67,7 @@ def _qs():
 class TestVagueProjectDescriptions:
     """Unique fallback paths not covered by test_analyzer.py.
 
-    # See README: "Architecture" — project_analyzer node, fallback path
+    # See docs: "Architecture" — project_analyzer node, fallback path
     """
 
     def test_preamble_plus_fence_parses_gracefully(self):
@@ -125,7 +125,7 @@ class TestVagueProjectDescriptions:
 class TestContradictoryFieldValues:
     """Impossible/invalid field values are corrected, not crashed on.
 
-    # See README: "Scrum Standards" — priority levels, Fibonacci story points
+    # See docs: "Scrum Standards" — priority levels, Fibonacci story points
     """
 
     def test_all_four_valid_priorities_preserved_case_insensitively(self):
@@ -222,7 +222,7 @@ class TestContradictoryFieldValues:
 class TestAbsurdlyLargeScope:
     """Oversized LLM outputs (50+ features, 30+ stories/feature) do not crash.
 
-    # See README: "Scrum Standards" — feature decomposition (3-6 features rule)
+    # See docs: "Scrum Standards" — feature decomposition (3-6 features rule)
     #
     # The feature_generator prompt instructs the LLM to return 3-6 features.
     # The parser does NOT enforce this cap — it returns whatever the LLM sent.
@@ -283,7 +283,7 @@ class TestAbsurdlyLargeScope:
     def test_validate_stories_warns_for_overcrowded_feature(self):
         """``_validate_stories`` issues a warning when a single feature exceeds MAX_STORIES_PER_FEATURE.
 
-        # See README: "Scrum Standards" — story count constraints
+        # See docs: "Scrum Standards" — story count constraints
         """
         features = [f for f in make_sample_features() if f.id == "F1"]
         stories_data = [

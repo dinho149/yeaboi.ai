@@ -1,6 +1,6 @@
 """Documentation quality — is the team's written knowledge clear, and how does AI show up in it?
 
-# See README: "Architecture" — engines are UI-free pipelines; this is a sub-analysis
+# See docs: "Architecture" — engines are UI-free pipelines; this is a sub-analysis
 # of team-analysis mode (CLAUDE.md "REQUIRED: Surface Parity" — the TUI/CLI/MCP are
 # thin adapters over ``analysis/engine.py:run_team_analysis``, which calls into here).
 
@@ -675,7 +675,7 @@ def generate_doc_quality_insights(signal: DocQualitySignal, examples: dict) -> d
         example_lines.append(line + (f" — {url}" if url else ""))
     examples_block = "\n".join(example_lines) or "(no illustrative pages available)"
 
-    # See README: "Prompt Construction" — ARC: Ask (coach doc quality + AI usage),
+    # See docs: "Prompt Construction" — ARC: Ask (coach doc quality + AI usage),
     # Requirements (categories, item shape, estimate/lower-bound honesty), Context (digest).
     prompt = (
         "You are a technical-writing and enablement coach helping a team lead improve the "

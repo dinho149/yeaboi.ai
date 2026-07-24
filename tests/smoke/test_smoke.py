@@ -7,7 +7,7 @@ the regular test suite — they run on a weekly cron schedule or manually via
 Each test creates minimal resources and cleans up after itself. Tests skip
 gracefully when credentials are missing.
 
-# See README: "Testing — Smoke Tests" for background.
+# See docs: "Testing — Smoke Tests" for background.
 """
 
 from __future__ import annotations

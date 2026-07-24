@@ -5,7 +5,7 @@ API responses. They verify that our tool functions correctly parse the response
 shapes returned by the real API — catching SDK upgrades, schema changes, and
 field-mapping regressions without requiring live Jira credentials.
 
-# See README: "Testing — Contract Tests" for background on VCR.py replay.
+# See docs: "Testing — Contract Tests" for background on VCR.py replay.
 
 Each test is marked with @pytest.mark.vcr so pytest-recording loads the
 matching cassette from tests/contract/cassettes/test_jira_contract/.

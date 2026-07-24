@@ -31,7 +31,7 @@ Prompts live in `prompts/` with a factory function per file:
 - `get_system_prompt()`, `get_analyzer_prompt(questionnaire, ...)`, `get_feature_generator_prompt(analysis)`, etc.
 - Each factory takes parameters (not the full state) and returns a string
 - Prompts use the ARC framework: Ask (what to do), Requirements (constraints), Context (background)
-- `# See README: "..."` comments cross-reference theory sections
+- `# See docs: "..."` comments cross-reference theory sections
 
 ## Tool Conventions
 

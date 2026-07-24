@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # LLM override — inject a caller-supplied model into every get_llm() call
 # ---------------------------------------------------------------------------
 #
-# # See README: "MCP Server" — sampling (host-model) mode
+# # See docs: "MCP Server" — sampling (host-model) mode
 # The MCP server can route yeaboi's LLM calls through the *client's* model
 # (MCP "sampling") instead of the user's own API key. Engines and nodes all
 # obtain their model via get_llm(), so the override must live here — modules
@@ -386,7 +386,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
 
     if provider == "ollama":
         # langchain-ollama is an optional dependency (install with: uv sync --extra ollama)
-        # # See README: "Local Mode (Ollama)" — keyless local provider. The model
+        # # See docs: "Local Mode (Ollama)" — keyless local provider. The model
         # runs entirely on the user's machine via the Ollama server; there are no
         # credentials, so get_llm() never raises OSError for this provider.
         try:
@@ -521,7 +521,7 @@ def invoke_with_images(llm: BaseChatModel, prompt: str, image_paths=None):
 # Reliable JSON invocation — constrained decoding + one-shot repair loop
 # ---------------------------------------------------------------------------
 #
-# # See README: "Local Mode (Ollama)" — how reliability is achieved
+# # See docs: "Local Mode (Ollama)" — how reliability is achieved
 # The planning pipeline and the mode engines all parse the model's reply as
 # JSON, and every parser falls back to a deterministic artifact when parsing
 # fails. That fallback never crashes — but it silently downgrades quality.

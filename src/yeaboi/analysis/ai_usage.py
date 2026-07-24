@@ -1,6 +1,6 @@
 """AI-adoption footprint — detect how much of a team's tracked work shows an AI-tool trace.
 
-# See README: "Architecture" — engines are UI-free pipelines; this is a sub-analysis
+# See docs: "Architecture" — engines are UI-free pipelines; this is a sub-analysis
 # of team-analysis mode (CLAUDE.md "REQUIRED: Surface Parity" — the TUI/CLI/MCP are
 # thin adapters over ``analysis/engine.py:run_team_analysis``, which calls into here).
 
@@ -633,7 +633,7 @@ def generate_ai_adoption_insights(signal: AiAdoptionSignal, examples: dict) -> d
         example_lines.append(f"- [{_source_label(s.get('source', ''))}] {ref}" + (f" — {url}" if url else ""))
     examples_block = "\n".join(example_lines) or "(no illustrative samples available)"
 
-    # See README: "Prompt Construction" — ARC: Ask (coach adoption), Requirements
+    # See docs: "Prompt Construction" — ARC: Ask (coach adoption), Requirements
     # (categories, item shape, lower-bound honesty), Context (footprint digest).
     prompt = (
         "You are an engineering enablement coach helping a team lead grow effective, "

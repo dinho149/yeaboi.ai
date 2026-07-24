@@ -1,6 +1,6 @@
 """Team-analysis engine — the headless pipeline behind the TUI Analysis mode.
 
-# See README: "Architecture" — engines are UI-free pipelines; the TUI, CLI and
+# See docs: "Architecture" — engines are UI-free pipelines; the TUI, CLI and
 # MCP server are thin adapters over them (CLAUDE.md "REQUIRED: Surface Parity").
 
 Design choice — standalone pipeline, not a LangGraph node (same rationale as

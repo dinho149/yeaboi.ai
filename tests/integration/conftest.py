@@ -1,6 +1,6 @@
 """Integration test fixtures — shared autouse setup for all integration tests.
 
-# See README: "Guardrails" — three lines of defence (Input layer)
+# See docs: "Guardrails" — three lines of defence (Input layer)
 
 Why this file exists
 --------------------

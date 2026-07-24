@@ -1,6 +1,6 @@
 """Snapshot tests for Rich formatter output in src/yeaboi/formatters.py.
 
-# See README: "Architecture" — REPL-side formatter layer
+# See docs: "Architecture" — REPL-side formatter layer
 
 Why snapshot tests?
 -------------------
@@ -144,7 +144,7 @@ _ANALYSIS = ProjectAnalysis(
 class TestRenderAnalysisPanel:
     """Snapshot tests for the project analysis Rich Panel.
 
-    # See README: "Architecture" — project_analyzer node output display
+    # See docs: "Architecture" — project_analyzer node output display
     """
 
     def test_full(self, snapshot):
@@ -188,7 +188,7 @@ class TestRenderAnalysisPanel:
 class TestRenderFeaturesTable:
     """Snapshot tests for the features Rich Table.
 
-    # See README: "Scrum Standards" — feature decomposition
+    # See docs: "Scrum Standards" — feature decomposition
     """
 
     def test_full(self, snapshot):
@@ -228,7 +228,7 @@ class TestRenderFeaturesTable:
 class TestRenderStoriesTable:
     """Snapshot tests for the stories Rich Group (one Table per feature).
 
-    # See README: "Scrum Standards" — user story format, acceptance criteria
+    # See docs: "Scrum Standards" — user story format, acceptance criteria
     """
 
     def test_full(self, snapshot):
@@ -274,7 +274,7 @@ class TestRenderStoriesTable:
 class TestRenderTasksTable:
     """Snapshot tests for the tasks Rich Group (one Table per feature).
 
-    # See README: "Scrum Standards" — task decomposition
+    # See docs: "Scrum Standards" — task decomposition
     """
 
     def test_full(self, snapshot):
@@ -321,7 +321,7 @@ class TestRenderTasksTable:
 class TestRenderSprintPlan:
     """Snapshot tests for the sprint plan Rich Group (summary + per-sprint Panels).
 
-    # See README: "Scrum Standards" — sprint planning, capacity allocation
+    # See docs: "Scrum Standards" — sprint planning, capacity allocation
     """
 
     def test_full(self, snapshot):

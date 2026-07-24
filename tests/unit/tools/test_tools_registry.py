@@ -1,6 +1,6 @@
 """Tool registration sync check — every @tool in tools/ must appear in get_tools().
 
-# See README: "Tools" — tool types, @tool decorator, tool registration
+# See docs: "Tools" — tool types, @tool decorator, tool registration
 
 These tests catch two classes of silent mistakes that are easy to introduce
 when adding or refactoring tools:
@@ -89,7 +89,7 @@ def _discover_all_tools() -> dict[str, str]:
 class TestToolRegistrySync:
     """Ensure get_tools() stays in sync with @tool-decorated functions in tools/.
 
-    # See README: "Tools" — tool registration pattern
+    # See docs: "Tools" — tool registration pattern
     #
     # The contract: every @tool function in a tools module must appear in
     # get_tools(). This is not enforced by Python or LangChain — it relies

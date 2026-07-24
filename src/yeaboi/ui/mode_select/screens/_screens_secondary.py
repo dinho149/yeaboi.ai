@@ -3344,7 +3344,7 @@ def _build_roadmap_screen(
     A Planning sub-page — uses PLANNING_THEME + planning_title (not a new mode
     theme), with shared buttons, scrollbar, and viewport.
 
-    # See README: "Roadmap Intake" — TUI page
+    # See docs: "Roadmap Intake" — TUI page
     """
     from yeaboi.ui.shared._components import PLANNING_THEME, build_reveal_subtitle
 

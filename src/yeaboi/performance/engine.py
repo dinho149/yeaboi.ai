@@ -81,7 +81,7 @@ def _invoke_llm(prompt: str, *, what: str, images: Sequence[str] = ()) -> tuple[
         return {}, [f"AI output unavailable — {why}."]
 
     # invoke_json tracks usage + turns on JSON mode + re-asks once on bad JSON.
-    # See README: "Local Mode (Ollama)" — reliability layer.
+    # See docs: "Local Mode (Ollama)" — reliability layer.
     from yeaboi.agent.llm import invoke_json
     from yeaboi.agent.nodes import _is_llm_auth_or_billing_error, _local_llm_hint
 

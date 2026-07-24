@@ -5,7 +5,7 @@ responses. They verify that our tool functions correctly parse the response
 shapes — catching PyGithub SDK upgrades, schema changes, and content-decoding
 regressions without requiring a live GitHub token.
 
-# See README: "Testing — Contract Tests" for background on VCR.py replay.
+# See docs: "Testing — Contract Tests" for background on VCR.py replay.
 
 Each test is marked with @pytest.mark.vcr so pytest-recording loads the
 matching cassette from tests/contract/cassettes/test_github_contract/.

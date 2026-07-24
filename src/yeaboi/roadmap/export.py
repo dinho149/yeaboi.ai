@@ -12,7 +12,7 @@ Every project ``name`` / ``description`` came from an LLM reading an *untrusted*
 roadmap document, so the HTML escapes every field with ``html.escape`` — the same
 defense the other exporters use. The TUI **Export** button re-writes on demand.
 
-# See README: "Roadmap Intake" — Export
+# See docs: "Roadmap Intake" — Export
 """
 
 from __future__ import annotations
