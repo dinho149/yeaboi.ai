@@ -154,6 +154,21 @@ code,pre,kbd{font-family:var(--mono)}
 }
 .rail .brand:hover,
 .rail-toggle:hover{color:var(--accent-bright)}
+/* subtle accent glow behind the whole rail block (brand + DOCS together) —
+   strongest at the vertical centre of the group, fading to transparent
+   toward the edges. A ::before anchored to the top group (fixed height, so
+   it stays put behind brand+toggle even when the DOCS menu expands below);
+   isolation keeps the z-index:-1 layer scoped behind the rail text. Desktop
+   rail only — the mobile top bar keeps its clean compact look. */
+@media (min-width:901px){
+  .rail{position:relative; isolation:isolate}
+  .rail::before{
+    content:""; position:absolute; z-index:-1; pointer-events:none;
+    left:6px; right:-4px; top:-26px; height:172px;
+    background:radial-gradient(ellipse 60% 48% at 33% 50%,
+      rgba(110,140,220,.16), rgba(110,140,220,.05) 48%, transparent 72%);
+  }
+}
 /* no ugly click box; keep a clean keyboard-only focus ring — a soft glow,
    not a hard rectangle */
 .rail .brand:focus,
