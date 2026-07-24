@@ -382,7 +382,13 @@
   .cta-links{margin-top:22px; display:flex; gap:12px; flex-wrap:wrap}
 
   /* ---------- footer (left-aligned, on-theme) ---------- */
-  footer{border-top:1px solid var(--border); padding:48px 0 80px; position:relative; z-index:1}
+  /* divider fades in from the left (a border-image gradient rather than a flat
+     hairline) so it reads as emerging into the footer rather than a hard rule */
+  footer{
+    border-top:1px solid transparent;
+    border-image:linear-gradient(90deg, transparent 0%, var(--border) 22%, var(--border) 100%) 1;
+    padding:48px 0 80px; position:relative; z-index:1;
+  }
   .foot{display:flex; flex-direction:column; align-items:flex-start; gap:24px}
 
   /* the mascot: walks the bottom edge of the viewport, x driven from scroll
@@ -460,6 +466,40 @@
   }
   /* its whole purpose is motion — hide under reduced motion */
   @media (prefers-reduced-motion:reduce){.duck-walker{display:none}}
+
+  /* the duck's rotating "catch me" speech bubble — fades in once the page is
+     scrolled to the very bottom, sits IN LINE beside the duck (level with its
+     head), tail pointing sideways back at it. The line cycles on a timer and a
+     jump interrupts it with a reaction (landing only). */
+  .duck-bubble{
+    position:fixed; top:0; left:0; z-index:41; pointer-events:none;
+    transform:translateX(-6px); transform-origin:left center;
+    background:var(--bg-raised); color:var(--text);
+    border:1px solid var(--border-strong); border-radius:12px;
+    padding:8px 13px; font-family:var(--mono); font-size:.82rem; white-space:nowrap;
+    box-shadow:0 8px 22px rgba(0,0,0,.5);
+    opacity:0; visibility:hidden;
+    transition:opacity .28s ease, transform .32s cubic-bezier(.2,1.3,.4,1);
+  }
+  .duck-bubble.show{opacity:1; visibility:visible; transform:translateX(0)}
+  /* the cycling text swaps with a quick pop (retriggered from JS on each line) */
+  .duck-bubble.say{animation:duck-say .34s ease}
+  @keyframes duck-say{0%{opacity:.25; transform:translateX(0) scale(.94)} 100%{opacity:1; transform:translateX(0) scale(1)}}
+  /* tail on the LEFT side, pointing back toward the duck (bubble is to its right) */
+  .duck-bubble::after{
+    content:""; position:absolute; top:50%; left:-6px; margin-top:-5px;
+    width:11px; height:11px; background:var(--bg-raised);
+    border-left:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong);
+    transform:rotate(45deg);
+  }
+  /* flipped: bubble sits to the LEFT of the duck → tail on the right */
+  .duck-bubble.flip{transform-origin:right center; transform:translateX(6px)}
+  .duck-bubble.flip.show{transform:translateX(0)}
+  .duck-bubble.flip::after{
+    left:auto; right:-6px;
+    border-left:none; border-bottom:none;
+    border-right:1px solid var(--border-strong); border-top:1px solid var(--border-strong);
+  }
   .foot .brandline{font-family:var(--mono); font-weight:800; font-size:1.3rem;
     letter-spacing:.08em; text-transform:uppercase; color:var(--text)}
   .foot .brandline .sub{display:block; margin-top:8px; font-weight:400; font-size:.8rem;

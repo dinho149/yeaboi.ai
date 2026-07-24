@@ -73,6 +73,7 @@ function _duckPhysicsStep() {
       _duckAirV = -12;
       _duckVel += (cx >= _mX ? 1 : -1) * 6;
       duck.classList.add('startled', 'airborne');
+      _duckJumpSay();      // interrupt the taunt with a startled reaction line
       setTimeout(function () { duck.classList.remove('startled'); }, 1350);
     }
   }
@@ -88,7 +89,19 @@ function _duckPhysicsStep() {
     }
   }
   _duckVel *= 0.86;                          // friction
-  if (Math.abs(_duckVel) < 0.05 && _duckAirY === 0 && _duckAirV === 0) return;  // at rest
+  if (Math.abs(_duckVel) < 0.05 && _duckAirY === 0 && _duckAirV === 0) {
+    // At rest — but the surface may have just scrolled under us. When Lenis
+    // settles at the very bottom it fires no further mouse events, so without
+    // this the duck would freeze at its stale pre-settle spot (sitting UNDER
+    // the divider) until the cursor nudged the physics back to life. Re-pin to
+    // the current footer geometry every frame so it seats ON the divider the
+    // instant the scroll settles — no mouse move required.
+    var rrx = g.base + _duckFlee, rry = g.y;
+    _duckX = rrx; _duckY = rry; _duckLandX = rrx; _duckLandY = rry;
+    duck.style.transform = 'translate(' + rrx.toFixed(1) + 'px,' + rry.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+    _positionDuckBubble(rrx, rry);
+    return;
+  }
   _duckFlee += _duckVel;
   x = g.base + _duckFlee;
   if (x < g.minX || x > g.maxX) {
@@ -125,6 +138,94 @@ function _duckPhysicsStep() {
   var ry = g.y + _duckAirY;
   _duckX = x; _duckY = ry; _duckLandX = x; _duckLandY = ry;
   duck.style.transform = 'translate(' + x.toFixed(1) + 'px,' + ry.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+  _positionDuckBubble(x, ry);
+}
+
+// ---- the duck's "catch me" speech bubble (landing footer only) ----
+// A rotating one-liner that fades in ONCE the page is scrolled to the very
+// bottom and the duck has settled on the footer, teasing the cursor-flee game.
+// The line cycles on a timer, and a cursor-touch JUMP interrupts it with a
+// reaction line. Only ever exists on the landing page (never the docs).
+var _duckBubbleEl = null;
+var _duckBubbleShown = false;
+var _duckBubbleTimer = null;
+var _duckBubbleIdx = 0;
+var DUCK_TAUNTS = [
+  'catch me if you can!',
+  "you'll never catch me 🦆",
+  'too slow!',
+  'bet you can’t catch me',
+  'nice try 😜',
+  "gotta be quicker than that!",
+  'over here! …nope 🦆',
+];
+var DUCK_JUMPS = ['whoa!', 'hey! 🦆', 'eek!', 'missed me!', 'nope!', 'rude! 🦆'];
+
+function _ensureDuckBubble() {
+  if (_duckBubbleEl && document.body.contains(_duckBubbleEl)) return _duckBubbleEl;
+  if (document.body.classList.contains('docs')) return null;   // docs duck ≠ mascot
+  var b = document.createElement('div');
+  b.className = 'duck-bubble';
+  b.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(b);
+  _duckBubbleEl = b;
+  return b;
+}
+function _duckSay(line) {
+  if (!_duckBubbleEl) return;
+  _duckBubbleEl.textContent = line;
+  _duckBubbleEl.classList.remove('say');
+  void _duckBubbleEl.offsetWidth;              // reflow → restart the pop
+  _duckBubbleEl.classList.add('say');
+}
+function _duckNextTaunt() {
+  _duckSay(DUCK_TAUNTS[_duckBubbleIdx % DUCK_TAUNTS.length]);
+  _duckBubbleIdx++;
+}
+function _startTauntCycle() {
+  clearInterval(_duckBubbleTimer);
+  _duckBubbleTimer = setInterval(function () {
+    if (_duckBubbleShown && _duckBubbleEl) _duckNextTaunt();
+  }, 3200);
+}
+function _hideDuckBubble() {
+  if (_duckBubbleEl) _duckBubbleEl.classList.remove('show');
+  _duckBubbleShown = false;
+  clearInterval(_duckBubbleTimer); _duckBubbleTimer = null;
+}
+// a startle jump interrupts the taunt with a reaction line, then resumes cycling
+function _duckJumpSay() {
+  if (reducedMotion || !_duckBubbleShown || !_duckBubbleEl) return;
+  _duckSay(DUCK_JUMPS[_duckBubbleIdx % DUCK_JUMPS.length]);
+  _duckBubbleIdx++;
+  _startTauntCycle();          // reset the timer so the reaction lingers
+}
+// Position the bubble IN LINE with the duck (level with its head, off to the
+// side with room), tail pointing back at it. Reveals only once the page is at
+// the very bottom; stays until the duck leaves the footer perch.
+function _positionDuckBubble(dx, dy) {
+  if (reducedMotion) return;
+  var onFooter = _duckChase && _duckFootGeom;
+  if (!onFooter) { _hideDuckBubble(); return; }
+  var doc = document.documentElement;
+  var atBottom = (window.scrollY || doc.scrollTop || 0) + window.innerHeight >= doc.scrollHeight - 6;
+  if (!_duckBubbleShown && !atBottom) return;      // wait until we've reached the bottom
+  var b = _ensureDuckBubble();
+  if (!b) return;
+  var vw = window.innerWidth, dw = 64;
+  // place to the right of the duck by default; flip to the left if it'd overflow
+  var toLeft = dx + dw + 230 > vw;
+  b.classList.toggle('flip', toLeft);
+  b.style.top = (dy + 6) + 'px';                   // level with the duck's head
+  if (toLeft) { b.style.right = (vw - dx + 12) + 'px'; b.style.left = 'auto'; }
+  else { b.style.left = (dx + dw + 12) + 'px'; b.style.right = 'auto'; }
+  if (!_duckBubbleShown) {
+    _duckBubbleShown = true;
+    _duckBubbleIdx = 0;
+    _duckNextTaunt();
+    _startTauntCycle();
+    requestAnimationFrame(function () { b.classList.add('show'); });
+  }
 }
 
 // Reveal the duck only after the hero's staggered entrance has finished
@@ -138,6 +239,352 @@ function scheduleDuckReveal() {
     var el = document.getElementById('duck-walker');
     if (el) { el.classList.remove('unloaded'); el.classList.add('hatch'); }
   }, 900);
+}
+
+// ============================================================================
+// Docs duck — a small chatbot perched bottom-right of every docs page. The
+// site is fully static (GitHub Pages, no backend), so it answers by SIFTING
+// the docs client-side: on first open it lazily fetches every page in
+// NAV_GROUPS, splits each into sections at its h2/h3 headings, and builds a
+// lightweight in-memory index. A question is tokenised and scored against that
+// index (term frequency + title/heading boosts); the best sections come back
+// as answer cards with a snippet and a deep link to the exact heading.
+// ============================================================================
+var _docsIndex = null;         // [{path,pageTitle,heading,id,text,tokens}]
+var _docsIndexing = null;      // in-flight promise (built once)
+var _docsDuckBuilt = false;
+
+var STOPWORDS = { the:1, a:1, an:1, and:1, or:1, of:1, to:1, in:1, on:1, for:1,
+  is:1, are:1, be:1, how:1, do:1, i:1, my:1, with:1, it:1, that:1, this:1,
+  can:1, does:1, what:1, when:1, where:1, which:1, you:1, your:1, me:1, from:1,
+  by:1, as:1, at:1, s:1 };
+
+function _tokenize(str) {
+  return (str || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+}
+function _contentTokens(str) {
+  return _tokenize(str).filter(function (t) { return t.length > 1 && !STOPWORDS[t]; });
+}
+
+// Build the section index by fetching every docs page once and parsing it.
+function _buildDocsIndex() {
+  if (_docsIndexing) return _docsIndexing;
+  var pages = _flatNav();
+  _docsIndexing = Promise.all(pages.map(function (pg) {
+    return fetch(pg.path)
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (html) {
+        if (!html) return [];
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var art = doc.querySelector('.docs-content article') || doc.querySelector('article') || doc.body;
+        var pageTitle = (doc.querySelector('h1') || {}).textContent || pg.title;
+        var sections = [];
+        var cur = { heading: pageTitle, id: '', parts: [] };
+        // walk the article in document order; each h2/h3 starts a new section
+        art.querySelectorAll('h2, h3, p, li, pre, td').forEach(function (el) {
+          var tag = el.tagName.toLowerCase();
+          if (tag === 'h2' || tag === 'h3') {
+            if (cur.parts.length) sections.push(cur);
+            cur = { heading: el.textContent.trim(), id: el.id || '', parts: [] };
+          } else {
+            var t = el.textContent.trim();
+            if (t) cur.parts.push(t);
+          }
+        });
+        if (cur.parts.length) sections.push(cur);
+        return sections.map(function (s) {
+          var text = s.parts.join(' ').replace(/\s+/g, ' ').slice(0, 900);
+          return {
+            path: pg.path, pageTitle: pageTitle.trim(),
+            heading: s.heading, id: s.id, text: text,
+            tokens: _contentTokens(s.heading + ' ' + text),
+            headTokens: _contentTokens(s.heading + ' ' + pageTitle),
+          };
+        });
+      })
+      .catch(function () { return []; });
+  })).then(function (all) {
+    _docsIndex = all.reduce(function (acc, arr) { return acc.concat(arr); }, []);
+    return _docsIndex;
+  });
+  return _docsIndexing;
+}
+
+// Score sections against the query and return the best few.
+function _searchDocs(query) {
+  if (!_docsIndex) return [];
+  var qs = _contentTokens(query);
+  if (!qs.length) return [];
+  var scored = _docsIndex.map(function (sec) {
+    var score = 0;
+    qs.forEach(function (q) {
+      var inText = 0, inHead = 0;
+      sec.tokens.forEach(function (t) { if (t === q) inText++; else if (t.indexOf(q) === 0) inText += 0.4; });
+      sec.headTokens.forEach(function (t) { if (t === q) inHead++; else if (t.indexOf(q) === 0) inHead += 0.4; });
+      score += inText + inHead * 4;   // heading/title matches weigh heavily
+    });
+    return { sec: sec, score: score };
+  }).filter(function (r) { return r.score > 0; });
+  scored.sort(function (a, b) { return b.score - a.score; });
+  return scored.slice(0, 4).map(function (r) { return r.sec; });
+}
+
+// Split a block of text into sentences (naive but good enough for docs prose).
+function _splitSentences(text) {
+  return (text || '')
+    .replace(/([.!?])\s+(?=[A-Z0-9])/g, '$1')
+    .split('')
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s.length > 25; });
+}
+
+// Conversational small-talk / meta handling — greetings, thanks, capability
+// questions — so the duck feels like it's talking, not just searching. Returns
+// a reply object or null (null → fall through to the doc-answer composer).
+function _smallTalk(query) {
+  var q = query.toLowerCase().trim();
+  var has = function (re) { return re.test(q); };
+  if (has(/^(hi|hey|hello|yo|sup|howdy|hiya|quack)\b/) || has(/good (morning|afternoon|evening)/)) {
+    return { text: "🦆 Hey! I'm the yeaboi docs duck. Ask me how to install it, what the modes do, how integrations work — anything in the docs and I'll talk you through it.", cards: [] };
+  }
+  if (has(/\b(thanks|thank you|cheers|ta|appreciate)\b/)) {
+    return { text: "🦆 Anytime! Quack if you need anything else.", cards: [] };
+  }
+  if (has(/\b(bye|goodbye|see ya|later)\b/)) {
+    return { text: "🦆 See you around! Close me with the ✕ or Esc whenever.", cards: [] };
+  }
+  if (has(/who are you|what are you|are you (a )?(bot|duck|ai|real)|your name/)) {
+    return { text: "🦆 I'm the yeaboi docs duck — a little helper that reads the whole documentation and answers your questions in plain English, with links to the exact page.", cards: [] };
+  }
+  if (has(/what can you (do|help)|help me|what do you know|how (can|do) you (help|work)/)) {
+    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the six modes (planning, standup, retro, performance, reporting, analysis), integrations & exports, tools, session management, architecture, and deployment. What are you trying to do?", cards: [] };
+  }
+  if (has(/^\s*(what is|what's|whats) yeaboi/)) {
+    return null; // real question — let the composer answer it from the docs
+  }
+  return null;
+}
+
+// Compose a conversational answer: take the top matching sections, pull the
+// sentences within them that best match the question, stitch them into a short
+// natural-language reply phrased for the question, and cite the sources. This
+// is extractive (no LLM — the site is fully static) but reads as prose, not a
+// pile of keyword snippets.
+function _composeAnswer(query, hits) {
+  var qtok = _contentTokens(query);
+  var qset = {}; qtok.forEach(function (t) { qset[t] = 1; });
+
+  // gather candidate sentences from the top few sections, scored by overlap
+  var cand = [];
+  hits.slice(0, 3).forEach(function (sec, hi) {
+    _splitSentences(sec.text).forEach(function (sent) {
+      var toks = _contentTokens(sent), sc = 0;
+      toks.forEach(function (t) { if (qset[t]) sc += 1; else { for (var k in qset) { if (t.indexOf(k) === 0 || k.indexOf(t) === 0) { sc += 0.3; break; } } } });
+      if (sc > 0) cand.push({ sent: sent, score: sc - hi * 0.15, sec: sec });
+    });
+  });
+  cand.sort(function (a, b) { return b.score - a.score; });
+
+  // de-dupe near-identical sentences, keep the best 2–3
+  var picked = [], seen = {};
+  for (var i = 0; i < cand.length && picked.length < 3; i++) {
+    var key = cand[i].sent.slice(0, 40).toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = 1; picked.push(cand[i]);
+  }
+
+  var lead;
+  if (/^(how|how do|how can|how to)\b/i.test(query.trim())) lead = "🦆 Here's how:";
+  else if (/^(what|what's|whats|which)\b/i.test(query.trim())) lead = "🦆 ";
+  else if (/^(can|does|do|is|are|will)\b/i.test(query.trim())) lead = "🦆 ";
+  else if (/^(why)\b/i.test(query.trim())) lead = "🦆 ";
+  else lead = "🦆 ";
+
+  var body;
+  if (picked.length) {
+    body = picked.map(function (p) {
+      var s = p.sent;
+      if (!/[.!?]$/.test(s)) s += '.';
+      return s;
+    }).join(' ');
+  } else {
+    // matched a section by heading but no strong sentence — summarise the top
+    body = "The docs cover this under “" + hits[0].heading + "” on the " + hits[0].pageTitle + " page.";
+  }
+
+  // sources: the distinct sections behind the answer, as deep links
+  var srcSecs = [], srcSeen = {};
+  (picked.length ? picked.map(function (p) { return p.sec; }) : hits.slice(0, 2)).forEach(function (sec) {
+    var href = sec.path + (sec.id ? '#' + sec.id : '');
+    if (srcSeen[href]) return; srcSeen[href] = 1;
+    srcSecs.push({ title: sec.heading, page: sec.pageTitle, href: href });
+  });
+
+  return { text: (lead + body).replace(/🦆\s+\./, '🦆 '), cards: srcSecs.slice(0, 3), sources: true };
+}
+
+function _docsDuckReply(query) {
+  var small = _smallTalk(query);
+  if (small) return small;
+  var hits = _searchDocs(query);
+  if (!hits.length) {
+    return { text: "🦆 Hmm, I couldn't find that in the docs. Try rephrasing — I know about installation & setup, the six modes, integrations & exports, tools, session management, architecture, and deployment.", cards: [] };
+  }
+  return _composeAnswer(query, hits);
+}
+
+function _appendDocsMsg(log, who, node) {
+  var row = document.createElement('div');
+  row.className = 'dd-msg dd-' + who + ' dd-enter';   // dd-enter → CSS slide-in
+  row.appendChild(node);
+  log.appendChild(row);
+  // next frame: drop .dd-enter so it transitions from offset+faded → in place
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { row.classList.remove('dd-enter'); });
+  });
+  log.scrollTop = log.scrollHeight;
+  return row;
+}
+
+// Build the bottom-right duck FAB + chat panel on docs pages (once).
+function initDocsDuck() {
+  var onDocs = document.body.classList.contains('docs');
+  var existing = document.getElementById('docs-duck');
+  if (!onDocs) { if (existing) existing.remove(); _docsDuckBuilt = false; return; }
+  if (existing) return;             // already present, survives content swaps
+  _docsDuckBuilt = true;
+
+  var root = document.createElement('div');
+  root.id = 'docs-duck';
+  // Bare duck sprite (no circle). Click → it slides left + flips to face the
+  // other way, the conversation console expands outward from it (CSS transform)
+  // and a greeting bubble pops from the duck.
+  root.innerHTML =
+    '<div class="dd-console" role="dialog" aria-label="Ask the docs">' +
+      '<div class="dd-log" id="dd-log" data-lenis-prevent></div>' +
+      '<form class="dd-form" id="dd-form">' +
+        '<input type="text" class="dd-input" id="dd-input" placeholder="Ask about yeaboi…" autocomplete="off" aria-label="Ask about yeaboi" />' +
+        '<button type="submit" class="dd-send" aria-label="Send">→</button>' +
+      '</form>' +
+    '</div>' +
+    '<div class="dd-prompt" aria-hidden="true"></div>' +
+    '<button type="button" class="dd-duck" aria-label="Ask the docs duck" aria-expanded="false">' +
+      '<span class="dd-duck-rig">' +
+        '<img class="d-base" src="/assets/duck-base.png" alt="" />' +
+        '<img class="d-wing" src="/assets/duck-wing.png" alt="" />' +
+        '<img class="d-glasses" src="/assets/duck-glasses.png" alt="" />' +
+      '</span>' +
+    '</button>';
+  document.body.appendChild(root);
+
+  var duck = root.querySelector('.dd-duck');
+  var console_ = root.querySelector('.dd-console');
+  var form = root.querySelector('#dd-form');
+  var input = root.querySelector('#dd-input');
+  var log = root.querySelector('#dd-log');
+  var promptEl = root.querySelector('.dd-prompt');
+  var greeted = false;
+
+  // idle-prompt bubble: the duck spits out an inviting line while it's closed,
+  // rotating through a few. Hidden the moment the console opens; resumes if
+  // the user closes it again without ever asking.
+  var DD_PROMPTS = ['Any questions? 🦆', 'Ask me about yeaboi!', 'Need a hand? Quack.', 'Stuck? Ask the duck →'];
+  var _promptIdx = 0, _promptTimer = null;
+  function showPrompt() {
+    if (root.classList.contains('open')) return;
+    promptEl.textContent = DD_PROMPTS[_promptIdx % DD_PROMPTS.length];
+    _promptIdx++;
+    promptEl.classList.remove('say'); void promptEl.offsetWidth; promptEl.classList.add('say', 'show');
+  }
+  function hidePrompt() { promptEl.classList.remove('show'); }
+  function startPrompts() {
+    clearInterval(_promptTimer);
+    // first nudge shortly after arriving, then rotate every ~9s
+    setTimeout(showPrompt, 2600);
+    _promptTimer = setInterval(showPrompt, 9000);
+  }
+  if (!reducedMotion) startPrompts();
+
+  function renderReply(reply) {
+    var wrap = document.createElement('div');
+    var p = document.createElement('p');
+    p.className = 'dd-text';
+    p.textContent = reply.text;
+    wrap.appendChild(p);
+    if (reply.cards && reply.cards.length) {
+      if (reply.sources) {
+        var lbl = document.createElement('span');
+        lbl.className = 'dd-src-label';
+        lbl.textContent = reply.cards.length > 1 ? 'Sources' : 'Source';
+        wrap.appendChild(lbl);
+      }
+      reply.cards.forEach(function (c) {
+        var a = document.createElement('a');
+        a.className = 'dd-card';
+        a.href = c.href;
+        a.innerHTML = '<span class="dd-card-h"></span><span class="dd-card-page"></span>';
+        a.querySelector('.dd-card-h').textContent = c.title;
+        a.querySelector('.dd-card-page').textContent = c.page;
+        wrap.appendChild(a);
+      });
+    }
+    _appendDocsMsg(log, 'bot', wrap);
+  }
+
+  function ask(q) {
+    var u = document.createElement('p');
+    u.className = 'dd-text';
+    u.textContent = q;
+    _appendDocsMsg(log, 'user', u);
+    var typing = document.createElement('p');
+    typing.className = 'dd-text dd-typing';
+    typing.textContent = '🦆 sifting the docs…';
+    var trow = _appendDocsMsg(log, 'bot', typing);
+    _buildDocsIndex().then(function () {
+      trow.remove();
+      renderReply(_docsDuckReply(q));
+    });
+  }
+
+  function openPanel() {
+    duck.setAttribute('aria-expanded', 'true');
+    root.classList.add('open');                // CSS: duck slides left + flips, console expands
+    hidePrompt(); clearInterval(_promptTimer);
+    _buildDocsIndex();                         // warm the index on first open
+    if (!greeted) {
+      greeted = true;
+      var g = document.createElement('p');
+      g.className = 'dd-text';
+      g.textContent = "🦆 Quack! Ask me anything about yeaboi — I'll read the docs and talk you through it.";
+      _appendDocsMsg(log, 'bot', g);
+    }
+    setTimeout(function () { input.focus(); }, 260);
+  }
+  function closePanel() {
+    duck.setAttribute('aria-expanded', 'false');
+    root.classList.remove('open');
+    if (!reducedMotion) startPrompts();        // resume idle nudges
+  }
+
+  duck.addEventListener('click', function () {
+    if (root.classList.contains('open')) closePanel(); else openPanel();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && root.classList.contains('open')) closePanel();
+  });
+  // click outside the console (and not on the duck) closes it
+  document.addEventListener('click', function (e) {
+    if (!root.classList.contains('open')) return;
+    if (e.target.closest && e.target.closest('#docs-duck')) return;
+    closePanel();
+  });
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var q = input.value.trim();
+    if (!q) return;
+    input.value = '';
+    ask(q);
+  });
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -319,6 +766,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // chase physics runs only while the flee perch is active
         _duckChase = !!spots[spotIdx].chase;
         if (_duckChase && !_duckPhysOn) { _duckPhysOn = true; requestAnimationFrame(_duckPhysicsStep); }
+        // scrolled up off the footer → tuck the speech bubble away again
+        if (!_duckChase && _duckBubbleEl) { _duckBubbleEl.classList.remove('show'); _duckBubbleShown = false; }
       }
 
       if (_duckSpot === null || _duckTp) {
@@ -392,6 +841,7 @@ document.addEventListener('DOMContentLoaded', function () {
   rescanReveals();
   initHeroDemo();
   initPipeCarousel();
+  initDocsDuck();
 
   // give the current history entry a state object so the first Back works
   try { history.replaceState({}, '', window.location.href); } catch (e) {}
@@ -432,6 +882,7 @@ function navigateTo(url, push) {
       rescanReveals();
       initHeroDemo();
       initPipeCarousel();
+      initDocsDuck();
       scheduleDuckReveal();
       if (window.YB && window.YB.setCurrent) window.YB.setCurrent(target.pathname);
       syncRailToPage();
