@@ -31,6 +31,20 @@ var _mY = -1;
 var _mmPend = false;
 var _duckFlee = 0;
 var _duckPoof = false;
+var _duckRevealT = null;
+
+// Reveal the duck only after the hero's staggered entrance has finished
+// (~1.2s of rise animations) — it positions invisibly first, then fades in.
+// Called on initial load AND after client-side nav back to the landing page
+// (the swapped-in markup carries .unloaded again and the entrance replays).
+function scheduleDuckReveal() {
+  if (!document.getElementById('duck-walker')) return;
+  clearTimeout(_duckRevealT);
+  _duckRevealT = setTimeout(function () {
+    var el = document.getElementById('duck-walker');
+    if (el) { el.classList.remove('unloaded'); el.classList.add('hatch'); }
+  }, 1500);
+}
 
 document.addEventListener('DOMContentLoaded', function () {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -285,8 +299,10 @@ document.addEventListener('DOMContentLoaded', function () {
   updateScrollProgress();
   // re-render once the hero's staggered entrance animations finish — rects
   // measured mid-entrance (content rises 22px) would leave the duck perched
-  // slightly below its surface until the first scroll/mouse event
-  setTimeout(updateScrollProgress, 1500);
+  // slightly below its surface until the first scroll/mouse event — then
+  // fade the duck in (it positions while still invisible)
+  setTimeout(updateScrollProgress, 1450);
+  scheduleDuckReveal();
 
   // ---- persistent rail shell ----
   buildRail();
@@ -336,6 +352,7 @@ function navigateTo(url, push) {
       rescanReveals();
       initHeroDemo();
       initPipeCarousel();
+      scheduleDuckReveal();
       if (window.YB && window.YB.setCurrent) window.YB.setCurrent(target.pathname);
       syncRailToPage();
 
