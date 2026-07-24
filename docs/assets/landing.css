@@ -374,24 +374,25 @@
 
   /* ---------- get started ---------- */
   .start-grid{display:grid; grid-template-columns:1fr 1fr; gap:64px; align-items:start}
-  /* each step stacks cleanly: label → command chip → note, so nothing
-     wraps mid-line (the old single-line label|code|dim layout wrapped badly
-     on narrow columns and on mobile) */
-  .steps{display:grid; gap:12px}
+  /* one compact ROW per step — label · command chip · note — so the cards
+     stay short and fill their width instead of stranding empty space. Each
+     part owns its own grid column, so nothing wraps mid-line. Collapses to a
+     clean vertical stack on narrow phones (see the 600px block). */
+  .steps{display:grid; gap:10px}
   .step{
-    display:flex; flex-direction:column; align-items:flex-start; gap:9px;
-    padding:16px 20px; transition:border-color .2s;
+    display:grid; grid-template-columns:108px auto minmax(0,1fr);
+    align-items:center; gap:16px; padding:12px 20px; transition:border-color .2s;
   }
   .step:hover{border-color:var(--border-strong)}
   .step-k{
     margin:0; font-family:var(--mono); font-size:.74rem; letter-spacing:.14em;
-    text-transform:uppercase; color:var(--text-dim); font-weight:500;
+    text-transform:uppercase; color:var(--text-dim); font-weight:500; white-space:nowrap;
   }
   .step-k .n{color:var(--accent); font-weight:700; margin-right:8px}
   .step-cmd{
     font-family:var(--mono); font-size:.92rem; color:var(--text);
     background:var(--bg-sunken); border:1px solid var(--border); border-radius:6px;
-    padding:7px 12px; max-width:100%; overflow-x:auto; white-space:nowrap;
+    padding:6px 12px; max-width:100%; overflow-x:auto; white-space:nowrap; justify-self:start;
   }
   .step-cmd::before{content:"$ "; color:var(--accent)}
   .step-note{margin:0; color:var(--text-muted); font-size:.86rem}
@@ -581,6 +582,9 @@
   }
   @media (max-width:600px){
     section{padding:60px 0}
+    /* steps go back to a clean left-aligned stack on phones, where a row
+       would wrap */
+    .step{grid-template-columns:1fr; justify-items:start; gap:9px; padding:14px 18px}
     /* phone: the full 8-row menu is a 7px unreadable wall — show a
        single-mode showcase instead: only the active mode renders, at a
        legible size, cycling with its typed description. Tip block, version
