@@ -393,9 +393,13 @@
        .d-glasses    — slow sunglasses bob (own timeline)
      Separate elements per transform so none of them ever fight. */
   .duck-walker{
-    position:fixed; bottom:2px; left:0; z-index:40; pointer-events:none;
+    position:fixed; top:0; left:0; z-index:40; pointer-events:none;
     will-change:transform;
+    transition:opacity .15s ease;
   }
+  /* between areas the duck TELEPORTS — fades out here, pops in there
+     (site.js swaps the position while this class holds opacity at 0) */
+  .duck-walker.teleporting{opacity:0}
   .duck-rig{position:relative; width:64px}
   .duck-rig img{
     display:block; width:100%; height:auto;

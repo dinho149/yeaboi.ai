@@ -17,7 +17,12 @@ var lenis = null;
 // duck walker state: last x, facing direction (sprite faces LEFT, so moving
 // right = flipped), and the idle timer that ends the waddle
 var _duckX = -1;
+var _duckY = -1;
+var _duckLandX = 0;
+var _duckLandY = 0;
 var _duckDir = -1;
+var _duckSpot = null;
+var _duckTp = false;
 var _duckIdleT = null;
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -122,21 +127,101 @@ document.addEventListener('DOMContentLoaded', function () {
         hint.style.filter = hp > 0.01 ? 'blur(' + (hp * 16).toFixed(1) + 'px)' : 'none';
       }
     }
-    // duck walker: strolls the bottom edge, x = scroll progress across the
-    // viewport; waddles while the position is actually changing and faces
-    // its direction of travel (sprite art faces left → flip to walk right)
+    // duck walker: a fixed set of PERCHES, each ON a surface (a component's
+    // top edge or empty margin — never floating over content). Within a
+    // perch it can walk along its surface (terminal top L→R, modes grid top
+    // R→L, tracked from live rects); BETWEEN perches it TELEPORTS (quick
+    // fade out/in) instead of gliding — so it can never be caught mid-air
+    // over the page. Mobile keeps the simple bottom-edge stroll.
     var duck = document.getElementById('duck-walker');
     if (duck) {
-      var range = Math.max(0, window.innerWidth - 64 - 24);
-      var dx = 12 + p * range;
-      if (_duckX >= 0 && Math.abs(dx - _duckX) > 0.5) {
-        _duckDir = dx > _duckX ? -1 : 1;
-        duck.classList.add('walking');
-        clearTimeout(_duckIdleT);
-        _duckIdleT = setTimeout(function () { duck.classList.remove('walking'); }, 180);
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var dw = 64, dh = 70;
+      var dx, dy, spotIdx;
+      var clamp01 = function (t) { return Math.min(1, Math.max(0, t)); };
+      var lerp = function (a, b, t) { return a + (b - a) * clamp01(t); };
+      var rectOf = function (sel) { var e = document.querySelector(sel); return e ? e.getBoundingClientRect() : null; };
+      if (vw <= 900) {
+        spotIdx = -1;
+        dx = 12 + p * Math.max(0, vw - dw - 24);
+        dy = vh - dh - 6;
+      } else {
+        var spots = [];
+        // hero: grounded on the viewport's bottom edge, empty left margin
+        spots.push({ s: -1e9, pos: function () { return [0.07 * (vw - dw), vh - dh - 8]; } });
+        // terminal: stands on the pinned frame's chrome and walks LEFT→RIGHT
+        // across it as the scrollytelling steps go by
+        var sc = rectOf('.scrolly'), fb = rectOf('.app-frame');
+        if (sc && fb) {
+          (function (s0, span) {
+            spots.push({ s: s0, pos: function () {
+              var q = (st - s0) / span;
+              return [lerp(fb.left + 6, fb.right - dw - 6, q), fb.top - dh + 9];
+            } });
+          })(sc.top + st - vh * 0.5, Math.max(1, sc.height - vh * 0.55));
+        }
+        // modes grid: walks its top edge RIGHT→LEFT as the grid rides up
+        var mg = rectOf('.modes');
+        if (mg) {
+          spots.push({ s: mg.top + st - vh * 0.85, pos: function () {
+            var q = (vh * 0.85 - mg.top) / (vh * 0.85);
+            return [lerp(mg.right - dw - 8, mg.left + 8, q), mg.top - dh + 13];
+          } });
+        }
+        // pipeline: walks its top edge LEFT→RIGHT
+        var pl = rectOf('.pipeline');
+        if (pl) {
+          spots.push({ s: pl.top + st - vh * 0.85, pos: function () {
+            var q = (vh * 0.85 - pl.top) / (vh * 0.85);
+            return [lerp(pl.left + 8, pl.right - dw - 8, q), pl.top - dh + 13];
+          } });
+        }
+        // footer: stands on the footer's top hairline, in the empty right half
+        var ft = rectOf('footer');
+        if (ft) {
+          spots.push({ s: ft.top + st - vh * 0.85, pos: function () {
+            return [0.74 * (vw - dw), ft.top - dh + 4];
+          } });
+        }
+        spots.sort(function (a, b) { return a.s - b.s; });
+        spotIdx = 0;
+        for (var i = 0; i < spots.length; i++) if (st >= spots[i].s) spotIdx = i;
+        var xy = spots[spotIdx].pos();
+        dx = xy[0]; dy = xy[1];
       }
-      _duckX = dx;
-      duck.style.transform = 'translateX(' + dx + 'px) scaleX(' + _duckDir + ')';
+
+      if (_duckSpot === null || _duckTp) {
+        // first paint: place directly; mid-teleport: hold until it lands
+        if (_duckSpot === null) {
+          _duckSpot = spotIdx; _duckX = dx; _duckY = dy;
+          duck.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+        }
+      } else if (spotIdx !== _duckSpot) {
+        // area change → teleport: fade out here, reappear there
+        _duckTp = true;
+        _duckSpot = spotIdx;
+        duck.classList.add('teleporting');
+        duck.classList.remove('walking');
+        setTimeout(function () {
+          // land at the CURRENT position for the new spot (recomputed by the
+          // next scroll frame; use last computed as the landing point)
+          duck.style.transform = 'translate(' + _duckLandX.toFixed(1) + 'px,' + _duckLandY.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+          _duckX = _duckLandX; _duckY = _duckLandY;
+          duck.classList.remove('teleporting');
+          _duckTp = false;
+        }, 160);
+      } else {
+        // in-spot movement: walk the surface, waddling while moving
+        if (Math.abs(dx - _duckX) > 0.5) _duckDir = dx > _duckX ? -1 : 1;
+        if (Math.abs(dx - _duckX) > 0.5 || Math.abs(dy - _duckY) > 0.5) {
+          duck.classList.add('walking');
+          clearTimeout(_duckIdleT);
+          _duckIdleT = setTimeout(function () { duck.classList.remove('walking'); }, 180);
+        }
+        _duckX = dx; _duckY = dy;
+        duck.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+      }
+      _duckLandX = dx; _duckLandY = dy;
     }
   }
   window.addEventListener('scroll', updateScrollProgress, { passive: true });
