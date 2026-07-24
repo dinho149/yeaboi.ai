@@ -39,6 +39,7 @@ var _duckChase = false;
 var _duckPhysOn = false;
 var _duckFootGeom = null;
 var _duckRevealT = null;
+var _updateScroll = null;   // assigned inside DOMContentLoaded; lets navigateTo reposition the duck
 
 // The footer chase runs on real physics: every frame the cursor applies a
 // repulsion force (quadratic falloff inside the comfort radius), friction
@@ -234,6 +235,12 @@ function _positionDuckBubble(dx, dy) {
 // (the swapped-in markup carries .unloaded again and the entrance replays).
 function scheduleDuckReveal() {
   if (!document.getElementById('duck-walker')) return;
+  // Fresh element after (re)load — clear any stale motion state so the duck
+  // paints DIRECTLY on its perch (first-paint branch), instead of teleporting
+  // from a previous position or sitting at its 0,0 CSS default until the first
+  // scroll. This is what stranded it in the top-left after nav back from docs.
+  _duckSpot = null; _duckX = -1; _duckY = -1; _duckTp = false; _duckPoof = false;
+  _duckChase = false; _duckFlee = 0; _duckVel = 0; _duckAirY = 0; _duckAirV = 0;
   clearTimeout(_duckRevealT);
   _duckRevealT = setTimeout(function () {
     var el = document.getElementById('duck-walker');
@@ -924,6 +931,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }, { passive: true });
   if (lenis) lenis.on('scroll', updateScrollProgress);
+  _updateScroll = updateScrollProgress;   // expose so navigateTo can reposition after a page swap
   updateScrollProgress();
   // re-render once the hero's staggered entrance animations finish — rects
   // measured mid-entrance (content rises 22px) would leave the duck perched
@@ -983,6 +991,7 @@ function navigateTo(url, push) {
       initPipeCarousel();
       initDocsDuck();
       scheduleDuckReveal();
+      if (_updateScroll) _updateScroll();   // place the fresh duck on its perch NOW (still invisible), not at 0,0
       if (window.YB && window.YB.setCurrent) window.YB.setCurrent(target.pathname);
       syncRailToPage();
 
