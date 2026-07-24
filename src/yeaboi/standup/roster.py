@@ -4,7 +4,7 @@ The Standup Team picker deliberately mirrors Analysis mode: choose Jira,
 Azure DevOps, or both, then select people from the resulting assignee roster.
 Discovery is deterministic and best-effort; it never invokes an LLM.
 
-# See README: "Daily Standup" — recent-activity collection
+# See docs: "Daily Standup" — recent-activity collection
 """
 
 from __future__ import annotations
