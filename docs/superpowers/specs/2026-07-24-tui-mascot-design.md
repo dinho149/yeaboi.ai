@@ -2,159 +2,175 @@
 
 **Date:** 2026-07-24
 **Branch:** `feature/tui-mascot`
-**Status:** Approved scope, spec under review
+**Status:** Design refined after visual prototyping; spec under review
 
 ## Goal
 
-Bring the website's pixel-duck mascot (green mallard in sunglasses) into the
-terminal app as a persistent, characterful presence — not just a screensaver
-Easter egg. Two concrete deliverables:
+Bring the website's pixel-duck mascot (green mallard in wayfarer sunglasses) into
+the terminal app as a crisp, on-brand, characterful presence. Two deliverables,
+sharing one sprite source so the duck can never drift into two different ducks:
 
-1. **A small companion sprite** that lives on the welcome (mode-select) screen —
-   "as small as possible while still maintaining its proper image", multi-row
-   (explicitly NOT a one-line ASCII face), with its signature sunglasses.
-2. **An enriched idle screensaver** — the full-size duck already renders with
-   sunglasses, a glint sweep, a foot shuffle and a bob; add more life (wing
-   flap, idle behaviours, caption variety) so a long idle feels animated rather
-   than looping four frames.
+1. **A small companion sprite** on the welcome (mode-select) screen — as small
+   as possible while still reading as *the* mascot (multi-row, never a one-line
+   ASCII face), keeping the signature sunglasses.
+2. **A replaced, cleaner idle screensaver duck** — a crisp full-body mallard with
+   idle life (bob, wing flap, glint), instead of today's noisy procedural one.
 
-Both must share one sprite source so the duck can never drift into two different
-ducks.
+## Why the approach changed
 
-## Current State (what already exists)
+The current `_screensaver.py` draws the large duck **procedurally** — overlapping
+ellipses/polygons splatted onto a 42×30 grid, then half-block packed. Visual
+prototyping (rendering the real output to PNG via Rich's SVG export + `qlmanage`
+and inspecting it) showed this is intrinsically **noisy**: streaky outline rows,
+speckled wing, lumpy sunglasses. Nudging coordinates produced only comedy
+("Matrix sunnies"). The clean assets in the codebase (`_COMPACT_DUCK`) and the
+brand favicon are clean for one reason: they are **explicit pixel grids**, not
+math.
 
-`src/yeaboi/ui/shared/_screensaver.py` already contains:
+**Decision:** stop drawing the duck procedurally. Derive it from the finished
+brand art (`docs/assets/duck-touch.png`, 180×180 RGBA) and ship it as frozen
+pixel-grid data.
 
-- `_PALETTE` — the mallard palette (green body, teal shadow, orange bill/feet,
-  black outline, dark sunglasses lenses `S`, glint white `W`).
-- `_high_resolution_duck(frame)` — draws the full duck on a 42×30 pixel canvas
-  via `_fill_ellipse`/`_fill_polygon`, then packs to ~15 text rows with
-  `_half_block_rows` (▀/▄ compress two pixel rows per text row). **Already has
-  two sunglass lenses, bridge, temple arm, glint sweep, foot shuffle, bob.**
-- `_FULL_DUCK` / `_COMPACT_DUCK` — string-art fallbacks rendered two columns per
-  source char via `_pixel_line`/`_duck_art`; also already carry sunglasses.
-- `build_screensaver(*, width, height, elapsed)` — size-aware frame picker:
-  high-res if width≥46 & height≥19, compact string-art if width≥22 & height≥13,
-  else a tiny `<(o )___ YEABOI` label. `frame = int(elapsed*8) % 8`.
-- `IdleController` — thread-safe idle state (5-min timeout) driving the
-  full-screen idle takeover.
+## Visual style (locked via prototyping)
 
-`MusicLive.get_renderable()` (`_music_bar.py`) is the app-wide chokepoint that
-swaps in `build_screensaver()` when `idle_controller.should_show()`.
+- **Flat cartoon.** Every pixel is snapped to a small curated brand palette
+  (~10 colours: near-black outline, two head greens, dark lens, belly/glint
+  white, three body blue-greys, two oranges) so each region is one flat colour —
+  no anti-aliased gradients. Prototype confirmed this reads as a clean cartoon
+  mallard.
+- **Facing left**, matching the existing screensaver/compact duck orientation.
+- **Two shipped sizes:**
+  - **Screensaver — full body, width ≈ 34 px** (~17 half-block text rows). Crisp
+    at large terminal sizes.
+  - **Companion — head-only crop, width ≈ 12 px** (~5 text rows). The
+    sunglasses + bill carry the identity, so a head reads at roughly half the
+    footprint of the smallest legible full body (≈ w16 / ~8 rows). This is the
+    "as small as possible" answer.
 
-`_build_mode_screen()` (`ui/mode_select/screens/_screens.py`) centres the mode
-rows, reserving empty `mid_top` whitespace above them — the companion's home.
+## Sprite production pipeline (design-time, not runtime)
+
+Runtime ships **no Pillow dependency and no image IO**. Production is a
+design-time step whose *output* — frozen pixel data — is committed.
+
+1. **Trace** `duck-touch.png`: crop to alpha bbox, (optionally crop to head
+   region), flip to face left, snap every pixel to the curated palette, then
+   downscale with NEAREST so blocks stay solid. (Prototype: `scratchpad/tui/duck.py`.)
+2. **Hand-clean** the traced grid: remove stray speckle (auto-trace gets ~85% of
+   the way; hand-cleaning the ~40 remaining stray pixels makes it crisp), unify
+   region colours, tidy the sunglasses and bill edges. Done via the same
+   render-and-view loop (render grid → SVG → PNG → inspect → fix).
+3. **Freeze** the cleaned grids as module-level constants in `_mascot.py` — a
+   compact string-art form keyed to a palette dict, exactly how `_FULL_DUCK` /
+   `_COMPACT_DUCK` are frozen today. No runtime tracing.
+
+The trace script stays in the repo (or scratchpad) as the documented way to
+regenerate the base grid if the brand art changes, but it is a dev tool, not an
+import.
 
 ## Architecture
 
 ### New module: `ui/shared/_mascot.py`
 
-Factor the reusable sprite core out of `_screensaver.py` into `_mascot.py`:
+The single source of truth for "how the duck is drawn".
 
-- `MASCOT_PALETTE` — moved from `_screensaver._PALETTE` (single source of truth).
-- Pixel-canvas primitives (`_fill_ellipse`, `_fill_polygon`, `_inside_polygon`,
-  `_half_block_rows`) — moved here; both the screensaver and the companion draw
-  on canvases and pack with the same half-block compressor.
-- `render_duck(size, frame) -> Group` — the one duck renderer, parameterised by
-  size. `size="full"` reproduces today's 42×30 high-res duck; `size="mini"`
-  draws the small companion on a compact canvas (target ~10–12 pixel rows → **5–6
-  text rows** after half-block packing, ~18–22 columns wide) keeping the round
-  head, sunglasses (two lenses + bridge), bill and body legible. One row is
-  explicitly rejected per the requirement.
-- `mini_duck(frame) -> Group` and `full_duck(frame) -> Group` thin wrappers.
+- `MASCOT_PALETTE` — the curated flat palette (letter → rgb), superseding
+  `_screensaver._PALETTE`.
+- **Frozen sprite data** — `DUCK_FULL` (screensaver, ~w34) and `DUCK_HEAD`
+  (companion, ~w12) as pixel grids (rows of palette letters, `.` = transparent).
+- Animation-frame variants layered on the base grid (see below).
+- `_half_block_rows(grid)` — the ▀/▄ packer (moved here from `_screensaver.py`),
+  turning a pixel grid into Rich `Text` rows.
+- `render_full(frame) -> Group` and `render_head(frame) -> Group` — return the
+  packed renderable for a given animation frame.
 
-`_screensaver.py` keeps `IdleController`, the idle plumbing, `build_screensaver`,
-captions/hints, and the size-tier decision — it imports the sprite from
-`_mascot.py` instead of owning the pixel art. `_music_bar.py` is untouched.
+`_screensaver.py` keeps `IdleController`, idle plumbing, `build_screensaver`,
+captions/hints and the size-tier decision; it imports sprites from `_mascot.py`
+instead of drawing them. The procedural `_high_resolution_duck`,
+`_fill_ellipse`, `_fill_polygon`, `_inside_polygon`, `_FULL_DUCK`,
+`_COMPACT_DUCK`, `_duck_art`, `_pixel_line` are **deleted**. `_music_bar.py` is
+untouched.
 
-This keeps one clear boundary: `_mascot.py` = "how a duck is drawn at a given
-size/frame"; `_screensaver.py` = "when/where the idle duck takes over the
-screen"; the mode screen = "a small resting duck in the header whitespace".
+### Animation frames
+
+Kept simple and hand-authored as small deltas over the base grid (no procedural
+motion):
+
+- **Full (screensaver):** a gentle vertical **bob** (blank row inserted on some
+  frames), a **wing flap** (one alternate wing-position grid), and a **glint**
+  sweep across the sunglasses (a moving W pixel). ~6–8 frames driven by
+  `idle_controller.animation_elapsed()`.
+- **Head (companion):** a subtle idle — a slow glint on the shades and a 1-row
+  bob — driven by the mode screen's existing `shimmer_tick`. Minimal; it should
+  feel alive, not busy.
+
+Caption variety on the screensaver ("YEABOI · chilling" / "· zzz" / "· vibing")
+rotates on a slow timer. Hint stays "press any key".
 
 ### Companion on the welcome screen
 
-`_build_mode_screen()` gains a small mascot block rendered from
-`mini_duck(frame)` placed in the top whitespace (`mid_top` region), horizontally
-centred, above the mode rows. It animates off the existing `shimmer_tick` render
-clock (no new timer): `frame = int(shimmer_tick * N) % FRAMES`. It occupies a
-fixed small row budget (≤6 rows) that is subtracted from `mid_top` so the mode
-rows never shift or get pushed off-screen. When the terminal is too short to
-spare the rows (small `inner_h`), the companion is omitted — mode rows always
-win the space budget.
+`_build_mode_screen()` renders `render_head(frame)` in the top whitespace
+(`mid_top` region), horizontally centred, above the mode rows, on a fixed row
+budget (≤6 rows) subtracted from `mid_top` so mode rows never shift. Omitted when
+the terminal is too short to spare the rows. Animated off the existing
+`shimmer_tick` (no new timer).
 
-### Enriched screensaver behaviours
+### Size tiers (screensaver)
 
-Extend `render_duck(size="full", …)` frame set (and the compact fallback) with:
-
-- **Wing flap** — the pale wing already exists as a polygon; add a raised-wing
-  variant on one or two frames so the duck visibly flaps rather than only
-  bobbing.
-- **Idle behaviour cycle** — over a longer period (driven by
-  `animation_elapsed`, not just the 8-frame loop) cycle through a few resting
-  behaviours: the existing glint sweep, an occasional wing flap, and an
-  occasional "look" (head/eye shift). Kept subtle — this is a calm idle duck.
-- **Caption variety** — rotate the idle caption between a small set (e.g.
-  "YEABOI · chilling", "YEABOI · zzz", "YEABOI · vibing") on a slow timer so a
-  multi-minute idle isn't a single frozen string. Hint stays "press any key".
-
-No change to the idle-takeover mechanism, timeout, or `MusicLive` chokepoint.
+`build_screensaver` keeps its tier logic but backed by the new sprites:
+full-body `DUCK_FULL` at large sizes; the head sprite (or a scaled full body) at
+the compact tier; the existing tiny `YEABOI` text label at the smallest tier.
 
 ## Data Flow
 
 ```
-shimmer_tick (mode screen render loop) ─┐
-                                        ├─> frame index ─> render_duck("mini") ─> welcome header
-animation_elapsed (IdleController) ─────┘                └> render_duck("full") ─> build_screensaver ─> MusicLive.get_renderable (idle)
+shimmer_tick (mode screen) ─────> frame ─> render_head  ─> welcome header
+animation_elapsed (IdleController) ─> frame ─> render_full ─> build_screensaver ─> MusicLive.get_renderable (idle)
 ```
 
-`_mascot.py` is pure/stateless: given `(size, frame)` it returns a Rich `Group`.
-All animation timing stays in the callers' existing clocks.
+`_mascot.py` is pure/stateless: `(frame)` → Rich `Group`. All timing stays in the
+callers' existing clocks. No new state, persistence, or config toggle in v1.
 
 ## Error / Edge Handling
 
-- **Small terminals:** companion omitted when row budget can't be spared;
-  screensaver keeps its existing size tiers (high-res → compact → tiny label).
-- **No new state, no persistence, no config toggle** in v1.
-- **Music bar / subtitle:** unaffected — the companion is inside the Panel body,
-  not the border; the screensaver path already replaces the whole renderable.
+- **Small terminals:** companion omitted when the row budget can't be spared;
+  screensaver falls back head → tiny label as today.
+- **Music bar / subtitle:** unaffected — companion sits inside the Panel body;
+  the screensaver path already replaces the whole renderable.
 
-## Testing (per the three-pillars rule)
+## Testing (three-pillars)
 
 - `tests/unit/ui/shared/test_mascot.py` (new):
-  - `render_duck("mini", frame)` returns a `Group` of the expected small row
-    count (>1 and ≤6) for every frame; columns within budget.
-  - `render_duck("full", frame)` unchanged row count vs. today (regression
-    guard on the packed height).
-  - Palette keys referenced by the art all exist in `MASCOT_PALETTE`.
-  - Frame index is stable/deterministic for a given input (pure function).
-- `test_screensaver.py` (existing): keep passing after the extraction; add a
-  wing-flap/behaviour-cycle assertion (a flap frame differs from a rest frame)
-  and caption-rotation coverage.
-- Welcome screen render test: `_build_mode_screen(...)` still returns a Panel of
-  exactly `height` rows with the companion present at a normal size and absent at
-  a short height (no layout shift of the mode rows).
+  - `render_full(frame)` / `render_head(frame)` return a `Group`; head is `>1`
+    and `≤6` text rows for every frame; full matches its expected packed height.
+  - Every palette letter used in `DUCK_FULL` / `DUCK_HEAD` (and frame variants)
+    exists in `MASCOT_PALETTE`; every grid row is equal length.
+  - Frame index is deterministic (pure function).
+- `test_screensaver.py`: keep passing after the extraction/deletion; assert a
+  flap frame differs from a rest frame and captions rotate.
+- Welcome-screen render test: `_build_mode_screen(...)` returns a Panel of
+  exactly `height` rows with the companion present at normal height and absent at
+  a short height (no mode-row shift either way).
+- Optional dev aid: a script that renders sprites to SVG/PNG for eyeballing is a
+  scratch tool, not a committed test.
 
 ## Logging / Observability
 
-Pure rendering functions on the hot render path → **no per-frame logging** (the
-never-log-per-frame rule). No log-dir or path changes. No LLM/API calls.
+Pure render-path functions → **no per-frame logging** (never-log-per-frame rule).
+No log-dir/path changes, no LLM/API calls.
 
 ## Surface Parity
 
-This is a **TUI-only visual flourish** (a mascot rendered in the terminal). It is
-not a headless capability — there is nothing to expose via an engine, MCP tool,
-CLI flag, or plugin skill. It therefore does **not** enter the `CAPABILITIES`
-registry; no `FeatureTip` is required. This is a deliberate, reasoned absence
-consistent with e.g. the retro live board being TUI-only. No surface-parity test
-changes expected; if `test_surface_parity.py` proves otherwise, record an
-`Exempt("TUI-only mascot flourish")` rather than inventing surfaces.
+TUI-only visual flourish; nothing headless to expose. Does **not** enter the
+`CAPABILITIES` registry and needs no `FeatureTip` — a deliberate, reasoned
+absence (cf. the retro live board being TUI-only). If `test_surface_parity.py`
+disagrees, record `Exempt("TUI-only mascot flourish")` rather than inventing
+surfaces.
 
 ## Out of Scope (v1)
 
-- App-wide corner overlay following you across every screen (Rich can't free-
-  overlay a floating sprite cleanly without touching ~30 builders).
-- Reactive moods wired to accept/error/LLM events (happy/thinking/oops faces).
+- App-wide corner overlay following you across every screen (Rich can't
+  free-overlay cleanly without touching ~30 builders).
+- Reactive moods wired to accept/error/LLM events.
 - Config toggle to disable the companion.
-- Mascot on any surface other than welcome screen + idle screensaver.
-
-These are candidates for a v2 once the shared sprite system exists.
+- Runtime image tracing / Pillow as a runtime dependency.
+- The mascot on any surface other than welcome screen + idle screensaver.
