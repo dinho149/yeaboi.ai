@@ -401,7 +401,11 @@
     .start-grid{grid-template-columns:1fr; gap:48px}
   }
   @media (max-width:860px){
-    .hero{padding:64px 0 72px}
+    .hero{padding:0 0 72px}
+    /* no 100vh centering on mobile — it strands the copy mid-screen with a
+       huge dead band above it; just pad it like a normal section */
+    .hero-copy{min-height:0; padding:64px 0 8px}
+    .scroll-hint{position:static; margin-top:40px}
     .hero-cta .codeblock{min-width:0; width:100%}
     .tui{font-size:9.5px; padding:8px 8px 12px}
     .tui-panel{padding:14px 14px 10px}

@@ -376,14 +376,15 @@ ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--borde
     flex-direction:row; align-items:center; justify-content:space-between;
     gap:16px; padding:12px 20px;
   }
+  /* brand + toggle share one typographic voice (same as desktop) — the
+     toggle is just the smaller, quieter sibling, not a pill component */
   .rail .brand{font-size:1.1rem; letter-spacing:.14em}
   .rail-toggle{
-    font-size:.78rem; letter-spacing:.18em; color:var(--text-muted);
-    border:1px solid var(--border-strong); border-radius:8px; padding:8px 14px;
-    transition:color .2s, border-color .2s;
+    font-size:.82rem; letter-spacing:.22em; color:var(--text-muted);
+    padding:6px 0; transition:color .2s;
   }
-  .rail-toggle:hover{color:var(--text); border-color:var(--accent)}
-  .rail.expanded .rail-toggle{color:var(--accent-bright); border-color:var(--accent)}
+  .rail-toggle:hover{color:var(--text)}
+  .rail.expanded .rail-toggle{color:var(--accent-bright)}
   .rail-nav{width:auto; position:static}
   /* the menu becomes a full-bleed sheet anchored to the bar's bottom edge —
      same 0fr/1fr open animation, but overlaying the page, not reflowing it.
