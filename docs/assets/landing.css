@@ -267,16 +267,28 @@
   .section-lede{margin:0 0 44px; color:var(--text-muted); max-width:58ch; font-size:1.05rem}
   .rule{border:none; border-top:1px solid var(--border); margin:0}
 
-  /* ---------- stack / integrations (plain left-aligned text, on-theme) ---------- */
+  /* ---------- stack / integrations (plain left-aligned text, on-theme) —
+     two labelled groups: board/data sources and LLM providers ---------- */
   .stack{padding:40px 0}
-  .stack .eyebrow{margin-bottom:18px}
+  .stack .eyebrow{margin-bottom:22px}
+  .stack-group{
+    display:grid; grid-template-columns:170px 1fr; align-items:baseline; gap:8px 28px;
+    max-width:760px;
+  }
+  .stack-group + .stack-group{margin-top:18px; padding-top:18px; border-top:1px solid var(--border)}
+  .stack-cat{
+    font-family:var(--mono); font-size:.74rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--text-dim); font-weight:500;
+  }
   .stack-list{
-    display:flex; flex-wrap:wrap; gap:12px 30px; max-width:680px;
+    display:flex; flex-wrap:wrap; gap:12px 26px;
     font-family:var(--mono); font-size:.92rem; font-weight:500;
   }
   .stack-list span{color:var(--text-muted); transition:color .2s}
   .stack-list span:hover{color:var(--text)}
-  .stack-list .self{color:var(--accent-bright); font-weight:700}
+  @media (max-width:600px){
+    .stack-group{grid-template-columns:1fr; gap:10px}
+  }
 
   /* ---------- modes — one connected panel, hairline-divided, each cell
      carrying its own TUI accent (--mh, set inline in the HTML from the
