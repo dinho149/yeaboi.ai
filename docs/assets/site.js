@@ -30,8 +30,72 @@ var _mX = -1;
 var _mY = -1;
 var _mmPend = false;
 var _duckFlee = 0;
+var _duckVel = 0;
 var _duckPoof = false;
+var _duckChase = false;
+var _duckPhysOn = false;
+var _duckFootGeom = null;
 var _duckRevealT = null;
+
+// The footer chase runs on real physics: every frame the cursor applies a
+// repulsion force (quadratic falloff inside the comfort radius), friction
+// bleeds velocity off, and the viewport edges are soft walls the duck
+// BOUNCES off — unless the cursor has it truly cornered, in which case it
+// poofs to the far side. Runs as its own rAF loop only while the footer
+// perch is active.
+function _duckPhysicsStep() {
+  if (!_duckChase || !_duckFootGeom) { _duckPhysOn = false; return; }
+  requestAnimationFrame(_duckPhysicsStep);
+  var duck = document.getElementById('duck-walker');
+  if (!duck || _duckPoof || _duckTp) return;
+  var g = _duckFootGeom;
+  var x = g.base + _duckFlee;
+  var cx = x + 32, cy = g.y + 35;
+  if (_mX >= 0) {
+    var ddx = cx - _mX, ddy = cy - _mY;
+    var dist = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+    if (dist < 170) {
+      var s = (170 - dist) / 170;            // 0 at the radius edge → 1 on contact
+      _duckVel += (ddx >= 0 ? 1 : -1) * (0.4 + 4.8 * s * s);
+    }
+  }
+  _duckVel *= 0.86;                          // friction
+  if (Math.abs(_duckVel) < 0.05) return;     // at rest
+  _duckFlee += _duckVel;
+  x = g.base + _duckFlee;
+  if (x < g.minX || x > g.maxX) {
+    var wall = x < g.minX ? g.minX : g.maxX;
+    x = wall; _duckFlee = wall - g.base;
+    var d2x = x + 32 - _mX, d2y = cy - _mY;
+    if (_mX >= 0 && Math.sqrt(d2x * d2x + d2y * d2y) < 95) {
+      // pinned against the wall with the cursor closing in → escape poof
+      _duckPoof = true; _duckVel = 0;
+      duck.classList.add('teleporting');
+      duck.classList.remove('walking');
+      (function (atLeft) {
+        setTimeout(function () {
+          _duckFlee = (atLeft ? g.maxX : g.minX) - g.base;
+          var nx = g.base + _duckFlee;
+          _duckDir = atLeft ? 1 : -1;   // face back toward the page
+          _duckX = nx; _duckY = g.y; _duckLandX = nx; _duckLandY = g.y;
+          duck.style.transform = 'translate(' + nx.toFixed(1) + 'px,' + g.y.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+          duck.classList.remove('teleporting');
+          _duckPoof = false;
+        }, 160);
+      })(wall === g.minX);
+      return;
+    }
+    _duckVel = -_duckVel * 0.4;              // soft bounce off the edge
+  }
+  if (Math.abs(_duckVel) > 0.4) {
+    _duckDir = _duckVel > 0 ? -1 : 1;
+    duck.classList.add('walking');
+    clearTimeout(_duckIdleT);
+    _duckIdleT = setTimeout(function () { duck.classList.remove('walking'); }, 180);
+  }
+  _duckX = x; _duckY = g.y; _duckLandX = x; _duckLandY = g.y;
+  duck.style.transform = 'translate(' + x.toFixed(1) + 'px,' + g.y.toFixed(1) + 'px) scaleX(' + _duckDir + ')';
+}
 
 // Reveal the duck only after the hero's staggered entrance has finished
 // (~1.2s of rise animations) — it positions invisibly first, then fades in.
@@ -164,6 +228,7 @@ document.addEventListener('DOMContentLoaded', function () {
       var rectOf = function (sel) { var e = document.querySelector(sel); return e ? e.getBoundingClientRect() : null; };
       if (vw <= 900) {
         spotIdx = -1;
+        _duckChase = false;
         dx = 12 + p * Math.max(0, vw - dw - 24);
         dy = vh - dh - 6;
       } else {
@@ -203,39 +268,17 @@ document.addEventListener('DOMContentLoaded', function () {
           } });
         }
         // footer: stands on the footer's top hairline — and FLEES the cursor
-        // along it. Chase it to a viewport edge and it poofs to the far side.
+        // along it with real physics (see _duckPhysicsStep). This pos() just
+        // publishes the surface geometry; the physics loop owns the motion.
         var ft = rectOf('footer');
         if (ft) {
-          spots.push({ s: ft.top + st - vh * 0.85, pos: function () {
+          spots.push({ s: ft.top + st - vh * 0.85, chase: true, pos: function () {
             var base = 0.74 * (vw - dw);
-            var fy = ft.top - dh + 4;
-            var fx = base + _duckFlee;
-            var minX = 10, maxX = vw - dw - 10;
-            if (_mX >= 0 && !_duckPoof) {
-              var cx = fx + dw / 2, cy = fy + dh / 2;
-              var ddx = cx - _mX, ddy = cy - _mY;
-              var dist = Math.sqrt(ddx * ddx + ddy * ddy);
-              if (dist < 150) {
-                _duckFlee += (ddx >= 0 ? 1 : -1) * (150 - dist) * 0.4;
-                fx = Math.min(maxX, Math.max(minX, base + _duckFlee));
-                _duckFlee = fx - base;
-                // cornered with the cursor still closing in → escape poof
-                if ((fx === minX || fx === maxX) && dist < 85) {
-                  _duckPoof = true;
-                  var el = document.getElementById('duck-walker');
-                  if (el) el.classList.add('teleporting');
-                  (function (corneredLeft) {
-                    setTimeout(function () {
-                      _duckFlee = (corneredLeft ? maxX : minX) - base;
-                      if (el) el.classList.remove('teleporting');
-                      _duckPoof = false;
-                      updateScrollProgress();
-                    }, 160);
-                  })(fx === minX);
-                }
-              }
-            }
-            return [fx, fy];
+            _duckFootGeom = { base: base, minX: 10, maxX: vw - dw - 10, y: ft.top - dh + 4 };
+            return [
+              Math.min(_duckFootGeom.maxX, Math.max(_duckFootGeom.minX, base + _duckFlee)),
+              _duckFootGeom.y,
+            ];
           } });
         }
         spots.sort(function (a, b) { return a.s - b.s; });
@@ -243,6 +286,9 @@ document.addEventListener('DOMContentLoaded', function () {
         for (var i = 0; i < spots.length; i++) if (st >= spots[i].s) spotIdx = i;
         var xy = spots[spotIdx].pos();
         dx = xy[0]; dy = xy[1];
+        // chase physics runs only while the flee perch is active
+        _duckChase = !!spots[spotIdx].chase;
+        if (_duckChase && !_duckPhysOn) { _duckPhysOn = true; requestAnimationFrame(_duckPhysicsStep); }
       }
 
       if (_duckSpot === null || _duckTp) {
@@ -256,7 +302,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // area change → teleport: fade out here, reappear there
         _duckTp = true;
         _duckSpot = spotIdx;
-        _duckFlee = 0; // fresh perch, no leftover chase offset
+        _duckFlee = 0; _duckVel = 0; // fresh perch, no leftover chase state
         duck.classList.add('teleporting');
         duck.classList.remove('walking');
         setTimeout(function () {
