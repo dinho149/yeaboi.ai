@@ -51,6 +51,7 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _build_mode_screen,
     _build_slide_frame,
     _build_too_small_screen,
+    mode_title_widths,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
     _build_export_success_screen,
@@ -82,6 +83,10 @@ logger = logging.getLogger(__name__)
 _DESC_SCROLL_SPEED = 200  # characters per second for typewriter reveal
 _HEADER_SUB_SPEED = 45  # characters per second for the page subtitle typewriter reveal
 _FRAME_TIME = FRAME_TIME_60FPS
+# Staggered menu intro: each mode title wipes in at _MENU_INTRO_CPS block-font
+# columns/sec, and item i+1 starts _MENU_INTRO_STAGGER seconds after item i.
+_MENU_INTRO_CPS = 70
+_MENU_INTRO_STAGGER = 0.45
 
 
 def _run_output_share_flow(
@@ -7042,26 +7047,38 @@ def select_mode(
             _restart_mode_select = False
 
             if _skip_fade_in:
-                # Esc transition already rendered all items — no fade needed.
+                # Esc transition already rendered all items — no reveal needed.
                 # Description typewriter starts fresh from now.
                 _skip_fade_in = False
             else:
-                # Fade in all three mode items from near-black to full colour
-                for grey in FADE_IN_LEVELS:
-                    w, h = console.size
-                    live.update(
-                        _build_mode_screen(
-                            selected,
-                            width=w,
-                            height=h,
-                            shimmer_tick=0.0,
-                            desc_reveal=0,
-                            fade_style=grey,
-                            fade_indices=all_mode_indices,
+                # Staggered intro: each mode title wipes in left-to-right, the top
+                # item first and each next one starting a beat later — overlapping,
+                # not waiting for the previous to finish. Skipped when the terminal
+                # is too small (Phase 1 shows the resize duck instead).
+                _iw, _ih = console.size
+                if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
+                    _widths = mode_title_widths()
+                    _intro_start = time.monotonic()
+                    while True:
+                        _t = time.monotonic() - _intro_start
+                        _reveals = []
+                        _done = True
+                        for _i in range(n):
+                            _it = _t - _i * _MENU_INTRO_STAGGER
+                            _cols = int(_it * _MENU_INTRO_CPS) if _it > 0 else 0
+                            if _cols < _widths[_i]:
+                                _done = False
+                            _reveals.append(min(_cols, _widths[_i]))
+                        w, h = console.size
+                        live.update(
+                            _build_mode_screen(
+                                selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, reveal_cols=_reveals
+                            )
                         )
-                    )
-                    time.sleep(_FRAME_TIME)
-                # Final frame with normal styling (no fade override)
+                        if _done:
+                            break
+                        time.sleep(_FRAME_TIME)
+                # Final frame with normal styling (fully revealed)
                 w, h = console.size
                 live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0))
             select_time = time.monotonic()

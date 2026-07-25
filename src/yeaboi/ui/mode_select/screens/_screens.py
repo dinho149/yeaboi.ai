@@ -167,6 +167,15 @@ _COMPANION_COLS = 36  # right-hand lane width (bubble + duck)
 # ---------------------------------------------------------------------------
 
 
+def mode_title_widths() -> list[int]:
+    """Block-font column width of every mode title, index-aligned to _MODE_CARDS.
+
+    The staggered intro reveal uses these to know when each title is fully wiped
+    in (see the reveal loop in :mod:`yeaboi.ui.mode_select`).
+    """
+    return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in _MODE_CARDS]
+
+
 def _build_mode_row(
     mode: dict[str, Any],
     *,
@@ -175,16 +184,23 @@ def _build_mode_row(
     desc_reveal: float = 0.0,
     override_style: str = "",
     desc_width: int | None = None,
+    reveal_cols: int | None = None,
 ) -> list:
     """Render a mode as ASCII art title + optional description underneath.
 
     Returns a list of Rich renderables (1–3 items depending on state).
     desc_reveal: float — the fractional part fades in the next character for
         a smoother typewriter effect (e.g. 5.4 = 5 solid chars + 1 at 40% opacity).
+    reveal_cols: int | None — during the intro, show only the first N columns of
+        the block-font title so it wipes in left-to-right. None shows the whole
+        title. The row still occupies its full height at any reveal (the two
+        block-font lines are always present, just truncated), so nothing jumps.
     """
     available = mode["available"]
     color = mode["color"]
     lines = render_ascii_text(mode["title"])
+    if reveal_cols is not None:
+        lines = [line[:reveal_cols] for line in lines]
 
     rendered = Text(justify="left")
 
@@ -377,8 +393,13 @@ def _build_mode_screen(
     fade_indices: list[int] | None = None,
     selected_style: str = "",
     tip_offset: int = 0,
+    reveal_cols: list[int] | None = None,
 ) -> Panel:
-    """Build the full-screen mode selection layout."""
+    """Build the full-screen mode selection layout.
+
+    reveal_cols: optional per-mode block-font column count for the staggered
+    intro wipe (index-aligned to _MODE_CARDS). None → every title fully shown.
+    """
     show = visible if visible is not None else list(range(len(_MODE_CARDS)))
     fading = fade_indices or []
 
@@ -412,6 +433,7 @@ def _build_mode_screen(
             desc_reveal=desc_reveal if is_sel else 0,
             override_style=override,
             desc_width=desc_width,
+            reveal_cols=reveal_cols[i] if reveal_cols is not None else None,
         )
         body.extend(items)
         body_h += 2 + (2 if is_sel else 0)
