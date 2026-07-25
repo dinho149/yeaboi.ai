@@ -12,7 +12,6 @@ from rich.panel import Panel
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.splash import (
-    _DUCK_REVEAL_LAG,
     _WORDMARK,
     _build_run_frame,
     _build_shine_frame,
@@ -173,7 +172,7 @@ class TestPaintInReveal:
 
     def _ink_cols(self, duck_col, *, width=80):
         frame = _build_run_frame(
-            _WORDMARK, width=width, height=16, duck_col=duck_col, reveal_front=duck_col + _DUCK_REVEAL_LAG
+            _WORDMARK, width=width, height=16, duck_col=duck_col, reveal_front=duck_col + 5
         )
         rows = _rendered_art_rows(frame, width=width)
         # Columns that carry wordmark ink (the block-shadow glyphs), excluding the
@@ -201,7 +200,7 @@ class TestPaintInReveal:
         duck_col = 30
         cols = self._ink_cols(duck_col)
         assert cols  # something is drawn at this position
-        assert max(cols) <= duck_col + _DUCK_REVEAL_LAG + 2  # in his wake, not ahead
+        assert max(cols) <= duck_col + 5 + 2  # in his wake, not ahead
 
     @patch("yeaboi.ui.splash.time.sleep")
     @patch("yeaboi.ui.splash.Live")
