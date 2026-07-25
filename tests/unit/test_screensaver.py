@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from rich.align import Align
 from rich.console import Console
+from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared import _input, _screensaver
@@ -146,17 +146,25 @@ def test_full_compact_and_tiny_layouts_fit_the_terminal():
 
 def test_screensaver_large_uses_full_duck():
     saver = build_screensaver(width=60, height=22, elapsed=0.0)
-    assert isinstance(saver, Align)  # renders without error at the large tier
+    assert isinstance(saver, Panel)  # framed so the border stays put on idle
 
 
 def test_screensaver_compact_tier_renders():
     saver = build_screensaver(width=30, height=15, elapsed=0.0)
-    assert isinstance(saver, Align)
+    assert isinstance(saver, Panel)
 
 
 def test_screensaver_tiny_tier_renders():
     saver = build_screensaver(width=10, height=4, elapsed=0.0)
-    assert isinstance(saver, Align)
+    assert isinstance(saver, Panel)
+
+
+def test_screensaver_is_framed_with_a_border():
+    # The saver must keep the app's rounded border when it takes over the screen.
+    con = Console(width=60, height=24, record=True, file=open("/dev/null", "w"))
+    con.print(build_screensaver(width=60, height=24, elapsed=0.0))
+    text = con.export_text()
+    assert "╭" in text and "╰" in text  # rounded box corners present
 
 
 def test_screensaver_animates_between_frames():
@@ -169,7 +177,8 @@ def test_screensaver_animates_between_frames():
 
 
 def test_screensaver_full_tier_minimum_height_keeps_hint():
-    con = Console(width=60, height=20, record=True, file=open("/dev/null", "w"))
-    con.print(build_screensaver(width=60, height=20, elapsed=0.0))
+    # 22 is the full-tier minimum (18 duck rows + caption + hint + 2 border rows).
+    con = Console(width=60, height=22, record=True, file=open("/dev/null", "w"))
+    con.print(build_screensaver(width=60, height=22, elapsed=0.0))
     text = con.export_text()
     assert "press any key" in text

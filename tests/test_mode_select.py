@@ -350,19 +350,19 @@ class TestModeScreenCompanion:
     """Test the head-companion mascot rendered beside the welcome-screen menu."""
 
     def test_companion_present_when_wide(self):
-        panel = _build_mode_screen(0, width=110, height=30, shimmer_tick=0.0)
-        text = _text_of(panel, 110, 30)
+        panel = _build_mode_screen(0, width=110, height=34, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 34)
         # "chilling" is the companion's caption — unique to the duck column;
         # the block-font mode titles themselves already use ▀/▄ glyphs, so
         # glyph presence alone can't distinguish companion on/off.
         assert "chilling" in text
 
     def test_companion_absent_when_narrow(self):
-        panel = _build_mode_screen(0, width=80, height=26, shimmer_tick=0.0)
-        text = _text_of(panel, 80, 26)
+        panel = _build_mode_screen(0, width=80, height=34, shimmer_tick=0.0)
+        text = _text_of(panel, 80, 34)
         assert "chilling" not in text
 
     def test_mode_screen_exact_height_with_companion(self):
-        panel = _build_mode_screen(0, width=110, height=30, shimmer_tick=0.0)
-        text = _text_of(panel, 110, 30)
-        assert len(text.splitlines()) == 30
+        panel = _build_mode_screen(0, width=110, height=34, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 34)
+        assert len(text.splitlines()) == 34

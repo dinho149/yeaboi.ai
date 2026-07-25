@@ -147,12 +147,20 @@ _OFFLINE_CARDS: list[dict[str, Any]] = [
 
 _PAD = PAD  # alias for backward compatibility within this module
 
-# The companion perches in the right-hand whitespace. Only shown when the panel
-# is wide enough that the longest mode title (block-font) still fits on the left,
-# and tall enough to seat the ~7-row duck; otherwise the menu keeps full width.
-_COMPANION_MIN_WIDTH = 92
-_COMPANION_MIN_HEIGHT = 18
-_COMPANION_COLS = 18
+# Minimum terminal the welcome screen needs to show everything (all mode rows,
+# the selected description, and the bottom hints) without clipping. Below either
+# dimension the loop shows the "too small" duck instead (see
+# :func:`_build_too_small_screen`). Tunable.
+_MIN_WIDTH = 84
+_MIN_HEIGHT = 32
+
+# The bottom-right duck companion + its speech-bubble tip need extra room: the
+# bubble reserves a right-hand lane, so the longest mode title must still fit to
+# its left. Only shown above this (wider) threshold; between _MIN_* and here the
+# menu renders full-width with the tip pinned at the bottom as before.
+_COMPANION_MIN_WIDTH = 108
+_COMPANION_MIN_HEIGHT = 32
+_COMPANION_COLS = 36  # right-hand lane width (bubble + duck)
 
 # ---------------------------------------------------------------------------
 # Rendering helpers — mode selection
@@ -166,6 +174,7 @@ def _build_mode_row(
     shimmer_tick: float = 0.0,
     desc_reveal: float = 0.0,
     override_style: str = "",
+    desc_width: int | None = None,
 ) -> list:
     """Render a mode as ASCII art title + optional description underneath.
 
@@ -211,6 +220,11 @@ def _build_mode_row(
         desc_text = Text(justify="left")
         if desc_reveal > 0:
             desc_full = mode["description"]
+            # Clip to a single line: a wrapped continuation loses the _PAD indent
+            # and adds an unaccounted row that pushes the bottom content past the
+            # panel. desc_width is the character budget for the text (excludes _PAD).
+            if desc_width is not None and len(desc_full) > desc_width:
+                desc_full = desc_full[: max(1, desc_width - 1)].rstrip() + "…"
             solid_count = int(desc_reveal)
             frac = desc_reveal - solid_count  # 0.0–1.0 fade for next char
 
@@ -368,6 +382,14 @@ def _build_mode_screen(
     show = visible if visible is not None else list(range(len(_MODE_CARDS)))
     fading = fade_indices or []
 
+    # Decide the companion up front so the mode description can be clipped to the
+    # (narrower) left-column width when the duck lane is present — keeping it on
+    # one line so the layout height stays predictable.
+    show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
+    inner_w = width - 6  # borders (2) + horizontal padding (4)
+    left_w = inner_w - _COMPANION_COLS if show_companion else inner_w
+    desc_width = max(10, left_w - len(_PAD) - 2)
+
     # Mode rows
     body: list = []
     body_h = 0
@@ -389,6 +411,7 @@ def _build_mode_screen(
             shimmer_tick=shimmer_tick,
             desc_reveal=desc_reveal if is_sel else 0,
             override_style=override,
+            desc_width=desc_width,
         )
         body.extend(items)
         body_h += 2 + (2 if is_sel else 0)
@@ -396,52 +419,58 @@ def _build_mode_screen(
             body.append(Text(""))
             body_h += 1
 
-    # Bottom-pinned discoverability tip — so users learn features exist from the
-    # very first screen, not only inside a session. Tips rotate every few seconds
-    # off the render loop's shimmer_tick, cross-fading between one another, and can
-    # be switched off entirely. Rendered as two quiet rows: the tip itself, then
-    # position dots + a keycap control hint.
+    # Discoverability tip. _build_tip_rows returns two rows: [tip text, controls].
+    # On wide terminals the tip *text* moves into the duck's speech bubble
+    # (bottom-right) and only the control hints stay pinned at the bottom; on
+    # narrower terminals both rows stay pinned at the bottom as before.
     tip_rows = _build_tip_rows(shimmer_tick, tip_offset=tip_offset)
 
     # Bottom-left version hint (+ upgrade advisory when a newer release exists),
     # opposite the music bar on the border below it.
     version_row = _build_version_row(width)
 
-    # Reserve two rows for the tip block plus one for the version row; centre the
-    # mode rows in the space above.
-    inner_h = height - 4
-    body_area = max(0, inner_h - len(tip_rows) - 1)
-    mid_top = max(0, (body_area - body_h) // 2)
-    mid_bot = max(0, body_area - body_h - mid_top)
+    # See docs: "TUI system" — render_head returns a rich.console.Group of
+    # pre-composited half-block (▀/▄) rows. Its frame advances off the same
+    # shimmer_tick that drives the tip cross-fade (slowed a touch so the idle
+    # duck breathes rather than twitches).
+    frame = int(shimmer_tick * 4) % 8
 
-    content = Group(
-        *[Text("") for _ in range(mid_top)],
-        *body,
-        *[Text("") for _ in range(mid_bot)],
-        *tip_rows,
-        version_row,
-    )
-
-    # Head companion — a small idle-duck that perches beside the mode list on
-    # wide terminals. See docs: "TUI system" — render_head returns a
-    # rich.console.Group of pre-composited half-block (▀/▄) rows; frame advances
-    # off the same shimmer_tick that drives the tip cross-fade, so it stays in
-    # lockstep with the rest of the screen's animation clock.
-    frame = int(shimmer_tick * 6) % 8
-    if width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT:
-        companion = Align.center(
-            Group(render_head(frame), Text(""), Text("chilling", style="rgb(120,130,140)", justify="center")),
-            vertical="middle",
+    if show_companion:
+        # Tip text goes to the bubble; only the control row + version pin bottom-left.
+        bottom_rows = [tip_rows[1], version_row]
+        inner_h = height - 4
+        # -1 leaves a margin row: the selected mode's description can wrap to a
+        # second line in the narrower left column (the duck lane steals width),
+        # which body_h doesn't count — the margin absorbs it so the bottom rows
+        # and the duck's caption never clip.
+        body_area = max(0, inner_h - len(bottom_rows) - 1)
+        mid_top = max(0, (body_area - body_h) // 2)
+        mid_bot = max(0, body_area - body_h - mid_top)
+        content = Group(
+            *[Text("") for _ in range(mid_top)],
+            *body,
+            *[Text("") for _ in range(mid_bot)],
+            *bottom_rows,
         )
-        # See docs: "TUI system" — Table.grid lays out fixed-width columns
-        # without borders/padding, used here purely as a two-column splitter so
-        # the mode list keeps its width and the companion gets a reserved lane.
+        # Table.grid is a borderless fixed-column splitter: mode list keeps its
+        # width, the duck + speech bubble get a reserved right-hand lane.
         layout = Table.grid(expand=True)
         layout.add_column(ratio=1)
         layout.add_column(width=_COMPANION_COLS)
-        layout.add_row(content, companion)
+        layout.add_row(content, _build_companion(tip_rows[0], frame))
         body_renderable: RenderableType = layout
     else:
+        inner_h = height - 4
+        body_area = max(0, inner_h - len(tip_rows) - 1)
+        mid_top = max(0, (body_area - body_h) // 2)
+        mid_bot = max(0, body_area - body_h - mid_top)
+        content = Group(
+            *[Text("") for _ in range(mid_top)],
+            *body,
+            *[Text("") for _ in range(mid_bot)],
+            *tip_rows,
+            version_row,
+        )
         body_renderable = content
 
     return Panel(
@@ -450,6 +479,66 @@ def _build_mode_screen(
         box=rich.box.ROUNDED,
         expand=True,
         height=height,
+        padding=(1, 2),
+    )
+
+
+def _build_companion(tip_line: Text, frame: int) -> RenderableType:
+    """Bottom-right idle duck (facing left, toward the menu) with the current tip
+    in a speech bubble above it.
+
+    ``tip_line`` is the tip text from :func:`_build_tip_rows` (may be blank when
+    tips are hidden — then only the duck shows). The bubble uses a plain, static
+    copy of the tip: the per-frame cross-fade is dropped (it flickers in a box)
+    and any leading emoji is stripped (a wide glyph in a bordered Panel breaks the
+    border). Bottom-aligned so it sits in the corner regardless of terminal height.
+    """
+    # Duck faces left so he looks toward the mode list rather than the wall.
+    duck = Group(render_head(frame, flip=True), Text("chilling", style="rgb(120,130,140)", justify="center"))
+    parts: list[RenderableType] = []
+
+    tip = tip_line.plain.strip()
+    while tip and not (tip[0].isascii() and tip[0].isalnum()):  # drop a leading emoji/glyph
+        tip = tip[1:]
+    tip = tip.strip()
+    if tip:
+        bubble = Panel(
+            Text(tip, style="rgb(198,198,208)", justify="left"),
+            box=rich.box.ROUNDED,
+            border_style="rgb(90,100,110)",
+            padding=(0, 1),
+            width=_COMPANION_COLS - 2,
+        )
+        # A short diagonal tail from the bubble's lower edge toward the duck.
+        tail = Text(" " * (_COMPANION_COLS - 8) + "╲", style="rgb(90,100,110)")
+        parts = [bubble, tail]
+    parts.append(Align.center(duck))
+    return Align.center(Group(*parts), vertical="bottom")
+
+
+def _build_too_small_screen(width: int, height: int) -> Panel:
+    """Guard screen shown when the terminal is below :data:`_MIN_WIDTH` /
+    :data:`_MIN_HEIGHT` — the duck asks the user to size up so the welcome
+    screen can show everything without clipping.
+    """
+    rows: list[RenderableType] = []
+    if height >= 12:  # only seat the duck when there's vertical room for it
+        rows.extend([Align.center(render_head(0)), Text("")])
+    rows.extend(
+        [
+            Align.center(Text("your terminal's a bit cramped", style="bold rgb(226,186,96)")),
+            Align.center(
+                Text(f"give me at least {_MIN_WIDTH} × {_MIN_HEIGHT} to stretch out", style="rgb(198,198,208)")
+            ),
+            Align.center(Text(f"(you're at {width} × {height})", style="rgb(120,130,140)")),
+        ]
+    )
+    return Panel(
+        Align.center(Group(*rows), vertical="middle"),
+        border_style="rgb(226,186,96)",
+        box=rich.box.ROUNDED,
+        expand=True,
+        height=max(1, height),
         padding=(1, 2),
     )
 

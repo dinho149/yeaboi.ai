@@ -44,10 +44,13 @@ from yeaboi.ui.mode_select.screens._project_list_screen import (  # noqa: F401
 # Re-exports for backwards compatibility and test imports.
 from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _INTAKE_CARDS,
+    _MIN_HEIGHT,
+    _MIN_WIDTH,
     _MODE_CARDS,
     _OFFLINE_CARDS,
     _build_mode_screen,
     _build_slide_frame,
+    _build_too_small_screen,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
     _build_export_success_screen,
@@ -7009,11 +7012,14 @@ def select_mode(
 
     all_mode_indices = list(range(n))
 
-    # If alt-screen is already active (from splash), use screen=False so
-    # Live doesn't toggle it (which causes a visible flicker).  If not
-    # active, let Live manage it normally with screen=True.
-    _screen_managed_by_live = not console.is_alt_screen
-
+    # Render into the alternate-screen buffer (screen=True) so Rich double-buffers
+    # each frame. The welcome screen animates continuously (the selected title's
+    # shimmer, the cross-fading tip, the idle duck, the music equalizer), so in
+    # inline mode Rich rewrites scattered lines across the full height every frame
+    # — the visible "reprint"/flicker. Alt-screen swaps composite frames cleanly.
+    # A single, brief flash at the splash→menu boundary is the accepted trade for
+    # a flicker-free steady state. 30fps is ample for these gentle animations and
+    # halves the redraw load.
     with make_live(
         _build_mode_screen(
             selected,
@@ -7025,8 +7031,8 @@ def select_mode(
             fade_indices=all_mode_indices,
         ),
         console=console,
-        refresh_per_second=60,
-        screen=_screen_managed_by_live,
+        refresh_per_second=30,
+        screen=True,
     ) as live:
         # Outer loop: returns here when user presses Esc from project list
         # to go back to mode selection (instead of recursive select_mode call).
@@ -7062,6 +7068,18 @@ def select_mode(
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
             while True:
+                # Terminal-size guard: below the minimum the welcome screen can't
+                # show every mode + description + hints without clipping, so the
+                # duck asks the user to size up. Poll for a resize (or quit)
+                # instead of rendering a broken menu.
+                _w, _h = console.size
+                if _w < _MIN_WIDTH or _h < _MIN_HEIGHT:
+                    live.update(_build_too_small_screen(_w, _h))
+                    _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                    if _k in ("q", "esc"):
+                        return None
+                    continue
+
                 key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
 
                 if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):

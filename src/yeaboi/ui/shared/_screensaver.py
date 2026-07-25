@@ -14,8 +14,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import ParamSpec, TypeVar
 
+import rich.box
 from rich.align import Align
 from rich.console import Group, RenderableType
+from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared._mascot import render_full, render_head
@@ -156,21 +158,36 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     elapsed = idle_controller.animation_elapsed() if elapsed is None else elapsed
     frame = int(elapsed * 8) % 8
 
-    if width >= 46 and height >= 20:
+    # Thresholds account for the surrounding Panel: the full duck is 18 half-block
+    # rows + caption + hint = 20, plus 2 border rows = 22.
+    if width >= 46 and height >= 22:
         art = render_full(frame)
     elif width >= 22 and height >= 13:
         art = render_head(frame)
     else:
+        art = None
+
+    if art is None:
         if width >= 20:
             label = "<(o )___ YEABOI"
         elif width >= 12:
             label = "<(o )_ YEABOI"
         else:
             label = "YEABOI"[:width]
-        line = Text(label, style="bold rgb(42,170,105)")
-        return Align.center(line, vertical="middle", height=max(1, height))
+        inner: RenderableType = Text(label, style="bold rgb(42,170,105)")
+    else:
+        caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
+        hint = Text("press any key", style="rgb(95,105,115)", justify="center")
+        inner = Group(art, caption, hint)
 
-    caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
-    hint = Text("press any key", style="rgb(95,105,115)", justify="center")
-    content = Group(art, caption, hint)
-    return Align.center(content, vertical="middle", height=max(1, height))
+    # Wrap in the app's rounded Panel so the border stays put when the saver takes
+    # over the screen — otherwise the frame vanishes on idle. Border-only chrome
+    # (no vertical padding) so the duck keeps as much height as possible.
+    pad = (0, 2) if width >= 8 else (0, 0)
+    return Panel(
+        Align.center(inner, vertical="middle"),
+        border_style="white",
+        box=rich.box.ROUNDED,
+        height=max(1, height),
+        padding=pad,
+    )

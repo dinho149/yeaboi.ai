@@ -123,7 +123,15 @@ def render_full(frame: int) -> Group:
     return Group(*_pack(grid))
 
 
-def render_head(frame: int) -> Group:
-    """Small head companion: a gentle breathing bob (glints are baked in)."""
+def render_head(frame: int, *, flip: bool = False) -> Group:
+    """Small head companion: a gentle breathing bob (glints are baked in).
+
+    ``flip=True`` mirrors the duck horizontally (reverse each pixel row) so he
+    can face the other way — e.g. face left toward the menu when perched on the
+    right-hand side of a screen.
+    """
     f = frame % FRAMES
-    return Group(*_pack(_bob(DUCK_HEAD, HEAD_BOB[f])))
+    grid = _bob(DUCK_HEAD, HEAD_BOB[f])
+    if flip:
+        grid = tuple(row[::-1] for row in grid)
+    return Group(*_pack(grid))
