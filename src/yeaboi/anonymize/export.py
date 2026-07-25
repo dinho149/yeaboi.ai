@@ -3,7 +3,7 @@
 Mirrors the other mode exporters (standup/export.py, reporting/export.py): the
 masked, shareable copy is written under ``~/.yeaboi/exports/anonymize/<project>/`` as
 both a Markdown file (the primary artifact — paste it into a README/post) and a
-self-contained HTML page reusing the plan stylesheet (``html_exporter._CSS``).
+self-contained HTML page using the shared design system (``html_theme``).
 
 Unlike the other exporters the input is already a Markdown *string* (a mode's masked
 Export document), so this module carries a small, defensive Markdown→HTML renderer
@@ -165,35 +165,17 @@ def build_anonymized_markdown(result: AnonymizedOutput, *, title: str = "") -> s
 
 
 def build_anonymized_html(result: AnonymizedOutput, *, title: str = "") -> str:
-    """Return a self-contained HTML page for the masked output (reuses the plan CSS)."""
-    from yeaboi.html_exporter import _CSS
+    """Return a self-contained HTML page for the masked output (shared design system)."""
+    from yeaboi.html_theme import html_page, notice_block
 
-    heading = f"<h1>{_e(title)}</h1>" if title else ""
     body = _md_to_html(result.anonymized_text)
-    notices = ""
-    if result.warnings:
-        items = "".join(f"<li>{_e(w)}</li>" for w in result.warnings)
-        notices = f"<h2>⚠ Notices</h2><ul>{items}</ul>"
-    stamp = _e(result.generated_at or datetime.now().strftime("%Y-%m-%d"))
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{_e(title or "Anonymized output")}</title>
-  <style>{_CSS}</style>
-</head>
-<body>
-<div class="report">
-{heading}
-{body}
-{notices}
-</div>
-<footer class="site-footer">
-  Anonymized with yeaboi.ai &bull; {stamp}
-</footer>
-</body>
-</html>"""
+    body += notice_block("Notices", result.warnings or [])
+    stamp = result.generated_at or datetime.now().strftime("%Y-%m-%d")
+    return html_page(
+        title=title or "Anonymized output",
+        body=body,
+        footer_note=f"Anonymized with yeaboi.ai • {stamp}",
+    )
 
 
 def export_anonymized(result: AnonymizedOutput, *, title: str = "", project_name: str = "") -> dict[str, Path]:

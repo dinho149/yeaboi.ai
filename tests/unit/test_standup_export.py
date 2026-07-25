@@ -189,3 +189,11 @@ class TestSkippedSourcesLine:
         from yeaboi.standup.render import format_standup_plaintext
 
         assert "Sources skipped" not in format_standup_plaintext(_report())
+
+
+class TestSharedDesignSystem:
+    def test_standup_html_uses_shared_theme(self):
+        html = build_standup_html(_report())
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

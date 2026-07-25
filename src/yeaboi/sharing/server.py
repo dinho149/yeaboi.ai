@@ -31,18 +31,26 @@ _GATE_HTML = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shared with yeaboi</title>
   <style>
-    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;
-    display:grid;place-items:center;background:#090d14;color:#e6edf3;font:16px system-ui,sans-serif}
-    main{width:min(92vw,430px);padding:2rem;border:1px solid #30363d;border-radius:14px;
-    background:#111722;box-shadow:0 20px 70px #0008}h1{margin:.2rem 0 .5rem;font-size:1.45rem}
-    p{color:#9da7b3;line-height:1.5}label{display:block;margin:1.4rem 0 .45rem;font-weight:650}
-    input{width:100%;padding:.85rem 1rem;border:1px solid #465166;border-radius:9px;background:#090d14;
-    color:#fff;font:700 1.15rem ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}
-    button{width:100%;margin-top:.8rem;padding:.8rem;border:0;border-radius:9px;background:#648cff;
-    color:#fff;font-weight:750;cursor:pointer}#status{min-height:1.4rem;color:#ff9b9b;font-size:.9rem}
+    /* Midnight palette from the shared design system (html_theme) — kept inline
+       so the gate stays a single dependency-free string. */
+    :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;
+    --muted:#8b949e;--accent:#50bebe;--ink:#04211f;--danger:#f85149}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;
+    display:grid;place-items:center;background:var(--bg);color:var(--text);
+    font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    main{width:min(92vw,430px);padding:2rem;border:1px solid var(--line);border-radius:14px;
+    background:var(--panel);box-shadow:0 20px 70px #0008}h1{margin:.2rem 0 .5rem;font-size:1.45rem}
+    .brand{color:var(--accent);font-weight:700}
+    p{color:var(--muted);line-height:1.5}label{display:block;margin:1.4rem 0 .45rem;font-weight:650}
+    input{width:100%;padding:.85rem 1rem;border:1px solid var(--line);border-radius:9px;background:var(--bg);
+    color:var(--text);font:700 1.15rem ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}
+    input:focus{outline:none;border-color:var(--accent)}
+    button{width:100%;margin-top:.8rem;padding:.8rem;border:0;border-radius:9px;background:var(--accent);
+    color:var(--ink);font-weight:750;cursor:pointer}button:hover{filter:brightness(1.08)}
+    #status{min-height:1.4rem;color:var(--danger);font-size:.9rem}
   </style>
 </head>
-<body><main><div>🤙 yeaboi.ai</div><h1>Someone shared an output with you</h1>
+<body><main><div class="brand">🤙 yeaboi.ai</div><h1>Someone shared an output with you</h1>
 <p>Enter the access code shown by the host. This temporary page disappears when they stop sharing.</p>
 <form id="join"><label for="code">Access code</label><input id="code" maxlength="9"
 placeholder="XXXX-XXXX" autocomplete="one-time-code" autofocus><button>View output</button>

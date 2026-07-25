@@ -1950,3 +1950,13 @@ class TestTicketParseCache:
 
         assert len(result) == 25
         assert calls["count"] == 3
+
+
+class TestSharedDesignSystem:
+    def test_team_profile_html_uses_shared_theme(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        html = build_team_profile_html(TeamProfile(team_id="x", source="jira", project_key="X"))
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

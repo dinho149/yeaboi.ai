@@ -66,11 +66,11 @@ def _e(text: str) -> str:
 def _pct_bar_html(pct: float, width_px: int = 120) -> str:
     """Render a thin percentage bar as inline HTML."""
     fill = min(int(pct), 100)
-    color = "#22c55e" if pct >= 80 else ("#eab308" if pct >= 50 else "#ef4444")
+    color = "var(--ok)" if pct >= 80 else ("var(--warn)" if pct >= 50 else "var(--danger)")
     return (
         f'<span style="display:inline-flex;align-items:center;gap:6px;">'
         f'<span style="display:inline-block;width:{width_px}px;height:6px;'
-        f'background:#e2e8f0;border-radius:3px;overflow:hidden;">'
+        f'background:var(--line);border-radius:3px;overflow:hidden;">'
         f'<span style="display:block;width:{fill}%;height:100%;background:{color};'
         f'border-radius:3px;"></span></span>'
         f'<span style="font-size:0.8rem;color:var(--text-muted);">{_format_pct(pct)}</span></span>'
@@ -212,11 +212,11 @@ def build_team_profile_html(
     ``ceremony`` is an optional CeremonyContext (agent/ceremony_history.py). When
     present and non-empty, a "Ceremony Cadence & Trends" section is added.
     """
-    from yeaboi.html_exporter import _CSS
+    from yeaboi.html_theme import html_page
 
     ex = examples or {}
     sections: list[str] = []
-    nav_links: list[str] = []
+    nav_links: list[tuple[str, str]] = []
     depth = str(ex.get("analysis_depth", "")).strip().lower()
     if depth in ("quick", "deep"):
         _depth_html = f"<p><strong>Analysis depth:</strong> {_e(depth.capitalize())}</p>"
@@ -224,7 +224,7 @@ def build_team_profile_html(
         _depth_html = ""
 
     def _nav(id_: str, label: str) -> None:
-        nav_links.append(f'<a href="#{id_}">{_e(label)}</a>')
+        nav_links.append((id_, label))
 
     # ── Executive Summary (AI narrative, generated at analysis time) ─
     narrative = ex.get("narrative", {})
@@ -392,7 +392,7 @@ def build_team_profile_html(
         _hdv = _html_scope["totals"].get("avg_delivered_velocity", 0.0)
         if _hcv > 0:
             _hdp = round(_hdv / _hcv * 100)
-            _hdc = "#22c55e" if _hdp >= 85 else ("#eab308" if _hdp >= 70 else "#ef4444")
+            _hdc = "var(--ok)" if _hdp >= 85 else ("var(--warn)" if _hdp >= 70 else "var(--danger)")
             vel_rows.append(("Committed avg", f"{_hcv:g} pts/sprint"))
             vel_rows.append(
                 (
@@ -424,7 +424,7 @@ def build_team_profile_html(
         first_v = vt.get("first_velocity", 0)
         last_v = vt.get("last_velocity", 0)
         icon = {"improving": "&#x2197;", "degrading": "&#x2198;"}.get(trend, "&#x2192;")
-        color = {"improving": "#22c55e", "degrading": "#ef4444"}.get(trend, "var(--text-muted)")
+        color = {"improving": "var(--ok)", "degrading": "var(--danger)"}.get(trend, "var(--text-muted)")
         vel_rows.append(
             (
                 "Trend",
@@ -434,12 +434,12 @@ def build_team_profile_html(
         )
 
     _nav("velocity", "Velocity")
-    sections.append(_section("velocity", "Team &amp; Velocity", _kv_table(vel_rows)))
+    sections.append(_section("velocity", "Team & Velocity", _kv_table(vel_rows)))
 
     # ── Ceremony cadence & trends (Standup + Retro history) ─────────
     if ceremony is not None and not ceremony.is_empty:
         _nav("ceremonies", "Ceremonies")
-        sections.append(_section("ceremonies", "Ceremony Cadence &amp; Trends", _ceremony_html(ceremony)))
+        sections.append(_section("ceremonies", "Ceremony Cadence & Trends", _ceremony_html(ceremony)))
 
     # ── Recurring work ──────────────────────────────────────────────
     rec_count = ex.get("recurring_count", 0)
@@ -497,8 +497,8 @@ def build_team_profile_html(
             done = sd.get("done", False)
             has_shadow = sd.get("has_shadow", False)
             icon = "&#x2713;" if done else ("&#x25cb;" if has_shadow else "&#x2717;")
-            icon_color = "#22c55e" if done else ("#eab308" if has_shadow else "#ef4444")
-            rate_color = "#22c55e" if rate >= 80 else ("#eab308" if rate >= 50 else "#ef4444")
+            icon_color = "var(--ok)" if done else ("var(--warn)" if has_shadow else "var(--danger)")
+            rate_color = "var(--ok)" if rate >= 80 else ("var(--warn)" if rate >= 50 else "var(--danger)")
             sp_rows_html.append(
                 f"<tr><td>{name}</td><td>{pts}</td><td>{completed}/{planned}</td>"
                 f'<td style="color:{rate_color};font-weight:600;">{rate}%</td>'
@@ -545,8 +545,8 @@ def build_team_profile_html(
                     if has_sh:
                         label_parts.append("shadow spillover")
                     sprint_content += (
-                        f'<div class="card" style="border-left:3px solid #eab308;margin:0.5rem 0;">'
-                        f'<strong style="color:#eab308;">{sname}</strong>'
+                        f'<div class="card" style="border-left:3px solid var(--warn);margin:0.5rem 0;">'
+                        f'<strong style="color:var(--warn);">{sname}</strong>'
                         f'<span style="color:var(--text-muted);margin-left:0.5rem;">{" + ".join(label_parts)}</span>'
                     )
                     for item in sd.get("incomplete", [])[:3]:
@@ -560,7 +560,7 @@ def build_team_profile_html(
                         sprint_content += (
                             f'<div style="margin-left:1rem;font-size:0.85rem;color:var(--text-muted);">'
                             f"<code>{ek}</code> {sm}"
-                            f'<span style="color:#eab308;">{detail}</span></div>'
+                            f'<span style="color:var(--warn);">{detail}</span></div>'
                         )
                     sprint_content += "</div>"
 
@@ -577,7 +577,7 @@ def build_team_profile_html(
                     sprint_content += '<hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">'
                     if _sc_cv > 0:
                         _dp = round(_sc_dv / _sc_cv * 100)
-                        _dc = "#22c55e" if _dp >= 85 else ("#eab308" if _dp >= 70 else "#ef4444")
+                        _dc = "var(--ok)" if _dp >= 85 else ("var(--warn)" if _dp >= 70 else "var(--danger)")
                         sprint_content += (
                             f"<p>Committed <strong>{_sc_cv:g}</strong> &rarr; "
                             f"Delivered <strong>{_sc_dv:g}</strong> pts/sprint avg "
@@ -595,7 +595,7 @@ def build_team_profile_html(
                         _d = tl.scope_change_total
                         _p = round(_d / tl.committed_pts * 100) if tl.committed_pts else 0
                         _ds = f"+{_d:g}" if _d > 0 else f"{_d:g}"
-                        _dcol = "#22c55e" if _d == 0 else ("#eab308" if abs(_d) < 5 else "#ef4444")
+                        _dcol = "var(--ok)" if _d == 0 else ("var(--warn)" if abs(_d) < 5 else "var(--danger)")
                         _ns = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
                         _nf = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
                         sprint_content += (
@@ -610,7 +610,9 @@ def build_team_profile_html(
                             ct = ev.change_type.replace("re_estimated_", "re-est ").replace("_", " ")
                             evd = f"+{ev.delta_pts:g}" if ev.delta_pts > 0 else f"{ev.delta_pts:g}"
                             evc = (
-                                "#22c55e" if ev.delta_pts < 0 else ("#eab308" if abs(ev.delta_pts) <= 3 else "#ef4444")
+                                "var(--ok)"
+                                if ev.delta_pts < 0
+                                else ("var(--warn)" if abs(ev.delta_pts) <= 3 else "var(--danger)")
                             )
                             sprint_content += (
                                 f'<div style="font-size:0.85rem;margin:0.1rem 0 0 1rem;">'
@@ -635,7 +637,7 @@ def build_team_profile_html(
                     _sc_chains = _sc_scope.get("carry_over_chains", [])
                     if _sc_chains:
                         sprint_content += (
-                            f'<h3 style="font-size:0.85rem;color:#eab308;margin-top:0.75rem;">'
+                            f'<h3 style="font-size:0.85rem;color:var(--warn);margin-top:0.75rem;">'
                             f"{len(_sc_chains)} stories bounced across 3+ sprints</h3>"
                         )
                         for ch in _sc_chains[:5]:
@@ -677,14 +679,14 @@ def build_team_profile_html(
         )
         for cs in _h_contrib[:10]:
             sp_r = cs.get("spill_rate", 0)
-            sp_col = "#22c55e" if sp_r < 10 else ("#eab308" if sp_r < 25 else "#ef4444")
+            sp_col = "var(--ok)" if sp_r < 10 else ("var(--warn)" if sp_r < 25 else "var(--danger)")
             ct_v = cs.get("avg_cycle_time", 0)
             ct_s = f"{ct_v:.0f}d" if ct_v > 0 else "&mdash;"
             disc = cs.get("top_discipline", "fullstack")
             wt = cs.get("top_work_type", "")
             focus = f"{disc}/{wt.split('/')[0]}" if wt else disc
             ps = cs.get("per_sprint", 0)
-            ps_col = "#22c55e" if ps >= 3 else ("#eab308" if ps >= 1.5 else "#888")
+            ps_col = "var(--ok)" if ps >= 3 else ("var(--warn)" if ps >= 1.5 else "var(--low)")
             sa = cs.get("sprints_active", 0)
             tm_content += (
                 f"<tr><td>{_e(cs.get('name', ''))}</td>"
@@ -703,7 +705,7 @@ def build_team_profile_html(
             top_pct = round(top["delivery_pts"] / _h_total_del * 100)
             if top_pct >= 40:
                 tm_content += (
-                    f'<p style="color:#eab308;">&#x26a0; {_e(top["name"])} carries {top_pct}% of delivery work</p>'
+                    f'<p style="color:var(--warn);">&#x26a0; {_e(top["name"])} carries {top_pct}% of delivery work</p>'
                 )
         _nav("team-members", "Team")
         sections.append(_section("team-members", "Team Members", tm_content))
@@ -712,8 +714,8 @@ def build_team_profile_html(
     shadow = ex.get("shadow_spillover", [])
     if isinstance(shadow, list) and shadow:
         shadow_html = (
-            f'<div class="card" style="border-left:3px solid #eab308;">'
-            f'<strong style="color:#eab308;">&#x26a0; {len(shadow)} re-created stories detected</strong>'
+            f'<div class="card" style="border-left:3px solid var(--warn);">'
+            f'<strong style="color:var(--warn);">&#x26a0; {len(shadow)} re-created stories detected</strong>'
             f'<p style="color:var(--text-muted);">Closed in one sprint but re-created in the next:</p>'
         )
         for sh in shadow[:5]:
@@ -752,7 +754,7 @@ def build_team_profile_html(
                 samples = e.get("samples", 0)
                 sp = e.get("spill_pct", 0)
                 var_html = f"&pm;{var:.0f}d" if var > 0 else "&mdash;"
-                sp_color = "#22c55e" if sp < 10 else ("#eab308" if sp < 25 else "#ef4444")
+                sp_color = "var(--ok)" if sp < 10 else ("var(--warn)" if sp < 25 else "var(--danger)")
                 sp_html = f'<span style="color:{sp_color};">{sp:.0f}%</span>' if sp > 0 else "&mdash;"
                 disc_rows += (
                     f"<tr><td>{pts}pt{'s' if pts != 1 else ''}</td>"
@@ -786,7 +788,7 @@ def build_team_profile_html(
         cal_rows_html = []
         for c in cals:
             conf = conf_levels.get(c.point_value, "")
-            conf_color = {"high": "#22c55e", "medium": "var(--text-muted)", "low": "#eab308"}.get(conf, "")
+            conf_color = {"high": "var(--ok)", "medium": "var(--text-muted)", "low": "var(--warn)"}.get(conf, "")
             conf_html = f'<span style="color:{conf_color};font-weight:600;">{conf.upper()}</span>' if conf else ""
             cal_rows_html.append(
                 f"<tr><td><strong>{c.point_value} pt{'s' if c.point_value != 1 else ''}</strong></td>"
@@ -865,8 +867,8 @@ def build_team_profile_html(
         bottlenecks = td.get("bottlenecks", [])
         for cat, rate_val, count in bottlenecks:
             td_content += (
-                f'<div class="card" style="border-left:3px solid #eab308;margin-top:0.5rem;">'
-                f'<strong style="color:#eab308;">&#x26a0; {_e(str(cat))} bottleneck</strong>'
+                f'<div class="card" style="border-left:3px solid var(--warn);margin-top:0.5rem;">'
+                f'<strong style="color:var(--warn);">&#x26a0; {_e(str(cat))} bottleneck</strong>'
                 f'<p style="color:var(--text-muted);">'
                 f"Only {rate_val}% completion ({count} tasks)</p></div>"
             )
@@ -947,19 +949,23 @@ def build_team_profile_html(
     if isinstance(pdod, dict) and pdod.get("items"):
         pdod_summary = pdod.get("summary", "")
         pdod_health = pdod.get("health", "weak")
-        h_col = "#22c55e" if pdod_health == "strong" else ("#eab308" if pdod_health == "moderate" else "#ef4444")
+        h_col = (
+            "var(--ok)"
+            if pdod_health == "strong"
+            else ("var(--warn)" if pdod_health == "moderate" else "var(--danger)")
+        )
         pdod_html = f'<p style="color:{h_col};font-weight:bold;">{_e(pdod_summary)}</p>'
         pdod_html += (
             '<table class="data-table"><tr><th>Practice</th><th>Status</th><th>Evidence</th><th>Action</th></tr>'
         )
         _pst_icon = {"established": "&#x2713;", "emerging": "&#x25cb;", "missing": "&#x2717;"}
-        _pst_col = {"established": "#22c55e", "emerging": "#eab308", "missing": "#ef4444"}
+        _pst_col = {"established": "var(--ok)", "emerging": "var(--warn)", "missing": "var(--danger)"}
         for item in pdod["items"]:
             st = item.get("status", "missing")
             sig = item.get("signals", "no evidence")
             pdod_html += (
                 f"<tr><td>{_e(item.get('practice', ''))}</td>"
-                f'<td style="color:{_pst_col.get(st, "#888")};">'
+                f'<td style="color:{_pst_col.get(st, "var(--low)")};">'
                 f"{_pst_icon.get(st, '?')} {_e(st)}</td>"
                 f'<td style="color:var(--text-muted);">{_e(sig)}</td>'
                 f'<td style="color:var(--text-muted);font-size:0.85rem;">'
@@ -1014,8 +1020,8 @@ def build_team_profile_html(
             pct = r.get("pct", 0)
             avg_ct = avg_cts.get(rname) if isinstance(avg_cts, dict) else None
             ct_html = f"{avg_ct:.0f}d" if avg_ct else "&mdash;"
-            ct_color = "#eab308" if avg_ct and avg_ct > 15 else "var(--text-muted)"
-            name_style = "color:#eab308;font-weight:600;" if rname in spill_repos_set else ""
+            ct_color = "var(--warn)" if avg_ct and avg_ct > 15 else "var(--text-muted)"
+            name_style = "color:var(--warn);font-weight:600;" if rname in spill_repos_set else ""
             repo_rows_html += (
                 f'<tr><td style="{name_style}"><strong>{_e(rname)}</strong></td>'
                 f"<td>{cnt}</td><td>{_pct_bar_html(pct, 80)}</td>"
@@ -1039,7 +1045,7 @@ def build_team_profile_html(
                     continue
                 repo_content += (
                     f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
-                    f'<strong style="color:#eab308;">{_e(sr.get("repo", ""))}</strong>'
+                    f'<strong style="color:var(--warn);">{_e(sr.get("repo", ""))}</strong>'
                     f' <span style="color:var(--text-muted);">'
                     f"{sr.get('spill_rate', 0)}% spillover ({sr.get('spills', 0)} times)</span></div>"
                 )
@@ -1097,7 +1103,7 @@ def build_team_profile_html(
             _nm_ss = " &rarr; ".join(f"&ldquo;{_e(s)}&rdquo;" for s, _ in _nm_secs[:5])
             nm_rows.append(("Description template", _nm_ss))
         _nav("naming", "Naming")
-        sections.append(_section("naming", "Ticket Naming &amp; Organisation", _kv_table(nm_rows)))
+        sections.append(_section("naming", "Ticket Naming & Organisation", _kv_table(nm_rows)))
 
     # ── Story & Epic Structure ──────────────────────────────────────
     _h_struct = ex.get("story_structure", {})
@@ -1137,7 +1143,7 @@ def build_team_profile_html(
                 )
         if st_rows:
             _nav("structure", "Structure")
-            sections.append(_section("structure", "Story &amp; Epic Structure", _kv_table(st_rows)))
+            sections.append(_section("structure", "Story & Epic Structure", _kv_table(st_rows)))
 
     # ── Acceptance Criteria Patterns ──────────────────────────────────
     ac_pat = ex.get("ac_patterns", {})
@@ -1469,8 +1475,8 @@ def build_team_profile_html(
 
     if recs:
         rec_html_items = "".join(
-            f'<div class="card" style="border-left:3px solid #eab308;margin-bottom:0.5rem;">'
-            f'<strong style="color:#eab308;">&#x26a0; {title}</strong>'
+            f'<div class="card" style="border-left:3px solid var(--warn);margin-bottom:0.5rem;">'
+            f'<strong style="color:var(--warn);">&#x26a0; {title}</strong>'
             f'<p style="color:var(--text-muted);margin-top:0.3rem;">{desc}</p></div>'
             for title, desc in recs
         )
@@ -1478,51 +1484,21 @@ def build_team_profile_html(
         sections.append(_section("recommendations", "Recommendations", rec_html_items))
 
     # ── Assemble page ───────────────────────────────────────────────
-    esc_key = _e(profile.project_key)
-    esc_src = _e(profile.source)
     gen_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    nav_html = ""
-    if nav_links:
-        nav_html = f'<nav class="toc">{"".join(nav_links)}</nav>'
-
-    sprint_names_html = ""
-    if sprint_names:
-        sprint_names_html = (
-            f'<span class="badge" style="background:rgba(255,255,255,0.15);padding:0.1rem 0.6rem;'
-            f'border-radius:999px;font-size:0.78rem;">'
-            f"{', '.join(_e(n) for n in sprint_names)}</span>"
-        )
-
-    body_content = f'<div class="container">{"".join(sections)}</div>'
-
-    page = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Profile &mdash; {esc_key}</title>
-<style>{_CSS}</style>
-</head>
-<body>
-<header class="site-header">
-  <h1>Team Profile &mdash; {esc_src}/{esc_key}</h1>
-  <div class="meta">
-    <span>{profile.sample_sprints} sprints analysed</span>
-    <span>{profile.sample_stories} stories</span>
-    <span>Generated {_e(gen_ts)}</span>
-    {sprint_names_html}
-  </div>
-</header>
-{nav_html}
-{body_content}
-<footer class="site-footer">
-  Generated by yeaboi.ai &bull; {_e(datetime.now().strftime("%Y-%m-%d"))}
-</footer>
-</body>
-</html>"""
-
-    return page
+    return html_page(
+        title=f"Team Profile — {profile.project_key}",
+        heading=f"Team Profile — {profile.source}/{profile.project_key}",
+        meta=[
+            f"{profile.sample_sprints} sprints analysed",
+            f"{profile.sample_stories} stories",
+            f"Generated {gen_ts}",
+        ],
+        badges=[", ".join(sprint_names)] if sprint_names else [],
+        nav=nav_links,
+        body="".join(sections),
+        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+    )
 
 
 def export_team_profile_html(
