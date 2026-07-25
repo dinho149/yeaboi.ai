@@ -106,8 +106,14 @@ def _build_run_hub_screen(
     body_h = 0
     _card_pad = (0, 0, 0, len(_PAD))
 
+    # Sit the title level with the topmost menu item (Analysis) on the welcome
+    # screen, so the select→page transition lands the title exactly where the menu
+    # row was — same vertical offset, not jammed at the top border.
+    from yeaboi.ui.mode_select.screens._screens import selected_title_offset
+
+    title_offset = selected_title_offset(0, width=width, height=height)
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = title_offset + 5  # title_offset blanks + title(2) + blank + subtitle + blank
 
     n_items = len(runs) + 1  # runs + "+ New run" card
     _new_idx = len(runs)
@@ -272,7 +278,7 @@ def _build_run_hub_screen(
         popup_before = [Text("") for _ in range(remaining)]
 
     content = Group(
-        Text(""),
+        *[Text("") for _ in range(title_offset)],
         title,
         Text(""),
         sub,
@@ -289,5 +295,8 @@ def _build_run_hub_screen(
         box=rich.box.ROUNDED,
         expand=True,
         height=height,
-        padding=(0, 2),
+        # Top padding of 1 (matching every other page and this builder's own
+        # `inner_h = height - 4`) so the title lands one line below the top border —
+        # level with where the menu's select→page slide leaves it, not a row higher.
+        padding=(1, 2),
     )

@@ -114,3 +114,55 @@ class TestModeScreenWithVersionRow:
         out = console.file.getvalue()
         assert "v2.12.0" in out
         assert "changelog" in out
+
+
+class TestUpdateBox:
+    """Bottom-right update box (companion lane) — the 'more pressing' advisory."""
+
+    def test_none_when_up_to_date(self, _patch_status):
+        _patch_status()
+        assert _screens._build_update_box(cols=36) is None
+
+    def test_none_on_dev_build(self, _patch_status):
+        _patch_status(latest="2.13.0", update_available=True, is_dev=True)
+        assert _screens._build_update_box(cols=36) is None
+
+    def test_shows_version_and_ctrl_u(self, _patch_status):
+        _patch_status(latest="2.13.0", update_available=True)
+        box = _screens._build_update_box(cols=36)
+        assert isinstance(box, Panel)
+        out = _render(box, width=40)
+        assert "v2.13.0" in out
+        assert "ctrl+U" in out
+
+    def test_version_row_suppresses_advisory_when_box_carries_it(self, _patch_status):
+        _patch_status(latest="2.13.0", update_available=True)
+        out = _render(_screens._build_version_row(120, suppress_upgrade=True))
+        assert "→" not in out
+        assert "uv tool upgrade yeaboi" not in out
+        assert "v2.12.0" in out  # current version still shown
+        assert "c changelog" in out
+
+
+class TestUpdateScreen:
+    """The ctrl+U modal: spinner → success / failure result."""
+
+    def test_running_shows_spinner_and_target(self):
+        out = _render(_screens._build_update_screen(80, 24, latest="2.13.0", command="x", spinner="*"), width=80)
+        assert "updating to v2.13.0" in out
+        assert "*" in out
+
+    def test_success_tells_user_to_restart(self):
+        out = _render(_screens._build_update_screen(80, 24, latest="2.13.0", command="x", done=True, ok=True), width=80)
+        assert "v2.13.0" in out
+        assert "restart" in out
+
+    def test_failure_shows_manual_command(self):
+        out = _render(
+            _screens._build_update_screen(
+                80, 24, latest="2.13.0", command="uv tool upgrade yeaboi", done=True, ok=False, detail="boom"
+            ),
+            width=80,
+        )
+        assert "failed" in out
+        assert "uv tool upgrade yeaboi" in out

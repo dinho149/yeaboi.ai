@@ -52,7 +52,11 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _build_mode_screen,
     _build_slide_frame,
     _build_too_small_screen,
+    _build_update_screen,
+    duck_hit,
+    mode_at_row,
     mode_title_widths,
+    selected_title_offset,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
     _build_export_success_screen,
@@ -6978,6 +6982,79 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         logger.info("retro: page closed for session=%s", session_id)
 
 
+def _play_duck_shades(console, live, selected, *, tip_offset, start_time, select_time) -> None:
+    """Play the click-the-duck gag: his sunglasses lift to reveal a second pair
+    underneath, then drop back. Re-renders the whole welcome screen per lift stage
+    (the rest of it keeps its current animation state) so only the duck changes."""
+    from yeaboi.ui.shared._mascot import SHADES_LIFT_SEQUENCE
+
+    for lift in SHADES_LIFT_SEQUENCE:
+        w, h = console.size
+        tick = time.monotonic() - start_time
+        reveal = (time.monotonic() - select_time) * _DESC_SCROLL_SPEED
+        live.update(
+            _build_mode_screen(
+                selected,
+                width=w,
+                height=h,
+                shimmer_tick=tick,
+                desc_reveal=reveal,
+                tip_offset=tip_offset,
+                duck_lift=lift,
+            )
+        )
+        time.sleep(_FRAME_TIME * 3)  # ~20fps — a readable lift/drop over ~0.5s
+
+
+def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> None:
+    """Run the in-app upgrade (the ctrl+U shortcut): show a spinner while the
+    detected ``uv/pipx upgrade`` command runs on a worker thread, then a success or
+    failure result the user dismisses with any key.
+
+    Only invoked when an update is available (the caller gates on it). The upgrade
+    runs in a subprocess; the freshly-installed code takes effect on the next
+    launch, so the success screen tells the user to restart.
+    """
+    import threading
+
+    from yeaboi import update_check
+    from yeaboi.ui.shared._screensaver import suppress_screensaver
+
+    status = update_check.get_update_status()
+    latest = status.get("latest", "")
+    command = status.get("upgrade_command", "")
+    logger.info("update: ctrl+U upgrade to v%s via '%s'", latest, command)
+
+    result: dict = {}
+
+    def _worker() -> None:
+        result["ok"], result["detail"] = update_check.run_upgrade()
+
+    spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    thread = threading.Thread(target=_worker, daemon=True)
+    # Exclude the (potentially slow) network upgrade from idle tracking so the
+    # screensaver doesn't take over mid-update.
+    with suppress_screensaver():
+        thread.start()
+        i = 0
+        while thread.is_alive():
+            w, h = console.size
+            live.update(_build_update_screen(w, h, latest=latest, command=command, spinner=spin[i % len(spin)]))
+            i += 1
+            time.sleep(max(0.05, frame_time * 4))
+        thread.join(timeout=0.1)
+
+    ok = bool(result.get("ok"))
+    detail = result.get("detail", "") or ""
+    logger.info("update: upgrade %s", "succeeded" if ok else "failed")
+    while True:
+        w, h = console.size
+        live.update(_build_update_screen(w, h, latest=latest, command=command, done=True, ok=ok, detail=detail))
+        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if k:
+            return
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -7020,8 +7097,10 @@ def select_mode(
     # inline mode Rich rewrites scattered lines across the full height every frame
     # — the visible "reprint"/flicker. Alt-screen swaps composite frames cleanly.
     # A single, brief flash at the splash→menu boundary is the accepted trade for
-    # a flicker-free steady state. 30fps is ample for these gentle animations and
-    # halves the redraw load.
+    # a flicker-free steady state. 60fps keeps the shimmer/duck/tip motion smooth
+    # (the input loop already polls at _FRAME_TIME = 1/60, so the Live refresh cap
+    # was the bottleneck); alt-screen double-buffering means the higher rate costs
+    # redraw work but never flickers.
     with make_live(
         # Seed the first frame with NOTHING revealed (sweep front at 0) so the
         # diagonal intro wipes titles in from an empty screen — otherwise every
@@ -7035,7 +7114,7 @@ def select_mode(
             sweep_front=0.0,
         ),
         console=console,
-        refresh_per_second=30,
+        refresh_per_second=60,
         screen=True,
     ) as live:
         # Outer loop: returns here when user presses Esc from project list
@@ -7063,7 +7142,7 @@ def select_mode(
                     _rb = 0
                     for _i in range(n):
                         _front_max = max(_front_max, (_rb + 1) * _SWEEP_ROW_WEIGHT + _widths[_i])
-                        _rb += (2 + (2 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
+                        _rb += (2 + (3 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
                     _front_max += 2
                     _intro_start = time.monotonic()
                     while True:
@@ -7177,6 +7256,47 @@ def select_mode(
                     play_wordmark_intro(console, live, "All Tips", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     select_time = time.monotonic()  # restart the description typewriter
+                elif key == "clear":
+                    # Ctrl+U — the update shortcut advertised by the bottom-right
+                    # update box. Only acts when a newer release exists; Ctrl+U is
+                    # otherwise the text "kill line" key, unused on this menu.
+                    from yeaboi.update_check import get_update_status
+
+                    if get_update_status()["update_available"]:
+                        _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        select_time = time.monotonic()
+                elif isinstance(key, str) and key.startswith("click:"):
+                    # Click-to-select: a click on a mode's block highlights it
+                    # (revealing its description); a click on the already-selected
+                    # mode activates it, exactly like Enter. Clicks off the list
+                    # (tips, version row, the duck lane) resolve to None → ignored.
+                    try:
+                        _cx, _cy = (int(p) for p in key.split(":")[1:3])
+                    except ValueError:
+                        _cx = _cy = -1
+                    _w, _h = console.size
+                    if duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the duck → his shades lift to reveal a second pair.
+                        logger.info("duck clicked — double-shades gag")
+                        _play_duck_shades(
+                            console,
+                            live,
+                            selected,
+                            tip_offset=tip_offset,
+                            start_time=start_time,
+                            select_time=select_time,
+                        )
+                        continue
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx)
+                    if _hit is not None:
+                        if _hit == selected:
+                            if _MODE_CARDS[selected]["available"]:
+                                logger.info("mode click-activate: %s", _MODE_CARDS[selected]["key"])
+                                break
+                        else:
+                            logger.info("mode click-select: %s", _MODE_CARDS[_hit]["key"])
+                            selected = _hit
+                            select_time = time.monotonic()
 
                 elapsed = time.monotonic() - select_time
                 reveal = elapsed * _DESC_SCROLL_SPEED  # float for sub-char fade
@@ -7238,12 +7358,11 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
-            # 2c: Slide Planning title + description from center to top.
-            # Description fades out as the title slides up.
+            # 2c: Slide the chosen title up to the top. It starts from the item's
+            # ACTUAL resting row (so a mid-list pick lifts from where it sits, not
+            # from a fixed centre) and rises to one line below the top border.
             w, h = console.size
-            inner_h = h - 4
-            block_h = 2  # title(6) only — description disappears on selection
-            start_offset = max(0, (inner_h - block_h) // 2)
+            start_offset = selected_title_offset(selected, width=w, height=h)
             end_offset = 1  # one blank line above title to match project list layout
 
             slide_frames = 15
@@ -7270,7 +7389,6 @@ def select_mode(
                 # analysis flow runs. The branch is too large for a `with`
                 # block, so it detaches explicitly at both `continue` exits.
                 attach_mode_handler("analysis")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 from yeaboi.azdevops_sync import is_azdevops_board_configured as _azdevops_check
                 from yeaboi.jira_sync import is_jira_configured as _jira_check
 
@@ -8057,7 +8175,6 @@ def select_mode(
             # ── Route: Daily Standup mode → dashboard + actions ──────────
             if chosen["key"] == "daily-standup":
                 logger.info("Daily Standup mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 # Route all records to logs/standup/standup.log while the page runs.
                 with mode_log("standup"):
                     _run_standup_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
@@ -8068,7 +8185,6 @@ def select_mode(
             # ── Route: Retro mode → collaborative board page ─────────────
             if chosen["key"] == "retro":
                 logger.info("Retro mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("retro"):
                     _run_retro_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -8078,7 +8194,6 @@ def select_mode(
             # ── Route: Performance mode → per-engineer dashboard ─────────
             if chosen["key"] == "performance":
                 logger.info("Performance mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("performance"):
                     _run_performance_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -8088,7 +8203,6 @@ def select_mode(
             # ── Route: Reporting mode → delivery-report page ─────────────
             if chosen["key"] == "reporting":
                 logger.info("Reporting mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("reporting"):
                     _run_reporting_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -8098,7 +8212,6 @@ def select_mode(
             # ── Route: Usage mode → single-page dashboard ────────────────
             if chosen["key"] == "usage":
                 logger.info("Usage mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
 
                 _usage_data = _collect_usage_data()
@@ -8169,7 +8282,6 @@ def select_mode(
             # ── Route: Settings mode → config viewer + setup wizard ────────
             if chosen["key"] == "settings":
                 logger.info("Settings mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
                 _settings_data = _collect_settings_data()
@@ -8251,7 +8363,6 @@ def select_mode(
             # Reached only when none of the mode branches above matched, i.e.
             # chosen["key"] == "project-planning". Runs once, before the project
             # list loop, so the intro plays a single time per Planning entry.
-            play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
 
             # Staggered vertical reveal — cards pop in one by one, fast.
             _reveal_target = float(proj_n)
