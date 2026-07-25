@@ -1308,6 +1308,53 @@ class TestDeliveryOffScreen:
         ):
             assert expected in combined
 
+    def test_zero_marked_explains_detection_limits(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=0, footprint_pct=0.0)
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples={}, view="ai-adoption", code_signal=signal, width=100, height=50
+            ),
+            width=100,
+        )
+        assert "does not mean zero AI use" in out
+        assert "attribution" in out
+
+    def test_identity_mismatch_warning_when_no_users_matched(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal()
+        examples = {
+            "ai_adoption": {
+                "selected_users": ["Ava"],
+                "matched_identities": {},
+                "unmatched_users": ["Ava"],
+                "coverage": ["no commits or authored PRs matched the selected users"],
+            }
+        }
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=examples, view="ai-adoption", code_signal=signal, width=100, height=50
+            ),
+            width=100,
+        )
+        assert "IDENTITY MISMATCH" in out
+        assert "not zero AI usage" in out
+
+    def test_no_identity_mismatch_warning_when_users_matched(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        examples = {"ai_adoption": {"selected_users": ["Ava"], "matched_identities": {"Ava": ["ava"]}}}
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=examples, view="ai-adoption", code_signal=signal, width=100, height=50
+            ),
+            width=100,
+        )
+        assert "IDENTITY MISMATCH" not in out
+
     def test_ai_adoption_repo_list_capped_with_more_row(self):
         from yeaboi.team_profile import AiAdoptionSignal
 

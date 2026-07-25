@@ -1815,8 +1815,26 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     blob = ctx.code_blob or _ex.get("ai_adoption", {})
     scanned = (getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)) if sig else 0
 
+    # A 0% that comes from unresolved identities is a data problem, not an AI
+    # signal — say so wherever the card lands (empty state included).
+    _selected = (blob.get("selected_users") or []) if isinstance(blob, dict) else []
+    _identity_mismatch = bool(_selected) and not (blob.get("matched_identities") or {})
+
+    def _mismatch_callout() -> None:
+        unmatched = ", ".join(str(u) for u in (blob.get("unmatched_users") or _selected))
+        _ta_callout(
+            ctx,
+            "IDENTITY MISMATCH",
+            f"None of the selected members ({unmatched}) matched a git author name or email "
+            "in the scan window — 0% here means unmatched identities, not zero AI usage. "
+            "Compare the selection against real commit authors.",
+            colour=c_warn,
+        )
+
     ctx.heading("AI Footprint")
     if not sig or scanned == 0:
+        if _identity_mismatch:
+            _mismatch_callout()
         coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
         detail = (
             "No AI-usage scan for this analysis. Run a new analysis with a repository or "
@@ -1826,7 +1844,20 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
             detail += " Coverage: " + " · ".join(str(gap) for gap in coverage)
         _ta_callout(ctx, "NO RECENT CODE DATA", detail, colour=c_muted)
         return
-    if scanned:
+    marked = sig.ai_commits + sig.ai_prs
+    if _identity_mismatch:
+        _mismatch_callout()
+    if marked == 0:
+        _ta_callout(
+            ctx,
+            "LOWER BOUND SIGNAL",
+            f"No detectable markers in {scanned} scanned items. Only tools that leave attribution "
+            "traces are counted — Claude Code and aider trailers, Codex / Copilot / Devin / Cursor "
+            "agent commits, PRs, and branches. Inline autocomplete and chat copy-paste (Copilot "
+            "ghost-text, Cursor Tab, ChatGPT) leave no trace, so zero detected does not mean zero AI use.",
+            colour=c_warn,
+        )
+    else:
         _ta_callout(
             ctx,
             "LOWER BOUND SIGNAL",
@@ -1837,7 +1868,6 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
 
     fp = getattr(sig, "footprint_pct", 0.0)
     fp_sty = c_good if fp >= 40 else (c_warn if fp >= 15 else c_bad)
-    marked = sig.ai_commits + sig.ai_prs
     _window = blob.get("window_days") if isinstance(blob, dict) else None
     _scan_detail = f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs"
     if _window:
