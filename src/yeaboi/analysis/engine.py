@@ -26,14 +26,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Re-exported: callers (TUI worker, tests) import the error from the engine,
+# but it lives in analysis/cancellation.py so the fetch layers can raise it
+# without importing this module (engine imports them — reverse would cycle).
+from yeaboi.analysis.cancellation import AnalysisCancelledError
+
 logger = logging.getLogger(__name__)
-
-
-class AnalysisCancelledError(RuntimeError):
-    """A caller's ``cancel_event`` aborted the run before anything was saved.
-
-    Raised (not returned) so the TUI worker's except-chain can distinguish
-    cancellation from real failures; nothing is persisted once it fires."""
 
 
 # Friendly tracker labels for 'both'-mode output (mirrors reporting/engine.py's
