@@ -283,3 +283,13 @@ def test_engine_module_only_public_run_anonymize():
     public = [n for n in vars(anon_engine) if not n.startswith("_") and callable(vars(anon_engine)[n])]
     # Imported names (date) are fine; assert our own pipeline entry point is the public one.
     assert "run_anonymize" in public
+
+
+class TestSharedDesignSystem:
+    def test_anonymized_html_uses_shared_theme(self):
+        from yeaboi.anonymize.export import build_anonymized_html
+
+        html = build_anonymized_html(AnonymizedOutput(anonymized_text="body"), title="T")
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

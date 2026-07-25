@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.36.0",
+      "date": "2026-07-25",
+      "summary": "All shareable HTML exports now share a cohesive, polished design system. Every mode's export page — planning, standup, retro, performance, reporting, roadmap, team profile, and anonymize — uses unified five-theme palettes (midnight, light, solarized, synthwave, forest) with a persistent theme switcher. A self-contained header button cycles themes and remembers your choice in localStorage; printing always forces light tokens. New semantic color tokens (`--ok`, `--warn`, `--danger`, priority ramps, text variants) replace scattered hardcoded hex values across eight exporters, and shared page chrome primitives (`html_page()`, `chip()`, `section()`, `stat_tile()`, `stat_bar()`, `notice_block()`) unify markup and reduce duplication. The design is self-contained with no external CDN or requests. Incidentally fixes an unstyled container in the anonymize export and corrects four double-escaped ampersands in team-profile titles.",
+      "highlights": [
+        {"text": "Five unified theme palettes (midnight default, light, solarized, synthwave, forest) across all eight export pages", "areas": ["general", "planning", "standup", "retro", "performance", "reporting", "usage"]},
+        {"text": "Persistent theme switcher in a header button; localStorage remembers choice and printing forces light tokens", "areas": ["general", "usage"]},
+        {"text": "Shared semantic color tokens and page chrome primitives reduce duplication across exporters", "areas": ["general"]},
+        {"text": "Self-contained design with no CDN or external requests; all resources inline", "areas": ["general"]},
+        {"text": "Bug fixes: unstyled anonymize export container and corrected double-escaped ampersands in team profile", "areas": ["general"]}
+      ]
+    },
+    {
       "version": "2.35.0",
       "date": "2026-07-24",
       "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan — letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",

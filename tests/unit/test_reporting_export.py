@@ -112,3 +112,11 @@ class TestExportReport:
         assert (tmp_path / "delivered.png").exists()
         # …and the HTML embeds it base64 so it stays self-contained.
         assert "data:image/png;base64," in paths["html"].read_text(encoding="utf-8")
+
+
+class TestSharedDesignSystem:
+    def test_report_html_uses_shared_theme(self):
+        html = export.build_report_html(_report())
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

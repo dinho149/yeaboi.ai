@@ -119,3 +119,11 @@ class TestExportWrites:
         paths = export_retro(_report(), project_name="Demo")
         assert paths["markdown"].exists() and paths["html"].exists()
         assert paths["markdown"].read_text().startswith("# Sprint Retro")
+
+
+class TestSharedDesignSystem:
+    def test_retro_html_uses_shared_theme(self):
+        html = build_retro_html(_report())
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained
