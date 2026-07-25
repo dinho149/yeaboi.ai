@@ -40,6 +40,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
     Returns standardised key names:
       - "up", "down", "left", "right" — arrow keys
       - "scroll_up", "scroll_down" — mouse wheel events
+      - "click:<x>:<y>" — left-button click at 1-based cell (x, y)
       - "enter", "tab", "esc", "backspace", "clear" — special keys
       - "paste:<content>" — bracketed paste payload
       - single character — printable input
@@ -212,15 +213,24 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                     parts = sgr_buf.split(";")
                     # Only act on press events — release events ('m') for
                     # scroll wheel would double-count each tick, causing jumps.
-                    if is_press and len(parts) >= 1:
+                    if is_press and len(parts) >= 3:
                         try:
                             button = int(parts[0])
+                            cx = int(parts[1])
+                            cy = int(parts[2])
                         except ValueError:
                             return ""
                         if button == 64:
                             return "scroll_up"
                         if button == 65:
                             return "scroll_down"
+                        # Plain left-button press (button 0, no motion/modifier
+                        # flag bits set) → a click. Return the 1-based cell the
+                        # pointer is over so a screen can hit-test it against its
+                        # own layout (e.g. click-to-select a menu item). Middle/
+                        # right clicks and modified clicks are still swallowed.
+                        if button == 0:
+                            return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).
                 # Button byte 96 = scroll up (64+32), 97 = scroll down (65+32).

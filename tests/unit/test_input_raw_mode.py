@@ -127,6 +127,46 @@ def test_ctrl_y_decodes_to_hidden_screensaver_key(pty_pair):
         t.cancel()
 
 
+def _decode_mouse(pty_pair, payload: bytes) -> str:
+    """Feed an SGR mouse report mid-wait and return the decoded key name."""
+    import threading
+
+    master, slave = pty_pair
+
+    class _Stdin:
+        def fileno(self):
+            return slave
+
+    t = threading.Timer(0.2, os.write, args=(master, payload))
+    t.start()
+    try:
+        return _input._read_key_impl(stdin=_Stdin(), timeout=3.0)
+    finally:
+        t.cancel()
+
+
+def test_left_click_decodes_to_click_coordinates(pty_pair):
+    # SGR left-button press \x1b[<0;12;5M → "click:12:5" (1-based col;row) so a
+    # screen can hit-test the click against its layout (click-to-select a mode).
+    assert _decode_mouse(pty_pair, b"\x1b[<0;12;5M") == "click:12:5"
+
+
+def test_scroll_still_decodes_after_click_support(pty_pair):
+    # Regression: adding click parsing must not disturb wheel decoding.
+    assert _decode_mouse(pty_pair, b"\x1b[<64;3;4M") == "scroll_up"
+    assert _decode_mouse(pty_pair, b"\x1b[<65;3;4M") == "scroll_down"
+
+
+def test_left_button_release_is_swallowed(pty_pair):
+    # Release events ('m') must not fire a second click (would double-activate).
+    assert _decode_mouse(pty_pair, b"\x1b[<0;12;5m") == ""
+
+
+def test_right_click_is_swallowed(pty_pair):
+    # Only plain left clicks (button 0) select; other buttons stay consumed.
+    assert _decode_mouse(pty_pair, b"\x1b[<2;12;5M") == ""
+
+
 def test_enter_raw_mode_on_non_tty_is_safe(monkeypatch):
     # A pipe fd is not a terminal — enter_raw_mode must swallow the error.
     r, w = os.pipe()
