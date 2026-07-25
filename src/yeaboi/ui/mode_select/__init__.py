@@ -93,9 +93,10 @@ _MENU_SWEEP_SPEED = 150.0
 # Companion entrance: after the menu wipes in, the duck glides in from the right
 # over this many seconds, then the tip bubble + update box fade in above him.
 _COMPANION_INTRO_SECONDS = 0.55
-# On returning from a sub-page the entrance starts this far along, so he only nudges
-# the little bit forward into the menu spot rather than sliding in from off-screen.
-_COMPANION_RETURN_START = 0.55
+# On returning from a sub-page the entrance starts this far along, chosen so the
+# welcome duck's first column lines up with the sub-page duck's corner (~col 104 at
+# a 120-wide terminal), so he continues forward from there rather than jumping.
+_COMPANION_RETURN_START = 0.28
 
 
 def _run_output_share_flow(
