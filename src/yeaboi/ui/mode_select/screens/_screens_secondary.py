@@ -487,6 +487,11 @@ def _build_team_analysis_screen(
 
     return Panel(
         content,
+        # Rich cascades a Panel's style onto every child segment without an
+        # explicit bgcolor, so one background here tints content rows, heading
+        # spacers, scroll filler lines and card interiors alike — no dark seams
+        # between cards regardless of the terminal's own background.
+        style=_ANALYSIS_CARD_BG,
         border_style="white",
         box=rich.box.ROUNDED,
         expand=True,
@@ -527,6 +532,8 @@ _ANALYSIS_FEATURE_LABELS: dict[str, tuple[str, str]] = {
     "documentation": ("Documentation", "clarity, usefulness, structure, and ownership"),
 }
 
+# The only background style in the app: used on the analysis setup/review cards
+# and on the whole analysis results viewport (see _build_team_analysis_screen).
 _ANALYSIS_CARD_BG = "on rgb(13,31,27)"
 
 

@@ -2323,6 +2323,20 @@ class TestAnalysisOverview:
         output = self._render_view(examples=_NARRATIVE_EXAMPLES)
         assert "Open" in output and "Continue" in output
 
+    def test_results_panel_carries_card_background(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _ANALYSIS_CARD_BG
+
+        panel = _build_team_analysis_screen(_make_overview_profile(), width=100, height=40)
+        assert panel.style == _ANALYSIS_CARD_BG
+
+    def test_results_background_cascades_onto_blank_rows(self):
+        """The card background must reach spacer/filler rows (no dark seams)."""
+        panel = _build_team_analysis_screen(_make_overview_profile(), width=100, height=40)
+        buf = StringIO()
+        console = Console(file=buf, width=100, force_terminal=True, color_system="truecolor", highlight=False)
+        console.print(panel)
+        assert "13;31;27" in buf.getvalue()
+
     def test_overview_code_health_row_aligns_with_ai_rows(self):
         output = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
         columns = {}
