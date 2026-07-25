@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.align import Align
 from rich.console import Console
 from rich.text import Text
 
@@ -141,3 +142,27 @@ def test_full_compact_and_tiny_layouts_fit_the_terminal():
         )
         assert len(lines) <= height
         assert all(sum(segment.cell_length for segment in line) <= width for line in lines)
+
+
+def test_screensaver_large_uses_full_duck():
+    saver = build_screensaver(width=60, height=22, elapsed=0.0)
+    assert isinstance(saver, Align)  # renders without error at the large tier
+
+
+def test_screensaver_compact_tier_renders():
+    saver = build_screensaver(width=30, height=15, elapsed=0.0)
+    assert isinstance(saver, Align)
+
+
+def test_screensaver_tiny_tier_renders():
+    saver = build_screensaver(width=10, height=4, elapsed=0.0)
+    assert isinstance(saver, Align)
+
+
+def test_screensaver_animates_between_frames():
+    def rendered(elapsed):
+        con = Console(width=60, height=22, record=True, file=open("/dev/null", "w"))
+        con.print(build_screensaver(width=60, height=22, elapsed=elapsed))
+        return con.export_text()
+
+    assert rendered(0.0) != rendered(0.375)  # frame 0 vs frame 3 (wing lifted)
