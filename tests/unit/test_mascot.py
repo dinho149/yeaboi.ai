@@ -64,6 +64,9 @@ def test_wing_flap_changes_a_frame():
 
 
 def test_palette_matches_generator():
+    import pytest
+
+    pytest.importorskip("PIL")
     import importlib.util
     from pathlib import Path
 

@@ -156,7 +156,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     elapsed = idle_controller.animation_elapsed() if elapsed is None else elapsed
     frame = int(elapsed * 8) % 8
 
-    if width >= 46 and height >= 19:
+    if width >= 46 and height >= 20:
         art = render_full(frame)
     elif width >= 22 and height >= 13:
         art = render_head(frame)

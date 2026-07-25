@@ -166,3 +166,10 @@ def test_screensaver_animates_between_frames():
         return con.export_text()
 
     assert rendered(0.0) != rendered(0.375)  # frame 0 vs frame 3 (wing lifted)
+
+
+def test_screensaver_full_tier_minimum_height_keeps_hint():
+    con = Console(width=60, height=20, record=True, file=open("/dev/null", "w"))
+    con.print(build_screensaver(width=60, height=20, elapsed=0.0))
+    text = con.export_text()
+    assert "press any key" in text
