@@ -7,7 +7,30 @@ discovered asset receives one terminal state and the overall run is only
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+
+# One mid-scan network loss produces dozens of identical exceptions differing
+# only by URL/sha/id. Grouping must key on the *shape* of the error, not its
+# raw text, or every failure renders as its own coverage note.
+_DETAIL_SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"https?://\S+"), "<url>"),
+    (re.compile(r"/[\w][\w./~%-]*_apis/\S+"), "<api-path>"),
+    (re.compile(r"\b[0-9a-f]{7,40}\b"), "<id>"),
+    (re.compile(r"\b\d{4,}\b"), "<n>"),
+)
+_DETAIL_MAX_LEN = 200
+
+
+def _normalize_detail(detail: str) -> str:
+    """Strip volatile parts (URLs, shas, ids) so repeated errors group as one."""
+    text = detail or ""
+    for pattern, replacement in _DETAIL_SUBSTITUTIONS:
+        text = pattern.sub(replacement, text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > _DETAIL_MAX_LEN:
+        text = text[: _DETAIL_MAX_LEN - 1] + "…"
+    return text
 
 
 @dataclass
@@ -80,13 +103,14 @@ class CoverageTracker:
         for asset in self.assets:
             if asset["status"] not in {"failed", "inaccessible", "truncated"}:
                 continue
-            key = (asset["provider"], asset["status"], asset["detail"] or asset["status"])
+            detail = _normalize_detail(asset["detail"]) or asset["status"]
+            key = (asset["provider"], asset["status"], detail)
             group = grouped.setdefault(
                 key,
                 {
                     "provider": asset["provider"],
                     "status": asset["status"],
-                    "detail": asset["detail"] or asset["status"],
+                    "detail": detail,
                     "count": 0,
                     "containers": set(),
                     "examples": [],
