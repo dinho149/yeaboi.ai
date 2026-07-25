@@ -472,6 +472,7 @@ def run_team_analysis(
                     "analysis_scope": analysis_scope,
                     "db_path": effective_db_path,
                     "code_features": selected_code_features,
+                    "cancel_event": cancel_event,
                 },
             )
         )

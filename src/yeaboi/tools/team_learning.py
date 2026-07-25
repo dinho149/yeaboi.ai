@@ -2629,11 +2629,15 @@ def _run_ai_usage_component(
     analysis_scope: dict[str, list[str]] | None = None,
     db_path=None,
     code_features: list[str] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[object | None, dict | None]:
     """Run the AI-adoption ('code') sub-analysis over ``sub_sources`` (github/azdo;
     None = all). Returns ``(signal, blob)`` or ``(None, None)`` on failure. Best-effort
-    — never raises. The engine runs this ONCE globally; it's also reused inline by the
-    delivery pipeline for back-compat."""
+    — never raises, EXCEPT ``AnalysisCancelledError`` (cancellation must propagate so
+    the engine discards the run instead of recording an empty result). The engine runs
+    this ONCE globally; it's also reused inline by the delivery pipeline for back-compat."""
+    from yeaboi.analysis.cancellation import AnalysisCancelledError
+
     enabled = set(code_features or ("ai_footprint", "code_health"))
     try:
         from yeaboi.analysis.ai_usage import generate_ai_adoption_insights, run_ai_adoption
@@ -2650,6 +2654,8 @@ def _run_ai_usage_component(
         if analysis_scope is not None:
             kwargs["analysis_scope"] = analysis_scope
         kwargs["progress"] = progress
+        if cancel_event is not None:
+            kwargs["cancel_event"] = cancel_event
         try:
             signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
         except TypeError:
@@ -2657,6 +2663,7 @@ def _run_ai_usage_component(
             kwargs.pop("code_features", None)
             kwargs.pop("db_path", None)
             kwargs.pop("generate_insights", None)
+            kwargs.pop("cancel_event", None)
             signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
         # Only spend an LLM call on coaching when something was actually scanned;
         # an empty footprint (no repos/creds) coaches deterministically.
@@ -2672,6 +2679,8 @@ def _run_ai_usage_component(
 
             ai_examples["insights"] = _fallback_ai_adoption_insights(signal, ai_examples.get("samples"))
         return (signal if "ai_footprint" in enabled else None), ai_examples
+    except AnalysisCancelledError:
+        raise  # cancellation is not a failure — the engine discards the run
     except Exception:  # pragma: no cover - defensive; run_ai_adoption already guards
         logger.exception("AI-adoption analysis failed; continuing without it")
         return None, None

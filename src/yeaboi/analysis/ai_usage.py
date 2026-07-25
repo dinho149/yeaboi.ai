@@ -37,6 +37,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from yeaboi.analysis.cancellation import AnalysisCancelledError
 from yeaboi.team_profile import AiAdoptionSignal
 
 logger = logging.getLogger(__name__)
@@ -258,6 +259,7 @@ def collect_ai_activity(
     analysis_scope: dict[str, list[str]] | None = None,
     progress: list[str] | None = None,
     code_features: list[str] | tuple[str, ...] | set[str] = ("ai_footprint", "code_health"),
+    cancel_event: threading.Event | None = None,
     _return_inventory: bool = False,
 ) -> (
     tuple[list[dict], list[str], list[str], list[str]]
@@ -271,7 +273,8 @@ def collect_ai_activity(
     coverage is visible rather than silent. ``repos_scanned`` holds friendly
     "what was actually scanned" labels (remote slug / project). Only remote sources
     are scanned — local-clone scanning was removed. ``sub_sources`` restricts which
-    hosts to scan (subset of ``{"github", "azdo"}``; None = both). Never raises.
+    hosts to scan (subset of ``{"github", "azdo"}``; None = both). Never raises,
+    except ``AnalysisCancelledError`` when ``cancel_event`` is set mid-scan.
     """
     from yeaboi.analysis.coverage import CoverageTracker, coverage_notes
     from yeaboi.config import (
@@ -360,6 +363,10 @@ def collect_ai_activity(
                 futures = {executor.submit(_read_github_repo, repo): (index, repo) for index, repo in active_repos}
                 completed = 0
                 for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        raise AnalysisCancelledError("Analysis cancelled")
                     index, _repo = futures[future]
                     try:
                         repo_results[index] = (future.result(), None)
@@ -487,6 +494,10 @@ def collect_ai_activity(
             ) as executor:
                 futures = {executor.submit(_read_azure_project, project): project for project in azdo_projects}
                 for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        raise AnalysisCancelledError("Analysis cancelled")
                     project = futures[future]
                     try:
                         _project, raw = future.result()
@@ -581,6 +592,7 @@ def run_ai_adoption(
     code_features: list[str] | tuple[str, ...] | set[str] | None = None,
     db_path=None,
     generate_insights: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[AiAdoptionSignal, dict]:
     """Orchestrate the AI-adoption scan: discover sources → collect → aggregate.
 
@@ -617,6 +629,7 @@ def run_ai_adoption(
                 analysis_scope=analysis_scope,
                 progress=progress,
                 code_features=enabled_features,
+                cancel_event=cancel_event,
                 _return_inventory=True,
             )
         except TypeError:
@@ -837,6 +850,10 @@ def run_ai_adoption(
                         executor.submit(_read_changed_files, request): (index, request) for index, request in pending
                     }
                     for future in as_completed(futures):
+                        if cancel_event is not None and cancel_event.is_set():
+                            for pending_future in futures:
+                                pending_future.cancel()
+                            raise AnalysisCancelledError("Analysis cancelled")
                         index, request = futures[future]
                         provider, container, repository, item = request
                         try:
@@ -970,6 +987,9 @@ def run_ai_adoption(
             ",".join(sources_scanned) or "none",
         )
         return signal, blob
+    except AnalysisCancelledError:
+        # Cancellation is not a failure — propagate so the engine discards the run.
+        raise
     except Exception:  # pragma: no cover - collect/aggregate already guard
         logger.exception("run_ai_adoption failed; returning empty signal")
         return AiAdoptionSignal(), {

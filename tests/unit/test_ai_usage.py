@@ -627,6 +627,18 @@ class TestRunAiAdoption:
         assert sorted(fetched) == ["sha-2", "sha-3"]  # the two newest; older ones skipped
         assert any("capped at 2 of 4" in note for note in blob["coverage"])
 
+    def test_cancel_propagates_instead_of_returning_empty_signal(self, monkeypatch):
+        import pytest
+
+        from yeaboi.analysis.cancellation import AnalysisCancelledError
+
+        def _cancelled(*args, **kwargs):
+            raise AnalysisCancelledError("Analysis cancelled")
+
+        monkeypatch.setattr("yeaboi.analysis.ai_usage.collect_ai_activity", _cancelled)
+        with pytest.raises(AnalysisCancelledError):
+            run_ai_adoption("jira", "P", [], [], members=["Alice"], cancel_event=threading.Event())
+
     def test_immutable_commit_file_metadata_is_reused(self, monkeypatch, tmp_path):
         item = {
             "kind": "commit",
