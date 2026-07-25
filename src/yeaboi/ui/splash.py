@@ -60,13 +60,14 @@ _SHINE_ROW_SKEW = 0.03
 # the whole boot snappy (the splash is on the critical path to the menu) while the
 # letters are still visibly *drawn* in his wake rather than zoomed past.
 _DUCK_PAINT_STEP = 2.4
-# The reveal front sits this many cells into the duck's body from his trailing
-# (left) edge: a letter only appears once his back has nearly cleared it, so the
-# wordmark emerges from under him rather than snapping in at his beak.
-_DUCK_REVEAL_LAG = 5
 # Walk cycle: vertical bob (pixels) applied to the duck as he strides, so he
 # waddles up-and-down instead of gliding flat. Paired with the wing flap.
 _WALK_BOB = (0, 0, 1, 1, 0, 0, 1, 1)
+# Intro: he walks in from the left to this fraction of the wordmark's left edge,
+# then YEABOI bursts out from behind him at _EXCLAIM_STEP cols/frame (fast — an
+# exclamation), while he recoils with _EXCLAIM_RECOIL (a lean-back bob per frame).
+_EXCLAIM_STEP = 5.0
+_EXCLAIM_RECOIL = (3, 3, 2, 2, 1, 1, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -349,16 +350,20 @@ def _run_wordmark_animation(
 
     # Phase 1 — Reveal.
     if run_duck:
-        # The duck draws the wordmark: he runs across empty space and the letters
-        # appear behind him (reveal_front trails his leading edge by _DUCK_REVEAL_LAG).
+        # The duck waddles in from the left and stops at the wordmark's left edge;
+        # then YEABOI bursts out from behind him (reveal sweeps right past his body)
+        # as he recoils, as if he's exclaiming it.
         from yeaboi.ui.shared._mascot import mini_cells
 
         _cells = mini_cells()
         _duck_w = len(_cells[0]) if _cells else 0
+        w, h = console.size
+        _rest = len(_block_left_pad(text_lines, w))  # wordmark's left column
+
+        # Phase A — walk in from off-left to his resting spot, no wordmark yet.
         _col = float(-_duck_w)
         _step_i = 0
-        while True:
-            w, h = console.size
+        while _col < _rest:
             live.update(
                 _build_run_frame(
                     text_lines,
@@ -366,21 +371,39 @@ def _run_wordmark_animation(
                     height=h,
                     duck_col=int(_col),
                     rgb=rgb,
-                    reveal_front=_col + _DUCK_REVEAL_LAG,
-                    # Wing flap + up/down walk bob so he waddles rather than glides.
+                    reveal_front=0.0,  # hide the whole wordmark while he arrives
                     duck_frame=_step_i // 3,
                     duck_bob=_WALK_BOB[_step_i % len(_WALK_BOB)],
                 ),
-                refresh=True,  # one deterministic render per frame (no background double-draw)
+                refresh=True,
             )
             time.sleep(frame_time)
             _step_i += 1
             _col += _DUCK_PAINT_STEP
-            if _col > max(1, w - 6):
-                break
-        # Settle on the fully-drawn wordmark (duck gone), then go straight to the
-        # crumble — the paint IS the reveal, so the duck splash skips the shine to
-        # keep the whole boot snappy.
+
+        # Phase B — YEABOI springs out from behind him; he leans back (recoil bob).
+        _front = float(_rest)
+        _r = 0
+        inner_w = max(1, w - 6)
+        while _front < inner_w:
+            live.update(
+                _build_run_frame(
+                    text_lines,
+                    width=w,
+                    height=h,
+                    duck_col=_rest,
+                    rgb=rgb,
+                    reveal_front=_front,
+                    duck_frame=0,
+                    duck_bob=_EXCLAIM_RECOIL[_r] if _r < len(_EXCLAIM_RECOIL) else 0,
+                ),
+                refresh=True,
+            )
+            time.sleep(frame_time)
+            _front += _EXCLAIM_STEP
+            _r += 1
+
+        # Settle on the fully-drawn wordmark (duck gone), then straight to the crumble.
         w, h = console.size
         live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=1.0, rgb=rgb), refresh=True)
     else:
