@@ -169,6 +169,7 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
 _SAVER_FOOT_RESERVE = 1
 _SAVER_DUCK_W = 34  # full duck trace width
 _SAVER_JUMP_H = 4  # how many rows he springs up as he reaches the music tab
+_SAVER_JUMP_HALF = 0.06  # half-width of the hop as a fraction of the walk period
 
 
 def build_screensaver(*, width: int, height: int, elapsed: float | None = None) -> RenderableType:
@@ -190,9 +191,13 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         x = int(travel * span)
         facing_left = phase >= 0.5  # heading left on the return leg → mirror him
         foot = int(elapsed * 3.0)  # step cadence, decoupled from the fast wing frame
-        # Spring up as he nears the music tab at the right end (the last ~40% of the
-        # leg). While airborne the sunglasses bob; on the ground they hold still.
-        jump = int(_SAVER_JUMP_H * max(0.0, (travel - 0.6) / 0.4))
+        # A single quick spring-hop centred on the turnaround (phase 0.5), where he's
+        # at the music tab: a peaked parabola so it snaps up, hovers a beat at bar
+        # level, and drops — not a slow row-by-row climb that read as several jumps.
+        # While airborne the sunglasses bob; on the ground they hold still.
+        d = abs(phase - 0.5)
+        hop = max(0.0, 1.0 - (d / _SAVER_JUMP_HALF) ** 2)
+        jump = int(round(_SAVER_JUMP_H * hop))
         glasses_frame = frame if jump > 0 else 0
         grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left)
         duck_rows = [_cells_to_text(r, x) for r in grid]
@@ -200,12 +205,15 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
         hint = Text("press any key", style="rgb(95,105,115)", justify="center")
         below = _SAVER_FOOT_RESERVE + jump  # blank rows under him → raises him mid-jump
-        above = max(0, content_h - len(duck_rows) - below)
-        cap_top = max(0, (above - 2) // 2)
+        duck_top = max(0, content_h - len(duck_rows) - below)  # rises as he jumps
+        # Caption pinned near the top (fixed), so it doesn't bob with the jumping duck.
+        cap_top = max(0, min(content_h // 5, duck_top - 2))
         rows: list[RenderableType] = [Text("") for _ in range(cap_top)]
-        if above >= 2:
+        if duck_top - cap_top >= 2:
             rows += [caption, hint]
-        rows += [Text("") for _ in range(max(0, above - cap_top - 2))]
+            rows += [Text("") for _ in range(max(0, duck_top - cap_top - 2))]
+        else:
+            rows += [Text("") for _ in range(max(0, duck_top - cap_top))]
         rows += duck_rows
         rows += [Text("") for _ in range(below)]
         return Panel(
