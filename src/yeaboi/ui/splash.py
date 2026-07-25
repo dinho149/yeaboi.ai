@@ -219,6 +219,39 @@ def _resolve_wordmark(word: str, available_width: int) -> list[str]:
     return render_ascii_text(word)
 
 
+def _build_crumble_frame(
+    text_lines: list[str],
+    *,
+    width: int,
+    height: int,
+    progress: float,
+    rgb: tuple[int, int, int] = _BRAND_RGB,
+) -> Panel:
+    """Build a dissolve frame: characters clear top-left → bottom-right.
+
+    ``progress`` 0→1 sweeps a diagonal front across the block — a character at
+    (row, col) has cleared once ``(row + col)`` normalised is past ``progress`` —
+    so the wordmark crumbles away from the top-left corner instead of fading as a
+    whole. Cleared cells become spaces so nothing lingers against the background.
+    """
+    pad = _block_left_pad(text_lines, width)
+    max_r = max(len(text_lines) - 1, 0)
+    max_c = max((len(line) for line in text_lines), default=1) - 1
+    denom = max(max_r + max_c, 1)
+    style = f"bold rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+    rendered = Text(justify="left")
+    for r, line in enumerate(text_lines):
+        rendered.append(pad)
+        for c, ch in enumerate(line):
+            if ch == " " or (r + c) / denom <= progress:
+                rendered.append(" ")
+            else:
+                rendered.append(ch, style=style)
+        if r < len(text_lines) - 1:
+            rendered.append("\n")
+    return _center_in_panel(rendered, width=width, height=height, block_h=len(text_lines))
+
+
 def _run_wordmark_animation(
     console: Console,
     live: object,
@@ -229,6 +262,7 @@ def _run_wordmark_animation(
     shine_frames: int,
     fade_out_frames: int,
     frame_time: float,
+    crumble: bool = False,
 ) -> None:
     """Drive ``live`` through fade-in → diagonal shine → fade-out for a wordmark.
 
@@ -253,11 +287,15 @@ def _run_wordmark_animation(
         live.update(_build_shine_frame(text_lines, width=w, height=h, hotspot=hotspot, rgb=rgb))
         time.sleep(frame_time)
 
-    # Phase 3 — Fade out: colour → nothing
+    # Phase 3 — Exit: either a whole-block fade (per-mode intros) or a top-left →
+    # bottom-right crumble (the brand splash), depending on ``crumble``.
     for frame in range(fade_out_frames):
-        t = 1.0 - _ease_out_cubic(frame / max(fade_out_frames - 1, 1))
+        t = _ease_out_cubic(frame / max(fade_out_frames - 1, 1))
         w, h = console.size
-        live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=t, rgb=rgb))
+        if crumble:
+            live.update(_build_crumble_frame(text_lines, width=w, height=h, progress=t, rgb=rgb))
+        else:
+            live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=1.0 - t, rgb=rgb))
         time.sleep(frame_time)
 
 
@@ -316,12 +354,14 @@ def show_splash(console: Console) -> None:
             _BRAND_RGB,
             fade_in_frames=48,  # ~0.8s
             shine_frames=66,  # ~1.1s
-            fade_out_frames=48,  # ~0.8s
+            fade_out_frames=60,  # ~1.0s — the wordmark crumbles away top-left → bottom-right
             frame_time=_FRAME_TIME,
+            crumble=True,
         )
 
-    # Live(screen=True) restores the normal screen on exit; the next fullscreen
-    # UI (wizard or mode-select) re-enters alt-screen with its own screen=True.
+    # Alt-screen is intentionally left active — the next Live(screen=True) in the
+    # wizard or mode-select re-enters it seamlessly, so the menu draws straight
+    # over the splash with no clear-to-shell gap.
     logger.debug("splash: completed in %.2fs", time.monotonic() - _splash_start)
 
 

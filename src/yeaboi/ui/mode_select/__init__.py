@@ -63,7 +63,6 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
 )
 from yeaboi.ui.shared._animations import (
     COLOR_RGB,
-    FADE_IN_LEVELS,
     FADE_OUT_LEVELS,
     FRAME_TIME_60FPS,
     ease_out_cubic,
@@ -7015,8 +7014,6 @@ def select_mode(
 
     _supports_timeout = "timeout" in inspect.signature(read_key).parameters
 
-    all_mode_indices = list(range(n))
-
     # Render into the alternate-screen buffer (screen=True) so Rich double-buffers
     # each frame. The welcome screen animates continuously (the selected title's
     # shimmer, the cross-fading tip, the idle duck, the music equalizer), so in
@@ -7026,14 +7023,16 @@ def select_mode(
     # a flicker-free steady state. 30fps is ample for these gentle animations and
     # halves the redraw load.
     with make_live(
+        # Seed the first frame with NOTHING revealed (not the near-black fade of
+        # all items) so the staggered intro wipes titles in from an empty screen
+        # — otherwise every item flashes in black for one frame before animating.
         _build_mode_screen(
             selected,
             width=w,
             height=h,
             shimmer_tick=0.0,
             desc_reveal=0,
-            fade_style=FADE_IN_LEVELS[0],
-            fade_indices=all_mode_indices,
+            reveal_cols=[0] * n,
         ),
         console=console,
         refresh_per_second=30,

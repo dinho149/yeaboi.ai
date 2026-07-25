@@ -512,7 +512,9 @@ def _build_companion(tip_line: Text, frame: int) -> RenderableType:
     border). Bottom-aligned so it sits in the corner regardless of terminal height.
     """
     # Duck faces left so he looks toward the mode list rather than the wall.
-    duck = Group(render_head(frame, flip=True), Text("chilling", style="rgb(120,130,140)", justify="center"))
+    # Static frame (no bob): the up/down breathing shifted both the duck and the
+    # speech bubble every few frames, which read as jitter — keep him still.
+    duck = Group(render_head(0, flip=True), Text("chilling", style="rgb(120,130,140)", justify="center"))
     parts: list[RenderableType] = []
 
     tip = tip_line.plain.strip()
