@@ -47,6 +47,23 @@ from yeaboi.team_profile import DocQualitySignal
 
 logger = logging.getLogger(__name__)
 
+# A page counts as AI-assisted only when a marker appears in an AUTHORSHIP
+# context ("Generated with…", a Co-Authored-By line) — a page that merely
+# documents AI tooling (pasting copilot@github.com or an anthropic URL as an
+# example) is *about* AI, not written by it.
+_AI_DISCLOSURE_CONTEXT = re.compile(
+    r"\b(generated|written|drafted|created|produced|co-authored)\s+(with|by)\b|co-authored-by:",
+    re.IGNORECASE,
+)
+
+
+def _has_ai_disclosure(text: str) -> bool:
+    """True when the page carries an explicit AI-authorship disclosure (lower bound)."""
+    if not text:
+        return False
+    return bool(_classify_ai_markers(text)) and bool(_AI_DISCLOSURE_CONTEXT.search(text))
+
+
 # Default look-back window. Collectors page through every eligible page in each
 # configured container; callers can override this window for a run.
 _SCAN_DAYS = 90
@@ -226,7 +243,7 @@ def aggregate_doc_quality(pages: list[dict]) -> DocQualitySignal:
         owned += int(useful["owned"])
         actionable += int(useful["actionable"])
         structured += int(useful["structured"])
-        if _classify_ai_markers(text):
+        if _has_ai_disclosure(text):
             ai_marked += 1
 
         scored.append((clarity, useful["usefulness"], title))
@@ -280,7 +297,7 @@ def _analyse_page_asset(page: dict) -> dict:
         "owned": useful["owned"],
         "actionable": useful["actionable"],
         "structured": useful["structured"],
-        "marked": bool(_classify_ai_markers(text)),
+        "marked": _has_ai_disclosure(text),
         "url": page.get("url", ""),
         "key": page.get("key", ""),
         "container": page.get("container", ""),
@@ -921,7 +938,7 @@ def _collect_samples(pages: list[dict], limit: int | None = None) -> list[dict]:
                 "platform": page.get("platform", ""),
                 "clarity": _clarity_metrics(text)["clarity"],
                 "usefulness": _usefulness_metrics(text)["usefulness"],
-                "marked": bool(_classify_ai_markers(text)),
+                "marked": _has_ai_disclosure(text),
                 "url": page.get("url", ""),
                 "key": page.get("key", ""),
                 "container": page.get("container", ""),

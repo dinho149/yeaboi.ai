@@ -109,28 +109,53 @@ _AI_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    # Tool markers below require an ATTRIBUTION shape (co-author trailer, bot
+    # account, "generated with", agent domain), never a bare product name — a
+    # commit that merely *mentions* "windsurf" or "aider" in prose is not AI
+    # authorship, and precision matters more than recall for a lower bound.
     (
         "cursor",
-        re.compile(r"co-authored-by:.*cursor|\bcursor\s*(ai|assistant|agent)\b|cursor\.com", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\bcursor\b|generated (?:with|by) cursor|agent@cursor\.com|cursor\.com/agents",
+            re.IGNORECASE,
+        ),
     ),
     (
         "aider",
-        re.compile(r"co-authored-by:.*aider|\baider\b\s*(commit|edit|chat)?|aider\.chat", re.IGNORECASE),
+        # aider's real attribution forms: co-author trailer, "(aider)" author
+        # suffix, "aider: " subject prefix, aider.chat links.
+        re.compile(
+            r"co-authored-by:.*\baider\b|\baider\.chat\b|\(aider\)|^\s*aider:\s",
+            re.IGNORECASE | re.MULTILINE,
+        ),
     ),
     (
         "devin",
-        re.compile(r"co-authored-by:.*devin|\bdevin[\s\-]?ai\b|devin\.ai", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\bdevin\b|devin-ai-integration\[bot\]|\bdevin\.ai\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "codeium",
-        re.compile(r"co-authored-by:.*(codeium|windsurf)|\bcodeium\b|\bwindsurf\b", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\b(codeium|windsurf)\b|\bcodeium\.com\b|\bwindsurf\.com\b"
+            r"|generated (?:with|by) (?:codeium|windsurf)",
+            re.IGNORECASE,
+        ),
     ),
-    # Catch-all: an explicit co-author/trailer that names *some* AI/bot but matched
-    # none of the specific tools above. Kept last; suppressed when a specific hit exists.
-    (
-        "other_ai",
-        re.compile(r"co-authored-by:.*\b(ai|assistant|bot|llm|gpt|agent)\b", re.IGNORECASE),
-    ),
+)
+
+# Catch-all handled in _classify_ai_markers (not the table): a co-author LINE
+# whose name looks like an AI but matches no specific tool. Parsed per line so
+# dependency-automation co-authors (dependabot[bot], renovate[bot], ...) can be
+# excluded — they are automation, not AI codegen, and used to inflate the count.
+_COAUTHOR_LINE = re.compile(r"^\s*co-authored-by:\s*(?P<name>[^<\n]+)", re.IGNORECASE | re.MULTILINE)
+_OTHER_AI_NAME = re.compile(r"\b(ai|assistant|llm|gpt|chatgpt|openai|gemini|agent)\b", re.IGNORECASE)
+_AUTOMATION_BOT_NAME = re.compile(
+    r"\b(dependabot|renovate|greenkeeper|snyk|github-actions|imgbot|allcontributors|whitesource|mend"
+    r"|pre-commit-ci|codecov|semantic-release|release-please|pyup)\b",
+    re.IGNORECASE,
 )
 
 # A commit whose subject looks documentation-shaped is bucketed as "docs", not "code".
@@ -154,9 +179,11 @@ def _source_label(tag: str) -> str:
 def _classify_ai_markers(text: str) -> set[str]:
     """Return the set of AI-tool ids whose markers appear in ``text``.
 
-    Pure, no I/O — the core unit-test seam. ``other_ai`` is dropped when a specific
-    tool matched, so a Claude commit that also has a generic ``Co-Authored-By`` line
-    is credited to "claude", not double-counted. Returns ``set()`` for empty text.
+    Pure, no I/O — the core unit-test seam. ``other_ai`` fires only when NO
+    specific tool matched (so a Claude commit with a generic ``Co-Authored-By``
+    line is credited to "claude", not double-counted) and only for a co-author
+    line whose name looks like an AI — dependency-automation bots (dependabot,
+    renovate, ...) are excluded. Returns ``set()`` for empty text.
     """
     if not text:
         return set()
@@ -164,8 +191,12 @@ def _classify_ai_markers(text: str) -> set[str]:
     for tool_id, pattern in _AI_MARKERS:
         if pattern.search(text):
             hits.add(tool_id)
-    if len(hits) > 1:
-        hits.discard("other_ai")
+    if not hits:
+        for match in _COAUTHOR_LINE.finditer(text):
+            name = match.group("name")
+            if _OTHER_AI_NAME.search(name) and not _AUTOMATION_BOT_NAME.search(name):
+                hits.add("other_ai")
+                break
     return hits
 
 

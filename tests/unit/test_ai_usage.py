@@ -45,10 +45,32 @@ class TestClassifyAiMarkers:
         assert _classify_ai_markers("aider: refactor module\n\nCo-authored-by: aider (gpt-4)") == {"aider"}
 
     def test_devin(self):
-        assert _classify_ai_markers("work by devin-ai") == {"devin"}
+        assert _classify_ai_markers("Co-authored-by: Devin AI <devin-ai-integration[bot]@users.noreply>") == {"devin"}
 
     def test_codeium(self):
-        assert _classify_ai_markers("edited with Windsurf") == {"codeium"}
+        assert _classify_ai_markers("Generated with Windsurf") == {"codeium"}
+
+    def test_aider_author_suffix_and_chat_link(self):
+        assert _classify_ai_markers("refactor helpers (aider)") == {"aider"}
+        assert _classify_ai_markers("see https://aider.chat for details") == {"aider"}
+
+    def test_chatgpt_co_author_is_other_ai(self):
+        assert _classify_ai_markers("fix\n\nCo-authored-by: ChatGPT <noreply@openai.com>") == {"other_ai"}
+
+    def test_prose_mentions_of_tool_names_are_not_ai_usage(self):
+        # Regression: bare product names in prose used to count as AI authorship.
+        assert _classify_ai_markers("Add windsurf integration page") == set()
+        assert _classify_ai_markers("Document codeium comparison for the wiki") == set()
+        assert _classify_ai_markers("Refactor aider docs and cursor bindings") == set()
+        assert _classify_ai_markers("work by devin-ai on the roadmap") == set()
+
+    def test_dependency_bots_are_not_ai(self):
+        # Regression: dependabot/renovate co-authors inflated the footprint.
+        assert _classify_ai_markers("bump deps\n\nCo-authored-by: dependabot[bot] <support@github.com>") == set()
+        assert _classify_ai_markers("chore\n\nCo-authored-by: renovate[bot] <bot@renovateapp.com>") == set()
+        assert _classify_ai_markers("ci\n\nCo-authored-by: github-actions[bot] <actions@github.com>") == set()
+        # A generic non-AI bot co-author no longer counts either ("bot" is not "AI").
+        assert _classify_ai_markers("merge\n\nCo-authored-by: my-team-bot <bot@example.com>") == set()
 
     def test_generic_other_ai(self):
         assert _classify_ai_markers("Co-Authored-By: Some Assistant <bot@x.com>") == {"other_ai"}

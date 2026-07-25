@@ -103,6 +103,13 @@ class TestAggregate:
         sig = aggregate_doc_quality(pages)
         assert sig.ai_marked_pages == 1
 
+    def test_page_about_ai_tools_is_not_marked(self):
+        # Regression: a page that documents AI tooling (pasting a marker address
+        # or URL as an example) is ABOUT AI, not written by it.
+        about = "AI tooling guide. Example trailer address: copilot@github.com. See https://claude.com/claude-code."
+        sig = aggregate_doc_quality([{"platform": "notion", "title": "About AI", "text": about}])
+        assert sig.ai_marked_pages == 0
+
     def test_flagged_pages_populated(self):
         sig = aggregate_doc_quality(self._pages())
         # Low-quality pages surface as call-outs.
