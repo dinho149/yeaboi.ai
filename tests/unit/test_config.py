@@ -106,6 +106,21 @@ def test_analysis_max_change_lookups_defaults_and_bounds(monkeypatch):
     assert get_team_analysis_max_change_lookups() == 500
 
 
+def test_azure_devops_org_url_normalised(monkeypatch):
+    from yeaboi.config import get_azure_devops_org_url
+
+    monkeypatch.delenv("AZURE_DEVOPS_ORG_URL", raising=False)
+    assert get_azure_devops_org_url() is None
+    # Regression: a scheme-less value reached the SDK's URL joining and produced
+    # "MissingSchema: Invalid URL 'dev.azure.com/org/dev.azure.com/org/_apis'".
+    monkeypatch.setenv("AZURE_DEVOPS_ORG_URL", "dev.azure.com/youlend")
+    assert get_azure_devops_org_url() == "https://dev.azure.com/youlend"
+    monkeypatch.setenv("AZURE_DEVOPS_ORG_URL", " https://dev.azure.com/youlend/ ")
+    assert get_azure_devops_org_url() == "https://dev.azure.com/youlend"
+    monkeypatch.setenv("AZURE_DEVOPS_ORG_URL", "http://azdo.internal/org")
+    assert get_azure_devops_org_url() == "http://azdo.internal/org"
+
+
 def test_get_anthropic_api_key_raises_when_missing(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(OSError, match="ANTHROPIC_API_KEY is not set"):

@@ -193,8 +193,19 @@ def get_azure_devops_token() -> str | None:
 
 
 def get_azure_devops_org_url() -> str | None:
-    """Return the Azure DevOps organization URL (e.g. https://dev.azure.com/myorg), or None if not set."""
-    return os.getenv("AZURE_DEVOPS_ORG_URL") or None
+    """Return the Azure DevOps organization URL (e.g. https://dev.azure.com/myorg), or None if not set.
+
+    Normalised on read: whitespace/trailing slashes stripped and a missing scheme
+    defaulted to https://. A bare "dev.azure.com/org" value otherwise reaches the
+    SDK's URL joining and surfaces as MissingSchema errors with a doubled host
+    ("dev.azure.com/org/dev.azure.com/org/_apis") on every AzDO surface.
+    """
+    raw = (os.getenv("AZURE_DEVOPS_ORG_URL") or "").strip().rstrip("/")
+    if not raw:
+        return None
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    return raw
 
 
 def get_azure_devops_project() -> str | None:
