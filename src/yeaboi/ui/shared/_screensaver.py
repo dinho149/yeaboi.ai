@@ -164,9 +164,9 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
     return t
 
 
-# One blank row under his feet so they rest just above the bottom border. The music
+# No blank rows under his feet — they rest right on the bottom border. The music
 # pocket is drawn with preserve_content, so it no longer blanks the rows he's on.
-_SAVER_FOOT_RESERVE = 1
+_SAVER_FOOT_RESERVE = 0
 _SAVER_DUCK_W = 34  # full duck trace width
 _SAVER_JUMP_H = 4  # how many rows he springs up as he reaches the music tab
 _SAVER_JUMP_HALF = 0.06  # half-width of the hop as a fraction of the walk period
@@ -191,13 +191,16 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         x = int(travel * span)
         facing_left = phase >= 0.5  # heading left on the return leg → mirror him
         foot = int(elapsed * 3.0)  # step cadence, decoupled from the fast wing frame
-        # A single quick spring-hop centred on the turnaround (phase 0.5), where he's
-        # at the music tab: a peaked parabola so it snaps up, hovers a beat at bar
-        # level, and drops — not a slow row-by-row climb that read as several jumps.
+        # Spring up onto bar level the moment his leading edge reaches the music tab
+        # and hold there while he's over it, dropping back as he walks off — so the
+        # jump lands right when he meets the tab, not late at the far turnaround.
         # While airborne the sunglasses bob; on the ground they hold still.
-        d = abs(phase - 0.5)
-        hop = max(0.0, 1.0 - (d / _SAVER_JUMP_HALF) ** 2)
-        jump = int(round(_SAVER_JUMP_H * hop))
+        from yeaboi.ui.shared._music_bar import build_music_subtitle
+
+        tab_w = build_music_subtitle().cell_len + 4  # music alcove width
+        tab_left = inner_w - tab_w  # content column where the tab begins
+        over = (x + _SAVER_DUCK_W) - tab_left  # how far his right edge is over the tab
+        jump = int(round(_SAVER_JUMP_H * max(0.0, min(1.0, over / 4.0))))  # ramp over 4 cols
         glasses_frame = frame if jump > 0 else 0
         grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left)
         duck_rows = [_cells_to_text(r, x) for r in grid]
