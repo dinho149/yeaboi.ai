@@ -689,7 +689,10 @@ def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[lis
     check both. Items authored by an AI agent/bot account (:func:`_classify_ai_authors`)
     are also retained: agents act on behalf of the selected members, and dropping
     them silently zeroes the very footprint this scan measures. The retention is
-    disclosed via the returned count. Returns
+    disclosed via the returned count. Kept items are annotated with
+    ``matched_members`` (human matches) or ``agent_authored`` (bot matches) so
+    downstream per-member breakdowns don't have to re-derive the attribution.
+    Returns
     ``(filtered_items, distinct_authors_matched, unmatched_members, agent_items_retained)``.
     """
     selected = [m.strip() for m in members if m and m.strip()]
@@ -706,15 +709,56 @@ def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[lis
         candidates = {_identity_key(author), _identity_key(local)}
         member_keys = candidates & set(norm)
         if member_keys:
+            it["matched_members"] = sorted(norm[key] for key in member_keys)
             kept.append(it)
             for key in member_keys:
                 matched[norm[key]].add(author or local)
         elif _classify_ai_authors(author, email):
+            it["agent_authored"] = True
             kept.append(it)
             agents_retained += 1
     resolved = {member: sorted(identities) for member, identities in matched.items() if identities}
     unmatched = [member for member in selected if member not in resolved]
     return kept, resolved, unmatched, agents_retained
+
+
+def _dedupe_fanout_items(items: list[dict]) -> tuple[list[dict], int]:
+    """Collapse fan-out automation: one piece of work pushed to many repos.
+
+    Platform teams script the same maintenance commit/PR into hundreds of
+    repositories under their own identities (observed live: one Dockerfile fix
+    ×93 repos, one scripted PR per YL.Domain.* repo). Counting every copy
+    multiplies the footprint denominator by the estate size and drowns the AI
+    signal, so items with the same kind, author, message, and day collapse to
+    the first occurrence regardless of repository. The survivor is annotated
+    with ``fanout_copies`` and the collapsed total is returned for disclosure.
+    """
+    kept: list[dict] = []
+    first_by_key: dict[tuple, dict] = {}
+    collapsed = 0
+    for it in items:
+        title = str(it.get("title", "") or "")
+        repo_short = str(it.get("repository", "") or "").rsplit("/", 1)[-1]
+        if repo_short:
+            # Azure DevOps titles carry a " (repo)" suffix; strip it so copies
+            # of one message differ only by repository, not by title.
+            title = title.removesuffix(f" ({repo_short})")
+        author = (it.get("author", "") or "").strip()
+        key = (
+            str(it.get("kind", "")),
+            _identity_key(author) or (it.get("author_email", "") or "").strip().lower(),
+            title,
+            str(it.get("body", "") or ""),
+            str(it.get("timestamp", "") or "")[:10],
+        )
+        survivor = first_by_key.get(key)
+        if survivor is None:
+            first_by_key[key] = it
+            kept.append(it)
+        else:
+            survivor["fanout_copies"] = survivor.get("fanout_copies", 1) + 1
+            collapsed += 1
+    return kept, collapsed
 
 
 def run_ai_adoption(
@@ -831,6 +875,18 @@ def run_ai_adoption(
             matched_identities = {}
             unmatched_users = []
             coverage.append("no users selected — code analysis requires an explicit member scope")
+        # Repo provenance must reflect what the scan actually covered, so keep
+        # the pre-dedup member-scoped list for it; everything else (footprint
+        # numerator AND denominator, samples, activity summary, code-health
+        # change lookups) counts distinct work only.
+        member_scoped_items = items
+        items, fanout_collapsed = _dedupe_fanout_items(items)
+        if fanout_collapsed:
+            logger.info("AI-usage fan-out dedup collapsed %d duplicate item(s)", fanout_collapsed)
+            coverage.append(
+                f"{fanout_collapsed} duplicate fan-out item(s) collapsed "
+                "(same author, message, and day across multiple repositories)"
+            )
         signal = aggregate_ai_markers(items) if footprint_enabled else AiAdoptionSignal()
         if footprint_enabled:
             _report_code_progress(
@@ -848,7 +904,7 @@ def run_ai_adoption(
         touched_repositories = sorted(
             {
                 (str(item.get("source", "")), str(item.get("container", "")), str(item.get("repository", "")))
-                for item in items
+                for item in member_scoped_items
                 if item.get("repository")
             }
         )
@@ -1080,6 +1136,32 @@ def run_ai_adoption(
             coverage.extend(coverage_notes(file_coverage))
         commit_count = sum(item.get("kind") == "commit" for item in items)
         pr_count = sum(item.get("kind") == "pr" for item in items)
+        # Per-member activity over the deduped items so the footprint
+        # denominator is verifiable at a glance (one member carrying thousands
+        # of automated commits is visible instead of hidden in a total).
+        member_rows: dict[str, dict] = {
+            member: {"member": member, "commits": 0, "prs": 0, "ai_marked": 0} for member in selected_users
+        }
+        agent_row = {"member": "AI agent accounts", "commits": 0, "prs": 0, "ai_marked": 0}
+        for item in items:
+            kind = item.get("kind")
+            if kind not in ("commit", "pr"):
+                continue
+            slot = "commits" if kind == "commit" else "prs"
+            ai_marked = bool(_classify_ai_item(item))
+            targets = [member_rows[m] for m in item.get("matched_members", ()) if m in member_rows]
+            if not targets and item.get("agent_authored"):
+                targets = [agent_row]
+            for row in targets:
+                row[slot] += 1
+                if ai_marked:
+                    row["ai_marked"] += 1
+        member_activity = sorted(
+            (row for row in member_rows.values()),
+            key=lambda row: (-(row["commits"] + row["prs"]), row["member"]),
+        )
+        if agent_row["commits"] or agent_row["prs"]:
+            member_activity.append(agent_row)
         blob: dict = {
             "enabled_features": enabled_features,
             "summary": {
@@ -1098,6 +1180,7 @@ def run_ai_adoption(
                 "selected_users": selected_users,
                 "matched_users": len(matched_identities),
                 "unmatched_users": unmatched_users,
+                "fanout_collapsed": fanout_collapsed,
             },
             "samples": samples,
             "coverage": coverage,
@@ -1106,6 +1189,7 @@ def run_ai_adoption(
             "selected_users": selected_users,
             "matched_identities": matched_identities,
             "unmatched_users": unmatched_users,
+            "member_activity": member_activity,
             "activity_summary": {
                 "commits": commit_count,
                 "authored_prs": pr_count,

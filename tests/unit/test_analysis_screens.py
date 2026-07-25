@@ -1355,6 +1355,44 @@ class TestDeliveryOffScreen:
         )
         assert "IDENTITY MISMATCH" not in out
 
+    def test_ai_adoption_member_activity_table(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        examples = {
+            "ai_adoption": {
+                "selected_users": ["Ava", "Sam"],
+                "matched_identities": {"Ava": ["ava"], "Sam": ["sam"]},
+                "member_activity": [
+                    {"member": "Ava", "commits": 2140, "prs": 12, "ai_marked": 5},
+                    {"member": "Sam", "commits": 3, "prs": 4, "ai_marked": 1},
+                    {"member": "AI agent accounts", "commits": 7, "prs": 0, "ai_marked": 7},
+                ],
+            }
+        }
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=examples, view="ai-adoption", code_signal=signal, width=100, height=60
+            ),
+            width=100,
+        )
+        assert "Activity by member" in out
+        assert "2140" in out  # the automation-heavy member's volume is visible
+        assert "AI agent accounts" in out
+
+    def test_ai_adoption_no_member_table_for_old_profiles(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        examples = {"ai_adoption": {"selected_users": ["Ava"], "matched_identities": {"Ava": ["ava"]}}}
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=examples, view="ai-adoption", code_signal=signal, width=100, height=50
+            ),
+            width=100,
+        )
+        assert "Activity by member" not in out
+
     def test_ai_adoption_repo_list_capped_with_more_row(self):
         from yeaboi.team_profile import AiAdoptionSignal
 

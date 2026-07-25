@@ -1903,6 +1903,26 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         if blob.get("unmatched_users"):
             ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
 
+    # Per-member activity so the denominator is verifiable at a glance —
+    # a member whose automation pushes thousands of fan-out commits shows up
+    # here instead of silently inflating the totals. Old profiles lack the field.
+    member_activity = blob.get("member_activity") if isinstance(blob, dict) else None
+    if member_activity:
+        ctx.heading("Activity by member")
+        table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
+        table.add_column("Member", ratio=1)
+        table.add_column("Commits", justify="right", width=9)
+        table.add_column("PRs", justify="right", width=7)
+        table.add_column("AI-marked", justify="right", width=11)
+        for row in member_activity:
+            table.add_row(
+                Text(str(row.get("member", "")), style=c_value),
+                Text(str(row.get("commits", 0)), style=c_accent),
+                Text(str(row.get("prs", 0)), style=c_accent),
+                Text(str(row.get("ai_marked", 0)), style=c_good),
+            )
+        ctx.add_table(table)
+
     repos = list(getattr(sig, "repos_scanned", ()) or ())
     if sig.sources_scanned or repos:
         ctx.heading("Scan coverage")

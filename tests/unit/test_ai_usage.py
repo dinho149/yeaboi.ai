@@ -18,6 +18,7 @@ from yeaboi.analysis.ai_usage import (
     _classify_ai_authors,
     _classify_ai_item,
     _classify_ai_markers,
+    _dedupe_fanout_items,
     _fallback_ai_adoption_insights,
     aggregate_ai_markers,
     collect_ai_activity,
@@ -152,6 +153,53 @@ class TestClassifyAiItem:
 
 
 # ── Aggregation ────────────────────────────────────────────────────────────
+
+
+class TestDedupeFanout:
+    def _item(self, repo="RepoA", title="Fix path", author="Alice", day="2026-07-20", kind="commit", body=""):
+        return {
+            "kind": kind,
+            "author": author,
+            "title": f"{title} ({repo})",
+            "body": body,
+            "repository": repo,
+            "timestamp": f"{day}T10:00:00",
+        }
+
+    def test_same_message_across_repos_collapses_to_first(self):
+        items = [self._item(repo=r) for r in ("RepoA", "RepoB", "RepoC")]
+        kept, collapsed = _dedupe_fanout_items(items)
+        assert len(kept) == 1 and collapsed == 2
+        assert kept[0]["repository"] == "RepoA"
+        assert kept[0]["fanout_copies"] == 3
+
+    def test_different_message_author_or_day_survive(self):
+        items = [
+            self._item(repo="RepoA"),
+            self._item(repo="RepoB", title="Another change"),
+            self._item(repo="RepoC", author="Bob"),
+            self._item(repo="RepoD", day="2026-07-21"),
+        ]
+        kept, collapsed = _dedupe_fanout_items(items)
+        assert len(kept) == 4 and collapsed == 0
+        assert all("fanout_copies" not in item for item in kept)
+
+    def test_github_titles_without_repo_suffix_still_collapse(self):
+        # GitHub commit titles carry no " (repo)" suffix — the key must not
+        # depend on one being present.
+        items = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "title": "Fix path",
+                "body": "",
+                "repository": f"o/{r}",
+                "timestamp": "2026-07-20T10:00:00",
+            }
+            for r in ("a", "b")
+        ]
+        kept, collapsed = _dedupe_fanout_items(items)
+        assert len(kept) == 1 and collapsed == 1
 
 
 class TestAggregate:
@@ -516,6 +564,71 @@ class TestRunAiAdoption:
         assert sig.ai_commits == 1
         assert sig.per_tool == (("devin", 1),)
         assert any("agent-authored item(s) retained" in c for c in blob["coverage"])
+
+    def test_fanout_dedup_collapses_duplicates_and_discloses(self, monkeypatch):
+        # One scripted commit fanned out to three repos + one distinct commit:
+        # the footprint must count two pieces of work, not four.
+        fanout = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "title": f"Fix Dockerfile path ({repo})",
+                "body": "Co-Authored-By: Claude",
+                "source": "azdo",
+                "container": "Proj",
+                "repository": repo,
+                "timestamp": "2026-07-20T10:00:00",
+            }
+            for repo in ("RepoA", "RepoB", "RepoC")
+        ]
+        distinct = {
+            "kind": "commit",
+            "author": "Alice",
+            "title": "Real feature work (RepoA)",
+            "body": "",
+            "source": "azdo",
+            "container": "Proj",
+            "repository": "RepoA",
+            "timestamp": "2026-07-20T11:00:00",
+        }
+        items = (fanout + [distinct], ["azdo"], [], [])
+        monkeypatch.setattr("yeaboi.analysis.ai_usage.collect_ai_activity", lambda s, p, sub_sources=None: items)
+        sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"])
+        assert sig.scanned_commits == 2
+        assert sig.ai_commits == 1  # the AI-marked fan-out collapses in the numerator too
+        assert sig.footprint_pct == 50.0
+        assert blob["summary"]["fanout_collapsed"] == 2
+        assert any("duplicate fan-out item(s) collapsed" in c for c in blob["coverage"])
+        # Repo provenance still reflects the true scan coverage, pre-dedup.
+        assert len(sig.repos_scanned) == 3
+
+    def test_member_activity_breakdown_in_blob(self, monkeypatch):
+        items = (
+            [
+                {
+                    "kind": "commit",
+                    "author": "Alice",
+                    "title": "a",
+                    "body": "Co-Authored-By: Claude",
+                    "source": "github",
+                },
+                {"kind": "pr", "author": "Alice", "title": "b", "body": "", "source": "github"},
+                {"kind": "commit", "author": "Bob", "title": "c", "body": "", "source": "github"},
+                {"kind": "commit", "author": "devin-ai-integration[bot]", "title": "d", "body": "", "source": "github"},
+            ],
+            ["github"],
+            [],
+            [],
+        )
+        monkeypatch.setattr("yeaboi.analysis.ai_usage.collect_ai_activity", lambda s, p, sub_sources=None: items)
+        _sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice", "Bob"])
+        rows = {row["member"]: row for row in blob["member_activity"]}
+        assert rows["Alice"] == {"member": "Alice", "commits": 1, "prs": 1, "ai_marked": 1}
+        assert rows["Bob"] == {"member": "Bob", "commits": 1, "prs": 0, "ai_marked": 0}
+        assert rows["AI agent accounts"]["commits"] == 1
+        assert rows["AI agent accounts"]["ai_marked"] == 1
+        # Sorted by volume: Alice (2) before Bob (1); the agent row trails.
+        assert [row["member"] for row in blob["member_activity"]] == ["Alice", "Bob", "AI agent accounts"]
 
     def test_changed_files_are_fetched_only_after_member_filter(self, monkeypatch):
         items = [
