@@ -114,7 +114,7 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
-def draw_music_pocket(console, options, lines: list) -> None:
+def draw_music_pocket(console, options, lines: list, *, preserve_content: bool = False) -> None:
     """Overwrite the bottom three rows of ``lines`` with the music pocket, in place.
 
     The alcove is a rounded roof, the music one line below it between the alcove's
@@ -173,9 +173,27 @@ def draw_music_pocket(console, options, lines: list) -> None:
     border.append(" " * (right - left - 1))
     border.append("╰" + "─" * (width - right - 2) + "╯", style=bstyle)
     sized = options.update_width(width)
-    lines[-3] = console.render_lines(roof, sized, pad=True)[0]
-    lines[-2] = console.render_lines(textrow, sized, pad=True)[0]
     lines[-1] = console.render_lines(border, sized, pad=True)[0]
+    if preserve_content:
+        # Splice ONLY the alcove columns onto the roof/text rows, leaving the rest of
+        # those rows as-is — so e.g. the screensaver duck can walk right down at the
+        # border and still show through the pocket band, instead of a blank strip.
+        from rich.segment import Segment
+
+        roof_alcove = Text()
+        roof_alcove.append("╭" + "─" * (right - left - 1) + "╮", style=bstyle)
+        text_alcove = Text()
+        text_alcove.append("│ ", style=bstyle)
+        text_alcove.append_text(music)
+        text_alcove.append(" │", style=bstyle)
+        asized = options.update_width(right - left + 1)
+        for idx, alcove in ((-3, roof_alcove), (-2, text_alcove)):
+            seg = console.render_lines(alcove, asized, pad=True)[0]
+            lft, _mid, rgt = Segment.divide(lines[idx], [left, right + 1, width])
+            lines[idx] = list(lft) + list(seg) + list(rgt)
+    else:
+        lines[-3] = console.render_lines(roof, sized, pad=True)[0]
+        lines[-2] = console.render_lines(textrow, sized, pad=True)[0]
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
@@ -251,15 +269,16 @@ class _MusicPocketFrame:
     ``_WelcomeFrame``. Falls back to a flat subtitle when too narrow.
     """
 
-    def __init__(self, panel: Panel, *, with_duck: bool = True) -> None:
+    def __init__(self, panel: Panel, *, with_duck: bool = True, preserve_content: bool = False) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
+        self.preserve_content = preserve_content  # keep row content behind the pocket band
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
 
         lines = console.render_lines(self.panel, options, pad=False)
-        draw_music_pocket(console, options, lines)
+        draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
         if self.with_duck:
             draw_companion_duck(console, options, lines)
         # Newlines go BETWEEN rows, never after the last one. A trailing
@@ -309,9 +328,10 @@ class MusicLive(Live):
             width, height = self.console.size
             saver = build_screensaver(width=width, height=height)
             # Keep the music tab on the saver too, but pocket-only (it already has
-            # the big chilling duck, so no companion overlay).
+            # the big chilling duck) and preserving the row content so the walking
+            # duck can go right down to the border behind the pocket band.
             if isinstance(saver, Panel) and build_music_subtitle().cell_len + 10 <= width:
-                return _MusicPocketFrame(saver, with_duck=False)
+                return _MusicPocketFrame(saver, with_duck=False, preserve_content=True)
             return saver
 
         renderable = super().get_renderable()

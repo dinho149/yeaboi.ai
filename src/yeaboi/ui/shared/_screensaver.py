@@ -164,9 +164,9 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
     return t
 
 
-# Rows kept clear at the saver foot for the music pocket the frame draws over the
-# bottom rows — the duck's floor sits just above it (near the bottom border).
-_SAVER_FOOT_RESERVE = 2
+# One blank row under his feet so they rest just above the bottom border. The music
+# pocket is drawn with preserve_content, so it no longer blanks the rows he's on.
+_SAVER_FOOT_RESERVE = 1
 _SAVER_DUCK_W = 34  # full duck trace width
 _SAVER_JUMP_H = 4  # how many rows he springs up as he reaches the music tab
 
