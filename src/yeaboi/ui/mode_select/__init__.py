@@ -85,8 +85,8 @@ _HEADER_SUB_SPEED = 45  # characters per second for the page subtitle typewriter
 _FRAME_TIME = FRAME_TIME_60FPS
 # Staggered menu intro: each mode title wipes in at _MENU_INTRO_CPS block-font
 # columns/sec, and item i+1 starts _MENU_INTRO_STAGGER seconds after item i.
-_MENU_INTRO_CPS = 70
-_MENU_INTRO_STAGGER = 0.45
+_MENU_INTRO_CPS = 220
+_MENU_INTRO_STAGGER = 0.13
 
 
 def _run_output_share_flow(
