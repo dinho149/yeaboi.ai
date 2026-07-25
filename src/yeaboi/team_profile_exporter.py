@@ -95,6 +95,33 @@ def _footprint_value(ai_sig) -> str:
     return _small_pct(ai_sig.footprint_pct)
 
 
+def _practice_cell_text(row: dict, prefix: str, min_sample: int) -> str:
+    """One practices cell for export: n/a without data, a raw fraction under
+    the sample floor (same rule as the TUI table, Surface Parity), else a %."""
+    den = int(row.get(f"{prefix}_den", 0) or 0)
+    if not den:
+        return "n/a"
+    num = int(row.get(f"{prefix}_num", 0) or 0)
+    rate = row.get(f"{prefix}_rate")
+    if den < min_sample or not isinstance(rate, (int, float)):
+        return f"{num}/{den}"
+    return f"{rate:.0f}%"
+
+
+def _practice_rows(ai_blob) -> tuple[list[dict], dict | None, int, dict]:
+    """Unpack blob["member_practices"] for export; empty members = old profile."""
+    practices = ai_blob.get("member_practices") if isinstance(ai_blob, dict) else None
+    if not isinstance(practices, dict) or not practices.get("members"):
+        return [], None, 5, {}
+    team = practices.get("team")
+    return (
+        list(practices["members"]),
+        team if isinstance(team, dict) else None,
+        int(practices.get("min_sample", 5) or 5),
+        practices.get("file_data") or {},
+    )
+
+
 def _doc_pages_value(dq_sig, dq_pages: int) -> str:
     """Pages-scanned stat for export, flagged when too few pages for a trend."""
     from yeaboi.analysis.doc_quality import doc_small_sample
@@ -376,6 +403,37 @@ def build_team_profile_html(
                 repo_preview += f" (+{len(ai_sig.repos_scanned) - 5} more)"
             a_rows.append(("Repository scope", _e(repo_preview)))
         a_html = disclaimer + _kv_table(a_rows)
+        p_members, p_team, p_min, p_file_data = _practice_rows(ai_blob)
+        if p_members:
+            headers = ("Member", "Commits", "PRs", "Tests", "Docs", "Tickets", "Descriptions")
+            head = "".join(
+                f"<th style='text-align:{'left' if i == 0 else 'right'};'>{h}</th>" for i, h in enumerate(headers)
+            )
+            body = ""
+            for row in p_members + ([p_team] if p_team else []):
+                cells = (
+                    _e(str(row.get("member", ""))),
+                    str(row.get("commits", 0)),
+                    str(row.get("prs", 0)),
+                    _practice_cell_text(row, "tests", p_min),
+                    _practice_cell_text(row, "docs", p_min),
+                    _practice_cell_text(row, "ticket", p_min),
+                    _practice_cell_text(row, "desc", p_min),
+                )
+                body += (
+                    "<tr>"
+                    + "".join(
+                        f"<td style='text-align:{'left' if i == 0 else 'right'};'>{c}</td>" for i, c in enumerate(cells)
+                    )
+                    + "</tr>"
+                )
+            a_html += f"<h4>Engineering practices by member</h4><table><tr>{head}</tr>{body}</table>"
+            if p_file_data.get("total") and p_file_data.get("with_file_data", 0) < p_file_data["total"]:
+                a_html += (
+                    f'<p class="muted"><em>File-based columns (Tests, Docs) cover '
+                    f"{p_file_data.get('with_file_data', 0)} of {p_file_data['total']} items "
+                    f"with change metadata.</em></p>"
+                )
         if ai_sig.per_tool:
             tool_lis = "".join(
                 f"<li>{_e('unlabelled AI' if t == 'other_ai' else t)}: {n}</li>" for t, n in ai_sig.per_tool
@@ -1797,6 +1855,24 @@ def build_team_profile_markdown(
         if ai_coverage:
             lines.append(f"- **Not scanned:** {'; '.join(ai_coverage)}")
         lines.append("")
+        p_members, p_team, p_min, p_file_data = _practice_rows(ai_blob)
+        if p_members:
+            lines.extend(["### Engineering practices by member", ""])
+            lines.append("| Member | Commits | PRs | Tests | Docs | Tickets | Descriptions |")
+            lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+            for row in p_members + ([p_team] if p_team else []):
+                lines.append(
+                    f"| {row.get('member', '')} | {row.get('commits', 0)} | {row.get('prs', 0)} | "
+                    f"{_practice_cell_text(row, 'tests', p_min)} | {_practice_cell_text(row, 'docs', p_min)} | "
+                    f"{_practice_cell_text(row, 'ticket', p_min)} | {_practice_cell_text(row, 'desc', p_min)} |"
+                )
+            lines.append("")
+            if p_file_data.get("total") and p_file_data.get("with_file_data", 0) < p_file_data["total"]:
+                lines.append(
+                    f"_File-based columns (Tests, Docs) cover {p_file_data.get('with_file_data', 0)} "
+                    f"of {p_file_data['total']} items with change metadata._"
+                )
+                lines.append("")
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
             lines.extend(["### Examples", ""])
@@ -2808,6 +2884,15 @@ def write_analysis_log(
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
     if "ai_footprint" in code_features and ai_sig and ai_scanned:
         sections.extend(["", "AI Usage (footprint is a lower bound — commit/PR markers only):"])
+        _p_members, p_team, p_min, _p_file_data = _practice_rows(ai_blob)
+        if p_team:
+            sections.append(
+                "  Practices (team): "
+                f"tests {_practice_cell_text(p_team, 'tests', p_min)} · "
+                f"docs {_practice_cell_text(p_team, 'docs', p_min)} · "
+                f"tickets {_practice_cell_text(p_team, 'ticket', p_min)} · "
+                f"descriptions {_practice_cell_text(p_team, 'desc', p_min)}"
+            )
         sections.append(f"  Detectable footprint: {_footprint_value(ai_sig)}")
         sections.append(f"  Commits with AI marker: {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:

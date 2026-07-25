@@ -1224,6 +1224,86 @@ class TestTeamProfileExporter:
         assert "[Fix login](https://github.com/o/r/commit/a1b2c3d4)" in md  # linked example
         assert "[↳ example](https://github.com/o/r/commit/a1b2c3d4)" in md  # linked coaching
 
+    def test_export_practices_table(self, tmp_path, monkeypatch):
+        from yeaboi.team_profile import AiAdoptionSignal
+        from yeaboi.team_profile_exporter import (
+            build_team_profile_html,
+            build_team_profile_markdown,
+            write_analysis_log,
+        )
+
+        sig = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", ai_adoption=sig)
+        ex = {
+            "ai_adoption": {
+                "member_practices": {
+                    "min_sample": 5,
+                    "file_data": {"with_file_data": 9, "total": 12},
+                    "members": [
+                        {
+                            "member": "Ava",
+                            "commits": 20,
+                            "prs": 10,
+                            "with_file_data": 8,
+                            "tests_num": 6,
+                            "tests_den": 8,
+                            "tests_rate": 75.0,
+                            "docs_num": 2,
+                            "docs_den": 8,
+                            "docs_rate": 25.0,
+                            "ticket_num": 5,
+                            "ticket_den": 10,
+                            "ticket_rate": 50.0,
+                            "desc_num": 1,
+                            "desc_den": 4,
+                            "desc_rate": 25.0,
+                        }
+                    ],
+                    "team": {
+                        "member": "Team",
+                        "commits": 20,
+                        "prs": 10,
+                        "with_file_data": 9,
+                        "tests_num": 6,
+                        "tests_den": 8,
+                        "tests_rate": 75.0,
+                        "docs_num": 2,
+                        "docs_den": 9,
+                        "docs_rate": 22.2,
+                        "ticket_num": 5,
+                        "ticket_den": 14,
+                        "ticket_rate": 35.7,
+                        "desc_num": 1,
+                        "desc_den": 4,
+                        "desc_rate": 25.0,
+                    },
+                }
+            }
+        }
+        md = build_team_profile_markdown(profile, examples=ex)
+        assert "### Engineering practices by member" in md
+        assert "| Ava | 20 | 10 | 75% | 25% | 50% | 1/4 |" in md  # desc under the sample floor stays a fraction
+        assert "| Team |" in md
+        assert "cover 9 of 12 items with change metadata" in md
+        html = build_team_profile_html(profile, examples=ex)
+        assert "Engineering practices by member" in html
+        assert "<table><tr><th" in html
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        text = write_analysis_log(profile, examples=ex).read_text()
+        assert "Practices (team): tests 75% · docs 22% · tickets 36% · descriptions 1/4" in text
+
+    def test_export_without_practices_blob_still_works(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+        from yeaboi.team_profile_exporter import build_team_profile_html, build_team_profile_markdown
+
+        sig = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", ai_adoption=sig)
+        md = build_team_profile_markdown(profile, examples={"ai_adoption": {}})
+        assert "## AI Usage" in md
+        assert "Engineering practices" not in md
+        html = build_team_profile_html(profile, examples={"ai_adoption": {}})
+        assert "Engineering practices" not in html
+
     def test_code_health_only_exports_without_ai_footprint(self):
         from yeaboi.team_profile_exporter import build_team_profile_html, build_team_profile_markdown
 
