@@ -19,7 +19,8 @@ from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
-from yeaboi.analysis.ai_usage import _source_label
+from yeaboi.analysis.ai_usage import _source_label, footprint_small_sample
+from yeaboi.analysis.doc_quality import doc_small_sample
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY as _TA_GLOSSARY
 from yeaboi.tools.team_learning import INSIGHT_CATEGORIES, compute_recommendations
 from yeaboi.ui.shared._components import PAD
@@ -1829,19 +1830,28 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     _scan_detail = f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs"
     if _window:
         _scan_detail += f" · last {_window} days"
+    # Below the sample floor a % swings wildly on single items — show the raw
+    # count instead of a definitive-looking percentage (see footprint_small_sample).
+    _small = footprint_small_sample(sig)
+    _fp_tile = (
+        ("Detectable footprint", f"{marked} of {scanned}", "small sample — % unstable", c_muted)
+        if _small
+        else ("Detectable footprint", f"{fp:.0f}%", "of scanned work carries a marker", fp_sty)
+    )
     _ta_metric_tiles(
         ctx,
         [
-            ("Detectable footprint", f"{fp:.0f}%", "of scanned work carries a marker", fp_sty),
+            _fp_tile,
             ("Work scanned", str(scanned), _scan_detail, c_accent),
             ("AI-marked work", str(marked), f"{sig.ai_commits} commits · {sig.ai_prs} PRs", c_good),
         ],
     )
-    hero = Text(PAD + "  ")
-    hero.append("Footprint  ", style=c_muted)
-    hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
-    hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
-    _add(hero)
+    if not _small:
+        hero = Text(PAD + "  ")
+        hero.append("Footprint  ", style=c_muted)
+        hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
+        hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
+        _add(hero)
 
     if isinstance(blob, dict) and blob.get("selected_users"):
         ctx.heading("Selected-user scope")
@@ -1976,14 +1986,24 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
         ctx,
         "HOW TO READ THESE SIGNALS",
         "Clarity measures readability. Usefulness measures whether pages state their purpose, "
-        "owner, structure, and concrete actions. Explicit AI disclosures remain a lower bound.",
+        "owner, structure, and concrete actions. Explicit AI disclosures remain a lower bound. "
+        "Documentation is scanned workspace-wide and attributed to each page's last editor; "
+        "the code scan covers only the selected members.",
         colour=c_warn,
     )
+    _doc_small = doc_small_sample(sig)
+    if _doc_small:
+        _ta_callout(
+            ctx,
+            "SMALL SAMPLE",
+            f"Averages cover only {pages} page(s) — read them as examples, not a trend.",
+            colour=c_muted,
+        )
 
     clarity = getattr(sig, "avg_clarity", 0.0)
-    cl_sty = c_good if clarity >= 60 else (c_warn if clarity >= 40 else c_bad)
+    cl_sty = c_muted if _doc_small else (c_good if clarity >= 60 else (c_warn if clarity >= 40 else c_bad))
     usefulness = getattr(sig, "avg_usefulness", 0.0)
-    useful_sty = c_good if usefulness >= 70 else (c_warn if usefulness >= 50 else c_bad)
+    useful_sty = c_muted if _doc_small else (c_good if usefulness >= 70 else (c_warn if usefulness >= 50 else c_bad))
     _ta_metric_tiles(
         ctx,
         [
@@ -2253,6 +2273,9 @@ def _ta_card_teaser(ctx: _TaCtx, profile, key: str) -> str:
         sig = getattr(profile, "ai_adoption", None) or ctx.ai_sig
         scanned = (getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)) if sig else 0
         if scanned:
+            if footprint_small_sample(sig):
+                marked = getattr(sig, "ai_commits", 0) + getattr(sig, "ai_prs", 0)
+                return f"{marked} of {scanned} AI-marked (small sample)"
             return f"{sig.footprint_pct:.0f}% AI footprint"
         return "not scanned"
     if key == "code-health":
@@ -2264,7 +2287,8 @@ def _ta_card_teaser(ctx: _TaCtx, profile, key: str) -> str:
         sig = getattr(profile, "doc_quality", None) or ctx.doc_sig
         pages = getattr(sig, "pages_scanned", 0) if sig else 0
         if pages:
-            return f"{sig.avg_clarity:.0f}/100 clarity · {pages} pages"
+            suffix = " (small sample)" if doc_small_sample(sig) else ""
+            return f"{sig.avg_clarity:.0f}/100 clarity · {pages} pages{suffix}"
         return "not scanned"
     if key == "insights":
         ins = ex.get("insights", {})

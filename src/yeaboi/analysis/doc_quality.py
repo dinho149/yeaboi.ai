@@ -57,6 +57,19 @@ _AI_DISCLOSURE_CONTEXT = re.compile(
 )
 
 
+# Below this many pages the clarity/usefulness averages are examples, not a trend.
+_MIN_DOC_SAMPLE = 5
+
+
+def doc_small_sample(signal: DocQualitySignal) -> bool:
+    """True when too few pages were scanned for the averages to be a trend.
+
+    Shared by every surface (TUI, CLI, exporters — Surface Parity) so they agree
+    on when to frame the scores as examples rather than a stable estate average.
+    """
+    return signal.pages_scanned < _MIN_DOC_SAMPLE
+
+
 def _has_ai_disclosure(text: str) -> bool:
     """True when the page carries an explicit AI-authorship disclosure (lower bound)."""
     if not text:
@@ -1131,6 +1144,7 @@ def run_doc_quality(
                 "per_platform": [list(p) for p in signal.per_platform],
                 "flagged_pages": [list(p) for p in signal.flagged_pages],
                 "is_ai_estimate": False,
+                "small_sample": doc_small_sample(signal),
             },
             "samples": samples,
             "assets": samples,

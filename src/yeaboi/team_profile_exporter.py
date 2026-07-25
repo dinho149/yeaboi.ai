@@ -83,6 +83,27 @@ def _small_pct(value: float) -> str:
     return f"{value:.1f}%".replace(".0%", "%")
 
 
+def _footprint_value(ai_sig) -> str:
+    """Footprint stat for export: a % — or a raw count when the sample is too
+    small for a stable percentage (same rule as the TUI/CLI, Surface Parity)."""
+    from yeaboi.analysis.ai_usage import footprint_small_sample
+
+    scanned = getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)
+    marked = getattr(ai_sig, "ai_commits", 0) + getattr(ai_sig, "ai_prs", 0)
+    if footprint_small_sample(ai_sig):
+        return f"{marked} of {scanned} AI-marked (small sample — % suppressed)"
+    return _small_pct(ai_sig.footprint_pct)
+
+
+def _doc_pages_value(dq_sig, dq_pages: int) -> str:
+    """Pages-scanned stat for export, flagged when too few pages for a trend."""
+    from yeaboi.analysis.doc_quality import doc_small_sample
+
+    platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
+    suffix = "; small sample — read as examples" if doc_small_sample(dq_sig) else ""
+    return f"{dq_pages} ({platforms}{suffix})"
+
+
 def _coverage_message(report: dict) -> str:
     status = str(report.get("status", "complete")).replace("_", " ")
     completed = int(report.get("completed", 0) or 0)
@@ -333,7 +354,7 @@ def build_team_profile_html(
         activity_coverage = ai_blob.get("activity_coverage", {}) if isinstance(ai_blob, dict) else {}
         a_rows = [
             ("Coverage", _e(_coverage_message(activity_coverage))),
-            ("Detectable footprint", _e(_small_pct(ai_sig.footprint_pct))),
+            ("Detectable footprint", _e(_footprint_value(ai_sig))),
             ("Commits with AI marker", f"{ai_sig.ai_commits} of {ai_sig.scanned_commits}"),
         ]
         if ai_sig.scanned_prs:
@@ -437,7 +458,7 @@ def build_team_profile_html(
                 [
                     ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
                     ("Average usefulness", f"{getattr(dq_sig, 'avg_usefulness', 0):.0f}/100"),
-                    ("Pages scanned", f"{dq_pages} ({', '.join(dq_sig.platforms_scanned) or 'n/a'})"),
+                    ("Pages scanned", _doc_pages_value(dq_sig, dq_pages)),
                     ("Clarity split", d_split),
                     (
                         "Owned / actionable",
@@ -1745,7 +1766,7 @@ def build_team_profile_markdown(
         lines.append("")
         activity_coverage = ai_blob.get("activity_coverage", {}) if isinstance(ai_blob, dict) else {}
         lines.append(f"- **Coverage:** {_coverage_message(activity_coverage)}")
-        lines.append(f"- **Detectable footprint:** {_small_pct(ai_sig.footprint_pct).replace('<', '&lt;')}")
+        lines.append(f"- **Detectable footprint:** {_footprint_value(ai_sig).replace('<', '&lt;')}")
         lines.append(f"- **Commits with AI marker:** {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:
             lines.append(f"- **PRs with AI marker:** {ai_sig.ai_prs} of {ai_sig.scanned_prs}")
@@ -1832,11 +1853,10 @@ def build_team_profile_markdown(
         lines.append("")
         lines.append(f"- **Coverage:** {_coverage_message(doc_coverage)}")
         if not doc_failed:
-            dq_platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
             dq_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
             lines.append(f"- **Average clarity:** {dq_sig.avg_clarity:.0f}/100")
             lines.append(f"- **Average usefulness:** {getattr(dq_sig, 'avg_usefulness', 0):.0f}/100")
-            lines.append(f"- **Pages scanned:** {dq_pages} ({dq_platforms})")
+            lines.append(f"- **Pages scanned:** {_doc_pages_value(dq_sig, dq_pages)}")
             lines.append(f"- **Clarity split:** {dq_split}")
             lines.append(
                 f"- **Owned / actionable pages:** {getattr(dq_sig, 'owned_pages', 0)} / "
@@ -2788,7 +2808,7 @@ def write_analysis_log(
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
     if "ai_footprint" in code_features and ai_sig and ai_scanned:
         sections.extend(["", "AI Footprint (lower bound — commit/PR markers only):"])
-        sections.append(f"  Detectable footprint: {ai_sig.footprint_pct:.0f}%")
+        sections.append(f"  Detectable footprint: {_footprint_value(ai_sig)}")
         sections.append(f"  Commits with AI marker: {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:
             sections.append(f"  PRs with AI marker: {ai_sig.ai_prs} of {ai_sig.scanned_prs}")
@@ -2849,14 +2869,13 @@ def write_analysis_log(
     if dq_sig and isinstance(dq_blob, dict):
         doc_coverage = dq_blob.get("coverage_report", {})
         doc_failed = doc_coverage.get("status") in {"failed", "no_data"}
-        dq_platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
         dq_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
         sections.extend(["", "Documentation (clarity and usefulness; explicit markers are a lower bound):"])
         sections.append(f"  Coverage: {_coverage_message(doc_coverage)}")
         if not doc_failed:
             sections.append(f"  Average clarity: {dq_sig.avg_clarity:.0f}/100")
             sections.append(f"  Average usefulness: {getattr(dq_sig, 'avg_usefulness', 0):.0f}/100")
-            sections.append(f"  Pages scanned: {dq_pages} ({dq_platforms})")
+            sections.append(f"  Pages scanned: {_doc_pages_value(dq_sig, dq_pages)}")
             sections.append(f"  Clarity split: {dq_split}")
             sections.append(
                 f"  Owned / actionable pages: {getattr(dq_sig, 'owned_pages', 0)} / "

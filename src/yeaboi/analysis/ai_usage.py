@@ -200,6 +200,20 @@ def _classify_ai_markers(text: str) -> set[str]:
     return hits
 
 
+# Below this many scanned items a percentage swings wildly on single commits —
+# a member-scoped scan of a quiet fortnight can read "50% AI" off 2 of 4 items.
+_MIN_FOOTPRINT_SAMPLE = 20
+
+
+def footprint_small_sample(signal: AiAdoptionSignal) -> bool:
+    """True when too little work was scanned for ``footprint_pct`` to be stable.
+
+    Shared by every surface (TUI, CLI, exporters — Surface Parity) so they agree
+    on when to show "N of M items" instead of a definitive-looking percentage.
+    """
+    return (signal.scanned_commits + signal.scanned_prs) < _MIN_FOOTPRINT_SAMPLE
+
+
 def _activity_bucket(item: dict) -> str:
     """Map a normalized activity item to an adoption activity type: pr / docs / code."""
     if item.get("kind") == "pr":
@@ -977,6 +991,7 @@ def run_ai_adoption(
                 "per_source": [list(p) for p in signal.per_source],
                 "repos_scanned": list(repos_scanned),
                 "is_lower_bound": True,
+                "small_sample": footprint_small_sample(signal) if footprint_enabled else False,
                 "selected_users": selected_users,
                 "matched_users": len(matched_identities),
                 "unmatched_users": unmatched_users,

@@ -869,6 +869,56 @@ class TestLocalGitBody:
 # ── TUI card builder ───────────────────────────────────────────────────────
 
 
+class TestFootprintSmallSample:
+    def test_below_threshold_is_small(self):
+        from yeaboi.analysis.ai_usage import footprint_small_sample
+
+        assert footprint_small_sample(AiAdoptionSignal(scanned_commits=10, scanned_prs=9)) is True
+
+    def test_at_threshold_is_not_small(self):
+        from yeaboi.analysis.ai_usage import footprint_small_sample
+
+        assert footprint_small_sample(AiAdoptionSignal(scanned_commits=15, scanned_prs=5)) is False
+
+    def test_blob_summary_carries_the_flag(self, monkeypatch):
+        item = {"kind": "commit", "author": "Alice", "source": "github", "title": "x", "body": ""}
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [item],
+                ["github"],
+                [],
+                [],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        _sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"])
+        assert blob["summary"]["small_sample"] is True
+
+
+class TestSmallSampleCard:
+    def test_small_sample_shows_count_not_percentage(self):
+        from yeaboi.ui.mode_select.screens._analysis_sections import _ta_ai_adoption, _TaCtx
+
+        sig = AiAdoptionSignal(
+            scanned_commits=3,
+            scanned_prs=1,
+            ai_commits=2,
+            ai_prs=0,
+            footprint_pct=50.0,
+            per_tool=(("claude", 2),),
+            sources_scanned=("github",),
+        )
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", ai_adoption=sig)
+        ctx = _TaCtx(width=100, examples={"ai_adoption": {}})
+        _ta_ai_adoption(ctx, profile)
+        out = _render_lines(ctx)
+        assert "2 of 4" in out
+        assert "small sample" in out
+        assert "50%" not in out
+
+
 def _render_lines(ctx) -> str:
     import io
 
@@ -890,8 +940,8 @@ class TestAiAdoptionCard:
         from yeaboi.ui.mode_select.screens._analysis_sections import _ta_ai_adoption
 
         sig = AiAdoptionSignal(
-            scanned_commits=10,
-            scanned_prs=2,
+            scanned_commits=25,
+            scanned_prs=5,
             ai_commits=4,
             ai_prs=1,
             footprint_pct=42.0,

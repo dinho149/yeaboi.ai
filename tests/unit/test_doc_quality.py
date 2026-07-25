@@ -97,6 +97,49 @@ class TestCodeAwareScoring:
         assert _usefulness_metrics("**Owner**: Jane")["owned"] is True
 
 
+class TestDocSmallSample:
+    def test_threshold(self):
+        from yeaboi.analysis.doc_quality import doc_small_sample
+
+        assert doc_small_sample(DocQualitySignal(pages_scanned=4)) is True
+        assert doc_small_sample(DocQualitySignal(pages_scanned=5)) is False
+
+    def test_card_shows_small_sample_callout(self):
+        from yeaboi.team_profile import TeamProfile
+        from yeaboi.ui.mode_select.screens._analysis_sections import _ta_doc_quality, _TaCtx
+
+        sig = DocQualitySignal(pages_scanned=2, avg_clarity=70.0, avg_usefulness=60.0, platforms_scanned=("notion",))
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", doc_quality=sig)
+        ctx = _TaCtx(width=100, examples={"doc_quality": {}})
+        _ta_doc_quality(ctx, profile)
+        out = _render_ctx_lines(ctx)
+        assert "SMALL SAMPLE" in out
+        assert "examples, not a trend" in out
+
+    def test_card_omits_callout_with_enough_pages(self):
+        from yeaboi.team_profile import TeamProfile
+        from yeaboi.ui.mode_select.screens._analysis_sections import _ta_doc_quality, _TaCtx
+
+        sig = DocQualitySignal(pages_scanned=9, avg_clarity=70.0, avg_usefulness=60.0, platforms_scanned=("notion",))
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", doc_quality=sig)
+        ctx = _TaCtx(width=100, examples={"doc_quality": {}})
+        _ta_doc_quality(ctx, profile)
+        out = _render_ctx_lines(ctx)
+        assert "SMALL SAMPLE" not in out
+        assert "last editor" in out  # asymmetry labeling in HOW TO READ
+
+
+def _render_ctx_lines(ctx) -> str:
+    import io
+
+    from rich.console import Console, Group
+
+    output = io.StringIO()
+    console = Console(file=output, width=100, color_system=None)
+    console.print(Group(*ctx.lines))
+    return output.getvalue()
+
+
 class TestScoringCacheVersion:
     def test_v2_cached_scores_not_reused_after_bump(self, tmp_path):
         from yeaboi.analysis.doc_quality import _DOC_CACHE_TASK, _DOC_SCORING_VERSION

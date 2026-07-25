@@ -1583,9 +1583,18 @@ def _print_code_summary(console: "Console", code: dict) -> None:
     enabled = set(examples.get("enabled_features") or ("ai_footprint", "code_health"))
     console.rule("[bold cyan]Code — selected-user analysis[/bold cyan]")
     if "ai_footprint" in enabled:
+        from yeaboi.analysis.ai_usage import footprint_small_sample
+
         fp = getattr(sig, "footprint_pct", 0.0)
         scanned = getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)
-        console.print(f"  AI footprint: [bold]{fp:.0f}%[/bold] of {scanned} commits/PRs (lower bound)")
+        marked = getattr(sig, "ai_commits", 0) + getattr(sig, "ai_prs", 0)
+        if sig is not None and footprint_small_sample(sig):
+            console.print(
+                f"  AI-marked: [bold]{marked} of {scanned}[/bold] commits/PRs "
+                "(small sample — % suppressed; lower bound)"
+            )
+        else:
+            console.print(f"  AI footprint: [bold]{fp:.0f}%[/bold] of {scanned} commits/PRs (lower bound)")
     health = examples.get("repository_health") or {}
     if "code_health" in enabled:
         console.print(
@@ -1612,11 +1621,14 @@ def _print_docs_summary(console: "Console", docs: dict) -> None:
     sig = docs.get("signal")
     examples = docs.get("examples") or {}
     console.rule("[bold cyan]Docs — clarity[/bold cyan]")
+    from yeaboi.analysis.doc_quality import doc_small_sample
+
     window = examples.get("window_days")
+    small = " (small sample)" if sig is not None and doc_small_sample(sig) else ""
     console.print(
         f"  Clarity: [bold]{getattr(sig, 'avg_clarity', 0):.0f}/100[/bold] · "
         f"Usefulness: [bold]{getattr(sig, 'avg_usefulness', 0):.0f}/100[/bold] · "
-        f"{getattr(sig, 'pages_scanned', 0)} pages" + (f" · last {window} days" if window else "")
+        f"{getattr(sig, 'pages_scanned', 0)} pages" + (f" · last {window} days" if window else "") + small
     )
     coverage = examples.get("coverage_report") or {}
     console.print(
