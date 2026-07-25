@@ -67,7 +67,7 @@ def _build_analysis_review_screen(
     sub = Text(_PAD + subtitle, style="dim", justify="left")
 
     # ── Viewport (height-aware for line wrapping)
-    viewport_h = calc_viewport(height, header_h=11, action_h=4)
+    viewport_h = calc_viewport(height, header_h=7, action_h=4)
 
     # Measure actual terminal height. Most pages pass Text, while the redesigned
     # Team Insights page also passes Rich panels and tables.
@@ -388,7 +388,7 @@ def _build_team_analysis_screen(
         crumb_text = anon_note
     crumb = Text(_PAD + crumb_text, style="rgb(120,120,140)", justify="left")
     # The 'both'-mode toggle line adds one header row; shrink the viewport to match.
-    body_h = calc_viewport(height, header_h=12 if toggle_line is not None else 11, action_h=4)
+    body_h = calc_viewport(height, header_h=8 if toggle_line is not None else 7, action_h=4)
 
     # Scroll by renderable rather than pretending every item is one terminal row.
     # Dashboard tiles/tables/cards are atomic Rich renderables with measured heights.
@@ -578,7 +578,7 @@ def _build_component_select_screen(
         footer.append("Select at least one source to analyse", style=theme.accent_bright)
     lines.append(footer)
 
-    viewport_h = calc_viewport(height, header_h=11, action_h=2)
+    viewport_h = calc_viewport(height, header_h=7, action_h=2)
     padded = list(lines[:viewport_h])
     for _ in range(max(0, viewport_h - len(padded))):
         padded.append(Text(""))
@@ -674,7 +674,7 @@ def _build_member_select_screen(
     if not roster:
         rows.append(Text(_PAD + "  No members found — the analysis will cover the whole team.", style=theme.muted))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    viewport_h = calc_viewport(height, header_h=6, action_h=2)
     total = len(rows)
     cursor_line = min(total - 1, cursor + 2) if roster else 0
     max_scroll = max(0, total - viewport_h)
@@ -1447,9 +1447,9 @@ def _build_intake_screen(
             body.append(Text(""))
             body_h += 1
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1512,9 +1512,9 @@ def _build_offline_screen(
             body.append(Text(""))
             body_h += 1
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1568,9 +1568,9 @@ def _build_export_success_screen(
     body.append(Text(_PAD + "Press any key to exit.", style="dim", justify="left"))
     body_h = 7
 
-    # Layout: blank + title(6) + blank + [body]
+    # Layout: blank + title(2) + blank + [body]
     inner_h = height - 4
-    header_h = 8  # blank + title(6) + blank
+    header_h = 4  # blank + title(2) + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1662,9 +1662,9 @@ def _build_import_screen(
     ]
     body_h = 8  # input_box(5) + error(1) + blank + hint(1)
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1802,7 +1802,7 @@ def _build_project_export_success_screen(
     body_h = 3 + len(file_path.splitlines()) + 2
 
     inner_h = height - 4
-    header_h = 8
+    header_h = 4  # blank + title(2) + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1966,7 +1966,7 @@ def _build_usage_screen(
             body_lines.append(r)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2129,15 +2129,15 @@ def _build_standup_screen(
 
     # ── Layout using shared components ────────────────────────────
     # header_h must match the Group rows above the viewport exactly (blank +
-    # 6-row title + blank + sub + blank + strip + optional banner + blank),
+    # title(2) + blanks + sub + strip + optional banner),
     # else the button bottom border falls off the fixed-height panel.
-    header_h = 12 + (1 if banner is not None else 0)
+    header_h = 8 + (1 if banner is not None else 0)
     if (height - 4) - header_h - 4 < 3:
         # Terminal too short for the strip — drop it rather than push the
         # buttons off the panel (same floor as before the strip existed).
         strip = None
         banner = None
-        header_h = 10
+        header_h = 6
     viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
@@ -2254,7 +2254,7 @@ def _build_standup_team_source_screen(
         if active:
             row.append(" ›", style=theme.accent_bright)
         rows.append(row)
-    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    viewport_h = calc_viewport(height, header_h=6, action_h=2)
     rows.extend(Text("") for _ in range(max(0, viewport_h - len(rows))))
     content = Group(
         Text(""),
@@ -2305,7 +2305,7 @@ def _build_standup_team_member_screen(
     if not roster:
         rows.append(Text(_PAD + empty_message, style=theme.muted))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    viewport_h = calc_viewport(height, header_h=6, action_h=2)
     total = len(rows)
     max_scroll = max(0, total - viewport_h)
     start = min(max(0, cursor - viewport_h // 2 + 2), max_scroll) if roster else 0
@@ -2423,7 +2423,7 @@ def _build_changelog_screen(
                     body_lines.append(line)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2586,7 +2586,7 @@ def _build_all_tips_screen(
             body_lines.append(Text(""))
 
     # ── Layout using shared components (identical to the changelog page) ──
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2764,7 +2764,7 @@ def _build_feedback_screen(
             body_lines.pop()
             # Rows consumed above the continuation block: top blank + 4 field
             # rows + 3 blanks between them, plus one trailing status/spacer row.
-            desc_budget = max(1, calc_viewport(height, header_h=10, action_h=4) - 10)
+            desc_budget = max(1, calc_viewport(height, header_h=6, action_h=4) - 10)
             for cont in continuations[:desc_budget]:
                 body_lines.append(Text(PAD + _val_indent + cont, style=theme.value, justify="left"))
             hidden = len(continuations) - desc_budget
@@ -2799,7 +2799,7 @@ def _build_feedback_screen(
         _wrapped(status, theme.warn, indent="  ")
 
     # ── Layout using shared components (same skeleton as the changelog page) ──
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     if view == "form" and focus == "fields":
@@ -3027,7 +3027,7 @@ def _build_performance_screen(
     for line in performance_data.get("detail_lines", []) or ["(nothing to show)"]:
         body_lines.append(_styled(line))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -3158,7 +3158,7 @@ def _build_reporting_screen(
         if not sprints:
             rows.append(Text(PAD + "  No sprints found.", style=theme.muted, justify="left"))
 
-        viewport_h = calc_viewport(height, header_h=10, action_h=4)
+        viewport_h = calc_viewport(height, header_h=6, action_h=4)
         total_lines = len(rows)
         # Window around the cursor row so it stays visible as you move.
         cursor_line = min(total_lines - 1, cursor + (3 if message else 1) + 1) if sprints else 0
@@ -3267,7 +3267,7 @@ def _build_reporting_screen(
     for line in reporting_data.get("detail_lines", []) or ["(nothing to show)"]:
         body_lines.append(_styled(line))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -3479,7 +3479,7 @@ def _build_roadmap_screen(
         # The zero-project fallback is exactly where the warnings carry the
         # failure reason (LLM/auth/ingest errors) — always show them here.
         if warnings:
-            base = calc_viewport(height, header_h=10, action_h=4) - len(body)
+            base = calc_viewport(height, header_h=6, action_h=4) - len(body)
             if base >= 2 + 2 + len(warnings):  # blank + borders + title + bullets
                 body.append(Text(""))
                 body.append(_Padding(_build_roadmap_notices_card(warnings, box_w=box_w), card_pad))
@@ -3501,7 +3501,7 @@ def _build_roadmap_screen(
         # placed above the cards, minus room reserved for the notices block (so
         # the cards never push the bottom buttons off-panel). Peek-stub space is
         # accounted for inside _window_project_cards, not reserved here.
-        base = calc_viewport(height, header_h=10, action_h=4) - len(body)
+        base = calc_viewport(height, header_h=6, action_h=4) - len(body)
         notices_full = (1 + 2 + len(warnings)) if warnings else 0  # blank + border + title + bullets
         notices_mode = "card" if warnings else "none"
         available_h = base - notices_full
@@ -3715,7 +3715,7 @@ def _build_retro_screen(
             _line("No cards yet.", theme.muted)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -3894,7 +3894,7 @@ def _build_standup_input_screen(
         # Large text box: wide, several rows, the value wraps across them.
         # Clamp the row count so the box + hint always fit the terminal
         # (label + 2 blanks + hint = 4 rows, box borders = 2 rows).
-        rows = max(2, min(box_rows, calc_viewport(height, header_h=10, action_h=1) - 6))
+        rows = max(2, min(box_rows, calc_viewport(height, header_h=6, action_h=1) - 6))
         inner_w = max(46, min(width - len(_PAD) - 12, 110))
         text_w = inner_w - 2  # one space of padding each side
         raw = value + "█"
@@ -3929,7 +3929,7 @@ def _build_standup_input_screen(
 
     # Vertically pad the middle so the field sits in the upper-third like the dashboard.
     body: list = [label, Text(""), *box_lines, Text(""), hint_line]
-    pad_rows = max(0, calc_viewport(height, header_h=10, action_h=1) - len(body))
+    pad_rows = max(0, calc_viewport(height, header_h=6, action_h=1) - len(body))
     body.extend(Text("") for _ in range(pad_rows))
 
     content = Group(Text(""), title, Text(""), sub, Text(""), *body)
@@ -4067,7 +4067,7 @@ def _build_profile_picker_screen(
     body_lines.append(Text(_PAD + "  \u2570" + "\u2500" * card_w + "\u256f", style=skip_border, justify="left"))
 
     # Layout
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     visible = body_lines[:viewport_h]
 
     padded_lines: list = list(visible)
@@ -4268,7 +4268,7 @@ def _build_settings_screen(
     _row("Config File", config_data.get("_config_path", ""))
 
     # ── Layout ────────────────────────────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)

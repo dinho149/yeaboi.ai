@@ -326,9 +326,9 @@ def _build_project_list_screen(
     # Left pad matches _PAD (4 chars) so cards align with the ASCII title
     _card_pad = (0, 0, 0, len(_PAD))
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
 
     _profiles = profiles or []
     _analysis_labels = new_analysis_labels or []

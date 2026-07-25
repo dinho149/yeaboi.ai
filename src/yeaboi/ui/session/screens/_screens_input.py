@@ -192,7 +192,7 @@ def _build_description_screen(
     body_h = 3 + len(example_lines) + 7  # hint(1) + blank + example lines + blank + box(~5) + blank + submit_hint
 
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining_h = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -385,7 +385,7 @@ def _build_question_screen(
     body_h += 1
 
     inner_h = height - 4
-    header_h = 10
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining_h = max(0, inner_h - header_h - body_h)
 
     content = Group(

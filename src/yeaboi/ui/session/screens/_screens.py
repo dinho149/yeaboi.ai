@@ -145,7 +145,7 @@ def _build_summary_screen(
     sub = Text(_PAD + "Review your answers", style="dim", justify="left")
 
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank(padding)
+    header_h = 6  # blank + title(2) + blank + subtitle + blank(padding)
     action_h = 4  # blank + 3 button lines
     viewport_h = max(3, inner_h - header_h - action_h)
 

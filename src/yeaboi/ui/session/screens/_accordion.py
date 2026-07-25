@@ -436,7 +436,7 @@ def _build_accordion_question_screen(
     heights = _compute_item_heights(questionnaire, active_q, question_text, choices, suggestion, box_w, edit_hint)
 
     inner_h = height - 4  # outer panel border + padding
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     available_h = max(5, inner_h - header_h - 1)  # -1 for bottom padding
 
     first_vis, last_vis = _compute_accordion_viewport(active_q, heights, available_h, scroll_offset)

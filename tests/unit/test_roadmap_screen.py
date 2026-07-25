@@ -175,8 +175,10 @@ class TestResultsView:
         assert "UNIQUEDESC1" not in out
 
     def test_notices_degrade_to_hint_on_small_height(self):
-        # Too short for the full notices card → a one-line ⚠ hint instead.
-        out = _render_to_text(_build_roadmap_screen(self._data(_analysis(), cursor=0), height=28), height=60)
+        # Too short for the full notices card → a one-line ⚠ hint instead. (The
+        # compact two-line title frees ~4 rows vs the old tall wordmark, so the
+        # threshold sits a few rows lower than before.)
+        out = _render_to_text(_build_roadmap_screen(self._data(_analysis(), cursor=0), height=24), height=60)
         assert "enlarge the window to view" in out
         assert "Notices" not in out  # the multi-line notices card is suppressed
 

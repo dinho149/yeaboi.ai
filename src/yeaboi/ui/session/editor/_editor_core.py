@@ -204,7 +204,7 @@ def render_editor_panel(
         sub.append(_editor_notice, style="bold white")
 
     inner_h = height - 4
-    header_h = 10
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     editor_h = max(3, inner_h - header_h)
     editor_w = width - 12
     wrap_w = editor_w - 4 - len(PAD)
