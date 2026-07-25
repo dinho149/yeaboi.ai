@@ -93,10 +93,6 @@ _MENU_SWEEP_SPEED = 150.0
 # Companion entrance: after the menu wipes in, the duck glides in from the right
 # over this many seconds, then the tip bubble + update box fade in above him.
 _COMPANION_INTRO_SECONDS = 0.55
-# On returning from a sub-page the entrance starts this far along, chosen so the
-# welcome duck's first column lines up with the sub-page duck's corner (~col 104 at
-# a 120-wide terminal), so he continues forward from there rather than jumping.
-_COMPANION_RETURN_START = 0.28
 
 
 def _run_output_share_flow(
@@ -7180,11 +7176,10 @@ def select_mode(
                 )
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right.
-            # Returning from a sub-page: start most of the way in so he just nudges
-            # the little bit forward into his menu spot (not from off-screen again).
-            _companion_intro_start = time.monotonic() - (
-                _COMPANION_RETURN_START * _COMPANION_INTRO_SECONDS if _returning else 0.0
-            )
+            # Returning from a sub-page: render him already settled (no slide) — a
+            # backward slide across the two duck-rendering systems double-rendered as
+            # a snap-then-slide, so on return he simply sits in his menu spot.
+            _companion_intro_start = time.monotonic() - (_COMPANION_INTRO_SECONDS if _returning else 0.0)
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
             while True:
