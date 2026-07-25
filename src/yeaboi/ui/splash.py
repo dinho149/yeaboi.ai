@@ -291,21 +291,22 @@ def show_splash(console: Console) -> None:
     logger.info("splash: shown")
     _splash_start = time.monotonic()
 
-    # Render into the alternate-screen buffer so Rich double-buffers each frame.
-    # The wordmark fade/shine animates continuously; in inline (screen=False) mode
-    # Rich rewrites lines every frame and the intro visibly flickers. screen=True
-    # composites whole frames cleanly. The next fullscreen UI (wizard/mode-select)
-    # also uses screen=True and re-enters seamlessly; the only cost is one brief
-    # flash at the splash→menu boundary, far less jarring than a flickering intro.
-    #
+    # Enter alt-screen once and keep it active through to the next fullscreen UI,
+    # so the menu draws straight over the splash with no clear-to-shell gap. Live
+    # uses screen=False (it does NOT own the alt-screen) precisely so exiting it
+    # doesn't restore the normal screen mid-handoff. The next UI's Live(screen=True)
+    # re-enters the already-active alt-screen seamlessly.
+    console.set_alt_screen(True)
+    console.clear()
+
     # Use a plain Live (not make_live/MusicLive): the splash is a non-interactive
     # intro with no music key controls, so the persistent music bar must NOT be
     # stamped onto its border — it first appears on the next fullscreen screen.
     with Live(
         _build_splash_frame(text_lines, width=w, height=h, opacity=0.0),
         console=console,
-        refresh_per_second=30,
-        screen=True,
+        refresh_per_second=60,
+        screen=False,
         vertical_overflow="crop",
     ) as live:
         _run_wordmark_animation(

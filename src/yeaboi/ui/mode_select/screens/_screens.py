@@ -436,29 +436,25 @@ def _build_mode_screen(
     frame = int(shimmer_tick * 4) % 8
 
     if show_companion:
-        # Tip text goes to the bubble; only the control row + version pin bottom-left.
-        bottom_rows = [tip_rows[1], version_row]
+        # Only the modes and the duck are column-split; the control + version rows
+        # span the FULL width underneath (their original alignment, no wrap). The
+        # duck bottom-aligns inside the grid so it perches just above those rows.
         inner_h = height - 4
-        # -1 leaves a margin row: the selected mode's description can wrap to a
-        # second line in the narrower left column (the duck lane steals width),
-        # which body_h doesn't count — the margin absorbs it so the bottom rows
-        # and the duck's caption never clip.
-        body_area = max(0, inner_h - len(bottom_rows) - 1)
-        mid_top = max(0, (body_area - body_h) // 2)
-        mid_bot = max(0, body_area - body_h - mid_top)
-        content = Group(
+        grid_h = max(0, inner_h - 2)  # reserve the control + version rows below
+        mid_top = max(0, (grid_h - body_h) // 2)
+        mid_bot = max(0, grid_h - body_h - mid_top)
+        left_col = Group(
             *[Text("") for _ in range(mid_top)],
             *body,
             *[Text("") for _ in range(mid_bot)],
-            *bottom_rows,
         )
         # Table.grid is a borderless fixed-column splitter: mode list keeps its
         # width, the duck + speech bubble get a reserved right-hand lane.
-        layout = Table.grid(expand=True)
-        layout.add_column(ratio=1)
-        layout.add_column(width=_COMPANION_COLS)
-        layout.add_row(content, _build_companion(tip_rows[0], frame))
-        body_renderable: RenderableType = layout
+        grid = Table.grid(expand=True)
+        grid.add_column(ratio=1)
+        grid.add_column(width=_COMPANION_COLS)
+        grid.add_row(left_col, _build_companion(tip_rows[0], frame))
+        body_renderable: RenderableType = Group(grid, tip_rows[1], version_row)
     else:
         inner_h = height - 4
         body_area = max(0, inner_h - len(tip_rows) - 1)
@@ -509,8 +505,9 @@ def _build_companion(tip_line: Text, frame: int) -> RenderableType:
             padding=(0, 1),
             width=_COMPANION_COLS - 2,
         )
-        # A short diagonal tail from the bubble's lower edge toward the duck.
-        tail = Text(" " * (_COMPANION_COLS - 8) + "╲", style="rgb(90,100,110)")
+        # A short diagonal tail centred over the duck (which is centred in the
+        # lane), so the bubble visibly points down at him.
+        tail = Text(" " * (_COMPANION_COLS // 2 - 1) + "╲", style="rgb(90,100,110)")
         parts = [bubble, tail]
     parts.append(Align.center(duck))
     return Align.center(Group(*parts), vertical="bottom")
