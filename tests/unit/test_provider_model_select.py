@@ -75,14 +75,19 @@ class _FakeResponse:
         return self._payload
 
 
+# Pin BOTH dimensions. The pickers size themselves from ``console.size`` (height
+# included); left unpinned, a non-tty StringIO console's height is ambient and can
+# collapse to a value too short for the picker, which then renders its body as a
+# bare "…" — an order-dependent flake in test-fast. A fixed height makes it
+# deterministic (and tall enough to render the whole picker).
 def _render(panel: Panel) -> str:
-    console = Console(file=StringIO(), width=80, highlight=False)
+    console = Console(file=StringIO(), width=80, height=40, highlight=False)
     console.print(panel)
     return console.file.getvalue()
 
 
 def _console() -> Console:
-    return Console(file=StringIO(), width=80)
+    return Console(file=StringIO(), width=80, height=40)
 
 
 class _FakeLive:
