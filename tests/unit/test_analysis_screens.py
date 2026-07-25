@@ -2277,6 +2277,24 @@ class TestAnalysisOverview:
         output = self._render_view(examples=_NARRATIVE_EXAMPLES)
         assert "Open" in output and "Continue" in output
 
+    def test_overview_code_health_row_aligns_with_ai_rows(self):
+        output = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
+        columns = {}
+        for line in output.splitlines():
+            for title in ("AI Footprint", "Code Health", "Documentation"):
+                if title in line and title not in columns:
+                    columns[title] = line.find(title)
+        assert set(columns) == {"AI Footprint", "Code Health", "Documentation"}
+        assert len(set(columns.values())) == 1, columns
+
+    def test_overview_code_health_has_no_ai_star(self):
+        output = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
+        for line in output.splitlines():
+            if "Code Health" in line:
+                assert "✦" not in line
+            if "AI Footprint" in line:
+                assert "✦" in line
+
 
 class TestAnalysisSectionDetail:
     """Each section card renders its sections, narrative block and glossary."""
