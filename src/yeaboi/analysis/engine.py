@@ -22,10 +22,19 @@ Error contract:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
+
+
+class AnalysisCancelledError(RuntimeError):
+    """A caller's ``cancel_event`` aborted the run before anything was saved.
+
+    Raised (not returned) so the TUI worker's except-chain can distinguish
+    cancellation from real failures; nothing is persisted once it fires."""
+
 
 # Friendly tracker labels for 'both'-mode output (mirrors reporting/engine.py's
 # _source_names). Note analysis uses "azdevops" (not reporting's "azuredevops").
@@ -327,6 +336,7 @@ def run_team_analysis(
     analysis_features: list[str] | None = None,
     progress: list | None = None,
     db_path=None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Analyse the team into decoupled Delivery / Code / Docs components.
 
@@ -379,6 +389,9 @@ def run_team_analysis(
         progress: optional shared list the analysis workers append activity strings
             and explicit component lifecycle events to.
         db_path: sessions DB override (tests). Defaults to paths.get_db_path().
+        cancel_event: injected in-process cancel seam (TUI worker thread), like
+            ``progress``/``db_path``. When set, queued jobs abort at pickup and
+            the whole run raises ``AnalysisCancelledError`` before anything persists.
 
     Raises ValueError when nothing at all can be analysed (no tracker/component
     configured); per-tracker board errors degrade to a ``warnings`` entry.
@@ -500,6 +513,17 @@ def run_team_analysis(
                 label = "Assessing documentation quality"
                 return [("docs:documentation", label)]
 
+        def _guarded(fn, /, *args, **kwargs):
+            # Cooperative cancel: a queued job aborts the moment a worker picks it
+            # up. A job already running finishes (its threads can't be killed) but
+            # its result is discarded by the pre-persist gate below.
+            def _run():
+                if cancel_event is not None and cancel_event.is_set():
+                    raise AnalysisCancelledError("Analysis cancelled")
+                return fn(*args, **kwargs)
+
+            return _run
+
         max_workers = min(4, len(jobs))
         logger.info("Running %d top-level analysis job(s) with %d worker(s)", len(jobs), max_workers)
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="team-analysis") as executor:
@@ -515,17 +539,29 @@ def run_team_analysis(
                         read_only=kind == "code",
                     )
                 if kind == "delivery":
-                    future = executor.submit(_run_delivery, *args, **kwargs)
+                    future = executor.submit(_guarded(_run_delivery, *args, **kwargs))
                 elif kind == "code":
-                    future = executor.submit(_run_ai_usage_component, *args, **kwargs)
+                    future = executor.submit(_guarded(_run_ai_usage_component, *args, **kwargs))
                 else:
-                    future = executor.submit(_run_doc_quality_component, *args, **kwargs)
+                    future = executor.submit(_guarded(_run_doc_quality_component, *args, **kwargs))
                 futures[future] = (kind, key)
 
             for future in as_completed(futures):
                 kind, key = futures[future]
                 try:
                     result = future.result()
+                except AnalysisCancelledError:
+                    # Not a real failure — mark the component cancelled without
+                    # polluting the warnings list.
+                    for component_id, label in _job_progress(kind, key):
+                        append_component_progress(
+                            progress_list,
+                            component_id=component_id,
+                            label=label,
+                            status="failed",
+                            detail="cancelled",
+                        )
+                    continue
                 except Exception as exc:
                     for component_id, label in _job_progress(kind, key):
                         append_component_progress(
@@ -608,6 +644,12 @@ def run_team_analysis(
                         status=lifecycle_status,
                         detail=detail,
                     )
+
+    # Pre-persist gate: even when a running job outlived the caller's bounded
+    # wait, a set cancel_event guarantees nothing is saved.
+    if cancel_event is not None and cancel_event.is_set():
+        logger.info("Team analysis cancelled — discarding results; no profile or analysis run saved")
+        raise AnalysisCancelledError("Analysis cancelled — nothing was saved.")
 
     # Futures complete in arbitrary order. Rebuild delivery in configured order so
     # the comparison table and TUI's initial tracker stay deterministic.

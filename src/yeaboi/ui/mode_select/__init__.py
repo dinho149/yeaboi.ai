@@ -4607,53 +4607,19 @@ def _performance_export(engineer: str) -> str:
         return f"Export failed: {e}"
 
 
-def _analysis_grid_columns(width: int) -> int:
-    """Responsive setup-grid column count (kept beside the input loops)."""
-    return 2 if width >= 88 else 1
+def _move_analysis_list_cursor(cursor: int, key: str, count: int) -> int:
+    """Single-column list navigation for every Analysis setup picker.
 
-
-def _move_analysis_grid_cursor(cursor: int, key: str, count: int, width: int) -> int:
-    """Move through a responsive card grid without landing on empty cells."""
+    The setup screens always render one toggle row per line (there is no wide
+    two-column layout), so movement is a plain ±1 with wraparound — the same
+    convention as the standup and reporting pickers."""
     if count <= 1:
         return 0
-    columns = _analysis_grid_columns(width)
-    if columns == 1:
-        if key in ("up", "left", "scroll_up"):
-            return (cursor - 1) % count
-        if key in ("down", "right", "scroll_down"):
-            return (cursor + 1) % count
-        return cursor
-    row, column = divmod(cursor, columns)
-    if key == "left":
-        candidate = cursor - 1
-        return candidate if column > 0 else cursor
-    if key == "right":
-        candidate = cursor + 1
-        return candidate if column + 1 < columns and candidate < count else cursor
-    if key in ("up", "scroll_up"):
-        candidate = cursor - columns
-        return candidate if candidate >= 0 else cursor
-    if key in ("down", "scroll_down"):
-        candidate = cursor + columns
-        if candidate < count:
-            return candidate
-        # A ragged final row keeps the closest valid column.
-        last_row_start = ((count - 1) // columns) * columns
-        return min(last_row_start + column, count - 1) if last_row_start > row * columns else cursor
+    if key in ("up", "left", "scroll_up"):
+        return (cursor - 1) % count
+    if key in ("down", "right", "scroll_down"):
+        return (cursor + 1) % count
     return cursor
-
-
-def _move_analysis_feature_cursor(cursor: int, key: str, width: int) -> int:
-    """Navigate the full-width Analyse-all card plus the responsive feature grid."""
-    if width < 88:
-        return _move_analysis_grid_cursor(cursor, key, 5, width)
-    if cursor == 0:
-        return 1 if key in ("down", "scroll_down") else 0
-    local = cursor - 1
-    if key in ("up", "scroll_up") and local < 2:
-        return 0
-    moved = _move_analysis_grid_cursor(local, key, 4, width)
-    return moved + 1
 
 
 def _run_analysis_feature_select(
@@ -4663,8 +4629,12 @@ def _run_analysis_feature_select(
     frame_time: float,
     supports_timeout: bool,
     available: dict[str, bool],
+    initial_features: list[str] | None = None,
 ):
-    """Choose analysis result areas; every runnable area starts selected."""
+    """Choose analysis result areas; every runnable area starts selected.
+
+    ``initial_features`` restores a previous selection when the setup wizard
+    re-enters this step (Esc back-navigation)."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _ANALYSIS_FEATURE_KEYS,
         _build_analysis_feature_screen,
@@ -4673,7 +4643,7 @@ def _run_analysis_feature_select(
     runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
     if not runnable:
         return "cancel"
-    checked = set(runnable)
+    checked = set(initial_features) & runnable if initial_features is not None else set(runnable)
     cursor = 0
     rows = ("all",) + _ANALYSIS_FEATURE_KEYS
     message = ""
@@ -4691,7 +4661,7 @@ def _run_analysis_feature_select(
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
-            cursor = _move_analysis_feature_cursor(cursor, key, w)
+            cursor = _move_analysis_list_cursor(cursor, key, len(rows))
         elif key in (" ", "a", "A"):
             feature = rows[cursor]
             if feature == "all" or key in ("a", "A"):
@@ -4716,6 +4686,7 @@ def _run_component_select(
     supports_timeout: bool,
     grid: dict,
     descriptions: dict[str, str] | None = None,
+    initial: dict[str, list[str]] | None = None,
 ):
     """Blocking ragged component × sub-source picker.
 
@@ -4723,7 +4694,9 @@ def _run_component_select(
     sub-sources. Returns a ``{component: [selected sub-sources]}`` dict (only
     components with a selection; ready to pass straight to ``run_team_analysis`` as
     ``components=``) or the string ``"cancel"`` on Esc. Everything is checked by
-    default; at least one source overall must stay selected."""
+    default; at least one source overall must stay selected. ``initial`` restores a
+    previous selection on wizard re-entry; a component absent from it (newly enabled
+    by a feature change) defaults to all-checked, matching the first visit."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _COMPONENT_KEYS,
         _build_component_select_screen,
@@ -4732,7 +4705,10 @@ def _run_component_select(
     rows = [c for c in _COMPONENT_KEYS if grid.get(c)]
     if not rows:  # nothing configured at all
         return "cancel"
-    checked: dict[str, set[int]] = {c: set(range(len(grid[c]))) for c in rows}
+    if initial is None:
+        checked: dict[str, set[int]] = {c: set(range(len(grid[c]))) for c in rows}
+    else:
+        checked = {c: {i for i, s in enumerate(grid[c]) if s in set(initial.get(c, grid[c]))} for c in rows}
     row_idx = 0
     col_idx = 0
     message = ""
@@ -4795,7 +4771,7 @@ def _run_analysis_depth_select(
         live.update(_build_analysis_depth_screen(selected, width=w, height=h))
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
-            selected = _move_analysis_grid_cursor(selected, key, 2, w)
+            selected = _move_analysis_list_cursor(selected, key, 2)
         elif key == "enter":
             return ("quick", "deep")[selected]
         elif key in ("esc", "q"):
@@ -4833,7 +4809,7 @@ def _run_analysis_model_offer(
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
-            selected = _move_analysis_grid_cursor(selected, key, 2, w)
+            selected = _move_analysis_list_cursor(selected, key, 2)
         elif key == "enter":
             return options[selected]
         elif key in ("esc", "q"):
@@ -4858,7 +4834,7 @@ def _run_analysis_window_select(
         live.update(_build_analysis_window_screen(selected, width=w, height=h))
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
-            selected = _move_analysis_grid_cursor(selected, key, len(options), w)
+            selected = _move_analysis_list_cursor(selected, key, len(options))
         elif key == "enter":
             return options[selected]
         elif key in ("esc", "q"):
@@ -4890,7 +4866,7 @@ def _run_member_select(
         live.update(_build_member_select_screen(roster, checked, cursor, width=w, height=h, message=message))
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
         if kk in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
-            cursor = _move_analysis_grid_cursor(cursor, kk, len(roster), w) if roster else 0
+            cursor = _move_analysis_list_cursor(cursor, kk, len(roster)) if roster else 0
         elif kk == " " and roster:
             checked.symmetric_difference_update({cursor})
             message = ""
@@ -4912,8 +4888,12 @@ def _run_code_project_select(
     read_key,
     frame_time: float,
     supports_timeout: bool,
+    initial_projects: list[str] | None = None,
 ) -> list[str] | str:
-    """Discover accessible Azure projects and choose the code scope for this run."""
+    """Discover accessible Azure projects and choose the code scope for this run.
+
+    ``initial_projects`` restores a previous selection on wizard re-entry (discovery
+    itself re-runs; only the checked state carries over)."""
     import threading
 
     from yeaboi.config import get_team_analysis_azdo_projects
@@ -4958,8 +4938,14 @@ def _run_code_project_select(
     projects = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
     if not projects:
         return "cancel"
-    defaults = {name.lower() for name in get_team_analysis_azdo_projects()}
-    checked = {idx for idx, name in enumerate(projects) if name.lower() in defaults}
+    if initial_projects is not None:
+        wanted = {name.lower() for name in initial_projects}
+        checked = {idx for idx, name in enumerate(projects) if name.lower() in wanted}
+    else:
+        checked = set()
+    if not checked:
+        defaults = {name.lower() for name in get_team_analysis_azdo_projects()}
+        checked = {idx for idx, name in enumerate(projects) if name.lower() in defaults}
     if not checked:
         checked = set(range(len(projects)))
     cursor = 0
@@ -4978,7 +4964,7 @@ def _run_code_project_select(
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
-            cursor = _move_analysis_grid_cursor(cursor, key, len(projects), w)
+            cursor = _move_analysis_list_cursor(cursor, key, len(projects))
         elif key == " ":
             checked.symmetric_difference_update({cursor})
             message = ""
@@ -5214,6 +5200,258 @@ def _run_analysis_roster_lookup(
         if key in ("enter", "r", "R"):
             continue
         return None
+
+
+# The Analysis setup flow is a WIZARD: an ordered tuple of steps, each with an
+# applicability predicate over the live selections. This replaces two duplicated
+# ~200-line linear call sequences whose Esc handling fell out of the restart
+# loops (and exited the app). Esc/"cancel" moves the index backward; steps whose
+# predicate no longer holds are transparent in BOTH directions, so backing over
+# e.g. the model offer after switching to Quick depth skips it cleanly.
+_WIZARD_STEPS = ("features", "sources", "code_projects", "depth", "model", "window", "members", "review")
+
+
+def _run_analysis_setup_wizard(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    grid: dict[str, list[str]],
+    roster_fallback: list[str],
+    project_key: str = "",
+    db_path=None,
+) -> dict | None:
+    """Walk the Analysis setup steps with Esc-back navigation and state carry-over.
+
+    ``grid`` is the FULL configured component → sub-source map (pre feature
+    filtering); ``roster_fallback`` names the delivery trackers to fetch the
+    roster from when no delivery component is selected. Returns the run config
+    dict, or ``None`` when the user backs out of the first step (the caller
+    returns to the analysis landing screen).
+
+    Choices for steps that later become inapplicable stay in ``state`` (so
+    re-enabling a feature restores them) but ``_config()`` coerces them out of
+    the run payload — a stale Deep depth can never leak into a docs-only run."""
+    state: dict = {
+        "features": None,
+        "components": None,
+        "azdo_projects": None,
+        "depth": "deep",
+        "model": None,
+        "window_days": 120,
+        "members": None,
+        "roster": None,
+        "roster_key": None,
+    }
+    preflight_box: list = [None]  # ollama preflight, probed at most once per wizard run
+
+    def _feature_set() -> set[str]:
+        return set(state["features"] or [])
+
+    def _filtered_grid() -> dict[str, list[str]]:
+        fs = _feature_set()
+        return {
+            "delivery": grid["delivery"] if "delivery" in fs else [],
+            "code": grid["code"] if fs & {"ai_footprint", "code_health"} else [],
+            "docs": grid["docs"] if "documentation" in fs else [],
+        }
+
+    def _preflight() -> dict:
+        if preflight_box[0] is None:
+            from yeaboi.analysis.llm_runtime import get_ollama_analysis_preflight
+
+            preflight_box[0] = get_ollama_analysis_preflight(db_path)
+        return preflight_box[0]
+
+    def _depth_applicable() -> bool:
+        return bool(_feature_set() & {"delivery", "ai_footprint"})
+
+    def _effective_depth() -> str:
+        return state["depth"] if _depth_applicable() else "quick"
+
+    def _applicable(step: str) -> bool:
+        fs = _feature_set()
+        comps = state["components"] or {}
+        if step in ("features", "sources", "review"):
+            return True
+        if step == "code_projects":
+            return bool(fs & {"ai_footprint", "code_health"}) and "azdo" in (comps.get("code") or [])
+        if step == "depth":
+            return _depth_applicable()
+        if step == "model":
+            return _effective_depth() == "deep" and bool(_preflight().get("offer"))
+        if step == "window":
+            return bool(fs & {"ai_footprint", "code_health", "documentation"})
+        if step == "members":
+            return bool(fs & {"delivery", "ai_footprint", "code_health"})
+        return False
+
+    def _config() -> dict:
+        comps = state["components"] or {}
+        members = state["members"] if _applicable("members") else None
+        trackers = comps.get("delivery") or roster_fallback
+        return {
+            "features": state["features"],
+            "components": comps,
+            "analysis_scope": (
+                {"azdo": state["azdo_projects"]} if _applicable("code_projects") and state["azdo_projects"] else {}
+            ),
+            "depth": _effective_depth(),
+            "model": state["model"] if _applicable("model") else None,
+            "window_days": state["window_days"] if _applicable("window") else 120,
+            "members": members,
+            "members_map": {tracker: members for tracker in trackers} if members else None,
+        }
+
+    def _members_step(direction: int) -> str:
+        sources = (state["components"] or {}).get("delivery") or roster_fallback
+        key = tuple(sources)
+        if state["roster_key"] != key:  # cache — don't re-fetch on back/forward
+            result = _run_analysis_roster_lookup(live, console, read_key, sources, project_key, db_path)
+            if result is None:  # lookup failed and the user declined the retry
+                return "back"
+            state["roster"] = [member.name for member in result.members]
+            state["roster_key"] = key
+            state["members"] = None  # roster changed — the old subset is invalid
+        if not state["roster"]:
+            # Nothing to pick: stay transparent in the direction of travel so Esc
+            # from review doesn't ping-pong against an auto-advancing step.
+            return "next" if direction >= 0 else "back"
+        selected = _run_member_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            state["roster"],
+            initial_members=state["members"],
+        )
+        if selected == "cancel":
+            return "back"
+        state["members"] = selected
+        return "next"
+
+    def _run_step(step: str, direction: int) -> str:
+        if step == "features":
+            chosen = _run_analysis_feature_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                {
+                    "delivery": bool(grid["delivery"]),
+                    "ai_footprint": bool(grid["code"]),
+                    "code_health": bool(grid["code"]),
+                    "documentation": bool(grid["docs"]),
+                },
+                initial_features=state["features"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["features"] = chosen
+            return "next"
+        if step == "sources":
+            fs = _feature_set()
+            chosen = _run_component_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                _filtered_grid(),
+                descriptions={
+                    "code": (
+                        "AI footprint + selected-user code-change health"
+                        if fs >= {"ai_footprint", "code_health"}
+                        else "detectable AI markers in selected-user activity"
+                        if "ai_footprint" in fs
+                        else "selected-user code-change health"
+                    )
+                },
+                initial=state["components"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["components"] = chosen
+            return "next"
+        if step == "code_projects":
+            chosen = _run_code_project_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                initial_projects=state["azdo_projects"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["azdo_projects"] = chosen
+            return "next"
+        if step == "depth":
+            chosen = _run_analysis_depth_select(
+                live, console, read_key, frame_time, supports_timeout, initial_depth=state["depth"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["depth"] = chosen
+            return "next"
+        if step == "model":
+            chosen = _run_analysis_model_offer(
+                live, console, read_key, frame_time, supports_timeout, _preflight(), initial_model=state["model"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["model"] = chosen
+            return "next"
+        if step == "window":
+            chosen = _run_analysis_window_select(
+                live, console, read_key, frame_time, supports_timeout, initial_days=state["window_days"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["window_days"] = chosen
+            return "next"
+        if step == "members":
+            return _members_step(direction)
+        config = _config()
+        verdict = _run_analysis_setup_review(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            features=config["features"],
+            components=config["components"],
+            members=config["members"],
+            analysis_scope=config["analysis_scope"],
+            depth=config["depth"],
+            window_days=config["window_days"],
+            model=config["model"],
+        )
+        return "run" if verdict == "run" else "back"
+
+    index = 0
+    direction = 1
+    while True:
+        step = _WIZARD_STEPS[index]
+        if not _applicable(step):
+            index += direction  # inapplicable steps are transparent in both directions
+            continue
+        outcome = _run_step(step, direction)
+        logger.info("Analysis setup wizard: step=%s outcome=%s", step, outcome)
+        if outcome == "run":
+            return _config()
+        if outcome == "back":
+            if index == 0:
+                return None  # Esc on the first step → analysis landing screen
+            direction = -1
+            index -= 1
+        else:
+            direction = 1
+            index += 1
 
 
 def _run_team_analysis_results(
@@ -8792,6 +9030,7 @@ def select_mode(
 
                         from yeaboi.analysis import run_team_analysis
                         from yeaboi.analysis.engine import (
+                            AnalysisCancelledError,
                             _available_code_sources,
                             _available_doc_sources,
                             _available_sources,
@@ -8799,205 +9038,36 @@ def select_mode(
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
-                        # \u2190 confluence/notion). Esc returns to the analysis screen.
-                        _ta_grid = {
-                            "delivery": _available_sources(),
-                            "code": _available_code_sources(),
-                            "docs": _available_doc_sources(),
-                        }
-                        _ta_features = _run_analysis_feature_select(
+                        # \u2190 confluence/notion). The wizard owns Esc-back navigation;
+                        # backing out of its first step returns to the analysis screen.
+                        _ta_setup = _run_analysis_setup_wizard(
                             live,
                             console,
                             read_key,
                             _FRAME_TIME,
                             _supports_timeout,
-                            {
-                                "delivery": bool(_ta_grid["delivery"]),
-                                "ai_footprint": bool(_ta_grid["code"]),
-                                "code_health": bool(_ta_grid["code"]),
-                                "documentation": bool(_ta_grid["docs"]),
+                            grid={
+                                "delivery": _available_sources(),
+                                "code": _available_code_sources(),
+                                "docs": _available_doc_sources(),
                             },
+                            roster_fallback=_available_sources(),
+                            project_key="",
+                            db_path=_ana_dbp,
                         )
-                        if _ta_features == "cancel":
+                        if _ta_setup is None:
+                            _ana_restart = True
                             _team_popup_result = ""
                             continue
-                        _ta_feature_set = set(_ta_features)
-                        _ta_grid = {
-                            "delivery": _ta_grid["delivery"] if "delivery" in _ta_feature_set else [],
-                            "code": (_ta_grid["code"] if _ta_feature_set & {"ai_footprint", "code_health"} else []),
-                            "docs": _ta_grid["docs"] if "documentation" in _ta_feature_set else [],
-                        }
-                        _ta_components = _run_component_select(
-                            live,
-                            console,
-                            read_key,
-                            _FRAME_TIME,
-                            _supports_timeout,
-                            _ta_grid,
-                            descriptions={
-                                "code": (
-                                    "AI footprint + selected-user code-change health"
-                                    if _ta_feature_set >= {"ai_footprint", "code_health"}
-                                    else "detectable AI markers in selected-user activity"
-                                    if "ai_footprint" in _ta_feature_set
-                                    else "selected-user code-change health"
-                                )
-                            },
-                        )
-                        if _ta_components == "cancel":
-                            _team_popup_result = ""
-                            continue
-
-                        _ta_analysis_scope: dict[str, list[str]] = {}
-                        if _ta_feature_set & {"ai_footprint", "code_health"} and "azdo" in (
-                            _ta_components.get("code") or []
-                        ):
-                            _azdo_scope = _run_code_project_select(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                            )
-                            if _azdo_scope == "cancel":
-                                _team_popup_result = ""
-                                continue
-                            _ta_analysis_scope["azdo"] = _azdo_scope
-
-                        _ta_depth = "quick"
-                        if _ta_feature_set & {"delivery", "ai_footprint"}:
-                            _ta_depth = _run_analysis_depth_select(
-                                live, console, read_key, _FRAME_TIME, _supports_timeout
-                            )
-                            if _ta_depth == "cancel":
-                                _team_popup_result = ""
-                                continue
-                        _ta_analysis_model = None
-                        _preflight = {}
-                        if _ta_depth == "deep":
-                            from yeaboi.analysis.llm_runtime import get_ollama_analysis_preflight
-
-                            _preflight = get_ollama_analysis_preflight(_ana_dbp)
-                            _ta_analysis_model = _run_analysis_model_offer(
-                                live, console, read_key, _FRAME_TIME, _supports_timeout, _preflight
-                            )
-                            if _ta_analysis_model == "cancel":
-                                _team_popup_result = ""
-                                continue
-                        _ta_window_days = 120
-                        if _ta_feature_set & {"ai_footprint", "code_health", "documentation"}:
-                            _ta_window_days = _run_analysis_window_select(
-                                live, console, read_key, _FRAME_TIME, _supports_timeout
-                            )
-                            if _ta_window_days == "cancel":
-                                _team_popup_result = ""
-                                continue
-
-                        # Member subset \u2014 only meaningful for delivery (velocity) or code
-                        # (authors). Prefetch the roster over the selected delivery trackers.
+                        _ta_features = _ta_setup["features"]
+                        _ta_components = _ta_setup["components"]
+                        _ta_analysis_scope = _ta_setup["analysis_scope"]
+                        _ta_depth = _ta_setup["depth"]
+                        _ta_analysis_model = _ta_setup["model"]
+                        _ta_window_days = _ta_setup["window_days"]
+                        _ta_members_map = _ta_setup["members_map"]
                         _ta_dlv = _ta_components.get("delivery") or []
-                        _ta_members_map = None
-                        _ta_selected_members = None
-                        _roster = []
-                        if _ta_dlv or _ta_feature_set & {"ai_footprint", "code_health"}:
-                            _roster_result = _run_analysis_roster_lookup(
-                                live,
-                                console,
-                                read_key,
-                                _ta_dlv or _available_sources(),
-                                "",
-                                _ana_dbp,
-                            )
-                            if _roster_result is None:
-                                _team_popup_result = ""
-                                continue
-                            _roster = [member.name for member in _roster_result.members]
-                            if _roster:
-                                _sel = _run_member_select(
-                                    live, console, read_key, _FRAME_TIME, _supports_timeout, _roster
-                                )
-                                if _sel == "cancel":
-                                    _team_popup_result = ""
-                                    continue
-                                if _sel:
-                                    _ta_selected_members = _sel
-                                    _ta_members_map = {t: _sel for t in (_ta_dlv or _available_sources())}
                         _ta_disp_source = _ta_dlv[0] if _ta_dlv else "analysis"
-
-                        while True:
-                            _review = _run_analysis_setup_review(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                                features=_ta_features,
-                                components=_ta_components,
-                                members=_ta_selected_members,
-                                analysis_scope=_ta_analysis_scope,
-                                depth=_ta_depth,
-                                window_days=_ta_window_days,
-                                model=_ta_analysis_model,
-                            )
-                            if _review == "run":
-                                break
-                            if _roster:
-                                _sel = _run_member_select(
-                                    live,
-                                    console,
-                                    read_key,
-                                    _FRAME_TIME,
-                                    _supports_timeout,
-                                    _roster,
-                                    initial_members=_ta_selected_members,
-                                )
-                                if _sel == "cancel":
-                                    _team_popup_result = ""
-                                    break
-                                _ta_selected_members = _sel
-                                _ta_members_map = {tracker: _sel for tracker in (_ta_dlv or _available_sources())}
-                            elif _ta_feature_set & {"ai_footprint", "code_health", "documentation"}:
-                                _window = _run_analysis_window_select(
-                                    live,
-                                    console,
-                                    read_key,
-                                    _FRAME_TIME,
-                                    _supports_timeout,
-                                    initial_days=_ta_window_days,
-                                )
-                                if _window == "cancel":
-                                    _team_popup_result = ""
-                                    break
-                                _ta_window_days = _window
-                            elif _ta_depth == "deep" and _preflight.get("offer"):
-                                _model = _run_analysis_model_offer(
-                                    live,
-                                    console,
-                                    read_key,
-                                    _FRAME_TIME,
-                                    _supports_timeout,
-                                    _preflight,
-                                    initial_model=_ta_analysis_model,
-                                )
-                                if _model == "cancel":
-                                    _team_popup_result = ""
-                                    break
-                                _ta_analysis_model = _model
-                            else:
-                                _depth = _run_analysis_depth_select(
-                                    live,
-                                    console,
-                                    read_key,
-                                    _FRAME_TIME,
-                                    _supports_timeout,
-                                    initial_depth=_ta_depth,
-                                )
-                                if _depth == "cancel":
-                                    _team_popup_result = ""
-                                    break
-                                _ta_depth = _depth
-                        if _team_popup_result == "":
-                            continue
 
                         _ta_progress: list = []
                         _ta_profile_box: list = [None]
@@ -9006,6 +9076,7 @@ def select_mode(
                         _ta_result_box: list = [None]  # full engine dict (carries 'both' results)
                         _ta_error_box: list[str] = [""]
                         _ta_done = threading.Event()
+                        _ta_cancel_event = threading.Event()
 
                         def _run_team_analysis_mode():
                             try:
@@ -9021,6 +9092,7 @@ def select_mode(
                                     analysis_features=_ta_features,
                                     progress=_ta_progress,
                                     db_path=_ana_dbp,
+                                    cancel_event=_ta_cancel_event,
                                 )
                                 _ta_result_box[0] = _res
                                 # Seed the boxes with the first delivery tracker (the
@@ -9031,6 +9103,8 @@ def select_mode(
                                 _ta_profile_box[0] = _first.get("profile")
                                 _ta_examples_box[0] = _first.get("examples") or {}
                                 _ta_sprint_names_box[0] = _first.get("sprint_names") or []
+                            except AnalysisCancelledError:
+                                pass  # cancelled — boxes stay empty; the poll loop owns the notice
                             except ValueError as exc:
                                 _ta_error_box[0] = str(exc)
                             except Exception as exc:
@@ -9053,22 +9127,71 @@ def select_mode(
                         )
 
                         _ta_anim_tick = 0.0
-                        while not _ta_done.is_set():
-                            _ta_anim_tick += _FRAME_TIME
+                        _ta_cancelled = False
+                        try:
+                            while not _ta_done.is_set():
+                                _ta_anim_tick += _FRAME_TIME
+                                w, h = console.size
+                                live.update(
+                                    _build_analysis_progress_screen(
+                                        _ta_progress,
+                                        width=w,
+                                        height=h,
+                                        elapsed=time.monotonic() - _ta_thread_start,
+                                        anim_tick=_ta_anim_tick,
+                                        source=_ta_disp_source,
+                                        mode="analysis",
+                                    )
+                                )
+                                time.sleep(_FRAME_TIME)
+                        except KeyboardInterrupt:
+                            # First Ctrl-C: cooperative cancel. The bounded wait below is
+                            # NOT wrapped, so a second Ctrl-C re-raises out of select_mode
+                            # and quits the app via cli.py's existing handler.
+                            logger.info("Analysis: Ctrl-C received — cancelling run")
+                            _ta_cancel_event.set()
+                            _ta_progress.append("Cancelling — waiting for running work to stop…")
+                            _ta_deadline = time.monotonic() + 10.0
+                            while not _ta_done.is_set() and time.monotonic() < _ta_deadline:
+                                _ta_anim_tick += _FRAME_TIME
+                                w, h = console.size
+                                live.update(
+                                    _build_analysis_progress_screen(
+                                        _ta_progress,
+                                        width=w,
+                                        height=h,
+                                        elapsed=time.monotonic() - _ta_thread_start,
+                                        anim_tick=_ta_anim_tick,
+                                        source=_ta_disp_source,
+                                        mode="analysis",
+                                    )
+                                )
+                                time.sleep(_FRAME_TIME)
+                            _ta_cancelled = True
+                        # Daemon thread — abandoned after the bounded wait if a job is
+                        # still busy; the engine's pre-persist gate still guarantees
+                        # nothing is saved once the cancel event is set.
+                        _ta_thread.join(timeout=0.1 if _ta_cancelled else None)
+
+                        if _ta_cancelled:
                             w, h = console.size
                             live.update(
-                                _build_analysis_progress_screen(
-                                    _ta_progress,
+                                _build_project_export_success_screen(
+                                    "Analysis cancelled — no results were saved.",
                                     width=w,
                                     height=h,
-                                    elapsed=time.monotonic() - _ta_thread_start,
-                                    anim_tick=_ta_anim_tick,
-                                    source=_ta_disp_source,
+                                    subtitle="Analysis cancelled",
+                                    hint="Press any key to continue.",
                                     mode="analysis",
                                 )
                             )
-                            time.sleep(_FRAME_TIME)
-                        _ta_thread.join()
+                            while True:
+                                _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                                if _k:
+                                    break
+                            _ana_restart = True
+                            _team_popup_result = ""
+                            continue
 
                         _ta_profile = _ta_profile_box[0]
                         _ta_duration = time.monotonic() - _ta_thread_start
@@ -10278,211 +10401,41 @@ def select_mode(
                     except Exception:
                         pass
 
-                    from yeaboi.analysis.engine import _available_code_sources, _available_doc_sources
+                    from yeaboi.analysis.engine import (
+                        AnalysisCancelledError,
+                        _available_code_sources,
+                        _available_doc_sources,
+                    )
 
+                    # The wizard owns the whole setup sequence (Esc steps back one
+                    # screen; backing out of the first step returns to this list).
                     _delivery_grid = ["jira", "azdevops"] if _ta_source == "both" else [_ta_source]
-                    _ta_grid = {
-                        "delivery": _delivery_grid,
-                        "code": _available_code_sources(),
-                        "docs": _available_doc_sources(),
-                    }
-                    _ta_features = _run_analysis_feature_select(
+                    _ta_setup = _run_analysis_setup_wizard(
                         live,
                         console,
                         read_key,
                         _FRAME_TIME,
                         _supports_timeout,
-                        {
-                            "delivery": bool(_ta_grid["delivery"]),
-                            "ai_footprint": bool(_ta_grid["code"]),
-                            "code_health": bool(_ta_grid["code"]),
-                            "documentation": bool(_ta_grid["docs"]),
+                        grid={
+                            "delivery": _delivery_grid,
+                            "code": _available_code_sources(),
+                            "docs": _available_doc_sources(),
                         },
+                        roster_fallback=_delivery_grid,
+                        project_key=_ta_project_key,
+                        db_path=_ana_dbp,
                     )
-                    if _ta_features == "cancel":
+                    if _ta_setup is None:
+                        _restart_project_list = True
                         _team_popup_result = ""
                         continue
-                    _ta_feature_set = set(_ta_features)
-                    _ta_grid = {
-                        "delivery": _ta_grid["delivery"] if "delivery" in _ta_feature_set else [],
-                        "code": (_ta_grid["code"] if _ta_feature_set & {"ai_footprint", "code_health"} else []),
-                        "docs": _ta_grid["docs"] if "documentation" in _ta_feature_set else [],
-                    }
-                    _ta_components = _run_component_select(
-                        live,
-                        console,
-                        read_key,
-                        _FRAME_TIME,
-                        _supports_timeout,
-                        _ta_grid,
-                        descriptions={
-                            "code": (
-                                "AI footprint + selected-user code-change health"
-                                if _ta_feature_set >= {"ai_footprint", "code_health"}
-                                else "detectable AI markers in selected-user activity"
-                                if "ai_footprint" in _ta_feature_set
-                                else "selected-user code-change health"
-                            )
-                        },
-                    )
-                    if _ta_components == "cancel":
-                        _team_popup_result = ""
-                        continue
-
-                    _ta_analysis_scope: dict[str, list[str]] = {}
-                    try:
-                        if _ta_feature_set & {"ai_footprint", "code_health"} and "azdo" in (
-                            _ta_components.get("code") or []
-                        ):
-                            _azdo_scope = _run_code_project_select(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                            )
-                            if _azdo_scope == "cancel":
-                                _team_popup_result = ""
-                                continue
-                            _ta_analysis_scope["azdo"] = _azdo_scope
-                    except Exception:
-                        logger.warning("Could not prepare Azure code-project scope", exc_info=True)
-
-                    _ta_members_map = None
-                    _ta_selected_members = None
-                    _roster = []
-                    if _ta_feature_set & {"delivery", "ai_footprint", "code_health"}:
-                        _roster_result = _run_analysis_roster_lookup(
-                            live,
-                            console,
-                            read_key,
-                            ["jira", "azdevops"] if _ta_source == "both" else [_ta_source],
-                            _ta_project_key,
-                            _ana_dbp,
-                        )
-                        if _roster_result is None:
-                            _team_popup_result = ""
-                            continue
-                        _roster = [member.name for member in _roster_result.members]
-                    if _roster:
-                        _selected_members = _run_member_select(
-                            live,
-                            console,
-                            read_key,
-                            _FRAME_TIME,
-                            _supports_timeout,
-                            _roster,
-                        )
-                        if _selected_members == "cancel":
-                            _team_popup_result = ""
-                            continue
-                        if _selected_members:
-                            _ta_selected_members = _selected_members
-                            _member_sources = ["jira", "azdevops"] if _ta_source == "both" else [_ta_source]
-                            _ta_members_map = {tracker: _selected_members for tracker in _member_sources}
-
-                    _ta_depth = "quick"
-                    if _ta_feature_set & {"delivery", "ai_footprint"}:
-                        _ta_depth = _run_analysis_depth_select(live, console, read_key, _FRAME_TIME, _supports_timeout)
-                        if _ta_depth == "cancel":
-                            _team_popup_result = ""
-                            continue
-                    _ta_analysis_model = None
-                    _preflight = {}
-                    if _ta_depth == "deep":
-                        from yeaboi.analysis.llm_runtime import get_ollama_analysis_preflight
-
-                        _preflight = get_ollama_analysis_preflight(_ana_dbp)
-                        _ta_analysis_model = _run_analysis_model_offer(
-                            live, console, read_key, _FRAME_TIME, _supports_timeout, _preflight
-                        )
-                        if _ta_analysis_model == "cancel":
-                            _team_popup_result = ""
-                            continue
-                    _ta_window_days = 120
-                    if _ta_feature_set & {"ai_footprint", "code_health", "documentation"}:
-                        _ta_window_days = _run_analysis_window_select(
-                            live, console, read_key, _FRAME_TIME, _supports_timeout
-                        )
-                        if _ta_window_days == "cancel":
-                            _team_popup_result = ""
-                            continue
-
-                    while True:
-                        _review = _run_analysis_setup_review(
-                            live,
-                            console,
-                            read_key,
-                            _FRAME_TIME,
-                            _supports_timeout,
-                            features=_ta_features,
-                            components=_ta_components,
-                            members=_ta_selected_members,
-                            analysis_scope=_ta_analysis_scope,
-                            depth=_ta_depth,
-                            window_days=_ta_window_days,
-                            model=_ta_analysis_model,
-                        )
-                        if _review == "run":
-                            break
-                        if _ta_feature_set & {"ai_footprint", "code_health", "documentation"}:
-                            _window = _run_analysis_window_select(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                                initial_days=_ta_window_days,
-                            )
-                            if _window == "cancel":
-                                _team_popup_result = ""
-                                break
-                            _ta_window_days = _window
-                        elif _ta_depth == "deep" and _preflight.get("offer"):
-                            _model = _run_analysis_model_offer(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                                _preflight,
-                                initial_model=_ta_analysis_model,
-                            )
-                            if _model == "cancel":
-                                _team_popup_result = ""
-                                break
-                            _ta_analysis_model = _model
-                        elif _ta_feature_set & {"delivery", "ai_footprint"}:
-                            _depth = _run_analysis_depth_select(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                                initial_depth=_ta_depth,
-                            )
-                            if _depth == "cancel":
-                                _team_popup_result = ""
-                                break
-                            _ta_depth = _depth
-                        elif _roster:
-                            _selected_members = _run_member_select(
-                                live,
-                                console,
-                                read_key,
-                                _FRAME_TIME,
-                                _supports_timeout,
-                                _roster,
-                                initial_members=_ta_selected_members,
-                            )
-                            if _selected_members == "cancel":
-                                _team_popup_result = ""
-                                break
-                            _ta_selected_members = _selected_members
-                            _member_sources = ["jira", "azdevops"] if _ta_source == "both" else [_ta_source]
-                            _ta_members_map = {tracker: _selected_members for tracker in _member_sources}
-                    if _team_popup_result == "":
-                        continue
+                    _ta_features = _ta_setup["features"]
+                    _ta_components = _ta_setup["components"]
+                    _ta_analysis_scope = _ta_setup["analysis_scope"]
+                    _ta_depth = _ta_setup["depth"]
+                    _ta_analysis_model = _ta_setup["model"]
+                    _ta_window_days = _ta_setup["window_days"]
+                    _ta_members_map = _ta_setup["members_map"]
 
                     _ta_progress: list = []
                     _ta_profile_box: list = [None]
@@ -10491,6 +10444,7 @@ def select_mode(
                     _ta_result_box: list = [None]  # full engine dict (carries 'both' results)
                     _ta_error_box: list[str] = [""]
                     _ta_done = threading.Event()
+                    _ta_cancel_event = threading.Event()
 
                     def _run_team_analysis():
                         try:
@@ -10509,6 +10463,7 @@ def select_mode(
                                 members=_ta_members_map,
                                 progress=_ta_progress,
                                 db_path=_ana_dbp,
+                                cancel_event=_ta_cancel_event,
                             )
                             _ta_result_box[0] = _res
                             _dlv = _res.get("delivery") or {}
@@ -10516,6 +10471,8 @@ def select_mode(
                             _ta_profile_box[0] = _first.get("profile")
                             _ta_examples_box[0] = _first.get("examples") or {}
                             _ta_sprint_names_box[0] = _first.get("sprint_names") or []
+                        except AnalysisCancelledError:
+                            pass  # cancelled — boxes stay empty; the poll loop owns the notice
                         except ValueError as exc:
                             _ta_error_box[0] = str(exc)
                         except Exception as exc:
@@ -10540,22 +10497,71 @@ def select_mode(
                     )
 
                     _ta_anim_tick = 0.0
-                    while not _ta_done.is_set():
-                        _ta_anim_tick += _FRAME_TIME
+                    _ta_cancelled = False
+                    try:
+                        while not _ta_done.is_set():
+                            _ta_anim_tick += _FRAME_TIME
+                            w, h = console.size
+                            live.update(
+                                _build_analysis_progress_screen(
+                                    _ta_progress,
+                                    width=w,
+                                    height=h,
+                                    elapsed=time.monotonic() - _ta_thread_start,
+                                    anim_tick=_ta_anim_tick,
+                                    source=_ta_source,
+                                    mode="analysis",
+                                )
+                            )
+                            time.sleep(_FRAME_TIME)
+                    except KeyboardInterrupt:
+                        # First Ctrl-C: cooperative cancel. The bounded wait below is
+                        # NOT wrapped, so a second Ctrl-C re-raises out of select_mode
+                        # and quits the app via cli.py's existing handler.
+                        logger.info("Analysis: Ctrl-C received — cancelling run")
+                        _ta_cancel_event.set()
+                        _ta_progress.append("Cancelling — waiting for running work to stop…")
+                        _ta_deadline = time.monotonic() + 10.0
+                        while not _ta_done.is_set() and time.monotonic() < _ta_deadline:
+                            _ta_anim_tick += _FRAME_TIME
+                            w, h = console.size
+                            live.update(
+                                _build_analysis_progress_screen(
+                                    _ta_progress,
+                                    width=w,
+                                    height=h,
+                                    elapsed=time.monotonic() - _ta_thread_start,
+                                    anim_tick=_ta_anim_tick,
+                                    source=_ta_source,
+                                    mode="analysis",
+                                )
+                            )
+                            time.sleep(_FRAME_TIME)
+                        _ta_cancelled = True
+                    # Daemon thread — abandoned after the bounded wait if a job is
+                    # still busy; the engine's pre-persist gate still guarantees
+                    # nothing is saved once the cancel event is set.
+                    _ta_thread.join(timeout=0.1 if _ta_cancelled else None)
+
+                    if _ta_cancelled:
                         w, h = console.size
                         live.update(
-                            _build_analysis_progress_screen(
-                                _ta_progress,
+                            _build_project_export_success_screen(
+                                "Analysis cancelled — no results were saved.",
                                 width=w,
                                 height=h,
-                                elapsed=time.monotonic() - _ta_thread_start,
-                                anim_tick=_ta_anim_tick,
-                                source=_ta_source,
+                                subtitle="Analysis cancelled",
+                                hint="Press any key to continue.",
                                 mode="analysis",
                             )
                         )
-                        time.sleep(_FRAME_TIME)
-                    _ta_thread.join()
+                        while True:
+                            _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                            if _k:
+                                break
+                        _restart_project_list = True
+                        _team_popup_result = ""
+                        continue
 
                     _ta_profile = _ta_profile_box[0]
                     _ta_duration = time.monotonic() - _ta_thread_start

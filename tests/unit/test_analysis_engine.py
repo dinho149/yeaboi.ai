@@ -476,6 +476,65 @@ class TestTopLevelConcurrency:
         assert "Code analysis failed: rate limited" in result["warnings"]
 
 
+class TestCancelEvent:
+    """cancel_event is the TUI's cooperative Ctrl-C seam: queued jobs abort at
+    pickup and a set event discards every result before anything persists."""
+
+    def test_pre_set_cancel_event_aborts_without_saving(self, wired, db):
+        import threading
+
+        from yeaboi.analysis.engine import AnalysisCancelledError
+
+        event = threading.Event()
+        event.set()
+        with pytest.raises(AnalysisCancelledError):
+            run_team_analysis(components=_ALL, cancel_event=event, db_path=db)
+        with TeamProfileStore(db) as store:
+            assert store.list_profiles() == []
+
+    def test_cancel_mid_run_discards_finished_results(self, monkeypatch, db):
+        import threading
+
+        from yeaboi.analysis.engine import AnalysisCancelledError
+
+        event = threading.Event()
+
+        def delivery(tracker, *args, **kwargs):
+            # A job that completes normally, but sets the event while running —
+            # its finished result must still be discarded at the pre-persist gate.
+            event.set()
+            return {"profile": _profile(), "examples": {}, "warnings": []}
+
+        persisted = []
+        monkeypatch.setattr("yeaboi.analysis.engine._run_delivery", delivery)
+        monkeypatch.setattr("yeaboi.analysis.engine._persist_delivery", lambda *a, **k: persisted.append(a))
+
+        with pytest.raises(AnalysisCancelledError):
+            run_team_analysis(components={"delivery": ["jira"]}, cancel_event=event, db_path=db)
+        assert persisted == []
+
+    def test_cancelled_queued_job_marks_progress_cancelled(self, wired, db):
+        import threading
+
+        from yeaboi.analysis.engine import AnalysisCancelledError
+
+        event = threading.Event()
+        event.set()
+        progress: list = []
+        with pytest.raises(AnalysisCancelledError):
+            run_team_analysis(components=_ALL, cancel_event=event, progress=progress, db_path=db)
+        lifecycle = [item for item in progress if isinstance(item, dict)]
+        assert any(item["status"] == "failed" and item["detail"] == "cancelled" for item in lifecycle)
+
+    def test_unset_cancel_event_runs_normally(self, wired, db):
+        import threading
+
+        result = run_team_analysis(components=_ALL, cancel_event=threading.Event(), db_path=db)
+        assert result["delivery"]["jira"]["profile"] is not None
+        with TeamProfileStore(db) as store:
+            assert store.list_profiles()
+
+
 def _configure(monkeypatch, *, jira=True, azdevops=True):
     """Toggle which trackers _available_sources() sees as configured."""
     monkeypatch.setattr("yeaboi.config.get_jira_base_url", lambda: "https://x.atlassian.net" if jira else None)

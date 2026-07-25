@@ -254,6 +254,7 @@ HIDDEN_PARAMS: dict[str, dict[str, str]] = {
     "team_analyze": {
         "progress": "injected adapter — the tool bridges it to ctx.report_progress notifications",
         "team_name": "AzDO team label; MCP auto-resolves it from the configured AZURE_DEVOPS_TEAM",
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; meaningless over the MCP wire",
     },
 }
 
@@ -333,6 +334,7 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "team_name": "AzDO team label; auto-resolved from the configured AZURE_DEVOPS_TEAM",
         "components": "assembled from per-component --delivery/--code/--docs sub-source flags",
         "analysis_scope": "assembled from the four provider-specific scope flags",
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
     },
 }
 

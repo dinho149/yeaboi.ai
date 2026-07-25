@@ -1529,6 +1529,41 @@ class TestMemberSelectScreen:
         assert "No members found" in out
 
 
+class TestMoveAnalysisListCursor:
+    """The setup pickers are single-column lists — movement is ±1 with wraparound."""
+
+    def _move(self, cursor, key, count):
+        from yeaboi.ui.mode_select import _move_analysis_list_cursor
+
+        return _move_analysis_list_cursor(cursor, key, count)
+
+    def test_down_moves_one_row(self):
+        assert self._move(0, "down", 5) == 1
+        assert self._move(1, "down", 5) == 2
+
+    def test_up_moves_one_row(self):
+        assert self._move(2, "up", 5) == 1
+
+    def test_wraps_at_both_ends(self):
+        assert self._move(0, "up", 5) == 4
+        assert self._move(4, "down", 5) == 0
+
+    def test_left_right_mirror_up_down(self):
+        assert self._move(1, "left", 4) == 0
+        assert self._move(1, "right", 4) == 2
+
+    def test_scroll_keys_move_one_row(self):
+        assert self._move(1, "scroll_up", 4) == 0
+        assert self._move(1, "scroll_down", 4) == 2
+
+    def test_unknown_key_is_a_no_op(self):
+        assert self._move(2, "x", 5) == 2
+
+    def test_single_row_pins_to_zero(self):
+        assert self._move(3, "down", 1) == 0
+        assert self._move(0, "up", 0) == 0
+
+
 class TestComponentAndMemberLoops:
     class _FakeLive:
         def update(self, renderable):
@@ -1669,8 +1704,85 @@ class TestComponentAndMemberLoops:
     def test_member_cancel(self):
         assert self._members(["esc"], ["Alice"]) == "cancel"
 
-    def test_wide_member_grid_uses_two_dimensional_navigation(self):
+    def test_member_right_key_moves_one_row(self):
         assert self._members(["right", " ", "enter"], ["Alice", "Bob", "Zoe"]) == ["Alice", "Zoe"]
+
+    # Regression tests for the ≥88-column grid-navigation bug: the pickers render a
+    # single vertical column at every width, but the old mover treated wide
+    # terminals (the fixture console is 100 columns) as a 2-column grid, so
+    # up/down jumped two rows and skipped toggles.
+
+    def test_member_down_at_wide_width_moves_one_row(self):
+        # Old grid math skipped Bob and toggled Zoe.
+        assert self._members(["down", " ", "enter"], ["Alice", "Bob", "Zoe"]) == ["Alice", "Zoe"]
+
+    def test_feature_down_twice_lands_on_second_area(self):
+        # Rows: Analyse-all, delivery, ai_footprint, … Old grid math jumped from
+        # delivery straight to code_health.
+        assert self._features(["down", "down", " ", "enter"]) == [
+            "delivery",
+            "code_health",
+            "documentation",
+        ]
+
+    def _window(self, keys):
+        from yeaboi.ui.mode_select import _run_analysis_window_select
+
+        return _run_analysis_window_select(self._FakeLive(), self._console(), self._reader(keys), 0.01, True)
+
+    def test_window_down_moves_one_option(self):
+        # 120 days is preselected; old grid math made "down" a no-op at wide widths.
+        assert self._window(["down", "enter"]) == 365
+
+    def test_window_up_moves_one_option(self):
+        assert self._window(["up", "enter"]) == 90
+
+    # initial_* params — the setup wizard re-enters a step with the previous
+    # choice restored instead of resetting to the defaults.
+
+    def test_feature_initial_selection_is_restored(self):
+        from yeaboi.ui.mode_select import _run_analysis_feature_select
+
+        result = _run_analysis_feature_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            {"delivery": True, "ai_footprint": True, "code_health": True, "documentation": True},
+            initial_features=["delivery", "documentation"],
+        )
+        assert result == ["delivery", "documentation"]
+
+    def test_component_initial_selection_is_restored(self):
+        from yeaboi.ui.mode_select import _run_component_select
+
+        result = _run_component_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            self._GRID,
+            initial={"delivery": ["azdevops"], "docs": ["confluence"]},
+        )
+        # code is absent from initial (newly enabled) → all-checked like a first visit.
+        assert result == {"delivery": ["azdevops"], "code": ["github", "azdo"], "docs": ["confluence"]}
+
+    def test_code_project_initial_selection_is_restored(self, monkeypatch):
+        from yeaboi.ui.mode_select import _run_code_project_select
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_list_projects", lambda: ["Alpha", "Beta", "Gamma"])
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_azdo_projects", lambda: [])
+        result = _run_code_project_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            initial_projects=["beta"],
+        )
+        assert result == ["Beta"]
 
     def test_member_selection_can_be_restored_after_review_back(self):
         from yeaboi.ui.mode_select import _run_member_select
@@ -1769,6 +1881,105 @@ class TestComponentAndMemberLoops:
             None,
         )
         assert result is None
+
+
+class TestAnalysisSetupWizard:
+    """Esc-back navigation through the setup steps with state carry-over."""
+
+    _FakeLive = TestComponentAndMemberLoops._FakeLive
+    _console = staticmethod(TestComponentAndMemberLoops._console)
+    _reader = staticmethod(TestComponentAndMemberLoops._reader)
+
+    _DOCS_ONLY = {"delivery": [], "code": [], "docs": ["confluence"]}
+    _DELIVERY_ONLY = {"delivery": ["jira"], "code": [], "docs": []}
+
+    def _wizard(self, monkeypatch, keys, grid, *, roster=("Alice",), preflight=None, lookup_fails=False):
+        from types import SimpleNamespace
+
+        from yeaboi.ui.mode_select import _run_analysis_setup_wizard
+
+        monkeypatch.setattr(
+            "yeaboi.analysis.llm_runtime.get_ollama_analysis_preflight",
+            lambda db_path: preflight or {"offer": False},
+        )
+        lookup_result = (
+            None if lookup_fails else SimpleNamespace(members=[SimpleNamespace(name=name) for name in roster])
+        )
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select._run_analysis_roster_lookup",
+            lambda *args, **kwargs: lookup_result,
+        )
+        return _run_analysis_setup_wizard(
+            self._FakeLive(),
+            self._console(),
+            self._reader(keys),
+            0.01,
+            True,
+            grid=grid,
+            roster_fallback=grid["delivery"] or ["jira"],
+        )
+
+    def test_esc_on_first_step_returns_none(self, monkeypatch):
+        assert self._wizard(monkeypatch, ["esc"], self._DOCS_ONLY) is None
+
+    def test_docs_only_walkthrough_skips_inapplicable_steps(self, monkeypatch):
+        # features → sources → window → review; depth/model/members never shown.
+        config = self._wizard(monkeypatch, ["enter", "enter", "enter", "enter"], self._DOCS_ONLY)
+        assert config["features"] == ["documentation"]
+        assert config["components"] == {"docs": ["confluence"]}
+        assert config["depth"] == "quick"
+        assert config["model"] is None
+        assert config["members"] is None and config["members_map"] is None
+        assert config["window_days"] == 120
+
+    def test_esc_from_review_preserves_window_choice(self, monkeypatch):
+        # Pick 365 days, Esc from review lands back on window with 365 kept.
+        keys = ["enter", "enter", "down", "enter", "esc", "enter", "enter"]
+        config = self._wizard(monkeypatch, keys, self._DOCS_ONLY)
+        assert config["window_days"] == 365
+
+    def test_back_skips_step_that_no_longer_applies(self, monkeypatch):
+        # Delivery-only: window is inapplicable, so Esc-chaining from review
+        # crosses members straight to depth (model is skipped: no offer).
+        keys = ["enter", "enter", "enter", "enter", "esc", "esc", "left", "enter", "enter", "enter"]
+        config = self._wizard(monkeypatch, keys, self._DELIVERY_ONLY)
+        assert config["depth"] == "quick"
+
+    def test_member_subset_survives_review_roundtrip(self, monkeypatch):
+        keys = ["enter", "enter", "enter", " ", "enter", "esc", "enter", "enter"]
+        config = self._wizard(monkeypatch, keys, self._DELIVERY_ONLY, roster=("Alice", "Bob"))
+        assert config["members"] == ["Bob"]
+        assert config["members_map"] == {"jira": ["Bob"]}
+
+    def test_stale_deep_depth_is_coerced_when_features_change(self, monkeypatch):
+        # Choose Deep, Esc-chain back to features, drop delivery leaving docs only:
+        # the stale Deep depth must coerce to quick and the members subset to None.
+        grid = {"delivery": ["jira"], "code": [], "docs": ["confluence"]}
+        keys = [
+            *["enter", "enter", "enter", "enter", "enter"],  # walk to review (deep)
+            *["esc", "esc", "esc", "esc", "esc"],  # review→members→window→depth→sources→features
+            *["down", " ", "enter"],  # deselect delivery (docs stays)
+            *["enter", "enter", "enter"],  # sources → window → review → run
+        ]
+        config = self._wizard(monkeypatch, keys, grid)
+        assert config["features"] == ["documentation"]
+        assert config["depth"] == "quick"
+        assert config["model"] is None
+        assert config["members"] is None and config["members_map"] is None
+
+    def test_roster_lookup_declined_steps_back(self, monkeypatch):
+        # Declining the failed-roster retry steps back (here all the way out)
+        # instead of exiting the app.
+        keys = ["enter", "enter", "enter", "esc", "esc", "esc"]
+        assert self._wizard(monkeypatch, keys, self._DELIVERY_ONLY, lookup_fails=True) is None
+
+    def test_empty_roster_is_transparent_in_both_directions(self, monkeypatch):
+        # Forward: members auto-advances to review. Backward: Esc from review
+        # crosses members to depth without ping-ponging.
+        keys = ["enter", "enter", "enter", "esc", "left", "enter", "enter"]
+        config = self._wizard(monkeypatch, keys, self._DELIVERY_ONLY, roster=())
+        assert config["depth"] == "quick"
+        assert config["members"] is None and config["members_map"] is None
 
 
 # ---------------------------------------------------------------------------
