@@ -10,13 +10,16 @@ from __future__ import annotations
 from typing import Any
 
 import rich.box
-from rich.console import Group
+from rich.align import Align
+from rich.console import Group, RenderableType
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._animations import COLOR_RGB, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import PAD
+from yeaboi.ui.shared._mascot import render_head
 
 # ---------------------------------------------------------------------------
 # Mode definitions
@@ -143,6 +146,13 @@ _OFFLINE_CARDS: list[dict[str, Any]] = [
 ]
 
 _PAD = PAD  # alias for backward compatibility within this module
+
+# The companion perches in the right-hand whitespace. Only shown when the panel
+# is wide enough that the longest mode title (block-font) still fits on the left,
+# and tall enough to seat the ~7-row duck; otherwise the menu keeps full width.
+_COMPANION_MIN_WIDTH = 92
+_COMPANION_MIN_HEIGHT = 18
+_COMPANION_COLS = 18
 
 # ---------------------------------------------------------------------------
 # Rendering helpers — mode selection
@@ -412,8 +422,30 @@ def _build_mode_screen(
         version_row,
     )
 
+    # Head companion — a small idle-duck that perches beside the mode list on
+    # wide terminals. See docs: "TUI system" — render_head returns a
+    # rich.console.Group of pre-composited half-block (▀/▄) rows; frame advances
+    # off the same shimmer_tick that drives the tip cross-fade, so it stays in
+    # lockstep with the rest of the screen's animation clock.
+    frame = int(shimmer_tick * 6) % 8
+    if width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT:
+        companion = Align.center(
+            Group(render_head(frame), Text(""), Text("chilling", style="rgb(120,130,140)", justify="center")),
+            vertical="middle",
+        )
+        # See docs: "TUI system" — Table.grid lays out fixed-width columns
+        # without borders/padding, used here purely as a two-column splitter so
+        # the mode list keeps its width and the companion gets a reserved lane.
+        layout = Table.grid(expand=True)
+        layout.add_column(ratio=1)
+        layout.add_column(width=_COMPANION_COLS)
+        layout.add_row(content, companion)
+        body_renderable: RenderableType = layout
+    else:
+        body_renderable = content
+
     return Panel(
-        content,
+        body_renderable,
         border_style="white",
         box=rich.box.ROUNDED,
         expand=True,

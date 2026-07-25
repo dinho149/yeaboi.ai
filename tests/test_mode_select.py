@@ -15,6 +15,7 @@ from yeaboi.ui.mode_select import (
     _build_project_row,
     _compute_viewport,
 )
+from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
 
 
 def _render(renderable, width: int = 80) -> str:
@@ -337,3 +338,31 @@ class TestExportSuccessScreen:
         screen = _build_project_export_success_screen("/tmp/test.json")
         rendered = _render(screen)
         assert "exported" in rendered.lower()
+
+
+def _text_of(panel, width, height):
+    con = Console(width=width, height=height, record=True, file=open("/dev/null", "w"))
+    con.print(panel)
+    return con.export_text()
+
+
+class TestModeScreenCompanion:
+    """Test the head-companion mascot rendered beside the welcome-screen menu."""
+
+    def test_companion_present_when_wide(self):
+        panel = _build_mode_screen(0, width=110, height=30, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 30)
+        # "chilling" is the companion's caption — unique to the duck column;
+        # the block-font mode titles themselves already use ▀/▄ glyphs, so
+        # glyph presence alone can't distinguish companion on/off.
+        assert "chilling" in text
+
+    def test_companion_absent_when_narrow(self):
+        panel = _build_mode_screen(0, width=80, height=26, shimmer_tick=0.0)
+        text = _text_of(panel, 80, 26)
+        assert "chilling" not in text
+
+    def test_mode_screen_exact_height_with_companion(self):
+        panel = _build_mode_screen(0, width=110, height=30, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 30)
+        assert len(text.splitlines()) == 30
