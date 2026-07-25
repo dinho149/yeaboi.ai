@@ -70,6 +70,35 @@ def detect_upgrade_command() -> str:
     return "uv tool upgrade yeaboi"
 
 
+def run_upgrade(*, timeout: float = 300.0) -> tuple[bool, str]:
+    """Run the detected upgrade command; return ``(ok, message)``.
+
+    Powers the in-app ``ctrl+U`` update shortcut. Best-effort and never raises: a
+    launch failure or non-zero exit returns ``(False, <detail>)`` so the caller can
+    fall back to showing the manual command. On success the freshly-installed code
+    only takes effect after a restart — the caller is responsible for saying so.
+    """
+    import shlex
+    import subprocess
+
+    command = detect_upgrade_command()
+    try:
+        proc = subprocess.run(  # noqa: S603 - command comes from detect_upgrade_command (fixed uv/pipx strings)
+            shlex.split(command),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 - report any launch/timeout failure to the UI
+        logger.warning("upgrade command failed to run: %s", exc)
+        return False, str(exc)
+    if proc.returncode == 0:
+        logger.info("upgrade succeeded via '%s'", command)
+        return True, (proc.stdout or "").strip()
+    logger.warning("upgrade exited %s via '%s'", proc.returncode, command)
+    return False, (proc.stderr or proc.stdout or "").strip()
+
+
 def fetch_latest_version(timeout: float = 3.0) -> str | None:
     """Fetch the latest released version from PyPI; None on any failure."""
     try:
