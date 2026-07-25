@@ -37,14 +37,15 @@ def wired(monkeypatch, db, tmp_path):
     capture dict (with per-component call counts)."""
     captured: dict = {"code_calls": 0, "docs_calls": 0, "members": {}}
 
-    def fake_jira_fetch(project, count):
+    def fake_jira_fetch(project, count, **kwargs):
         captured["fetch"] = (project, count)
+        captured["fetch_kwargs"] = kwargs
         return [{"sprint_name": "Sprint 1", "stories": []}, {"sprint_name": "Sprint 2", "stories": []}]
 
     monkeypatch.setattr("yeaboi.tools.team_learning._fetch_jira_history", fake_jira_fetch)
     monkeypatch.setattr(
         "yeaboi.tools.team_learning._fetch_azdevops_history",
-        lambda project, count: [{"sprint_name": "Iteration 1", "stories": []}],
+        lambda project, count, **kwargs: [{"sprint_name": "Iteration 1", "stories": []}],
     )
 
     def fake_parallel(
@@ -152,7 +153,7 @@ class TestDelivery:
         assert [item["status"] for item in lifecycle] == ["running", "completed"]
 
     def test_no_sprints_degrades_to_warning(self, wired, db, monkeypatch):
-        monkeypatch.setattr("yeaboi.tools.team_learning._fetch_jira_history", lambda project, count: [])
+        monkeypatch.setattr("yeaboi.tools.team_learning._fetch_jira_history", lambda project, count, **kwargs: [])
         # Delivery fails, but a global code scan still returns → no raise.
         r = run_team_analysis(components={"delivery": ["jira"], "code": ["github"]}, db_path=db)
         assert r["delivery"] == {}
@@ -480,6 +481,15 @@ class TestCancelEvent:
     """cancel_event is the TUI's cooperative Ctrl-C seam: queued jobs abort at
     pickup and a set event discards every result before anything persists."""
 
+    def test_delivery_forwards_progress_and_cancel_to_fetcher(self, wired, db):
+        import threading
+
+        event = threading.Event()
+        run_team_analysis(components={"delivery": ["jira"], "code": [], "docs": []}, cancel_event=event, db_path=db)
+        kwargs = wired["fetch_kwargs"]
+        assert kwargs["cancel_event"] is event
+        assert isinstance(kwargs["progress"], list)
+
     def test_pre_set_cancel_event_aborts_without_saving(self, wired, db):
         import threading
 
@@ -564,7 +574,7 @@ class TestMultiTrackerDelivery:
 
     def test_one_tracker_fails_other_returns(self, wired, db, monkeypatch):
         _configure(monkeypatch, jira=True, azdevops=True)
-        monkeypatch.setattr("yeaboi.tools.team_learning._fetch_azdevops_history", lambda project, count: [])
+        monkeypatch.setattr("yeaboi.tools.team_learning._fetch_azdevops_history", lambda project, count, **kwargs: [])
         r = run_team_analysis(components={"delivery": ["jira", "azdevops"]}, db_path=db)
         assert set(r["delivery"]) == {"jira"}
         assert any("Azure DevOps delivery analysis failed" in w for w in r["warnings"])

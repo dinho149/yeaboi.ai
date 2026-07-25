@@ -80,6 +80,19 @@ def test_analysis_code_runtime_defaults_and_bounds(monkeypatch):
     assert get_team_analysis_code_max_concurrency() == 6
 
 
+def test_analysis_tracker_runtime_defaults_and_bounds(monkeypatch):
+    from yeaboi.config import get_team_analysis_tracker_max_concurrency
+
+    monkeypatch.delenv("TEAM_ANALYSIS_TRACKER_MAX_CONCURRENCY", raising=False)
+    assert get_team_analysis_tracker_max_concurrency() == 4
+    monkeypatch.setenv("TEAM_ANALYSIS_TRACKER_MAX_CONCURRENCY", "99")
+    assert get_team_analysis_tracker_max_concurrency() == 12
+    monkeypatch.setenv("TEAM_ANALYSIS_TRACKER_MAX_CONCURRENCY", "0")
+    assert get_team_analysis_tracker_max_concurrency() == 1
+    monkeypatch.setenv("TEAM_ANALYSIS_TRACKER_MAX_CONCURRENCY", "invalid")
+    assert get_team_analysis_tracker_max_concurrency() == 4
+
+
 def test_get_anthropic_api_key_raises_when_missing(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(OSError, match="ANTHROPIC_API_KEY is not set"):

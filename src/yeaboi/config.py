@@ -481,6 +481,20 @@ def get_team_analysis_code_max_concurrency() -> int:
         return 6
 
 
+def get_team_analysis_tracker_max_concurrency() -> int:
+    """Maximum concurrent Jira/Azure-DevOps per-story reads during sprint-history fetch.
+
+    Deliberately lower than the code knob's default: Jira Cloud's cost-based rate
+    limiting throttles bursts sooner than GitHub does, and a throttled per-story
+    call degrades that story's data silently (empty comments / missing changelog).
+    """
+    raw = os.getenv("TEAM_ANALYSIS_TRACKER_MAX_CONCURRENCY", "4")
+    try:
+        return max(1, min(int(raw), 12))
+    except ValueError:
+        return 4
+
+
 def get_retro_server_port() -> int:
     """Return the base port for the Retro collaboration server (default 5173).
 

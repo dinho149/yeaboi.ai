@@ -18,6 +18,7 @@ import logging
 import math
 import re
 import statistics
+import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
@@ -5101,17 +5102,18 @@ def _normalize_iter_path(path: str) -> str:
 
 
 def _build_azdo_sprint_scope_timeline(
-    wit_client: object,
-    project: str,
     stories: list[dict],
     iter_path: str,
     iter_start: str,
     iter_end: str,
     completed_pts: float,
+    revisions_by_id: dict[str, list],
 ) -> SprintScopeTimeline | None:
     """Walk AzDO work item revisions to build a day-by-day scope timeline.
 
-    For each story currently in the sprint, fetches revisions and records:
+    ``revisions_by_id`` maps issue key → prefetched revisions (missing on fetch
+    failure — see ``_fetch_azdo_revisions``; the fetch is shared with
+    ``_enrich_azdo_scope_changes``). For each story in the sprint it records:
     - When it entered this iteration (date + points at that time)
     - When its points changed (re-estimation events)
     - The daily scope total for every day of the sprint
@@ -5139,20 +5141,12 @@ def _build_azdo_sprint_scope_timeline(
         wi_id_str = story.get("issue_key", "")
         if not wi_id_str:
             continue
-        try:
-            wi_id = int(wi_id_str)
-        except (ValueError, TypeError):
+        revisions = revisions_by_id.get(wi_id_str)
+        if not revisions:
             continue
 
         summary = (story.get("summary", "") or "")[:60]
         issue_url = story.get("issue_url", "")
-
-        try:
-            revisions = wit_client.get_revisions(wi_id, project=project)  # type: ignore[union-attr]
-            if not revisions:
-                continue
-        except Exception:
-            continue
 
         # Walk revisions to build a timeline of (date, in_iteration, points)
         # Each entry: (date_str, in_this_iter: bool, points: float)
@@ -5276,17 +5270,18 @@ def _build_azdo_sprint_scope_timeline(
 
 
 def _build_jira_sprint_scope_timeline(
-    jira_client: object,
     stories: list[dict],
     sprint_name: str,
     sprint_start: str,
     sprint_end: str,
     completed_pts: float,
+    changelog_issues: dict[str, object],
 ) -> SprintScopeTimeline | None:
     """Walk Jira changelogs to build a day-by-day scope timeline for a sprint.
 
-    For each story, fetches the changelog and reconstructs when it entered/left
-    the sprint and when its points changed.
+    ``changelog_issues`` maps issue key → issue fetched with ``expand="changelog"``
+    (``None``/missing on fetch failure). The fetch happens once in
+    ``_fetch_jira_story_extras`` and is shared with ``_enrich_jira_scope_changes``.
     """
     s_dt = _parse_date(sprint_start)
     e_dt = _parse_date(sprint_end)
@@ -5309,16 +5304,16 @@ def _build_jira_sprint_scope_timeline(
         summary = (story.get("summary", "") or "")[:60]
         issue_url = story.get("issue_url", "")
 
-        try:
-            issue = jira_client.issue(issue_key, expand="changelog")  # type: ignore[union-attr]
-            changelog = getattr(issue, "changelog", None)
-        except Exception:
-            # Fallback: use story data as-is, assume in scope for full sprint
+        issue = changelog_issues.get(issue_key)
+        if issue is None:
+            # Fallback (changelog fetch failed): use story data as-is, assume in
+            # scope for the full sprint — same semantics as the old except path.
             pts = _safe_float(story.get("points", 0))
             if pts > 0:
                 for day in days:
                     day_scope[day][issue_key] = pts
             continue
+        changelog = getattr(issue, "changelog", None)
 
         # Build timeline of (date, in_sprint, points) from changelog
         # Start with the story's current points and assume it was in sprint initially
@@ -5474,15 +5469,17 @@ def _build_jira_sprint_scope_timeline(
 
 
 def _enrich_jira_scope_changes(
-    jira_client: object,
     stories: list[dict],
     sprint_name: str,
     sprint_start: str,
     sprint_end: str,
+    changelog_issues: dict[str, object],
 ) -> None:
     """Enrich story dicts with mid-sprint scope change data from Jira changelog.
 
-    For each story, fetches the issue changelog and detects:
+    ``changelog_issues`` maps issue key → issue fetched with ``expand="changelog"``
+    (``None``/missing on fetch failure — that story is skipped, as before).
+    For each story, reads the prefetched changelog and detects:
     - point_changed: True if story points were modified during the sprint
     - original_points: points value at sprint start (before any mid-sprint change)
     - added_mid_sprint: True if the story was added to this sprint after it started
@@ -5498,9 +5495,10 @@ def _enrich_jira_scope_changes(
         if not issue_key:
             continue
 
+        issue = changelog_issues.get(issue_key)
+        if issue is None:
+            continue
         try:
-            # Fetch issue with changelog expanded
-            issue = jira_client.issue(issue_key, expand="changelog")
             changelog = getattr(issue, "changelog", None)
             if not changelog:
                 continue
@@ -5577,16 +5575,17 @@ def _enrich_jira_scope_changes(
 
 
 def _enrich_azdo_scope_changes(
-    wit_client: object,
-    project: str,
     stories: list[dict],
     iter_path: str,
     iter_start: str,
     iter_end: str,
+    revisions_by_id: dict[str, list],
 ) -> None:
     """Enrich story dicts with mid-sprint scope change data from AzDO revisions.
 
-    For each story, fetches work item revisions and detects:
+    ``revisions_by_id`` maps issue key → prefetched revisions (missing on fetch
+    failure — that story is skipped, as before; see ``_fetch_azdo_revisions``).
+    For each story, reads the revisions and detects:
     - point_changed: True if story points were modified during the iteration
     - original_points: points value at iteration start
     - added_mid_sprint: True if moved into this iteration after it started
@@ -5604,16 +5603,11 @@ def _enrich_azdo_scope_changes(
         wi_id_str = story.get("issue_key", "")
         if not wi_id_str:
             continue
-        try:
-            wi_id = int(wi_id_str)
-        except (ValueError, TypeError):
+        revisions = revisions_by_id.get(wi_id_str)
+        if not revisions:
             continue
 
         try:
-            revisions = wit_client.get_revisions(wi_id, project=project)
-            if not revisions:
-                continue
-
             point_changes: list[dict] = []
             was_added_mid_sprint = False
             original_pts = story.get("points", 0)
@@ -5821,10 +5815,86 @@ def _analyse_scope_changes(sprint_data: list[dict]) -> dict:
     }
 
 
-def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
+def _fetch_jira_story_extras(
+    jira: object,
+    done_issues: list,
+    spillover_keys: list[str],
+    *,
+    cancel_event: threading.Event | None = None,
+    on_story_done=None,
+) -> dict[str, dict]:
+    """Pooled per-story Jira reads: comments, dev-status links, and ONE changelog fetch.
+
+    Returns ``{issue_key: {"comments_timed": [(iso_date, body), ...], "dev_blob": str,
+    "changelog_issue": obj | None}}``. Each sub-fetch degrades independently, exactly
+    like the old inline calls (comments failure → [], dev-status failure → "",
+    changelog failure → None) — a throttled call costs one story's enrichment,
+    never the sprint. Workers only fetch; story-dict mutation stays on the calling
+    thread, and results are keyed by issue key so pool completion order cannot
+    change the output.
+
+    The changelog issue is fetched here once and shared by both consumers
+    (``_enrich_jira_scope_changes`` and ``_build_jira_sprint_scope_timeline``),
+    which previously each fetched it — halving per-story changelog traffic.
+    Spillover (carried-over) stories only need the changelog, not comments/dev links.
+    """
+    from yeaboi.analysis.cancellation import AnalysisCancelledError, raise_if_cancelled
+    from yeaboi.config import get_team_analysis_tracker_max_concurrency
+
+    tasks: list[tuple[str, object | None]] = [(issue.key, issue) for issue in done_issues]
+    tasks += [(key, None) for key in spillover_keys]
+    if not tasks:
+        return {}
+
+    def _one(issue_key: str, issue: object | None) -> dict:
+        # Checked at pickup only — an in-flight HTTP call always finishes; its
+        # result is discarded by the engine's pre-persist cancel gate.
+        raise_if_cancelled(cancel_event)
+        comments_timed: list[tuple[str, str]] = []
+        dev_blob = ""
+        if issue is not None:
+            try:
+                for c in jira.comments(issue_key) or []:  # type: ignore[attr-defined]
+                    body = getattr(c, "body", "") or ""
+                    if body:
+                        comments_timed.append((getattr(c, "created", "") or "", body))
+            except Exception:
+                pass
+            dev_blob = _jira_development_url_blob(jira, issue)
+        try:
+            changelog_issue = jira.issue(issue_key, expand="changelog")  # type: ignore[attr-defined]
+        except Exception:
+            changelog_issue = None
+        return {"comments_timed": comments_timed, "dev_blob": dev_blob, "changelog_issue": changelog_issue}
+
+    extras: dict[str, dict] = {}
+    workers = max(1, min(get_team_analysis_tracker_max_concurrency(), len(tasks)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="jira-story") as pool:
+        futures = {pool.submit(_one, key, issue): key for key, issue in tasks}
+        try:
+            for future in as_completed(futures):
+                extras[futures[future]] = future.result()
+                if on_story_done is not None:
+                    on_story_done(len(extras))
+        except AnalysisCancelledError:
+            for pending in futures:
+                pending.cancel()
+            raise
+    return extras
+
+
+def _fetch_jira_history(
+    project_key: str,
+    sprint_count: int,
+    *,
+    progress: list | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict]:
     """Fetch historical sprint data from Jira.
 
     Returns a list of sprint dicts with story-level detail for profile building.
+    ``progress``/``cancel_event`` are the engine's injection seams: structured
+    per-sprint/per-story lifecycle events, and the cooperative Ctrl-C cancel.
     """
     from jira import JIRA, JIRAError
 
@@ -5885,8 +5955,31 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
     if not sample:
         return []
 
+    from yeaboi.analysis.cancellation import raise_if_cancelled
+    from yeaboi.analysis.progress import append_component_progress
+
+    _stories_done = 0
+
+    def _emit_progress(sprints_read: int) -> None:
+        # component_id/label must match the engine's _job_progress values so the
+        # TUI updates the existing "delivery:jira" row instead of adding one.
+        append_component_progress(
+            progress,
+            component_id="delivery:jira",
+            label="Fetching sprint history · Jira",
+            status="running",
+            phase="Reading sprint history",
+            current=sprints_read,
+            total=len(sample),
+            unit="sprints",
+            secondary_count=_stories_done,
+            secondary_unit="stories",
+        )
+
     sprint_data = []
-    for sp in sample:
+    for _sprint_idx, sp in enumerate(sample):
+        raise_if_cancelled(cancel_event)
+        _emit_progress(_sprint_idx)
         # Fetch completed points and sprint dates
         info = jira.sprint_info(board.id, sp.id)
         completed_pts = _safe_float(info.get("completedPoints", 0))
@@ -5929,6 +6022,7 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
             completed_pts = jql_total
 
         stories = []
+        done_issue_objs: list = []  # issue objects for the pooled per-story pass
         for issue in done_issues:
             issue_type = getattr(issue.fields, "issuetype", None)
             type_name = getattr(issue_type, "name", "").lower() if issue_type else ""
@@ -6008,19 +6102,11 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
             if _all_ac_sources.strip():
                 description = description + "\n" + _all_ac_sources
 
-            # Fetch comments for DoD signal analysis (with timestamps for ordering)
+            # Comments (for DoD signal analysis) and dev-status links are fetched
+            # in the pooled per-story pass below and back-filled — see
+            # _fetch_jira_story_extras. Rows start with empty placeholders.
             comments_text: list[str] = []
             comments_timed: list[tuple[str, str]] = []  # (iso_date, body)
-            try:
-                issue_comments = jira.comments(issue.key)
-                for c in issue_comments or []:
-                    body = getattr(c, "body", "") or ""
-                    if body:
-                        comments_text.append(body)
-                        c_date = getattr(c, "created", "") or ""
-                        comments_timed.append((c_date, body))
-            except Exception:
-                pass
 
             labels = [
                 lbl.lower() if isinstance(lbl, str) else getattr(lbl, "name", "").lower()
@@ -6047,7 +6133,6 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                     discipline = lbl
                     break
 
-            base_text = description + " " + " ".join(comments_text)
             story_row: dict = {
                 "points": pts,
                 "cycle_time_days": ct,
@@ -6078,13 +6163,10 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                 )
                 or "",
             }
-            _story_add_repos(story_row, _extract_repos(base_text), "jira_text")
-            _story_add_repos(
-                story_row,
-                _extract_repos(_jira_development_url_blob(jira, issue)),
-                "jira_development",
-            )
+            # repo extraction happens after the pooled back-fill below — base_text
+            # includes comments, which aren't fetched yet at this point.
             stories.append(story_row)
+            done_issue_objs.append(issue)
 
         # Add spillover entries for issues NOT completed in this sprint
         for issue in all_in_sprint:
@@ -6124,9 +6206,42 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                 }
             )
 
+        # Pooled per-story reads (comments, dev-status links, one changelog fetch
+        # per story) — this was ~4-5 sequential HTTP calls per story and dominated
+        # the whole analysis wall clock.
+        def _story_done(_completed: int, _read_sprints: int = _sprint_idx) -> None:
+            nonlocal _stories_done
+            _stories_done += 1
+            _emit_progress(_read_sprints)
+
+        _spillover_keys = [s["issue_key"] for s in stories if s.get("carried_over") and s.get("issue_key")]
+        extras = _fetch_jira_story_extras(
+            jira,
+            done_issue_objs,
+            _spillover_keys,
+            cancel_event=cancel_event,
+            on_story_done=_story_done,
+        )
+
+        # Back-fill on this thread: comments, comment-derived repo extraction, and
+        # dev-panel repo links (order of stories is unchanged — deterministic).
+        for story in stories:
+            if story.get("carried_over"):
+                continue
+            ex = extras.get(story.get("issue_key", ""), {})
+            comments_timed = ex.get("comments_timed", [])
+            comments_text = [body for _, body in comments_timed]
+            story["comments"] = comments_text
+            story["comments_timed"] = comments_timed
+            base_text = story.get("description", "") + " " + " ".join(comments_text)
+            _story_add_repos(story, _extract_repos(base_text), "jira_text")
+            _story_add_repos(story, _extract_repos(ex.get("dev_blob", "")), "jira_development")
+
+        changelog_issues = {key: (ex or {}).get("changelog_issue") for key, ex in extras.items()}
+
         # Enrich stories with mid-sprint scope change data from changelog
         try:
-            _enrich_jira_scope_changes(jira, stories, sp.name, sprint_start, sprint_end)
+            _enrich_jira_scope_changes(stories, sp.name, sprint_start, sprint_end, changelog_issues)
         except Exception as _sc_err:
             logger.debug("Scope change enrichment failed for %s: %s", sp.name, _sc_err)
 
@@ -6134,12 +6249,12 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
         scope_timeline: SprintScopeTimeline | None = None
         try:
             scope_timeline = _build_jira_sprint_scope_timeline(
-                jira,
                 stories,
                 sp.name,
                 sprint_start,
                 sprint_end,
                 completed_pts,
+                changelog_issues,
             )
         except Exception as _tl_err:
             logger.debug("Jira scope timeline failed for %s: %s", sp.name, _tl_err)
@@ -6193,10 +6308,70 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
     return sprint_data
 
 
-def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
+def _fetch_azdo_revisions(
+    wit_client: object,
+    project: str,
+    stories: list[dict],
+    *,
+    cancel_event: threading.Event | None = None,
+    on_story_done=None,
+) -> dict[str, list]:
+    """Pooled per-story AzDO revision fetch: ``{issue_key: revisions}``.
+
+    One ``get_revisions`` call per story, fetched here once and shared by both
+    consumers (``_enrich_azdo_scope_changes`` and
+    ``_build_azdo_sprint_scope_timeline``), which previously each fetched it —
+    halving per-story revision traffic. Failed/empty fetches are omitted from the
+    result, so consumers skip that story exactly like the old inline except path.
+    """
+    from yeaboi.analysis.cancellation import AnalysisCancelledError, raise_if_cancelled
+    from yeaboi.config import get_team_analysis_tracker_max_concurrency
+
+    ids = [s["issue_key"] for s in stories if s.get("issue_key")]
+    if not ids:
+        return {}
+
+    def _one(wi_id_str: str):
+        # Checked at pickup only — an in-flight HTTP call always finishes; its
+        # result is discarded by the engine's pre-persist cancel gate.
+        raise_if_cancelled(cancel_event)
+        try:
+            return wit_client.get_revisions(int(wi_id_str), project=project)  # type: ignore[attr-defined]
+        except Exception:
+            return None
+
+    out: dict[str, list] = {}
+    workers = max(1, min(get_team_analysis_tracker_max_concurrency(), len(ids)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="azdo-story") as pool:
+        futures = {pool.submit(_one, wi_id): wi_id for wi_id in ids}
+        try:
+            done = 0
+            for future in as_completed(futures):
+                revisions = future.result()
+                done += 1
+                if revisions:
+                    out[futures[future]] = revisions
+                if on_story_done is not None:
+                    on_story_done(done)
+        except AnalysisCancelledError:
+            for pending in futures:
+                pending.cancel()
+            raise
+    return out
+
+
+def _fetch_azdevops_history(
+    project_key: str,
+    sprint_count: int,
+    *,
+    progress: list | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict]:
     """Fetch historical sprint data from Azure DevOps.
 
     Returns a list of sprint dicts with story-level detail for profile building.
+    ``progress``/``cancel_event`` are the engine's injection seams: structured
+    per-iteration/per-story lifecycle events, and the cooperative Ctrl-C cancel.
     """
     from azure.devops.connection import Connection
     from msrest.authentication import BasicAuthentication
@@ -6251,7 +6426,30 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
     sample = past_iterations[-sprint_count:]
     sprint_data = []
 
-    for iteration in sample:
+    from yeaboi.analysis.cancellation import raise_if_cancelled
+    from yeaboi.analysis.progress import append_component_progress
+
+    _stories_done = 0
+
+    def _emit_progress(sprints_read: int) -> None:
+        # component_id/label must match the engine's _job_progress values so the
+        # TUI updates the existing "delivery:azdevops" row instead of adding one.
+        append_component_progress(
+            progress,
+            component_id="delivery:azdevops",
+            label="Fetching sprint history · Azure DevOps",
+            status="running",
+            phase="Reading sprint history",
+            current=sprints_read,
+            total=len(sample),
+            unit="sprints",
+            secondary_count=_stories_done,
+            secondary_unit="stories",
+        )
+
+    for _iter_idx, iteration in enumerate(sample):
+        raise_if_cancelled(cancel_event)
+        _emit_progress(_iter_idx)
         iter_id = iteration.id
 
         # Capture iteration dates for cycle time calculation and scope change detection
@@ -6493,15 +6691,29 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
             )
             stories.append(story_row)
 
+        # Pooled per-story revision fetch — previously the enrichment and the
+        # timeline below each fetched every story's revisions sequentially.
+        def _story_done(_completed: int, _read_sprints: int = _iter_idx) -> None:
+            nonlocal _stories_done
+            _stories_done += 1
+            _emit_progress(_read_sprints)
+
+        _revisions_by_id = _fetch_azdo_revisions(
+            wit_client,
+            project,
+            stories,
+            cancel_event=cancel_event,
+            on_story_done=_story_done,
+        )
+
         # Enrich stories with mid-sprint scope change data from revisions
         try:
             _enrich_azdo_scope_changes(
-                wit_client,
-                project,
                 stories,
                 iter_path,
                 iter_start_str,
                 iter_end_str,
+                _revisions_by_id,
             )
         except Exception as _sc_err:
             logger.debug("AzDO scope change enrichment failed for %s: %s", getattr(iteration, "name", "?"), _sc_err)
@@ -6510,13 +6722,12 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
         _azdo_timeline: SprintScopeTimeline | None = None
         try:
             _azdo_timeline = _build_azdo_sprint_scope_timeline(
-                wit_client,
-                project,
                 stories,
                 iter_path,
                 iter_start_str,
                 iter_end_str,
                 completed_pts,
+                _revisions_by_id,
             )
         except Exception as _tl_err:
             logger.debug("AzDO scope timeline failed for %s: %s", getattr(iteration, "name", "?"), _tl_err)

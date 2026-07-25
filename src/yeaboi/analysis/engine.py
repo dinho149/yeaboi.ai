@@ -450,6 +450,7 @@ def run_team_analysis(
                     analysis_depth,
                     progress_list,
                     effective_db_path,
+                    cancel_event,
                 ),
                 {},
             )
@@ -746,6 +747,7 @@ def _run_delivery(
     analysis_depth: str,
     progress: list,
     db_path,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Run the Delivery component for one tracker → a per-tracker result sub-dict.
 
@@ -772,7 +774,7 @@ def _run_delivery(
     )
     fetch_started = time.monotonic()
     fetch = _fetch_jira_history if resolved_source == "jira" else _fetch_azdevops_history
-    sprint_data = fetch(resolved_project, sprint_count)
+    sprint_data = fetch(resolved_project, sprint_count, progress=progress, cancel_event=cancel_event)
     fetch_secs = time.monotonic() - fetch_started
     if not sprint_data:
         raise ValueError("No closed sprints found on the board — nothing to analyse.")
