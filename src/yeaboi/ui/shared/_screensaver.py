@@ -168,7 +168,7 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
 # pocket is drawn with preserve_content, so it no longer blanks the rows he's on.
 _SAVER_FOOT_RESERVE = 0
 _SAVER_DUCK_W = 34  # full duck trace width
-_SAVER_JUMP_H = 4  # how many rows he springs up as he reaches the music tab
+_SAVER_JUMP_H = 2  # rows he springs up onto bar level as he reaches the music tab
 _SAVER_JUMP_HALF = 0.06  # half-width of the hop as a fraction of the walk period
 
 
