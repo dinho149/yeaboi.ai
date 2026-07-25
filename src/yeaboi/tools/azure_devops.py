@@ -1430,6 +1430,32 @@ def _analysis_repository(value):
     )
 
 
+# Per-repo bound on full-message refetches for truncated commit comments.
+# Truncation only hits long messages, so this is rarely approached; the cap
+# keeps a pathological repo (huge generated messages) from doubling its calls.
+_TRUNCATED_COMMENT_REFETCH_CAP = 25
+
+
+def _full_commit_comment(git_client, project: str, repository_id, commit) -> str:
+    """Full commit message, refetching when the batch API truncated it.
+
+    ``get_commits`` truncates long ``comment`` values (``comment_truncated``)
+    and there is no criteria flag for full messages — but trailers like
+    Co-Authored-By live at the END of the message, exactly what truncation
+    strips, so AI markers would silently vanish. Best-effort: any refetch
+    error logs a warning and falls back to the truncated text.
+    """
+    comment = getattr(commit, "comment", "") or ""
+    if not getattr(commit, "comment_truncated", False):
+        return comment
+    try:
+        full = git_client.get_commit(getattr(commit, "commit_id", "") or "", repository_id, project=project)
+        return getattr(full, "comment", "") or comment
+    except Exception as e:
+        logger.warning("azdevops: full-comment refetch failed for %.8s: %s", getattr(commit, "commit_id", ""), e)
+        return comment
+
+
 def azdevops_recent_commits(
     project: str = "",
     days: int = 1,
@@ -1516,9 +1542,15 @@ def azdevops_recent_commits(
                 return []
             repo_web = _activity_repo_web_url(repo, selected_project)
             repo_items: list[dict] = []
+            refetched = 0
             for commit in commits or []:
                 author = getattr(commit, "author", None)
-                message = (getattr(commit, "comment", "") or "").splitlines()
+                if getattr(commit, "comment_truncated", False) and refetched < _TRUNCATED_COMMENT_REFETCH_CAP:
+                    comment = _full_commit_comment(git_client, selected_project, repo.id, commit)
+                    refetched += 1
+                else:
+                    comment = getattr(commit, "comment", "") or ""
+                message = comment.splitlines()
                 body = "\n".join(message[1:]).strip()  # Co-Authored-By / AI-tool trailers live here
                 sha = getattr(commit, "commit_id", "") or ""
                 item = {
@@ -1548,6 +1580,12 @@ def azdevops_recent_commits(
                 else:
                     item["repository"] = f"{selected_project}/{repo.name}"
                 repo_items.append(item)
+            if refetched >= _TRUNCATED_COMMENT_REFETCH_CAP:
+                logger.info(
+                    "azdevops_recent_commits: repo %s hit the truncated-comment refetch cap (%d)",
+                    getattr(repo, "name", "?"),
+                    _TRUNCATED_COMMENT_REFETCH_CAP,
+                )
             return repo_items
 
         from yeaboi.config import get_team_analysis_code_max_concurrency

@@ -6,6 +6,7 @@ edge cases for each tool and the _parse_azdo_url helper.
 """
 
 from datetime import UTC
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from azure.devops.exceptions import AzureDevOpsServiceError
@@ -1005,3 +1006,63 @@ class TestPinClientBaseUrl:
         from yeaboi.tools.azure_devops import _pin_client_base_url
 
         assert _pin_client_base_url(object(), "https://dev.azure.com/youlend") is not None
+
+
+class TestTruncatedCommentRefetch:
+    """get_commits truncates long comments, stripping end-of-message AI trailers."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(sha, comment, truncated=False):
+        return SimpleNamespace(
+            commit_id=sha,
+            comment=comment,
+            comment_truncated=truncated,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_truncated_comment_is_refetched_in_full(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("a" * 16, "fix login\n\nlong bo...", truncated=True)]
+        git.get_commit.return_value = SimpleNamespace(
+            comment="fix login\n\nlong body\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        )
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_called_once_with("a" * 16, "r1", project="Proj")
+        assert "Co-Authored-By: Claude" in items[0]["body"]
+
+    def test_refetch_failure_falls_back_to_truncated_text(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("b" * 16, "fix\n\ntruncated bo...", truncated=True)]
+        git.get_commit.side_effect = RuntimeError("boom")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert items[0]["body"] == "truncated bo..."
+
+    def test_untruncated_comment_never_refetches(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("c" * 16, "fix\n\nfull body")]
+        azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_not_called()
+
+    def test_refetches_capped_per_repo(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _TRUNCATED_COMMENT_REFETCH_CAP
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [
+            self._commit(f"{i:016d}", f"c{i}\n\nbo...", truncated=True)
+            for i in range(_TRUNCATED_COMMENT_REFETCH_CAP + 5)
+        ]
+        git.get_commit.return_value = SimpleNamespace(comment="c\n\nfull body")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert git.get_commit.call_count == _TRUNCATED_COMMENT_REFETCH_CAP
+        assert len(items) == _TRUNCATED_COMMENT_REFETCH_CAP + 5
