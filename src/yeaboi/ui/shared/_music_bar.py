@@ -251,15 +251,17 @@ class _MusicPocketFrame:
     ``_WelcomeFrame``. Falls back to a flat subtitle when too narrow.
     """
 
-    def __init__(self, panel: Panel) -> None:
+    def __init__(self, panel: Panel, *, with_duck: bool = True) -> None:
         self.panel = panel
+        self.with_duck = with_duck  # screensaver already has the big duck → pocket only
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines)
-        draw_companion_duck(console, options, lines)
+        if self.with_duck:
+            draw_companion_duck(console, options, lines)
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -305,7 +307,12 @@ class MusicLive(Live):
 
         if idle_controller.should_show():
             width, height = self.console.size
-            return build_screensaver(width=width, height=height)
+            saver = build_screensaver(width=width, height=height)
+            # Keep the music tab on the saver too, but pocket-only (it already has
+            # the big chilling duck, so no companion overlay).
+            if isinstance(saver, Panel) and build_music_subtitle().cell_len + 10 <= width:
+                return _MusicPocketFrame(saver, with_duck=False)
+            return saver
 
         renderable = super().get_renderable()
         if not isinstance(renderable, Panel):
