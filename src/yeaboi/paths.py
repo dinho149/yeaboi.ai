@@ -24,6 +24,8 @@ Directory structure:
     │   │   └── {project_key}/
     │   ├── retro/                # Retro exports (HTML + MD)
     │   │   └── {project_key}/
+    │   ├── poker/                # Scrum Poker exports (HTML + MD)
+    │   │   └── {project_key}/
     │   └── anonymize/            # Privacy-masked, shareable copies (HTML + MD)
     │       └── {project_key}/
     ├── logs/
@@ -31,7 +33,8 @@ Directory structure:
     │   ├── analysis/             # Per-analysis-run logs
     │   ├── planning/             # Per-planning-session logs
     │   ├── standup/              # Daily Standup logs
-    │   └── retro/                # Retro logs
+    │   ├── retro/                # Retro logs
+    │   └── poker/                # Scrum Poker logs
     ├── attachments/              # Screenshots pasted into TUI textboxes (Ctrl+V)
     │   └── {scope_id}/           #   per session/project scope
     ├── scrum-docs/               # SCRUM.md files for each project
@@ -95,6 +98,7 @@ ANALYSIS_EXPORTS_DIR = EXPORTS_DIR / "analysis"
 PLANNING_EXPORTS_DIR = EXPORTS_DIR / "planning"
 STANDUP_EXPORTS_DIR = EXPORTS_DIR / "standup"
 RETRO_EXPORTS_DIR = EXPORTS_DIR / "retro"
+POKER_EXPORTS_DIR = EXPORTS_DIR / "poker"
 PERFORMANCE_EXPORTS_DIR = EXPORTS_DIR / "performance"
 REPORTING_EXPORTS_DIR = EXPORTS_DIR / "reporting"
 ROADMAP_EXPORTS_DIR = EXPORTS_DIR / "roadmap"
@@ -108,6 +112,7 @@ LOGS_DIR = ROOT_DIR / "logs"
 TUI_LOGS_DIR = LOGS_DIR / "tui"
 STANDUP_LOGS_DIR = LOGS_DIR / "standup"
 RETRO_LOGS_DIR = LOGS_DIR / "retro"
+POKER_LOGS_DIR = LOGS_DIR / "poker"
 PERFORMANCE_LOGS_DIR = LOGS_DIR / "performance"
 REPORTING_LOGS_DIR = LOGS_DIR / "reporting"
 ROADMAP_LOGS_DIR = LOGS_DIR / "roadmap"
@@ -208,6 +213,13 @@ def get_standup_export_dir(project_key: str) -> Path:
 def get_retro_export_dir(project_key: str) -> Path:
     """Return the Retro export directory for a project, creating it if needed."""
     d = RETRO_EXPORTS_DIR / project_key.lower()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_poker_export_dir(project_key: str) -> Path:
+    """Return the Scrum Poker export directory for a project, creating it if needed."""
+    d = POKER_EXPORTS_DIR / project_key.lower()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -325,6 +337,12 @@ def get_retro_log_dir() -> Path:
     """Return the Retro logs directory, creating it if needed."""
     RETRO_LOGS_DIR.mkdir(parents=True, exist_ok=True)
     return RETRO_LOGS_DIR
+
+
+def get_poker_log_dir() -> Path:
+    """Return the Scrum Poker logs directory, creating it if needed."""
+    POKER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return POKER_LOGS_DIR
 
 
 def get_performance_log_dir() -> Path:

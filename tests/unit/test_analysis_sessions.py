@@ -43,8 +43,9 @@ class TestSchemaVersion:
         # (roadmap_config, roadmap_history); v11 added the multi-row roadmaps
         # list; v12 added the token_usage performance columns (duration_ms /
         # eval_duration_ms / load_duration_ms / tokens_per_sec) for local metrics;
-        # v13 added the Deep-analysis ticket parse cache.
-        assert CURRENT_SCHEMA_VERSION == 17
+        # v13 added the Deep-analysis ticket parse cache; v18 added the Scrum Poker
+        # table (poker_history).
+        assert CURRENT_SCHEMA_VERSION == 18
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

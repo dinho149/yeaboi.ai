@@ -122,8 +122,8 @@ src/yeaboi/
   agent/                             — ScrumState, graph wiring, node functions, LLM factory, headless.py
   prompts/                           — one factory function per prompt (ARC framework)
   tools/                             — @tool-decorated integrations (GitHub, Jira, AzDO, Confluence, Notion, …)
-  standup/ retro/ performance/ reporting/ roadmap/ analysis/  — standalone modes (shared blueprint)
-  mcp/                               — stdio MCP server (yeaboi-mcp; 25 tools over the engines)
+  standup/ retro/ poker/ performance/ reporting/ roadmap/ analysis/  — standalone modes (shared blueprint)
+  mcp/                               — stdio MCP server (yeaboi-mcp; 27 tools over the engines)
   repl/                              — legacy REPL for CLI-flag-driven flows
   ui/                                — full-screen TUI (mode_select, provider_select, session, shared)
   input_guardrails.py / output_guardrails.py / formatters.py / *_exporter.py / *_sync.py

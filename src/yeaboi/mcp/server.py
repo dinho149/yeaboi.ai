@@ -54,6 +54,7 @@ def create_app():
         tools_anonymize,
         tools_performance,
         tools_planning,
+        tools_poker,
         tools_reporting,
         tools_retro,
         tools_sessions,
@@ -69,6 +70,7 @@ def create_app():
         tools_reporting,
         tools_performance,
         tools_retro,
+        tools_poker,
         tools_team,
         tools_anonymize,
     )

@@ -3771,6 +3771,336 @@ def _build_retro_screen(
     )
 
 
+_voice_hint_cache: str | None = None
+
+
+def _voice_download_hint() -> str:
+    """First-run speech-model hint, probed ONCE per process.
+
+    Screen builders run per frame — importlib probes inside the render loop
+    would run dozens of times per second while the transcribing state shows.
+    """
+    global _voice_hint_cache
+    if _voice_hint_cache is None:
+        try:
+            from yeaboi import voice
+
+            _voice_hint_cache = (
+                " (downloading the speech model on first run)"
+                if voice.is_voice_available()[0] and not voice.is_model_loaded()
+                else ""
+            )
+        except Exception:  # a broken optional dep must never kill a render
+            _voice_hint_cache = ""
+    return _voice_hint_cache
+
+
+def _build_poker_screen(
+    poker_data: dict,
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+) -> Panel:
+    """Build the Scrum Poker screen using shared TUI components.
+
+    Three dict-driven views (the retro/reporting convention):
+      * ``pick``     — the setup wizard's ↑/↓ option list (source / scope / sprint).
+      * ``state``    — the live monitoring view: join info + the current ticket,
+                       who has voted (values only after the reveal — the same
+                       secrecy the browser gets), and the ticket list. The host
+                       *drives* the session from their browser (the admin link);
+                       this view is for monitoring, like retro's.
+      * ``snapshot`` — a saved run replayed from its PokerReport (the hub).
+
+    poker_data keys: message, actions, session_name, display_code, url, host_url,
+    public_url, pick {title, hint, options[(label, sub)], sel}, state (a
+    ``PokerBoard.state_snapshot()`` dict), report (a PokerReport for snapshots).
+
+    # See docs: "Poker" — TUI page
+    """
+    from yeaboi.ui.shared._components import POKER_THEME, build_reveal_subtitle, poker_title
+
+    theme = POKER_THEME
+    title = poker_title(shimmer_tick)
+    session_name = poker_data.get("session_name", "")
+    sub_text = poker_data.get("subtitle") or (
+        f"Planning poker for {session_name}" if session_name else "Planning poker"
+    )
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+
+    body_lines: list = []
+
+    def _heading(text: str) -> None:
+        body_lines.append(Text(""))
+        h = Text(_PAD + "  ", justify="left")
+        h.append(text, style=f"bold {theme.accent}")
+        body_lines.append(h)
+        body_lines.append(Text(_PAD + "  " + "─" * min(len(text), 40), style=theme.sep, justify="left"))
+
+    def _row(label: str, value: str, value_style: str = "") -> None:
+        r = Text(_PAD + "    ", justify="left")
+        r.append(f"{label}:  ", style=theme.muted)
+        r.append(str(value), style=value_style or theme.value)
+        body_lines.append(r)
+
+    def _line(text: str, style: str = "") -> None:
+        body_lines.append(Text(_PAD + "    " + text, style=style or theme.value, justify="left"))
+
+    def _wrapped(text: str, style: str, *, indent: str = "      ") -> None:
+        import textwrap
+
+        wrap_w = max(24, width - len(_PAD) - len(indent) - 6)
+        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
+
+    def _pts(value) -> str:
+        if value is None:
+            return "—"
+        return str(int(value)) if float(value) == int(value) else str(value)
+
+    message = poker_data.get("message", "")
+    if message:
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+
+    pick = poker_data.get("pick")
+    state = poker_data.get("state")
+    report = poker_data.get("report")
+    sel_line: int | None = None  # pick view: the selected row's line index (auto-scroll target)
+
+    if pick is not None:
+        # ── Wizard picker view ────────────────────────────────────
+        _heading(pick.get("title", "Choose"))
+        if pick.get("hint"):
+            _line(pick["hint"], theme.muted)
+            body_lines.append(Text(""))
+        sel_i = pick.get("sel", 0)
+        for i, (label, sublabel) in enumerate(pick.get("options", [])):
+            if i == sel_i:
+                sel_line = len(body_lines)
+            marker = "►" if i == sel_i else " "
+            style = f"bold {theme.accent_bright}" if i == sel_i else theme.value
+            r = Text(_PAD + f"  {marker} ", style=style, justify="left")
+            r.append(label, style=style)
+            if sublabel:
+                r.append(f"   {sublabel}", style=theme.muted)
+            body_lines.append(r)
+
+    elif state is not None:
+        # ── Live monitoring view ──────────────────────────────────
+        if not poker_data.get("snapshot"):
+            _heading("Join this session")
+            _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
+            _row("LAN URL", poker_data.get("url", "—"), theme.value)
+            _line("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
+            public_url = poker_data.get("public_url", "")
+            if public_url:
+                _row("Remote URL", public_url, f"bold {theme.accent_bright}")
+                _line(
+                    "Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted
+                )
+            host_url = poker_data.get("host_url", "")
+            if host_url:
+                _row("Host link (private)", host_url, theme.muted)
+                _line("Open this in YOUR browser — it holds the admin controls (reveal, save, edit, AI).", theme.muted)
+
+        notice = state.get("notice", "")
+        if notice:
+            body_lines.append(Text(""))
+            body_lines.append(Text(_PAD + "  ⚠ " + notice, style=theme.bad, justify="left"))
+
+        progress = state.get("progress") or {}
+        ticket = state.get("ticket")
+        revealed = state.get("phase") == "revealed"
+        dueling = state.get("phase") == "duel"
+        _heading(
+            f"Ticket {state.get('ticket_index', 0) + 1}/{state.get('ticket_count', 0)}"
+            f"  ·  {progress.get('estimated', 0)} estimated"
+        )
+        if ticket is None:
+            _line("No tickets loaded.", theme.muted)
+        else:
+            _wrapped(f"{ticket.get('key', '')}  {ticket.get('summary', '')}", f"bold {theme.value}", indent="    ")
+            bits = [f"points {_pts(ticket.get('story_points'))}"]
+            if ticket.get("type"):
+                bits.append(ticket["type"])
+            if ticket.get("state"):
+                bits.append(ticket["state"])
+            if ticket.get("assignee"):
+                bits.append(ticket["assignee"])
+            _line(" · ".join(bits), theme.muted)
+            acceptance = (ticket.get("acceptance_text") or "").strip()
+            if acceptance:
+                excerpt = acceptance[:240] + ("…" if len(acceptance) > 240 else "")
+                _line("Acceptance criteria", theme.muted)
+                _wrapped(excerpt, theme.value, indent="      ")
+            phase_label = "duel — the floor is open" if dueling else ("votes revealed" if revealed else "voting")
+            _row("Phase", phase_label, theme.accent_bright if (revealed or dueling) else theme.value)
+            votes = state.get("votes") or []
+            # During a duel the votes are already public (post-reveal shape).
+            if revealed or dueling:
+                if votes:
+                    _line("   ".join(f"{v.get('name', 'anon')} → {v.get('value', '?')}" for v in votes), theme.value)
+                    if state.get("suggestion") is not None:
+                        _row("Suggested", _pts(state.get("suggestion")), f"bold {theme.accent_bright}")
+                else:
+                    _line("No votes were cast this round.", theme.muted)
+            elif votes:
+                voted_n = sum(1 for v in votes if v.get("voted"))
+                _line(
+                    "   ".join(f"{v.get('name', 'anon')} {'✓' if v.get('voted') else '…'}" for v in votes),
+                    theme.value,
+                )
+                _line(f"{voted_n}/{len(votes)} voted — reveal from your admin browser link.", theme.muted)
+            else:
+                _line("Waiting for teammates to join…", theme.muted)
+            duel = state.get("duel") or {}
+            duel_status = duel.get("status", "")
+            if duel_status == "live":
+                low, high = duel.get("low") or {}, duel.get("high") or {}
+                _line(
+                    f"⚔ Duel — {low.get('name', '?')} ({low.get('value', '?')})"
+                    f" vs {high.get('name', '?')} ({high.get('value', '?')})",
+                    theme.accent_bright,
+                )
+                speaker = low if duel.get("turn") == "low" else high
+                _line(f"    Turn {duel.get('turn_no', 1)}/2 — {speaker.get('name', '?')} has the floor", theme.value)
+                rec = duel.get("recording") or {}
+                mics = sum(1 for r in ("low", "high") if rec.get(r))
+                if rec.get("host") or mics:
+                    # Recording must never be invisible — mirror the browser's REC pill.
+                    _line(
+                        f"    ● RECORDING — host mic {'on' if rec.get('host') else 'off'} · {mics} browser mic(s)",
+                        theme.bad,
+                    )
+                else:
+                    _line("    Not recording — no mic source available.", theme.muted)
+            elif duel_status == "transcribing":
+                _line(f"⚔ Duel — transcribing the debate…{_voice_download_hint()}", theme.muted)
+            elif duel_status == "done":
+                transcript = duel.get("transcript") or ""
+                _line(f"⚔ Duel transcript captured ({len(transcript)} chars)", theme.accent)
+                if transcript:
+                    _wrapped(transcript[:160] + ("…" if len(transcript) > 160 else ""), theme.muted, indent="      ")
+            elif duel_status == "failed":
+                _line(f"⚔ Duel — {duel.get('error') or 'recording failed'}", theme.bad)
+            ai = state.get("ai") or {}
+            if ai.get("pending"):
+                _line("🤖 AI perspective — thinking…", theme.muted)
+            elif ai.get("note"):
+                _wrapped(f"🤖 {ai['note']}", theme.accent, indent="    ")
+                if ai.get("confidence"):
+                    _line(f"    AI confidence: {ai['confidence']}", theme.muted)
+                for ev in ai.get("evidence") or ():
+                    _wrapped(f"• {ev}", theme.muted, indent="      ")
+
+        tickets_meta = state.get("tickets_meta") or []
+        if tickets_meta:
+            _heading("Tickets")
+            for i, t in enumerate(tickets_meta):
+                current = i == state.get("ticket_index")
+                mark = "►" if current else ("✓" if t.get("estimated") else "·")
+                style = (
+                    f"bold {theme.accent_bright}" if current else (theme.value if t.get("estimated") else theme.muted)
+                )
+                pts = f"  [{_pts(t.get('final_points'))}]" if t.get("estimated") else ""
+                _wrapped(f"{mark} {t.get('key', '')}  {t.get('summary', '')}{pts}", style, indent="    ")
+
+    elif report is not None:
+        # ── Saved-run snapshot view ───────────────────────────────
+        estimated = sum(1 for t in report.tickets if t.estimated)
+        _heading(f"Session summary  ({estimated}/{len(report.tickets)} estimated)")
+        _row("Source", f"{report.source or '—'} · {report.scope_label or '—'}", theme.value)
+        if report.participants:
+            _row("Participants", ", ".join(report.participants), theme.value)
+        for t in report.tickets:
+            body_lines.append(Text(""))
+            _wrapped(f"{t.key}  {t.summary}", f"bold {theme.value}", indent="    ")
+            if t.estimated:
+                move = f"{_pts(t.initial_points)} → {_pts(t.final_points)} points"
+                _line(move, theme.accent_bright)
+                if t.votes:
+                    _line("   ".join(f"{v.voter} {v.value}" for v in t.votes), theme.muted)
+            else:
+                _line("not estimated", theme.muted)
+            if t.ai_note:
+                _wrapped(f"🤖 {t.ai_note}", theme.accent, indent="      ")
+            if t.duel_transcript:
+                _line(f"⚔ Duel: {t.duel_low} vs {t.duel_high}", theme.accent)
+                _wrapped(
+                    t.duel_transcript[:160] + ("…" if len(t.duel_transcript) > 160 else ""),
+                    theme.muted,
+                    indent="      ",
+                )
+
+    # ── Layout using shared components ────────────────────────────
+    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    total_lines = len(body_lines)
+    max_scroll = max(0, total_lines - viewport_h)
+    actual_scroll = min(scroll_offset, max_scroll)
+    # Pick view: ↑/↓ move the selection, so auto-scroll to keep it visible
+    # (a long sprint list must never leave the ► row off-screen).
+    if sel_line is not None:
+        if sel_line < actual_scroll:
+            actual_scroll = sel_line
+        elif sel_line >= actual_scroll + viewport_h:
+            actual_scroll = min(max_scroll, sel_line - viewport_h + 1)
+    publish_geometry(scroll_meta, max_scroll, viewport_h)
+    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    padded_lines: list = list(visible)
+    for _ in range(max(0, viewport_h - len(visible))):
+        padded_lines.append(Text(""))
+
+    actions = poker_data.get("actions") or ["Close"]
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+
+    if _sb_text is not None:
+        from rich.table import Table as _SbTable
+
+        _vp_table = _SbTable(
+            show_header=False,
+            show_edge=False,
+            box=None,
+            padding=0,
+            pad_edge=False,
+            expand=True,
+        )
+        _vp_table.add_column(ratio=1)
+        _vp_table.add_column(width=1)
+        _vp_table.add_row(Group(*padded_lines), _sb_text)
+        viewport_renderable = _vp_table
+    else:
+        viewport_renderable = Group(*padded_lines)
+
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        viewport_renderable,
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+
+    return Panel(
+        content,
+        border_style="white",
+        box=rich.box.ROUNDED,
+        expand=True,
+        height=height,
+        padding=(1, 2),
+    )
+
+
 def _build_standup_progress_screen(
     progress: list[str],
     *,

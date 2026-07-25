@@ -618,3 +618,235 @@ class TestGetTools:
             "analyze_team_history",
             "compare_plan_to_actuals",
         }
+
+
+# ---------------------------------------------------------------------------
+# Poker helpers — per-work-item fetch + field update
+# ---------------------------------------------------------------------------
+
+
+def _make_poker_work_item(
+    wi_id: int,
+    title: str = "Do the thing",
+    points=None,
+    assignee=None,
+    type_name: str = "User Story",
+    acceptance: str = "",
+):
+    item = MagicMock()
+    item.id = wi_id
+    item.fields = {
+        "System.Id": wi_id,
+        "System.Title": title,
+        "System.Description": "<div>Details<br>here</div>",
+        "System.State": "New",
+        "System.AssignedTo": assignee,
+        "System.WorkItemType": type_name,
+        "Microsoft.VSTS.Scheduling.StoryPoints": points,
+        "Microsoft.VSTS.Common.AcceptanceCriteria": acceptance,
+    }
+    return item
+
+
+class TestAzdevopsSprintIssues:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_normalizes_rows(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rel1, rel2 = MagicMock(), MagicMock()
+        rel1.target.id = 101
+        rel2.target.id = 102
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=[rel1, rel2])
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, points=5, assignee={"displayName": "Alex"}),
+            _make_poker_work_item(102),
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject")
+        assert len(out) == 2
+        assert out[0] == {
+            "source": "azdevops",
+            "key": "101",
+            "summary": "Do the thing",
+            "description": "<div>Details<br>here</div>",
+            "story_points": 5.0,
+            "state": "New",
+            "assignee": "Alex",
+            "url": "https://dev.azure.com/org/MyProject/_workitems/edit/101",
+            "type": "User Story",
+            "acceptance": "",
+        }
+        assert out[1]["story_points"] is None
+        assert out[1]["assignee"] == ""
+        mock_wit.get_work_items.assert_called_once()
+        # The acceptance-criteria field rides in the batch fetch.
+        assert "Microsoft.VSTS.Common.AcceptanceCriteria" in mock_wit.get_work_items.call_args.kwargs["fields"]
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_include_types_drops_tasks_keeps_unknown(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rels = []
+        for wid in (101, 102, 103, 104):
+            rel = MagicMock()
+            rel.target.id = wid
+            rels.append(rel)
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=rels)
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, type_name="User Story"),
+            _make_poker_work_item(102, type_name="Task"),  # child work item — the reported leak
+            _make_poker_work_item(103, type_name="Bug"),
+            _make_poker_work_item(104, type_name="Impediment"),  # unknown type — kept
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject", include_types=("story", "bug"))
+        assert [r["key"] for r in out] == ["101", "103", "104"]
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_acceptance_carried_on_row(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rel = MagicMock()
+        rel.target.id = 101
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=[rel])
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, acceptance="<div>Given a user<br>Then it works</div>")
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject")
+        assert out[0]["acceptance"] == "<div>Given a user<br>Then it works</div>"
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="")
+    def test_missing_project_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        assert azdevops_sprint_issues("iter-guid") == []
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    def test_missing_iteration_id_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        assert azdevops_sprint_issues("") == []
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_empty_on_api_error(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        mock_work.get_iteration_work_items.side_effect = _FakeAzdoError("boom")
+        assert azdevops_sprint_issues("iter-guid") == []
+
+
+class TestAzdevopsBacklogIssues:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_backlog_wiql_targets_root_iteration(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        ref = MagicMock()
+        ref.id = 201
+        mock_wit.query_by_wiql.return_value = MagicMock(work_items=[ref])
+        mock_wit.get_work_items.return_value = [_make_poker_work_item(201)]
+
+        out = azdevops_backlog_issues("MyProject")
+        assert [r["key"] for r in out] == ["201"]
+        query = mock_wit.query_by_wiql.call_args[0][0].query
+        assert "[System.IterationPath] = 'MyProject'" in query
+        assert "'User Story'" in query
+        assert "NOT IN" in query
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_wiql_types_from_selection(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        mock_wit.query_by_wiql.return_value = MagicMock(work_items=[])
+
+        azdevops_backlog_issues("MyProject", include_types=("story",))
+        query = mock_wit.query_by_wiql.call_args[0][0].query
+        assert "'User Story'" in query and "'Product Backlog Item'" in query
+        assert "'Bug'" not in query and "'Task'" not in query
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="")
+    def test_missing_project_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        assert azdevops_backlog_issues() == []
+
+
+class TestAzdevopsUpdateWorkItemFields:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_updates_all_fields_with_add_ops(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+
+        ok, err = azdevops_update_work_item_fields(101, summary="New", description="<div>D</div>", story_points=8)
+        assert (ok, err) == (True, "")
+        kwargs = mock_wit.update_work_item.call_args.kwargs
+        assert kwargs["id"] == 101
+        assert kwargs["project"] == "MyProject"
+        ops = {op.path: (op.op, op.value) for op in kwargs["document"]}
+        # op="add" is AzDO's add-or-replace — "replace" fails on unset StoryPoints.
+        assert ops == {
+            "/fields/System.Title": ("add", "New"),
+            "/fields/System.Description": ("add", "<div>D</div>"),
+            "/fields/Microsoft.VSTS.Scheduling.StoryPoints": ("add", 8.0),
+        }
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_noop_when_nothing_to_update(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        assert azdevops_update_work_item_fields(101) == (True, "")
+        mock_wit.update_work_item.assert_not_called()
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_api_error_folded_into_tuple(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        mock_wit.update_work_item.side_effect = _FakeAzdoError("denied")
+        ok, err = azdevops_update_work_item_fields(101, story_points=5)
+        assert ok is False
+        assert err.startswith("Error")
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value=None)
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    def test_unconfigured_returns_error_tuple(self, *_):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        ok, err = azdevops_update_work_item_fields(101, story_points=5)
+        assert ok is False
+        assert "AZURE_DEVOPS_ORG_URL" in err

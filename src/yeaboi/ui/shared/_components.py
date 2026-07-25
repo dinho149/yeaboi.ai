@@ -58,6 +58,9 @@ USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
 RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
+# Gold, not table-felt green — analysis owns green, and the two cards sat side
+# by side looking like twins. Gold keeps the casino identity (chips) instead.
+POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)")
 PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)")
 REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)")
 # Silver chrome on purpose — the changelog page's per-feature area tags carry the
@@ -131,6 +134,9 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Anonymize": ("rgb(120,110,170)", "rgb(165,150,220)", "rgb(44,42,54)", "rgb(54,52,64)"),
     "Copy": ("rgb(120,110,170)", "rgb(165,150,220)", "rgb(44,42,54)", "rgb(54,52,64)"),
     "Adjust": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Poker mode actions (green accent).
+    "Start Session": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "New Session": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     # Saved-runs hub actions (standup / retro / reporting / performance history).
     "Delete": ("rgb(220,60,60)", "rgb(240,90,90)", "rgb(52,38,38)", "rgb(62,48,48)"),
     "Run again": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
@@ -264,6 +270,11 @@ def standup_title(shimmer_tick: float | None = None, *, width: int | None = None
 def retro_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Retro ASCII title (teal accent). Optionally shimmering."""
     return build_ascii_title("Retro", "rgb(80,190,190)", shimmer_tick=shimmer_tick, width=width)
+
+
+def poker_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Poker ASCII title (gold accent). Optionally shimmering."""
+    return build_ascii_title("Poker", "rgb(230,200,70)", shimmer_tick=shimmer_tick, width=width)
 
 
 def performance_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

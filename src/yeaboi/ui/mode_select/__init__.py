@@ -6971,6 +6971,567 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         logger.info("retro: page closed for session=%s", session_id)
 
 
+def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
+    """Poker setup wizard: source → scope → sprint → ticket types → fetch.
+
+    Returns ``{"source", "scope_label", "tickets"}`` ready for the live page, or
+    None when the user backs out. Each step is a view of ``_build_poker_screen``
+    (the dict-driven picker convention); the ticket fetch runs on a worker
+    thread behind the shared progress screen because it makes tracker network
+    calls that can take seconds.
+    """
+    from yeaboi.poker import tickets as poker_tickets
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+    anim_start = time.monotonic()
+
+    def _pick(title: str, hint: str, options: list[tuple[str, str]], preselect: int = 0) -> int | None:
+        """Arrow-key option picker. Returns the chosen index, or None on back/esc."""
+        sel = max(0, min(preselect, len(options) - 1))
+        action_sel = 0
+        actions = ["Select", "Back"]
+
+        def _render() -> None:
+            w, h = console.size
+            elapsed = time.monotonic() - anim_start
+            live.update(
+                _build_poker_screen(
+                    {
+                        "subtitle": "Set up a poker session",
+                        "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
+                        "actions": actions,
+                    },
+                    width=w,
+                    height=max(10, h - 1),
+                    action_sel=action_sel,
+                    shimmer_tick=elapsed,
+                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                )
+            )
+
+        _render()
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k == "up":
+                sel = max(0, sel - 1)
+            elif k == "down":
+                sel = min(len(options) - 1, sel + 1)
+            elif k == "left":
+                action_sel = max(0, action_sel - 1)
+            elif k == "right":
+                action_sel = min(len(actions) - 1, action_sel + 1)
+            elif k in ("enter", " "):
+                if actions[action_sel] == "Back":
+                    return None
+                return sel
+            elif k in ("esc", "q"):
+                return None
+            _render()
+
+    def _toggle(title: str, hint: str, options: list[tuple[str, str]], checked: set[int]) -> set[int] | None:
+        """Multi-select toggle on the same pick view (space flips, enter continues).
+
+        The pick view has no checkbox concept — the [✓]/[ ] state is baked
+        into the option labels on every render, the same trick the standup
+        source multi-select uses. Returns the checked set, or None on back.
+        """
+        sel = 0
+        action_sel = 0
+        actions = ["Continue", "Back"]
+        warn = ""
+
+        def _render() -> None:
+            w, h = console.size
+            elapsed = time.monotonic() - anim_start
+            opts = [(("[✓] " if i in checked else "[ ] ") + label, sub) for i, (label, sub) in enumerate(options)]
+            live.update(
+                _build_poker_screen(
+                    {
+                        "subtitle": "Set up a poker session",
+                        "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
+                        "actions": actions,
+                    },
+                    width=w,
+                    height=max(10, h - 1),
+                    action_sel=action_sel,
+                    shimmer_tick=elapsed,
+                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                )
+            )
+
+        _render()
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k == "up":
+                sel = max(0, sel - 1)
+            elif k == "down":
+                sel = min(len(options) - 1, sel + 1)
+            elif k == "left":
+                action_sel = max(0, action_sel - 1)
+            elif k == "right":
+                action_sel = min(len(actions) - 1, action_sel + 1)
+            elif k == " ":
+                checked ^= {sel}
+                warn = ""
+            elif k == "enter":
+                if actions[action_sel] == "Back":
+                    return None
+                if not checked:
+                    warn = "Select at least one type."
+                else:
+                    return checked
+            elif k in ("esc", "q"):
+                return None
+            _render()
+
+    # ── Step 1: source (Jira / Azure DevOps / Demo) ───────────────────────
+    sources = poker_tickets.available_sources()
+    options = [(poker_tickets.source_label(s), "") for s in sources]
+    # Demo is always offered last — a no-tracker playground (write-back is a no-op).
+    options.append(("Demo tickets", "no tracker needed — try the flow with sample tickets"))
+    hint = (
+        "Both boards are configured — pick which one this session estimates against."
+        if len(sources) > 1
+        else ("No tracker configured — add Jira or Azure DevOps credentials in Settings." if not sources else "")
+    )
+    idx = _pick("Where do the tickets come from?", hint, options)
+    if idx is None:
+        return None
+    source = sources[idx] if idx < len(sources) else poker_tickets.SOURCE_DEMO
+    logger.info("poker setup: source=%s", source)
+
+    sprint = None
+    scope_label = "Demo"
+    if source != poker_tickets.SOURCE_DEMO:
+        # ── Step 2: scope (a sprint or the backlog) ───────────────────────
+        idx = _pick(
+            "Which tickets should the team estimate?",
+            "",
+            [("A sprint", "pick one from the board's sprint list"), ("The backlog", "open items not in any sprint")],
+        )
+        if idx is None:
+            return None
+        if idx == 0:
+            # ── Step 3: sprint list ───────────────────────────────────────
+            sprints = poker_tickets.list_sprints(source)
+            if not sprints:
+                logger.warning("poker setup: no sprints found for %s", source)
+                _pick(
+                    "No sprints found",
+                    "Check the board's credentials/logs, or estimate the backlog instead.",
+                    [("Back", "")],
+                )
+                return None
+            sprint_opts = [
+                (
+                    s.get("name", "?"),
+                    " · ".join(p for p in (s.get("start_date"), s.get("end_date"), s.get("state")) if p),
+                )
+                for s in sprints
+            ]
+            active = next((i for i, s in enumerate(sprints) if s.get("state") == "active"), len(sprints) - 1)
+            idx = _pick("Which sprint?", "", sprint_opts, preselect=active)
+            if idx is None:
+                return None
+            sprint = sprints[idx]
+            scope_label = sprint.get("name", "Sprint")
+        else:
+            scope_label = "Backlog"
+    logger.info("poker setup: scope=%s", scope_label)
+
+    # ── Step 4: ticket types (multi-toggle; demo skips) ───────────────────
+    include_types: tuple[str, ...] | None = None
+    if source != poker_tickets.SOURCE_DEMO:
+        if source == poker_tickets.SOURCE_JIRA:
+            sublabels = {"story": "issuetype Story", "bug": "issuetype Bug", "task": "issuetype Task"}
+            type_hint = "Space toggles · Sub-tasks are never included."
+        else:
+            sublabels = {
+                "story": "User Story / Product Backlog Item",
+                "bug": "Bug",
+                "task": "child tasks — usually not estimated",
+            }
+            type_hint = "Space toggles · pick the work-item types to estimate."
+        type_defaults = poker_tickets.default_include_types(source)
+        checked = _toggle(
+            "Which ticket types should be estimated?",
+            type_hint,
+            [(poker_tickets.TICKET_TYPE_LABELS[t], sublabels[t]) for t in poker_tickets.TICKET_TYPES],
+            {i for i, t in enumerate(poker_tickets.TICKET_TYPES) if t in type_defaults},
+        )
+        if checked is None:
+            return None
+        include_types = tuple(t for i, t in enumerate(poker_tickets.TICKET_TYPES) if i in checked)
+        logger.info("poker setup: include_types=%s", ",".join(include_types))
+
+    # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
+    import threading as _thr
+
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+    from yeaboi.ui.shared._components import POKER_THEME, poker_title
+
+    result: dict = {}
+    progress = [f"Fetching tickets from {poker_tickets.source_label(source)} ({scope_label})"]
+
+    def _fetch() -> None:
+        result["tickets"] = poker_tickets.fetch_tickets(source, sprint=sprint, include_types=include_types)
+
+    worker = _thr.Thread(target=_fetch, name="poker-fetch", daemon=True)
+    started = time.monotonic()
+    worker.start()
+    while worker.is_alive():
+        w, h = console.size
+        elapsed = time.monotonic() - started
+        live.update(
+            _build_standup_progress_screen(
+                progress,
+                width=w,
+                height=max(10, h - 1),
+                elapsed=elapsed,
+                anim_tick=elapsed,
+                theme=POKER_THEME,
+                title=poker_title(),
+                label="Fetching tickets",
+            )
+        )
+        read_key(timeout=frame_time) if supports_timeout else time.sleep(frame_time)
+    tickets = result.get("tickets") or []
+    if not tickets:
+        logger.warning("poker setup: no tickets fetched (source=%s scope=%s)", source, scope_label)
+        _pick(
+            "No tickets found",
+            f"{poker_tickets.source_label(source)} returned nothing for {scope_label} — check credentials (see logs).",
+            [("Back", "")],
+        )
+        return None
+    logger.info("poker setup: fetched %d ticket(s)", len(tickets))
+    return {"source": source, "scope_label": scope_label, "tickets": tickets}
+
+
+def _run_poker_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Event loop for the collaborative Scrum Poker page.
+
+    Runs the setup wizard (source → sprint/backlog → fetch), then starts the LAN
+    web server so teammates can vote from a browser. Like retro, the TUI is a
+    monitoring view refreshed every frame; the host DRIVES the session (reveal /
+    finalize / edit / AI) from their own browser via the private admin link —
+    duplicating those controls in the terminal would double the admin surface.
+    Buttons: [Share Remotely, Export, Close]. On exit the session is flushed to
+    PokerStore and the server torn down (in a finally, so Ctrl-C still persists).
+
+    # See docs: "Poker" — TUI page, LAN collaboration
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+    setup = _run_poker_setup(console, live, read_key, frame_time, supports_timeout)
+    if setup is None:
+        return
+
+    anim_start = time.monotonic()
+    _scroll_meta: dict = {}
+
+    def _render(data: dict, scroll: int, sel: int) -> None:
+        w, h = console.size
+        elapsed = time.monotonic() - anim_start
+        live.update(
+            _build_poker_screen(
+                data,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                action_sel=sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            )
+        )
+
+    # A poker session doesn't need a planning session to exist — fall back to a
+    # stable quick-session id so history still records and groups sensibly.
+    session_id, session_name, project_name, _sprint = _resolve_retro_session()
+    if not session_id:
+        session_id, session_name, project_name = "quick-poker", "", ""
+
+    from yeaboi.config import get_poker_server_port
+    from yeaboi.poker.board import PokerBoard, board_to_report
+    from yeaboi.poker.server import PokerServer
+    from yeaboi.poker.store import PokerStore
+
+    board = PokerBoard(
+        session_id,
+        project_name=project_name,
+        source=setup["source"],
+        scope_label=setup["scope_label"],
+        tickets=setup["tickets"],
+    )
+    server = PokerServer(board, port=get_poker_server_port())
+    try:
+        server.start()
+        logger.info("poker: server started on port %s (session=%s)", server.port, session_id)
+    except OSError as e:
+        logger.error("poker: failed to start server: %s", e, exc_info=True)
+        data = {
+            "session_name": session_name,
+            "message": f"Could not start the poker server: {e}",
+            "state": board.state_snapshot(),
+            "actions": ["Close"],
+        }
+        _render(data, 0, 0)
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k in ("enter", " ", "esc", "q"):
+                return
+            _render(data, 0, 0)
+
+    logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
+    scroll, sel = 0, 0
+    message = "Server ready — open the Host link in your browser to run the session; share the code with the team."
+
+    import threading as _thr
+
+    remote: dict = {"tunnel": None, "url": "", "status": "", "active": False, "starting": False}
+
+    def _start_remote() -> None:
+        def _worker() -> None:
+            try:
+                from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+
+                remote["status"] = "Setting up remote link — fetching cloudflared (first use, ~40MB)…"
+                binary = ensure_cloudflared()
+                if binary is None:
+                    logger.warning("poker: remote link failed — could not obtain cloudflared binary")
+                    remote["status"] = "Remote link failed — could not obtain cloudflared (see logs)."
+                    return
+                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
+                tunnel = CloudflareTunnel(server.port, binary=binary)
+                public = tunnel.start(timeout=45)
+                if not public:
+                    tunnel.stop()
+                    logger.warning("poker: remote link failed — tunnel did not start within timeout")
+                    remote["status"] = "Remote link failed — tunnel did not start (see logs)."
+                    return
+                logger.info("poker: remote tunnel ready (port=%s)", server.port)
+                remote["tunnel"] = tunnel
+                remote["url"] = f"{public}/"
+                remote["active"] = True
+                remote["status"] = "Remote link ready — share the Remote URL with off-network teammates."
+            except Exception as e:
+                logger.error("poker: remote tunnel setup failed: %s", e, exc_info=True)
+                remote["status"] = f"Remote link failed — {e}"
+            finally:
+                remote["starting"] = False
+
+        logger.info("poker: Share Remotely pressed — starting tunnel setup (session=%s)", session_id)
+        remote["starting"] = True
+        remote["status"] = "Setting up remote link…"
+        _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
+
+    def _stop_remote() -> None:
+        logger.info("poker: Stop Sharing pressed — stopping remote tunnel (session=%s)", session_id)
+        tunnel = remote.get("tunnel")
+        if tunnel is not None:
+            tunnel.stop()
+        remote.update({"tunnel": None, "url": "", "active": False, "starting": False})
+        remote["status"] = "Remote link stopped — LAN sharing still on."
+
+    def _share_label() -> str:
+        if remote["active"]:
+            return "Stop Sharing"
+        if remote["starting"]:
+            return "Sharing…"
+        return "Share Remotely"
+
+    def _actions() -> list[str]:
+        return [_share_label(), "Export", "Close"]
+
+    def _data() -> dict:
+        return {
+            "session_name": session_name or setup["scope_label"],
+            "display_code": server.display_code,
+            "url": server.share_url,
+            "host_url": server.url,
+            "public_url": remote["url"],
+            "message": remote["status"] or message,
+            "state": board.state_snapshot(),
+            "actions": _actions(),
+        }
+
+    def _poker_document() -> tuple[str, str]:
+        from yeaboi.poker.export import build_poker_markdown
+
+        report = board_to_report(board)
+        name = project_name or session_name or setup["scope_label"]
+        return (f"Poker — {name}" if name else "Poker", build_poker_markdown(report))
+
+    try:
+        _render(_data(), scroll, sel)
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k in SCROLL_KEYS:
+                _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
+                if _ns == scroll:
+                    continue
+                scroll = _ns
+            elif k == "left":
+                sel = max(0, sel - 1)
+            elif k == "right":
+                sel = min(len(_actions()) - 1, sel + 1)
+            elif k in ("enter", " "):
+                acts = _actions()
+                label = acts[sel] if sel < len(acts) else "Close"
+                if label == "Close":
+                    break
+                if label in ("Share Remotely", "Stop Sharing", "Sharing…"):
+                    if remote["active"]:
+                        _stop_remote()
+                    elif not remote["starting"]:
+                        _start_remote()
+                    scroll = 0
+                elif label == "Export":
+                    logger.info("poker: Export pressed (session=%s)", session_id)
+
+                    def _poker_files() -> str:
+                        try:
+                            from yeaboi.poker.export import export_poker
+
+                            report = board_to_report(board)
+                            paths = export_poker(report, project_name=project_name or session_name)
+                            logger.info("poker: exported to %s", paths["markdown"].parent)
+                            return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
+                        except Exception as e:
+                            logger.error("poker: export failed: %s", e, exc_info=True)
+                            return f"Export failed: {e}"
+
+                    msg = _export_via_picker(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        mode="poker",
+                        files_export=_poker_files,
+                        get_document=_poker_document,
+                    )
+                    if msg is not None:
+                        message = msg
+                        scroll = 0
+            elif k in ("esc", "q"):
+                break
+            _render(_data(), scroll, sel)
+    finally:
+        # Always flush the session and tear the server down — even on exception
+        # or Ctrl-C — so the estimates' record persists and no process leaks.
+        try:
+            report = board_to_report(board)
+            with PokerStore(_ana_dbp) as store:
+                store.record_run(report)
+        except Exception as e:
+            logger.warning("poker: flush to store failed: %s", e)
+        if remote.get("tunnel") is not None:
+            remote["tunnel"].stop()
+        server.stop()
+        logger.info("poker: page closed for session=%s", session_id)
+
+
+def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Poker saved-runs hub → landing for the Poker card.
+
+    Opening a saved session renders the recorded report as a read-only snapshot;
+    "+ New session" runs the setup wizard + live page.
+    """
+    from yeaboi.persistence import _relative_time
+    from yeaboi.poker.export import _title, build_poker_markdown, export_poker
+    from yeaboi.poker.store import PokerStore
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+    from yeaboi.ui.shared._components import POKER_THEME, poker_title
+
+    def _report(run_id: int):
+        with PokerStore(_ana_dbp) as store:
+            return store.get_run_by_id(run_id)
+
+    def load_runs():
+        with PokerStore(_ana_dbp) as store:
+            rows = store.get_all_history(100)
+        out = []
+        for r in rows:
+            date = r.get("poker_date") or ""
+            scope = r.get("scope_label") or ""
+            n, done = r.get("ticket_count", 0), r.get("estimated_count", 0)
+            sub = " · ".join(p for p in (scope, f"{done}/{n} estimated") if p)
+            out.append(
+                RunSummary(
+                    "poker",
+                    r["id"],
+                    f"Poker — {date or _relative_time(r['run_at'])}",
+                    sub,
+                    _relative_time(r["run_at"]),
+                    session_id=r.get("session_id", ""),
+                )
+            )
+        return out
+
+    def make_detail(run):
+        report = _report(run.run_id)
+        if report is None:
+            return None
+
+        def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
+            return _build_poker_screen(
+                {
+                    "report": report,
+                    "session_name": report.project_name or report.scope_label,
+                    "snapshot": True,
+                    "actions": actions,
+                    "message": message,
+                },
+                scroll_offset=scroll,
+                scroll_meta=scroll_meta,
+                action_sel=action_sel,
+                width=width,
+                height=height,
+                shimmer_tick=shimmer_tick,
+            )
+
+        return render
+
+    def files_export(run):
+        report = _report(run.run_id)
+        if report is None:
+            return "That run is no longer available."
+        paths = export_poker(report)
+        return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
+
+    def get_document(run):
+        report = _report(run.run_id)
+        return "That run is no longer available." if report is None else (_title(report), build_poker_markdown(report))
+
+    def delete_run(run):
+        with PokerStore(_ana_dbp) as store:
+            store.delete_run(run.run_id)
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="poker",
+        title_fn=poker_title,
+        subtitle="Saved poker sessions",
+        empty_title="No poker sessions yet",
+        empty_subtitle="Press Enter to start estimating tickets with your team",
+        new_label="+ New session",
+        load_runs=load_runs,
+        make_detail=make_detail,
+        files_export=files_export,
+        get_document=get_document,
+        share_theme=POKER_THEME,
+        delete_run=delete_run,
+        run_new=lambda: _run_poker_page(console, live, read_key, frame_time, supports_timeout),
+    )
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -8037,6 +8598,16 @@ def select_mode(
                 play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("retro"):
                     _run_retro_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
+            # ── Route: Poker mode → collaborative estimation page ────────
+            if chosen["key"] == "poker":
+                logger.info("Poker mode selected")
+                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
+                with mode_log("poker"):
+                    _run_poker_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

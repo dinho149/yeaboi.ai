@@ -141,6 +141,7 @@ ignore = [
 # line length carries no meaning there, so exempt it from E501 only. S608 fires on
 # a JS string that merely resembles SQL — there is no database here.
 "src/yeaboi/retro/page.py" = ["E501", "S608"]
+"src/yeaboi/poker/page.py" = ["E501", "S608"]
 # presentation.py is an embedded slide-deck asset (inline HTML/CSS/JS string constants).
 "src/yeaboi/reporting/presentation.py" = ["E501"]
 # Tests deliberately use asserts, toy secrets, temp paths, and localhost URLs —
