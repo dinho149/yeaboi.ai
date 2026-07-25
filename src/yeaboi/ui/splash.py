@@ -4,10 +4,11 @@
 # before the setup wizard or mode selection screen. It replaces the static
 # welcome panel as the first branded intro users see.
 
-Animation sequence (~2.7s total):
-  Phase 1 — Fade in:  text appears from nothing → brand blue (~0.8s).
-  Phase 2 — Shine:    a diagonal white glint sweeps across the wordmark (~1.1s).
-  Phase 3 — Fade out: brand blue → nothing (~0.8s).
+Animation sequence:
+  Phase 1 — Paint in: the duck waddles left→right and the wordmark appears in
+            his wake, as though he's drawing it (per-mode intros fade in instead).
+  Phase 2 — Shine:    a diagonal white glint sweeps across the finished wordmark.
+  Phase 3 — Crumble:  the wordmark dissolves top-left → bottom-right into the menu.
 """
 
 from __future__ import annotations
@@ -54,6 +55,18 @@ _WORDMARK_WIDTH = 45  # cell width of every row above
 # How far each successive wordmark row is nudged ahead of the one above it,
 # so the shine reads as a slanted streak of light rather than a vertical bar.
 _SHINE_ROW_SKEW = 0.03
+
+# Duck paint-in intro: columns the duck advances per frame. Brisk enough to keep
+# the whole boot snappy (the splash is on the critical path to the menu) while the
+# letters are still visibly *drawn* in his wake rather than zoomed past.
+_DUCK_PAINT_STEP = 2.4
+# The reveal front sits this many cells into the duck's body from his trailing
+# (left) edge: a letter only appears once his back has nearly cleared it, so the
+# wordmark emerges from under him rather than snapping in at his beak.
+_DUCK_REVEAL_LAG = 5
+# Walk cycle: vertical bob (pixels) applied to the duck as he strides, so he
+# waddles up-and-down instead of gliding flat. Paired with the wing flap.
+_WALK_BOB = (0, 0, 1, 1, 0, 0, 1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -259,16 +272,27 @@ def _build_run_frame(
     height: int,
     duck_col: int,
     rgb: tuple[int, int, int] = _BRAND_RGB,
+    reveal_front: float | None = None,
+    duck_frame: int = 0,
+    duck_bob: int = 0,
 ) -> Panel:
     """The wordmark with the duck composited on top at column ``duck_col`` — used
-    to run him left→right across the text. The duck faces right (its travel
-    direction); its transparent cells let the wordmark show through."""
-    from yeaboi.ui.shared._mascot import head_cells
+    to run him left→right across the text. The full-body duck (legs and all) faces
+    right (his travel direction), his wing flaps via ``duck_frame`` and he bobs up
+    by ``duck_bob`` pixels (the walk cycle); his transparent cells let the wordmark
+    show through.
+
+    ``reveal_front`` paints the wordmark *in his wake*: only wordmark cells whose
+    canvas column is left of ``reveal_front`` are drawn (the rest stay blank), so
+    as the duck advances the letters appear from under his body. ``None`` shows the
+    whole wordmark (he just runs over a fully-drawn logo).
+    """
+    from yeaboi.ui.shared._mascot import mini_cells
 
     inner_w = max(1, width - 6)  # matches _block_left_pad / _center_in_panel
-    cells = head_cells()  # faces right = direction of travel
+    cells = mini_cells(duck_frame)  # full body, faces right = direction of travel
     duck_h = len(cells)
-    block_h = max(len(text_lines), duck_h)
+    block_h = max(len(text_lines), duck_h) + 1  # +1 row headroom so the walk bob never clips his crown
     canvas: list[list[tuple[str, str | None]]] = [[(" ", None)] * inner_w for _ in range(block_h)]
 
     brand = f"bold rgb({rgb[0]},{rgb[1]},{rgb[2]})"
@@ -277,10 +301,10 @@ def _build_run_frame(
     for r, line in enumerate(text_lines):
         for c, ch in enumerate(line):
             x = pad_len + c
-            if ch != " " and 0 <= x < inner_w:
+            if ch != " " and 0 <= x < inner_w and (reveal_front is None or x < reveal_front):
                 canvas[wm_top + r][x] = (ch, brand)
 
-    duck_top = (block_h - duck_h) // 2
+    duck_top = (block_h - duck_h - 1) // 2 + 1 - duck_bob  # rest 1 row down; bob lifts him into the headroom
     for r, row in enumerate(cells):
         for c, (glyph, style) in enumerate(row):
             if glyph == " " and style is None:
@@ -311,42 +335,69 @@ def _run_wordmark_animation(
     crumble: bool = False,
     run_duck: bool = False,
 ) -> None:
-    """Drive ``live`` through fade-in → diagonal shine → fade-out for a wordmark.
+    """Drive ``live`` through reveal → diagonal shine → exit for a wordmark.
 
     Shared by the brand splash and the per-mode intros. ``live`` is any object
     with an ``update(renderable)`` method (a Rich Live). Glint travels from just
     off the left edge to past the right edge so it enters and fully exits cleanly.
+
+    The reveal is one of two: when ``run_duck`` the duck waddles left→right and
+    *paints the wordmark in his wake* (letters emerge from under him — the splash);
+    otherwise the whole block fades up from nothing (the per-mode intros).
     """
     shine_start, shine_end = -0.25, 1.4
 
-    # Phase 1 — Fade in: nothing → colour
-    for frame in range(fade_in_frames):
-        t = _ease_out_cubic(frame / max(fade_in_frames - 1, 1))
-        w, h = console.size
-        live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=t, rgb=rgb))
-        time.sleep(frame_time)
-
-    # Phase 2 — Shine: a diagonal glint sweeps across the fully-lit wordmark
-    for frame in range(shine_frames):
-        t = frame / max(shine_frames - 1, 1)
-        hotspot = shine_start + (shine_end - shine_start) * t
-        w, h = console.size
-        live.update(_build_shine_frame(text_lines, width=w, height=h, hotspot=hotspot, rgb=rgb))
-        time.sleep(frame_time)
-
-    # Phase 2.5 — the duck runs left → right across the wordmark (splash only).
+    # Phase 1 — Reveal.
     if run_duck:
-        from yeaboi.ui.shared._mascot import head_cells
+        # The duck draws the wordmark: he runs across empty space and the letters
+        # appear behind him (reveal_front trails his leading edge by _DUCK_REVEAL_LAG).
+        from yeaboi.ui.shared._mascot import mini_cells
 
-        _duck_w = len(head_cells()[0]) if head_cells() else 0
-        _col = -_duck_w
+        _cells = mini_cells()
+        _duck_w = len(_cells[0]) if _cells else 0
+        _col = float(-_duck_w)
+        _step_i = 0
         while True:
             w, h = console.size
-            live.update(_build_run_frame(text_lines, width=w, height=h, duck_col=_col, rgb=rgb))
+            live.update(
+                _build_run_frame(
+                    text_lines,
+                    width=w,
+                    height=h,
+                    duck_col=int(_col),
+                    rgb=rgb,
+                    reveal_front=_col + _DUCK_REVEAL_LAG,
+                    # Wing flap + up/down walk bob so he waddles rather than glides.
+                    duck_frame=_step_i // 3,
+                    duck_bob=_WALK_BOB[_step_i % len(_WALK_BOB)],
+                ),
+                refresh=True,  # one deterministic render per frame (no background double-draw)
+            )
             time.sleep(frame_time)
-            _col += 3  # ~180 cols/sec at 60fps — a brisk waddle across
+            _step_i += 1
+            _col += _DUCK_PAINT_STEP
             if _col > max(1, w - 6):
                 break
+        # Settle on the fully-drawn wordmark (duck gone), then go straight to the
+        # crumble — the paint IS the reveal, so the duck splash skips the shine to
+        # keep the whole boot snappy.
+        w, h = console.size
+        live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=1.0, rgb=rgb), refresh=True)
+    else:
+        # Fade in: nothing → colour.
+        for frame in range(fade_in_frames):
+            t = _ease_out_cubic(frame / max(fade_in_frames - 1, 1))
+            w, h = console.size
+            live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=t, rgb=rgb), refresh=True)
+            time.sleep(frame_time)
+        # Phase 2 — Shine: a diagonal glint sweeps across the fully-lit wordmark
+        # (per-mode intros only; the duck splash's paint already served as reveal).
+        for frame in range(shine_frames):
+            t = frame / max(shine_frames - 1, 1)
+            hotspot = shine_start + (shine_end - shine_start) * t
+            w, h = console.size
+            live.update(_build_shine_frame(text_lines, width=w, height=h, hotspot=hotspot, rgb=rgb), refresh=True)
+            time.sleep(frame_time)
 
     # Phase 3 — Exit: either a whole-block fade (per-mode intros) or a top-left →
     # bottom-right crumble (the brand splash), depending on ``crumble``.
@@ -354,9 +405,9 @@ def _run_wordmark_animation(
         t = _ease_out_cubic(frame / max(fade_out_frames - 1, 1))
         w, h = console.size
         if crumble:
-            live.update(_build_crumble_frame(text_lines, width=w, height=h, progress=t, rgb=rgb))
+            live.update(_build_crumble_frame(text_lines, width=w, height=h, progress=t, rgb=rgb), refresh=True)
         else:
-            live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=1.0 - t, rgb=rgb))
+            live.update(_build_splash_frame(text_lines, width=w, height=h, opacity=1.0 - t, rgb=rgb), refresh=True)
         time.sleep(frame_time)
 
 
@@ -404,7 +455,11 @@ def show_splash(console: Console) -> None:
     with Live(
         _build_splash_frame(text_lines, width=w, height=h, opacity=0.0),
         console=console,
-        refresh_per_second=60,
+        # auto_refresh off: the animation loop drives one deterministic render per
+        # frame (via update(refresh=True)). Otherwise Rich's background thread
+        # re-renders on its own cadence too, and the two interleave into the
+        # inline-mode flicker the duck run was showing.
+        auto_refresh=False,
         screen=False,
         vertical_overflow="crop",
     ) as live:
@@ -413,9 +468,9 @@ def show_splash(console: Console) -> None:
             live,
             text_lines,
             _BRAND_RGB,
-            fade_in_frames=48,  # ~0.8s
-            shine_frames=66,  # ~1.1s
-            fade_out_frames=60,  # ~1.0s — the wordmark crumbles away top-left → bottom-right
+            fade_in_frames=48,  # (unused on the duck path — paint replaces the fade-in)
+            shine_frames=66,  # (unused on the duck path — it skips the shine)
+            fade_out_frames=42,  # ~0.7s — the wordmark crumbles away top-left → bottom-right
             frame_time=_FRAME_TIME,
             crumble=True,
             run_duck=True,  # the duck waddles across the wordmark before it crumbles

@@ -11,7 +11,14 @@ from unittest.mock import MagicMock, patch
 from rich.panel import Panel
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.splash import _build_shine_frame, _build_splash_frame, show_splash
+from yeaboi.ui.splash import (
+    _DUCK_REVEAL_LAG,
+    _WORDMARK,
+    _build_run_frame,
+    _build_shine_frame,
+    _build_splash_frame,
+    show_splash,
+)
 
 
 class TestBuildSplashFrame:
@@ -146,7 +153,7 @@ class TestShowSplash:
     def test_uses_plain_live_not_music_live(self):
         """The splash must use a plain Live, not MusicLive.
 
-        MusicLive stamps the persistent music bar (^P/^O controls) onto every
+        MusicLive stamps the persistent music bar (ctrl+P/ctrl+O controls) onto every
         Panel's border. Those controls belong to the interactive screens, so the
         bar should first appear on the mode-select menu — never on the intro. If
         the splash ever switches back to make_live/MusicLive, the bar reappears
@@ -159,3 +166,55 @@ class TestShowSplash:
 
         assert splash_mod.Live is RichLive
         assert not issubclass(splash_mod.Live, MusicLive)
+
+
+class TestPaintInReveal:
+    """The duck 'paints in' the wordmark: letters appear in his wake (behind him)."""
+
+    def _ink_cols(self, duck_col, *, width=80):
+        frame = _build_run_frame(
+            _WORDMARK, width=width, height=16, duck_col=duck_col, reveal_front=duck_col + _DUCK_REVEAL_LAG
+        )
+        rows = _rendered_art_rows(frame, width=width)
+        # Columns that carry wordmark ink (the block-shadow glyphs), excluding the
+        # duck: the duck's half-block glyphs (▀▄█) overlap the set, so we key on
+        # the wordmark-only shadow chars ╗╔╝╚═║ to locate revealed letters.
+        cols = set()
+        for row in rows:
+            for i, ch in enumerate(row):
+                if ch in "╗╔╝╚═║":
+                    cols.add(i)
+        return cols
+
+    def test_nothing_revealed_before_the_duck_reaches_the_wordmark(self):
+        # Duck still off to the left of the (centred) wordmark → no letters drawn.
+        assert self._ink_cols(-15) == set()
+
+    def test_reveal_grows_as_the_duck_advances(self):
+        early = self._ink_cols(20)
+        late = self._ink_cols(45)
+        assert len(late) > len(early)  # more of the wordmark drawn later
+        assert early <= late  # and it only ever adds — nothing un-draws
+
+    def test_revealed_ink_stays_behind_the_duck(self):
+        # Every revealed wordmark column sits left of the duck's front edge.
+        duck_col = 30
+        cols = self._ink_cols(duck_col)
+        assert cols  # something is drawn at this position
+        assert max(cols) <= duck_col + _DUCK_REVEAL_LAG + 2  # in his wake, not ahead
+
+    @patch("yeaboi.ui.splash.time.sleep")
+    @patch("yeaboi.ui.splash.Live")
+    def test_show_splash_paints_then_settles_full_wordmark(self, mock_live_cls, mock_sleep):
+        # The paint loop must run (many update frames) and the final frame before
+        # the shine is the fully-drawn wordmark.
+        mock_live = MagicMock()
+        mock_live.__enter__ = MagicMock(return_value=mock_live)
+        mock_live.__exit__ = MagicMock(return_value=False)
+        mock_live_cls.return_value = mock_live
+        console = MagicMock()
+        console.size = (80, 24)
+
+        show_splash(console)
+
+        assert mock_live.update.call_count > 20  # a real per-frame paint, not a jump
