@@ -1010,10 +1010,11 @@ def jira_active_sprint_progress(project_key: str = "") -> dict:
 def jira_list_sprints(project_key: str = "", limit: int = 30) -> list[dict]:
     """Return the board's sprints (closed + active + future) with date ranges.
 
-    Each item: {name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), state}. Reuses
+    Each item: {id, name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), state}. Reuses
     the same board discovery as jira_active_sprint_progress. Returns [] when Jira is
     unconfigured or the query fails (logged). Used by Reporting mode's quarter view
-    to let the user pick which sprints make up the quarter.
+    to let the user pick which sprints make up the quarter, and by Poker mode's
+    sprint picker (which needs the numeric id to fetch the sprint's issues).
     """
     logger.info("jira_list_sprints: project_key=%r limit=%d", project_key, limit)
     jira = _make_jira_client()
@@ -1041,7 +1042,13 @@ def jira_list_sprints(project_key: str = "", limit: int = 30) -> list[dict]:
                     continue
                 start = (getattr(sp, "startDate", None) or "")[:10]
                 end = (getattr(sp, "endDate", None) or getattr(sp, "completeDate", None) or "")[:10]
-                seen[name] = {"name": name, "start_date": start, "end_date": end, "state": state}
+                seen[name] = {
+                    "id": getattr(sp, "id", None),
+                    "name": name,
+                    "start_date": start,
+                    "end_date": end,
+                    "state": state,
+                }
         # Sort by start date (undated last), newest last so the caller can window the tail.
         sprints = sorted(seen.values(), key=lambda s: s["start_date"] or "0000-00-00")
         logger.info("jira_list_sprints: %d sprint(s)", len(sprints))
@@ -1053,3 +1060,294 @@ def jira_list_sprints(project_key: str = "", limit: int = 30) -> list[dict]:
     except Exception as e:
         logger.warning("jira_list_sprints unexpected error: %s", e)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Per-issue fetch + field update helpers for Poker mode
+# ---------------------------------------------------------------------------
+# Like the recent-activity helpers above, these are plain functions (not @tool)
+# called directly by poker/tickets.py. They return structured rows / result
+# tuples and degrade gracefully: a live poker session must never crash because
+# the tracker is unavailable.
+# See docs: "Tools" — tool types, read-only vs write tools
+
+# Fields requested for every poker ticket row. customfield_10016 is the Jira
+# Cloud "Story Points" field with story_points as the PyJira alias fallback —
+# the same pair used by jira_fetch_velocity / jira_active_sprint_progress.
+# issuetype feeds the client-side category filter below.
+_POKER_ISSUE_FIELDS = "summary,description,status,assignee,issuetype,customfield_10016,story_points"
+
+# The story-points field id varies per Jira instance (classic vs team-managed
+# projects use different custom fields). Reads tolerate this via the two-field
+# fallback; writes discover the real id once and cache it here.
+_STORY_POINTS_FIELD_DEFAULT = "customfield_10016"
+_STORY_POINTS_FIELD_NAMES = frozenset({"story points", "story point estimate"})
+_story_points_field_cache: str = ""
+
+# Canonical poker type categories -> lowercase Jira issuetype names. Names not
+# listed here (custom types like "Spike") are always KEPT — a category filter
+# must narrow the batch, never empty it on an instance with exotic types.
+_POKER_TYPE_NAMES: dict[str, frozenset[str]] = {
+    "story": frozenset({"story", "user story"}),
+    "bug": frozenset({"bug", "defect"}),
+    "task": frozenset({"task"}),
+}
+
+# Acceptance criteria is always a custom field in Jira (there is no builtin).
+# Discovered once via jira.fields() and cached module-level: None = not yet
+# attempted (a transient failure retries on the next fetch), "" = this
+# instance has no such field (never re-scan), anything else = the field id.
+_ACCEPTANCE_FIELD_NAMES = frozenset({"acceptance criteria"})
+_acceptance_field_cache: str | None = None
+
+
+def _discover_acceptance_field(jira: JIRA) -> str:
+    """Find this instance's acceptance-criteria custom-field id ("" if none).
+
+    Same display-name scan as _discover_story_points_field, but run BEFORE the
+    search (the fields= param must name the field to fetch it) and cached only
+    on a successful scan so transient API failures don't poison the session.
+    """
+    global _acceptance_field_cache
+    if _acceptance_field_cache is not None:
+        return _acceptance_field_cache
+    try:
+        found = ""
+        for field in jira.fields():
+            if (field.get("name") or "").strip().lower() in _ACCEPTANCE_FIELD_NAMES:
+                found = field.get("id") or ""
+                break
+        _acceptance_field_cache = found
+        logger.info("_discover_acceptance_field: %s", "found" if found else "none on this instance")
+        return found
+    except Exception as e:
+        logger.warning("_discover_acceptance_field failed: %s", e)
+        return ""
+
+
+def _poker_search_fields(jira: JIRA) -> tuple[str, str]:
+    """Return (fields param for search_issues, acceptance-criteria field id or "")."""
+    ac_field = _discover_acceptance_field(jira)
+    return (_POKER_ISSUE_FIELDS + "," + ac_field if ac_field else _POKER_ISSUE_FIELDS), ac_field
+
+
+def _issue_type_allowed(fields, include_types: tuple[str, ...]) -> bool:
+    """Client-side category filter on issuetype.name (unknown names kept).
+
+    Client-side (not JQL name lists) because issuetype names vary per instance
+    and language — a JQL `issuetype IN (Story, …)` 400s outright when a name
+    doesn't exist, emptying the fetch. Sub-task exclusion stays in JQL via the
+    locale-independent builtin subTaskIssueTypes().
+    """
+    name = (getattr(getattr(fields, "issuetype", None), "name", "") or "").strip().lower()
+    for category, names in _POKER_TYPE_NAMES.items():
+        if name in names:
+            return category in include_types
+    return True
+
+
+def _poker_issue_row(issue, acceptance_field: str = "") -> dict:
+    """Normalize one Jira issue into the poker ticket-row shape.
+
+    {source, key, summary, description, story_points, state, assignee, url,
+    type, acceptance}. Jira Cloud (REST v2, the PyJira default) returns
+    description (and the acceptance custom field) as plain wiki-markup
+    strings, so both are carried verbatim.
+    """
+    fields = issue.fields
+    pts = getattr(fields, "customfield_10016", None)
+    if pts is None:
+        pts = getattr(fields, "story_points", None)
+    try:
+        pts = float(pts) if pts is not None else None
+    except (TypeError, ValueError):
+        pts = None
+    status = getattr(fields, "status", None)
+    assignee_name, _email = _actor_fields(getattr(fields, "assignee", None))
+    return {
+        "source": "jira",
+        "key": issue.key,
+        "summary": getattr(fields, "summary", "") or "",
+        "description": getattr(fields, "description", "") or "",
+        "story_points": pts,
+        "state": getattr(status, "name", "") if status else "",
+        "assignee": assignee_name,
+        "url": _issue_url(issue.key),
+        "type": getattr(getattr(fields, "issuetype", None), "name", "") or "",
+        "acceptance": (getattr(fields, acceptance_field, "") or "") if acceptance_field else "",
+    }
+
+
+def jira_sprint_issues(
+    sprint_id: int,
+    project_key: str = "",
+    limit: int = 100,
+    *,
+    include_types: tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Return the issues in one sprint as normalized poker ticket rows.
+
+    sprint_id comes from jira_list_sprints. Sub-tasks are always excluded
+    (JQL builtin, locale-independent); include_types optionally narrows to
+    canonical categories ("story"/"bug"/"task"), None = no category filter.
+    Returns [] when Jira is unconfigured, the sprint is empty, or the query
+    fails (logged).
+    """
+    logger.info(
+        "jira_sprint_issues: sprint_id=%r project_key=%r limit=%d types=%s",
+        sprint_id,
+        project_key,
+        limit,
+        ",".join(include_types) if include_types else "all",
+    )
+    jira = _make_jira_client()
+    if jira is None:
+        return []
+    key = project_key.strip() or (get_jira_project_key() or "")
+    try:
+        # int() guards the JQL interpolation — sprint_id is numeric by contract.
+        jql = f"sprint = {int(sprint_id)} AND issuetype NOT IN subTaskIssueTypes() ORDER BY rank"
+        if key:
+            jql = f'project = "{key}" AND {jql}'
+        fields_param, ac_field = _poker_search_fields(jira)
+        issues = jira.search_issues(jql, maxResults=limit, fields=fields_param)
+        rows = [
+            _poker_issue_row(issue, ac_field)
+            for issue in issues
+            if include_types is None or _issue_type_allowed(issue.fields, include_types)
+        ]
+        logger.info("jira_sprint_issues: %d issue(s) after type filter (%d fetched)", len(rows), len(issues))
+        return rows
+    except JIRAError as e:
+        _raise_if_auth_error(e, "jira")
+        logger.warning("jira_sprint_issues failed: %s", _jira_error_msg(e))
+        return []
+    except (TypeError, ValueError) as e:
+        logger.warning("jira_sprint_issues bad sprint id %r: %s", sprint_id, e)
+        return []
+    except Exception as e:
+        logger.warning("jira_sprint_issues unexpected error: %s", e)
+        return []
+
+
+def jira_backlog_issues(
+    project_key: str = "",
+    limit: int = 100,
+    *,
+    include_types: tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Return the project's backlog (open issues in no sprint) as poker ticket rows.
+
+    Uses statusCategory != Done (not status != Done) so custom workflow status
+    names don't leak closed work into the backlog. Sub-tasks always excluded;
+    include_types as in jira_sprint_issues. Returns [] when Jira is
+    unconfigured or the query fails (logged).
+    """
+    logger.info(
+        "jira_backlog_issues: project_key=%r limit=%d types=%s",
+        project_key,
+        limit,
+        ",".join(include_types) if include_types else "all",
+    )
+    jira = _make_jira_client()
+    if jira is None:
+        return []
+    key = project_key.strip() or (get_jira_project_key() or "")
+    if not key:
+        return []
+    try:
+        jql = (
+            f'project = "{key}" AND sprint IS EMPTY AND statusCategory != Done'
+            " AND issuetype NOT IN subTaskIssueTypes() ORDER BY rank"
+        )
+        fields_param, ac_field = _poker_search_fields(jira)
+        issues = jira.search_issues(jql, maxResults=limit, fields=fields_param)
+        rows = [
+            _poker_issue_row(issue, ac_field)
+            for issue in issues
+            if include_types is None or _issue_type_allowed(issue.fields, include_types)
+        ]
+        logger.info("jira_backlog_issues: %d issue(s) after type filter (%d fetched)", len(rows), len(issues))
+        return rows
+    except JIRAError as e:
+        _raise_if_auth_error(e, "jira")
+        logger.warning("jira_backlog_issues failed: %s", _jira_error_msg(e))
+        return []
+    except Exception as e:
+        logger.warning("jira_backlog_issues unexpected error: %s", e)
+        return []
+
+
+def _discover_story_points_field(jira: JIRA) -> str:
+    """Find this instance's story-points field id by display name ("" if not found)."""
+    try:
+        for field in jira.fields():
+            if (field.get("name") or "").strip().lower() in _STORY_POINTS_FIELD_NAMES:
+                return field.get("id") or ""
+    except Exception as e:
+        logger.warning("_discover_story_points_field failed: %s", e)
+    return ""
+
+
+def jira_update_issue_fields(
+    key: str,
+    *,
+    summary: str | None = None,
+    description: str | None = None,
+    story_points: float | None = None,
+) -> tuple[bool, str]:
+    """Update fields on an existing issue. Returns (ok, human_error).
+
+    Unlike the read helpers, auth errors are folded into the tuple (never
+    raised) — this runs inside a live poker session that must not die on a
+    tracker failure. If the default story-points field is rejected (field id
+    varies per instance), the real id is discovered via jira.fields(), cached
+    module-level, and the update retried once.
+    """
+    global _story_points_field_cache
+    logger.info(
+        "jira_update_issue_fields: key=%r summary=%s description=%s points=%r",
+        key,
+        summary is not None,
+        description is not None,
+        story_points,
+    )
+    jira = _make_jira_client()
+    if jira is None:
+        return False, _MISSING_CONFIG_MSG
+    pts_field = _story_points_field_cache or _STORY_POINTS_FIELD_DEFAULT
+    fields: dict = {}
+    if summary is not None:
+        fields["summary"] = summary
+    if description is not None:
+        fields["description"] = description
+    if story_points is not None:
+        fields[pts_field] = float(story_points)
+    if not fields:
+        return True, ""
+    try:
+        jira.issue(key).update(fields=fields)
+        logger.info("jira_update_issue_fields: %s updated", key)
+        return True, ""
+    except JIRAError as e:
+        # A 400 naming the points field means this instance uses a different
+        # custom field id — discover it and retry exactly once.
+        field_rejected = getattr(e, "status_code", 0) == 400 and pts_field in (getattr(e, "text", "") or "")
+        if story_points is not None and field_rejected:
+            discovered = _discover_story_points_field(jira)
+            if discovered and discovered != pts_field:
+                logger.info("jira_update_issue_fields: story-points field is %s, retrying", discovered)
+                _story_points_field_cache = discovered
+                fields.pop(pts_field, None)
+                fields[discovered] = float(story_points)
+                try:
+                    jira.issue(key).update(fields=fields)
+                    return True, ""
+                except JIRAError as retry_err:
+                    logger.warning("jira_update_issue_fields retry failed: %s", _jira_error_msg(retry_err))
+                    return False, _jira_error_msg(retry_err)
+        logger.warning("jira_update_issue_fields failed: %s", _jira_error_msg(e))
+        return False, _jira_error_msg(e)
+    except Exception as e:
+        logger.warning("jira_update_issue_fields unexpected error: %s", e)
+        return False, f"Error: {e}"

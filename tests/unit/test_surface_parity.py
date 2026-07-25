@@ -130,6 +130,16 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"perf"},
         "skill": "performance",
     },
+    "scrum-poker": {
+        # get_poker_perspective: the one LLM call (AI take on a revealed vote
+        # spread); the live voting board itself is a real-time LAN server the
+        # TUI hosts — like retro, it can't be a one-shot pipeline.
+        "engines": {("yeaboi.poker.engine", "get_poker_perspective")},
+        "mcp_tools": {"poker_history", "poker_export"},
+        "tui_mode": "poker",
+        "cli": {"poker"},  # history read-back + export; the live voting board stays TUI-hosted
+        "skill": Exempt("live voting session is TUI-hosted by design; history stays readable via poker_history"),
+    },
     "retro-board": {
         # carried_action_items_for_session: the headless carry-forward load (prior
         # retro's action items) the TUI/browser adapt for the review column.

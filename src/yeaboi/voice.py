@@ -31,7 +31,12 @@ Design notes / architectural decisions:
   subsequent ones are fast.
 - **WAV assembled with the stdlib.** Recorded int16 frames are written with the
   standard-library ``wave`` module and decoded back to a float32 array for the
-  model, so we never depend on ffmpeg or PyAV's decode path.
+  model, so the *host recording* path never depends on ffmpeg or PyAV's decode
+  path. The one deliberate exception is :func:`transcribe_media`, which accepts
+  browser ``MediaRecorder`` blobs (webm/opus, or mp4 on Safari) — those arrive
+  in container formats the stdlib cannot decode, and faster-whisper already
+  hard-depends on PyAV, so handing the bytes straight to the model adds no new
+  dependency.
 """
 
 from __future__ import annotations
@@ -225,4 +230,28 @@ def transcribe(wav_bytes: bytes) -> str:
     segments, _info = model.transcribe(samples, beam_size=5)
     text = " ".join(segment.text.strip() for segment in segments).strip()
     logger.info("Transcription complete: %d chars", len(text))
+    return text
+
+
+def transcribe_media(data: bytes) -> str:
+    """Transcribe browser-recorded audio (webm/opus, mp4) via faster-whisper.
+
+    Used by the poker duel feature: duelists' browsers upload ``MediaRecorder``
+    blobs whose container format the stdlib ``wave`` module cannot read. This is
+    the documented exception to the module's "no ffmpeg/PyAV decode" note — that
+    note is about the HOST recording path, which stays stdlib-WAV. faster-whisper
+    hard-depends on PyAV anyway, so passing a file-like object straight to
+    ``model.transcribe()`` decodes these containers with zero new dependencies.
+
+    Returns the transcript (stripped), or an empty string for empty input.
+    Raises on decode/model errors so the caller can handle each blob separately.
+    """
+    if not data:
+        return ""
+
+    model = _get_model()
+    logger.info("Transcribing %d-byte media blob with local Whisper", len(data))
+    segments, _info = model.transcribe(io.BytesIO(data), beam_size=5)
+    text = " ".join(segment.text.strip() for segment in segments).strip()
+    logger.info("Media transcription complete: %d chars", len(text))
     return text

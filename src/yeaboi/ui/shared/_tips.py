@@ -79,6 +79,12 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         mode_key="retro",
     ),
     FeatureTip(
+        "scrum-poker",
+        "\U0001f0cf Tip: Poker runs live planning poker — teammates vote from a browser, points save to your board",
+        mode_key="poker",
+        is_new=True,
+    ),
+    FeatureTip(
         "performance",
         "\U0001f3af Tip: Performance preps 1:1s and 6-month reviews from real delivery data",
         mode_key="performance",

@@ -482,7 +482,7 @@ def build_parser() -> argparse.ArgumentParser:
     # optional, so bare `yeaboi` and `yeaboi --<flag>` parse unchanged).
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
-    subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,analyze}")
+    subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,poker,analyze}")
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
     report_p.add_argument("--period", choices=["last_sprint", "last_month", "quarter"], default="last_sprint")
@@ -609,6 +609,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also export the latest retro to Markdown + HTML",
     )
     retro_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    poker_p = subparsers.add_parser("poker", help="Read past poker sessions (the live voting board runs in the TUI)")
+    poker_p.add_argument("--session", default="", metavar="ID", help="Only show sessions recorded under this id")
+    poker_p.add_argument("--limit", type=int, default=10, help="Number of past sessions to show (default 10)")
+    # dest stays "export"; spelled out for the same argparse prefix-collision
+    # reason as the retro subcommand above.
+    poker_p.add_argument(
+        "--export-latest",
+        dest="export",
+        action="store_true",
+        help="Also export the latest poker session to Markdown + HTML",
+    )
+    poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
@@ -1122,6 +1135,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "standup": _cmd_standup,
         "perf": _cmd_perf,
         "retro": _cmd_retro,
+        "poker": _cmd_poker,
         "analyze": _cmd_analyze,
     }
     try:
@@ -1396,6 +1410,47 @@ def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
         )
     if carried_summary:
         console.print(f"  Last sprint's actions: {carried_summary}")
+    for kind, path in exported.items():
+        console.print(f"  Exported {kind}: {path}")
+    return 0
+
+
+def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
+    """Read-back of past poker sessions. The live voting board needs a TTY host
+    and stays in the TUI (see the surface-parity registry)."""
+    import json
+
+    from yeaboi.paths import get_db_path
+    from yeaboi.poker.store import PokerStore
+
+    with PokerStore(get_db_path()) as store:
+        # Poker sessions often run under auto-created quick sessions, so the
+        # default listing is cross-session; --session narrows it.
+        rows = store.get_all_history(200)
+        if args.session:
+            rows = [r for r in rows if r.get("session_id") == args.session]
+        rows = rows[: args.limit]
+        latest = store.get_run_by_id(rows[0]["id"]) if rows else None
+    exported: dict = {}
+    if args.export:
+        if latest is None:
+            print("Error: no poker session recorded yet — run one from the TUI Poker page.", file=sys.stderr)
+            return 2
+        from yeaboi.poker.export import export_poker
+
+        exported = {k: str(v) for k, v in export_poker(latest).items()}
+    if args.format == "json":
+        print(json.dumps({"history": rows, "exported": exported}, indent=2))
+        return 0
+    if not rows:
+        console.print("[yellow]No poker sessions recorded yet — run one from the TUI Poker page.[/yellow]")
+        return 0
+    for row in rows:
+        scope = " · ".join(p for p in (row.get("source"), row.get("scope_label")) if p)
+        console.print(
+            f"  • {row['poker_date'] or row['run_at'][:10]}  {scope or row.get('project_name') or '—'}"
+            f"  — {row['estimated_count']}/{row['ticket_count']} estimated"
+        )
     for kind, path in exported.items():
         console.print(f"  Exported {kind}: {path}")
     return 0

@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 17  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope  # noqa: E501
+CURRENT_SCHEMA_VERSION = 18  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -333,6 +333,7 @@ def _dict_to_story(d: dict) -> UserStory:
         acceptance_criteria=acs,
         story_points=StoryPointValue(d["story_points"]),
         priority=Priority(d["priority"]),
+        title=d.get("title", ""),
         discipline=Discipline(d.get("discipline", "fullstack")),
         dod_applicable=tuple(d.get("dod_applicable", (True,) * 7)),
         points_rationale=d.get("points_rationale", ""),
@@ -674,6 +675,13 @@ class SessionStore:
                         (json.dumps(projects), session_id),
                     )
             logger.info("Migration v17: added standup Azure project scope")
+
+        if from_version < 18:
+            # v18: Scrum Poker mode — one poker_history table. Schema lives in poker/store.py.
+            from yeaboi.poker.store import _POKER_SCHEMA
+
+            self._conn.executescript(_POKER_SCHEMA)
+            logger.info("Migration v18: created poker tables")
 
     # ── Token usage persistence ──────────────────────────────────────────
 

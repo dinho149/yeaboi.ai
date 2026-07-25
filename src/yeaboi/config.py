@@ -382,6 +382,18 @@ def get_retro_server_port() -> int:
         return 5173
 
 
+def get_poker_server_port() -> int:
+    """Return the base port for the Poker collaboration server (default 5273).
+
+    5273 sits clear of retro's 5173..5193 walk range so both modes can run at
+    once. The server walks upward from this port if it is busy (poker/server.py).
+    """
+    try:
+        return int(os.getenv("POKER_PORT", "5273"))
+    except ValueError:
+        return 5273
+
+
 def get_slack_webhook_url() -> str:
     """Return the Slack incoming-webhook URL for standup delivery, or '' if unset."""
     return os.getenv("SLACK_WEBHOOK_URL", "") or ""

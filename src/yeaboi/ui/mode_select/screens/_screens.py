@@ -52,6 +52,13 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "color": "rgb(80,190,190)",
     },
     {
+        "key": "poker",
+        "title": "Poker",
+        "description": "Run planning poker: the team votes on sprint or backlog tickets in a browser; points sync.",
+        "available": True,
+        "color": "rgb(230,200,70)",
+    },
+    {
         "key": "performance",
         "title": "Performance",
         "description": "Manage each engineer: 1:1 prep, 1:1 summaries, and 6-month reviews from real delivery data.",

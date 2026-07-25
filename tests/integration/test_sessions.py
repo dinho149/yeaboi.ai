@@ -400,6 +400,7 @@ class TestDeserializeState:
             acceptance_criteria=(ac,),
             story_points=StoryPointValue.FIVE,
             priority=Priority.MEDIUM,
+            title="Create Bookmark Endpoint",
             discipline=Discipline.BACKEND,
         )
         serialized = _serialize_state({"messages": [], "stories": [story]})
@@ -408,6 +409,7 @@ class TestDeserializeState:
         assert isinstance(s, UserStory)
         assert s.story_points == StoryPointValue.FIVE
         assert s.discipline == Discipline.BACKEND
+        assert s.title == "Create Bookmark Endpoint"  # regression: title used to be dropped on load
         assert isinstance(s.acceptance_criteria[0], AcceptanceCriterion)
 
     def test_reconstructs_task(self):

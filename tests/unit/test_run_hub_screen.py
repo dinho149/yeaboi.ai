@@ -147,6 +147,60 @@ class TestSnapshotRendering:
         )
         assert "Join this retro" in _text(panel)
 
+    def test_poker_snapshot_shows_results_and_hides_join(self):
+        from yeaboi.agent.state import PokerReport, PokerTicketResult, PokerVote
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+        report = PokerReport(
+            session_id="s",
+            project_name="Demo",
+            source="jira",
+            scope_label="Sprint 42",
+            tickets=(
+                PokerTicketResult(
+                    key="PROJ-1",
+                    summary="Add login",
+                    initial_points=None,
+                    final_points=5.0,
+                    estimated=True,
+                    votes=(PokerVote("Sam", "🐙", "5"),),
+                ),
+            ),
+            participants=("Sam",),
+        )
+        panel = _build_poker_screen(
+            {
+                "report": report,
+                "session_name": report.project_name,
+                "snapshot": True,
+                "actions": _SNAP_ACTIONS,
+            },
+            action_sel=0,
+            width=100,
+            height=40,
+        )
+        out = _text(panel)
+        assert "Add login" in out
+        assert "5 points" in out
+        assert "Join this session" not in out  # live-only join block suppressed for a saved run
+
+    def test_poker_live_still_shows_join(self):
+        from yeaboi.poker.board import PokerBoard
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+        board = PokerBoard("s", tickets=[{"key": "T-1", "summary": "X"}])
+        panel = _build_poker_screen(
+            {
+                "state": board.state_snapshot(),
+                "display_code": "ABC123",
+                "actions": ["Share Remotely", "Export", "Close"],
+            },
+            action_sel=0,
+            width=100,
+            height=40,
+        )
+        assert "Join this session" in _text(panel)
+
     def test_standup_overview_shows_meter_strip(self):
         from yeaboi.agent.state import StandupReport
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_screen

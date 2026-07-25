@@ -1605,10 +1605,11 @@ def azdevops_active_sprint_progress(project: str = "") -> dict:
 def azdevops_list_sprints(project: str = "", limit: int = 30) -> list[dict]:
     """Return the team's iterations (sprints) with date ranges.
 
-    Each item: {name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), state}. Reuses
-    the same team-iteration read as azdevops_active_sprint_progress. Returns [] when
-    unconfigured or on failure. Used by Reporting mode's quarter view to let the user
-    pick which sprints make up the quarter.
+    Each item: {id, path, name, start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), state}.
+    Reuses the same team-iteration read as azdevops_active_sprint_progress. Returns []
+    when unconfigured or on failure. Used by Reporting mode's quarter view to let the
+    user pick which sprints make up the quarter, and by Poker mode's sprint picker
+    (which needs the iteration id to fetch the iteration's work items).
     """
     project = project or get_azure_devops_project() or ""
     logger.info("azdevops_list_sprints: project=%r limit=%d", project, limit)
@@ -1640,6 +1641,8 @@ def azdevops_list_sprints(project: str = "", limit: int = 30) -> list[dict]:
                 state = "future"
             out.append(
                 {
+                    "id": getattr(it, "id", "") or "",
+                    "path": getattr(it, "path", "") or "",
                     "name": getattr(it, "name", "") or "",
                     "start_date": start.strftime("%Y-%m-%d"),
                     "end_date": finish.strftime("%Y-%m-%d"),
@@ -1659,3 +1662,292 @@ def azdevops_list_sprints(project: str = "", limit: int = 30) -> list[dict]:
     except Exception as e:
         logger.warning("azdevops_list_sprints unexpected error: %s", e)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Per-work-item fetch + field update helpers for Poker mode
+# ---------------------------------------------------------------------------
+# Plain functions (not @tool) called directly by poker/tickets.py. They return
+# structured rows / result tuples and degrade gracefully: a live poker session
+# must never crash because the tracker is unavailable.
+# See docs: "Tools" — tool types, read-only vs write tools
+
+# Fields requested for every poker ticket row. StoryPoints is the same field
+# used by azdevops_fetch_velocity / azdevops_active_sprint_progress.
+# WorkItemType feeds the category filter; AcceptanceCriteria is AzDO's builtin
+# AC field (Agile/Scrum templates; absent fields just come back empty).
+_POKER_WI_FIELDS = [
+    "System.Id",
+    "System.Title",
+    "System.Description",
+    "System.State",
+    "System.AssignedTo",
+    "System.WorkItemType",
+    "Microsoft.VSTS.Scheduling.StoryPoints",
+    "Microsoft.VSTS.Common.AcceptanceCriteria",
+]
+
+# get_work_items caps a batch at 200 ids — page larger iterations.
+_WI_BATCH = 200
+
+# Work-item types offered for estimation; states that mean "already done".
+_POKER_BACKLOG_TYPES = ("User Story", "Product Backlog Item", "Bug")
+_POKER_CLOSED_STATES = ("Done", "Closed", "Removed", "Completed", "Resolved")
+
+# Canonical poker type categories -> AzDO work-item type names. Unknown names
+# (custom process types) are always KEPT by the filter — narrowing must never
+# empty the fetch on an exotic process template. AzDO "Task" is a child work
+# item (the sub-task analog), which is why it's a category of its own.
+_POKER_TYPE_NAMES: dict[str, tuple[str, ...]] = {
+    "story": ("User Story", "Product Backlog Item"),
+    "bug": ("Bug",),
+    "task": ("Task",),
+}
+
+
+def _work_item_type_allowed(type_name: str, include_types: tuple[str, ...]) -> bool:
+    """Category filter on System.WorkItemType (unknown names kept)."""
+    for category, names in _POKER_TYPE_NAMES.items():
+        if type_name in names:
+            return category in include_types
+    return True
+
+
+def _poker_work_item_row(item) -> dict:
+    """Normalize one AzDO work item into the poker ticket-row shape.
+
+    {source, key, summary, description, story_points, state, assignee, url}.
+    System.Description is HTML — carried raw here; poker/tickets.py adds a
+    stripped plain-text variant for display.
+    """
+    f = item.fields
+    pts = f.get("Microsoft.VSTS.Scheduling.StoryPoints")
+    try:
+        pts = float(pts) if pts is not None else None
+    except (TypeError, ValueError):
+        pts = None
+    assigned_raw = f.get("System.AssignedTo")
+    if isinstance(assigned_raw, dict):
+        assignee = assigned_raw.get("displayName", "") or ""
+    elif assigned_raw:
+        assignee = str(assigned_raw)
+    else:
+        assignee = ""
+    wi_id = f.get("System.Id") or getattr(item, "id", "")
+    org_url = (get_azure_devops_org_url() or "").rstrip("/")
+    project = get_azure_devops_project() or ""
+    url = f"{org_url}/{quote(project)}/_workitems/edit/{wi_id}" if org_url and project and wi_id else ""
+    return {
+        "source": "azdevops",
+        "key": str(wi_id),
+        "summary": f.get("System.Title", "") or "",
+        "description": f.get("System.Description", "") or "",
+        "story_points": pts,
+        "state": f.get("System.State", "") or "",
+        "assignee": assignee,
+        "url": url,
+        "type": f.get("System.WorkItemType", "") or "",
+        "acceptance": f.get("Microsoft.VSTS.Common.AcceptanceCriteria", "") or "",
+    }
+
+
+def _fetch_work_item_rows(
+    wit_client, ids: list, limit: int, include_types: tuple[str, ...] | None = None
+) -> list[dict]:
+    """Batch-fetch work items by id (<=200 per call) as normalized rows.
+
+    The type filter runs per batch and fetching continues until `limit`
+    SURVIVING rows are collected (or ids run out) — capping ids up front would
+    under-fill the page whenever the filter drops items.
+    """
+    rows: list[dict] = []
+    for start in range(0, len(ids), _WI_BATCH):
+        batch = ids[start : start + _WI_BATCH]
+        items = wit_client.get_work_items(batch, fields=_POKER_WI_FIELDS)
+        for item in items or []:
+            row = _poker_work_item_row(item)
+            if include_types is not None and not _work_item_type_allowed(row["type"], include_types):
+                continue
+            rows.append(row)
+            if len(rows) >= limit:
+                return rows
+    return rows
+
+
+def azdevops_sprint_issues(
+    iteration_id: str,
+    project: str = "",
+    limit: int = 100,
+    *,
+    include_types: tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Return the work items in one iteration as normalized poker ticket rows.
+
+    iteration_id comes from azdevops_list_sprints. get_iteration_work_items
+    returns EVERY item in the iteration (child Tasks included), so the
+    category filter here is what keeps task-level items out of a poker
+    session; None = no filter. Returns [] when unconfigured, the iteration is
+    empty, or the query fails (logged).
+    """
+    project = project or get_azure_devops_project() or ""
+    logger.info(
+        "azdevops_sprint_issues: iteration_id=%r project=%r limit=%d types=%s",
+        iteration_id,
+        project,
+        limit,
+        ",".join(include_types) if include_types else "all",
+    )
+    if not project or not iteration_id:
+        return []
+    try:
+        from azure.devops.v7_1.work.models import TeamContext
+
+        wit_client, work_client = _make_azdo_clients()
+        team = get_azure_devops_team() or f"{project} Team"
+        team_context = TeamContext(project=project, team=team)
+        work_items = work_client.get_iteration_work_items(team_context, iteration_id)
+        wi_ids = [
+            rel.target.id
+            for rel in getattr(work_items, "work_item_relations", []) or []
+            if getattr(rel, "target", None)
+        ]
+        rows = _fetch_work_item_rows(wit_client, wi_ids, limit, include_types)
+        logger.info(
+            "azdevops_sprint_issues: %d work item(s) after type filter (%d in iteration)", len(rows), len(wi_ids)
+        )
+        return rows
+    except ValueError as e:
+        logger.warning("azdevops_sprint_issues skipped: %s", e)
+        return []
+    except AzureDevOpsServiceError as e:
+        _raise_if_azdo_auth(e)
+        logger.warning("azdevops_sprint_issues failed: %s", _azdo_error_msg(e))
+        return []
+    except Exception as e:
+        logger.warning("azdevops_sprint_issues unexpected error: %s", e)
+        return []
+
+
+def azdevops_backlog_issues(
+    project: str = "",
+    limit: int = 100,
+    *,
+    include_types: tuple[str, ...] | None = None,
+) -> list[dict]:
+    """Return the project's backlog (open work items in the root iteration).
+
+    "Backlog" = work items whose IterationPath is the project root, i.e. not
+    scheduled into any sprint — the AzDO convention. Ordered by last change
+    (WIQL backlog-rank fields differ per process template, so ChangedDate is
+    the portable ordering). include_types narrows the WIQL type list; None
+    keeps the historical stories/PBIs/bugs set. Returns [] when unconfigured
+    or on failure (logged).
+    """
+    project = project or get_azure_devops_project() or ""
+    logger.info(
+        "azdevops_backlog_issues: project=%r limit=%d types=%s",
+        project,
+        limit,
+        ",".join(include_types) if include_types else "all",
+    )
+    if not project:
+        return []
+    try:
+        from azure.devops.v7_1.work_item_tracking.models import Wiql
+
+        wit_client, _work_client = _make_azdo_clients()
+        # SECURITY: project comes from config (not the LLM) but is still escaped
+        # per WIQL rules (double the single quotes) — WIQL has no bind parameters.
+        safe_project = project.replace("'", "''")
+        # The WIQL type list IS the filter here (server-side, unlike the sprint
+        # fetch): selected categories map to their type names; None keeps the
+        # historical default set.
+        if include_types is None:
+            type_names: tuple[str, ...] = _POKER_BACKLOG_TYPES
+        else:
+            type_names = tuple(name for cat in include_types for name in _POKER_TYPE_NAMES.get(cat, ()))
+        if not type_names:
+            type_names = _POKER_BACKLOG_TYPES
+        types = ", ".join(f"'{t}'" for t in type_names)
+        states = ", ".join(f"'{s}'" for s in _POKER_CLOSED_STATES)
+        wiql = Wiql(
+            query=(
+                f"SELECT [System.Id] FROM WorkItems"  # noqa: S608
+                f" WHERE [System.TeamProject] = '{safe_project}'"
+                f" AND [System.IterationPath] = '{safe_project}'"
+                f" AND [System.WorkItemType] IN ({types})"
+                f" AND [System.State] NOT IN ({states})"
+                f" ORDER BY [System.ChangedDate] DESC"
+            )
+        )
+        result = wit_client.query_by_wiql(wiql, top=limit)
+        wi_ids = [wi.id for wi in result.work_items or []]
+        rows = _fetch_work_item_rows(wit_client, wi_ids, limit)
+        logger.info("azdevops_backlog_issues: %d work item(s)", len(rows))
+        return rows
+    except ValueError as e:
+        logger.warning("azdevops_backlog_issues skipped: %s", e)
+        return []
+    except AzureDevOpsServiceError as e:
+        _raise_if_azdo_auth(e)
+        logger.warning("azdevops_backlog_issues failed: %s", _azdo_error_msg(e))
+        return []
+    except Exception as e:
+        logger.warning("azdevops_backlog_issues unexpected error: %s", e)
+        return []
+
+
+def azdevops_update_work_item_fields(
+    work_item_id: int,
+    *,
+    summary: str | None = None,
+    description: str | None = None,
+    story_points: float | None = None,
+    project: str = "",
+) -> tuple[bool, str]:
+    """Update fields on an existing work item. Returns (ok, human_error).
+
+    Auth errors are folded into the tuple (never raised) — this runs inside a
+    live poker session that must not die on a tracker failure. Uses op="add",
+    which AzDO treats as add-or-replace: op="replace" fails on a field with no
+    current value (an unestimated ticket's StoryPoints, exactly the poker case).
+    """
+    project = project or get_azure_devops_project() or ""
+    logger.info(
+        "azdevops_update_work_item_fields: id=%r summary=%s description=%s points=%r",
+        work_item_id,
+        summary is not None,
+        description is not None,
+        story_points,
+    )
+    try:
+        from azure.devops.v7_1.work_item_tracking.models import JsonPatchOperation
+
+        wit_client, _work_client = _make_azdo_clients()
+        document = []
+        if summary is not None:
+            document.append(JsonPatchOperation(op="add", path="/fields/System.Title", value=summary))
+        if description is not None:
+            document.append(JsonPatchOperation(op="add", path="/fields/System.Description", value=description))
+        if story_points is not None:
+            document.append(
+                JsonPatchOperation(
+                    op="add",
+                    path="/fields/Microsoft.VSTS.Scheduling.StoryPoints",
+                    value=float(story_points),
+                )
+            )
+        if not document:
+            return True, ""
+        wit_client.update_work_item(document=document, id=int(work_item_id), project=project)
+        logger.info("azdevops_update_work_item_fields: #%s updated", work_item_id)
+        return True, ""
+    except ValueError as e:
+        logger.warning("azdevops_update_work_item_fields skipped: %s", e)
+        return False, f"Error: {e}"
+    except AzureDevOpsServiceError as e:
+        logger.warning("azdevops_update_work_item_fields failed: %s", _azdo_error_msg(e))
+        return False, _azdo_error_msg(e)
+    except Exception as e:
+        logger.warning("azdevops_update_work_item_fields unexpected error: %s", e)
+        return False, f"Error: {e}"

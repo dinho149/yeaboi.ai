@@ -361,7 +361,10 @@ let focusSig = null;                          // cached author set so we rebuild
 let lastBcastTheme = null, lastMusicSeq = 0;  // host broadcasts applied once, on change
 let LOCKED = false;                           // board frozen by the host
 
-function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+// Escapes quotes too (not just &<>): esc()'d values land inside double-quoted
+// HTML attributes (title="…"), where an unescaped quote would let a
+// participant-chosen name break out of the attribute and run script.
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
 function api(path) { return path + (path.indexOf("?") < 0 ? "?" : "&") + "token=" + encodeURIComponent(TOKEN); }
 function postJSON(path, body) {
   // `admin` is sent on every POST but only checked by the server on /api/admin/* and

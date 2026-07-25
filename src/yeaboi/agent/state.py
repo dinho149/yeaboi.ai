@@ -388,6 +388,71 @@ class RetroReport:
         return out
 
 
+# See docs: "Session Management" — Poker mode artifacts
+#
+# Scrum Poker (planning poker) mode: the team votes on tickets pulled from Jira
+# or Azure DevOps, the admin reveals the votes and writes the agreed story
+# points back to the board. Like Retro, the live session is run by a mutable,
+# lock-guarded board (poker/board.py); these FROZEN dataclasses are the
+# finalized snapshot the store and exporter consume. Every field is defaulted
+# so old serialized reports still deserialize (see CLAUDE.md "Frozen dataclass
+# backward compatibility").
+@dataclass(frozen=True)
+class PokerVote:
+    """One participant's revealed vote on a ticket (the round that was accepted)."""
+
+    voter: str = ""  # display name from the browser join prompt
+    avatar: str = ""  # emoji avatar picked at join (may be empty)
+    value: str = ""  # a POKER_DECK string ("0".."21", "?" or "☕")
+
+
+@dataclass(frozen=True)
+class PokerTicketResult:
+    """One ticket's outcome after a poker session.
+
+    ``initial_points`` is what the tracker held when the session started;
+    ``final_points`` is what the admin saved after the reveal (also pushed to
+    Jira / Azure DevOps). ``estimated`` distinguishes "finalized this session"
+    from "skipped / never voted".
+    """
+
+    key: str = ""  # Jira issue key ("PROJ-1") or AzDO work-item id ("101")
+    url: str = ""  # browse URL on the tracker ("" for demo tickets)
+    summary: str = ""
+    description: str = ""  # plain display text (HTML already stripped for AzDO)
+    state: str = ""  # tracker status name at fetch time
+    assignee: str = ""
+    initial_points: float | None = None
+    final_points: float | None = None
+    estimated: bool = False  # True once the admin finalized points this session
+    votes: tuple[PokerVote, ...] = ()  # the revealed round the final points came from
+    ai_note: str = ""  # the AI-perspective comment shown during the debate ("" if unused)
+    # Duel (open the floor): the recorded low-vs-high debate, "" when no duel
+    # ran. Defaulted so pre-duel report JSON keeps deserializing (frozen-
+    # dataclass backward-compat rule — no schema bump needed).
+    duel_transcript: str = ""  # capped, speaker-attributed where browser mics ran
+    duel_low: str = ""  # "Alex (2)" — the low-extreme duelist and their vote
+    duel_high: str = ""  # "Sam (13)"
+
+
+@dataclass(frozen=True)
+class PokerReport:
+    """A finished poker session over one batch of tickets.
+
+    Produced by poker/board.py:board_to_report(). Persisted by PokerStore and
+    rendered to Markdown + HTML by poker/export.py.
+    """
+
+    date: str = ""  # ISO date the session was held
+    session_id: str = ""
+    project_name: str = ""
+    source: str = ""  # "jira" | "azdevops" | "demo"
+    scope_label: str = ""  # "Sprint 42" | "Backlog" — where the tickets came from
+    tickets: tuple[PokerTicketResult, ...] = ()
+    participants: tuple[str, ...] = ()  # distinct joiner names seen during the session
+    generated_at: str = ""  # ISO-8601 UTC timestamp the report was assembled
+
+
 # See docs: "Session Management" — Performance mode artifacts
 #
 # The Performance mode helps a team lead manage each engineer's growth. It has
