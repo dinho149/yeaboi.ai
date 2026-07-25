@@ -20,7 +20,7 @@ from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.ui.shared._mascot import render_full, render_head
+from yeaboi.ui.shared._mascot import render_head, walk_cells
 
 IDLE_SECONDS = 5 * 60
 
@@ -153,16 +153,63 @@ def suppress_during_call(fn: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapped
 
 
+def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
+    """Render one sprite cell-row to a Text, shifted right by ``left_pad`` columns —
+    for compositing the duck at a moving x along the saver floor."""
+    t = Text()
+    if left_pad > 0:
+        t.append(" " * left_pad)
+    for glyph, style in row:
+        t.append(glyph, style=style)
+    return t
+
+
+# Rows kept clear at the saver foot for the music pocket the frame draws over it.
+_SAVER_FOOT_RESERVE = 2
+_MINI_DUCK_W = 22
+
+
 def build_screensaver(*, width: int, height: int, elapsed: float | None = None) -> RenderableType:
     """Build a size-aware animated saver frame without mutating app content."""
     elapsed = idle_controller.animation_elapsed() if elapsed is None else elapsed
     frame = int(elapsed * 8) % 8
 
+    # Roomy terminals: the duck waddles back and forth along the floor (feet
+    # stepping) rather than standing still in the centre.
+    if width >= 46 and height >= 22:
+        content_h = max(1, height - 2)  # inside the border
+        inner_w = width - 6  # borders (2) + horizontal padding (4)
+        span = max(1, inner_w - _MINI_DUCK_W)
+        speed = 7.0  # columns per second
+        period = max(0.1, 2.0 * span / speed)
+        phase = (elapsed % period) / period  # 0 → 1 over a there-and-back trip
+        travel = phase * 2.0 if phase < 0.5 else (1.0 - phase) * 2.0  # 0 → 1 → 0
+        x = int(travel * span)
+        facing_left = phase >= 0.5  # heading left on the return leg → mirror him
+        grid = walk_cells(frame, flip=facing_left)
+        duck_rows = [_cells_to_text(r, x) for r in grid]
+
+        caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
+        hint = Text("press any key", style="rgb(95,105,115)", justify="center")
+        above = max(0, content_h - len(duck_rows) - _SAVER_FOOT_RESERVE)
+        cap_top = max(0, (above - 2) // 2)
+        rows: list[RenderableType] = [Text("") for _ in range(cap_top)]
+        if above >= 2:
+            rows += [caption, hint]
+        rows += [Text("") for _ in range(max(0, above - cap_top - 2))]
+        rows += duck_rows
+        rows += [Text("") for _ in range(_SAVER_FOOT_RESERVE)]
+        return Panel(
+            Group(*rows),
+            border_style="white",
+            box=rich.box.ROUNDED,
+            height=max(1, height),
+            padding=(0, 2),
+        )
+
     # Thresholds account for the surrounding Panel: the full duck is 18 half-block
     # rows + caption + hint = 20, plus 2 border rows = 22.
-    if width >= 46 and height >= 22:
-        art = render_full(frame)
-    elif width >= 22 and height >= 13:
+    if width >= 22 and height >= 13:
         art = render_head(frame)
     else:
         art = None

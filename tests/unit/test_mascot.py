@@ -95,6 +95,25 @@ def test_render_mini_flip_mirrors():
     assert normal == [row[::-1] for row in flipped]
 
 
+def test_walk_cells_steps_alternate_feet():
+    from yeaboi.ui.shared._mascot import walk_cells
+
+    even = walk_cells(0)
+    odd = walk_cells(1)
+    # Same dimensions as the mini duck, but the bottom (feet) row differs between
+    # the two beats as each foot steps in turn.
+    assert len(even) == len(odd)
+    assert [g for g, _ in even[-1]] != [g for g, _ in odd[-1]]
+
+
+def test_walk_cells_flip_mirrors():
+    from yeaboi.ui.shared._mascot import walk_cells
+
+    normal = [[g for g, _ in row] for row in walk_cells(0)]
+    flipped = [[g for g, _ in row] for row in walk_cells(0, flip=True)]
+    assert normal == [row[::-1] for row in flipped]
+
+
 def test_palette_matches_generator():
     import pytest
 
