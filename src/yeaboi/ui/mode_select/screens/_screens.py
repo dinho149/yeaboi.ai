@@ -784,11 +784,11 @@ def _build_companion(
     # old Align.center(head) exactly). Extras only appear once he's ~settled.
     intro = min(1.0, max(0.0, companion_intro))
     center_pad = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
-    # Near-linear glide (a touch of ease-out for a soft landing) so the slide reads
-    # as smooth constant motion rather than the front-loaded rush ease_out_cubic
-    # gave — which looked like a small slide then a jump.
-    slide = intro * (2.0 - intro)  # ease-out-quad, ~linear across the visible window
-    left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - slide))
+    # Constant-speed (linear) glide: the duck reaches its resting column exactly at
+    # intro 1.0, so the last few characters glide in rather than snapping — the
+    # ease-out variants reached the spot early (~85%) then sat, which read as the
+    # duck jumping the final stretch.
+    left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - intro))
     duck = Padding(head, (0, 0, 0, left_pad))
     show_extras = intro >= _COMPANION_REVEAL_FROM
     reveal = min(1.0, max(0.0, (intro - _COMPANION_REVEAL_FROM) / (1.0 - _COMPANION_REVEAL_FROM)))
