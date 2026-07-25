@@ -2680,8 +2680,9 @@ def _run_ai_usage_component(
             "db_path": db_path,
             "generate_insights": analysis_depth == "deep",
         }
-        if window_days != 120:
-            kwargs["window_days"] = window_days
+        # Always forward the window — a "default means don't pass it" guard let
+        # the callee's own default diverge from the engine's (code 120d vs docs 90d).
+        kwargs["window_days"] = window_days
         if analysis_scope is not None:
             kwargs["analysis_scope"] = analysis_scope
         kwargs["progress"] = progress
@@ -2734,9 +2735,10 @@ def _run_doc_quality_component(
     try:
         from yeaboi.analysis.doc_quality import run_doc_quality
 
-        kwargs = {"sub_sources": sub_sources}
-        if window_days != 120:
-            kwargs["window_days"] = window_days
+        # Always forward the window — the old "!= 120" guard silently let default
+        # runs scan docs over run_doc_quality's own 90-day default while the code
+        # component scanned 120 days, shown side by side undisclosed.
+        kwargs = {"sub_sources": sub_sources, "window_days": window_days}
         if analysis_scope is not None:
             kwargs["analysis_scope"] = analysis_scope
         kwargs["progress"] = progress

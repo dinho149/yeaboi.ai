@@ -1825,11 +1825,15 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     fp = getattr(sig, "footprint_pct", 0.0)
     fp_sty = c_good if fp >= 40 else (c_warn if fp >= 15 else c_bad)
     marked = sig.ai_commits + sig.ai_prs
+    _window = blob.get("window_days") if isinstance(blob, dict) else None
+    _scan_detail = f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs"
+    if _window:
+        _scan_detail += f" · last {_window} days"
     _ta_metric_tiles(
         ctx,
         [
             ("Detectable footprint", f"{fp:.0f}%", "of scanned work carries a marker", fp_sty),
-            ("Work scanned", str(scanned), f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs", c_accent),
+            ("Work scanned", str(scanned), _scan_detail, c_accent),
             ("AI-marked work", str(marked), f"{sig.ai_commits} commits · {sig.ai_prs} PRs", c_good),
         ],
     )
@@ -1984,7 +1988,17 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
         ctx,
         [
             ("Average clarity", f"{clarity:.0f}/100", "higher means easier to read", cl_sty),
-            ("Pages scanned", str(pages), ", ".join(sig.platforms_scanned) or "platform unavailable", c_accent),
+            (
+                "Pages scanned",
+                str(pages),
+                (", ".join(sig.platforms_scanned) or "platform unavailable")
+                + (
+                    f" · last {blob.get('window_days')} days"
+                    if isinstance(blob, dict) and blob.get("window_days")
+                    else ""
+                ),
+                c_accent,
+            ),
             (
                 "Average usefulness",
                 f"{usefulness:.0f}/100",

@@ -1612,10 +1612,11 @@ def _print_docs_summary(console: "Console", docs: dict) -> None:
     sig = docs.get("signal")
     examples = docs.get("examples") or {}
     console.rule("[bold cyan]Docs — clarity[/bold cyan]")
+    window = examples.get("window_days")
     console.print(
         f"  Clarity: [bold]{getattr(sig, 'avg_clarity', 0):.0f}/100[/bold] · "
         f"Usefulness: [bold]{getattr(sig, 'avg_usefulness', 0):.0f}/100[/bold] · "
-        f"{getattr(sig, 'pages_scanned', 0)} pages"
+        f"{getattr(sig, 'pages_scanned', 0)} pages" + (f" · last {window} days" if window else "")
     )
     coverage = examples.get("coverage_report") or {}
     console.print(

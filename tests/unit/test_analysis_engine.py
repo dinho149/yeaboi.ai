@@ -84,15 +84,17 @@ def wired(monkeypatch, db, tmp_path):
         lambda profile, examples: {"start": [], "stop": [], "keep": [], "try": []},
     )
 
-    def fake_ai(source, pk, ds, alls, members=None, sub_sources=None):
+    def fake_ai(source, pk, ds, alls, members=None, sub_sources=None, **kwargs):
         captured["code_calls"] += 1
         captured["code_sub"] = sub_sources
         captured["code_members"] = members
+        captured["code_kwargs"] = kwargs
         return AiAdoptionSignal(scanned_commits=10, ai_commits=4, footprint_pct=40.0), {"summary": {}, "coverage": []}
 
-    def fake_doc(source, pk, sub_sources=None):
+    def fake_doc(source, pk, sub_sources=None, **kwargs):
         captured["docs_calls"] += 1
         captured["docs_sub"] = sub_sources
+        captured["docs_kwargs"] = kwargs
         return DocQualitySignal(pages_scanned=5, avg_clarity=70.0), {"summary": {}, "coverage": []}
 
     monkeypatch.setattr("yeaboi.analysis.ai_usage.run_ai_adoption", fake_ai)
@@ -475,6 +477,21 @@ class TestTopLevelConcurrency:
         assert result["docs"] is not None
         assert result["code"] is None
         assert "Code analysis failed: rate limited" in result["warnings"]
+
+
+class TestWindowForwarding:
+    def test_default_window_reaches_both_components(self, wired, db):
+        """Regression: a '!= 120' guard used to skip forwarding the default, so
+        docs silently scanned run_doc_quality's own 90-day default while code
+        scanned 120 days — shown side by side undisclosed."""
+        run_team_analysis(components=_ALL, db_path=db)
+        assert wired["code_kwargs"]["window_days"] == 120
+        assert wired["docs_kwargs"]["window_days"] == 120
+
+    def test_custom_window_reaches_both_components(self, wired, db):
+        run_team_analysis(components=_ALL, db_path=db, analysis_window_days=45)
+        assert wired["code_kwargs"]["window_days"] == 45
+        assert wired["docs_kwargs"]["window_days"] == 45
 
 
 class TestCancelEvent:
