@@ -1801,12 +1801,71 @@ def _ta_insights(ctx: _TaCtx, profile) -> None:
     _ta_coaching_dashboard(ctx, insights)
 
 
+def _practice_cell(num: int, den: int, rate, min_sample: int) -> Text:
+    """One practices-table cell: n/a without data, raw fraction under the
+    sample floor (a % built on 2 items is noise), coloured % otherwise."""
+    if not den:
+        return Text("n/a", style=c_dim)
+    if den < min_sample:
+        return Text(f"{num}/{den}", style=c_muted)
+    sty = c_good if rate >= 70 else (c_warn if rate >= 40 else c_bad)
+    return Text(f"{rate:.0f}%", style=sty)
+
+
+def _ta_practices_table(ctx: _TaCtx, practices: dict, member_activity: list, team_ai: int) -> None:
+    """The card's lead section: per-member practice hygiene over ALL attributed work."""
+    ctx.heading("Engineering practices by member")
+    framing = Text(PAD + "  ")
+    framing.append("All attributed work in the window — not just AI-marked items.", style=c_muted)
+    ctx.add(framing)
+    min_sample = int(practices.get("min_sample", 5) or 5)
+    ai_by_member = {str(row.get("member", "")): int(row.get("ai_marked", 0) or 0) for row in member_activity}
+    table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
+    table.add_column("Member", ratio=1)
+    table.add_column("Cmts", justify="right", width=6)
+    table.add_column("PRs", justify="right", width=5)
+    table.add_column("AI", justify="right", width=5)
+    table.add_column("Tests", justify="right", width=7)
+    table.add_column("Docs", justify="right", width=7)
+    table.add_column("Tickets", justify="right", width=8)
+    table.add_column("Descs", justify="right", width=7)
+    rows = [(row, False) for row in (practices.get("members") or [])]
+    team = practices.get("team")
+    if isinstance(team, dict):
+        rows.append((team, True))
+    for row, is_team in rows:
+        member = str(row.get("member", ""))
+        ai_count = team_ai if is_team else ai_by_member.get(member, 0)
+        table.add_row(
+            Text(member, style=f"bold {c_accent}" if is_team else c_value),
+            Text(str(row.get("commits", 0)), style=c_accent),
+            Text(str(row.get("prs", 0)), style=c_accent),
+            Text(str(ai_count), style=c_good),
+            _practice_cell(row.get("tests_num", 0), row.get("tests_den", 0), row.get("tests_rate"), min_sample),
+            _practice_cell(row.get("docs_num", 0), row.get("docs_den", 0), row.get("docs_rate"), min_sample),
+            _practice_cell(row.get("ticket_num", 0), row.get("ticket_den", 0), row.get("ticket_rate"), min_sample),
+            _practice_cell(row.get("desc_num", 0), row.get("desc_den", 0), row.get("desc_rate"), min_sample),
+        )
+    ctx.add_table(table)
+    file_data = practices.get("file_data") or {}
+    if file_data.get("total") and file_data.get("with_file_data", 0) < file_data["total"]:
+        footnote = Text(PAD + "  ")
+        footnote.append(
+            f"File-based columns (Tests, Docs) cover {file_data.get('with_file_data', 0)} "
+            f"of {file_data['total']} items with change metadata.",
+            style=c_dim,
+        )
+        ctx.add(footnote)
+
+
 def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
-    """AI-adoption footprint: how much tracked work shows an AI-tool trace + coaching.
+    """AI usage: per-member practice hygiene first, then the detectable footprint.
 
     Reads ``profile.ai_adoption`` for the numbers and ``examples["ai_adoption"]`` for
-    coaching insights + coverage. Always frames the footprint as a lower bound. Old
-    profiles (no scan) show the same "run a new analysis" empty state as the other cards.
+    the practices/coaching blobs + coverage. The lead section is HOW members work
+    (tests, docs, tickets, descriptions); the footprint stays as secondary context,
+    always framed as a lower bound. Old profiles (no scan) show the same "run a new
+    analysis" empty state as the other cards.
     """
     _add, _ex = ctx.add, ctx.ex
     # Prefer the profile's signal; fall back to ctx.ai_sig for a delivery-off run
@@ -1831,7 +1890,7 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
             colour=c_warn,
         )
 
-    ctx.heading("AI Footprint")
+    ctx.heading("AI Usage")
     if not sig or scanned == 0:
         if _identity_mismatch:
             _mismatch_callout()
@@ -1847,6 +1906,30 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     marked = sig.ai_commits + sig.ai_prs
     if _identity_mismatch:
         _mismatch_callout()
+
+    # Lead with practice hygiene — the lead already knows the team uses AI; the
+    # question this card answers first is HOW WELL each member works. Old saved
+    # profiles predate practice scoring and fall back to the activity table.
+    practices = blob.get("member_practices") if isinstance(blob, dict) else None
+    member_activity = blob.get("member_activity") if isinstance(blob, dict) else None
+    if isinstance(practices, dict) and practices.get("members"):
+        _ta_practices_table(ctx, practices, member_activity or [], marked)
+    elif member_activity:
+        ctx.heading("Activity by member")
+        table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
+        table.add_column("Member", ratio=1)
+        table.add_column("Commits", justify="right", width=9)
+        table.add_column("PRs", justify="right", width=7)
+        table.add_column("AI-marked", justify="right", width=11)
+        for row in member_activity:
+            table.add_row(
+                Text(str(row.get("member", "")), style=c_value),
+                Text(str(row.get("commits", 0)), style=c_accent),
+                Text(str(row.get("prs", 0)), style=c_accent),
+                Text(str(row.get("ai_marked", 0)), style=c_good),
+            )
+        ctx.add_table(table)
+
     if marked == 0:
         _ta_callout(
             ctx,
@@ -1902,26 +1985,6 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         ctx.kv("Matched", f"{len(matched)}/{len(blob.get('selected_users', []))}")
         if blob.get("unmatched_users"):
             ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
-
-    # Per-member activity so the denominator is verifiable at a glance —
-    # a member whose automation pushes thousands of fan-out commits shows up
-    # here instead of silently inflating the totals. Old profiles lack the field.
-    member_activity = blob.get("member_activity") if isinstance(blob, dict) else None
-    if member_activity:
-        ctx.heading("Activity by member")
-        table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
-        table.add_column("Member", ratio=1)
-        table.add_column("Commits", justify="right", width=9)
-        table.add_column("PRs", justify="right", width=7)
-        table.add_column("AI-marked", justify="right", width=11)
-        for row in member_activity:
-            table.add_row(
-                Text(str(row.get("member", "")), style=c_value),
-                Text(str(row.get("commits", 0)), style=c_accent),
-                Text(str(row.get("prs", 0)), style=c_accent),
-                Text(str(row.get("ai_marked", 0)), style=c_good),
-            )
-        ctx.add_table(table)
 
     repos = list(getattr(sig, "repos_scanned", ()) or ())
     if sig.sources_scanned or repos:
@@ -2228,7 +2291,7 @@ _TA_CARDS: dict[str, dict] = {
         "glossary": (),
     },
     "ai-adoption": {
-        "title": "AI Footprint",
+        "title": "AI Usage",
         "builders": (_ta_ai_adoption,),
         "glossary": (),
     },

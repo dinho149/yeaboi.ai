@@ -407,8 +407,8 @@ def build_team_profile_html(
                 i_lis = "".join(_insight_html(it) for it in i_items if isinstance(it, dict) and it.get("title"))
                 if i_lis:
                     a_html += f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>'
-        _nav("ai-adoption", "AI Footprint")
-        sections.append(_section("ai-adoption", "AI Footprint", a_html))
+        _nav("ai-adoption", "AI Usage")
+        sections.append(_section("ai-adoption", "AI Usage", a_html))
 
     file_health = ai_blob.get("repository_health", {}) if isinstance(ai_blob, dict) else {}
     if "code_health" in code_features and file_health:
@@ -1757,7 +1757,7 @@ def build_team_profile_markdown(
     code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
     if "ai_footprint" in code_features and ai_sig and ai_scanned:
-        lines.extend(["## AI Footprint", ""])
+        lines.extend(["## AI Usage", ""])
         lines.append(
             "> _Lower bound — only AI tools that leave a marker in commit messages or PR "
             "descriptions are counted. Inline IDE assist (Copilot ghost-text, Cursor Tab) "
@@ -2807,7 +2807,7 @@ def write_analysis_log(
     code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
     if "ai_footprint" in code_features and ai_sig and ai_scanned:
-        sections.extend(["", "AI Footprint (lower bound — commit/PR markers only):"])
+        sections.extend(["", "AI Usage (footprint is a lower bound — commit/PR markers only):"])
         sections.append(f"  Detectable footprint: {_footprint_value(ai_sig)}")
         sections.append(f"  Commits with AI marker: {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:

@@ -1230,7 +1230,7 @@ class TestDeliveryOffScreen:
             code_signal=self._code_signal(),
         )
         out = _render(panel, width=100)
-        assert "AI Footprint" in out
+        assert "AI Usage" in out
         assert "45%" in out  # footprint rendered from the global code_signal
 
     def test_ai_adoption_dashboard_breakdowns_evidence_and_actions(self):
@@ -1355,7 +1355,112 @@ class TestDeliveryOffScreen:
         )
         assert "IDENTITY MISMATCH" not in out
 
-    def test_ai_adoption_member_activity_table(self):
+    def _practices_examples(self):
+        return {
+            "ai_adoption": {
+                "selected_users": ["Ava", "Sam"],
+                "matched_identities": {"Ava": ["ava"], "Sam": ["sam"]},
+                "member_activity": [
+                    {"member": "Ava", "commits": 2140, "prs": 12, "ai_marked": 5},
+                    {"member": "Sam", "commits": 3, "prs": 4, "ai_marked": 1},
+                ],
+                "member_practices": {
+                    "min_sample": 5,
+                    "file_data": {"with_file_data": 9, "total": 12},
+                    "members": [
+                        {
+                            "member": "Ava",
+                            "commits": 2140,
+                            "prs": 12,
+                            "with_file_data": 8,
+                            "tests_num": 6,
+                            "tests_den": 8,
+                            "tests_rate": 75.0,
+                            "docs_num": 2,
+                            "docs_den": 8,
+                            "docs_rate": 25.0,
+                            "ticket_num": 5,
+                            "ticket_den": 10,
+                            "ticket_rate": 50.0,
+                            "desc_num": 7,
+                            "desc_den": 12,
+                            "desc_rate": 58.3,
+                        },
+                        {
+                            "member": "Sam",
+                            "commits": 3,
+                            "prs": 4,
+                            "with_file_data": 1,
+                            "tests_num": 0,
+                            "tests_den": 0,
+                            "tests_rate": None,
+                            "docs_num": 1,
+                            "docs_den": 1,
+                            "docs_rate": 100.0,
+                            "ticket_num": 2,
+                            "ticket_den": 4,
+                            "ticket_rate": 50.0,
+                            "desc_num": 1,
+                            "desc_den": 4,
+                            "desc_rate": 25.0,
+                        },
+                    ],
+                    "team": {
+                        "member": "Team",
+                        "commits": 2143,
+                        "prs": 16,
+                        "with_file_data": 9,
+                        "tests_num": 6,
+                        "tests_den": 8,
+                        "tests_rate": 75.0,
+                        "docs_num": 3,
+                        "docs_den": 9,
+                        "docs_rate": 33.3,
+                        "ticket_num": 7,
+                        "ticket_den": 14,
+                        "ticket_rate": 50.0,
+                        "desc_num": 8,
+                        "desc_den": 16,
+                        "desc_rate": 50.0,
+                    },
+                },
+            }
+        }
+
+    def test_ai_adoption_practices_table(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=self._practices_examples(), view="ai-adoption", code_signal=signal, width=100, height=70
+            ),
+            width=100,
+        )
+        assert "Engineering practices by member" in out
+        for header in ("Tests", "Docs", "Tickets", "Descs"):
+            assert header in out
+        assert "75%" in out  # Ava's tests rate as a coloured percentage
+        assert "n/a" in out  # Sam has no tests denominator
+        assert "1/1" in out  # Sam's docs cell stays a raw fraction under the sample floor
+        assert "Team" in out
+        assert "2140" in out  # volume counts stay visible in the merged table
+        assert "cover 9 of 12 items with change metadata" in out
+
+    def test_practices_lead_above_footprint(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples=self._practices_examples(), view="ai-adoption", code_signal=signal, width=100, height=70
+            ),
+            width=100,
+        )
+        assert out.index("Engineering practices by member") < out.index("LOWER BOUND SIGNAL")
+
+    def test_ai_adoption_activity_fallback_for_old_blobs(self):
+        # Saved profiles that predate practice scoring keep the activity table.
         from yeaboi.team_profile import AiAdoptionSignal
 
         signal = AiAdoptionSignal(scanned_commits=30, ai_commits=6, footprint_pct=20.0)
@@ -1379,6 +1484,7 @@ class TestDeliveryOffScreen:
         assert "Activity by member" in out
         assert "2140" in out  # the automation-heavy member's volume is visible
         assert "AI agent accounts" in out
+        assert "Engineering practices" not in out
 
     def test_ai_adoption_no_member_table_for_old_profiles(self):
         from yeaboi.team_profile import AiAdoptionSignal
@@ -2345,7 +2451,7 @@ class TestAnalysisOverview:
             "Writing Style",
             "Trends & Repos",
             "Recommendations",
-            "AI Footprint",
+            "AI Usage",
             "Code Health",
             "Documentation",
             "Team Insights",
@@ -2442,7 +2548,7 @@ class TestAnalysisOverview:
         for line in (top + bottom).splitlines():
             if "Code Health" in line:
                 assert "✦" not in line
-            if "AI Footprint" in line:
+            if "AI Usage" in line:
                 assert "✦" in line
 
 

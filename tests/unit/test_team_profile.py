@@ -1242,9 +1242,9 @@ class TestTeamProfileExporter:
         markdown = build_team_profile_markdown(profile, examples=examples)
         html = build_team_profile_html(profile, examples=examples)
         assert "## Code Health" in markdown
-        assert "## AI Footprint" not in markdown
+        assert "## AI Usage" not in markdown
         assert "Code Health" in html
-        assert "AI Footprint" not in html
+        assert "AI Usage" not in html
 
     def test_failed_code_and_docs_export_status_without_zero_metrics_or_advice(self):
         from yeaboi.team_profile_exporter import build_team_profile_html, build_team_profile_markdown
