@@ -221,10 +221,20 @@ def render_full(frame: int) -> Group:
     return Group(*_pack(grid))
 
 
-# Foot columns in the mini duck's bottom row (see mini_cells): two orange feet the
-# walk cycle steps by dropping each in turn (half-block ▀→▄, the pixel lowers).
-_MINI_LEFT_FOOT = (7, 8, 9)
-_MINI_RIGHT_FOOT = (12, 13, 14)
+def full_cells(frame: int, *, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+    """The full-size idle duck (wing-flap + glasses-bob) as (glyph, style) cells, for
+    compositing him over other content — e.g. walking along the saver floor."""
+    f = frame % FRAMES
+    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[f]))
+    if flip:
+        grid = tuple(row[::-1] for row in grid)
+    return _pack_cells(grid)
+
+
+# Orange foot columns in the full duck's bottom row (see full_cells): the two feet
+# the walk cycle steps by dropping each in turn (half-block ▀→▄, the pixel lowers).
+_FULL_LEFT_FOOT = (11, 12, 13, 14, 15, 16)
+_FULL_RIGHT_FOOT = (17, 18, 19, 20, 21, 22, 23)
 
 
 def _step_foot(cell: tuple[str, str | None]) -> tuple[str, str | None]:
@@ -238,15 +248,18 @@ def _step_foot(cell: tuple[str, str | None]) -> tuple[str, str | None]:
     return cell
 
 
-def walk_cells(frame: int, *, flip: bool = False) -> list[list[tuple[str, str | None]]]:
-    """The mini duck mid-walk: wing flap (from ``frame``) plus an alternating foot
-    step, as (glyph, style) cells for compositing him moving along a surface.
+def walk_cells(frame: int, *, foot: int | None = None, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+    """The full-size duck mid-walk: wing flap + glasses bob (from ``frame``) plus an
+    alternating foot plant, as (glyph, style) cells for compositing him moving along
+    a surface.
 
-    Even/odd ``frame`` plants the left/right foot in turn (see :func:`_step_foot`),
-    giving a two-beat waddle. ``flip`` mirrors him to face his travel direction."""
-    grid = [list(row) for row in mini_cells(frame, flip=False)]
+    ``foot`` (its own slow phase, so the steps aren't tied to the fast wing frame)
+    plants the left/right foot in turn on even/odd — defaults to ``frame``. ``flip``
+    mirrors him to face his travel direction."""
+    grid = [list(row) for row in full_cells(frame, flip=False)]
     last = len(grid) - 1  # feet occupy the bottom row
-    down = _MINI_LEFT_FOOT if frame % 2 == 0 else _MINI_RIGHT_FOOT
+    step = frame if foot is None else foot
+    down = _FULL_LEFT_FOOT if step % 2 == 0 else _FULL_RIGHT_FOOT
     for col in down:
         if 0 <= col < len(grid[last]):
             grid[last][col] = _step_foot(grid[last][col])

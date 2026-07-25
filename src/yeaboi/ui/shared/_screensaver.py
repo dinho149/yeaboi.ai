@@ -20,7 +20,7 @@ from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.ui.shared._mascot import render_head, walk_cells
+from yeaboi.ui.shared._mascot import render_full, render_head, walk_cells
 
 IDLE_SECONDS = 5 * 60
 
@@ -164,9 +164,10 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
     return t
 
 
-# Rows kept clear at the saver foot for the music pocket the frame draws over it.
-_SAVER_FOOT_RESERVE = 2
-_MINI_DUCK_W = 22
+# Rows kept clear at the saver foot: 3 for the music pocket the frame draws over it
+# + 1 gap, so the duck walks on a floor line ABOVE the pocket rather than on it.
+_SAVER_FOOT_RESERVE = 4
+_SAVER_DUCK_W = 34  # full duck trace width
 
 
 def build_screensaver(*, width: int, height: int, elapsed: float | None = None) -> RenderableType:
@@ -175,18 +176,20 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     frame = int(elapsed * 8) % 8
 
     # Roomy terminals: the duck waddles back and forth along the floor (feet
-    # stepping) rather than standing still in the centre.
-    if width >= 46 and height >= 22:
+    # stepping) rather than standing still in the centre. Needs room for the 18-row
+    # duck + the caption/hint + the pocket-clearance reserve.
+    if width >= 46 and height >= 26:
         content_h = max(1, height - 2)  # inside the border
         inner_w = width - 6  # borders (2) + horizontal padding (4)
-        span = max(1, inner_w - _MINI_DUCK_W)
-        speed = 7.0  # columns per second
+        span = max(1, inner_w - _SAVER_DUCK_W)
+        speed = 14.0  # columns per second — a brisk waddle
         period = max(0.1, 2.0 * span / speed)
         phase = (elapsed % period) / period  # 0 → 1 over a there-and-back trip
         travel = phase * 2.0 if phase < 0.5 else (1.0 - phase) * 2.0  # 0 → 1 → 0
         x = int(travel * span)
         facing_left = phase >= 0.5  # heading left on the return leg → mirror him
-        grid = walk_cells(frame, flip=facing_left)
+        foot = int(elapsed * 3.0)  # step cadence, decoupled from the fast wing frame
+        grid = walk_cells(frame, foot=foot, flip=facing_left)
         duck_rows = [_cells_to_text(r, x) for r in grid]
 
         caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
@@ -208,8 +211,11 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         )
 
     # Thresholds account for the surrounding Panel: the full duck is 18 half-block
-    # rows + caption + hint = 20, plus 2 border rows = 22.
-    if width >= 22 and height >= 13:
+    # rows + caption + hint = 20, plus 2 border rows = 22. Between 22 and the walk
+    # threshold he stands centred.
+    if width >= 46 and height >= 22:
+        art: RenderableType | None = render_full(frame)
+    elif width >= 22 and height >= 13:
         art = render_head(frame)
     else:
         art = None
