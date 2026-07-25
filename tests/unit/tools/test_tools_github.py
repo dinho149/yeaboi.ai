@@ -555,3 +555,41 @@ class TestActivityScanCaps:
         items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
 
         assert sum(1 for item in items if item.get("kind") == "pr") == _MAX_REPO_PRS
+
+
+class TestGithubAnalysisInventory:
+    @staticmethod
+    def _repo(full_name, *, pushed_at, archived=False):
+        repo = MagicMock()
+        repo.full_name = full_name
+        repo.pushed_at = pushed_at
+        repo.updated_at = pushed_at
+        repo.archived = archived
+        repo.html_url = f"https://github.com/{full_name}"
+        repo.default_branch = "main"
+        repo.empty = False
+        return repo
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_relevance_flags(self, mock_client):
+        from datetime import UTC, datetime, timedelta
+
+        from yeaboi.tools.github import github_analysis_inventory
+
+        now = datetime.now(UTC)
+        owner = mock_client.return_value.get_organization.return_value
+        owner.get_repos.return_value = [
+            self._repo("acme/live", pushed_at=now - timedelta(days=3)),
+            self._repo("acme/stale", pushed_at=now - timedelta(days=400)),
+            self._repo("acme/dead", pushed_at=now - timedelta(days=3), archived=True),
+            self._repo("acme/unknown", pushed_at=None),
+        ]
+
+        rows = {r["name"]: r for r in github_analysis_inventory(["acme"], days=120, include_trees=False)}
+
+        assert rows["acme/live"]["active"] is True
+        assert rows["acme/stale"]["active"] is False and rows["acme/stale"]["skip_reason"] == ""
+        assert rows["acme/dead"]["active"] is False
+        assert rows["acme/dead"]["skip_reason"] == "archived repository"
+        assert rows["acme/unknown"]["active"] is False
+        assert rows["acme/unknown"]["skip_reason"] == "no recorded push activity"

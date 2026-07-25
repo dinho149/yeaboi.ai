@@ -434,7 +434,8 @@ def collect_ai_activity(
                 coverage_tracker.add("github", container, name, "inaccessible", str(repo.get("error", "")))
                 continue
             if not repo.get("active"):
-                coverage_tracker.add("github", container, name, "unchanged", "no changes in window", eligible=False)
+                detail = str(repo.get("skip_reason") or "no changes in window")
+                coverage_tracker.add("github", container, name, "unchanged", detail, eligible=False)
                 continue
             raw, read_error = repo_results.get(index, ([], RuntimeError("repository activity was not attempted")))
             try:

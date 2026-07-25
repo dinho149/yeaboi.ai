@@ -119,7 +119,16 @@ def github_analysis_inventory(
                 pushed = getattr(repo, "pushed_at", None) or getattr(repo, "updated_at", None)
                 if pushed is not None and pushed.tzinfo is None:
                     pushed = pushed.replace(tzinfo=UTC)
-                active = pushed is None or pushed >= cutoff
+                archived = bool(getattr(repo, "archived", False))
+                # Relevance: archived repos and repos with no recorded push are
+                # never scanned (unknown-pushed used to count as active, pulling
+                # dead repos into every run); the skip reason feeds coverage notes.
+                skip_reason = ""
+                if archived:
+                    skip_reason = "archived repository"
+                elif pushed is None:
+                    skip_reason = "no recorded push activity"
+                active = not skip_reason and pushed >= cutoff
                 paths: list[str] = []
                 tree_error = ""
                 if include_trees and active and not bool(getattr(repo, "empty", False)):
@@ -137,9 +146,10 @@ def github_analysis_inventory(
                         "name": slug,
                         "url": getattr(repo, "html_url", "") or "",
                         "default_branch": getattr(repo, "default_branch", "") or "",
-                        "archived": bool(getattr(repo, "archived", False)),
+                        "archived": archived,
                         "updated_at": pushed.isoformat() if pushed else "",
                         "active": active,
+                        "skip_reason": skip_reason,
                         "paths": paths,
                         "error": tree_error,
                     }
