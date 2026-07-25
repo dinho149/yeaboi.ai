@@ -91,29 +91,51 @@ def _compose(*grids: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _pack(rows: tuple[str, ...]) -> list[Text]:
-    """Compress two pixel rows into each terminal row using ▀/▄ half-blocks."""
-    out: list[Text] = []
+def _pack_cells(rows: tuple[str, ...]) -> list[list[tuple[str, str | None]]]:
+    """Half-block pack to a grid of (glyph, style) cells. A fully-transparent cell
+    is ``(" ", None)`` so callers can composite the sprite over a background by
+    skipping those cells."""
+    out: list[list[tuple[str, str | None]]] = []
     width = len(rows[0]) if rows else 0
     for y in range(0, len(rows), 2):
         top = rows[y]
         bot = rows[y + 1] if y + 1 < len(rows) else "." * width
-        line = Text()
+        cells: list[tuple[str, str | None]] = []
         for x in range(width):
             t = _style(top[x])
             b = _style(bot[x]) if x < len(bot) else None
             if t is None and b is None:
-                line.append(" ")
+                cells.append((" ", None))
             elif t == b:
-                line.append("█", style=t)
+                cells.append(("█", t))
             elif t and b:
-                line.append("▀", style=f"{t} on {b}")
+                cells.append(("▀", f"{t} on {b}"))
             elif t:
-                line.append("▀", style=t)
+                cells.append(("▀", t))
             else:
-                line.append("▄", style=b)
+                cells.append(("▄", b))
+        out.append(cells)
+    return out
+
+
+def _pack(rows: tuple[str, ...]) -> list[Text]:
+    """Compress two pixel rows into each terminal row using ▀/▄ half-blocks."""
+    out: list[Text] = []
+    for cells in _pack_cells(rows):
+        line = Text()
+        for glyph, style in cells:
+            line.append(glyph, style=style)
         out.append(line)
     return out
+
+
+def head_cells(*, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+    """The head sprite as a grid of (glyph, style) cells, for compositing the duck
+    over other content (e.g. running across the splash wordmark). Static frame 0."""
+    grid = DUCK_HEAD
+    if flip:
+        grid = tuple(row[::-1] for row in grid)
+    return _pack_cells(grid)
 
 
 def render_full(frame: int) -> Group:

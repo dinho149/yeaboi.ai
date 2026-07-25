@@ -252,6 +252,52 @@ def _build_crumble_frame(
     return _center_in_panel(rendered, width=width, height=height, block_h=len(text_lines))
 
 
+def _build_run_frame(
+    text_lines: list[str],
+    *,
+    width: int,
+    height: int,
+    duck_col: int,
+    rgb: tuple[int, int, int] = _BRAND_RGB,
+) -> Panel:
+    """The wordmark with the duck composited on top at column ``duck_col`` — used
+    to run him left→right across the text. The duck faces right (its travel
+    direction); its transparent cells let the wordmark show through."""
+    from yeaboi.ui.shared._mascot import head_cells
+
+    inner_w = max(1, width - 6)  # matches _block_left_pad / _center_in_panel
+    cells = head_cells()  # faces right = direction of travel
+    duck_h = len(cells)
+    block_h = max(len(text_lines), duck_h)
+    canvas: list[list[tuple[str, str | None]]] = [[(" ", None)] * inner_w for _ in range(block_h)]
+
+    brand = f"bold rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+    pad_len = len(_block_left_pad(text_lines, width))
+    wm_top = (block_h - len(text_lines)) // 2
+    for r, line in enumerate(text_lines):
+        for c, ch in enumerate(line):
+            x = pad_len + c
+            if ch != " " and 0 <= x < inner_w:
+                canvas[wm_top + r][x] = (ch, brand)
+
+    duck_top = (block_h - duck_h) // 2
+    for r, row in enumerate(cells):
+        for c, (glyph, style) in enumerate(row):
+            if glyph == " " and style is None:
+                continue  # transparent duck cell — let the wordmark show
+            x = duck_col + c
+            if 0 <= x < inner_w and 0 <= duck_top + r < block_h:
+                canvas[duck_top + r][x] = (glyph, style)
+
+    rows: list[Text] = []
+    for row in canvas:
+        line = Text()
+        for glyph, style in row:
+            line.append(glyph, style=style)
+        rows.append(line)
+    return _center_in_panel(Group(*rows), width=width, height=height, block_h=block_h)
+
+
 def _run_wordmark_animation(
     console: Console,
     live: object,
@@ -263,6 +309,7 @@ def _run_wordmark_animation(
     fade_out_frames: int,
     frame_time: float,
     crumble: bool = False,
+    run_duck: bool = False,
 ) -> None:
     """Drive ``live`` through fade-in → diagonal shine → fade-out for a wordmark.
 
@@ -286,6 +333,20 @@ def _run_wordmark_animation(
         w, h = console.size
         live.update(_build_shine_frame(text_lines, width=w, height=h, hotspot=hotspot, rgb=rgb))
         time.sleep(frame_time)
+
+    # Phase 2.5 — the duck runs left → right across the wordmark (splash only).
+    if run_duck:
+        from yeaboi.ui.shared._mascot import head_cells
+
+        _duck_w = len(head_cells()[0]) if head_cells() else 0
+        _col = -_duck_w
+        while True:
+            w, h = console.size
+            live.update(_build_run_frame(text_lines, width=w, height=h, duck_col=_col, rgb=rgb))
+            time.sleep(frame_time)
+            _col += 3  # ~180 cols/sec at 60fps — a brisk waddle across
+            if _col > max(1, w - 6):
+                break
 
     # Phase 3 — Exit: either a whole-block fade (per-mode intros) or a top-left →
     # bottom-right crumble (the brand splash), depending on ``crumble``.
@@ -357,6 +418,7 @@ def show_splash(console: Console) -> None:
             fade_out_frames=60,  # ~1.0s — the wordmark crumbles away top-left → bottom-right
             frame_time=_FRAME_TIME,
             crumble=True,
+            run_duck=True,  # the duck waddles across the wordmark before it crumbles
         )
 
     # Alt-screen is intentionally left active — the next Live(screen=True) in the
