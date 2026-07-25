@@ -503,6 +503,27 @@ class TestDuckHit:
         assert duck_hit(w, h, row=6, col=w - 15) is False
 
 
+class TestCompanionEntrance:
+    """On welcome load the duck slides in from the right, then the tip fades in."""
+
+    def _lane_glyphs(self, txt: str) -> int:
+        # Count block-font glyphs in the right-hand companion lane (col ≥ 85); the
+        # mode titles live well to the left of it, so this is the duck.
+        return sum(ln[85:].count("█") for ln in txt.splitlines())
+
+    def test_duck_offscreen_at_start_present_when_settled(self):
+        early = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=0.0), 120, 40)
+        settled = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=1.0), 120, 40)
+        assert self._lane_glyphs(early) == 0  # duck still off-screen during the slide
+        assert self._lane_glyphs(settled) > 0  # duck arrived in its corner
+
+    def test_tip_bubble_hidden_until_the_duck_settles(self):
+        early = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=0.0), 120, 40)
+        settled = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=1.0), 120, 40)
+        assert "▾" not in early  # no speech-bubble tail while the duck is sliding in
+        assert "▾" in settled  # bubble (and its tail) appear once he's in
+
+
 class TestMusicPocket:
     """The welcome screen boxes the music bar in a bottom-right pocket."""
 

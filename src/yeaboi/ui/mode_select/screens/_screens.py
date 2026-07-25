@@ -13,11 +13,12 @@ from typing import Any
 import rich.box
 from rich.align import Align
 from rich.console import Group, RenderableType
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi.ui.shared._animations import COLOR_RGB, shimmer_style
+from yeaboi.ui.shared._animations import BLACK_RGB, COLOR_RGB, lerp_color, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import PAD
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
@@ -167,6 +168,8 @@ _MIN_HEIGHT = 32
 # menu renders full-width with the tip pinned at the bottom as before.
 _COMPANION_MIN_WIDTH = 108
 _COMPANION_MIN_HEIGHT = 32
+_COMPANION_HEAD_W = 13  # tight render width of the duck head (matches _mascot)
+_COMPANION_REVEAL_FROM = 0.72  # entrance progress at which the tip/update box fade in
 _COMPANION_COLS = 44  # right-hand lane width (bubble + duck); wide enough for the
 # tip bubble to fit the full control row (incl. `g open`) on its border.
 
@@ -320,7 +323,6 @@ def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
     ``t show tips`` hint so the feature is always discoverable/recoverable.
     """
     from yeaboi.config import is_tips_enabled
-    from yeaboi.ui.shared._animations import lerp_color
     from yeaboi.ui.shared._tips import resolve_index, tip_at, tip_brightness
 
     if not is_tips_enabled():
@@ -497,6 +499,7 @@ def _build_mode_screen(
     tip_offset: int = 0,
     sweep_front: float | None = None,
     duck_lift: int | None = None,
+    companion_intro: float = 1.0,
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -603,6 +606,7 @@ def _build_mode_screen(
                 beak_open=beak_open,
                 update_box=update_box,
                 duck_lift=duck_lift,
+                companion_intro=companion_intro,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -748,6 +752,7 @@ def _build_companion(
     beak_open: bool = False,
     update_box: Panel | None = None,
     duck_lift: int | None = None,
+    companion_intro: float = 1.0,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -760,10 +765,13 @@ def _build_companion(
     bubble when a release is available. ``beak_open`` opens his bill for a quack
     when a new tip appears. Bottom-aligned so it sits in the corner regardless of
     terminal height.
+
+    ``companion_intro`` (0→1) drives the screen-load entrance: the duck glides in
+    from the right, and only once he has settled do the tip bubble and update box
+    fade in above him. Defaults to 1.0 (fully settled) so static renders are
+    unchanged.
     """
     # Duck faces left so he looks toward the mode list rather than the wall.
-    # Otherwise static (no bob): the up/down breathing shifted both the duck and
-    # the bubble, which read as jitter — the only motion is the tip-change quack.
     # duck_lift not None → play the double-shades gag (sunglasses raised by that
     # many pixels, second pair revealed underneath); otherwise the resting head.
     head = (
@@ -771,9 +779,23 @@ def _build_companion(
         if duck_lift is not None
         else render_head(0, flip=True, beak_open=beak_open)
     )
+    # Entrance slide: left-pad the head so it glides from the right edge of the lane
+    # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
+    # old Align.center(head) exactly). Extras only appear once he's ~settled.
+    intro = min(1.0, max(0.0, companion_intro))
+    center_pad = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
+    # Near-linear glide (a touch of ease-out for a soft landing) so the slide reads
+    # as smooth constant motion rather than the front-loaded rush ease_out_cubic
+    # gave — which looked like a small slide then a jump.
+    slide = intro * (2.0 - intro)  # ease-out-quad, ~linear across the visible window
+    left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - slide))
+    duck = Padding(head, (0, 0, 0, left_pad))
+    show_extras = intro >= _COMPANION_REVEAL_FROM
+    reveal = min(1.0, max(0.0, (intro - _COMPANION_REVEAL_FROM) / (1.0 - _COMPANION_REVEAL_FROM)))
+
     has_controls = controls is not None and controls.plain.strip()
     parts: list[RenderableType] = []
-    if update_box is not None:
+    if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the
         # bubble, with a blank line separating the two boxes.
         parts.extend([update_box, Text("")])
@@ -782,11 +804,14 @@ def _build_companion(
     while tip and not (tip[0].isascii() and tip[0].isalnum()):  # drop a leading emoji/glyph
         tip = tip[1:]
     tip = tip.strip()
-    if tip:
+    if tip and show_extras:
+        # Fade the bubble in over the reveal window (dark → its resting colours).
+        text_color = lerp_color(reveal, BLACK_RGB, (198, 198, 208))
+        border_color = lerp_color(reveal, BLACK_RGB, (90, 100, 110))
         bubble = Panel(
-            Text(tip, style="rgb(198,198,208)", justify="left"),
+            Text(tip, style=text_color, justify="left"),
             box=rich.box.ROUNDED,
-            border_style="rgb(90,100,110)",
+            border_style=border_color,
             padding=(0, 1),
             width=_COMPANION_COLS - 2,
         )
@@ -797,12 +822,12 @@ def _build_companion(
             bubble.subtitle_align = "center"
         # A small nub centred under the bubble that points down at the duck — a
         # tidy speech-bubble tail rather than a stray diagonal slash.
-        tail = Align.center(Text("▾", style="rgb(90,100,110)"))
+        tail = Align.center(Text("▾", style=border_color))
         parts.extend([bubble, tail])  # extend, not reassign — keep any update_box above
-    elif has_controls:
+    elif has_controls and show_extras:
         # Tips hidden → no bubble to carry the "t show tips" hint; keep it visible.
         parts.append(controls)
-    parts.append(Align.center(head))
+    parts.append(duck)
     # "chilling" is no longer tucked under the duck — it's rendered on the music
     # pocket row, just above the bottom border (see _build_music_pocket caption).
     return Align.center(Group(*parts), vertical="bottom")

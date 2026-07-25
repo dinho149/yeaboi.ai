@@ -90,6 +90,12 @@ _FRAME_TIME = FRAME_TIME_60FPS
 # Menu intro sweep speed, in diagonal-front units per second (see _SWEEP_ROW_WEIGHT
 # and _build_mode_row). Higher = faster wipe-in of the whole menu.
 _MENU_SWEEP_SPEED = 150.0
+# Companion entrance: after the menu wipes in, the duck glides in from the right
+# over this many seconds, then the tip bubble + update box fade in above him.
+_COMPANION_INTRO_SECONDS = 0.55
+# On returning from a sub-page the entrance starts this far along, so he only nudges
+# the little bit forward into the menu spot rather than sliding in from off-screen.
+_COMPANION_RETURN_START = 0.55
 
 
 def _run_output_share_flow(
@@ -7112,6 +7118,7 @@ def select_mode(
             shimmer_tick=0.0,
             desc_reveal=0,
             sweep_front=0.0,
+            companion_intro=0.0,  # duck stays off-screen until it slides in post-wipe
         ),
         console=console,
         refresh_per_second=60,
@@ -7124,6 +7131,7 @@ def select_mode(
         while _restart_mode_select:
             _restart_mode_select = False
 
+            _returning = _skip_fade_in
             if _skip_fade_in:
                 # Esc transition already rendered all items — no reveal needed.
                 # Description typewriter starts fresh from now.
@@ -7150,7 +7158,13 @@ def select_mode(
                         w, h = console.size
                         live.update(
                             _build_mode_screen(
-                                selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, sweep_front=_front
+                                selected,
+                                width=w,
+                                height=h,
+                                shimmer_tick=0.0,
+                                desc_reveal=0,
+                                sweep_front=_front,
+                                companion_intro=0.0,  # duck waits off-screen until the wipe ends
                             )
                         )
                         if _front >= _front_max:
@@ -7158,8 +7172,18 @@ def select_mode(
                         time.sleep(_FRAME_TIME)
                 # Final frame with normal styling (fully revealed)
                 w, h = console.size
-                live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0))
+                live.update(
+                    _build_mode_screen(
+                        selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0
+                    )
+                )
             select_time = time.monotonic()
+            # Companion entrance. Fresh load: full slide-in from off-screen right.
+            # Returning from a sub-page: start most of the way in so he just nudges
+            # the little bit forward into his menu spot (not from off-screen again).
+            _companion_intro_start = time.monotonic() - (
+                _COMPANION_RETURN_START * _COMPANION_INTRO_SECONDS if _returning else 0.0
+            )
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
             while True:
@@ -7303,6 +7327,7 @@ def select_mode(
 
                 w, h = console.size
                 tick = time.monotonic() - start_time
+                companion_intro = min(1.0, (time.monotonic() - _companion_intro_start) / _COMPANION_INTRO_SECONDS)
                 live.update(
                     _build_mode_screen(
                         selected,
@@ -7311,6 +7336,7 @@ def select_mode(
                         shimmer_tick=tick,
                         desc_reveal=reveal,
                         tip_offset=tip_offset,
+                        companion_intro=companion_intro,
                     )
                 )
 
