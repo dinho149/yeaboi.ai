@@ -1373,6 +1373,31 @@ class TestTeamProfileExporter:
         assert log_path.parent.name == "analysis"
         assert "team-analysis-proj-" in log_path.name
 
+    def test_analysis_log_caps_repo_list(self, tmp_path, monkeypatch):
+        """The log lists at most 5 scanned repos (+N more) but keeps every sample."""
+        from dataclasses import replace
+
+        from yeaboi.team_profile import AiAdoptionSignal
+        from yeaboi.team_profile_exporter import write_analysis_log
+
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        profile = replace(
+            _make_extended_profile(),
+            ai_adoption=AiAdoptionSignal(
+                scanned_commits=30,
+                ai_commits=9,
+                footprint_pct=30.0,
+                repos_scanned=tuple(f"acme/repo-{i}" for i in range(8)),
+            ),
+        )
+        examples = {"ai_adoption": {"samples": [{"tool": "claude", "title": f"Sample change {i}"} for i in range(9)]}}
+        content = write_analysis_log(profile, examples=examples).read_text()
+        assert content.count("  Scanned:") == 6  # 5 repos + the "+N more" row
+        assert "Scanned: +3 more repositories" in content
+        assert "Examples (9):" in content
+        for i in range(9):
+            assert f"Sample change {i}" in content
+
 
 # ---------------------------------------------------------------------------
 # Team analysis screen rendering tests (Phase E)

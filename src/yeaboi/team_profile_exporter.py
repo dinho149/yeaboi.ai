@@ -2820,8 +2820,11 @@ def write_analysis_log(
                 f"  Matched identities: {len(ai_blob.get('matched_identities') or {})} "
                 f"of {len(ai_blob['selected_users'])}"
             )
-        for repo in getattr(ai_sig, "repos_scanned", ()):
+        log_repos = list(getattr(ai_sig, "repos_scanned", ()) or ())
+        for repo in log_repos[:5]:
             sections.append(f"  Scanned: {repo}")
+        if len(log_repos) > 5:
+            sections.append(f"  Scanned: +{len(log_repos) - 5} more repositories")
         if ai_sig.per_tool:
             sections.append(
                 "  By tool: "
@@ -2834,7 +2837,7 @@ def write_analysis_log(
             sections.append(f"  Not scanned: {'; '.join(ai_coverage)}")
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
-            sections.append("  Examples:")
+            sections.append(f"  Examples ({len(ai_samples)}):")
             for s in ai_samples:
                 ref = s.get("url") or (f"commit {s.get('key')}" if s.get("key") else "")
                 sections.append(f"    [{s.get('tool', '')}] {s.get('title', '')} {ref}".rstrip())

@@ -200,6 +200,18 @@ def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -
     )
 
 
+_TA_LIST_LIMIT = 6  # scan-coverage repo rows shown before collapsing to "+ N more"
+
+
+def _ta_more_row(ctx: _TaCtx, hidden: int, noun: str) -> None:
+    """Dim '+ N more <noun>' disclosure row closing a capped list."""
+    if hidden <= 0:
+        return
+    t = Text(PAD + "  ", justify="left")
+    t.append(f"+ {hidden} more {noun}", style=c_dim)
+    ctx.add(t)
+
+
 def _ta_metric_tiles(ctx: _TaCtx, tiles: list[tuple[str, str, str, str]]) -> None:
     """Render responsive dashboard tiles: label, value, supporting hint, colour."""
     if not tiles:
@@ -1861,12 +1873,16 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         if blob.get("unmatched_users"):
             ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
 
-    if sig.sources_scanned or getattr(sig, "repos_scanned", ()):
+    repos = list(getattr(sig, "repos_scanned", ()) or ())
+    if sig.sources_scanned or repos:
         ctx.heading("Scan coverage")
         if sig.sources_scanned:
             ctx.kv("Sources", ", ".join(_source_label(s) for s in sig.sources_scanned))
-        for repo in getattr(sig, "repos_scanned", ()):
-            ctx.kv("Repository", repo)
+        if repos:
+            ctx.kv("Repositories", str(len(repos)))
+            for repo in repos[:_TA_LIST_LIMIT]:
+                ctx.kv("", repo)
+            _ta_more_row(ctx, len(repos) - _TA_LIST_LIMIT, "repositories")
 
     _ta_ranked_bars(
         ctx,
@@ -1882,10 +1898,11 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     coverage = blob.get("coverage") if isinstance(blob, dict) else None
     if coverage:
         ctx.heading("Not scanned")
-        for gap in coverage:
+        for gap in coverage[:8]:
             g = Text(PAD + "  ", justify="left")
             g.append(f"• {gap}", style=c_dim)
             _add(g)
+        _ta_more_row(ctx, len(coverage) - 8, "coverage notes (full list in export)")
 
     # Examples — real AI-marked items (with links/SHAs) so the numbers are inspectable.
     samples = blob.get("samples") if isinstance(blob, dict) else None
@@ -1895,13 +1912,14 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         table.add_column("Tool", width=14)
         table.add_column("Tracked work", ratio=1)
         table.add_column("Reference", ratio=1)
-        for s in samples:
+        for s in samples[:8]:
             tool = "unlabelled AI" if s.get("tool") == "other_ai" else s.get("tool", "")
             title = str(s.get("title", "")).strip()
             ref = s.get("url") or (f"commit {s.get('key')}" if s.get("key") else "")
             ref_text = Text(str(ref), style=f"underline {c_accent} link {ref}" if s.get("url") else c_example)
             table.add_row(Text(str(tool), style=c_ai_head), Text(title, style=c_value), ref_text)
         ctx.add_table(table)
+        _ta_more_row(ctx, len(samples) - 8, "AI-marked items (full list in export)")
 
     insights = blob.get("insights", {}) if isinstance(blob, dict) else {}
     if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):

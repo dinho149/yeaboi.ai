@@ -1308,6 +1308,52 @@ class TestDeliveryOffScreen:
         ):
             assert expected in combined
 
+    def test_ai_adoption_repo_list_capped_with_more_row(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(
+            scanned_commits=40,
+            ai_commits=8,
+            footprint_pct=20.0,
+            sources_scanned=("github",),
+            repos_scanned=tuple(f"acme/repo-{i:02d}" for i in range(12)),
+        )
+        out = _render(
+            _build_team_analysis_screen(
+                None, examples={}, view="ai-adoption", code_signal=signal, width=100, height=60
+            ),
+            width=100,
+        )
+        assert "Repositories" in out and "12" in out
+        assert "acme/repo-05" in out
+        assert "acme/repo-06" not in out
+        assert "+ 6 more repositories" in out
+
+    def test_ai_adoption_evidence_capped(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+
+        signal = AiAdoptionSignal(scanned_commits=40, ai_commits=12, footprint_pct=30.0)
+        examples = {
+            "ai_adoption": {
+                "samples": [{"tool": "claude", "title": f"Sample change {i:02d}"} for i in range(12)],
+            }
+        }
+        out = _render(
+            _build_team_analysis_screen(
+                None,
+                examples=examples,
+                view="ai-adoption",
+                code_signal=signal,
+                scroll_offset=9999,
+                width=100,
+                height=50,
+            ),
+            width=100,
+        )
+        assert "Sample change 07" in out
+        assert "Sample change 08" not in out
+        assert "+ 4 more AI-marked items" in out
+
     def test_visible_card_order_code_only(self):
         from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
 
