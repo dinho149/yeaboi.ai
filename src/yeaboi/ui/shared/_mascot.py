@@ -47,6 +47,16 @@ DUCK_HEAD: tuple[str, ...] = (
     "....ggGGGGG.....",
 )
 
+# Open-beak variant — identical to DUCK_HEAD except the bill splits into an upper
+# and lower half with a dark mouth gap between (rows 9–10). Toggling with the
+# closed head makes the duck look like he's quacking (used when a new tip appears).
+DUCK_HEAD_QUACK: tuple[str, ...] = (
+    *DUCK_HEAD[:9],
+    "...kggGGkkkkkkkk",  # mouth open (dark gap where the lower bill was)
+    "....kgggbrrbbk..",  # lower bill dropped a row
+    *DUCK_HEAD[11:],
+)
+
 # Per-frame vertical offsets (pixels). Positive = lift the layer up.
 WING_OFF = (0, 1, 2, 2, 1, 0, 0, 0)  # gentle wing flap
 GLASS_OFF = (0, 0, 0, 1, 1, 1, 0, 0)  # slow glasses bob
@@ -145,15 +155,16 @@ def render_full(frame: int) -> Group:
     return Group(*_pack(grid))
 
 
-def render_head(frame: int, *, flip: bool = False) -> Group:
+def render_head(frame: int, *, flip: bool = False, beak_open: bool = False) -> Group:
     """Small head companion: a gentle breathing bob (glints are baked in).
 
     ``flip=True`` mirrors the duck horizontally (reverse each pixel row) so he
     can face the other way — e.g. face left toward the menu when perched on the
-    right-hand side of a screen.
+    right-hand side of a screen. ``beak_open=True`` uses the open-mouth variant
+    (for a quack when a new tip appears).
     """
     f = frame % FRAMES
-    grid = _bob(DUCK_HEAD, HEAD_BOB[f])
+    grid = _bob(DUCK_HEAD_QUACK if beak_open else DUCK_HEAD, HEAD_BOB[f])
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))

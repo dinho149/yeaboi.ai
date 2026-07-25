@@ -20,6 +20,12 @@ from yeaboi.ui.shared._animations import COLOR_RGB, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 from yeaboi.ui.shared._components import PAD
 from yeaboi.ui.shared._mascot import render_head
+from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
+
+# Tip-change quack: the beak toggles for the first _QUACK_SECONDS of each tip
+# window at _QUACK_HZ (so a couple of open/close cycles), then holds still.
+_QUACK_SECONDS = 0.6
+_QUACK_HZ = 6.0
 
 # ---------------------------------------------------------------------------
 # Mode definitions
@@ -467,11 +473,11 @@ def _build_mode_screen(
     # opposite the music bar on the border below it.
     version_row = _build_version_row(width)
 
-    # See docs: "TUI system" — render_head returns a rich.console.Group of
-    # pre-composited half-block (▀/▄) rows. Its frame advances off the same
-    # shimmer_tick that drives the tip cross-fade (slowed a touch so the idle
-    # duck breathes rather than twitches).
-    frame = int(shimmer_tick * 4) % 8
+    # The duck quacks when a new tip appears: his beak toggles open/closed a few
+    # times over the first _QUACK_SECONDS of each tip window (tips rotate every
+    # TIP_ROTATE_SECONDS). shimmer_tick is the continuous animation clock.
+    _tw = shimmer_tick % TIP_ROTATE_SECONDS
+    beak_open = _tw < _QUACK_SECONDS and int(_tw * _QUACK_HZ) % 2 == 1
 
     if show_companion:
         # Only the modes and the duck are column-split; the control + version rows
@@ -491,7 +497,7 @@ def _build_mode_screen(
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
         grid.add_column(width=_COMPANION_COLS)
-        grid.add_row(left_col, _build_companion(tip_rows[0], frame))
+        grid.add_row(left_col, _build_companion(tip_rows[0], beak_open=beak_open))
         body_renderable: RenderableType = Group(grid, tip_rows[1], version_row)
     else:
         inner_h = height - 4
@@ -517,7 +523,7 @@ def _build_mode_screen(
     )
 
 
-def _build_companion(tip_line: Text, frame: int) -> RenderableType:
+def _build_companion(tip_line: Text, *, beak_open: bool = False) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it.
 
@@ -525,12 +531,16 @@ def _build_companion(tip_line: Text, frame: int) -> RenderableType:
     tips are hidden — then only the duck shows). The bubble uses a plain, static
     copy of the tip: the per-frame cross-fade is dropped (it flickers in a box)
     and any leading emoji is stripped (a wide glyph in a bordered Panel breaks the
-    border). Bottom-aligned so it sits in the corner regardless of terminal height.
+    border). ``beak_open`` opens his bill for a quack when a new tip appears.
+    Bottom-aligned so it sits in the corner regardless of terminal height.
     """
     # Duck faces left so he looks toward the mode list rather than the wall.
-    # Static frame (no bob): the up/down breathing shifted both the duck and the
-    # speech bubble every few frames, which read as jitter — keep him still.
-    duck = Group(render_head(0, flip=True), Text("chilling", style="rgb(120,130,140)", justify="center"))
+    # Otherwise static (no bob): the up/down breathing shifted both the duck and
+    # the bubble, which read as jitter — the only motion is the tip-change quack.
+    duck = Group(
+        render_head(0, flip=True, beak_open=beak_open),
+        Text("chilling", style="rgb(120,130,140)", justify="center"),
+    )
     parts: list[RenderableType] = []
 
     tip = tip_line.plain.strip()
