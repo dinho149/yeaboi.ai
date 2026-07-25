@@ -7370,8 +7370,11 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
-            # 2b: Fade out unselected modes
-            for grey in FADE_OUT_LEVELS:
+            # 2b: Fade out unselected modes — and, in step, fade the tip bubble +
+            # update box out (the duck stays put so the sub-page overlay can continue
+            # him into his corner). The mirror of the fade-in on arrival.
+            _nfade = max(1, len(FADE_OUT_LEVELS) - 1)
+            for _i, grey in enumerate(FADE_OUT_LEVELS):
                 w, h = console.size
                 live.update(
                     _build_mode_screen(
@@ -7382,6 +7385,7 @@ def select_mode(
                         fade_style=grey,
                         fade_indices=others,
                         selected_style=base_style,
+                        extras_reveal=1.0 - (_i / _nfade),
                     )
                 )
                 time.sleep(_FRAME_TIME)

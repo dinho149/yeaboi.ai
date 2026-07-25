@@ -500,6 +500,7 @@ def _build_mode_screen(
     sweep_front: float | None = None,
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
+    extras_reveal: float | None = None,
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -607,6 +608,7 @@ def _build_mode_screen(
                 update_box=update_box,
                 duck_lift=duck_lift,
                 companion_intro=companion_intro,
+                extras_reveal=extras_reveal,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -753,6 +755,7 @@ def _build_companion(
     update_box: Panel | None = None,
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
+    extras_reveal: float | None = None,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -789,9 +792,19 @@ def _build_companion(
     # ease-out variants reached the spot early (~85%) then sat, which read as the
     # duck jumping the final stretch.
     left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - intro))
-    duck = Padding(head, (0, 0, 0, left_pad))
-    show_extras = intro >= _COMPANION_REVEAL_FROM
-    reveal = min(1.0, max(0.0, (intro - _COMPANION_REVEAL_FROM) / (1.0 - _COMPANION_REVEAL_FROM)))
+    # Pad on BOTH sides to the full lane width so the duck's column never shifts when
+    # the tip bubble/controls above him appear or disappear (otherwise the group
+    # narrows and Align.center re-centres the lone duck).
+    right_pad = max(0, _COMPANION_COLS - _COMPANION_HEAD_W - left_pad)
+    duck = Padding(head, (0, right_pad, 0, left_pad))
+    # Tip/update-box opacity. Normally derived from the duck's entrance (they appear
+    # once he's ~settled); ``extras_reveal`` overrides it so the exit transition can
+    # fade them out while the duck stays put (see Phase 2b in mode_select).
+    if extras_reveal is None:
+        reveal = min(1.0, max(0.0, (intro - _COMPANION_REVEAL_FROM) / (1.0 - _COMPANION_REVEAL_FROM)))
+    else:
+        reveal = min(1.0, max(0.0, extras_reveal))
+    show_extras = reveal > 0.0
 
     has_controls = controls is not None and controls.plain.strip()
     parts: list[RenderableType] = []
