@@ -48,6 +48,7 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _MIN_WIDTH,
     _MODE_CARDS,
     _OFFLINE_CARDS,
+    _SWEEP_ROW_WEIGHT,
     _build_mode_screen,
     _build_slide_frame,
     _build_too_small_screen,
@@ -82,10 +83,9 @@ logger = logging.getLogger(__name__)
 _DESC_SCROLL_SPEED = 200  # characters per second for typewriter reveal
 _HEADER_SUB_SPEED = 45  # characters per second for the page subtitle typewriter reveal
 _FRAME_TIME = FRAME_TIME_60FPS
-# Staggered menu intro: each mode title wipes in at _MENU_INTRO_CPS block-font
-# columns/sec, and item i+1 starts _MENU_INTRO_STAGGER seconds after item i.
-_MENU_INTRO_CPS = 220
-_MENU_INTRO_STAGGER = 0.13
+# Menu intro sweep speed, in diagonal-front units per second (see _SWEEP_ROW_WEIGHT
+# and _build_mode_row). Higher = faster wipe-in of the whole menu.
+_MENU_SWEEP_SPEED = 150.0
 
 
 def _run_output_share_flow(
@@ -7023,16 +7023,16 @@ def select_mode(
     # a flicker-free steady state. 30fps is ample for these gentle animations and
     # halves the redraw load.
     with make_live(
-        # Seed the first frame with NOTHING revealed (not the near-black fade of
-        # all items) so the staggered intro wipes titles in from an empty screen
-        # — otherwise every item flashes in black for one frame before animating.
+        # Seed the first frame with NOTHING revealed (sweep front at 0) so the
+        # diagonal intro wipes titles in from an empty screen — otherwise every
+        # item flashes in for one frame before animating.
         _build_mode_screen(
             selected,
             width=w,
             height=h,
             shimmer_tick=0.0,
             desc_reveal=0,
-            reveal_cols=[0] * n,
+            sweep_front=0.0,
         ),
         console=console,
         refresh_per_second=30,
@@ -7050,31 +7050,31 @@ def select_mode(
                 # Description typewriter starts fresh from now.
                 _skip_fade_in = False
             else:
-                # Staggered intro: each mode title wipes in left-to-right, the top
-                # item first and each next one starting a beat later — overlapping,
-                # not waiting for the previous to finish. Skipped when the terminal
-                # is too small (Phase 1 shows the resize duck instead).
+                # Intro: one coherent diagonal sweep wipes every title in at once,
+                # top-left → bottom-right (the inverse of the splash crumble).
+                # Skipped when the terminal is too small (Phase 1 shows the resize
+                # duck instead).
                 _iw, _ih = console.size
                 if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
                     _widths = mode_title_widths()
+                    # Front value at which the last-revealed cell of each title is
+                    # covered; the sweep runs until the largest of these.
+                    _front_max = 0.0
+                    _rb = 0
+                    for _i in range(n):
+                        _front_max = max(_front_max, (_rb + 1) * _SWEEP_ROW_WEIGHT + _widths[_i])
+                        _rb += (2 + (2 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
+                    _front_max += 2
                     _intro_start = time.monotonic()
                     while True:
-                        _t = time.monotonic() - _intro_start
-                        _reveals = []
-                        _done = True
-                        for _i in range(n):
-                            _it = _t - _i * _MENU_INTRO_STAGGER
-                            _cols = int(_it * _MENU_INTRO_CPS) if _it > 0 else 0
-                            if _cols < _widths[_i]:
-                                _done = False
-                            _reveals.append(min(_cols, _widths[_i]))
+                        _front = (time.monotonic() - _intro_start) * _MENU_SWEEP_SPEED
                         w, h = console.size
                         live.update(
                             _build_mode_screen(
-                                selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, reveal_cols=_reveals
+                                selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, sweep_front=_front
                             )
                         )
-                        if _done:
+                        if _front >= _front_max:
                             break
                         time.sleep(_FRAME_TIME)
                 # Final frame with normal styling (fully revealed)

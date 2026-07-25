@@ -167,6 +167,13 @@ _COMPANION_COLS = 36  # right-hand lane width (bubble + duck)
 # ---------------------------------------------------------------------------
 
 
+# Diagonal intro sweep: a character on absolute menu-row R and title-column C is
+# revealed once the sweep front passes (R * _SWEEP_ROW_WEIGHT + C). A larger
+# weight makes the front more vertical (top items lead by more); smaller makes it
+# a flatter left-to-right curtain. This is the inverse of the splash crumble.
+_SWEEP_ROW_WEIGHT = 4.0
+
+
 def mode_title_widths() -> list[int]:
     """Block-font column width of every mode title, index-aligned to _MODE_CARDS.
 
@@ -184,23 +191,26 @@ def _build_mode_row(
     desc_reveal: float = 0.0,
     override_style: str = "",
     desc_width: int | None = None,
-    reveal_cols: int | None = None,
+    sweep_front: float | None = None,
+    row_base: int = 0,
 ) -> list:
     """Render a mode as ASCII art title + optional description underneath.
 
     Returns a list of Rich renderables (1–3 items depending on state).
     desc_reveal: float — the fractional part fades in the next character for
         a smoother typewriter effect (e.g. 5.4 = 5 solid chars + 1 at 40% opacity).
-    reveal_cols: int | None — during the intro, show only the first N columns of
-        the block-font title so it wipes in left-to-right. None shows the whole
-        title. The row still occupies its full height at any reveal (the two
-        block-font lines are always present, just truncated), so nothing jumps.
+    sweep_front / row_base — the diagonal intro reveal. Each block-font row at
+        absolute menu-row ``row_base + r`` shows only the columns whose diagonal
+        coordinate (row*_SWEEP_ROW_WEIGHT + col) is behind ``sweep_front``, so the
+        whole menu wipes in as one coherent top-left → bottom-right sweep. None
+        shows the full title. Both block-font lines are always present (just
+        truncated), so the row height never changes.
     """
     available = mode["available"]
     color = mode["color"]
     lines = render_ascii_text(mode["title"])
-    if reveal_cols is not None:
-        lines = [line[:reveal_cols] for line in lines]
+    if sweep_front is not None:
+        lines = [line[: max(0, int(sweep_front - (row_base + r) * _SWEEP_ROW_WEIGHT))] for r, line in enumerate(lines)]
 
     rendered = Text(justify="left")
 
@@ -393,12 +403,13 @@ def _build_mode_screen(
     fade_indices: list[int] | None = None,
     selected_style: str = "",
     tip_offset: int = 0,
-    reveal_cols: list[int] | None = None,
+    sweep_front: float | None = None,
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
-    reveal_cols: optional per-mode block-font column count for the staggered
-    intro wipe (index-aligned to _MODE_CARDS). None → every title fully shown.
+    sweep_front: optional diagonal intro-reveal front (see _build_mode_row). None
+    → every title fully shown. All titles share one front, so the menu wipes in as
+    a single coherent top-left → bottom-right sweep.
     """
     show = visible if visible is not None else list(range(len(_MODE_CARDS)))
     fading = fade_indices or []
@@ -414,6 +425,7 @@ def _build_mode_screen(
     # Mode rows
     body: list = []
     body_h = 0
+    row_base = 0  # absolute menu-row of the current item's title, for the sweep
     for i, mode in enumerate(_MODE_CARDS):
         if i not in show:
             continue
@@ -433,13 +445,17 @@ def _build_mode_screen(
             desc_reveal=desc_reveal if is_sel else 0,
             override_style=override,
             desc_width=desc_width,
-            reveal_cols=reveal_cols[i] if reveal_cols is not None else None,
+            sweep_front=sweep_front,
+            row_base=row_base,
         )
         body.extend(items)
-        body_h += 2 + (2 if is_sel else 0)
+        item_rows = 2 + (2 if is_sel else 0)
+        body_h += item_rows
+        row_base += item_rows
         if i < show[-1]:
             body.append(Text(""))
             body_h += 1
+            row_base += 1
 
     # Discoverability tip. _build_tip_rows returns two rows: [tip text, controls].
     # On wide terminals the tip *text* moves into the duck's speech bubble
