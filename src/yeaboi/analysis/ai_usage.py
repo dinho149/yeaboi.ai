@@ -114,6 +114,14 @@ _AI_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # commit that merely *mentions* "windsurf" or "aider" in prose is not AI
     # authorship, and precision matters more than recall for a lower bound.
     (
+        "codex",
+        # Codex cloud PR bodies carry a chatgpt.com/codex/tasks/... footer link.
+        re.compile(
+            r"co-authored-by:.*\bcodex\b|generated (?:with|by) codex|chatgpt\.com/codex|openai\.com/codex",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "cursor",
         re.compile(
             r"co-authored-by:.*\bcursor\b|generated (?:with|by) cursor|agent@cursor\.com|cursor\.com/agents",
@@ -144,6 +152,40 @@ _AI_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+)
+
+# Agent/bot AUTHOR identities — checked against the git author name and email,
+# which the text markers above never see. Anchored full-string / suffix matches
+# only, so a human named "Devin Smith" or a branch of prose never matches:
+# these patterns describe ACCOUNT shapes, not words.
+_AI_AUTHOR_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("claude", re.compile(r"^claude(\[bot\])?$|noreply@anthropic\.com$", re.IGNORECASE)),
+    (
+        "codex",
+        re.compile(r"^(openai-)?codex(\[bot\])?$|^chatgpt-codex-connector(\[bot\])?$", re.IGNORECASE),
+    ),
+    (
+        "copilot",
+        re.compile(
+            r"^(github-)?copilot(-swe-agent)?(\[bot\])?$|^copilot@github\.com$|copilot@users\.noreply\.github\.com$",
+            re.IGNORECASE,
+        ),
+    ),
+    ("cursor", re.compile(r"^cursor\s?agent$|@cursor\.com$", re.IGNORECASE)),
+    ("aider", re.compile(r"\(aider\)$", re.IGNORECASE)),  # aider suffixes the human author name
+    ("devin", re.compile(r"^devin-ai-integration(\[bot\])?$|@devin\.ai$", re.IGNORECASE)),
+    ("gemini", re.compile(r"^google-labs-jules(\[bot\])?$", re.IGNORECASE)),
+)
+
+# Agent-created PR source branches — the strongest default trace some cloud
+# agents leave (Codex cloud and the Copilot coding agent name their branches
+# this way). Prefix-anchored so a human branch like "feature/codex-docs" or
+# "fix-cursor-styles" never matches.
+_AI_BRANCH_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("codex", re.compile(r"^codex/", re.IGNORECASE)),
+    ("copilot", re.compile(r"^copilot/", re.IGNORECASE)),
+    ("cursor", re.compile(r"^cursor/", re.IGNORECASE)),
+    ("devin", re.compile(r"^devin/", re.IGNORECASE)),
 )
 
 # Catch-all handled in _classify_ai_markers (not the table): a co-author LINE
@@ -200,6 +242,47 @@ def _classify_ai_markers(text: str) -> set[str]:
     return hits
 
 
+def _classify_ai_authors(author: str, author_email: str = "") -> set[str]:
+    """Tool ids whose agent/bot account shape matches the git author identity.
+
+    Complements the text markers: an agent that commits under its own account
+    (devin-ai-integration[bot], copilot-swe-agent, ...) often leaves a plain
+    message with no trailer. Generic catch-all: an unknown ``[bot]`` name that
+    looks like an AI (and is not dependency automation) counts as ``other_ai``.
+    """
+    name = (author or "").strip()
+    email = (author_email or "").strip()
+    if not name and not email:
+        return set()
+    hits: set[str] = set()
+    for tool_id, pattern in _AI_AUTHOR_MARKERS:
+        if pattern.search(name) or pattern.search(email):
+            hits.add(tool_id)
+    if not hits and name.lower().endswith("[bot]"):
+        if _OTHER_AI_NAME.search(name) and not _AUTOMATION_BOT_NAME.search(name):
+            hits.add("other_ai")
+    return hits
+
+
+def _classify_ai_item(item: dict) -> set[str]:
+    """All AI-tool ids detectable on a normalized activity item.
+
+    Union of text markers (title+body), author-account markers, and PR
+    source-branch markers, with the same precedence rule as
+    :func:`_classify_ai_markers`: a specific tool hit suppresses ``other_ai``.
+    """
+    hits = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+    hits |= _classify_ai_authors(str(item.get("author", "")), str(item.get("author_email", "")))
+    branch = str(item.get("branch", "") or "")
+    if branch:
+        for tool_id, pattern in _AI_BRANCH_MARKERS:
+            if pattern.search(branch):
+                hits.add(tool_id)
+    if len(hits) > 1:
+        hits.discard("other_ai")
+    return hits
+
+
 # Below this many scanned items a percentage swings wildly on single commits —
 # a member-scoped scan of a quiet fortnight can read "50% AI" off 2 of 4 items.
 _MIN_FOOTPRINT_SAMPLE = 20
@@ -227,9 +310,10 @@ def aggregate_ai_markers(items: list[dict]) -> AiAdoptionSignal:
     """Aggregate scanned commit/PR items into an :class:`AiAdoptionSignal`.
 
     Pure over its input (no network). Each item is a normalized activity dict with
-    ``kind`` ('commit'/'pr'), ``author``, ``title``, optional ``body``, and
-    ``source``. An item is "AI-marked" when :func:`_classify_ai_markers` over its
-    ``title + body`` is non-empty. Returns an all-zero signal for an empty list.
+    ``kind`` ('commit'/'pr'), ``author``, ``title``, optional ``body``/``branch``,
+    and ``source``. An item is "AI-marked" when :func:`_classify_ai_item` finds a
+    text, author-account, or source-branch marker. Returns an all-zero signal for
+    an empty list.
     """
     scanned_commits = scanned_prs = ai_commits = ai_prs = 0
     per_tool: dict[str, int] = {}
@@ -252,7 +336,7 @@ def aggregate_ai_markers(items: list[dict]) -> AiAdoptionSignal:
         if src and src not in sources:
             sources.append(src)
 
-        tools = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+        tools = _classify_ai_item(item)
         if not tools:
             continue
 
@@ -596,20 +680,25 @@ def _identity_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (value or "").strip().lower())
 
 
-def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[list[dict], dict, list[str]]:
-    """Keep only commit/PR items authored by one of ``members``.
+def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[list[dict], dict, list[str], int]:
+    """Keep commit/PR items authored by one of ``members`` or by an AI agent account.
 
     Matches a member name (case-insensitive) against the item's ``author`` OR the
     local-part of its ``author_email`` — the tracker's assignee display name and the
     git commit-author name are different identity spaces and often disagree, so we
-    check both. Returns ``(filtered_items, distinct_authors_matched)``.
+    check both. Items authored by an AI agent/bot account (:func:`_classify_ai_authors`)
+    are also retained: agents act on behalf of the selected members, and dropping
+    them silently zeroes the very footprint this scan measures. The retention is
+    disclosed via the returned count. Returns
+    ``(filtered_items, distinct_authors_matched, unmatched_members, agent_items_retained)``.
     """
     selected = [m.strip() for m in members if m and m.strip()]
     norm = {_identity_key(m): m for m in selected}
     if not norm:
-        return [], {}, selected
+        return [], {}, selected, 0
     kept: list[dict] = []
     matched: dict[str, set[str]] = {m: set() for m in selected}
+    agents_retained = 0
     for it in items:
         author = (it.get("author", "") or "").strip()
         email = (it.get("author_email", "") or "").strip().lower()
@@ -620,9 +709,12 @@ def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[lis
             kept.append(it)
             for key in member_keys:
                 matched[norm[key]].add(author or local)
+        elif _classify_ai_authors(author, email):
+            kept.append(it)
+            agents_retained += 1
     resolved = {member: sorted(identities) for member, identities in matched.items() if identities}
     unmatched = [member for member in selected if member not in resolved]
-    return kept, resolved, unmatched
+    return kept, resolved, unmatched, agents_retained
 
 
 def run_ai_adoption(
@@ -650,8 +742,10 @@ def run_ai_adoption(
     keep the signature stable; scanning currently uses configured code sources.
 
     ``members`` is authoritative: only commits and PRs authored by a selected,
-    resolved identity are retained. An absent selection or zero identity matches
-    produces an explicit empty result; it never broadens to whole-team activity.
+    resolved identity are retained — plus items authored by AI agent/bot accounts
+    (disclosed in coverage), since agents act on behalf of the selected members.
+    An absent selection or zero identity matches produces an explicit empty
+    result; it never broadens to whole-team *human* activity.
     """
     enabled_features = [
         feature for feature in ("ai_footprint", "code_health") if code_features is None or feature in code_features
@@ -703,7 +797,9 @@ def run_ai_adoption(
             items, sources_scanned, coverage, repos_scanned, inventory, coverage_blob = collected
         selected_users = [m.strip() for m in (members or []) if m and m.strip()]
         if selected_users:
-            items, matched_identities, unmatched_users = _filter_items_by_members(items, selected_users)
+            items, matched_identities, unmatched_users, agents_retained = _filter_items_by_members(
+                items, selected_users
+            )
             _report_code_progress(
                 progress,
                 enabled_features,
@@ -720,6 +816,12 @@ def run_ai_adoption(
                 len(matched_identities),
                 len(selected_users),
             )
+            if agents_retained:
+                logger.info("AI-usage member filter retained %d agent-authored item(s)", agents_retained)
+                coverage.append(
+                    f"{agents_retained} agent-authored item(s) retained "
+                    "(AI bot accounts act on behalf of the selected members)"
+                )
             if unmatched_users:
                 coverage.append("unmatched selected users: " + ", ".join(unmatched_users))
             if not items:
@@ -1056,7 +1158,7 @@ def _collect_samples(items: list[dict], limit: int | None = 20) -> list[dict]:
     """AI-marked evidence items for the report (never bodies)."""
     out: list[dict] = []
     for item in items:
-        tools = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+        tools = _classify_ai_item(item)
         if not tools:
             continue
         out.append(

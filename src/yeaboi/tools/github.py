@@ -623,7 +623,8 @@ def github_recent_prs(
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
     else the last ``days`` days. Each PR item: {author, kind='pr', title, body,
-    status, timestamp, key(#num)} (``body`` is the PR description). For the newest
+    branch, status, timestamp, key(#num)} (``body`` is the PR description,
+    ``branch`` the source branch name). For the newest
     in-window PRs (open or merged, capped
     at _MAX_PR_COMMIT_LOOKUPS) the PR's branch commits are also emitted as
     kind='commit' items so unmerged feature-branch work is visible. Returns []
@@ -673,6 +674,9 @@ def github_recent_prs(
                     "kind": "pr",
                     "title": pr.title or "",
                     "body": getattr(pr, "body", "") or "",  # PR description — AI-drafted summaries / trailers live here
+                    # Source branch — cloud agents (Codex, Copilot coding agent)
+                    # name their branches "codex/…"/"copilot/…", a strong AI marker.
+                    "branch": getattr(getattr(pr, "head", None), "ref", "") or "",
                     "status": status,
                     "timestamp": ts,
                     "key": f"#{pr.number}",

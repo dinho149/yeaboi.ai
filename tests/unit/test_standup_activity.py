@@ -727,6 +727,7 @@ class TestAzdoRepoActivity:
                 creation_date=recent,
                 closed_date=None,
                 repository=repo,
+                source_ref_name="refs/heads/codex/new-pr",
             ),
             SimpleNamespace(
                 pull_request_id=2,
@@ -750,6 +751,8 @@ class TestAzdoRepoActivity:
         items = azdevops_recent_prs("Proj", days=1)
         assert [i["key"] for i in items] == ["!1", "!2"]
         assert items[0]["author"] == "Ivy"
+        assert items[0]["branch"] == "codex/new-pr"  # refs/heads/ stripped
+        assert items[1]["branch"] == ""  # absent on the SDK object → empty
         assert items[1]["status"] == "merged"  # completed → merged label
         assert items[0]["url"] == "https://dev.azure.com/acme/Proj/_git/api/pullrequest/1"
         assert items[1]["url"] == "https://dev.azure.com/acme/Proj/_git/api/pullrequest/2"

@@ -556,6 +556,30 @@ class TestActivityScanCaps:
 
         assert sum(1 for item in items if item.get("kind") == "pr") == _MAX_REPO_PRS
 
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_pr_items_carry_source_branch(self, mock_client):
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = MagicMock()
+        pr.number = 7
+        pr.title = "Fix login"
+        pr.body = ""
+        pr.merged = False
+        pr.state = "open"
+        pr.updated_at = None
+        pr.html_url = ""
+        pr.user.login = "alice"
+        pr.head.ref = "codex/fix-login"
+        pr.get_reviews.return_value = []
+        pr.get_issue_comments.return_value = []
+        pr.get_commits.return_value = []
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        pr_items = [item for item in items if item.get("kind") == "pr"]
+        assert pr_items and pr_items[0]["branch"] == "codex/fix-login"
+
 
 class TestGithubAnalysisInventory:
     @staticmethod

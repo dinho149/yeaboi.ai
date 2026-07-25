@@ -1598,7 +1598,8 @@ def azdevops_recent_prs(
     The v7_1 PR search criteria has no time filters, so PRs are fetched
     newest-first per repo (top 25) and filtered client-side by creation/closed
     date. Each item: {author, author_email, kind='pr', title(+repo name), body,
-    status, timestamp, key(!id)} (``body`` is the PR description). Returns [] on
+    branch, status, timestamp, key(!id)} (``body`` is the PR description,
+    ``branch`` the source branch without the refs/heads/ prefix). Returns [] on
     missing config or API failure.
     """
     project = project or get_azure_devops_project() or ""
@@ -1636,6 +1637,9 @@ def azdevops_recent_prs(
                         "kind": "pr",
                         "title": f"{getattr(pr, 'title', '') or ''} ({repo.name})",
                         "body": getattr(pr, "description", "") or "",
+                        # Source branch — agent-created PRs ("codex/…") carry
+                        # their strongest AI marker here.
+                        "branch": (getattr(pr, "source_ref_name", "") or "").removeprefix("refs/heads/"),
                         "status": "merged" if status == "completed" else status,
                         "timestamp": str(closed or created or "")[:19],
                         "key": f"!{pr_id}",
@@ -1724,6 +1728,9 @@ def azdevops_recent_prs(
                     "kind": "pr",
                     "title": f"{getattr(pr, 'title', '') or ''} ({repo.name})",
                     "body": getattr(pr, "description", "") or "",  # PR description
+                    # Source branch — agent-created PRs ("codex/…") carry
+                    # their strongest AI marker here.
+                    "branch": (getattr(pr, "source_ref_name", "") or "").removeprefix("refs/heads/"),
                     "status": "merged" if status == "completed" else status,
                     "timestamp": str(closed or created or "")[:19],
                     "key": f"!{pr_id}",
