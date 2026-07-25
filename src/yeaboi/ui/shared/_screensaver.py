@@ -164,10 +164,11 @@ def _cells_to_text(row: list[tuple[str, str | None]], left_pad: int) -> Text:
     return t
 
 
-# Rows kept clear at the saver foot: 3 for the music pocket the frame draws over it
-# + 1 gap, so the duck walks on a floor line ABOVE the pocket rather than on it.
-_SAVER_FOOT_RESERVE = 4
+# Rows kept clear at the saver foot for the music pocket the frame draws over the
+# bottom rows — the duck's floor sits just above it (near the bottom border).
+_SAVER_FOOT_RESERVE = 2
 _SAVER_DUCK_W = 34  # full duck trace width
+_SAVER_JUMP_H = 4  # how many rows he springs up as he reaches the music tab
 
 
 def build_screensaver(*, width: int, height: int, elapsed: float | None = None) -> RenderableType:
@@ -189,19 +190,24 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         x = int(travel * span)
         facing_left = phase >= 0.5  # heading left on the return leg → mirror him
         foot = int(elapsed * 3.0)  # step cadence, decoupled from the fast wing frame
-        grid = walk_cells(frame, foot=foot, flip=facing_left)
+        # Spring up as he nears the music tab at the right end (the last ~40% of the
+        # leg). While airborne the sunglasses bob; on the ground they hold still.
+        jump = int(_SAVER_JUMP_H * max(0.0, (travel - 0.6) / 0.4))
+        glasses_frame = frame if jump > 0 else 0
+        grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left)
         duck_rows = [_cells_to_text(r, x) for r in grid]
 
         caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
         hint = Text("press any key", style="rgb(95,105,115)", justify="center")
-        above = max(0, content_h - len(duck_rows) - _SAVER_FOOT_RESERVE)
+        below = _SAVER_FOOT_RESERVE + jump  # blank rows under him → raises him mid-jump
+        above = max(0, content_h - len(duck_rows) - below)
         cap_top = max(0, (above - 2) // 2)
         rows: list[RenderableType] = [Text("") for _ in range(cap_top)]
         if above >= 2:
             rows += [caption, hint]
         rows += [Text("") for _ in range(max(0, above - cap_top - 2))]
         rows += duck_rows
-        rows += [Text("") for _ in range(_SAVER_FOOT_RESERVE)]
+        rows += [Text("") for _ in range(below)]
         return Panel(
             Group(*rows),
             border_style="white",

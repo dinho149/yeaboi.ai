@@ -221,11 +221,17 @@ def render_full(frame: int) -> Group:
     return Group(*_pack(grid))
 
 
-def full_cells(frame: int, *, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+def full_cells(
+    frame: int, *, glasses_frame: int | None = None, flip: bool = False
+) -> list[list[tuple[str, str | None]]]:
     """The full-size idle duck (wing-flap + glasses-bob) as (glyph, style) cells, for
-    compositing him over other content — e.g. walking along the saver floor."""
+    compositing him over other content — e.g. walking along the saver floor.
+
+    ``glasses_frame`` drives the glasses bob independently of the wing ``frame`` (so
+    the glasses can hold still while the wings flap); defaults to ``frame``."""
     f = frame % FRAMES
-    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[f]))
+    gf = (frame if glasses_frame is None else glasses_frame) % FRAMES
+    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[gf]))
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
@@ -248,15 +254,17 @@ def _step_foot(cell: tuple[str, str | None]) -> tuple[str, str | None]:
     return cell
 
 
-def walk_cells(frame: int, *, foot: int | None = None, flip: bool = False) -> list[list[tuple[str, str | None]]]:
-    """The full-size duck mid-walk: wing flap + glasses bob (from ``frame``) plus an
-    alternating foot plant, as (glyph, style) cells for compositing him moving along
-    a surface.
+def walk_cells(
+    frame: int, *, foot: int | None = None, glasses_frame: int = 0, flip: bool = False
+) -> list[list[tuple[str, str | None]]]:
+    """The full-size duck mid-walk: wing flap (from ``frame``) plus an alternating
+    foot plant, as (glyph, style) cells for compositing him moving along a surface.
 
     ``foot`` (its own slow phase, so the steps aren't tied to the fast wing frame)
-    plants the left/right foot in turn on even/odd — defaults to ``frame``. ``flip``
-    mirrors him to face his travel direction."""
-    grid = [list(row) for row in full_cells(frame, flip=False)]
+    plants the left/right foot in turn on even/odd — defaults to ``frame``. The
+    glasses hold still by default (``glasses_frame=0``) — pass a live frame to bob
+    them (e.g. only while jumping). ``flip`` mirrors him to face his travel direction."""
+    grid = [list(row) for row in full_cells(frame, glasses_frame=glasses_frame, flip=False)]
     last = len(grid) - 1  # feet occupy the bottom row
     step = frame if foot is None else foot
     down = _FULL_LEFT_FOOT if step % 2 == 0 else _FULL_RIGHT_FOOT
