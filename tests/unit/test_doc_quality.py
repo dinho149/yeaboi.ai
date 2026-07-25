@@ -72,6 +72,42 @@ class TestClarityMetrics:
         assert m["long_sentence_pct"] > 0
 
 
+class TestCodeAwareScoring:
+    def test_fenced_code_excluded_from_readability(self):
+        from yeaboi.analysis.doc_quality import _usefulness_metrics
+
+        prose = "Run the deploy. It is safe. Check the logs. All good."
+        code = "```\nkubernetes_deployment_reconciliation_orchestrator --enable-multiregional-failover\n```\n"
+        plain = _clarity_metrics(prose)
+        with_code = _clarity_metrics(code + prose)
+        assert plain["has_code_blocks"] is False
+        assert with_code["has_code_blocks"] is True
+        # The fenced identifiers must not drag the Flesch score down.
+        assert with_code["clarity"] == plain["clarity"]
+        assert _usefulness_metrics(code + prose)  # signal only — no crash, no weight change
+
+    def test_owner_table_row_detected(self):
+        from yeaboi.analysis.doc_quality import _usefulness_metrics
+
+        assert _usefulness_metrics("Owner | Jane\n\nRun the procedure below.")["owned"] is True
+
+    def test_bold_owner_line_detected(self):
+        from yeaboi.analysis.doc_quality import _usefulness_metrics
+
+        assert _usefulness_metrics("**Owner**: Jane")["owned"] is True
+
+
+class TestScoringCacheVersion:
+    def test_v2_cached_scores_not_reused_after_bump(self, tmp_path):
+        from yeaboi.analysis.doc_quality import _DOC_CACHE_TASK, _DOC_SCORING_VERSION
+        from yeaboi.team_profile import TeamProfileStore
+
+        assert _DOC_SCORING_VERSION != "deterministic-v2"
+        with TeamProfileStore(tmp_path / "db.sqlite") as store:
+            store.save_analysis_enrichment(_DOC_CACHE_TASK, "page-key", "deterministic-v2", {"clarity": 10.0})
+            assert store.load_analysis_enrichment(_DOC_CACHE_TASK, "page-key", _DOC_SCORING_VERSION) is None
+
+
 class TestAggregate:
     def _pages(self):
         return [

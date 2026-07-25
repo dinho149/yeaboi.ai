@@ -57,6 +57,7 @@ _TEXT_BLOCK_TYPES = (
     "callout",
     "toggle",
     "code",
+    "table_row",
 )
 
 
@@ -112,12 +113,14 @@ def _rich_text_to_plain(rich_text: list) -> str:
 
 
 def _blocks_to_text(blocks: list) -> str:
-    """Convert a list of Notion block dicts to LLM-readable plain text.
+    """Convert a list of Notion block dicts to markdown-ish plain text.
 
     Notion's analog of Confluence's _strip_html_tags: walk each block, pull the
-    rich_text of the textual block types, and join them with newlines. Headings
-    keep a blank line before them; list items get a leading bullet. Unknown/media
-    blocks are skipped.
+    rich_text of the textual block types, and join them with newlines. Structure
+    is preserved as markdown markers — headings get ``#`` prefixes, to-dos get
+    checkboxes, code becomes fenced, table rows join cells with `` | `` — because
+    the doc-quality heuristics look for exactly those markers and LLM readers
+    parse them naturally. Unknown/media blocks are skipped.
     """
     lines: list[str] = []
     for block in blocks:
@@ -127,14 +130,27 @@ def _blocks_to_text(blocks: list) -> str:
         if btype not in _TEXT_BLOCK_TYPES:
             continue
         payload = block.get(btype, {}) if isinstance(block.get(btype), dict) else {}
+        if btype == "table_row":
+            cells = [_rich_text_to_plain(cell) for cell in payload.get("cells", []) if isinstance(cell, list)]
+            row = " | ".join(cell for cell in cells if cell)
+            if row:
+                lines.append(row)
+            continue
         text = _rich_text_to_plain(payload.get("rich_text", []))
         if not text:
             continue
         if btype.startswith("heading"):
+            level = {"heading_1": "#", "heading_2": "##", "heading_3": "###"}.get(btype, "#")
             lines.append("")
-            lines.append(text)
-        elif btype in ("bulleted_list_item", "numbered_list_item", "to_do"):
+            lines.append(f"{level} {text}")
+        elif btype == "to_do":
+            lines.append(f"- [{'x' if payload.get('checked') else ' '}] {text}")
+        elif btype in ("bulleted_list_item", "numbered_list_item"):
             lines.append(f"- {text}")
+        elif btype == "code":
+            lines.append("```")
+            lines.append(text)
+            lines.append("```")
         else:
             lines.append(text)
     return "\n".join(lines).strip()

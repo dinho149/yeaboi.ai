@@ -96,25 +96,51 @@ def _http_retry_after(e) -> str:
 
 
 def _strip_html_tags(html: str) -> str:
-    """Strip HTML/XML tags from Confluence storage format for LLM-readable plain text.
+    """Convert Confluence storage-format XHTML to markdown-ish plain text.
 
-    Confluence pages are stored as XHTML ('storage format'). This function converts
-    them to readable plain text by:
-      1. Converting <br> and </p> to newlines for natural paragraph breaks.
-      2. Removing all remaining tags.
-      3. Expanding common HTML entities.
-      4. Collapsing excess whitespace.
+    Emits structure markers instead of deleting them — headings become ``# ``
+    lines, list items become ``- `` lines, table cells join with `` | ``, and
+    code macros become fenced blocks. The doc-quality heuristics look for exactly
+    these markers (a plain tag-strip made every real page score "no structure"),
+    and every other consumer is an LLM or heuristic reader for whom markdown-ish
+    output is strictly clearer than tag soup.
     """
-    # Preserve paragraph and line breaks as newlines before stripping all tags.
-    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    # 1. Code first: unwrap code/noformat macro CDATA and <pre> bodies into
+    #    fenced blocks so readability scoring can treat them as code, not prose.
+    text = re.sub(
+        r"<ac:structured-macro[^>]*ac:name=\"(?:code|noformat)\"[^>]*>.*?<!\[CDATA\[(.*?)\]\]>"
+        r".*?</ac:structured-macro>",
+        lambda m: "\n```\n" + m.group(1) + "\n```\n",
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = re.sub(
+        r"<pre[^>]*>(.*?)</pre>",
+        lambda m: "\n```\n" + re.sub(r"<[^>]+>", "", m.group(1)) + "\n```\n",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    # 2. Headings → markdown heading lines.
+    text = re.sub(r"<h([1-6])[^>]*>", lambda m: "\n" + "#" * int(m.group(1)) + " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</h[1-6]>", "\n", text, flags=re.IGNORECASE)
+    # 3. List items → markdown bullets.
+    text = re.sub(r"<li[^>]*>", "\n- ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(?:ul|ol)>", "\n", text, flags=re.IGNORECASE)
+    # 4. Tables: cells join with a pipe, rows end the line — an "Owner | Jane"
+    #    row survives as one line the ownership heuristic can see.
+    text = re.sub(r"</t[dh]>", " | ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</tr>", "\n", text, flags=re.IGNORECASE)
+    # 5. Paragraph and line breaks as newlines before stripping all remaining tags.
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-    # Remove all remaining HTML/XML tags.
     text = re.sub(r"<[^>]+>", " ", text)
     # Expand common HTML entities.
     for entity, char in [("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&nbsp;", " ")]:
         text = text.replace(entity, char)
-    # Collapse multiple whitespace/newlines into a single space or newline.
+    # Collapse multiple whitespace/newlines into a single space or newline, and
+    # drop the indent that stripped wrapper tags leave in front of structure markers.
     text = re.sub(r" {2,}", " ", text)
+    text = re.sub(r"(?m)^ +", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

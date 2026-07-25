@@ -73,7 +73,11 @@ _DOC_READ_WORKERS = {"confluence": 8, "notion": 2}
 _DOC_INITIAL_WORKERS = {"confluence": 4, "notion": 2}
 _DOC_RETRY_BASE_SECONDS = 0.25
 _DOC_CACHE_TASK = "documentation_page_score"
-_DOC_SCORING_VERSION = "deterministic-v2"
+# v3: structure-aware extraction (headings/lists/tables/code fences from the
+# Confluence/Notion readers), prose-only Flesch, wider owner detection, and the
+# AI-disclosure gate — cached v2 page scores were built from structure-less text
+# and must not be reused.
+_DOC_SCORING_VERSION = "deterministic-v3"
 _EMPTY_BODY = "empty page body"
 
 # Clarity score bands (0–100, higher = clearer). Aligned to Flesch reading-ease:
@@ -132,8 +136,15 @@ def _clarity_metrics(text: str) -> dict:
     (0–100, higher = clearer) from a Flesch reading-ease approximation plus a small
     structure bonus (headings/lists aid a doc's clarity). Pure — no I/O.
     """
-    sentences = [s for s in re.split(r"[.!?]+(?:\s|$)", text) if s.strip()]
-    words = re.findall(r"[A-Za-z']+", text)
+    # Score readability on PROSE only: fenced code (see the extractors' ``` fences)
+    # is full of long identifiers that tank a Flesch score, so an engineering
+    # runbook full of examples would otherwise read as "unclear". Structure markers
+    # are also counted on the prose — a "#" comment inside a code fence is not a
+    # heading. Having code examples is kept as a neutral signal, not a penalty.
+    prose = re.sub(r"(?s)```.*?```", " ", text)
+    has_code_blocks = prose != text
+    sentences = [s for s in re.split(r"[.!?]+(?:\s|$)", prose) if s.strip()]
+    words = re.findall(r"[A-Za-z']+", prose)
     n_sentences = len(sentences)
     n_words = len(words)
     if n_words == 0 or n_sentences == 0:
@@ -144,6 +155,7 @@ def _clarity_metrics(text: str) -> dict:
             "long_sentence_pct": 0.0,
             "heading_count": 0,
             "has_lists": False,
+            "has_code_blocks": has_code_blocks,
             "clarity": 0.0,
         }
 
@@ -152,8 +164,8 @@ def _clarity_metrics(text: str) -> dict:
     long_sentence_pct = round(long_sentences / n_sentences * 100, 1)
     syllables = sum(_count_syllables(w) for w in words)
 
-    heading_count = len(re.findall(r"(?m)^\s{0,3}#{1,6}\s", text))
-    has_lists = bool(re.search(r"(?m)^\s*(?:[-*•]|\d+[.)])\s", text))
+    heading_count = len(re.findall(r"(?m)^\s{0,3}#{1,6}\s", prose))
+    has_lists = bool(re.search(r"(?m)^\s*(?:[-*•]|\d+[.)])\s", prose))
 
     # Flesch Reading Ease — higher = easier to read. Clamp to 0–100.
     flesch = 206.835 - 1.015 * avg_sentence_words - 84.6 * (syllables / n_words)
@@ -172,6 +184,7 @@ def _clarity_metrics(text: str) -> dict:
         "long_sentence_pct": long_sentence_pct,
         "heading_count": heading_count,
         "has_lists": has_lists,
+        "has_code_blocks": has_code_blocks,
         "clarity": round(clarity, 1),
     }
 
@@ -180,7 +193,9 @@ def _usefulness_metrics(text: str) -> dict:
     """Measure whether a page is structured, owned, and usable for action."""
     lower = text.lower()
     clarity = _clarity_metrics(text)
-    owned = bool(re.search(r"(?im)^\s*(owner|maintainer|contact|responsible)\s*[:\-]", text))
+    # Owner lines survive extraction in several shapes: "Owner: Jane", a bolded
+    # "**Owner** - Jane", or a table row "Owner | Jane" (see _strip_html_tags).
+    owned = bool(re.search(r"(?im)^\s*[*_]{0,2}(owner|maintainer|contact|responsible)[*_]{0,2}\s*[:\-|]", text))
     actionable = bool(
         re.search(
             r"\b(run|execute|deploy|rollback|verify|check|decide|decision|next step|procedure|troubleshoot|resolve)\b",
@@ -297,6 +312,7 @@ def _analyse_page_asset(page: dict) -> dict:
         "owned": useful["owned"],
         "actionable": useful["actionable"],
         "structured": useful["structured"],
+        "has_code_blocks": clarity["has_code_blocks"],
         "marked": _has_ai_disclosure(text),
         "url": page.get("url", ""),
         "key": page.get("key", ""),

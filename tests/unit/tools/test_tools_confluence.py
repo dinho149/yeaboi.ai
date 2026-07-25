@@ -82,6 +82,39 @@ class TestStripHtmlTags:
 # ---------------------------------------------------------------------------
 
 
+class TestStripHtmlTagsStructure:
+    """Structure markers must survive extraction — the doc-quality heuristics
+    look for markdown headings/lists/owner lines."""
+
+    def test_headings_become_markdown(self):
+        result = _strip_html_tags("<h1>Title</h1><p>Body</p><h3>Sub</h3>")
+        assert "# Title" in result
+        assert "### Sub" in result
+
+    def test_list_items_become_bullets(self):
+        result = _strip_html_tags("<ul><li>one</li><li>two</li></ul>")
+        assert "- one" in result
+        assert "- two" in result
+
+    def test_table_row_joins_cells_on_one_line(self):
+        result = _strip_html_tags("<table><tr><th>Owner</th><td>Jane</td></tr></table>")
+        assert any(line.startswith("Owner | Jane") for line in result.splitlines())
+
+    def test_code_macro_becomes_fenced_block(self):
+        html = (
+            '<ac:structured-macro ac:name="code" ac:schema-version="1">'
+            "<ac:plain-text-body><![CDATA[def f():\n    return 1]]></ac:plain-text-body>"
+            "</ac:structured-macro>"
+        )
+        result = _strip_html_tags(html)
+        assert result.count("```") == 2
+        assert "def f():" in result
+
+    def test_pre_block_becomes_fenced(self):
+        result = _strip_html_tags("<p>Run this:</p><pre>make test</pre>")
+        assert "```\nmake test\n```" in result
+
+
 class TestTextToStorage:
     def test_single_paragraph_wrapped(self):
         result = _text_to_storage("Hello world")
