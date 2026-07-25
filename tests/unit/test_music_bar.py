@@ -158,27 +158,26 @@ def test_pocket_pads_short_panel_to_bottom_row():
     assert "channel" in textrow  # music one line below the roof, above the border
 
 
-def test_companion_duck_slides_in_from_the_edge(monkeypatch):
-    # On screen entry the mascot glides in from the right edge into its corner:
-    # off-screen at the start of the slide, fully shown once it settles.
+def test_companion_duck_slides_from_centre_to_the_corner(monkeypatch):
+    # On screen entry the mascot starts relatively central and glides RIGHT into
+    # its corner: its leftmost glyph column moves rightward as the slide settles.
     from yeaboi.ui.shared._music_bar import _MusicPocketFrame
 
     panel = Panel(Text("body"), height=20, padding=(1, 2))
 
-    def render_at(clock: float, slide_start: float, last_draw: float) -> str:
+    def duck_left_col(clock: float, slide_start: float, last_draw: float) -> int:
         _music_bar._duck_slide_start = slide_start
         _music_bar._duck_last_draw = last_draw
         monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
         console = Console(width=80, height=20, file=StringIO())
         lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
-        return "\n".join("".join(seg.text for seg in ln) for ln in lines)
+        cols = ["".join(seg.text for seg in ln).find("█") for ln in lines if "█" in "".join(seg.text for seg in ln)]
+        return min(cols) if cols else -1
 
-    # Settled (progress ≥ 1, no gap reset): the duck's block glyphs are present.
-    settled = render_at(10.6, slide_start=10.0, last_draw=10.5)
-    assert "█" in settled
-    # Just-entered (gap → slide restarts at `now`, progress ≈ 0): duck is off-screen.
-    entering = render_at(50.0, slide_start=0.0, last_draw=0.0)
-    assert "█" not in entering
+    # Early in the slide (progress ≈ 0, no gap reset) vs settled (progress ≥ 1).
+    early = duck_left_col(10.01, slide_start=10.0, last_draw=10.0)
+    settled = duck_left_col(10.6, slide_start=10.0, last_draw=10.5)
+    assert 0 < early < settled  # both visible; the duck moved right into the corner
 
 
 def test_get_renderable_pockets_a_bare_panel():

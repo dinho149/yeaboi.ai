@@ -182,6 +182,7 @@ _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
 _DUCK_RIGHT_MARGIN = 3  # cols kept clear on the right (border + breathing room)
 _DUCK_SLIDE_SECONDS = 0.45  # duration of the slide-into-corner on screen entry
 _DUCK_SLIDE_GAP = 0.25  # a render gap longer than this counts as a fresh screen entry
+_DUCK_SLIDE_DISTANCE = 16  # how far he nudges right into the corner (a little bit)
 
 # Slide-in animation clock (module-level; there is only ever one live screen).
 _duck_slide_start = 0.0
@@ -220,10 +221,13 @@ def draw_companion_duck(console, options, lines: list) -> None:
         _duck_slide_start = now
     _duck_last_draw = now
     progress = min(1.0, (now - _duck_slide_start) / _DUCK_SLIDE_SECONDS)
-    slide = int((1.0 - ease_out_cubic(progress)) * (_DUCK_W + _DUCK_RIGHT_MARGIN + 2))
 
-    rest_dl = width - _DUCK_W - _DUCK_RIGHT_MARGIN  # resting left column of the duck
-    dl = rest_dl + slide  # further right (partly off-screen) while sliding in
+    # He starts at roughly his menu-lane column and glides the little bit RIGHT into
+    # his in-page corner, mirroring the menu->page transition (and the reverse when
+    # going back). Only a small nudge, not a swing in from screen-centre.
+    rest_dl = width - _DUCK_W - _DUCK_RIGHT_MARGIN  # resting left column (the corner)
+    start_dl = max(1, rest_dl - _DUCK_SLIDE_DISTANCE)  # a little left, ~the menu position
+    dl = int(start_dl + (rest_dl - start_dl) * ease_out_cubic(progress))
     right_edge = width - 1  # never overwrite the panel's right border
     if dl >= right_edge:
         return
