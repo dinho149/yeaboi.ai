@@ -977,6 +977,131 @@ class TestRunAiAdoption:
         assert overlapped == [True, True]
         assert "insights" in blob
 
+    def test_member_practices_in_blob(self, monkeypatch):
+        items = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "commit_id": "sha-1",
+                "title": "PAY-7 add retries",
+                "body": "",
+            },
+            {
+                # No commit_id → no change lookup → no file data for this item.
+                "kind": "commit",
+                "author": "Alice",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "title": "tidy imports",
+                "body": "",
+            },
+        ]
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                items,
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.github.github_changed_files",
+            lambda repo, activity: [
+                {
+                    "provider": "github",
+                    "container": "acme",
+                    "repository": repo,
+                    "path": "src/api.py",
+                    "status": "modified",
+                },
+                {
+                    "provider": "github",
+                    "container": "acme",
+                    "repository": repo,
+                    "path": "tests/test_api.py",
+                    "status": "added",
+                },
+            ],
+        )
+        _sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"])
+        practices = blob["member_practices"]
+        row = practices["members"][0]
+        assert row["member"] == "Alice"
+        assert (row["tests_num"], row["tests_den"]) == (1, 1)
+        assert (row["ticket_num"], row["ticket_den"]) == (1, 2)
+        assert practices["file_data"] == {"with_file_data": 1, "total": 2}
+        assert any("based on 1 of 2 items with change metadata" in note for note in blob["coverage"])
+
+    def test_member_practices_without_code_health(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [
+                    {
+                        "kind": "pr",
+                        "author": "Alice",
+                        "source": "github",
+                        "container": "acme",
+                        "repository": "acme/api",
+                        "pr_id": 5,
+                        "status": "merged",
+                        "title": "harden client",
+                        "body": "Reworks the retry loop with jitter.\nAdds a regression test for the timeout path.",
+                    }
+                ],
+                ["github"],
+                [],
+                [],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        _sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"], code_features=["ai_footprint"])
+        row = blob["member_practices"]["members"][0]
+        assert row["tests_den"] == 0 and row["docs_den"] == 0  # no file data without code health
+        assert (row["desc_num"], row["desc_den"]) == (1, 1)
+        assert any("file-level practice signals unavailable" in note for note in blob["coverage"])
+
+    def test_failed_change_lookup_gives_no_file_data(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [
+                    {
+                        "kind": "commit",
+                        "author": "Alice",
+                        "source": "github",
+                        "container": "acme",
+                        "repository": "acme/api",
+                        "commit_id": "sha-1",
+                        "title": "quick fix",
+                        "body": "",
+                    }
+                ],
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+
+        def boom(repo, activity):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", boom)
+        _sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"])
+        practices = blob["member_practices"]
+        assert practices["file_data"] == {"with_file_data": 0, "total": 1}
+        assert practices["members"][0]["tests_den"] == 0
+
 
 # ── Serialization round-trip ───────────────────────────────────────────────
 

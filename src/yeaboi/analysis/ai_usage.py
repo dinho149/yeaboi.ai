@@ -38,6 +38,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from yeaboi.analysis.cancellation import AnalysisCancelledError
+from yeaboi.analysis.practices import member_practices
 from yeaboi.team_profile import AiAdoptionSignal
 
 logger = logging.getLogger(__name__)
@@ -1111,6 +1112,20 @@ def run_ai_adoption(
             if cache_store is not None:
                 cache_store.close()
 
+        # Annotate each item with the file paths its change touched so the
+        # practices scorer can measure tests/docs hygiene. Items whose lookup
+        # was cap-skipped or failed get NO annotation (not an empty list) —
+        # they must stay out of the file-based denominators.
+        if health_enabled:
+            for index, (_prov, _cont, _repo, item) in enumerate(change_requests):
+                files = change_results.get(index)
+                if files is None:
+                    continue
+                ok_files = [file for file in files if str(file.get("status", "")).lower() != "failed"]
+                if files and not ok_files:
+                    continue
+                item["changed_file_paths"] = [str(file.get("path", "")) for file in ok_files if file.get("path")]
+
         file_reports: list[dict] = []
         health_findings: list[dict] = []
         action_plan: list[dict] = []
@@ -1162,6 +1177,17 @@ def run_ai_adoption(
         )
         if agent_row["commits"] or agent_row["prs"]:
             member_activity.append(agent_row)
+        # Practice hygiene (tests / docs / tickets / descriptions) per member —
+        # the lead signal of the card; the footprint is secondary context.
+        practices = member_practices(items, selected_users)
+        file_data = practices["file_data"]
+        if health_enabled and file_data["total"] and file_data["with_file_data"] < file_data["total"]:
+            coverage.append(
+                f"file-level practice signals (tests, docs files) based on "
+                f"{file_data['with_file_data']} of {file_data['total']} items with change metadata"
+            )
+        elif not health_enabled and file_data["total"]:
+            coverage.append("file-level practice signals unavailable — code health disabled")
         blob: dict = {
             "enabled_features": enabled_features,
             "summary": {
@@ -1190,6 +1216,7 @@ def run_ai_adoption(
             "matched_identities": matched_identities,
             "unmatched_users": unmatched_users,
             "member_activity": member_activity,
+            "member_practices": practices,
             "activity_summary": {
                 "commits": commit_count,
                 "authored_prs": pr_count,
