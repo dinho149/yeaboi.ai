@@ -2260,10 +2260,12 @@ def visible_card_order(
         order.extend(k for k in _DELIVERY_CARD_ORDER if k != "insights")
     features = set(analysis_features or ())
     explicit = analysis_features is not None
-    if has_code and (not explicit or "ai_footprint" in features):
-        order.append("ai-adoption")
+    # code-health first: it's deterministic, so it sits with the regular cards,
+    # ABOVE the ✦ AI-POWERED INSIGHTS group the LLM-backed cards render under.
     if has_code_health and (not explicit or "code_health" in features):
         order.append("code-health")
+    if has_code and (not explicit or "ai_footprint" in features):
+        order.append("ai-adoption")
     if has_docs and (not explicit or "documentation" in features):
         order.append("documentation")
     if profile is not None:
@@ -2420,13 +2422,12 @@ def _ta_overview(ctx: _TaCtx, profile, selected_card: int) -> None:
 
     ctx.heading("Sections")
     ctx.overview_first_card_row = ctx.rendered_lines
+    # LLM-backed cards only — code-health is deterministic and deliberately
+    # ordered above this group (see visible_card_order), so no star, no indent.
     ai_keys = {"ai-adoption", "documentation", "insights"}
-    # code-health is deterministic (no LLM) so it never gets the ✦ star, but it
-    # renders inside the AI group and must share the group's 2-column indent.
-    ai_group = ai_keys | {"code-health"}
     ai_heading_added = False
     for i, key in enumerate(ctx.visible_order):
-        if key in ai_group and not ai_heading_added:
+        if key in ai_keys and not ai_heading_added:
             ctx.add(Text(""))
             label = Text(PAD + "  ")
             label.append("✦ AI-POWERED INSIGHTS", style=f"bold {c_ai_head}")
@@ -2440,8 +2441,6 @@ def _ta_overview(ctx: _TaCtx, profile, selected_card: int) -> None:
         row.append("▸ " if selected else "  ", style=c_accent if selected else c_dim)
         if key in ai_keys:
             row.append("✦ ", style=c_ai_head if selected else c_dim)
-        elif key in ai_group:
-            row.append("  ")
         row.append(f"{card['title']:<20s}", style=f"bold {c_accent}" if selected else c_value)
         teaser = _ta_card_teaser(ctx, profile, key)
         if teaser:

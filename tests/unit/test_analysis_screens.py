@@ -2384,19 +2384,24 @@ class TestAnalysisOverview:
         console.print(panel)
         assert "13;31;27" in buf.getvalue()
 
-    def test_overview_code_health_row_aligns_with_ai_rows(self):
-        output = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
+    def test_overview_code_health_sits_above_the_ai_group(self):
+        # Deterministic card: renders with the regular cards, before the ✦ heading.
+        top = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=0)
+        bottom = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
+        combined = top + bottom
+        assert combined.index("Code Health") < combined.index("AI-POWERED INSIGHTS")
         columns = {}
-        for line in output.splitlines():
-            for title in ("AI Footprint", "Code Health", "Documentation"):
+        for line in combined.splitlines():
+            for title in ("Trends & Repos", "Code Health"):
                 if title in line and title not in columns:
                     columns[title] = line.find(title)
-        assert set(columns) == {"AI Footprint", "Code Health", "Documentation"}
+        assert set(columns) == {"Trends & Repos", "Code Health"}
         assert len(set(columns.values())) == 1, columns
 
     def test_overview_code_health_has_no_ai_star(self):
-        output = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
-        for line in output.splitlines():
+        top = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=0)
+        bottom = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
+        for line in (top + bottom).splitlines():
             if "Code Health" in line:
                 assert "✦" not in line
             if "AI Footprint" in line:
