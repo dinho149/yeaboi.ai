@@ -2743,6 +2743,68 @@ class TestDocumentationCard:
         assert "Page evidence" in output  # evidence table
         assert "https://wiki/onboarding" in output + bottom  # page link on example + coaching item
 
+    def test_large_scan_tables_capped_and_never_blank(self):
+        # Regression: a 188-page scan produced flagged/evidence tables hundreds of
+        # rows tall. Tables are atomic renderables for the viewport packer, so one
+        # taller than the viewport rendered as pure blank scroll space. Capped
+        # tables must actually render, with "+ N more" disclosure rows.
+        from yeaboi.team_profile import DocQualitySignal
+
+        sig = DocQualitySignal(
+            pages_scanned=188,
+            platforms_scanned=("confluence",),
+            avg_clarity=50.0,
+            avg_usefulness=45.0,
+            clear_pages=60,
+            mixed_pages=60,
+            unclear_pages=68,
+            per_platform=(("confluence", 188),),
+            flagged_pages=tuple((f"Page {i:03d}", "clarity 30/100 — dense or long-winded") for i in range(100)),
+        )
+        ex = {
+            "doc_quality": {
+                "samples": [
+                    {
+                        "title": f"Page {i:03d}",
+                        "platform": "confluence",
+                        "clarity": 30,
+                        "usefulness": 40,
+                        "url": f"https://wiki/page-{i}",
+                    }
+                    for i in range(188)
+                ],
+                "action_plan": [
+                    {
+                        "priority": "high",
+                        "title": "Rewrite the densest pages",
+                        "detail": "Start with the flagged list.",
+                        "affected_scope": ["confluence"],
+                        "owner_role": "team lead",
+                        "effort": "medium",
+                    }
+                ],
+            }
+        }
+        frames = [
+            _render(
+                _build_team_analysis_screen(
+                    self._profile(sig),
+                    examples=ex,
+                    view="documentation",
+                    scroll_offset=offset,
+                    width=100,
+                    height=40,
+                ),
+                width=100,
+            )
+            for offset in range(0, 70, 5)
+        ]
+        combined = "\n".join(frames)
+        assert "Page 000" in combined  # the capped tables really render
+        assert "+ 92 more flagged pages (full list in export)" in combined
+        assert "+ 180 more scanned pages (full list in export)" in combined
+        assert "Prioritized action plan" in combined  # sections after the tables are reachable
+
     def test_empty_state_and_coverage(self):
         from yeaboi.team_profile import TeamProfile
 

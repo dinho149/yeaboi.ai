@@ -2189,15 +2189,17 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     if sig.per_platform:
         _ta_ranked_bars(ctx, "Platforms", sig.per_platform)
 
-    # Pages worth a look
+    # Pages worth a look. Capped: tables are atomic renderables for the viewport
+    # packer — one taller than the viewport renders as blank scroll space.
     if sig.flagged_pages:
         ctx.heading("Pages needing attention")
         flagged = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
         flagged.add_column("Page", ratio=1)
         flagged.add_column("Why it was flagged", ratio=2)
-        for title, reason in sig.flagged_pages:
+        for title, reason in sig.flagged_pages[:8]:
             flagged.add_row(Text(title, style=c_value), Text(reason, style=c_warn))
         ctx.add_table(flagged)
+        _ta_more_row(ctx, len(sig.flagged_pages) - 8, "flagged pages (full list in export)")
 
     # Examples — real scanned pages (with links) so the scores are inspectable.
     samples = blob.get("samples") if isinstance(blob, dict) else None
@@ -2208,7 +2210,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
         sample_table.add_column("Platform", width=12)
         sample_table.add_column("Clarity", width=9)
         sample_table.add_column("Useful", width=8)
-        for s in samples:
+        for s in samples[:8]:
             title = str(s.get("title", "")).strip()
             url = str(s.get("url", "") or "")
             page = Text(title, style=f"underline {c_accent} link {url}" if url else c_value)
@@ -2221,6 +2223,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
                 Text(f"{s.get('usefulness', 0):.0f}/100", style=c_dim),
             )
         ctx.add_table(sample_table)
+        _ta_more_row(ctx, len(samples) - 8, "scanned pages (full list in export)")
 
     insights = blob.get("insights", {}) if isinstance(blob, dict) else {}
     if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):
