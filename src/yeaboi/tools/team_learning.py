@@ -2274,6 +2274,13 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
     return fallback
 
 
+# Illustrative story examples per point value in the synthesis prompt. The
+# digest's aggregate calibrations already include EVERY story, so the evidence
+# list is examples, not the statistical basis — an uncapped list grows the
+# prompt linearly with board size (slower call, higher parse-failure risk).
+_MAX_POINT_EVIDENCE_PER_VALUE = 6
+
+
 def _generate_analysis_synthesis(
     profile: TeamProfile,
     examples: dict,
@@ -2296,18 +2303,41 @@ def _generate_analysis_synthesis(
         }
         for story in point_stories
     ]
+    # Keep only the LAST N examples per point value — stories arrive in
+    # oldest→newest sprint order, so recency wins; relative order is preserved.
+    grouped_counts: dict[str, int] = {}
+    for entry in point_evidence:
+        value = str(entry.get("points", 0))
+        grouped_counts[value] = grouped_counts.get(value, 0) + 1
+    evidence_omitted = {
+        value: count - _MAX_POINT_EVIDENCE_PER_VALUE
+        for value, count in grouped_counts.items()
+        if count > _MAX_POINT_EVIDENCE_PER_VALUE
+    }
+    if evidence_omitted:
+        kept: list[dict] = []
+        kept_counts: dict[str, int] = {}
+        for entry in reversed(point_evidence):
+            value = str(entry.get("points", 0))
+            if kept_counts.get(value, 0) < _MAX_POINT_EVIDENCE_PER_VALUE:
+                kept_counts[value] = kept_counts.get(value, 0) + 1
+                kept.append(entry)
+        point_evidence = list(reversed(kept))
     fallback = {
         "point_descriptions": _fallback_point_descriptions(point_calibrations),
         "narrative": _fallback_narrative(profile, examples),
         "insights": _fallback_team_insights(profile, examples),
     }
     digest = _build_narrative_digest(profile, examples)
-    prompt_version = "analysis-synthesis-v1"
+    # v2: evidence capped per point value + evidence_omitted counts — bumping the
+    # version keeps v1 cache entries (built from the uncapped shape) from matching.
+    prompt_version = "analysis-synthesis-v2"
     material = json.dumps(
         {
             "version": prompt_version,
             "digest": digest,
             "point_evidence": point_evidence,
+            "evidence_omitted": evidence_omitted,
             "discipline_calibration": discipline_calibration,
             "spillover_correlation": spillover_correlation,
             "include_insights": include_insights,
@@ -2355,12 +2385,13 @@ def _generate_analysis_synthesis(
         prompt += '- "insights": {}.\n'
     prompt += (
         "\nUse plain English, cite concrete numbers, and give actions the team can take next.\n\n"
-        "## Complete metrics digest\n"
-        + digest
-        + "\n\n## Complete story-point evidence\n"
+        "## Complete metrics digest\n" + digest + "\n\n## Story-point evidence (recent examples per point value)\n"
+        "Counts in evidence_omitted are additional stories at that point value not "
+        "shown; the digest's aggregates already include them.\n"
         + json.dumps(
             {
                 "stories": point_evidence,
+                "evidence_omitted": evidence_omitted,
                 "discipline_calibration": discipline_calibration,
                 "spillover_correlation": spillover_correlation,
             },
