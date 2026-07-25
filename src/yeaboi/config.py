@@ -495,6 +495,20 @@ def get_team_analysis_tracker_max_concurrency() -> int:
         return 4
 
 
+def get_team_analysis_max_change_lookups() -> int:
+    """Maximum per-run code-change metadata lookups (each cache miss costs one API call).
+
+    Applied to cache misses only — warm re-runs resolve from the SQLite sha cache
+    and keep full coverage; a capped cold run discloses the truncation in the
+    coverage notes and prefers the newest changes.
+    """
+    raw = os.getenv("TEAM_ANALYSIS_MAX_CHANGE_LOOKUPS", "500")
+    try:
+        return max(50, min(int(raw), 5000))
+    except ValueError:
+        return 500
+
+
 def get_retro_server_port() -> int:
     """Return the base port for the Retro collaboration server (default 5173).
 

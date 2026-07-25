@@ -93,6 +93,19 @@ def test_analysis_tracker_runtime_defaults_and_bounds(monkeypatch):
     assert get_team_analysis_tracker_max_concurrency() == 4
 
 
+def test_analysis_max_change_lookups_defaults_and_bounds(monkeypatch):
+    from yeaboi.config import get_team_analysis_max_change_lookups
+
+    monkeypatch.delenv("TEAM_ANALYSIS_MAX_CHANGE_LOOKUPS", raising=False)
+    assert get_team_analysis_max_change_lookups() == 500
+    monkeypatch.setenv("TEAM_ANALYSIS_MAX_CHANGE_LOOKUPS", "9")
+    assert get_team_analysis_max_change_lookups() == 50
+    monkeypatch.setenv("TEAM_ANALYSIS_MAX_CHANGE_LOOKUPS", "99999")
+    assert get_team_analysis_max_change_lookups() == 5000
+    monkeypatch.setenv("TEAM_ANALYSIS_MAX_CHANGE_LOOKUPS", "invalid")
+    assert get_team_analysis_max_change_lookups() == 500
+
+
 def test_get_anthropic_api_key_raises_when_missing(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(OSError, match="ANTHROPIC_API_KEY is not set"):

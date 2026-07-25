@@ -587,6 +587,46 @@ class TestRunAiAdoption:
         assert updates[-1]["secondary_count"] == 4
         assert updates[-1]["read_only"] is True
 
+    def test_change_lookup_cap_prefers_newest_and_discloses(self, monkeypatch):
+        items = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "commit_id": f"sha-{index}",
+                "title": f"Change {index}",
+                "body": "",
+                "timestamp": f"2026-01-0{index + 1}T00:00:00",
+            }
+            for index in range(4)
+        ]
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                items,
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_max_change_lookups", lambda: 2)
+        fetched: list[str] = []
+
+        def changed(repo, activity):
+            fetched.append(activity[0]["commit_id"])
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", changed)
+
+        _signal, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"], code_features=["code_health"])
+
+        assert sorted(fetched) == ["sha-2", "sha-3"]  # the two newest; older ones skipped
+        assert any("capped at 2 of 4" in note for note in blob["coverage"])
+
     def test_immutable_commit_file_metadata_is_reused(self, monkeypatch, tmp_path):
         item = {
             "kind": "commit",

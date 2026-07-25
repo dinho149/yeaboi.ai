@@ -337,20 +337,20 @@ def collect_ai_activity(
         def _read_github_repo(repo: dict) -> list[dict]:
             name = str(repo.get("name", ""))
             try:
-                return github_recent_commits(
-                    name,
-                    days=window_days,
-                    include_changed_files=False,
-                ) + github_recent_prs(
-                    name,
-                    days=window_days,
-                    include_changed_files=False,
-                )
+                commit_items = github_recent_commits(name, days=window_days, include_changed_files=False)
+                pr_items = github_recent_prs(name, days=window_days, include_changed_files=False)
             except TypeError:
-                return github_recent_commits(name, days=window_days) + github_recent_prs(
-                    name,
-                    days=window_days,
-                )
+                commit_items = github_recent_commits(name, days=window_days)
+                pr_items = github_recent_prs(name, days=window_days)
+            # A full-cap result means older in-window work went unread — surface it
+            # through the coverage loop below ("truncated" status reads repo["error"]).
+            from yeaboi.tools.github import _MAX_REPO_COMMITS, _MAX_REPO_PRS
+
+            if len(commit_items) >= _MAX_REPO_COMMITS and not repo.get("error"):
+                repo["error"] = f"commit scan capped at {_MAX_REPO_COMMITS} newest in window"
+            if sum(1 for item in pr_items if item.get("kind") == "pr") >= _MAX_REPO_PRS and not repo.get("error"):
+                repo["error"] = f"pull-request scan capped at {_MAX_REPO_PRS} most recently updated"
+            return commit_items + pr_items
 
         if active_repos:
             with ThreadPoolExecutor(
@@ -799,6 +799,23 @@ def run_ai_adoption(
                 else:
                     pending.append((index, request))
 
+            # Global cold-run cap: each pending entry is one live API call. Cache
+            # hits above are never capped, so warm re-runs keep full coverage;
+            # newest-first ordering degrades quality toward older evidence.
+            from yeaboi.config import get_team_analysis_max_change_lookups
+
+            lookup_cap = get_team_analysis_max_change_lookups()
+            skipped_lookups = 0
+            if len(pending) > lookup_cap:
+                pending.sort(key=lambda entry: str(entry[1][3].get("timestamp", "")), reverse=True)
+                skipped_lookups = len(pending) - lookup_cap
+                pending = pending[:lookup_cap]
+                coverage.append(
+                    f"code-change inspection capped at {lookup_cap} of {lookup_cap + skipped_lookups} "
+                    "uncached changes (newest first; older changes were not inspected)"
+                )
+            lookup_total = len(change_requests) - skipped_lookups
+
             completed_changes = len(change_results)
             files_found = sum(len(files) for files in change_results.values())
             _report_code_progress(
@@ -806,7 +823,7 @@ def run_ai_adoption(
                 ("code_health",) if health_enabled else (),
                 phase="Reading code-change metadata",
                 current=completed_changes,
-                total=len(change_requests),
+                total=lookup_total,
                 unit="changes inspected",
                 secondary_count=files_found,
                 secondary_unit="file records found",
@@ -863,7 +880,7 @@ def run_ai_adoption(
                             ("code_health",),
                             phase="Reading code-change metadata",
                             current=completed_changes,
-                            total=len(change_requests),
+                            total=lookup_total,
                             unit="changes inspected",
                             secondary_count=files_found,
                             secondary_unit="file records found",

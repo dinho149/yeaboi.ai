@@ -499,3 +499,59 @@ class TestGithubListIssuesRateLimitAndPagination:
         result = github_list_issues.invoke({"repo_url": "owner/repo", "max_issues": 10})
 
         assert "increase max_issues" not in result
+
+
+# ---------------------------------------------------------------------------
+# Activity-scan caps (analysis cold-run bounds)
+# ---------------------------------------------------------------------------
+
+
+class TestActivityScanCaps:
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_commit_iteration_capped(self, mock_client):
+        from datetime import UTC, datetime
+
+        from yeaboi.tools.github import _MAX_REPO_COMMITS, github_recent_commits
+
+        def _commit(index):
+            c = MagicMock()
+            c.sha = f"sha{index:05d}"
+            c.html_url = ""
+            c.commit.message = f"change {index}"
+            c.commit.author.name = "Alice"
+            c.commit.author.email = "a@example.com"
+            c.commit.author.date = datetime(2026, 1, 1, tzinfo=UTC)
+            return c
+
+        repo = mock_client.return_value.get_repo.return_value
+        repo.get_commits.return_value = [_commit(index) for index in range(_MAX_REPO_COMMITS + 40)]
+
+        items = github_recent_commits("owner/repo", days=120, include_changed_files=False)
+
+        assert len(items) == _MAX_REPO_COMMITS
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_pr_listing_sliced_even_without_metadata_cache(self, mock_client):
+        from yeaboi.tools.github import _MAX_REPO_PRS, github_recent_prs
+
+        def _pr(number):
+            pr = MagicMock()
+            pr.number = number
+            pr.title = f"PR {number}"
+            pr.body = ""
+            pr.merged = False
+            pr.state = "open"
+            pr.updated_at = None
+            pr.html_url = ""
+            pr.user.login = "alice"
+            pr.get_reviews.return_value = []
+            pr.get_issue_comments.return_value = []
+            pr.get_commits.return_value = []
+            return pr
+
+        repo = mock_client.return_value.get_repo.return_value
+        repo.get_pulls.return_value = [_pr(number) for number in range(_MAX_REPO_PRS + 30)]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        assert sum(1 for item in items if item.get("kind") == "pr") == _MAX_REPO_PRS

@@ -484,6 +484,14 @@ def _github_changed_files(
 
 _MAX_CHANGED_FILE_LOOKUPS = 25
 
+# Caps for the analysis/standup activity scan: PyGithub pages ~30 items per HTTP
+# request, so an unbounded iteration over a high-churn repo's 120-day window can
+# cost hundreds of round-trips per repo. Mirrors azure_devops.py's scan caps
+# (_MAX_REPO_COMMITS/_MAX_REPO_PRS there); a full-cap result is disclosed as a
+# "truncated" coverage note by the analysis collector.
+_MAX_REPO_COMMITS = 300
+_MAX_REPO_PRS = 100
+
 
 def github_recent_commits(
     repo_url: str,
@@ -508,6 +516,9 @@ def github_recent_commits(
         commits = repo.get_commits(since=_since_dt(days, since))
         items: list[dict] = []
         for index, c in enumerate(commits):
+            if index >= _MAX_REPO_COMMITS:
+                logger.info("github_recent_commits: capped at %d commits for %s", _MAX_REPO_COMMITS, slug)
+                break
             commit = c.commit
             author = commit.author.name if commit.author else ""
             email = (getattr(commit.author, "email", "") or "") if commit.author else ""
@@ -615,8 +626,10 @@ def github_recent_prs(
         cutoff = _since_dt(days, since)
 
         def _list_prs():
+            # Always slice: without the cap this materialises EVERY PR the repo
+            # has ever had (paged ~30/request) before the cutoff break can fire.
             pulls = repo.get_pulls(state="all", sort="updated", direction="desc")
-            return list(pulls[:100] if metadata_cache is not None else pulls)
+            return list(pulls[:_MAX_REPO_PRS])
 
         prs = (
             metadata_cache.memoize(("github", "pull_requests", slug), _list_prs)
