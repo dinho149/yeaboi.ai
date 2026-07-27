@@ -803,7 +803,8 @@ class PokerServer:
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="poker-http", daemon=True)
         self._thread.start()
-        logger.info("poker server up on %s (token=%s…)", self.url.split("?")[0], self.token[:6])
+        # Never log any part of the token (see retro/server.py — same rationale).
+        logger.info("poker server up on %s (token_len=%d)", self.url.split("?")[0], len(self.token))
 
     def stop(self) -> None:
         """Stop serving and free the socket. Safe to call from the TUI thread."""

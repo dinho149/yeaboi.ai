@@ -482,6 +482,21 @@ class TestSettingsScreen:
         output = self._render({}, height=40)
         assert "Data Dir" in output
 
+    def test_allowed_paths_row_rendered(self):
+        output = self._render({"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, height=80)
+        assert "Allowed Paths" in output
+        assert "/repos/team,/tmp/exports" in output
+
+    def test_allowed_paths_empty_shows_sandbox_note(self):
+        output = self._render({}, height=80)
+        assert "none — sandboxed to data dir" in output
+
+    def test_paths_button_rendered(self):
+        # height=40 keeps the Storage section out of the viewport, so "Paths"
+        # can only come from the action-button row.
+        output = self._render({}, height=40)
+        assert "Paths" in output
+
     def test_status_message_rendered(self):
         output = self._render({"_message": "Data directory saved — restart yeaboi to fully apply"})
         assert "restart yeaboi" in output
@@ -541,6 +556,54 @@ class TestCollectSettingsData:
         monkeypatch.delenv("JIRA_BASE_URL", raising=False)
         data = _collect_settings_data()
         assert data.get("JIRA_BASE_URL") == ""
+
+    def test_includes_allowed_paths(self, monkeypatch):
+        from yeaboi.ui.mode_select import _collect_settings_data
+
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/a,/b")
+        data = _collect_settings_data()
+        assert data["YEABOI_ALLOWED_PATHS"] == "/a,/b"
+
+
+class TestAllowedPathsFlow:
+    """_settings_allowed_paths_flow — single-line editor of YEABOI_ALLOWED_PATHS."""
+
+    class _Console:
+        size = (100, 36)
+
+    class _Live:
+        def update(self, _renderable):
+            pass
+
+    def _run(self, monkeypatch, *, current: tuple = (), typed):
+        from yeaboi.ui import mode_select
+
+        calls: list = []
+        monkeypatch.setattr("yeaboi.config.get_allowed_paths", lambda: current)
+        monkeypatch.setattr("yeaboi.config.set_allowed_paths", calls.append)
+        monkeypatch.setattr(mode_select, "_standup_read_line", lambda *a, **k: typed)
+        msg = mode_select._settings_allowed_paths_flow(self._Console(), self._Live(), lambda **k: "", 0.001, True)
+        return calls, msg
+
+    def test_saves_parsed_comma_list(self, monkeypatch):
+        calls, msg = self._run(monkeypatch, typed=" /repos/one , /repos/two ")
+        assert calls == [["/repos/one", "/repos/two"]]
+        assert "2 path" in msg
+
+    def test_dash_clears_whitelist(self, monkeypatch):
+        calls, msg = self._run(monkeypatch, current=("/old",), typed="-")
+        assert calls == [[]]
+        assert "sandboxed" in msg
+
+    def test_esc_aborts_without_saving(self, monkeypatch):
+        calls, msg = self._run(monkeypatch, current=("/old",), typed=None)
+        assert calls == []
+        assert msg == ""
+
+    def test_unchanged_value_is_a_noop(self, monkeypatch):
+        calls, msg = self._run(monkeypatch, current=("/old",), typed="/old")
+        assert calls == []
+        assert msg == ""
 
 
 class TestSettingsTitle:

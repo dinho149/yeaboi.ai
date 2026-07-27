@@ -35,6 +35,8 @@ from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from yeaboi.redaction import RedactingFormatter
+
 logger = logging.getLogger(__name__)
 
 LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
@@ -56,13 +58,39 @@ def _level() -> int:
     return getattr(logging, get_log_level(), logging.WARNING)
 
 
+class _SecureRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler whose files are always owner-only (0o600).
+
+    Log files can carry sensitive detail (paths, project content, redacted-but-
+    adjacent error text), so they get the same treatment as ``.env``. The chmod
+    lives in ``_open()`` rather than a one-shot after construction because
+    rollover renames the current file to ``.1`` (rename preserves perms) and
+    then ``_open()``s a fresh base file at umask-default perms — overriding
+    ``_open()`` hardens the initial file AND every post-rollover file.
+    """
+
+    def _open(self):  # noqa: ANN202 - matches the stdlib signature
+        from yeaboi.config import restrict_permissions
+
+        stream = super()._open()
+        restrict_permissions(Path(self.baseFilename), mode=0o600)
+        return stream
+
+
 def _attach(key: str, path: Path) -> None:
     """Attach a rotating file handler under `key`. Idempotent per key."""
     if key in _handlers:  # already attached — page re-entry is a no-op
         return
+    from yeaboi.config import restrict_permissions
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(path, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8")
-    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+    # Log dirs are 0o700 like ~/.yeaboi itself — YEABOI_HOME may relocate the
+    # tree somewhere that doesn't inherit the hardened root perms.
+    restrict_permissions(path.parent, mode=0o700)
+    handler = _SecureRotatingFileHandler(path, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8")
+    # RedactingFormatter scrubs secrets from every record (incl. tracebacks)
+    # at the one point where the final log line is assembled — see redaction.py.
+    handler.setFormatter(RedactingFormatter(LOG_FORMAT, datefmt=DATE_FORMAT))
     handler.setLevel(_level())
     logging.getLogger(_APP).addHandler(handler)
     logging.getLogger(_APP).setLevel(_level())

@@ -5,6 +5,7 @@ flags and stays untouched; this file covers the new headless mode runners.
 """
 
 import argparse
+import os
 
 import pytest
 
@@ -770,3 +771,53 @@ def test_namespace_type_sanity():
     assert isinstance(args, argparse.Namespace)
     assert args.quick is True
     assert args.command is None
+
+
+class TestAllowPathFlag:
+    """--allow-path grants session-scoped sandbox access (never persisted)."""
+
+    def test_flag_is_repeatable(self):
+        args = build_parser().parse_args(["--allow-path", "/a", "--allow-path", "/b"])
+        assert args.allow_path == ["/a", "/b"]
+
+    def test_defaults_to_empty(self):
+        args = build_parser().parse_args([])
+        assert args.allow_path == []
+
+
+class TestSeedAllowedPaths:
+    """One-time grandfathering of pre-sandbox standup repo paths."""
+
+    def _seed(self):
+        from yeaboi.cli import _seed_allowed_paths_from_standup
+
+        return _seed_allowed_paths_from_standup()
+
+    def test_noop_when_whitelist_already_set(self, monkeypatch):
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/already")
+        self._seed()
+        assert os.environ["YEABOI_ALLOWED_PATHS"] == "/already"
+
+    def test_seeds_from_standup_config(self, monkeypatch, tmp_path):
+        import sqlite3
+
+        from yeaboi import paths as paths_mod
+
+        db = tmp_path / "sessions.db"
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("CREATE TABLE standup_config (session_id TEXT, repo_path TEXT)")
+            conn.execute("INSERT INTO standup_config VALUES ('s1', '/team/repo')")
+            conn.execute("INSERT INTO standup_config VALUES ('s2', '')")
+        monkeypatch.setattr(paths_mod, "DB_PATH", db)
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        self._seed()
+        assert os.environ.get("YEABOI_ALLOWED_PATHS") == "/team/repo"
+
+    def test_noop_without_db(self, monkeypatch, tmp_path):
+        from yeaboi import paths as paths_mod
+
+        monkeypatch.setattr(paths_mod, "DB_PATH", tmp_path / "missing.db")
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        self._seed()
+        assert "YEABOI_ALLOWED_PATHS" not in os.environ

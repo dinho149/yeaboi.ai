@@ -1279,8 +1279,9 @@ def _collect_settings_data() -> dict:
         # Notion (rendered by the settings screen; was missing from this list)
         "NOTION_TOKEN",
         "NOTION_ROOT_PAGE_ID",
-        # Storage (Settings → Data Dir)
+        # Storage (Settings → Data Dir / Paths)
         "YEABOI_HOME",
+        "YEABOI_ALLOWED_PATHS",
         "AZURE_DEVOPS_ORG_URL",
         "AZURE_DEVOPS_PROJECT",
         "AZURE_DEVOPS_TOKEN",
@@ -1368,6 +1369,45 @@ def _settings_data_dir_flow(console: Console, live, read_key, frame_time, suppor
     set_data_dir(value)
     logger.info("Settings: data directory set to %r", value)
     return message
+
+
+def _settings_allowed_paths_flow(console: Console, live, read_key, frame_time, supports_timeout) -> str:
+    """Settings editor for the sandbox whitelist (YEABOI_ALLOWED_PATHS, persisted to ~/.yeaboi/.env).
+
+    One prompt for the comma-separated path list (Enter keeps the current
+    value, blank or ``-`` clears the whitelist back to sandbox-only, Esc
+    aborts). Returns a status message for the Settings page ('' when nothing
+    changed). Mirrors _settings_data_dir_flow.
+    """
+    from yeaboi.config import get_allowed_paths, set_allowed_paths
+    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+
+    logger.info("Settings: opening Allowed Paths editor")
+    current = ", ".join(get_allowed_paths())
+    value = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Allowed paths (comma-separated) — folders yeaboi may access outside ~/.yeaboi",
+        step="Allowed Paths  ·  '-' clears",
+        default=current,
+        theme=SETTINGS_THEME,
+        title=settings_title(),
+    )
+    if value is None:
+        logger.info("Settings: Allowed Paths editor cancelled")
+        return ""
+    value = "" if value.strip() == "-" else value.strip()
+    if value == current:
+        return ""
+    paths = [p.strip() for p in value.split(",") if p.strip()]
+    set_allowed_paths(paths)
+    logger.info("Settings: allowed paths whitelist edited → %r", paths)
+    if not paths:
+        return "Allowed paths cleared — yeaboi is sandboxed to its data directory"
+    return f"Allowed paths saved — {len(paths)} path(s) whitelisted"
 
 
 def _confirm_move_data(console: Console, live, read_key, frame_time, supports_timeout, new_root: Path) -> bool:
@@ -2868,6 +2908,23 @@ def _standup_configure(console: Console, live, read_key, frame_time, supports_ti
     repo_in = _ask("Local git repo path (optional)", "Configure standup  (5/7)", cur_repo)
     if repo_in is None:
         return "Configure cancelled."
+    if repo_in.strip() and repo_in.strip() != cur_repo:
+        # Sandbox pre-flight (main thread): the scheduled standup runs headless
+        # later, where a denial cannot ask — so consent is collected here, at
+        # the moment the user types the path.
+        from yeaboi.ui.shared._consent import _preflight_path_consent
+
+        if not _preflight_path_consent(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            repo_in.strip(),
+            mode="read",
+            context="Daily Standup — local repo scan",
+        ):
+            return "Repo path denied — configure cancelled. Allow it via Settings → Paths."
     # Aliases let your activity (GitHub handle, Jira display name, commit email)
     # attach to YOUR standup card even when the names don't match exactly.
     aliases_in = _ask(
@@ -4539,6 +4596,22 @@ def _performance_get_transcript(console, live, read_key, frame_time, supports_ti
         return None
     path = path.strip()
     if path:
+        # Sandbox pre-flight (main thread): consent BEFORE the read so the
+        # user gets the Allow/Deny popup instead of a SandboxViolationError.
+        from yeaboi.ui.shared._consent import _preflight_path_consent
+
+        if not _preflight_path_consent(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            path,
+            mode="read",
+            context="Performance — 1:1 transcript import",
+        ):
+            logger.info("performance: transcript path denied by sandbox consent: %s", path)
+            return None
         try:
             from pathlib import Path
 
@@ -7167,6 +7240,22 @@ def _run_roadmap_page(
             if not path.exists() or not path.is_file():
                 state["message"] = f"File not found: {path}"
                 return
+            # Sandbox pre-flight (main thread): consent before the engine reads
+            # the file, so a denial is a status line, not an exception mid-run.
+            from yeaboi.ui.shared._consent import _preflight_path_consent
+
+            if not _preflight_path_consent(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                path,
+                mode="read",
+                context="Roadmap intake — local file",
+            ):
+                state["message"] = f"Access to {path} denied — allow it via Settings → Paths."
+                return
             source = RoadmapSource(source_type="local", locator=str(path), label=path.name)
         elif key == "confluence":
             source = RoadmapSource(source_type="confluence", locator=parse_confluence_locator(raw), label=raw)
@@ -8358,6 +8447,15 @@ def select_mode(
     read_key = _read_key_fn or _read_key
     selected = 0
     n = len(_MODE_CARDS)
+
+    # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
+    # consent mode: denials still raise, but ALSO queue a ConsentRequest that
+    # the session loop pops after each graph turn to show the Allow once /
+    # Always allow / Deny popup. Headless paths (cli flags, MCP, scheduled
+    # standups) never set this, so they stay hard-deny with an actionable error.
+    from yeaboi import fs_policy
+
+    fs_policy.set_interactive(True)
 
     # Kick off the one-shot PyPI update check on a daemon thread. Idempotent and
     # fire-and-forget — the bottom-left version row picks the result up whenever
@@ -9613,7 +9711,7 @@ def select_mode(
                     elif sk == "left":
                         _s_sel = max(0, _s_sel - 1)
                     elif sk == "right":
-                        _s_sel = min(3, _s_sel + 1)
+                        _s_sel = min(4, _s_sel + 1)
                     elif sk in ("enter", " "):
                         if _s_sel == 0:
                             # Configure — launch setup wizard
@@ -9637,6 +9735,15 @@ def select_mode(
                             _settings_data = _collect_settings_data()
                             if _dd_msg:
                                 _settings_data["_message"] = _dd_msg
+                        elif _s_sel == 3:
+                            # Paths — edit the sandbox whitelist (YEABOI_ALLOWED_PATHS)
+                            logger.info("Settings: Allowed Paths editor opened")
+                            _ap_msg = _settings_allowed_paths_flow(
+                                console, live, read_key, _FRAME_TIME, _supports_timeout
+                            )
+                            _settings_data = _collect_settings_data()
+                            if _ap_msg:
+                                _settings_data["_message"] = _ap_msg
                         else:
                             logger.info("Settings: user pressed Back")
                             break
@@ -10923,7 +11030,23 @@ def select_mode(
                             elif not p.suffix == ".md":
                                 import_error = f"Expected a .md file, got: {p.suffix or 'no extension'}"
                             else:
-                                return ("project-planning", None, str(p))
+                                # Sandbox pre-flight (main thread): cli.py will
+                                # parse this path headlessly — consent now, so
+                                # the import never dies on a sandbox error.
+                                from yeaboi.ui.shared._consent import _preflight_path_consent
+
+                                if _preflight_path_consent(
+                                    console,
+                                    live,
+                                    read_key,
+                                    _FRAME_TIME,
+                                    _supports_timeout,
+                                    str(p),
+                                    mode="read",
+                                    context="Questionnaire import",
+                                ):
+                                    return ("project-planning", None, str(p))
+                                import_error = f"Access to {p} denied — allow it via Settings → Paths"
 
                             w, h = console.size
                             live.update(

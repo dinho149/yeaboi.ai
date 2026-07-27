@@ -95,6 +95,14 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Confluence": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Settings page: data-directory (YEABOI_HOME) editor.
     "Data Dir": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Settings page: sandbox allowed-paths (YEABOI_ALLOWED_PATHS) editor.
+    "Paths": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Filesystem-sandbox consent popup — Allow once (session-only, green like
+    # Accept), Always allow (persists to .env, amber to signal permanence),
+    # Deny (safe default, grey like Leave).
+    "Allow once": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Always allow": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    "Deny": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Blocked-destination warning popup in the export picker.
     "Open Setup": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Data-dir change: move the existing tree or leave it in place.

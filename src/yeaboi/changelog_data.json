@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.39.0",
+      "date": "2026-07-27",
+      "summary": "Security-hardened release elevating the app's trust foundation across five independent workstreams. A new filesystem sandbox restricts all reads and writes to ~/.yeaboi unless explicitly allowed, with interactive TUI consent and Settings integration. Sensitive credentials and tokens are now redacted from all logs and tracebacks. Every external write tool (Jira/Azure DevOps ticket creation) now requires human confirmation before executing. HTML exports were hardened against XSS injection across all eight exporters with consolidated escaping. File permissions were tightened (chmod 0o600 for logs and database), and a non-blocking CodeQL workflow adds continuous static analysis. Manual end-to-end testing confirms sandbox denial paths work, and all existing functionality remains backward-compatible.",
+      "highlights": [
+        {"text": "New filesystem sandbox: restricts all reads/writes to ~/.yeaboi unless explicitly allowed via Settings, --allow-path flag, or YEABOI_ALLOWED_PATHS env var", "areas": ["settings", "general"]},
+        {"text": "Interactive TUI consent flow for path access: Allow once / Always allow / Deny, with post-turn retry queue", "areas": ["general"]},
+        {"text": "Secret redaction in all logs: automatic scrubbing of env secrets and token shapes from messages and tracebacks", "areas": ["general"]},
+        {"text": "Full write-tool gating: ticket creation tools now require human confirmation before executing", "areas": ["planning", "analysis"]},
+        {"text": "HTML export XSS hardening: consolidated escaping, real-leak fixes across all eight exporters, and probe-injection harness", "areas": ["general", "planning", "standup", "retro", "reporting"]}
+      ]
+    },
+    {
       "version": "2.38.0",
       "date": "2026-07-27",
       "summary": "Every TUI screen now displays with its mode's signature background color — a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",

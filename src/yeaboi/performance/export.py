@@ -14,10 +14,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
-from html import escape as _e
 from pathlib import Path
 
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.html_theme import escape as _e
 from yeaboi.html_theme import html_page, notice_block
 
 logger = logging.getLogger(__name__)

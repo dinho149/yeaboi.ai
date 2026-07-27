@@ -326,7 +326,7 @@ class TestSinceWindow:
         monkeypatch.setattr("yeaboi.tools.github._get_github_client", lambda: client)
         assert github_recent_prs("owner/repo", since=self._SINCE) == []
 
-    def test_local_git_builds_iso_since(self, monkeypatch):
+    def test_local_git_builds_iso_since(self, monkeypatch, tmp_path):
         captured: dict = {}
 
         def fake_run(cmd, **kwargs):
@@ -334,7 +334,9 @@ class TestSinceWindow:
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr("yeaboi.tools.local_git.subprocess.run", fake_run)
-        local_git_recent_commits("/tmp", since=self._SINCE)
+        # tmp_path (whitelisted by the conftest sandbox fixture), not /tmp —
+        # a path outside the sandbox never reaches subprocess.run.
+        local_git_recent_commits(str(tmp_path), since=self._SINCE)
         assert f"--since={self._SINCE.isoformat()}" in captured["cmd"]
 
     def test_notion_cuts_at_since(self, monkeypatch):

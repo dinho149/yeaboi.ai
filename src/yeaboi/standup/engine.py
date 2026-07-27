@@ -254,7 +254,14 @@ def _detect_git_identity(repo_path: str) -> list[str]:
 
     commands: list[list[str]] = []
     if (repo_path or "").strip():
-        commands += [["git", "-C", repo_path, "config", key] for key in ("user.name", "user.email")]
+        # Sandbox: a configured-but-not-whitelisted repo_path contributes no
+        # repo-local identity (global git config still applies below).
+        from yeaboi.fs_policy import is_allowed
+
+        if is_allowed(repo_path, mode="read"):
+            commands += [["git", "-C", repo_path, "config", key] for key in ("user.name", "user.email")]
+        else:
+            logger.warning("standup: repo_path %s is outside the sandbox whitelist — skipping repo identity", repo_path)
     commands += [["git", "config", "--global", key] for key in ("user.name", "user.email")]
 
     identities: list[str] = []

@@ -56,6 +56,10 @@ def _origin_commit_url_base(repo_path: str) -> str:
 
     Returns "" for an unknown host or any failure — the caller then falls back to a
     SHA-only reference. Never raises.
+
+    Note: assumes ``repo_path`` was already sandbox-validated by the caller (its
+    only caller, ``local_git_recent_commits``, runs ``resolve_and_check`` first).
+    A new caller must validate the path before invoking this helper.
     """
     try:
         proc = subprocess.run(
@@ -105,7 +109,16 @@ def local_git_recent_commits(repo_path: str, days: int = 1, since=None) -> list[
     logger.info("local_git_recent_commits: repo_path=%r days=%d since=%s", repo_path, days, since)
     if not repo_path:
         return []
-    path = Path(repo_path).expanduser()
+    # Sandbox check before the git subprocess touches the path. This module's
+    # contract is "never raise" — a denial degrades to [] with a warning (the
+    # standup engine surfaces its own warning for the configured repo_path).
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+    try:
+        path = resolve_and_check(repo_path, mode="read", context="local git activity")
+    except SandboxViolationError as e:
+        logger.warning("local_git_recent_commits skipped — %s", e)
+        return []
     if not path.is_dir():
         logger.warning("local_git_recent_commits skipped — not a directory: %s", path)
         return []

@@ -4817,6 +4817,13 @@ def _build_settings_screen(
     # sessions DB…). Edited via the Data Dir action button.
     _heading("Storage")
     _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)")
+    # Filesystem-sandbox whitelist (fs_policy.py) — edited via the Paths button.
+    _allowed_paths = config_data.get("YEABOI_ALLOWED_PATHS", "")
+    _row(
+        "Allowed Paths",
+        _allowed_paths or "none — sandboxed to data dir",
+        value_style="" if _allowed_paths else theme.dim,
+    )
 
     # ── Daily Standup delivery ────────────────────────────────────
     # Secrets (Slack webhook, SMTP password) are masked like every other credential.
@@ -4873,7 +4880,9 @@ def _build_settings_screen(
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(["Configure", "Log Level", "Data Dir", "Back"], action_sel)
+    btn_top, btn_mid, btn_bot = build_action_buttons(
+        ["Configure", "Log Level", "Data Dir", "Paths", "Back"], action_sel
+    )
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable

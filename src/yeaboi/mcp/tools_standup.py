@@ -166,6 +166,14 @@ def _standup_config_set(
 
     if time and not re.fullmatch(r"\d{1,2}:\d{2}", time):
         raise ValueError(f"time must be HH:MM (24h), got {time!r}")
+    if repo_path:
+        # Sandbox check at write time: this path is later fed to `git -C` by the
+        # standup engine, so it must be whitelisted before it can be persisted.
+        # A violation propagates through the MCP error envelope with the
+        # message naming YEABOI_ALLOWED_PATHS.
+        from yeaboi.fs_policy import resolve_and_check
+
+        resolve_and_check(repo_path, mode="read", context="standup repo_path")
     resolved = resolve_session_id(session_id)
     with StandupStore(get_db_path()) as store:
         current = store.load_config(resolved) or dict(_CONFIG_DEFAULTS)

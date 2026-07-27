@@ -839,6 +839,19 @@ class TestStandupConfigTools:
         assert payload["data"]["tracker_sources"] == ["jira"]
         assert payload["data"]["members"] == ["Alice", "Bob"]
 
+    def test_config_set_rejects_sandboxed_repo_path(self, seeded_session, tmp_path):
+        """A repo_path outside the sandbox whitelist is refused at write time."""
+        payload = call_tool("standup_config_set", {"repo_path": "/denied-sandbox-dir/repo"})
+        assert payload["ok"] is False
+        assert "YEABOI_ALLOWED_PATHS" in payload["error"]["message"]
+
+    def test_config_set_accepts_whitelisted_repo_path(self, seeded_session, tmp_path):
+        repo = tmp_path / "repo"  # tmp_path is whitelisted by the conftest fixture
+        repo.mkdir()
+        payload = call_tool("standup_config_set", {"repo_path": str(repo)})
+        assert payload["ok"] is True
+        assert payload["data"]["config"]["repo_path"] == str(repo)
+
     def test_config_set_rejects_bad_time(self, seeded_session):
         payload = call_tool("standup_config_set", {"time": "quarter past nine"})
         assert payload["ok"] is False

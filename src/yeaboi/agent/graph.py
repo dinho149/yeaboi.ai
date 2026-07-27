@@ -185,7 +185,9 @@ def create_graph(
     graph.add_node("tools", ToolNode(list(tools), handle_tool_errors=True))
 
     # "human_review" node — the human-in-the-loop step for high-risk writes.
-    # Reached when should_continue detects a Jira/Confluence write tool call.
+    # Reached when should_continue detects an external write tool call
+    # (Jira, Azure DevOps, Confluence, Notion) — the WRITE rows of the
+    # per-tool registry in tools/risk.py.
     # Replaces the tool_calls AIMessage with a plain-text confirmation request,
     # then routes to END so the REPL displays the confirmation to the user.
     # If the user confirms, the next invocation's should_continue detects the
