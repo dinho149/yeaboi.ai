@@ -176,9 +176,12 @@ def test_screensaver_animates_between_frames():
     assert rendered(0.0) != rendered(0.375)  # frame 0 vs frame 3 (wing lifted)
 
 
-def test_screensaver_full_tier_minimum_height_keeps_hint():
-    # 22 is the full-tier minimum (18 duck rows + caption + hint + 2 border rows).
-    con = Console(width=60, height=22, record=True, file=open("/dev/null", "w"))
-    con.print(build_screensaver(width=60, height=22, elapsed=0.0))
-    text = con.export_text()
-    assert "press any key" in text
+def test_screensaver_has_no_caption_or_hint():
+    # The "chilling" caption and "press any key" hint were removed — the saver is
+    # just the duck. Check the standing full tier (22) and the walking tier (28).
+    for h in (22, 28):
+        con = Console(width=60, height=h, record=True, file=open("/dev/null", "w"))
+        con.print(build_screensaver(width=60, height=h, elapsed=0.0))
+        text = con.export_text()
+        assert "chilling" not in text and "press any key" not in text
+        assert any(ch in text for ch in "▀▄█")  # the duck art still renders

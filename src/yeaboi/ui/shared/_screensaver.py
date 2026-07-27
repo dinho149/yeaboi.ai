@@ -204,18 +204,10 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left)
         duck_rows = [_cells_to_text(r, x) for r in grid]
 
-        caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
-        hint = Text("press any key", style="rgb(95,105,115)", justify="center")
+        # No caption/hint — just the duck walking along the floor.
         below = _SAVER_FOOT_RESERVE + jump  # blank rows under him → raises him mid-jump
         duck_top = max(0, content_h - len(duck_rows) - below)  # rises as he jumps
-        # Caption pinned near the top (fixed), so it doesn't bob with the jumping duck.
-        cap_top = max(0, min(content_h // 5, duck_top - 2))
-        rows: list[RenderableType] = [Text("") for _ in range(cap_top)]
-        if duck_top - cap_top >= 2:
-            rows += [caption, hint]
-            rows += [Text("") for _ in range(max(0, duck_top - cap_top - 2))]
-        else:
-            rows += [Text("") for _ in range(max(0, duck_top - cap_top))]
+        rows: list[RenderableType] = [Text("") for _ in range(duck_top)]
         rows += duck_rows
         rows += [Text("") for _ in range(below)]
         # build_page_panel (main #104) gives the rounded white border + neutral
@@ -223,8 +215,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         return build_page_panel(Group(*rows), height=max(1, height), padding=(0, 2))
 
     # Thresholds account for the surrounding Panel: the full duck is 18 half-block
-    # rows + caption + hint = 20, plus 2 border rows = 22. Between 22 and the walk
-    # threshold he stands centred.
+    # rows plus 2 border rows. Between this and the walk threshold he stands centred.
     if width >= 46 and height >= 22:
         art: RenderableType | None = render_full(frame)
     elif width >= 22 and height >= 13:
@@ -241,9 +232,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
             label = "YEABOI"[:width]
         inner: RenderableType = Text(label, style="bold rgb(42,170,105)")
     else:
-        caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
-        hint = Text("press any key", style="rgb(95,105,115)", justify="center")
-        inner = Group(art, caption, hint)
+        inner = art  # no caption/hint — just the duck
 
     # Wrap in the app's rounded Panel so the border stays put when the saver takes
     # over the screen — otherwise the frame vanishes on idle. Border-only chrome
