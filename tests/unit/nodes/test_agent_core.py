@@ -766,6 +766,11 @@ class TestUserConfirmed:
     def test_hold_on_is_not_consent(self):
         assert not _user_confirmed("ok wait, hold on")
 
+    def test_bare_go_is_not_consent(self):
+        # "go" alone is discourse ("go back", "go to the board"), not a write approval.
+        assert not _user_confirmed("go back to the plan first")
+        assert not _user_confirmed("go to the board")
+
     def test_dont_is_not_consent(self):
         assert not _user_confirmed("don't")
         assert not _user_confirmed("please don't proceed")

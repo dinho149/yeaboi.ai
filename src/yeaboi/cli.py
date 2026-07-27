@@ -2004,7 +2004,9 @@ def main(argv: list[str] | None = None) -> None:
             parsed = parse_questionnaire_md(qpath)
             questionnaire = build_questionnaire_from_answers(parsed)
             console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
-        except ValueError as e:
+        except (ValueError, fs_policy.SandboxViolationError) as e:
+            # A sandbox denial (path outside the whitelist) prints the same
+            # clean message as --description @file / perf @transcript, not a traceback.
             console.print(f"[red]Error: {e}[/red]")
             sys.exit(1)
 

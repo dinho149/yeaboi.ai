@@ -330,7 +330,9 @@ _HIGH_RISK_TOOLS: frozenset[str] = high_risk_tool_names()
 # again; a false positive would write to an external tracker.
 _NEGATION_RE = re.compile(r"\b(no|not|don'?t|never|stop|cancel|wait|hold)\b")
 
-_AFFIRM_TOKENS = {"yes", "y", "ok", "okay", "sure", "confirm", "proceed", "yep", "yup", "go"}
+# Bare "go" is deliberately NOT here — "go back to the plan" / "go to the board"
+# are not consent to a write. It only confirms as the phrase "go ahead" below.
+_AFFIRM_TOKENS = {"yes", "y", "ok", "okay", "sure", "confirm", "proceed", "yep", "yup"}
 _AFFIRM_PHRASES = ("go ahead", "please proceed", "please go ahead")
 
 
@@ -599,8 +601,9 @@ def should_continue(state: ScrumState) -> str:
     #   low/medium-risk      → "tools"         (auto-execute via ToolNode)
     #   high-risk            → "human_review"  (pause for user confirmation)
     #
-    # High-risk tools are Jira/Confluence write operations that create or modify
-    # external records and cannot be easily undone. _HIGH_RISK_TOOLS lists them.
+    # High-risk tools are external write operations (Jira, Azure DevOps,
+    # Confluence, Notion) that create or modify records and cannot be easily
+    # undone. _HIGH_RISK_TOOLS lists them (the WRITE rows of tools/risk.py).
     #
     # Confirmation detection: if the immediately preceding messages show that
     # the user already confirmed (human_review asked → user said "yes"), route

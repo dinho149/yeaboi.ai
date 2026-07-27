@@ -56,6 +56,10 @@ def _origin_commit_url_base(repo_path: str) -> str:
 
     Returns "" for an unknown host or any failure — the caller then falls back to a
     SHA-only reference. Never raises.
+
+    Note: assumes ``repo_path`` was already sandbox-validated by the caller (its
+    only caller, ``local_git_recent_commits``, runs ``resolve_and_check`` first).
+    A new caller must validate the path before invoking this helper.
     """
     try:
         proc = subprocess.run(
