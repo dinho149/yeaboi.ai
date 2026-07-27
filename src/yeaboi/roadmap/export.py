@@ -97,8 +97,12 @@ def build_roadmap_markdown(analysis: RoadmapAnalysis) -> str:
 
 
 def build_roadmap_html(analysis: RoadmapAnalysis) -> str:
-    """Return the roadmap analysis as a self-contained HTML document (shared design system)."""
-    from yeaboi.html_theme import chip, html_page, notice_block
+    """Return the roadmap analysis as a self-contained HTML document (shared design system).
+
+    No trend sparkline by design: roadmap runs are ad-hoc ingestions, so a
+    run-over-run series has no meaningful cadence.
+    """
+    from yeaboi.html_theme import chip, counted_segment_bar, html_page, notice_block, prose_bullets
 
     when = (analysis.generated_at or "")[:10]
     meta = [x for x in (analysis.source_type, analysis.source_locator) if x]
@@ -111,17 +115,41 @@ def build_roadmap_html(analysis: RoadmapAnalysis) -> str:
 
     if analysis.projects:
         parts.append("<h2>Recommended projects</h2>")
+        # At-a-glance mix: projects by size (and by quarter when present).
+        size_counts: dict[str, int] = {}
+        quarter_counts: dict[str, int] = {}
+        for project in analysis.projects:
+            size_counts[_size_label(project)] = size_counts.get(_size_label(project), 0) + 1
+            if project.quarter:
+                quarter_counts[project.quarter] = quarter_counts.get(project.quarter, 0) + 1
+        breakdown = counted_segment_bar(sorted(size_counts.items()), title="Projects by size")
+        if breakdown:
+            parts.append(f"<div style='margin-bottom:.6rem'>{breakdown}</div>")
+        if len(quarter_counts) > 1:
+            by_quarter = counted_segment_bar(sorted(quarter_counts.items()), title="Projects by quarter")
+            parts.append(f"<div style='margin-bottom:.6rem'>{by_quarter}</div>")
+
         for i, project in enumerate(analysis.projects):
             index = project.priority or (i + 1)
             badge_kind = "warn" if getattr(project, "size", "") == "large" else "ok"
-            parts.append(f"<h3>{index}. {_e(project.name)} {chip(_size_label(project), badge_kind)}</h3>")
-            project_meta = _meta(project)
-            if project_meta:
-                parts.append(f"<p style='color:var(--text-muted);font-size:.9rem'>{_e(project_meta)}</p>")
+            card: list[str] = [
+                f"<div class='card-header'><div class='card-title'><strong>{index}. {_e(project.name)}</strong>"
+                f"</div><div class='card-meta'>{chip(_size_label(project), badge_kind)}"
+            ]
+            # Quarter + themes as a chip row in the header meta.
+            if project.quarter:
+                card.append(chip(project.quarter))
+            card.extend(chip(theme) for theme in project.themes)
+            card.append("</div></div>")
             if project.description:
-                parts.append(f"<p>{_e(project.description).replace(chr(10), '<br>')}</p>")
+                lis = "".join(f"<li>{_e(fragment)}</li>" for fragment in prose_bullets(project.description))
+                if lis:
+                    card.append(f"<div class='analysis-section'><ul>{lis}</ul></div>")
             if project.rationale:
-                parts.append(f"<p><strong>Why now:</strong> {_e(project.rationale)}</p>")
+                card.append(
+                    f"<p style='margin-top:.4rem'><span class='badge'>Why now</span> {_e(project.rationale)}</p>"
+                )
+            parts.append(f"<div class='card story-card'>{''.join(card)}</div>")
     else:
         parts.append("<p><em>No projects were extracted from the roadmap.</em></p>")
 

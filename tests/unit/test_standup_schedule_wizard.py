@@ -170,7 +170,7 @@ class TestScheduleWizard:
 class TestIdentityFlow:
     """The slimmed session-page Identity action (repo path + aliases only)."""
 
-    def _run(self, tmp_path, monkeypatch, values, config=None):
+    def _run(self, tmp_path, monkeypatch, values, config=None, consent=True):
         db = tmp_path / "sessions.db"
         if config:
             with StandupStore(db) as store:
@@ -178,6 +178,9 @@ class TestIdentityFlow:
         monkeypatch.setattr(ms, "_ana_dbp", db)
         answers = iter(values)
         monkeypatch.setattr(ms, "_standup_read_line", lambda *a, **k: next(answers, None))
+        # A NEW repo path triggers the sandbox pre-flight (fs_policy consent);
+        # stub the interactive dialog so tests stay headless.
+        monkeypatch.setattr("yeaboi.ui.shared._consent._preflight_path_consent", lambda *a, **k: consent)
         msg = ms._standup_identity_configure(_Console(), _Live(), lambda timeout=None: "esc", 0.05, True, "s1")
         with StandupStore(db) as store:
             return msg, store.load_config("s1")
@@ -201,3 +204,23 @@ class TestIdentityFlow:
         msg, saved = self._run(tmp_path, monkeypatch, [None])
         assert msg == "Identity cancelled."
         assert saved is None
+
+    def test_denied_repo_path_cancels_without_saving(self, tmp_path, monkeypatch):
+        # Sandbox pre-flight (from the security hardening) denies → no save.
+        msg, saved = self._run(tmp_path, monkeypatch, ["/tmp/evil", "alice"], consent=False)
+        assert "denied" in msg
+        assert saved is None
+
+    def test_unchanged_repo_path_skips_consent(self, tmp_path, monkeypatch):
+        # Re-saving the SAME path must not re-prompt (consent stub set to deny).
+        config = dict(
+            enabled=False,
+            time="10:00",
+            lead_minutes=10,
+            weekdays="1-5",
+            delivery_channels=["terminal"],
+            repo_path="/tmp/repo",
+        )
+        msg, saved = self._run(tmp_path, monkeypatch, ["/tmp/repo", "alice"], config=config, consent=False)
+        assert msg == "Identity saved."
+        assert saved["repo_path"] == "/tmp/repo"

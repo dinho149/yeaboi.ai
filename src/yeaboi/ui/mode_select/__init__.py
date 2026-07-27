@@ -4250,11 +4250,18 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past retros (newest-first rows).
+        if not report.session_id:
+            return []
+        with RetroStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_retro(report)
+        paths = export_retro(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -4267,7 +4274,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
             return None
         from yeaboi.sharing.documents import retro_document
 
-        return retro_document(report)
+        return retro_document(report, history=_history_for(report))
 
     def delete_run(run):
         with RetroStore(_ana_dbp) as store:
@@ -4359,11 +4366,16 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
         return render
 
+    def _history_for(run):
+        # Trend chart data: past reports for the run's session (newest-first rows).
+        with ReportingStore(_ana_dbp) as store:
+            return store.get_history(run.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_report(report)
+        paths = export_report(report, history=_history_for(run))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
 
     def get_document(run):
@@ -4376,7 +4388,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
             return None
         from yeaboi.sharing.documents import reporting_document
 
-        return reporting_document(report)
+        return reporting_document(report, history=_history_for(run))
 
     def delete_run(run):
         with ReportingStore(_ana_dbp) as store:
@@ -7082,8 +7094,11 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         report = state.get("report")
         try:
             from yeaboi.reporting.export import export_report
+            from yeaboi.reporting.store import ReportingStore
 
-            paths = export_report(report, theme=state["theme"])
+            with ReportingStore(_ana_dbp) as _store:
+                run_history = _store.get_history(session_id, limit=30)
+            paths = export_report(report, theme=state["theme"], history=run_history)
             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
         except Exception as e:  # noqa: BLE001
             logger.error("reporting export failed: %s", e, exc_info=True)
@@ -8136,7 +8151,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.retro.export import export_retro
 
                             report = board_to_report(board, sprint_name=sprint_name)
-                            paths = export_retro(report, project_name=project_name or session_name)
+                            with RetroStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_retro(report, project_name=project_name or session_name, history=run_history)
                             logger.info("retro: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8671,7 +8688,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.poker.export import export_poker
 
                             report = board_to_report(board)
-                            paths = export_poker(report, project_name=project_name or session_name)
+                            with PokerStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_poker(report, project_name=project_name or session_name, history=run_history)
                             logger.info("poker: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8771,11 +8790,18 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past poker runs (newest-first rows).
+        if not report.session_id:
+            return []
+        with PokerStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_poker(report)
+        paths = export_poker(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):

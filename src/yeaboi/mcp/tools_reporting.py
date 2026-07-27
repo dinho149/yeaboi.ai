@@ -42,11 +42,12 @@ def _reporting_export(session_id: str) -> dict:
     resolved = resolve_session_id(session_id)
     with ReportingStore(get_db_path()) as store:
         report = store.get_latest_report(resolved)
+        run_history = store.get_history(resolved, limit=30)
     if report is None:
         raise ValueError(
             f"No delivery report recorded for session {resolved!r} — generate one from the yeaboi TUI first."
         )
-    paths = export_report(report)
+    paths = export_report(report, history=run_history)
     logger.info("Delivery report exported via MCP: session=%s period=%s", resolved, report.period_label)
     return {
         "session_id": resolved,

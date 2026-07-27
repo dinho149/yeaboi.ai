@@ -192,7 +192,7 @@ def _reporting_html() -> str:
         emoji_theme=(("headline", "🚀"),),
         warnings=("test warning",),
     )
-    return build_report_html(_inject(report), chart_path=None)
+    return build_report_html(_inject(report))
 
 
 def _roadmap_html() -> str:

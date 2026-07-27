@@ -54,13 +54,14 @@ def standup_document(report, *, anon=None, history=()) -> ShareDocument:
     return ShareDocument(title=title, html=build_standup_html(report, history=history), source_mode="standup")
 
 
-def retro_document(report, *, anon=None) -> ShareDocument:
+def retro_document(report, *, anon=None, history=()) -> ShareDocument:
+    """``history`` = RetroStore.get_history rows; feeds the card-volume trend chart."""
     title = f"Retro — {report.sprint_name or report.date}"
     if anon is not None:
         return _masked_document(anon, title, "retro")
     from yeaboi.retro.export import build_retro_html
 
-    return ShareDocument(title=title, html=build_retro_html(report), source_mode="retro")
+    return ShareDocument(title=title, html=build_retro_html(report, history=history), source_mode="retro")
 
 
 def performance_document(artifact, *, kind: str, anon=None) -> ShareDocument:
@@ -78,13 +79,14 @@ def performance_document(artifact, *, kind: str, anon=None) -> ShareDocument:
     return ShareDocument(title=title, html=builders[kind](artifact), source_mode="performance")
 
 
-def reporting_document(report, *, anon=None) -> ShareDocument:
+def reporting_document(report, *, anon=None, history=()) -> ShareDocument:
+    """``history`` = ReportingStore.get_history rows; feeds the volume-trend chart."""
     title = f"Delivery Report — {report.period_label}"
     if anon is not None:
         return _masked_document(anon, title, "reporting")
     from yeaboi.reporting.export import build_report_html
 
-    return ShareDocument(title=title, html=build_report_html(report), source_mode="reporting")
+    return ShareDocument(title=title, html=build_report_html(report, history=history), source_mode="reporting")
 
 
 def roadmap_document(analysis, *, anon=None) -> ShareDocument:

@@ -26,6 +26,8 @@ from pathlib import Path
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.html_theme import escape as _e
+from yeaboi.html_theme import prose_bullets as _summary_bullets
+from yeaboi.html_theme import split_sentences as _split_sentences
 
 logger = logging.getLogger(__name__)
 
@@ -208,9 +210,9 @@ def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[s
 # ---------------------------------------------------------------------------
 
 
-def _split_sentences(text: str) -> list[str]:
-    # The [A-Z] lookahead avoids splitting on "e.g. " and similar abbreviations.
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text.strip()) if s.strip()]
+# Sentence/bullet splitting moved to the shared design system —
+# yeaboi.html_theme.split_sentences / prose_bullets (imported above) so every
+# mode's export fragments prose the same way.
 
 
 def _name_variants(member_names: Sequence[str]) -> list[str]:
@@ -386,51 +388,39 @@ def build_standup_markdown(report: StandupReport) -> str:
 def _history_points(report: StandupReport, history: Sequence[dict]) -> list[tuple[str, int]]:
     """Normalize store history rows into (standup_date, confidence_pct), oldest → newest.
 
-    Keeps successful/partial runs up to the report's own date (re-exporting an
-    old run must not show its future), dedupes same-day reruns keeping the
-    latest (input is newest-first), and caps at the last 14 points.
+    Thin wrapper over the shared ``history_series`` with standup's field names,
+    clipped to the report's own date so re-exporting an old run never shows its
+    future.
     """
-    points: list[tuple[str, int]] = []
-    seen: set[str] = set()
-    for row in history:
-        day = str(row.get("standup_date", "") or "")
-        pct = row.get("confidence_pct")
-        if not day or pct is None or row.get("status") not in ("success", "partial"):
-            continue
-        if report.date and day > report.date:
-            continue
-        if day in seen:
-            continue  # newest-first input → first occurrence is the latest rerun
-        seen.add(day)
-        points.append((day, int(pct)))
-    points.reverse()
-    if report.date and report.date not in seen:
-        points.append((report.date, report.confidence_pct))
-    return points[-_SPARKLINE_MAX_POINTS:]
+    from yeaboi.html_theme import history_series
+
+    points = history_series(
+        history,
+        date_key="standup_date",
+        value_key="confidence_pct",
+        status_key="status",
+        cutoff_date=report.date,
+        current=(report.date, report.confidence_pct),
+        max_points=_SPARKLINE_MAX_POINTS,
+    )
+    return [(day, int(value)) for day, value in points]
 
 
 def _confidence_sparkline(report: StandupReport, history: Sequence[dict]) -> str:
     """Confidence-over-time trend card, or "" when there is no trend to show."""
-    from yeaboi.html_theme import sparkline_svg
+    from yeaboi.html_theme import sparkline_card
 
     points = _history_points(report, history)
-    if len(points) < 2:
-        return ""
     # _CONF_COLOR stores full "var(--ok)" strings; the SVG helper wants bare tokens.
     end_token = _CONF_COLOR.get(report.confidence_label, "var(--low)")[4:-1]
-    values = [pct for _, pct in points]
-    # Padded data range (not 0-100): confidence moves in a narrow band, and a
-    # full-percentage domain flattens the trend into an unreadable line.
-    svg = sparkline_svg(
-        values,
-        vmin=max(0, min(values) - 8),
-        vmax=min(100, max(values) + 8),
+    return sparkline_card(
+        points,
+        title="Confidence trend",
         end_color_var=end_token,
-        start_label=points[0][0],
-        end_label=points[-1][0],
-        title=f"Confidence trend — last {len(points)} standups",
+        floor=0,
+        ceiling=100,
+        svg_title=f"Confidence trend — last {len(points)} standups",
     )
-    return f"<div class='card'><div class='card-title' style='margin-bottom:.3rem'>Confidence trend</div>{svg}</div>"
 
 
 def _team_activity_block(report: StandupReport) -> str:
@@ -463,42 +453,12 @@ def _team_activity_block(report: StandupReport) -> str:
     return f"<div class='card'><div class='card-title' style='margin-bottom:.3rem'>Team activity</div>{key}{bars}</div>"
 
 
-# Fixed hue order for the by-source bar; a 9th+ source folds into a muted
-# "other" segment instead of inventing new hues.
-_SOURCE_VARS = ("--accent", "--accent2", "--info", "--ok", "--warn", "--high", "--medium")
-
-
 def _source_bar(report: StandupReport) -> str:
     """Activity-by-source segmented bar with a counted legend, or ""."""
-    from yeaboi.html_theme import legend, segment_bar
+    from yeaboi.html_theme import counted_segment_bar
 
-    counts = [(str(src), int(n)) for src, n in report.activity_counts if n > 0]
-    if not counts or sum(n for _, n in counts) <= 0:
-        return ""
-    counts.sort(key=lambda pair: -pair[1])
-    if len(counts) > len(_SOURCE_VARS) + 1:
-        head, tail = counts[: len(_SOURCE_VARS)], counts[len(_SOURCE_VARS) :]
-        counts = [*head, ("other", sum(n for _, n in tail))]
-    palette = [*_SOURCE_VARS, "--muted"][: len(counts)]
-    bar = segment_bar(
-        [(n, var) for (_, n), var in zip(counts, palette)],
-        title="Activity by source",
-    )
-    key = legend([(f"{src} {n}", var) for (src, n), var in zip(counts, palette)])
-    return f"<div style='margin-bottom:.6rem'>{bar}{key}</div>"
-
-
-def _summary_bullets(summary: str) -> list[str]:
-    """Split a category summary into scannable bullet fragments.
-
-    Sentences first, then ``"; "``-joined clauses — the LLM packs several
-    ticket movements into one long sentence, which reads as a wall of text
-    when rendered as a single bullet.
-    """
-    fragments: list[str] = []
-    for sentence in _split_sentences(summary):
-        fragments.extend(part.strip(" ;") for part in sentence.split("; ") if part.strip(" ;"))
-    return fragments
+    block = counted_segment_bar(report.activity_counts, title="Activity by source")
+    return f"<div style='margin-bottom:.6rem'>{block}</div>" if block else ""
 
 
 def _category_block(title: str, summary: str, links: Sequence[tuple[str, str]], key_map: dict[str, str]) -> str:

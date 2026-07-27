@@ -14,7 +14,8 @@ no external requests, ever.
 from __future__ import annotations
 
 import html
-from collections.abc import Sequence
+import re
+from collections.abc import Mapping, Sequence
 
 # ---------------------------------------------------------------------------
 # Stylesheet
@@ -560,6 +561,137 @@ def notice_block(title: str, items: Sequence[str]) -> str:
         return ""
     lis = "".join(f"<li>{_e(item)}</li>" for item in items)
     return f'<div class="notice"><div class="notice-title">⚠ {_e(title)}</div><ul>{lis}</ul></div>'
+
+
+# ---------------------------------------------------------------------------
+# Chart compositions — shared building blocks over the primitives above,
+# extracted from the standup export so every mode renders visuals the same way.
+# ---------------------------------------------------------------------------
+
+# The [A-Z] lookahead avoids splitting on "e.g. " and similar abbreviations.
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+# Fixed hue order for counted breakdowns; an overflow segment folds into a
+# muted "other" instead of inventing new hues.
+_CHART_VARS = ("--accent", "--accent2", "--info", "--ok", "--warn", "--high", "--medium")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split prose into sentences (abbreviation-safe), dropping empties."""
+    return [s.strip() for s in _SENTENCE_RE.split(text.strip()) if s.strip()]
+
+
+def prose_bullets(text: str) -> list[str]:
+    """Split prose into scannable bullet fragments: sentences, then "; " clauses.
+
+    LLM summaries pack several facts into one long sentence, which reads as a
+    wall of text when rendered as a single bullet.
+    """
+    fragments: list[str] = []
+    for sentence in split_sentences(text):
+        fragments.extend(part.strip(" ;") for part in sentence.split("; ") if part.strip(" ;"))
+    return fragments
+
+
+def counted_segment_bar(
+    counts: Sequence[tuple[str, int]],
+    *,
+    palette: Sequence[str] = _CHART_VARS,
+    title: str = "",
+    overflow_label: str = "other",
+    overflow_var: str = "--muted",
+) -> str:
+    """A sorted segmented bar + counted legend ("github 12") from (label, count) pairs.
+
+    Zero/negative counts are dropped; more than ``len(palette) + 1`` labels fold
+    the tail into a single muted overflow segment. Returns "" when nothing is
+    positive.
+    """
+    pairs = [(str(label), int(n)) for label, n in counts if int(n) > 0]
+    if not pairs:
+        return ""
+    pairs.sort(key=lambda pair: -pair[1])
+    if len(pairs) > len(palette) + 1:
+        head, tail = pairs[: len(palette)], pairs[len(palette) :]
+        pairs = [*head, (overflow_label, sum(n for _, n in tail))]
+    vars_ = [*palette, overflow_var][: len(pairs)]
+    bar = segment_bar([(n, var) for (_, n), var in zip(pairs, vars_)], title=title)
+    key = legend([(f"{label} {n}", var) for (label, n), var in zip(pairs, vars_)])
+    return f"{bar}{key}"
+
+
+def history_series(
+    rows: Sequence[Mapping],
+    *,
+    date_key: str,
+    value_key: str,
+    status_key: str = "",
+    ok_statuses: Sequence[str] = ("success", "partial"),
+    cutoff_date: str = "",
+    current: tuple[str, float] | None = None,
+    max_points: int = 14,
+) -> list[tuple[str, float]]:
+    """Normalize newest-first store history rows into (date, value), oldest → newest.
+
+    Rows past ``cutoff_date`` are dropped (re-exporting an old run must not show
+    its future), same-date reruns dedupe keeping the newest (input newest-first),
+    ``status_key`` (when given) filters to ``ok_statuses``, and ``current``
+    appends today's point when its date isn't already present.
+    """
+    points: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    for row in rows:
+        day = str(row.get(date_key, "") or "")
+        value = row.get(value_key)
+        if not day or value is None:
+            continue
+        if status_key and row.get(status_key) not in ok_statuses:
+            continue
+        if cutoff_date and day > cutoff_date:
+            continue
+        if day in seen:
+            continue
+        seen.add(day)
+        points.append((day, float(value)))
+    points.reverse()
+    if current and current[0] and current[0] not in seen:
+        points.append((current[0], float(current[1])))
+    return points[-max_points:]
+
+
+def sparkline_card(
+    points: Sequence[tuple[str, float]],
+    *,
+    title: str,
+    color_var: str = "--accent",
+    end_color_var: str = "",
+    pad: float = 8.0,
+    floor: float = 0.0,
+    ceiling: float | None = None,
+    svg_title: str = "",
+) -> str:
+    """A titled ``.card`` wrapping a sparkline over (date, value) points, or "".
+
+    The value domain is the data range padded by ``pad`` (clamped to
+    ``floor``/``ceiling``) — a full fixed domain flattens series that move in a
+    narrow band into an unreadable line. Under two points renders nothing.
+    """
+    if len(points) < 2:
+        return ""
+    values = [value for _, value in points]
+    vmin = max(floor, min(values) - pad)
+    vmax = min(ceiling, max(values) + pad) if ceiling is not None else max(values) + pad
+    svg = sparkline_svg(
+        values,
+        vmin=vmin,
+        vmax=vmax,
+        color_var=color_var,
+        end_color_var=end_color_var or color_var,
+        start_label=points[0][0],
+        end_label=points[-1][0],
+        title=svg_title or f"{title} — last {len(points)} runs",
+    )
+    return f"<div class='card'><div class='card-title' style='margin-bottom:.3rem'>{_e(title)}</div>{svg}</div>"
 
 
 # ---------------------------------------------------------------------------

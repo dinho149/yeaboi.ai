@@ -161,10 +161,23 @@ def _build_capacity_block(graph_state: dict, analysis) -> str:
 
     rows.append(f"<li><strong>Net velocity: {net_velocity} pts/sprint</strong></li>")
 
+    # Visual split: how much of the gross velocity survives the deductions.
+    bar = ""
+    if velocity > 0 and 0 < net_velocity <= velocity:
+        from yeaboi.html_theme import legend, segment_bar
+
+        deducted = velocity - net_velocity
+        split = segment_bar(
+            [(net_velocity, "--ok"), (deducted, "--muted")],
+            title=f"Net {net_velocity} of {velocity} pts/sprint",
+        )
+        key = legend([(f"Net {net_velocity}", "--ok"), (f"Deducted {deducted}", "--muted")])
+        bar = f"<div style='margin-top:.4rem'>{split}{key}</div>"
+
     return f"""
   <div class="analysis-section">
     <h3>Capacity</h3>
-    <ul>{"".join(rows)}</ul>
+    <ul>{"".join(rows)}</ul>{bar}
   </div>"""
 
 
@@ -380,9 +393,21 @@ def _build_stories_section(graph_state: dict) -> str:
     {"".join(cards)}
   </div>""")
 
+    # At-a-glance mix: story points per discipline (theme-aware inline bar).
+    from yeaboi.html_theme import counted_segment_bar
+
+    pts_by_discipline: dict[str, int] = {}
+    for story in stories:
+        discipline = story.discipline.value if hasattr(story.discipline, "value") else str(story.discipline)
+        pts = story.story_points.value if hasattr(story.story_points, "value") else int(story.story_points)
+        pts_by_discipline[discipline] = pts_by_discipline.get(discipline, 0) + int(pts)
+    breakdown = counted_segment_bar(sorted(pts_by_discipline.items()), title="Story points by discipline")
+    breakdown_html = f"<div style='margin-bottom:1rem'>{breakdown}</div>" if breakdown else ""
+
     return f"""
 <section id="stories">
   <h2>User Stories</h2>
+  {breakdown_html}
   {"".join(sections)}
 </section>
 """

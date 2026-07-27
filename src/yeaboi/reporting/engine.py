@@ -366,8 +366,10 @@ def run_delivery_report(
 
     with _store(db_path) as store:
         store.record_run(report, session_id=session_id)
+        # Fetched AFTER record_run so this report is part of the volume trend.
+        run_history = store.get_history(session_id, limit=30)
 
-    _export(report)
+    _export(report, history=run_history)
     logger.info(
         "run_delivery_report complete: items=%d themes=%d warnings=%d",
         len(report.delivered_items),
@@ -383,11 +385,11 @@ def _store(db_path):
     return ReportingStore(db_path)
 
 
-def _export(report: DeliveryReport) -> None:
+def _export(report: DeliveryReport, *, history=()) -> None:
     """Auto-export the report to Markdown + HTML + slide deck; swallow any I/O error."""
     try:
         from yeaboi.reporting import export
 
-        export.export_report(report)
+        export.export_report(report, history=history)
     except Exception as e:  # noqa: BLE001 — export is best-effort
         logger.warning("reporting export failed: %s", e)

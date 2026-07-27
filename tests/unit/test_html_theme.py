@@ -263,3 +263,124 @@ class TestChartCss:
     def test_chart_classes_in_stylesheet(self):
         for cls in (".spark-wrap", ".seg-track", ".legend", ".bar-row", ".dot", ".avatar"):
             assert cls in EXPORT_CSS
+
+
+class TestProseBullets:
+    def test_sentences_and_clauses_split(self):
+        from yeaboi.html_theme import prose_bullets
+
+        assert prose_bullets("A moved X. B; C remain in To Do.") == ["A moved X.", "B", "C remain in To Do."]
+
+    def test_abbreviations_not_split(self):
+        from yeaboi.html_theme import split_sentences
+
+        assert split_sentences("Fixed e.g. the parser. Then shipped.") == ["Fixed e.g. the parser.", "Then shipped."]
+
+    def test_empty(self):
+        from yeaboi.html_theme import prose_bullets
+
+        assert prose_bullets("") == []
+
+
+class TestCountedSegmentBar:
+    def test_bar_and_counted_legend(self):
+        from yeaboi.html_theme import counted_segment_bar
+
+        html = counted_segment_bar([("jira", 5), ("github", 9)])
+        assert 'class="seg-track"' in html
+        assert "github 9" in html and "jira 5" in html
+        # Sorted descending: github's swatch gets the first palette hue.
+        assert html.index("github 9") < html.index("jira 5")
+
+    def test_zero_counts_dropped_and_empty(self):
+        from yeaboi.html_theme import counted_segment_bar
+
+        assert "zero" not in counted_segment_bar([("a", 3), ("zero", 0)])
+        assert counted_segment_bar([("zero", 0)]) == ""
+        assert counted_segment_bar([]) == ""
+
+    def test_overflow_folds_into_other(self):
+        from yeaboi.html_theme import counted_segment_bar
+
+        counts = [(f"src{i}", 20 - i) for i in range(10)]
+        html = counted_segment_bar(counts)
+        assert "other" in html
+        assert "src8" not in html and "src9" not in html
+        assert "var(--muted)" in html
+
+    def test_labels_escaped(self):
+        from yeaboi.html_theme import counted_segment_bar
+
+        assert "<b>" not in counted_segment_bar([("<b>x</b>", 3)])
+
+
+class TestHistorySeries:
+    def _rows(self):
+        return [
+            {"d": "2026-07-25", "v": 8, "s": "success"},
+            {"d": "2026-07-25", "v": 3, "s": "success"},  # older same-day rerun — dropped
+            {"d": "2026-07-24", "v": 6, "s": "failed"},
+            {"d": "2026-07-23", "v": 5, "s": "success"},
+        ]
+
+    def test_oldest_first_dedupe_newest_wins(self):
+        from yeaboi.html_theme import history_series
+
+        pts = history_series(self._rows(), date_key="d", value_key="v")
+        # No status filter → the failed row stays.
+        assert pts == [("2026-07-23", 5.0), ("2026-07-24", 6.0), ("2026-07-25", 8.0)]
+
+    def test_status_filter(self):
+        from yeaboi.html_theme import history_series
+
+        pts = history_series(self._rows(), date_key="d", value_key="v", status_key="s")
+        assert pts == [("2026-07-23", 5.0), ("2026-07-25", 8.0)]
+
+    def test_cutoff_and_current(self):
+        from yeaboi.html_theme import history_series
+
+        pts = history_series(
+            self._rows(),
+            date_key="d",
+            value_key="v",
+            cutoff_date="2026-07-24",
+            current=("2026-07-26", 9),
+        )
+        assert pts == [("2026-07-23", 5.0), ("2026-07-24", 6.0), ("2026-07-26", 9.0)]
+
+    def test_max_points_keeps_tail(self):
+        from yeaboi.html_theme import history_series
+
+        rows = [{"d": f"2026-07-{day:02d}", "v": day} for day in range(20, 0, -1)]
+        pts = history_series(rows, date_key="d", value_key="v", max_points=5)
+        assert len(pts) == 5
+        assert pts[-1] == ("2026-07-20", 20.0)
+
+
+class TestSparklineCard:
+    def test_under_two_points_empty(self):
+        from yeaboi.html_theme import sparkline_card
+
+        assert sparkline_card([("2026-07-25", 5.0)], title="Volume") == ""
+        assert sparkline_card([], title="Volume") == ""
+
+    def test_card_with_title_and_labels(self):
+        from yeaboi.html_theme import sparkline_card
+
+        html = sparkline_card([("2026-07-24", 5.0), ("2026-07-25", 9.0)], title="Card volume")
+        assert "Card volume" in html
+        assert 'class="spark-wrap"' in html
+        assert "2026-07-24" in html and "2026-07-25" in html
+
+    def test_ceiling_clamps_domain(self):
+        from yeaboi.html_theme import sparkline_card
+
+        # Values near the ceiling must not pad past it (no crash, end dot present).
+        html = sparkline_card([("a", 95.0), ("b", 99.0)], title="t", floor=0, ceiling=100)
+        assert "<circle" in html
+
+    def test_title_escaped(self):
+        from yeaboi.html_theme import sparkline_card
+
+        html = sparkline_card([("a", 1.0), ("b", 2.0)], title="<b>t</b>")
+        assert "<b>t</b>" not in html

@@ -101,17 +101,21 @@ class TestExportReport:
             assert p.exists() and p.read_text(encoding="utf-8")
         assert paths["slides"].name.endswith("-slides.html")
 
-    def test_chart_written_and_embedded(self, tmp_path, monkeypatch):
+    def test_chart_written_for_markdown_html_uses_inline_bar(self, tmp_path, monkeypatch):
         import pytest
 
         pytest.importorskip("matplotlib")
         monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
         paths = export.export_report(_report(), theme="aurora")
-        # Markdown links the chart relatively (it lives beside the .md)…
+        # Markdown links the chart relatively (it lives beside the .md, and
+        # flows to Notion/Confluence via export_targets)…
         assert "![Delivered items](delivered.png)" in paths["markdown"].read_text(encoding="utf-8")
         assert (tmp_path / "delivered.png").exists()
-        # …and the HTML embeds it base64 so it stays self-contained.
-        assert "data:image/png;base64," in paths["html"].read_text(encoding="utf-8")
+        # …while the HTML draws a theme-aware inline segment bar instead of the
+        # theme-blind PNG (recolors with the page's theme switcher).
+        html = paths["html"].read_text(encoding="utf-8")
+        assert "data:image/png;base64," not in html
+        assert 'class="seg-track"' in html
 
 
 class TestSharedDesignSystem:
@@ -120,3 +124,83 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+def _history(*rows):
+    """Newest-first rows mirroring ReportingStore.get_history output."""
+    return [
+        {
+            "id": i,
+            "run_at": f"{d}T17:00:00",
+            "period": "sprint",
+            "period_end": d,
+            "project_name": "Acme Portal",
+            "item_count": n,
+        }
+        for i, (d, n) in enumerate(rows)
+    ]
+
+
+class TestVisuals:
+    def test_delivered_breakdown_segment_bar(self):
+        html = export.build_report_html(_report())
+        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
+        assert 'class="seg-track"' in html
+        assert "Ada 1" in html  # counted legend (by-person counts here)
+
+    def test_assignee_avatar_in_table(self):
+        html = export.build_report_html(_report())
+        assert 'class="avatar"' in html
+        assert ">A</span>" in html
+
+    def test_avatar_name_escaped(self):
+        rep = _report()
+        hostile = DeliveryReport(
+            period_label="p",
+            period_end="2026-07-13",
+            delivered_items=(DeliveredItem(key="X-1", title="t", status="Done", assignee="<b>Eve</b>"),),
+        )
+        html = export.build_report_html(hostile)
+        assert "<b>Eve</b>" not in html
+        assert rep is not None  # keep the fixture exercised
+
+    def test_theme_and_highlight_bullets_split(self):
+        rep = DeliveryReport(
+            period_label="p",
+            period_end="2026-07-13",
+            highlights=("Shipped SSO. Landed MFA; docs refreshed.",),
+        )
+        html = export.build_report_html(rep)
+        assert "<li>Shipped SSO.</li>" in html
+        assert "<li>Landed MFA</li>" in html
+        assert "<li>docs refreshed.</li>" in html
+        assert "class='analysis-section'" in html
+
+    def test_sparkline_from_history(self):
+        history = _history(("2026-07-13", 7), ("2026-06-29", 5), ("2026-06-15", 9))
+        html = export.build_report_html(_report(), history=history)
+        assert 'class="spark-wrap"' in html
+        assert "Delivery volume trend" in html
+        assert "2026-06-15" in html
+
+    def test_other_project_history_excluded(self):
+        history = _history(("2026-06-29", 5))
+        history.append(
+            {
+                "id": 9,
+                "run_at": "2026-06-01T17:00:00",
+                "period": "sprint",
+                "period_end": "2026-06-01",
+                "project_name": "Other Project",
+                "item_count": 40,
+            }
+        )
+        html = export.build_report_html(_report(), history=history)
+        assert "2026-06-01" not in html
+
+    def test_no_history_no_sparkline(self):
+        assert 'class="spark-wrap"' not in export.build_report_html(_report())
+
+    def test_self_contained_with_history(self):
+        html = export.build_report_html(_report(), history=_history(("2026-07-13", 7), ("2026-06-29", 5)))
+        assert 'src="http' not in html and "<link" not in html
