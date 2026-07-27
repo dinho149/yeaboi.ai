@@ -571,14 +571,20 @@ def github_recent_commits(
         return []
 
 
-def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
+# Standup-path bounds for branch-commit expansion: the daily feed only needs a
+# taste of unmerged feature work. The exhaustive analysis path lifts both caps.
+_MAX_PR_COMMIT_LOOKUPS = 10
+_MAX_COMMITS_PER_PR = 60
+
+
+def _pr_branch_commit_items(pr, cutoff, *, limit: int | None = None) -> list[dict]:
     """In-window commits on a PR's branch — feature work invisible on the default branch.
 
     Best-effort: any failure yields [] for this PR only. The collector's dedupe
     pass drops shas that already arrived via the default-branch scan.
     """
     try:
-        commits = list(pr.get_commits())
+        commits = list(pr.get_commits()[:limit] if limit else pr.get_commits())
     except Exception as e:
         logger.debug("github pr #%s commit lookup failed: %s", getattr(pr, "number", "?"), e)
         return []
@@ -618,16 +624,21 @@ def github_recent_prs(
     metadata_cache=None,
     *,
     include_changed_files: bool = True,
+    exhaustive: bool = False,
 ) -> list[dict]:
     """Return pull requests updated since the window start, plus their branch commits.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
     else the last ``days`` days. Each PR item: {author, kind='pr', title, body,
     branch, status, timestamp, key(#num)} (``body`` is the PR description,
-    ``branch`` the source branch name). For the newest
-    in-window PRs (open or merged, capped
-    at _MAX_PR_COMMIT_LOOKUPS) the PR's branch commits are also emitted as
-    kind='commit' items so unmerged feature-branch work is visible. Returns []
+    ``branch`` the source branch name). For the newest in-window PRs (open or
+    merged, capped at _MAX_PR_COMMIT_LOOKUPS × _MAX_COMMITS_PER_PR) the PR's
+    branch commits are also emitted as kind='commit' items so unmerged
+    feature-branch work is visible. ``exhaustive=True`` (the analysis path)
+    lifts the branch-commit caps and additionally emits kind='review'/'comment'
+    discussion items per PR; the default keeps the bounded standup behaviour —
+    the standup collector fetches reviews separately via github_recent_reviews,
+    so emitting them here would duplicate every review in the feed. Returns []
     on any error. Sorted by updated desc; stops once older than the window.
     """
     logger.info("github_recent_prs: repo=%r days=%d since=%s", repo_url, days, since)
@@ -649,6 +660,7 @@ def github_recent_prs(
         )
         items: list[dict] = []
         file_lookups = 0
+        commit_lookups = 0
         for pr in prs:
             updated = pr.updated_at
             # updated_at may be naive; compare in UTC terms defensively.
@@ -685,44 +697,46 @@ def github_recent_prs(
                     "changed_files": changed_files,
                 }
             )
-            try:
-                for review in pr.get_reviews():
-                    submitted = getattr(review, "submitted_at", None)
-                    if submitted and submitted.tzinfo is not None and submitted < cutoff:
-                        continue
-                    items.append(
-                        {
-                            "author": getattr(getattr(review, "user", None), "login", "") or "",
-                            "kind": "review",
-                            "title": f"Reviewed PR #{pr.number}: {pr.title or ''}",
-                            "body": getattr(review, "body", "") or "",
-                            "status": str(getattr(review, "state", "") or "").lower(),
-                            "timestamp": submitted.isoformat()[:19] if submitted else ts,
-                            "key": f"review:{getattr(review, 'id', '')}",
-                            "pr_id": pr.number,
-                            "url": getattr(review, "html_url", "") or getattr(pr, "html_url", "") or "",
-                        }
-                    )
-                for comment in pr.get_issue_comments():
-                    updated_comment = getattr(comment, "updated_at", None)
-                    if updated_comment and updated_comment.tzinfo is not None and updated_comment < cutoff:
-                        continue
-                    items.append(
-                        {
-                            "author": getattr(getattr(comment, "user", None), "login", "") or "",
-                            "kind": "comment",
-                            "title": f"Commented on PR #{pr.number}: {pr.title or ''}",
-                            "body": getattr(comment, "body", "") or "",
-                            "timestamp": updated_comment.isoformat()[:19] if updated_comment else ts,
-                            "key": f"comment:{getattr(comment, 'id', '')}",
-                            "pr_id": pr.number,
-                            "url": getattr(comment, "html_url", "") or getattr(pr, "html_url", "") or "",
-                        }
-                    )
-            except Exception as exc:
-                logger.debug("github PR #%s review/comment lookup failed: %s", pr.number, exc)
-            if status in ("open", "merged"):
-                items.extend(_pr_branch_commit_items(pr, cutoff))
+            if exhaustive:
+                try:
+                    for review in pr.get_reviews():
+                        submitted = getattr(review, "submitted_at", None)
+                        if submitted and submitted.tzinfo is not None and submitted < cutoff:
+                            continue
+                        items.append(
+                            {
+                                "author": getattr(getattr(review, "user", None), "login", "") or "",
+                                "kind": "review",
+                                "title": f"Reviewed PR #{pr.number}: {pr.title or ''}",
+                                "body": getattr(review, "body", "") or "",
+                                "status": str(getattr(review, "state", "") or "").lower(),
+                                "timestamp": submitted.isoformat()[:19] if submitted else ts,
+                                "key": f"review:{getattr(review, 'id', '')}",
+                                "pr_id": pr.number,
+                                "url": getattr(review, "html_url", "") or getattr(pr, "html_url", "") or "",
+                            }
+                        )
+                    for comment in pr.get_issue_comments():
+                        updated_comment = getattr(comment, "updated_at", None)
+                        if updated_comment and updated_comment.tzinfo is not None and updated_comment < cutoff:
+                            continue
+                        items.append(
+                            {
+                                "author": getattr(getattr(comment, "user", None), "login", "") or "",
+                                "kind": "comment",
+                                "title": f"Commented on PR #{pr.number}: {pr.title or ''}",
+                                "body": getattr(comment, "body", "") or "",
+                                "timestamp": updated_comment.isoformat()[:19] if updated_comment else ts,
+                                "key": f"comment:{getattr(comment, 'id', '')}",
+                                "pr_id": pr.number,
+                                "url": getattr(comment, "html_url", "") or getattr(pr, "html_url", "") or "",
+                            }
+                        )
+                except Exception as exc:
+                    logger.debug("github PR #%s review/comment lookup failed: %s", pr.number, exc)
+            if status in ("open", "merged") and (exhaustive or commit_lookups < _MAX_PR_COMMIT_LOOKUPS):
+                commit_lookups += 1
+                items.extend(_pr_branch_commit_items(pr, cutoff, limit=None if exhaustive else _MAX_COMMITS_PER_PR))
         logger.info("github_recent_prs: %d item(s) in last %d day(s)", len(items), days)
         return items
     except github.RateLimitExceededException:

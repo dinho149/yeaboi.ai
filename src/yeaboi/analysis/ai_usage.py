@@ -31,6 +31,7 @@ wraps the whole thing so the analysis pipeline can call it unguarded.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import os
 import re
@@ -471,7 +472,7 @@ def collect_ai_activity(
             name = str(repo.get("name", ""))
             try:
                 commit_items = github_recent_commits(name, days=window_days, include_changed_files=False)
-                pr_items = github_recent_prs(name, days=window_days, include_changed_files=False)
+                pr_items = github_recent_prs(name, days=window_days, include_changed_files=False, exhaustive=True)
             except TypeError:
                 commit_items = github_recent_commits(name, days=window_days)
                 pr_items = github_recent_prs(name, days=window_days)
@@ -805,7 +806,20 @@ def run_ai_adoption(
         enabled_features,
     )
     try:
+        # Dispatch on the collector's signature instead of catching TypeError from
+        # the call: a genuine TypeError raised inside collection must propagate,
+        # not silently rerun the whole scan with legacy (unscoped) semantics.
+        # Integrations/tests may replace the collector with a legacy 3-arg stub.
         try:
+            parameters = inspect.signature(collect_ai_activity).parameters
+            legacy_collector = "cancel_event" not in parameters and not any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            legacy_collector = False
+        if legacy_collector:
+            collected = collect_ai_activity(source, project_key, sub_sources)
+        else:
             collected = collect_ai_activity(
                 source,
                 project_key,
@@ -817,9 +831,6 @@ def run_ai_adoption(
                 cancel_event=cancel_event,
                 _return_inventory=True,
             )
-        except TypeError:
-            # Compatibility for integrations/tests replacing the legacy collector.
-            collected = collect_ai_activity(source, project_key, sub_sources)
         if len(collected) == 4:
             items, sources_scanned, coverage, repos_scanned = collected
             inventory = []

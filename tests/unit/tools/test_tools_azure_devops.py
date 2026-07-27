@@ -1066,3 +1066,83 @@ class TestTruncatedCommentRefetch:
         items = azdevops_recent_commits("Proj", days=1, include_repository=True)
         assert git.get_commit.call_count == _TRUNCATED_COMMENT_REFETCH_CAP
         assert len(items) == _TRUNCATED_COMMENT_REFETCH_CAP + 5
+
+
+class TestStandupPathBounds:
+    """The standup path (include_repository=False) keeps its legacy API-call
+    bounds; only the exhaustive analysis path walks the whole window."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(index):
+        return SimpleNamespace(
+            commit_id=f"{index:016d}",
+            comment=f"change {index}",
+            comment_truncated=False,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_standup_commit_scan_and_change_lookups_capped(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, _MAX_REPO_COMMITS
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        batches = [[self._commit(index) for index in range(page * 100, page * 100 + 100)] for page in range(3)]
+        git.get_commits.side_effect = lambda **kwargs: batches[kwargs.get("skip", 0) // 100]
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_commit_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_commits("Proj", days=30)
+
+        assert len(items) == _MAX_REPO_COMMITS
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS
+
+    def test_standup_pr_change_lookups_capped(self, monkeypatch):
+        from datetime import UTC, datetime
+
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, azdevops_recent_prs
+
+        repo = SimpleNamespace(id="r1", name="api")
+        self._git_client(monkeypatch, [repo])
+        now = datetime.now(UTC)
+        prs = [
+            SimpleNamespace(
+                pull_request_id=index,
+                title=f"PR {index}",
+                description="",
+                status="active",
+                creation_date=now,
+                closed_date=None,
+                created_by=SimpleNamespace(display_name="Gina", unique_name="g@corp.com"),
+                source_ref_name="refs/heads/feature/x",
+                reviewers=(),
+            )
+            for index in range(_MAX_CHANGED_FILE_LOOKUPS + 10)
+        ]
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops._activity_pull_requests",
+            lambda *args, **kwargs: (("Proj", repo, pr) for pr in prs),
+        )
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_prs("Proj", days=30)
+
+        assert len(items) == _MAX_CHANGED_FILE_LOOKUPS + 10
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS

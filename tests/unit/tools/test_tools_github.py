@@ -580,6 +580,91 @@ class TestActivityScanCaps:
         pr_items = [item for item in items if item.get("kind") == "pr"]
         assert pr_items and pr_items[0]["branch"] == "codex/fix-login"
 
+    @staticmethod
+    def _pr_with_discussion(number):
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        pr = MagicMock()
+        pr.number = number
+        pr.title = f"PR {number}"
+        pr.body = ""
+        pr.merged = False
+        pr.state = "open"
+        pr.updated_at = None
+        pr.html_url = ""
+        pr.user.login = "alice"
+        review = MagicMock()
+        review.user.login = "bob"
+        review.body = "LGTM"
+        review.state = "APPROVED"
+        review.id = 1
+        review.submitted_at = now
+        review.html_url = ""
+        comment = MagicMock()
+        comment.user.login = "carol"
+        comment.body = "nice"
+        comment.id = 2
+        comment.updated_at = now
+        comment.html_url = ""
+        pr.get_reviews.return_value = [review]
+        pr.get_issue_comments.return_value = [comment]
+        branch_commit = MagicMock()
+        branch_commit.sha = f"branchsha{number:04d}"
+        branch_commit.html_url = ""
+        branch_commit.commit.message = "wip"
+        branch_commit.commit.author.name = "Alice"
+        branch_commit.commit.author.email = "a@example.com"
+        branch_commit.commit.author.date = now
+        pr.get_commits.return_value = [branch_commit]
+        return pr
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_standup_path_skips_discussion_items(self, mock_client):
+        # Regression: the standup collector fetches reviews via
+        # github_recent_reviews — emitting them here too duplicated every
+        # review in the feed (and cost two extra API calls per PR).
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = self._pr_with_discussion(7)
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        assert not any(item["kind"] in ("review", "comment") for item in items)
+        pr.get_reviews.assert_not_called()
+        pr.get_issue_comments.assert_not_called()
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_exhaustive_path_emits_discussion_items(self, mock_client):
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = self._pr_with_discussion(7)
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False, exhaustive=True)
+
+        kinds = {item["kind"] for item in items}
+        assert {"pr", "review", "comment"} <= kinds
+        review_item = next(item for item in items if item["kind"] == "review")
+        assert review_item["author"] == "bob"
+        assert review_item["key"] == "review:1"
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_standup_branch_commit_expansion_capped(self, mock_client):
+        from yeaboi.tools.github import _MAX_PR_COMMIT_LOOKUPS, github_recent_prs
+
+        prs = [self._pr_with_discussion(number) for number in range(_MAX_PR_COMMIT_LOOKUPS + 5)]
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = prs
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+        commit_items = [item for item in items if item["kind"] == "commit"]
+        assert len(commit_items) == _MAX_PR_COMMIT_LOOKUPS
+
+        exhaustive_items = github_recent_prs("owner/repo", days=120, include_changed_files=False, exhaustive=True)
+        exhaustive_commits = [item for item in exhaustive_items if item["kind"] == "commit"]
+        assert len(exhaustive_commits) == len(prs)
+
 
 class TestGithubAnalysisInventory:
     @staticmethod

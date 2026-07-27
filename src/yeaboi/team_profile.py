@@ -723,7 +723,7 @@ class TeamProfileStore:
         self._conn.execute(_ANALYSIS_ENRICHMENT_CACHE_SCHEMA)
         self._conn.executescript(_ANALYSIS_RUNS_SCHEMA)
         # CLI/MCP may open this store without first opening SessionStore, so keep
-        # the additive v15 migration safe on this direct path too.
+        # the additive v20 migration (sessions.py) safe on this direct path too.
         try:
             self._conn.execute("ALTER TABLE analysis_runs ADD COLUMN features_json TEXT NOT NULL DEFAULT '[]'")
         except sqlite3.OperationalError:

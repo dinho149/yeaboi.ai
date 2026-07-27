@@ -1534,7 +1534,17 @@ def azdevops_recent_commits(
                     commits.extend(new_chunk)
                     if chunk and not new_chunk:
                         break
-                    if len(chunk) < 100 or skip > 0 and not chunk:
+                    # Standup path: bounded feed — the exhaustive analysis path
+                    # (include_repository=True) walks the whole window instead.
+                    if not include_repository and len(commits) >= _MAX_REPO_COMMITS:
+                        logger.info(
+                            "azdevops_recent_commits: capped at %d commits for %s",
+                            _MAX_REPO_COMMITS,
+                            getattr(repo, "name", "?"),
+                        )
+                        commits = commits[:_MAX_REPO_COMMITS]
+                        break
+                    if len(chunk) < 100:
                         break
                     skip += len(chunk)
             except Exception as e:  # one bad/empty repo must not hide the others
@@ -1543,6 +1553,7 @@ def azdevops_recent_commits(
             repo_web = _activity_repo_web_url(repo, selected_project)
             repo_items: list[dict] = []
             refetched = 0
+            file_lookups = 0
             for commit in commits or []:
                 author = getattr(commit, "author", None)
                 if getattr(commit, "comment_truncated", False) and refetched < _TRUNCATED_COMMENT_REFETCH_CAP:
@@ -1553,6 +1564,19 @@ def azdevops_recent_commits(
                 message = comment.splitlines()
                 body = "\n".join(message[1:]).strip()  # Co-Authored-By / AI-tool trailers live here
                 sha = getattr(commit, "commit_id", "") or ""
+                # Standup path only: per-commit change lookups are capped per repo
+                # so a long window can't turn into an API call per commit. The
+                # analysis path fetches change metadata separately (pooled).
+                changed_files: list[dict] = []
+                if not include_repository and file_lookups < _MAX_CHANGED_FILE_LOOKUPS:
+                    file_lookups += 1
+                    changed_files = _azdo_commit_changed_files(
+                        git_client,
+                        project=selected_project,
+                        repository_id=repo.id,
+                        commit_id=sha,
+                        metadata_cache=metadata_cache,
+                    )
                 item = {
                     "author": getattr(author, "name", "") or "",
                     "author_email": getattr(author, "email", "") or "",
@@ -1563,17 +1587,7 @@ def azdevops_recent_commits(
                     "key": sha[:8],
                     "commit_id": sha,
                     "url": f"{repo_web}/commit/{sha}" if repo_web and sha else "",
-                    "changed_files": (
-                        _azdo_commit_changed_files(
-                            git_client,
-                            project=selected_project,
-                            repository_id=repo.id,
-                            commit_id=sha,
-                            metadata_cache=metadata_cache,
-                        )
-                        if not include_repository
-                        else []
-                    ),
+                    "changed_files": changed_files,
                 }
                 if include_repository:
                     item["repository"] = repo.name
@@ -1653,6 +1667,7 @@ def azdevops_recent_prs(
         if not include_repository:
             git_client = _make_git_client()
             items: list[dict] = []
+            file_lookups = 0
             for selected_project, repo, pr in _activity_pull_requests(
                 git_client,
                 project,
@@ -1668,6 +1683,18 @@ def azdevops_recent_prs(
                 status = getattr(pr, "status", "") or ""
                 pr_id = getattr(pr, "pull_request_id", "")
                 repo_web = _activity_repo_web_url(repo, selected_project)
+                # Standup path: per-PR change lookups capped so a busy window
+                # can't turn into an API call per PR.
+                changed_files: list[dict] = []
+                if file_lookups < _MAX_CHANGED_FILE_LOOKUPS:
+                    file_lookups += 1
+                    changed_files = _azdo_pr_changed_files(
+                        git_client,
+                        project=selected_project,
+                        repository_id=repo.id,
+                        pr_id=pr_id,
+                        metadata_cache=metadata_cache,
+                    )
                 items.append(
                     {
                         "author": getattr(creator, "display_name", "") or "",
@@ -1684,13 +1711,7 @@ def azdevops_recent_prs(
                         "pr_id": pr_id,
                         "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
                         "repository": f"{selected_project}/{repo.name}",
-                        "changed_files": _azdo_pr_changed_files(
-                            git_client,
-                            project=selected_project,
-                            repository_id=repo.id,
-                            pr_id=pr_id,
-                            metadata_cache=metadata_cache,
-                        ),
+                        "changed_files": changed_files,
                     }
                 )
             logger.info("azdevops_recent_prs: %d PR(s)", len(items))
@@ -1744,7 +1765,7 @@ def azdevops_recent_prs(
                     prs.extend(new_chunk)
                     if chunk and not new_chunk:
                         break
-                    if len(chunk) < 100 or skip > 0 and not chunk:
+                    if len(chunk) < 100:
                         break
                     skip += len(chunk)
             except Exception as e:
