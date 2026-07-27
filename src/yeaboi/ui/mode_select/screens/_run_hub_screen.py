@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-import rich.box
 from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
@@ -42,7 +41,7 @@ from yeaboi.ui.mode_select.screens._project_cards import (
 )
 from yeaboi.ui.mode_select.screens._project_list_screen import _build_project_row
 from yeaboi.ui.shared._animations import BLACK_RGB, lerp_color
-from yeaboi.ui.shared._components import PAD
+from yeaboi.ui.shared._components import PAD, Theme, build_page_panel
 
 _PAD = PAD
 
@@ -78,6 +77,7 @@ def _build_run_hub_screen(
     empty_title: str = "No saved runs yet",
     empty_subtitle: str = "Press Enter to start your first run",
     shimmer_tick: float | None = None,
+    theme: Theme | None = None,
 ) -> Panel:
     """Build the saved-runs hub: a scrollable list of past runs + a "+ New run" card.
 
@@ -86,6 +86,7 @@ def _build_run_hub_screen(
     where Enter opens the saved snapshot. Mirrors the planning list's key/animation model.
 
     title_fn: the mode's title function (e.g. ``standup_title``), called with shimmer_tick.
+    theme: the mode's Theme — its ``bg`` tints the whole page (None → neutral dark base).
     """
     title = title_fn(shimmer_tick)
 
@@ -283,11 +284,4 @@ def _build_run_hub_screen(
         *popup_after,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(0, 2),
-    )
+    return build_page_panel(content, theme=theme, height=height, padding=(0, 2))

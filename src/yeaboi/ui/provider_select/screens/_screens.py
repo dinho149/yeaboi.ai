@@ -18,6 +18,7 @@ from yeaboi.ui.provider_select._constants import _PROVIDER_CARDS, TOKEN_HELP
 from yeaboi.ui.provider_select._verification import _validate_key
 from yeaboi.ui.shared._animations import shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
+from yeaboi.ui.shared._components import build_page_panel
 from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
 # ---------------------------------------------------------------------------
@@ -187,7 +188,6 @@ def _build_screen_frame(
     title_text: text to render as ASCII art title. Defaults to "Setup". Rendered
     in the tall ANSI-Shadow font (brand blue) to match the app's mode screens.
     """
-    import rich.box
     from rich.console import Group
 
     display_title = title_text or "Setup"
@@ -221,14 +221,7 @@ def _build_screen_frame(
         Align.center(progress),
     )
 
-    return Panel(
-        content,
-        border_style=_ACCENT,
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, border_style=_ACCENT, height=height)
 
 
 def _build_select_screen(

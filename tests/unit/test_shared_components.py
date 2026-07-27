@@ -11,6 +11,7 @@ from yeaboi.ui.shared._components import (
     Theme,
     build_action_buttons,
     build_meter,
+    build_page_panel,
     build_progress_dots,
     build_scrollbar,
     calc_viewport,
@@ -50,6 +51,38 @@ class TestTheme:
 
         with pytest.raises(AttributeError):
             ANALYSIS_THEME.accent = "red"  # type: ignore[misc]
+
+    def test_bg_defaults_to_neutral(self):
+        from yeaboi.ui.shared._components import NEUTRAL_BG
+
+        assert Theme().bg == NEUTRAL_BG
+
+    def test_mode_themes_carry_dark_tints(self):
+        assert ANALYSIS_THEME.bg == "rgb(9,23,19)"
+        assert PLANNING_THEME.bg == "rgb(13,17,30)"
+
+
+class TestBuildPagePanel:
+    def test_applies_theme_bg_as_panel_style(self):
+        panel = build_page_panel(Text("x"), theme=ANALYSIS_THEME, height=10)
+        assert panel.style == f"on {ANALYSIS_THEME.bg}"
+        assert panel.height == 10
+        assert panel.expand is True
+
+    def test_no_theme_uses_neutral_base(self):
+        from yeaboi.ui.shared._components import NEUTRAL_BG
+
+        panel = build_page_panel(Text("x"), height=10)
+        assert panel.style == f"on {NEUTRAL_BG}"
+
+    def test_explicit_bg_overrides_theme(self):
+        panel = build_page_panel(Text("x"), theme=ANALYSIS_THEME, bg="rgb(1,2,3)", height=10)
+        assert panel.style == "on rgb(1,2,3)"
+
+    def test_passes_border_style_and_extra_kwargs(self):
+        panel = build_page_panel(Text("x"), theme=PLANNING_THEME, border_style="red", height=8, title="T")
+        assert panel.border_style == "red"
+        assert panel.title == "T"
 
 
 class TestBuildActionButtons:
