@@ -6,41 +6,44 @@ from yeaboi.sessions import SessionStore
 
 
 class TestFetchRoster:
-    def test_distinct_assignees_merged_and_sorted(self, monkeypatch):
+    def test_distinct_assignees_merged_and_sorted(self, monkeypatch, tmp_path):
         monkeypatch.setattr(
-            "yeaboi.tools.jira.jira_recent_activity",
-            lambda project_key, days=1, **kwargs: [
-                {"author": "Bob"},
-                {"author": "Ada"},
-                {"author": "Bob"},  # duplicate collapses
-                {"author": ""},  # empty dropped
+            "yeaboi.tools.jira.jira_assignee_roster",
+            lambda project_key, days=30: [
+                {"name": "Bob", "identity": "b"},
+                {"name": "Ada", "identity": "a"},
+                {"name": "Bob", "identity": "b"},
+                {"name": ""},
             ],
         )
         monkeypatch.setattr(
-            "yeaboi.tools.azure_devops.azdevops_recent_activity",
-            lambda project, days=1: [{"author": "Carol"}, {"author": "Ada"}],
+            "yeaboi.tools.azure_devops.azdevops_assignee_roster",
+            lambda project, days=30: [
+                {"name": "Carol", "identity": "c"},
+                {"name": "Ada", "identity": "az-a"},
+            ],
         )
-        result = roster.fetch_roster(jira_project="PROJ", azdo_project="AZ")
+        result = roster.fetch_roster(jira_project="PROJ", azdo_project="AZ", db_path=tmp_path / "db")
         assert [r.name for r in result] == ["Ada", "Bob", "Carol"]
         # Ada came from both — Jira (first source) wins the source tag.
         ada = next(r for r in result if r.name == "Ada")
         assert ada.source == "jira"
 
-    def test_jira_roster_counts_assignees_only(self, monkeypatch):
-        # The roster must ask Jira for assignee-credited items only — commenters
-        # and changelog actors (drive-by editors) are not team-membership evidence.
-        captured = {}
-
-        def fake_activity(project_key, days=1, **kwargs):
-            captured.update(kwargs)
-            return [{"author": "Ada"}]
-
-        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", fake_activity)
-        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_recent_activity", lambda project, days=1: [])
-        result = roster.fetch_roster(jira_project="PROJ", azdo_project="AZ")
+    def test_jira_roster_uses_dedicated_assignee_query(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            "yeaboi.tools.jira.jira_assignee_roster",
+            lambda project_key, days=30: [{"name": "Ada", "identity": "a"}],
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.azdevops_assignee_roster",
+            lambda project, days=30: [],
+        )
+        result = roster.fetch_roster(
+            jira_project="PROJ",
+            azdo_project="AZ",
+            db_path=tmp_path / "db",
+        )
         assert [r.name for r in result] == ["Ada"]
-        assert captured["include_changelog"] is False
-        assert captured["include_comments"] is False
 
     def test_empty_when_no_projects(self, monkeypatch):
         # No projects and no env config → empty roster, no crash.
@@ -48,17 +51,17 @@ class TestFetchRoster:
         monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
         assert roster.fetch_roster() == []
 
-    def test_jira_failure_is_swallowed(self, monkeypatch):
+    def test_jira_failure_is_swallowed(self, monkeypatch, tmp_path):
         def boom(*a, **k):
             raise RuntimeError("network")
 
-        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", boom)
+        monkeypatch.setattr("yeaboi.tools.jira.jira_assignee_roster", boom)
         # AzDO still contributes; Jira failure degrades to nothing.
         monkeypatch.setattr(
-            "yeaboi.tools.azure_devops.azdevops_recent_activity",
-            lambda project, days=1: [{"author": "Carol"}],
+            "yeaboi.tools.azure_devops.azdevops_assignee_roster",
+            lambda project, days=30: [{"name": "Carol", "identity": "c"}],
         )
-        result = roster.fetch_roster(jira_project="PROJ", azdo_project="AZ")
+        result = roster.fetch_roster(jira_project="PROJ", azdo_project="AZ", db_path=tmp_path / "db")
         assert [r.name for r in result] == ["Carol"]
 
 

@@ -30,16 +30,66 @@ wraps the whole thing so the analysis pipeline can call it unguarded.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import logging
+import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from yeaboi.analysis.cancellation import AnalysisCancelledError
+from yeaboi.analysis.practices import member_practices
 from yeaboi.team_profile import AiAdoptionSignal
 
 logger = logging.getLogger(__name__)
 
-# Look-back window for the commit/PR scan. The recent-activity helpers cap at ~100
-# rows/source, so this is a "recent sample" for a footprint %, not an exhaustive audit.
+# Default changed-content window. Callers can override this per run.
 _SCAN_DAYS = 120
+_CODE_COMPONENT_LABELS = {
+    "ai_footprint": "Scanning selected-user AI footprint",
+    "code_health": "Analysing selected-user code-change health",
+}
+
+
+def _code_workers(item_count: int) -> int:
+    from yeaboi.config import get_team_analysis_code_max_concurrency
+
+    return max(1, min(get_team_analysis_code_max_concurrency(), max(1, item_count)))
+
+
+def _report_code_progress(
+    progress: list | None,
+    features: list[str] | tuple[str, ...] | set[str],
+    *,
+    phase: str,
+    current: int | None = None,
+    total: int | None = None,
+    unit: str = "",
+    secondary_count: int | None = None,
+    secondary_unit: str = "",
+) -> None:
+    if progress is None:
+        return
+    from yeaboi.analysis.progress import append_component_progress
+
+    for feature in features:
+        label = _CODE_COMPONENT_LABELS.get(feature)
+        if label:
+            append_component_progress(
+                progress,
+                component_id=f"code:{feature}",
+                label=label,
+                status="running",
+                phase=phase,
+                current=current,
+                total=total,
+                unit=unit,
+                secondary_count=secondary_count,
+                secondary_unit=secondary_unit,
+                read_only=True,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Marker table — extensible. Each entry: (tool_id, compiled regex over commit/PR text).
@@ -61,28 +111,95 @@ _AI_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.IGNORECASE,
         ),
     ),
+    # Tool markers below require an ATTRIBUTION shape (co-author trailer, bot
+    # account, "generated with", agent domain), never a bare product name — a
+    # commit that merely *mentions* "windsurf" or "aider" in prose is not AI
+    # authorship, and precision matters more than recall for a lower bound.
+    (
+        "codex",
+        # Codex cloud PR bodies carry a chatgpt.com/codex/tasks/... footer link.
+        re.compile(
+            r"co-authored-by:.*\bcodex\b|generated (?:with|by) codex|chatgpt\.com/codex|openai\.com/codex",
+            re.IGNORECASE,
+        ),
+    ),
     (
         "cursor",
-        re.compile(r"co-authored-by:.*cursor|\bcursor\s*(ai|assistant|agent)\b|cursor\.com", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\bcursor\b|generated (?:with|by) cursor|agent@cursor\.com|cursor\.com/agents",
+            re.IGNORECASE,
+        ),
     ),
     (
         "aider",
-        re.compile(r"co-authored-by:.*aider|\baider\b\s*(commit|edit|chat)?|aider\.chat", re.IGNORECASE),
+        # aider's real attribution forms: co-author trailer, "(aider)" author
+        # suffix, "aider: " subject prefix, aider.chat links.
+        re.compile(
+            r"co-authored-by:.*\baider\b|\baider\.chat\b|\(aider\)|^\s*aider:\s",
+            re.IGNORECASE | re.MULTILINE,
+        ),
     ),
     (
         "devin",
-        re.compile(r"co-authored-by:.*devin|\bdevin[\s\-]?ai\b|devin\.ai", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\bdevin\b|devin-ai-integration\[bot\]|\bdevin\.ai\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "codeium",
-        re.compile(r"co-authored-by:.*(codeium|windsurf)|\bcodeium\b|\bwindsurf\b", re.IGNORECASE),
+        re.compile(
+            r"co-authored-by:.*\b(codeium|windsurf)\b|\bcodeium\.com\b|\bwindsurf\.com\b"
+            r"|generated (?:with|by) (?:codeium|windsurf)",
+            re.IGNORECASE,
+        ),
     ),
-    # Catch-all: an explicit co-author/trailer that names *some* AI/bot but matched
-    # none of the specific tools above. Kept last; suppressed when a specific hit exists.
+)
+
+# Agent/bot AUTHOR identities — checked against the git author name and email,
+# which the text markers above never see. Anchored full-string / suffix matches
+# only, so a human named "Devin Smith" or a branch of prose never matches:
+# these patterns describe ACCOUNT shapes, not words.
+_AI_AUTHOR_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("claude", re.compile(r"^claude(\[bot\])?$|noreply@anthropic\.com$", re.IGNORECASE)),
     (
-        "other_ai",
-        re.compile(r"co-authored-by:.*\b(ai|assistant|bot|llm|gpt|agent)\b", re.IGNORECASE),
+        "codex",
+        re.compile(r"^(openai-)?codex(\[bot\])?$|^chatgpt-codex-connector(\[bot\])?$", re.IGNORECASE),
     ),
+    (
+        "copilot",
+        re.compile(
+            r"^(github-)?copilot(-swe-agent)?(\[bot\])?$|^copilot@github\.com$|copilot@users\.noreply\.github\.com$",
+            re.IGNORECASE,
+        ),
+    ),
+    ("cursor", re.compile(r"^cursor\s?agent$|@cursor\.com$", re.IGNORECASE)),
+    ("aider", re.compile(r"\(aider\)$", re.IGNORECASE)),  # aider suffixes the human author name
+    ("devin", re.compile(r"^devin-ai-integration(\[bot\])?$|@devin\.ai$", re.IGNORECASE)),
+    ("gemini", re.compile(r"^google-labs-jules(\[bot\])?$", re.IGNORECASE)),
+)
+
+# Agent-created PR source branches — the strongest default trace some cloud
+# agents leave (Codex cloud and the Copilot coding agent name their branches
+# this way). Prefix-anchored so a human branch like "feature/codex-docs" or
+# "fix-cursor-styles" never matches.
+_AI_BRANCH_MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("codex", re.compile(r"^codex/", re.IGNORECASE)),
+    ("copilot", re.compile(r"^copilot/", re.IGNORECASE)),
+    ("cursor", re.compile(r"^cursor/", re.IGNORECASE)),
+    ("devin", re.compile(r"^devin/", re.IGNORECASE)),
+)
+
+# Catch-all handled in _classify_ai_markers (not the table): a co-author LINE
+# whose name looks like an AI but matches no specific tool. Parsed per line so
+# dependency-automation co-authors (dependabot[bot], renovate[bot], ...) can be
+# excluded — they are automation, not AI codegen, and used to inflate the count.
+_COAUTHOR_LINE = re.compile(r"^\s*co-authored-by:\s*(?P<name>[^<\n]+)", re.IGNORECASE | re.MULTILINE)
+_OTHER_AI_NAME = re.compile(r"\b(ai|assistant|llm|gpt|chatgpt|openai|gemini|agent)\b", re.IGNORECASE)
+_AUTOMATION_BOT_NAME = re.compile(
+    r"\b(dependabot|renovate|greenkeeper|snyk|github-actions|imgbot|allcontributors|whitesource|mend"
+    r"|pre-commit-ci|codecov|semantic-release|release-please|pyup)\b",
+    re.IGNORECASE,
 )
 
 # A commit whose subject looks documentation-shaped is bucketed as "docs", not "code".
@@ -106,9 +223,11 @@ def _source_label(tag: str) -> str:
 def _classify_ai_markers(text: str) -> set[str]:
     """Return the set of AI-tool ids whose markers appear in ``text``.
 
-    Pure, no I/O — the core unit-test seam. ``other_ai`` is dropped when a specific
-    tool matched, so a Claude commit that also has a generic ``Co-Authored-By`` line
-    is credited to "claude", not double-counted. Returns ``set()`` for empty text.
+    Pure, no I/O — the core unit-test seam. ``other_ai`` fires only when NO
+    specific tool matched (so a Claude commit with a generic ``Co-Authored-By``
+    line is credited to "claude", not double-counted) and only for a co-author
+    line whose name looks like an AI — dependency-automation bots (dependabot,
+    renovate, ...) are excluded. Returns ``set()`` for empty text.
     """
     if not text:
         return set()
@@ -116,9 +235,68 @@ def _classify_ai_markers(text: str) -> set[str]:
     for tool_id, pattern in _AI_MARKERS:
         if pattern.search(text):
             hits.add(tool_id)
+    if not hits:
+        for match in _COAUTHOR_LINE.finditer(text):
+            name = match.group("name")
+            if _OTHER_AI_NAME.search(name) and not _AUTOMATION_BOT_NAME.search(name):
+                hits.add("other_ai")
+                break
+    return hits
+
+
+def _classify_ai_authors(author: str, author_email: str = "") -> set[str]:
+    """Tool ids whose agent/bot account shape matches the git author identity.
+
+    Complements the text markers: an agent that commits under its own account
+    (devin-ai-integration[bot], copilot-swe-agent, ...) often leaves a plain
+    message with no trailer. Generic catch-all: an unknown ``[bot]`` name that
+    looks like an AI (and is not dependency automation) counts as ``other_ai``.
+    """
+    name = (author or "").strip()
+    email = (author_email or "").strip()
+    if not name and not email:
+        return set()
+    hits: set[str] = set()
+    for tool_id, pattern in _AI_AUTHOR_MARKERS:
+        if pattern.search(name) or pattern.search(email):
+            hits.add(tool_id)
+    if not hits and name.lower().endswith("[bot]"):
+        if _OTHER_AI_NAME.search(name) and not _AUTOMATION_BOT_NAME.search(name):
+            hits.add("other_ai")
+    return hits
+
+
+def _classify_ai_item(item: dict) -> set[str]:
+    """All AI-tool ids detectable on a normalized activity item.
+
+    Union of text markers (title+body), author-account markers, and PR
+    source-branch markers, with the same precedence rule as
+    :func:`_classify_ai_markers`: a specific tool hit suppresses ``other_ai``.
+    """
+    hits = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+    hits |= _classify_ai_authors(str(item.get("author", "")), str(item.get("author_email", "")))
+    branch = str(item.get("branch", "") or "")
+    if branch:
+        for tool_id, pattern in _AI_BRANCH_MARKERS:
+            if pattern.search(branch):
+                hits.add(tool_id)
     if len(hits) > 1:
         hits.discard("other_ai")
     return hits
+
+
+# Below this many scanned items a percentage swings wildly on single commits —
+# a member-scoped scan of a quiet fortnight can read "50% AI" off 2 of 4 items.
+_MIN_FOOTPRINT_SAMPLE = 20
+
+
+def footprint_small_sample(signal: AiAdoptionSignal) -> bool:
+    """True when too little work was scanned for ``footprint_pct`` to be stable.
+
+    Shared by every surface (TUI, CLI, exporters — Surface Parity) so they agree
+    on when to show "N of M items" instead of a definitive-looking percentage.
+    """
+    return (signal.scanned_commits + signal.scanned_prs) < _MIN_FOOTPRINT_SAMPLE
 
 
 def _activity_bucket(item: dict) -> str:
@@ -134,9 +312,10 @@ def aggregate_ai_markers(items: list[dict]) -> AiAdoptionSignal:
     """Aggregate scanned commit/PR items into an :class:`AiAdoptionSignal`.
 
     Pure over its input (no network). Each item is a normalized activity dict with
-    ``kind`` ('commit'/'pr'), ``author``, ``title``, optional ``body``, and
-    ``source``. An item is "AI-marked" when :func:`_classify_ai_markers` over its
-    ``title + body`` is non-empty. Returns an all-zero signal for an empty list.
+    ``kind`` ('commit'/'pr'), ``author``, ``title``, optional ``body``/``branch``,
+    and ``source``. An item is "AI-marked" when :func:`_classify_ai_item` finds a
+    text, author-account, or source-branch marker. Returns an all-zero signal for
+    an empty list.
     """
     scanned_commits = scanned_prs = ai_commits = ai_prs = 0
     per_tool: dict[str, int] = {}
@@ -159,7 +338,7 @@ def aggregate_ai_markers(items: list[dict]) -> AiAdoptionSignal:
         if src and src not in sources:
             sources.append(src)
 
-        tools = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+        tools = _classify_ai_item(item)
         if not tools:
             continue
 
@@ -203,8 +382,20 @@ def aggregate_ai_markers(items: list[dict]) -> AiAdoptionSignal:
 
 
 def collect_ai_activity(
-    source: str, project_key: str, sub_sources: list[str] | None = None
-) -> tuple[list[dict], list[str], list[str], list[str]]:
+    source: str,
+    project_key: str,
+    sub_sources: list[str] | None = None,
+    *,
+    window_days: int = _SCAN_DAYS,
+    analysis_scope: dict[str, list[str]] | None = None,
+    progress: list[str] | None = None,
+    code_features: list[str] | tuple[str, ...] | set[str] = ("ai_footprint", "code_health"),
+    cancel_event: threading.Event | None = None,
+    _return_inventory: bool = False,
+) -> (
+    tuple[list[dict], list[str], list[str], list[str]]
+    | tuple[list[dict], list[str], list[str], list[str], list[dict], dict]
+):
     """Fan out over GitHub + Azure DevOps (remote only) for recent commits/PRs with bodies.
 
     Returns ``(items, sources_scanned, coverage_notes, repos_scanned)``. Every source
@@ -213,13 +404,16 @@ def collect_ai_activity(
     coverage is visible rather than silent. ``repos_scanned`` holds friendly
     "what was actually scanned" labels (remote slug / project). Only remote sources
     are scanned — local-clone scanning was removed. ``sub_sources`` restricts which
-    hosts to scan (subset of ``{"github", "azdo"}``; None = both). Never raises.
+    hosts to scan (subset of ``{"github", "azdo"}``; None = both). Never raises,
+    except ``AnalysisCancelledError`` when ``cancel_event`` is set mid-scan.
     """
+    from yeaboi.analysis.coverage import CoverageTracker, coverage_notes
     from yeaboi.config import (
-        get_azure_devops_project,
         get_azure_devops_token,
         get_github_token,
         get_standup_github_repo,
+        get_team_analysis_azdo_projects,
+        get_team_analysis_github_owners,
     )
 
     def _want(tag: str) -> bool:
@@ -229,82 +423,344 @@ def collect_ai_activity(
     sources_scanned: list[str] = []
     coverage: list[str] = []
     repos_scanned: list[str] = []
+    inventory: list[dict] = []
+    coverage_tracker = CoverageTracker("code", window_days)
 
-    def _run(name: str, tag: str, fetcher) -> None:
+    scope = analysis_scope or {}
+
+    github_owners = scope.get("github") or list(get_team_analysis_github_owners())
+    if _want("github") and github_owners and get_github_token():
+        from yeaboi.tools.github import github_analysis_inventory, github_recent_commits, github_recent_prs
+
+        legacy_repo = get_standup_github_repo()
+        if not scope.get("github") and not os.getenv("TEAM_ANALYSIS_GITHUB_OWNERS") and legacy_repo:
+            gh_inventory = [
+                {
+                    "provider": "github",
+                    "container": legacy_repo.split("/", 1)[0],
+                    "name": legacy_repo,
+                    "active": True,
+                    "paths": [],
+                    "url": f"https://github.com/{legacy_repo}",
+                    "default_branch": "",
+                    "error": "",
+                }
+            ]
+        else:
+            try:
+                gh_inventory = github_analysis_inventory(tuple(github_owners), days=window_days, include_trees=False)
+            except TypeError:
+                gh_inventory = github_analysis_inventory(tuple(github_owners), days=window_days)
+        inventory.extend(gh_inventory)
+        github_succeeded = False
+        active_repos = [
+            (index, repo)
+            for index, repo in enumerate(gh_inventory)
+            if not repo.get("discovery_error") and repo.get("active")
+        ]
+        _report_code_progress(
+            progress,
+            code_features,
+            phase="Reading GitHub activity",
+            current=0,
+            total=len(active_repos),
+            unit="repositories",
+        )
+        repo_results: dict[int, tuple[list[dict], Exception | None]] = {}
+
+        def _read_github_repo(repo: dict) -> list[dict]:
+            name = str(repo.get("name", ""))
+            try:
+                commit_items = github_recent_commits(name, days=window_days, include_changed_files=False)
+                pr_items = github_recent_prs(name, days=window_days, include_changed_files=False, exhaustive=True)
+            except TypeError:
+                commit_items = github_recent_commits(name, days=window_days)
+                pr_items = github_recent_prs(name, days=window_days)
+            # A full-cap result means older in-window work went unread — surface it
+            # through the coverage loop below ("truncated" status reads repo["error"]).
+            from yeaboi.tools.github import _MAX_REPO_COMMITS, _MAX_REPO_PRS
+
+            if len(commit_items) >= _MAX_REPO_COMMITS and not repo.get("error"):
+                repo["error"] = f"commit scan capped at {_MAX_REPO_COMMITS} newest in window"
+            if sum(1 for item in pr_items if item.get("kind") == "pr") >= _MAX_REPO_PRS and not repo.get("error"):
+                repo["error"] = f"pull-request scan capped at {_MAX_REPO_PRS} most recently updated"
+            return commit_items + pr_items
+
+        if active_repos:
+            with ThreadPoolExecutor(
+                max_workers=_code_workers(len(active_repos)),
+                thread_name_prefix="code-github",
+            ) as executor:
+                futures = {executor.submit(_read_github_repo, repo): (index, repo) for index, repo in active_repos}
+                completed = 0
+                for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        raise AnalysisCancelledError("Analysis cancelled")
+                    index, _repo = futures[future]
+                    try:
+                        repo_results[index] = (future.result(), None)
+                    except Exception as exc:
+                        repo_results[index] = ([], exc)
+                    completed += 1
+                    _report_code_progress(
+                        progress,
+                        code_features,
+                        phase="Reading GitHub activity",
+                        current=completed,
+                        total=len(active_repos),
+                        unit="repositories",
+                    )
+
+        for index, repo in enumerate(gh_inventory):
+            name = str(repo.get("name", ""))
+            container = str(repo.get("container", ""))
+            if repo.get("discovery_error"):
+                coverage_tracker.add("github", container, name, "inaccessible", str(repo.get("error", "")))
+                continue
+            if not repo.get("active"):
+                detail = str(repo.get("skip_reason") or "no changes in window")
+                coverage_tracker.add("github", container, name, "unchanged", detail, eligible=False)
+                continue
+            raw, read_error = repo_results.get(index, ([], RuntimeError("repository activity was not attempted")))
+            try:
+                if read_error is not None:
+                    raise read_error
+                for item in raw:
+                    item["source"] = "github"
+                    item["repository"] = name
+                    item["container"] = container
+                    items.append(item)
+                status = "truncated" if repo.get("error") else "succeeded"
+                coverage_tracker.add("github", container, name, status, str(repo.get("error", "")))
+                repos_scanned.append(f"GitHub (remote): {name}")
+                github_succeeded = True
+            except Exception as exc:
+                coverage_tracker.add("github", container, name, "failed", str(exc))
+        if github_succeeded:
+            sources_scanned.append("github")
+    elif _want("github"):
+        coverage_tracker.add(
+            "github",
+            ",".join(github_owners) or "unconfigured",
+            "repository estate",
+            "inaccessible",
+            "TEAM_ANALYSIS_GITHUB_OWNERS / GITHUB_TOKEN not set",
+        )
+
+    azdo_projects = scope.get("azdo") or list(get_team_analysis_azdo_projects())
+    if source == "azdevops" and project_key and not scope.get("azdo"):
+        azdo_projects = [project_key]
+    if _want("azdo") and azdo_projects and get_azure_devops_token():
+        from yeaboi.tools.azure_devops import (
+            azdevops_analysis_inventory,
+            azdevops_recent_commits,
+            azdevops_recent_prs,
+        )
+
         try:
-            raw = fetcher()
-        except ImportError as e:
-            logger.warning("AI-usage source %s skipped — SDK not installed: %s", name, e)
-            coverage.append(f"{name}: SDK not installed")
-            return
-        except Exception as e:  # helpers already guard; never let one source abort
-            logger.warning("AI-usage source %s failed: %s", name, e)
-            coverage.append(f"{name}: error ({e})")
-            return
-        if not raw:
-            return
-        for item in raw:
-            item["source"] = tag
-            items.append(item)
-        sources_scanned.append(tag)
-        logger.info("AI-usage source %s contributed %d item(s)", name, len(raw))
+            az_inventory = azdevops_analysis_inventory(tuple(azdo_projects), include_trees=False)
+        except TypeError:
+            az_inventory = azdevops_analysis_inventory(tuple(azdo_projects))
+        inventory.extend(az_inventory)
+        activity_by_repo: dict[tuple[str, str], int] = {}
+        azure_inventory_by_project = {
+            project: [repo for repo in az_inventory if str(repo.get("container", "")) == project]
+            for project in azdo_projects
+        }
+        azure_repo_total = sum(not repo.get("discovery_error") for repo in az_inventory)
+        azure_operations_total = azure_repo_total * 2
+        azure_operations_completed = 0
+        azure_progress_lock = threading.Lock()
+        _report_code_progress(
+            progress,
+            code_features,
+            phase="Reading Azure DevOps activity",
+            current=0,
+            total=azure_operations_total,
+            unit="repository checks",
+        )
 
-    # GitHub — needs STANDUP_GITHUB_REPO (owner/repo) + a token.
-    github_repo = get_standup_github_repo()
-    if _want("github") and github_repo and get_github_token():
+        def _read_azure_project(project: str) -> tuple[str, list[dict]]:
+            def _repo_completed(_current: int, _total: int) -> None:
+                nonlocal azure_operations_completed
+                with azure_progress_lock:
+                    azure_operations_completed += 1
+                    current = azure_operations_completed
+                _report_code_progress(
+                    progress,
+                    code_features,
+                    phase="Reading Azure DevOps activity",
+                    current=current,
+                    total=azure_operations_total,
+                    unit="repository checks",
+                )
 
-        def _github() -> list[dict]:
-            from yeaboi.tools.github import github_recent_commits, github_recent_prs
+            repositories = azure_inventory_by_project.get(project, [])
+            try:
+                raw = azdevops_recent_commits(
+                    project,
+                    days=window_days,
+                    include_repository=True,
+                    repositories=repositories,
+                    progress_callback=_repo_completed,
+                ) + azdevops_recent_prs(
+                    project,
+                    days=window_days,
+                    include_repository=True,
+                    repositories=repositories,
+                    progress_callback=_repo_completed,
+                )
+            except TypeError:
+                raw = azdevops_recent_commits(project, days=window_days, include_repository=True) + azdevops_recent_prs(
+                    project, days=window_days, include_repository=True
+                )
+            return project, raw
 
-            return github_recent_commits(github_repo, days=_SCAN_DAYS) + github_recent_prs(github_repo, days=_SCAN_DAYS)
+        project_results: dict[str, list[dict]] = {}
+        if azdo_projects:
+            with ThreadPoolExecutor(
+                max_workers=_code_workers(len(azdo_projects)),
+                thread_name_prefix="code-azure-project",
+            ) as executor:
+                futures = {executor.submit(_read_azure_project, project): project for project in azdo_projects}
+                for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        raise AnalysisCancelledError("Analysis cancelled")
+                    project = futures[future]
+                    try:
+                        _project, raw = future.result()
+                    except Exception as exc:
+                        logger.warning("Azure activity collection failed for %s: %s", project, exc)
+                        raw = []
+                    project_results[project] = raw
 
-        _run("github", "github", _github)
-        if "github" in sources_scanned:
-            repos_scanned.append(f"GitHub (remote): {github_repo}")
-    else:
-        coverage.append("github: STANDUP_GITHUB_REPO / GITHUB_TOKEN not set")
+        for project in azdo_projects:
+            raw = project_results.get(project, [])
+            for item in raw:
+                item["source"] = "azdo"
+                item["container"] = project
+                items.append(item)
+                rname = str(item.get("repository", "")).lower()
+                activity_by_repo[(project, rname)] = activity_by_repo.get((project, rname), 0) + 1
+        for repo in az_inventory:
+            name = str(repo.get("name", ""))
+            project = str(repo.get("container", ""))
+            if repo.get("discovery_error"):
+                coverage_tracker.add("azdo", project, name, "inaccessible", str(repo.get("error", "")))
+                continue
+            if activity_by_repo.get((project, name.lower()), 0) == 0:
+                repo["active"] = False
+                coverage_tracker.add("azdo", project, name, "unchanged", "no changes in window", eligible=False)
+                continue
+            status = "truncated" if repo.get("error") else "succeeded"
+            coverage_tracker.add("azdo", project, name, status, str(repo.get("error", "")))
+            repos_scanned.append(f"Azure DevOps (remote): {project}/{name}")
+        if az_inventory:
+            sources_scanned.append("azdo")
+    elif _want("azdo"):
+        coverage_tracker.add(
+            "azdo",
+            ",".join(azdo_projects) or "unconfigured",
+            "repository estate",
+            "inaccessible",
+            "TEAM_ANALYSIS_AZDO_PROJECTS / AZURE_DEVOPS_TOKEN not set",
+        )
 
-    # Azure DevOps — scan the resolved project's repos when AzDO is configured.
-    azdo_project = project_key if source == "azdevops" else (get_azure_devops_project() or "")
-    if _want("azdo") and azdo_project and get_azure_devops_token():
-
-        def _azdo() -> list[dict]:
-            from yeaboi.tools.azure_devops import azdevops_recent_commits, azdevops_recent_prs
-
-            return azdevops_recent_commits(azdo_project, days=_SCAN_DAYS) + azdevops_recent_prs(
-                azdo_project, days=_SCAN_DAYS
-            )
-
-        _run("azdo", "azdo", _azdo)
-        if "azdo" in sources_scanned:
-            repos_scanned.append(f"Azure DevOps (remote): {azdo_project}")
-    else:
-        coverage.append("azdo: AZURE_DEVOPS_PROJECT / AZURE_DEVOPS_TOKEN not set")
-
+    coverage_blob = coverage_tracker.as_dict()
+    coverage.extend(coverage_notes(coverage_blob))
+    if _return_inventory:
+        return items, sources_scanned, coverage, repos_scanned, inventory, coverage_blob
     return items, sources_scanned, coverage, repos_scanned
 
 
-def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[list[dict], int]:
-    """Keep only commit/PR items authored by one of ``members``.
+def _identity_key(value: str) -> str:
+    """Normalize display names, usernames, and email local-parts for strict matching."""
+    return re.sub(r"[^a-z0-9]", "", (value or "").strip().lower())
+
+
+def _filter_items_by_members(items: list[dict], members: list[str]) -> tuple[list[dict], dict, list[str], int]:
+    """Keep commit/PR items authored by one of ``members`` or by an AI agent account.
 
     Matches a member name (case-insensitive) against the item's ``author`` OR the
     local-part of its ``author_email`` — the tracker's assignee display name and the
     git commit-author name are different identity spaces and often disagree, so we
-    check both. Returns ``(filtered_items, distinct_authors_matched)``.
+    check both. Items authored by an AI agent/bot account (:func:`_classify_ai_authors`)
+    are also retained: agents act on behalf of the selected members, and dropping
+    them silently zeroes the very footprint this scan measures. The retention is
+    disclosed via the returned count. Kept items are annotated with
+    ``matched_members`` (human matches) or ``agent_authored`` (bot matches) so
+    downstream per-member breakdowns don't have to re-derive the attribution.
+    Returns
+    ``(filtered_items, distinct_authors_matched, unmatched_members, agent_items_retained)``.
     """
-    norm = {m.strip().lower() for m in members if m and m.strip()}
+    selected = [m.strip() for m in members if m and m.strip()]
+    norm = {_identity_key(m): m for m in selected}
     if not norm:
-        return items, 0
+        return [], {}, selected, 0
     kept: list[dict] = []
-    matched_authors: set[str] = set()
+    matched: dict[str, set[str]] = {m: set() for m in selected}
+    agents_retained = 0
     for it in items:
-        author = (it.get("author", "") or "").strip().lower()
+        author = (it.get("author", "") or "").strip()
         email = (it.get("author_email", "") or "").strip().lower()
         local = email.split("@", 1)[0] if email else ""
-        if (author and author in norm) or (local and local in norm):
+        candidates = {_identity_key(author), _identity_key(local)}
+        member_keys = candidates & set(norm)
+        if member_keys:
+            it["matched_members"] = sorted(norm[key] for key in member_keys)
             kept.append(it)
-            matched_authors.add(author or local)
-    return kept, len(matched_authors)
+            for key in member_keys:
+                matched[norm[key]].add(author or local)
+        elif _classify_ai_authors(author, email):
+            it["agent_authored"] = True
+            kept.append(it)
+            agents_retained += 1
+    resolved = {member: sorted(identities) for member, identities in matched.items() if identities}
+    unmatched = [member for member in selected if member not in resolved]
+    return kept, resolved, unmatched, agents_retained
+
+
+def _dedupe_fanout_items(items: list[dict]) -> tuple[list[dict], int]:
+    """Collapse fan-out automation: one piece of work pushed to many repos.
+
+    Platform teams script the same maintenance commit/PR into hundreds of
+    repositories under their own identities (observed live: one Dockerfile fix
+    ×93 repos, one scripted PR per YL.Domain.* repo). Counting every copy
+    multiplies the footprint denominator by the estate size and drowns the AI
+    signal, so items with the same kind, author, message, and day collapse to
+    the first occurrence regardless of repository. The survivor is annotated
+    with ``fanout_copies`` and the collapsed total is returned for disclosure.
+    """
+    kept: list[dict] = []
+    first_by_key: dict[tuple, dict] = {}
+    collapsed = 0
+    for it in items:
+        title = str(it.get("title", "") or "")
+        repo_short = str(it.get("repository", "") or "").rsplit("/", 1)[-1]
+        if repo_short:
+            # Azure DevOps titles carry a " (repo)" suffix; strip it so copies
+            # of one message differ only by repository, not by title.
+            title = title.removesuffix(f" ({repo_short})")
+        author = (it.get("author", "") or "").strip()
+        key = (
+            str(it.get("kind", "")),
+            _identity_key(author) or (it.get("author_email", "") or "").strip().lower(),
+            title,
+            str(it.get("body", "") or ""),
+            str(it.get("timestamp", "") or "")[:10],
+        )
+        survivor = first_by_key.get(key)
+        if survivor is None:
+            first_by_key[key] = it
+            kept.append(it)
+        else:
+            survivor["fanout_copies"] = survivor.get("fanout_copies", 1) + 1
+            collapsed += 1
+    return kept, collapsed
 
 
 def run_ai_adoption(
@@ -314,6 +770,13 @@ def run_ai_adoption(
     all_stories: list[dict],
     members: list[str] | None = None,
     sub_sources: list[str] | None = None,
+    window_days: int = _SCAN_DAYS,
+    analysis_scope: dict[str, list[str]] | None = None,
+    progress: list[str] | None = None,
+    code_features: list[str] | tuple[str, ...] | set[str] | None = None,
+    db_path=None,
+    generate_insights: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[AiAdoptionSignal, dict]:
     """Orchestrate the AI-adoption scan: discover sources → collect → aggregate.
 
@@ -324,36 +787,423 @@ def run_ai_adoption(
     ``all_stories`` are accepted for future ticket-derived repo discovery and to
     keep the signature stable; scanning currently uses configured code sources.
 
-    When ``members`` is given, the scan is re-scoped to commits/PRs authored by
-    those people (matched by name or email local-part). If the filter matches
-    nothing, the whole-team scan is kept and a coverage note is added — reporting a
-    false 0% footprint would be worse than an unscoped number.
+    ``members`` is authoritative: only commits and PRs authored by a selected,
+    resolved identity are retained — plus items authored by AI agent/bot accounts
+    (disclosed in coverage), since agents act on behalf of the selected members.
+    An absent selection or zero identity matches produces an explicit empty
+    result; it never broadens to whole-team *human* activity.
     """
-    logger.info("run_ai_adoption: source=%s project=%s members=%s", source, project_key, members or "all")
+    enabled_features = [
+        feature for feature in ("ai_footprint", "code_health") if code_features is None or feature in code_features
+    ]
+    footprint_enabled = "ai_footprint" in enabled_features
+    health_enabled = "code_health" in enabled_features
+    logger.info(
+        "run_ai_adoption: source=%s project=%s members=%s features=%s",
+        source,
+        project_key,
+        members or "all",
+        enabled_features,
+    )
     try:
-        items, sources_scanned, coverage, repos_scanned = collect_ai_activity(source, project_key, sub_sources)
-        if members:
-            filtered, matched = _filter_items_by_members(items, members)
-            if filtered:
-                logger.info(
-                    "AI-usage member filter: %d/%d items from %d matched author(s)", len(filtered), len(items), matched
+        # Dispatch on the collector's signature instead of catching TypeError from
+        # the call: a genuine TypeError raised inside collection must propagate,
+        # not silently rerun the whole scan with legacy (unscoped) semantics.
+        # Integrations/tests may replace the collector with a legacy 3-arg stub.
+        try:
+            parameters = inspect.signature(collect_ai_activity).parameters
+            legacy_collector = "cancel_event" not in parameters and not any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            legacy_collector = False
+        if legacy_collector:
+            collected = collect_ai_activity(source, project_key, sub_sources)
+        else:
+            collected = collect_ai_activity(
+                source,
+                project_key,
+                sub_sources,
+                window_days=window_days,
+                analysis_scope=analysis_scope,
+                progress=progress,
+                code_features=enabled_features,
+                cancel_event=cancel_event,
+                _return_inventory=True,
+            )
+        if len(collected) == 4:
+            items, sources_scanned, coverage, repos_scanned = collected
+            inventory = []
+            coverage_blob = {
+                "component": "code",
+                "status": "complete",
+                "window_days": window_days,
+                "discovered": len(repos_scanned),
+                "eligible": len(repos_scanned),
+                "attempted": len(repos_scanned),
+                "succeeded": len(repos_scanned),
+                "failed": 0,
+                "unchanged": 0,
+                "inaccessible": 0,
+                "truncated": 0,
+                "per_container": {},
+                "assets": [],
+            }
+        else:
+            items, sources_scanned, coverage, repos_scanned, inventory, coverage_blob = collected
+        selected_users = [m.strip() for m in (members or []) if m and m.strip()]
+        if selected_users:
+            items, matched_identities, unmatched_users, agents_retained = _filter_items_by_members(
+                items, selected_users
+            )
+            _report_code_progress(
+                progress,
+                enabled_features,
+                phase="Matching selected-user activity",
+                current=len(matched_identities),
+                total=len(selected_users),
+                unit="users",
+                secondary_count=len(items),
+                secondary_unit="activity records",
+            )
+            logger.info(
+                "AI-usage member filter retained %d item(s) for %d/%d selected user(s)",
+                len(items),
+                len(matched_identities),
+                len(selected_users),
+            )
+            if agents_retained:
+                logger.info("AI-usage member filter retained %d agent-authored item(s)", agents_retained)
+                coverage.append(
+                    f"{agents_retained} agent-authored item(s) retained "
+                    "(AI bot accounts act on behalf of the selected members)"
                 )
-                items = filtered
-            else:
-                logger.warning("AI-usage member filter matched no commit authors — keeping whole-team scan")
-                coverage.append("member filter matched no commit authors — showing whole-team footprint")
-        signal = aggregate_ai_markers(items)
+            if unmatched_users:
+                coverage.append("unmatched selected users: " + ", ".join(unmatched_users))
+            if not items:
+                coverage.append("no commits or authored PRs matched the selected users")
+        else:
+            items = []
+            matched_identities = {}
+            unmatched_users = []
+            coverage.append("no users selected — code analysis requires an explicit member scope")
+        # Repo provenance must reflect what the scan actually covered, so keep
+        # the pre-dedup member-scoped list for it; everything else (footprint
+        # numerator AND denominator, samples, activity summary, code-health
+        # change lookups) counts distinct work only.
+        member_scoped_items = items
+        items, fanout_collapsed = _dedupe_fanout_items(items)
+        if fanout_collapsed:
+            logger.info("AI-usage fan-out dedup collapsed %d duplicate item(s)", fanout_collapsed)
+            coverage.append(
+                f"{fanout_collapsed} duplicate fan-out item(s) collapsed "
+                "(same author, message, and day across multiple repositories)"
+            )
+        signal = aggregate_ai_markers(items) if footprint_enabled else AiAdoptionSignal()
+        if footprint_enabled:
+            _report_code_progress(
+                progress,
+                ("ai_footprint",),
+                phase="Classifying detectable AI markers",
+                current=signal.scanned_commits + signal.scanned_prs,
+                total=signal.scanned_commits + signal.scanned_prs,
+                unit="commits and PRs",
+            )
 
         # Repo/source provenance onto the signal for honest, source-aware rendering.
         from dataclasses import replace
 
-        signal = replace(signal, sources_scanned=tuple(sources_scanned), repos_scanned=tuple(repos_scanned))
+        touched_repositories = sorted(
+            {
+                (str(item.get("source", "")), str(item.get("container", "")), str(item.get("repository", "")))
+                for item in member_scoped_items
+                if item.get("repository")
+            }
+        )
+        repos_scanned = [
+            (
+                f"GitHub (remote): {repository}"
+                if provider == "github"
+                else f"Azure DevOps (remote): {container}/{repository}"
+            )
+            for provider, container, repository in touched_repositories
+        ]
+        selected_sources = sorted({provider for provider, _container, _repository in touched_repositories})
+        signal = replace(signal, sources_scanned=tuple(selected_sources), repos_scanned=tuple(repos_scanned))
 
-        samples = _collect_samples(items)
+        # Evidence is no longer a first-N sample. Keep every AI-marked item so
+        # recommendations and JSON/MCP consumers can inspect the complete basis.
+        samples = _collect_samples(items, limit=None) if footprint_enabled else []
+        insights_executor = None
+        insights_future = None
+        if footprint_enabled and generate_insights and signal.scanned_commits + signal.scanned_prs > 0:
+            _report_code_progress(
+                progress,
+                ("ai_footprint",),
+                phase="Generating AI-footprint recommendations",
+            )
+            insights_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ai-footprint-guidance")
+            insights_future = insights_executor.submit(
+                generate_ai_adoption_insights,
+                signal,
+                {"samples": samples},
+                db_path=db_path,
+            )
+        change_requests: list[tuple[str, str, str, dict]] = []
+        seen_changes: set[tuple[str, str, str, str]] = set()
+        for provider, container, repository in touched_repositories if health_enabled else []:
+            repo_activity = [
+                item
+                for item in items
+                if item.get("source") == provider
+                and str(item.get("container", "")) == container
+                and str(item.get("repository", "")) == repository
+            ]
+            attributable_changes = [
+                item
+                for item in repo_activity
+                if (item.get("kind") == "commit" and item.get("commit_id"))
+                or (item.get("kind") == "pr" and item.get("pr_id"))
+            ]
+            for item in attributable_changes:
+                change_id = str(item.get("commit_id") or f"pr:{item.get('pr_id', '')}")
+                dedupe_key = (provider, container, repository, change_id)
+                if change_id and dedupe_key not in seen_changes:
+                    seen_changes.add(dedupe_key)
+                    change_requests.append((provider, container, repository, item))
+
+        def _change_cache_key(provider: str, container: str, repository: str, item: dict) -> str:
+            identity = str(item.get("commit_id") or f"pr:{item.get('pr_id', '')}")
+            version = "" if item.get("commit_id") else str(item.get("timestamp", ""))
+            raw = "\0".join((provider, container, repository, identity, version))
+            return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+        def _cacheable_change(item: dict) -> bool:
+            return bool(item.get("commit_id")) or str(item.get("status", "")).lower() in {
+                "merged",
+                "closed",
+                "completed",
+            }
+
+        def _read_changed_files(request: tuple[str, str, str, dict]) -> list[dict]:
+            provider, container, repository, item = request
+            if provider == "github":
+                from yeaboi.tools.github import github_changed_files
+
+                return github_changed_files(repository, [item])
+            from yeaboi.tools.azure_devops import azdevops_changed_files
+
+            return azdevops_changed_files(container, repository, [item])
+
+        changed_files: list[dict] = []
+        change_results: dict[int, list[dict]] = {}
+        pending: list[tuple[int, tuple[str, str, str, dict]]] = []
+        changed_file_cache_hits = 0
+        cache_store = None
+        if health_enabled and db_path:
+            try:
+                from pathlib import Path
+
+                from yeaboi.team_profile import TeamProfileStore
+
+                cache_store = TeamProfileStore(Path(db_path))
+            except Exception:
+                logger.debug("Code-change cache unavailable", exc_info=True)
+        try:
+            for index, request in enumerate(change_requests):
+                provider, container, repository, item = request
+                cached = None
+                if cache_store is not None and _cacheable_change(item):
+                    try:
+                        cached = cache_store.load_analysis_enrichment(
+                            "code_changed_files",
+                            _change_cache_key(provider, container, repository, item),
+                            "provider-metadata-v1",
+                        )
+                    except Exception:
+                        logger.debug("Code-change cache lookup failed", exc_info=True)
+                if isinstance(cached, dict) and isinstance(cached.get("files"), list):
+                    changed_file_cache_hits += 1
+                    change_results[index] = [{**file, "cache_status": "hit"} for file in cached["files"]]
+                else:
+                    pending.append((index, request))
+
+            # Global cold-run cap: each pending entry is one live API call. Cache
+            # hits above are never capped, so warm re-runs keep full coverage;
+            # newest-first ordering degrades quality toward older evidence.
+            from yeaboi.config import get_team_analysis_max_change_lookups
+
+            lookup_cap = get_team_analysis_max_change_lookups()
+            skipped_lookups = 0
+            if len(pending) > lookup_cap:
+                pending.sort(key=lambda entry: str(entry[1][3].get("timestamp", "")), reverse=True)
+                skipped_lookups = len(pending) - lookup_cap
+                pending = pending[:lookup_cap]
+                coverage.append(
+                    f"code-change inspection capped at {lookup_cap} of {lookup_cap + skipped_lookups} "
+                    "uncached changes (newest first; older changes were not inspected)"
+                )
+            lookup_total = len(change_requests) - skipped_lookups
+
+            completed_changes = len(change_results)
+            files_found = sum(len(files) for files in change_results.values())
+            _report_code_progress(
+                progress,
+                ("code_health",) if health_enabled else (),
+                phase="Reading code-change metadata",
+                current=completed_changes,
+                total=lookup_total,
+                unit="changes inspected",
+                secondary_count=files_found,
+                secondary_unit="file records found",
+            )
+            if pending:
+                with ThreadPoolExecutor(
+                    max_workers=_code_workers(len(pending)),
+                    thread_name_prefix="code-change-files",
+                ) as executor:
+                    futures = {
+                        executor.submit(_read_changed_files, request): (index, request) for index, request in pending
+                    }
+                    for future in as_completed(futures):
+                        if cancel_event is not None and cancel_event.is_set():
+                            for pending_future in futures:
+                                pending_future.cancel()
+                            raise AnalysisCancelledError("Analysis cancelled")
+                        index, request = futures[future]
+                        provider, container, repository, item = request
+                        try:
+                            files = future.result()
+                        except Exception as exc:
+                            logger.warning(
+                                "Code-change metadata failed for %s/%s: %s",
+                                container,
+                                repository,
+                                exc,
+                            )
+                            files = [
+                                {
+                                    "provider": provider,
+                                    "container": container,
+                                    "repository": repository,
+                                    "path": str(item.get("key", "unknown change")),
+                                    "status": "failed",
+                                    "error": str(exc),
+                                }
+                            ]
+                        change_results[index] = files
+                        if (
+                            cache_store is not None
+                            and _cacheable_change(item)
+                            and not any(str(file.get("status", "")).lower() == "failed" for file in files)
+                        ):
+                            try:
+                                cache_store.save_analysis_enrichment(
+                                    "code_changed_files",
+                                    _change_cache_key(provider, container, repository, item),
+                                    "provider-metadata-v1",
+                                    {"files": files},
+                                )
+                            except Exception:
+                                logger.debug("Code-change cache checkpoint failed", exc_info=True)
+                        completed_changes += 1
+                        files_found += len(files)
+                        _report_code_progress(
+                            progress,
+                            ("code_health",),
+                            phase="Reading code-change metadata",
+                            current=completed_changes,
+                            total=lookup_total,
+                            unit="changes inspected",
+                            secondary_count=files_found,
+                            secondary_unit="file records found",
+                        )
+            changed_files = [file for index in range(len(change_requests)) for file in change_results.get(index, [])]
+        finally:
+            if cache_store is not None:
+                cache_store.close()
+
+        # Annotate each item with the file paths its change touched so the
+        # practices scorer can measure tests/docs hygiene. Items whose lookup
+        # was cap-skipped or failed get NO annotation (not an empty list) —
+        # they must stay out of the file-based denominators.
+        if health_enabled:
+            for index, (_prov, _cont, _repo, item) in enumerate(change_requests):
+                files = change_results.get(index)
+                if files is None:
+                    continue
+                ok_files = [file for file in files if str(file.get("status", "")).lower() != "failed"]
+                if files and not ok_files:
+                    continue
+                item["changed_file_paths"] = [str(file.get("path", "")) for file in ok_files if file.get("path")]
+
+        file_reports: list[dict] = []
+        health_findings: list[dict] = []
+        action_plan: list[dict] = []
+        file_coverage: dict = {}
+        repository_health: dict = {}
+        if health_enabled:
+            from yeaboi.analysis.code_health import analyse_changed_files, changed_file_summary, prioritize_actions
+            from yeaboi.analysis.coverage import coverage_notes
+
+            file_reports, health_findings, file_coverage = analyse_changed_files(changed_files, window_days)
+            _report_code_progress(
+                progress,
+                ("code_health",),
+                phase="Evaluating code-change health",
+                current=len(file_reports),
+                total=len(file_reports),
+                unit="file records",
+            )
+            action_plan = prioritize_actions(health_findings)
+            repository_health = changed_file_summary(file_reports, health_findings)
+            repository_health["cached_change_lookups"] = changed_file_cache_hits
+            file_coverage["cached_change_lookups"] = changed_file_cache_hits
+            coverage.extend(coverage_notes(file_coverage))
+        commit_count = sum(item.get("kind") == "commit" for item in items)
+        pr_count = sum(item.get("kind") == "pr" for item in items)
+        # Per-member activity over the deduped items so the footprint
+        # denominator is verifiable at a glance (one member carrying thousands
+        # of automated commits is visible instead of hidden in a total).
+        member_rows: dict[str, dict] = {
+            member: {"member": member, "commits": 0, "prs": 0, "ai_marked": 0} for member in selected_users
+        }
+        agent_row = {"member": "AI agent accounts", "commits": 0, "prs": 0, "ai_marked": 0}
+        for item in items:
+            kind = item.get("kind")
+            if kind not in ("commit", "pr"):
+                continue
+            slot = "commits" if kind == "commit" else "prs"
+            ai_marked = bool(_classify_ai_item(item))
+            targets = [member_rows[m] for m in item.get("matched_members", ()) if m in member_rows]
+            if not targets and item.get("agent_authored"):
+                targets = [agent_row]
+            for row in targets:
+                row[slot] += 1
+                if ai_marked:
+                    row["ai_marked"] += 1
+        member_activity = sorted(
+            (row for row in member_rows.values()),
+            key=lambda row: (-(row["commits"] + row["prs"]), row["member"]),
+        )
+        if agent_row["commits"] or agent_row["prs"]:
+            member_activity.append(agent_row)
+        # Practice hygiene (tests / docs / tickets / descriptions) per member —
+        # the lead signal of the card; the footprint is secondary context.
+        practices = member_practices(items, selected_users)
+        file_data = practices["file_data"]
+        if health_enabled and file_data["total"] and file_data["with_file_data"] < file_data["total"]:
+            coverage.append(
+                f"file-level practice signals (tests, docs files) based on "
+                f"{file_data['with_file_data']} of {file_data['total']} items with change metadata"
+            )
+        elif not health_enabled and file_data["total"]:
+            coverage.append("file-level practice signals unavailable — code health disabled")
         blob: dict = {
+            "enabled_features": enabled_features,
             "summary": {
-                "scanned_commits": signal.scanned_commits,
-                "scanned_prs": signal.scanned_prs,
+                "scanned_commits": signal.scanned_commits if footprint_enabled else commit_count,
+                "scanned_prs": signal.scanned_prs if footprint_enabled else pr_count,
                 "ai_commits": signal.ai_commits,
                 "ai_prs": signal.ai_prs,
                 "footprint_pct": signal.footprint_pct,
@@ -363,10 +1213,43 @@ def run_ai_adoption(
                 "per_source": [list(p) for p in signal.per_source],
                 "repos_scanned": list(repos_scanned),
                 "is_lower_bound": True,
+                "small_sample": footprint_small_sample(signal) if footprint_enabled else False,
+                "selected_users": selected_users,
+                "matched_users": len(matched_identities),
+                "unmatched_users": unmatched_users,
+                "fanout_collapsed": fanout_collapsed,
             },
             "samples": samples,
             "coverage": coverage,
+            "coverage_report": file_coverage if health_enabled else coverage_blob,
+            "activity_coverage": coverage_blob,
+            "selected_users": selected_users,
+            "matched_identities": matched_identities,
+            "unmatched_users": unmatched_users,
+            "member_activity": member_activity,
+            "member_practices": practices,
+            "activity_summary": {
+                "commits": commit_count,
+                "authored_prs": pr_count,
+                "reviews": sum(item.get("kind") == "review" for item in items),
+                "comments": sum(item.get("kind") == "comment" for item in items),
+                "repositories_touched": len(touched_repositories),
+            },
+            "changed_files": file_reports,
+            "attribution": {
+                "authored_commit": "high confidence",
+                "authored_pr": "medium confidence; the PR may include collaborators' commits",
+            },
+            "repository_health": repository_health,
+            "findings": health_findings,
+            "action_plan": action_plan,
+            "window_days": window_days,
         }
+        if insights_future is not None:
+            try:
+                blob["insights"] = insights_future.result()
+            finally:
+                insights_executor.shutdown(wait=True)
         logger.info(
             "run_ai_adoption: scanned=%d ai=%d footprint=%.1f%% sources=%s",
             signal.scanned_commits + signal.scanned_prs,
@@ -375,16 +1258,29 @@ def run_ai_adoption(
             ",".join(sources_scanned) or "none",
         )
         return signal, blob
+    except AnalysisCancelledError:
+        # Cancellation is not a failure — propagate so the engine discards the run.
+        raise
     except Exception:  # pragma: no cover - collect/aggregate already guard
         logger.exception("run_ai_adoption failed; returning empty signal")
-        return AiAdoptionSignal(), {"summary": {}, "samples": [], "coverage": ["ai-usage scan failed"]}
+        return AiAdoptionSignal(), {
+            "enabled_features": enabled_features,
+            "summary": {},
+            "samples": [],
+            "coverage": ["code analysis failed"],
+            "coverage_report": {},
+            "repository_health": {},
+            "changed_files": [],
+            "findings": [],
+            "action_plan": [],
+        }
 
 
-def _collect_samples(items: list[dict], limit: int = 20) -> list[dict]:
-    """Up to ``limit`` illustrative AI-marked items for the report (never bodies)."""
+def _collect_samples(items: list[dict], limit: int | None = 20) -> list[dict]:
+    """AI-marked evidence items for the report (never bodies)."""
     out: list[dict] = []
     for item in items:
-        tools = _classify_ai_markers(f"{item.get('title', '')}\n{item.get('body', '')}")
+        tools = _classify_ai_item(item)
         if not tools:
             continue
         out.append(
@@ -398,7 +1294,7 @@ def _collect_samples(items: list[dict], limit: int = 20) -> list[dict]:
                 "url": item.get("url", ""),
             }
         )
-        if len(out) >= limit:
+        if limit is not None and len(out) >= limit:
             break
     return out
 
@@ -593,7 +1489,7 @@ def _fallback_ai_adoption_insights(signal: AiAdoptionSignal, samples: list[dict]
     }
 
 
-def generate_ai_adoption_insights(signal: AiAdoptionSignal, examples: dict) -> dict:
+def generate_ai_adoption_insights(signal: AiAdoptionSignal, examples: dict, *, db_path=None) -> dict:
     """Use the LLM to coach on AI adoption: start / stop / keep / try.
 
     Returns ``{"start": [...], "stop": [...], "keep": [...], "try": [...]}`` where
@@ -664,7 +1560,44 @@ def generate_ai_adoption_insights(signal: AiAdoptionSignal, examples: dict) -> d
     )
 
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        from yeaboi.agent.llm import get_analysis_fast_model
+        from yeaboi.config import get_llm_model, get_llm_provider
+
+        fast_model = get_analysis_fast_model()
+        cache_model = fast_model or get_llm_model() or f"{get_llm_provider()}:default"
+        cache_key = hashlib.sha256(
+            json.dumps(
+                {"version": "ai-footprint-coaching-v2", "digest": digest, "examples": example_lines},
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        if db_path:
+            from yeaboi.analysis.llm_runtime import record_analysis_cache_hit
+            from yeaboi.team_profile import TeamProfileStore
+
+            try:
+                with TeamProfileStore(db_path) as store:
+                    cached = store.load_analysis_enrichment("ai_footprint_coaching", cache_key, cache_model)
+                if cached:
+                    record_analysis_cache_hit(records=signal.scanned_commits + signal.scanned_prs)
+                    return cached
+            except Exception:
+                logger.debug("AI-footprint coaching cache read failed", exc_info=True)
+
+        from yeaboi.analysis.llm_runtime import record_analysis_input
+
+        record_analysis_input(records=signal.scanned_commits + signal.scanned_prs)
+
+        response = _llm_invoke(
+            prompt,
+            temperature=0.0,
+            max_reasks=0,
+            model=fast_model,
+            task="ai_footprint_coaching",
+            records=signal.scanned_commits + signal.scanned_prs,
+            request_timeout=60,
+        )
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -694,6 +1627,12 @@ def generate_ai_adoption_insights(signal: AiAdoptionSignal, examples: dict) -> d
                 "LLM AI-adoption insights generated (%s)",
                 ", ".join(f"{k}={len(v)}" for k, v in insights.items()),
             )
+            if db_path:
+                try:
+                    with TeamProfileStore(db_path) as store:
+                        store.save_analysis_enrichment("ai_footprint_coaching", cache_key, cache_model, insights)
+                except Exception:
+                    logger.debug("AI-footprint coaching cache write failed", exc_info=True)
             return insights
         logger.warning("LLM AI-adoption insights had unexpected shape; using fallback")
     except Exception as exc:

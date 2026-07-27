@@ -12,6 +12,7 @@ import github as _gh_import_check  # noqa: F401 — ensures PyGithub is installe
 from yeaboi.tools import detect_platform, get_tools
 from yeaboi.tools.github import (
     _parse_repo,
+    github_changed_files,
     github_list_issues,
     github_read_file,
     github_read_readme,
@@ -45,6 +46,29 @@ class TestParseRepo:
 
     def test_whitespace_stripped(self):
         assert _parse_repo("  https://github.com/owner/repo  ") == "owner/repo"
+
+
+class TestChangedFiles:
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_commit_and_pr_attribution_are_separate(self, mock_client):
+        repo = mock_client.return_value.get_repo.return_value
+        commit_file = MagicMock(filename="src/a.py", status="modified", additions=4, deletions=1, patch="+x")
+        pr_file = MagicMock(filename="src/b.py", status="added", additions=8, deletions=0, patch="+y")
+        repo.get_commit.return_value.files = [commit_file]
+        repo.get_pull.return_value.get_files.return_value = [pr_file]
+
+        files = github_changed_files(
+            "owner/repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [(f["path"], f["attribution"], f["confidence"]) for f in files] == [
+            ("src/a.py", "authored_commit", "high"),
+            ("src/b.py", "authored_pr", "medium"),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -475,3 +499,206 @@ class TestGithubListIssuesRateLimitAndPagination:
         result = github_list_issues.invoke({"repo_url": "owner/repo", "max_issues": 10})
 
         assert "increase max_issues" not in result
+
+
+# ---------------------------------------------------------------------------
+# Activity-scan caps (analysis cold-run bounds)
+# ---------------------------------------------------------------------------
+
+
+class TestActivityScanCaps:
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_commit_iteration_capped(self, mock_client):
+        from datetime import UTC, datetime
+
+        from yeaboi.tools.github import _MAX_REPO_COMMITS, github_recent_commits
+
+        def _commit(index):
+            c = MagicMock()
+            c.sha = f"sha{index:05d}"
+            c.html_url = ""
+            c.commit.message = f"change {index}"
+            c.commit.author.name = "Alice"
+            c.commit.author.email = "a@example.com"
+            c.commit.author.date = datetime(2026, 1, 1, tzinfo=UTC)
+            return c
+
+        repo = mock_client.return_value.get_repo.return_value
+        repo.get_commits.return_value = [_commit(index) for index in range(_MAX_REPO_COMMITS + 40)]
+
+        items = github_recent_commits("owner/repo", days=120, include_changed_files=False)
+
+        assert len(items) == _MAX_REPO_COMMITS
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_pr_listing_sliced_even_without_metadata_cache(self, mock_client):
+        from yeaboi.tools.github import _MAX_REPO_PRS, github_recent_prs
+
+        def _pr(number):
+            pr = MagicMock()
+            pr.number = number
+            pr.title = f"PR {number}"
+            pr.body = ""
+            pr.merged = False
+            pr.state = "open"
+            pr.updated_at = None
+            pr.html_url = ""
+            pr.user.login = "alice"
+            pr.get_reviews.return_value = []
+            pr.get_issue_comments.return_value = []
+            pr.get_commits.return_value = []
+            return pr
+
+        repo = mock_client.return_value.get_repo.return_value
+        repo.get_pulls.return_value = [_pr(number) for number in range(_MAX_REPO_PRS + 30)]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        assert sum(1 for item in items if item.get("kind") == "pr") == _MAX_REPO_PRS
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_pr_items_carry_source_branch(self, mock_client):
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = MagicMock()
+        pr.number = 7
+        pr.title = "Fix login"
+        pr.body = ""
+        pr.merged = False
+        pr.state = "open"
+        pr.updated_at = None
+        pr.html_url = ""
+        pr.user.login = "alice"
+        pr.head.ref = "codex/fix-login"
+        pr.get_reviews.return_value = []
+        pr.get_issue_comments.return_value = []
+        pr.get_commits.return_value = []
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        pr_items = [item for item in items if item.get("kind") == "pr"]
+        assert pr_items and pr_items[0]["branch"] == "codex/fix-login"
+
+    @staticmethod
+    def _pr_with_discussion(number):
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        pr = MagicMock()
+        pr.number = number
+        pr.title = f"PR {number}"
+        pr.body = ""
+        pr.merged = False
+        pr.state = "open"
+        pr.updated_at = None
+        pr.html_url = ""
+        pr.user.login = "alice"
+        review = MagicMock()
+        review.user.login = "bob"
+        review.body = "LGTM"
+        review.state = "APPROVED"
+        review.id = 1
+        review.submitted_at = now
+        review.html_url = ""
+        comment = MagicMock()
+        comment.user.login = "carol"
+        comment.body = "nice"
+        comment.id = 2
+        comment.updated_at = now
+        comment.html_url = ""
+        pr.get_reviews.return_value = [review]
+        pr.get_issue_comments.return_value = [comment]
+        branch_commit = MagicMock()
+        branch_commit.sha = f"branchsha{number:04d}"
+        branch_commit.html_url = ""
+        branch_commit.commit.message = "wip"
+        branch_commit.commit.author.name = "Alice"
+        branch_commit.commit.author.email = "a@example.com"
+        branch_commit.commit.author.date = now
+        pr.get_commits.return_value = [branch_commit]
+        return pr
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_standup_path_skips_discussion_items(self, mock_client):
+        # Regression: the standup collector fetches reviews via
+        # github_recent_reviews — emitting them here too duplicated every
+        # review in the feed (and cost two extra API calls per PR).
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = self._pr_with_discussion(7)
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+
+        assert not any(item["kind"] in ("review", "comment") for item in items)
+        pr.get_reviews.assert_not_called()
+        pr.get_issue_comments.assert_not_called()
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_exhaustive_path_emits_discussion_items(self, mock_client):
+        from yeaboi.tools.github import github_recent_prs
+
+        pr = self._pr_with_discussion(7)
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [pr]
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False, exhaustive=True)
+
+        kinds = {item["kind"] for item in items}
+        assert {"pr", "review", "comment"} <= kinds
+        review_item = next(item for item in items if item["kind"] == "review")
+        assert review_item["author"] == "bob"
+        assert review_item["key"] == "review:1"
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_standup_branch_commit_expansion_capped(self, mock_client):
+        from yeaboi.tools.github import _MAX_PR_COMMIT_LOOKUPS, github_recent_prs
+
+        prs = [self._pr_with_discussion(number) for number in range(_MAX_PR_COMMIT_LOOKUPS + 5)]
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = prs
+
+        items = github_recent_prs("owner/repo", days=120, include_changed_files=False)
+        commit_items = [item for item in items if item["kind"] == "commit"]
+        assert len(commit_items) == _MAX_PR_COMMIT_LOOKUPS
+
+        exhaustive_items = github_recent_prs("owner/repo", days=120, include_changed_files=False, exhaustive=True)
+        exhaustive_commits = [item for item in exhaustive_items if item["kind"] == "commit"]
+        assert len(exhaustive_commits) == len(prs)
+
+
+class TestGithubAnalysisInventory:
+    @staticmethod
+    def _repo(full_name, *, pushed_at, archived=False):
+        repo = MagicMock()
+        repo.full_name = full_name
+        repo.pushed_at = pushed_at
+        repo.updated_at = pushed_at
+        repo.archived = archived
+        repo.html_url = f"https://github.com/{full_name}"
+        repo.default_branch = "main"
+        repo.empty = False
+        return repo
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_relevance_flags(self, mock_client):
+        from datetime import UTC, datetime, timedelta
+
+        from yeaboi.tools.github import github_analysis_inventory
+
+        now = datetime.now(UTC)
+        owner = mock_client.return_value.get_organization.return_value
+        owner.get_repos.return_value = [
+            self._repo("acme/live", pushed_at=now - timedelta(days=3)),
+            self._repo("acme/stale", pushed_at=now - timedelta(days=400)),
+            self._repo("acme/dead", pushed_at=now - timedelta(days=3), archived=True),
+            self._repo("acme/unknown", pushed_at=None),
+        ]
+
+        rows = {r["name"]: r for r in github_analysis_inventory(["acme"], days=120, include_trees=False)}
+
+        assert rows["acme/live"]["active"] is True
+        assert rows["acme/stale"]["active"] is False and rows["acme/stale"]["skip_reason"] == ""
+        assert rows["acme/dead"]["active"] is False
+        assert rows["acme/dead"]["skip_reason"] == "archived repository"
+        assert rows["acme/unknown"]["active"] is False
+        assert rows["acme/unknown"]["skip_reason"] == "no recorded push activity"

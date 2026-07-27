@@ -163,6 +163,7 @@ CAPABILITIES: dict[str, dict] = {
         "engines": {
             ("yeaboi.analysis.engine", "run_team_analysis"),
             ("yeaboi.analysis.engine", "get_team_roster"),
+            ("yeaboi.analysis.engine", "get_team_roster_result"),
         },
         "mcp_tools": {"team_analyze", "team_roster"},
         "tui_mode": "team-analysis",
@@ -253,6 +254,7 @@ HIDDEN_PARAMS: dict[str, dict[str, str]] = {
     "team_analyze": {
         "progress": "injected adapter — the tool bridges it to ctx.report_progress notifications",
         "team_name": "AzDO team label; MCP auto-resolves it from the configured AZURE_DEVOPS_TEAM",
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; meaningless over the MCP wire",
     },
 }
 
@@ -291,6 +293,8 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
         "project": "project_key",
         "sprints": "sprint_count",
         "depth": "analysis_depth",
+        "window_days": "analysis_window_days",
+        "features": "analysis_features",
         "samples": "generate_samples",
         "no_insights": "include_insights",  # inverted store_true flag
     },
@@ -310,7 +314,17 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf review": {"strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
-    "analyze": {"format", "strict", "delivery", "code", "docs"},
+    "analyze": {
+        "format",
+        "strict",
+        "delivery",
+        "code",
+        "docs",
+        "github_owner",
+        "azdo_code_project",
+        "confluence_space",
+        "notion_root",
+    },
 }
 
 # Engine params deliberately without a CLI flag. Reasoned; staleness-checked.
@@ -319,6 +333,8 @@ CLI_HIDDEN: dict[str, dict[str, str]] = {
         "progress": "live shared-list progress feed for the TUI frame loop — the CLI prints a banner instead",
         "team_name": "AzDO team label; auto-resolved from the configured AZURE_DEVOPS_TEAM",
         "components": "assembled from per-component --delivery/--code/--docs sub-source flags",
+        "analysis_scope": "assembled from the four provider-specific scope flags",
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
     },
 }
 

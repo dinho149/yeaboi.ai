@@ -30,7 +30,10 @@ class _BridgedProgress(list):
         try:
             import asyncio
 
-            asyncio.run_coroutine_threadsafe(self._ctx.report_progress(float(len(self)), None, str(item)), self._loop)
+            from yeaboi.analysis.progress import format_analysis_progress
+
+            message = format_analysis_progress(item)
+            asyncio.run_coroutine_threadsafe(self._ctx.report_progress(float(len(self)), None, message), self._loop)
         except Exception:
             logger.debug("analysis progress bridge failed (continuing)", exc_info=True)
 
@@ -44,8 +47,12 @@ def _team_analyze(
     include_ai_usage: bool,
     include_doc_quality: bool,
     analysis_depth: str,
+    analysis_window_days: int,
     components=None,
     members=None,
+    analysis_scope=None,
+    analysis_model=None,
+    analysis_features=None,
     progress=None,
 ):
     if source not in ("", "jira", "azdevops", "both"):
@@ -60,6 +67,10 @@ def _team_analyze(
             bad = [s for s in (subs or []) if s not in allowed[comp]]
             if bad:
                 raise ValueError(f"{comp} sub-sources must be a subset of {allowed[comp]} — got {bad!r}")
+    allowed_features = {"delivery", "ai_footprint", "code_health", "documentation"}
+    bad_features = [feature for feature in (analysis_features or []) if feature not in allowed_features]
+    if bad_features:
+        raise ValueError(f"analysis_features contains unsupported values: {bad_features!r}")
     from yeaboi.analysis import run_team_analysis
 
     return run_team_analysis(
@@ -71,6 +82,10 @@ def _team_analyze(
         include_ai_usage=include_ai_usage,
         include_doc_quality=include_doc_quality,
         analysis_depth=analysis_depth,
+        analysis_window_days=analysis_window_days,
+        analysis_scope=analysis_scope,
+        analysis_model=analysis_model,
+        analysis_features=analysis_features,
         components=components,
         members=members,
         progress=progress,
@@ -122,9 +137,13 @@ def register(app) -> None:
         include_insights: bool = True,
         include_ai_usage: bool = True,
         include_doc_quality: bool = True,
-        analysis_depth: str = "quick",
+        analysis_depth: str = "deep",
+        analysis_window_days: int = 120,
         components: dict[str, list[str]] | None = None,
         members: dict[str, list[str]] | None = None,
+        analysis_scope: dict[str, list[str]] | None = None,
+        analysis_model: str | None = None,
+        analysis_features: list[str] | None = None,
     ) -> dict:
         """Analyse the team's tracker history (closed sprints) into a calibration profile:
         velocity, story-point calibration, writing style, DoD signals, plus coaching insights
@@ -139,19 +158,22 @@ def register(app) -> None:
         team's commits/PRs for AI-tool markers (Co-Authored-By: Claude, Copilot, Cursor, …) and
         reports a detectable AI-adoption footprint — a LOWER BOUND (inline IDE assist leaves no
         trace); set False to skip those GitHub/AzDO network calls. include_doc_quality also reads
-        the team's recent Notion/Confluence pages and reports a documentation clarity score plus a
-        stylometric AI-likelihood ESTIMATE (not a detection); set False to skip those doc-platform
-        network calls.
-        analysis_depth is "quick" (default, zero LLM calls) or "deep" (cached AI ticket
-        classification and AI-written explanations).
+        every recently changed page in the configured Notion/Confluence estate and reports
+        documentation clarity, ownership, structure, and actionability; set False to skip those calls.
+        analysis_depth is "deep" (default, exhaustive AI enrichment) or "quick"
+        (deterministic metrics only). analysis_window_days defaults to 120.
         components selects which parts run, each over its OWN sub-sources:
         {"delivery": ["jira","azdevops"], "code": ["github","azdo"], "docs": ["confluence","notion"]}.
+        analysis_features independently selects result areas from delivery, ai_footprint,
+        code_health, and documentation; None runs every area supported by components.
         Delivery runs one velocity profile PER selected tracker; code and docs are each ONE global
         scan over their selected hosts. An absent/empty component is skipped; None falls back to the
         include_* booleans. Result: {delivery:{tracker:{profile,...}}, code:{signal,examples}|null,
         docs:{signal,examples}|null, comparison, warnings}.
-        members re-scopes each delivery tracker's velocity/contributors (and code authors) to a
-        subset, e.g. {"jira": ["Alice","Bob"]} (blank = whole team); discover names with team_roster."""
+        members re-scopes each delivery tracker's velocity/contributors and is mandatory scope
+        for code analysis, e.g. {"jira": ["Alice","Bob"]}. Code results contain only matched
+        selected-user commits, authored PRs, activity, and changed files; a blank or unmatched
+        scope never falls back to whole-team code. Discover names with team_roster."""
         import asyncio
 
         try:
@@ -169,8 +191,12 @@ def register(app) -> None:
             include_ai_usage,
             include_doc_quality,
             analysis_depth,
+            analysis_window_days,
             components,
             members,
+            analysis_scope,
+            analysis_model,
+            analysis_features,
             progress,
         )
 

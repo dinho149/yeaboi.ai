@@ -928,3 +928,54 @@ class TestFallbackTeamInsights:
 
         result = _fallback_team_insights(_make_profile(), _STATS_EXAMPLES)
         assert all(len(result[k]) <= 4 for k in _INSIGHT_KEYS)
+
+
+class TestSynthesisEvidenceCap:
+    """The synthesis prompt keeps only recent examples per point value — the
+    digest's aggregates already include every story."""
+
+    _SYNTHESIS_JSON = {
+        "point_descriptions": {"3": "Routine story."},
+        "narrative": {"executive_summary": "Fine.", "sections": {}},
+        "insights": {},
+    }
+
+    @staticmethod
+    def _point_inputs():
+        stories = [
+            {"issue_key": f"S-{index}", "summary": f"Story {index}", "points": 3.0, "discipline": "backend"}
+            for index in range(20)
+        ] + [
+            {"issue_key": f"B-{index}", "summary": f"Big {index}", "points": 5.0, "discipline": "backend"}
+            for index in range(2)
+        ]
+        return (stories, (), {}, {})
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_prompt_keeps_last_six_per_value_and_discloses_omissions(self, mock_get_llm):
+        from yeaboi.tools.team_learning import _generate_analysis_synthesis
+
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps(self._SYNTHESIS_JSON))
+        _generate_analysis_synthesis(_make_profile(), _STATS_EXAMPLES, self._point_inputs(), include_insights=False)
+
+        messages = mock_get_llm.return_value.invoke.call_args[0][0]
+        prompt = messages[0].content
+        assert prompt.count('"key": "S-') == 6  # capped from 20
+        assert prompt.count('"key": "B-') == 2  # small groups untouched
+        assert '"S-19"' in prompt and '"S-0"' not in prompt  # newest kept
+        assert '"evidence_omitted": {"3.0": 14}' in prompt
+
+    @patch("yeaboi.agent.llm.get_llm")
+    def test_capped_material_round_trips_through_cache(self, mock_get_llm, tmp_path):
+        from yeaboi.tools.team_learning import _generate_analysis_synthesis
+
+        mock_get_llm.return_value.invoke.return_value = _mock_llm_response(json.dumps(self._SYNTHESIS_JSON))
+        db = tmp_path / "analysis.db"
+        first = _generate_analysis_synthesis(
+            _make_profile(), _STATS_EXAMPLES, self._point_inputs(), include_insights=False, db_path=db
+        )
+        second = _generate_analysis_synthesis(
+            _make_profile(), _STATS_EXAMPLES, self._point_inputs(), include_insights=False, db_path=db
+        )
+        assert not first.get("_cache_hit")
+        assert second.get("_cache_hit") is True

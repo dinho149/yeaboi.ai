@@ -11,6 +11,7 @@ from yeaboi.agent.llm import (
     _supports_temperature,
     build_multimodal_content,
     estimate_tokens,
+    get_analysis_fast_model,
     get_llm,
     get_usage_stats,
     invoke_json,
@@ -74,6 +75,38 @@ class TestLlmOverride:
 
         anyio.run(main)
         assert result[0] is fake
+
+
+class TestAnalysisFastModel:
+    def test_cloud_provider_defaults(self, monkeypatch):
+        monkeypatch.delenv("TEAM_ANALYSIS_FAST_MODEL", raising=False)
+        expected = {
+            "anthropic": "claude-haiku-4-5-20251001",
+            "openai": "gpt-4o-mini",
+            "google": "gemini-2.5-flash-lite",
+        }
+        for provider, model in expected.items():
+            monkeypatch.setenv("LLM_PROVIDER", provider)
+            assert get_analysis_fast_model() == model
+
+    def test_local_and_account_scoped_providers_keep_primary_model(self, monkeypatch):
+        monkeypatch.delenv("TEAM_ANALYSIS_FAST_MODEL", raising=False)
+        for provider in ("ollama", "bedrock"):
+            monkeypatch.setenv("LLM_PROVIDER", provider)
+            assert get_analysis_fast_model() is None
+
+    def test_explicit_override_and_disable(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        monkeypatch.setenv("TEAM_ANALYSIS_FAST_MODEL", "my-fast-model")
+        assert get_analysis_fast_model() == "my-fast-model"
+        monkeypatch.setenv("TEAM_ANALYSIS_FAST_MODEL", "default")
+        assert get_analysis_fast_model() is None
+
+    def test_sampling_override_keeps_host_model(self, monkeypatch):
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        fake = TestLlmOverride()._fake_model()
+        with llm_override(fake):
+            assert get_analysis_fast_model() is None
 
 
 class TestGetLlmAnthropic:
@@ -802,6 +835,7 @@ class TestInvokeJson:
         captured = {}
 
         def fake_get_llm(model=None, temperature=0.0, json_mode=False):
+            captured["model"] = model
             captured["json_mode"] = json_mode
             captured["temperature"] = temperature
             return llm
@@ -858,6 +892,12 @@ class TestInvokeJson:
         captured = self._patch(monkeypatch, llm)
         invoke_json("prompt", temperature=0.3)
         assert captured["temperature"] == 0.3
+
+    def test_model_override_forwarded(self, monkeypatch):
+        llm = self._FakeLLM(['{"ok": 1}'])
+        captured = self._patch(monkeypatch, llm)
+        invoke_json("prompt", model="fast-model")
+        assert captured["model"] == "fast-model"
 
     def test_repair_reask_keeps_image_blocks(self, monkeypatch, tmp_path):
         """The repair round must rebuild the multimodal first message — a

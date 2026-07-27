@@ -19,7 +19,8 @@ from rich.panel import Panel
 from rich.table import Table as RichTable
 from rich.text import Text
 
-from yeaboi.analysis.ai_usage import _source_label
+from yeaboi.analysis.ai_usage import _source_label, footprint_small_sample
+from yeaboi.analysis.doc_quality import doc_small_sample
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY as _TA_GLOSSARY
 from yeaboi.tools.team_learning import INSIGHT_CATEGORIES, compute_recommendations
 from yeaboi.ui.shared._components import PAD
@@ -83,6 +84,9 @@ class _TaCtx:
         # the active tracker's own (empty) profile signals.
         self.ai_sig = None
         self.doc_sig = None
+        self.code_blob: dict = {}
+        self.doc_blob: dict = {}
+        self.analysis_features: tuple[str, ...] = ()
         # Composed card order (delivery cards for the active tracker + global cards),
         # set by the screen builder and shared with the results-loop navigation.
         self.visible_order: tuple[str, ...] = _TA_CARD_ORDER
@@ -181,10 +185,17 @@ def _ta_meter(value: float, total: float = 100, *, width: int = 18, style: str =
     return out
 
 
+_TA_CALLOUT_MAX_LINES = 10  # callouts are atomic renderables — one taller than the viewport renders as blank
+
+
 def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -> None:
     """Render a compact, bordered explanatory callout."""
     lines = [Text(title, style=f"bold {colour}")]
-    for wrapped in _ta_wrap(body, max(28, ctx.width - len(PAD) - 16)):
+    wrapped_lines = _ta_wrap(body, max(28, ctx.width - len(PAD) - 16))
+    if len(wrapped_lines) > _TA_CALLOUT_MAX_LINES:
+        wrapped_lines = wrapped_lines[:_TA_CALLOUT_MAX_LINES]
+        wrapped_lines.append("… (full detail in export)")
+    for wrapped in wrapped_lines:
         lines.append(Text(wrapped, style=c_muted))
     ctx.add_renderable(
         Panel(
@@ -194,6 +205,26 @@ def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -
             padding=(0, 1),
         )
     )
+
+
+_TA_LIST_LIMIT = 6  # scan-coverage repo rows shown before collapsing to "+ N more"
+
+
+def _ta_scope_text(scopes: list, limit: int = _TA_LIST_LIMIT) -> str:
+    """Summarise an action's affected repos/platforms — cross-repo actions can span hundreds."""
+    names = [str(scope) for scope in scopes if scope]
+    if len(names) <= limit:
+        return ", ".join(names)
+    return ", ".join(names[:limit]) + f" and {len(names) - limit} more (full list in export)"
+
+
+def _ta_more_row(ctx: _TaCtx, hidden: int, noun: str) -> None:
+    """Dim '+ N more <noun>' disclosure row closing a capped list."""
+    if hidden <= 0:
+        return
+    t = Text(PAD + "  ", justify="left")
+    t.append(f"+ {hidden} more {noun}", style=c_dim)
+    ctx.add(t)
 
 
 def _ta_metric_tiles(ctx: _TaCtx, tiles: list[tuple[str, str, str, str]]) -> None:
@@ -1785,62 +1816,201 @@ def _ta_insights(ctx: _TaCtx, profile) -> None:
     _ta_coaching_dashboard(ctx, insights)
 
 
+def _practice_cell(num: int, den: int, rate, min_sample: int) -> Text:
+    """One practices-table cell: n/a without data, raw fraction under the
+    sample floor (a % built on 2 items is noise), coloured % otherwise."""
+    if not den:
+        return Text("n/a", style=c_dim)
+    if den < min_sample:
+        return Text(f"{num}/{den}", style=c_muted)
+    sty = c_good if rate >= 70 else (c_warn if rate >= 40 else c_bad)
+    return Text(f"{rate:.0f}%", style=sty)
+
+
+def _ta_practices_table(ctx: _TaCtx, practices: dict, member_activity: list, team_ai: int) -> None:
+    """The card's lead section: per-member practice hygiene over ALL attributed work."""
+    ctx.heading("Engineering practices by member")
+    framing = Text(PAD + "  ")
+    framing.append("All attributed work in the window — not just AI-marked items.", style=c_muted)
+    ctx.add(framing)
+    min_sample = int(practices.get("min_sample", 5) or 5)
+    ai_by_member = {str(row.get("member", "")): int(row.get("ai_marked", 0) or 0) for row in member_activity}
+    table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
+    table.add_column("Member", ratio=1)
+    table.add_column("Cmts", justify="right", width=6)
+    table.add_column("PRs", justify="right", width=5)
+    table.add_column("AI", justify="right", width=5)
+    table.add_column("Tests", justify="right", width=7)
+    table.add_column("Docs", justify="right", width=7)
+    table.add_column("Tickets", justify="right", width=8)
+    table.add_column("Descs", justify="right", width=7)
+    rows = [(row, False) for row in (practices.get("members") or [])]
+    team = practices.get("team")
+    if isinstance(team, dict):
+        rows.append((team, True))
+    for row, is_team in rows:
+        member = str(row.get("member", ""))
+        ai_count = team_ai if is_team else ai_by_member.get(member, 0)
+        table.add_row(
+            Text(member, style=f"bold {c_accent}" if is_team else c_value),
+            Text(str(row.get("commits", 0)), style=c_accent),
+            Text(str(row.get("prs", 0)), style=c_accent),
+            Text(str(ai_count), style=c_good),
+            _practice_cell(row.get("tests_num", 0), row.get("tests_den", 0), row.get("tests_rate"), min_sample),
+            _practice_cell(row.get("docs_num", 0), row.get("docs_den", 0), row.get("docs_rate"), min_sample),
+            _practice_cell(row.get("ticket_num", 0), row.get("ticket_den", 0), row.get("ticket_rate"), min_sample),
+            _practice_cell(row.get("desc_num", 0), row.get("desc_den", 0), row.get("desc_rate"), min_sample),
+        )
+    ctx.add_table(table)
+    file_data = practices.get("file_data") or {}
+    if file_data.get("total") and file_data.get("with_file_data", 0) < file_data["total"]:
+        footnote = Text(PAD + "  ")
+        footnote.append(
+            f"File-based columns (Tests, Docs) cover {file_data.get('with_file_data', 0)} "
+            f"of {file_data['total']} items with change metadata.",
+            style=c_dim,
+        )
+        ctx.add(footnote)
+
+
 def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
-    """AI-adoption footprint: how much tracked work shows an AI-tool trace + coaching.
+    """AI usage: per-member practice hygiene first, then the detectable footprint.
 
     Reads ``profile.ai_adoption`` for the numbers and ``examples["ai_adoption"]`` for
-    coaching insights + coverage. Always frames the footprint as a lower bound. Old
-    profiles (no scan) show the same "run a new analysis" empty state as the other cards.
+    the practices/coaching blobs + coverage. The lead section is HOW members work
+    (tests, docs, tickets, descriptions); the footprint stays as secondary context,
+    always framed as a lower bound. Old profiles (no scan) show the same "run a new
+    analysis" empty state as the other cards.
     """
     _add, _ex = ctx.add, ctx.ex
     # Prefer the profile's signal; fall back to ctx.ai_sig for a delivery-off run
     # (no profile) where the signal is carried on the context instead.
     sig = getattr(profile, "ai_adoption", None) or ctx.ai_sig
-    blob = _ex.get("ai_adoption", {})
+    blob = ctx.code_blob or _ex.get("ai_adoption", {})
     scanned = (getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)) if sig else 0
 
-    ctx.heading("AI Adoption")
+    # A 0% that comes from unresolved identities is a data problem, not an AI
+    # signal — say so wherever the card lands (empty state included).
+    _selected = (blob.get("selected_users") or []) if isinstance(blob, dict) else []
+    _identity_mismatch = bool(_selected) and not (blob.get("matched_identities") or {})
+
+    def _mismatch_callout() -> None:
+        unmatched = ", ".join(str(u) for u in (blob.get("unmatched_users") or _selected))
+        _ta_callout(
+            ctx,
+            "IDENTITY MISMATCH",
+            f"None of the selected members ({unmatched}) matched a git author name or email "
+            "in the scan window — 0% here means unmatched identities, not zero AI usage. "
+            "Compare the selection against real commit authors.",
+            colour=c_warn,
+        )
+
+    ctx.heading("AI Usage")
     if not sig or scanned == 0:
-        coverage = (blob.get("coverage") or [])[:4] if isinstance(blob, dict) else []
+        if _identity_mismatch:
+            _mismatch_callout()
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
         detail = (
             "No AI-usage scan for this analysis. Run a new analysis with a repository or "
             "tracker configured to generate one."
         )
         if coverage:
             detail += " Coverage: " + " · ".join(str(gap) for gap in coverage)
-        _ta_callout(ctx, "NO AI-USAGE DATA", detail, colour=c_muted)
+        _ta_callout(ctx, "NO RECENT CODE DATA", detail, colour=c_muted)
         return
-    _ta_callout(
-        ctx,
-        "LOWER BOUND SIGNAL",
-        "Only AI tools that leave a marker in commits or PR descriptions are counted. "
-        "Inline IDE assistance leaves no trace, so actual usage may be higher.",
-        colour=c_warn,
-    )
+    marked = sig.ai_commits + sig.ai_prs
+    if _identity_mismatch:
+        _mismatch_callout()
+
+    # Lead with practice hygiene — the lead already knows the team uses AI; the
+    # question this card answers first is HOW WELL each member works. Old saved
+    # profiles predate practice scoring and fall back to the activity table.
+    practices = blob.get("member_practices") if isinstance(blob, dict) else None
+    member_activity = blob.get("member_activity") if isinstance(blob, dict) else None
+    if isinstance(practices, dict) and practices.get("members"):
+        _ta_practices_table(ctx, practices, member_activity or [], marked)
+    elif member_activity:
+        ctx.heading("Activity by member")
+        table = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
+        table.add_column("Member", ratio=1)
+        table.add_column("Commits", justify="right", width=9)
+        table.add_column("PRs", justify="right", width=7)
+        table.add_column("AI-marked", justify="right", width=11)
+        for row in member_activity:
+            table.add_row(
+                Text(str(row.get("member", "")), style=c_value),
+                Text(str(row.get("commits", 0)), style=c_accent),
+                Text(str(row.get("prs", 0)), style=c_accent),
+                Text(str(row.get("ai_marked", 0)), style=c_good),
+            )
+        ctx.add_table(table)
+
+    if marked == 0:
+        _ta_callout(
+            ctx,
+            "LOWER BOUND SIGNAL",
+            f"No detectable markers in {scanned} scanned items. Only tools that leave attribution "
+            "traces are counted — Claude Code and aider trailers, Codex / Copilot / Devin / Cursor "
+            "agent commits, PRs, and branches. Inline autocomplete and chat copy-paste (Copilot "
+            "ghost-text, Cursor Tab, ChatGPT) leave no trace, so zero detected does not mean zero AI use.",
+            colour=c_warn,
+        )
+    else:
+        _ta_callout(
+            ctx,
+            "LOWER BOUND SIGNAL",
+            "Only AI tools that leave a marker in commits or PR descriptions are counted. "
+            "Inline IDE assistance leaves no trace, so actual usage may be higher.",
+            colour=c_warn,
+        )
 
     fp = getattr(sig, "footprint_pct", 0.0)
     fp_sty = c_good if fp >= 40 else (c_warn if fp >= 15 else c_bad)
-    marked = sig.ai_commits + sig.ai_prs
+    _window = blob.get("window_days") if isinstance(blob, dict) else None
+    _scan_detail = f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs"
+    if _window:
+        _scan_detail += f" · last {_window} days"
+    # Below the sample floor a % swings wildly on single items — show the raw
+    # count instead of a definitive-looking percentage (see footprint_small_sample).
+    _small = footprint_small_sample(sig)
+    _fp_tile = (
+        ("Detectable footprint", f"{marked} of {scanned}", "small sample — % unstable", c_muted)
+        if _small
+        else ("Detectable footprint", f"{fp:.0f}%", "of scanned work carries a marker", fp_sty)
+    )
     _ta_metric_tiles(
         ctx,
         [
-            ("Detectable footprint", f"{fp:.0f}%", "of scanned work carries a marker", fp_sty),
-            ("Work scanned", str(scanned), f"{sig.scanned_commits} commits · {sig.scanned_prs} PRs", c_accent),
+            _fp_tile,
+            ("Work scanned", str(scanned), _scan_detail, c_accent),
             ("AI-marked work", str(marked), f"{sig.ai_commits} commits · {sig.ai_prs} PRs", c_good),
         ],
     )
-    hero = Text(PAD + "  ")
-    hero.append("Footprint  ", style=c_muted)
-    hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
-    hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
-    _add(hero)
+    if not _small:
+        hero = Text(PAD + "  ")
+        hero.append("Footprint  ", style=c_muted)
+        hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
+        hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
+        _add(hero)
 
-    if sig.sources_scanned or getattr(sig, "repos_scanned", ()):
+    if isinstance(blob, dict) and blob.get("selected_users"):
+        ctx.heading("Selected-user scope")
+        ctx.kv("Selected", ", ".join(str(user) for user in blob.get("selected_users", [])))
+        matched = blob.get("matched_identities") or {}
+        ctx.kv("Matched", f"{len(matched)}/{len(blob.get('selected_users', []))}")
+        if blob.get("unmatched_users"):
+            ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
+
+    repos = list(getattr(sig, "repos_scanned", ()) or ())
+    if sig.sources_scanned or repos:
         ctx.heading("Scan coverage")
         if sig.sources_scanned:
             ctx.kv("Sources", ", ".join(_source_label(s) for s in sig.sources_scanned))
-        for repo in getattr(sig, "repos_scanned", ()):
-            ctx.kv("Repository", repo)
+        if repos:
+            ctx.kv("Repositories", str(len(repos)))
+            for repo in repos[:_TA_LIST_LIMIT]:
+                ctx.kv("", repo)
+            _ta_more_row(ctx, len(repos) - _TA_LIST_LIMIT, "repositories")
 
     _ta_ranked_bars(
         ctx,
@@ -1856,10 +2026,11 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     coverage = blob.get("coverage") if isinstance(blob, dict) else None
     if coverage:
         ctx.heading("Not scanned")
-        for gap in coverage[:4]:
+        for gap in coverage[:8]:
             g = Text(PAD + "  ", justify="left")
             g.append(f"• {gap}", style=c_dim)
             _add(g)
+        _ta_more_row(ctx, len(coverage) - 8, "coverage notes (full list in export)")
 
     # Examples — real AI-marked items (with links/SHAs) so the numbers are inspectable.
     samples = blob.get("samples") if isinstance(blob, dict) else None
@@ -1869,13 +2040,14 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         table.add_column("Tool", width=14)
         table.add_column("Tracked work", ratio=1)
         table.add_column("Reference", ratio=1)
-        for s in samples[:5]:
+        for s in samples[:8]:
             tool = "unlabelled AI" if s.get("tool") == "other_ai" else s.get("tool", "")
             title = str(s.get("title", "")).strip()
             ref = s.get("url") or (f"commit {s.get('key')}" if s.get("key") else "")
             ref_text = Text(str(ref), style=f"underline {c_accent} link {ref}" if s.get("url") else c_example)
             table.add_row(Text(str(tool), style=c_ai_head), Text(title, style=c_value), ref_text)
         ctx.add_table(table)
+        _ta_more_row(ctx, len(samples) - 8, "AI-marked items (full list in export)")
 
     insights = blob.get("insights", {}) if isinstance(blob, dict) else {}
     if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):
@@ -1883,22 +2055,71 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         _ta_coaching_dashboard(ctx, insights)
 
 
+def _ta_code_health(ctx: _TaCtx, profile) -> None:
+    """Selected-user code-change health, deliberately separate from AI markers."""
+    blob = ctx.code_blob or ctx.ex.get("ai_adoption", {})
+    health = blob.get("repository_health", {}) if isinstance(blob, dict) else {}
+    ctx.heading("Code Health — Selected-user Changed Files")
+    if not health:
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
+        detail = "No attributable changed files were available for the selected users."
+        if coverage:
+            detail += " Coverage: " + " · ".join(str(gap) for gap in coverage)
+        _ta_callout(ctx, "NO RECENT CODE-HEALTH DATA", detail, colour=c_muted)
+        return
+    _ta_callout(
+        ctx,
+        "SELECTED-USER SCOPE",
+        "These findings cover files attributable to the selected users' commits and authored PRs. "
+        "Untouched repositories and unrelated contributors are not analysed.",
+        colour=c_warn,
+    )
+    _ta_metric_tiles(
+        ctx,
+        [
+            ("Files analysed", str(health.get("files_analysed", 0)), "selected-user changes", c_accent),
+            ("Repositories touched", str(health.get("repositories_touched", 0)), "by selected users", c_value),
+            ("Change findings", str(health.get("findings", 0)), "evidence-backed indicators", c_warn),
+        ],
+    )
+    _ta_ranked_bars(ctx, "Findings by category", tuple((health.get("by_category") or {}).items()))
+    selected = blob.get("selected_users") or []
+    if selected:
+        ctx.heading("Selected-user scope")
+        ctx.kv("Selected", ", ".join(str(user) for user in selected))
+        matched = blob.get("matched_identities") or {}
+        ctx.kv("Matched", f"{len(matched)}/{len(selected)}")
+        if blob.get("unmatched_users"):
+            ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
+    actions = blob.get("action_plan", []) if isinstance(blob, dict) else []
+    if actions:
+        ctx.heading("Prioritized action plan")
+        for action in actions[:8]:
+            _ta_callout(
+                ctx,
+                f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
+                f"{action.get('detail', '')} Scope: {_ta_scope_text(action.get('affected_scope', []))}. "
+                f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
+                colour=c_warn if action.get("priority") == "high" else c_accent,
+            )
+
+
 def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     """Documentation quality: how clear the team's written pages are + how AI shows up.
 
     Reads ``profile.doc_quality`` for the numbers and ``examples["doc_quality"]`` for
-    coaching insights + coverage. Clarity is a readability score; the AI-likelihood is
-    a stylometric ESTIMATE (never a detection). Old profiles (no scan) show the same
+    coaching insights + coverage. Clarity is a readability score and usefulness
+    measures purpose, ownership, structure, and actionability. Old profiles show the same
     "run a new analysis" empty state as the other cards.
     """
     _add, _ex = ctx.add, ctx.ex
     sig = getattr(profile, "doc_quality", None) or ctx.doc_sig
-    blob = _ex.get("doc_quality", {})
+    blob = ctx.doc_blob or _ex.get("doc_quality", {})
     pages = getattr(sig, "pages_scanned", 0) if sig else 0
 
     ctx.heading("Documentation")
     if not sig or pages == 0:
-        coverage = (blob.get("coverage") or [])[:4] if isinstance(blob, dict) else []
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
         detail = (
             "No documentation scan for this analysis. Run a new analysis with Notion or "
             "Confluence configured to generate one."
@@ -1910,24 +2131,45 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     _ta_callout(
         ctx,
         "HOW TO READ THESE SIGNALS",
-        "Clarity is a readability score. AI-likelihood is a writing-style estimate, not a "
-        "detection. Explicit AI markers are shown separately as a lower bound fact.",
+        "Clarity measures readability. Usefulness measures whether pages state their purpose, "
+        "owner, structure, and concrete actions. Explicit AI disclosures remain a lower bound. "
+        "Documentation is scanned workspace-wide and attributed to each page's last editor; "
+        "the code scan covers only the selected members.",
         colour=c_warn,
     )
+    _doc_small = doc_small_sample(sig)
+    if _doc_small:
+        _ta_callout(
+            ctx,
+            "SMALL SAMPLE",
+            f"Averages cover only {pages} page(s) — read them as examples, not a trend.",
+            colour=c_muted,
+        )
 
     clarity = getattr(sig, "avg_clarity", 0.0)
-    cl_sty = c_good if clarity >= 60 else (c_warn if clarity >= 40 else c_bad)
-    ai_sty = c_bad if sig.avg_ai_likelihood >= 55 else c_muted
+    cl_sty = c_muted if _doc_small else (c_good if clarity >= 60 else (c_warn if clarity >= 40 else c_bad))
+    usefulness = getattr(sig, "avg_usefulness", 0.0)
+    useful_sty = c_muted if _doc_small else (c_good if usefulness >= 70 else (c_warn if usefulness >= 50 else c_bad))
     _ta_metric_tiles(
         ctx,
         [
             ("Average clarity", f"{clarity:.0f}/100", "higher means easier to read", cl_sty),
-            ("Pages scanned", str(pages), ", ".join(sig.platforms_scanned) or "platform unavailable", c_accent),
             (
-                "AI-likelihood estimate",
-                f"{sig.avg_ai_likelihood:.0f}/100",
-                f"~{sig.likely_ai_pages} pages above threshold",
-                ai_sty,
+                "Pages scanned",
+                str(pages),
+                (", ".join(sig.platforms_scanned) or "platform unavailable")
+                + (
+                    f" · last {blob.get('window_days')} days"
+                    if isinstance(blob, dict) and blob.get("window_days")
+                    else ""
+                ),
+                c_accent,
+            ),
+            (
+                "Average usefulness",
+                f"{usefulness:.0f}/100",
+                f"{getattr(sig, 'actionable_pages', 0)} actionable · {getattr(sig, 'owned_pages', 0)} owned",
+                useful_sty,
             ),
             (
                 "Explicit AI markers",
@@ -1962,15 +2204,17 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     if sig.per_platform:
         _ta_ranked_bars(ctx, "Platforms", sig.per_platform)
 
-    # Pages worth a look
+    # Pages worth a look. Capped: tables are atomic renderables for the viewport
+    # packer — one taller than the viewport renders as blank scroll space.
     if sig.flagged_pages:
         ctx.heading("Pages needing attention")
         flagged = RichTable(show_header=True, header_style=c_muted, box=None, padding=(0, 1), pad_edge=False)
         flagged.add_column("Page", ratio=1)
         flagged.add_column("Why it was flagged", ratio=2)
-        for title, reason in sig.flagged_pages:
+        for title, reason in sig.flagged_pages[:8]:
             flagged.add_row(Text(title, style=c_value), Text(reason, style=c_warn))
         ctx.add_table(flagged)
+        _ta_more_row(ctx, len(sig.flagged_pages) - 8, "flagged pages (full list in export)")
 
     # Examples — real scanned pages (with links) so the scores are inspectable.
     samples = blob.get("samples") if isinstance(blob, dict) else None
@@ -1980,8 +2224,8 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
         sample_table.add_column("Page", ratio=2)
         sample_table.add_column("Platform", width=12)
         sample_table.add_column("Clarity", width=9)
-        sample_table.add_column("AI est.", width=8)
-        for s in samples[:5]:
+        sample_table.add_column("Useful", width=8)
+        for s in samples[:8]:
             title = str(s.get("title", "")).strip()
             url = str(s.get("url", "") or "")
             page = Text(title, style=f"underline {c_accent} link {url}" if url else c_value)
@@ -1991,14 +2235,26 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
                 page,
                 Text(str(s.get("platform", "")), style=c_muted),
                 Text(f"{s.get('clarity', 0):.0f}/100", style=c_value),
-                Text(f"{s.get('ai_likelihood', 0):.0f}/100", style=c_dim),
+                Text(f"{s.get('usefulness', 0):.0f}/100", style=c_dim),
             )
         ctx.add_table(sample_table)
+        _ta_more_row(ctx, len(samples) - 8, "scanned pages (full list in export)")
 
     insights = blob.get("insights", {}) if isinstance(blob, dict) else {}
     if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):
         ctx.heading("Recommended actions")
         _ta_coaching_dashboard(ctx, insights)
+    actions = blob.get("action_plan", []) if isinstance(blob, dict) else []
+    if actions:
+        ctx.heading("Prioritized action plan")
+        for action in actions[:8]:
+            _ta_callout(
+                ctx,
+                f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
+                f"{action.get('detail', '')} Scope: {_ta_scope_text(action.get('affected_scope', []))}. "
+                f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
+                colour=c_warn if action.get("priority") == "high" else c_accent,
+            )
 
 
 # The overview cards: title, section builders (render order), glossary terms.
@@ -2053,8 +2309,13 @@ _TA_CARDS: dict[str, dict] = {
         "glossary": (),
     },
     "ai-adoption": {
-        "title": "AI Adoption",
+        "title": "AI Usage",
         "builders": (_ta_ai_adoption,),
+        "glossary": (),
+    },
+    "code-health": {
+        "title": "Code Health",
+        "builders": (_ta_code_health,),
         "glossary": (),
     },
     "documentation": {
@@ -2072,10 +2333,19 @@ _TA_CARD_ORDER: tuple[str, ...] = tuple(_TA_CARDS)
 
 
 # Delivery cards (everything except the two global cards + the insights coach).
-_DELIVERY_CARD_ORDER: tuple[str, ...] = tuple(k for k in _TA_CARDS if k not in ("ai-adoption", "documentation"))
+_DELIVERY_CARD_ORDER: tuple[str, ...] = tuple(
+    k for k in _TA_CARDS if k not in ("ai-adoption", "code-health", "documentation")
+)
 
 
-def visible_card_order(profile, has_code: bool, has_docs: bool) -> tuple[str, ...]:
+def visible_card_order(
+    profile,
+    has_code: bool,
+    has_docs: bool,
+    *,
+    has_code_health: bool = False,
+    analysis_features: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
     """Which section cards to show, composing per-tracker delivery cards with the
     global code/docs cards.
 
@@ -2089,9 +2359,15 @@ def visible_card_order(profile, has_code: bool, has_docs: bool) -> tuple[str, ..
     order: list[str] = []
     if profile is not None:
         order.extend(k for k in _DELIVERY_CARD_ORDER if k != "insights")
-    if has_code:
+    features = set(analysis_features or ())
+    explicit = analysis_features is not None
+    # code-health first: it's deterministic, so it sits with the regular cards,
+    # ABOVE the ✦ AI-POWERED INSIGHTS group the LLM-backed cards render under.
+    if has_code_health and (not explicit or "code_health" in features):
+        order.append("code-health")
+    if has_code and (not explicit or "ai_footprint" in features):
         order.append("ai-adoption")
-    if has_docs:
+    if has_docs and (not explicit or "documentation" in features):
         order.append("documentation")
     if profile is not None:
         order.append("insights")
@@ -2148,13 +2424,22 @@ def _ta_card_teaser(ctx: _TaCtx, profile, key: str) -> str:
         sig = getattr(profile, "ai_adoption", None) or ctx.ai_sig
         scanned = (getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)) if sig else 0
         if scanned:
+            if footprint_small_sample(sig):
+                marked = getattr(sig, "ai_commits", 0) + getattr(sig, "ai_prs", 0)
+                return f"{marked} of {scanned} AI-marked (small sample)"
             return f"{sig.footprint_pct:.0f}% AI footprint"
         return "not scanned"
+    if key == "code-health":
+        health = (ctx.code_blob or ex.get("ai_adoption", {})).get("repository_health", {})
+        if health:
+            return f"{health.get('files_analysed', 0)} files · {health.get('findings', 0)} findings"
+        return "no attributable changes"
     if key == "documentation":
         sig = getattr(profile, "doc_quality", None) or ctx.doc_sig
         pages = getattr(sig, "pages_scanned", 0) if sig else 0
         if pages:
-            return f"{sig.avg_clarity:.0f}/100 clarity · {pages} pages"
+            suffix = " (small sample)" if doc_small_sample(sig) else ""
+            return f"{sig.avg_clarity:.0f}/100 clarity · {pages} pages{suffix}"
         return "not scanned"
     if key == "insights":
         ins = ex.get("insights", {})
@@ -2238,6 +2523,8 @@ def _ta_overview(ctx: _TaCtx, profile, selected_card: int) -> None:
 
     ctx.heading("Sections")
     ctx.overview_first_card_row = ctx.rendered_lines
+    # LLM-backed cards only — code-health is deterministic and deliberately
+    # ordered above this group (see visible_card_order), so no star, no indent.
     ai_keys = {"ai-adoption", "documentation", "insights"}
     ai_heading_added = False
     for i, key in enumerate(ctx.visible_order):

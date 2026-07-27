@@ -6,6 +6,7 @@ edge cases for each tool and the _parse_azdo_url helper.
 """
 
 from datetime import UTC
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from azure.devops.exceptions import AzureDevOpsServiceError
@@ -14,9 +15,12 @@ from yeaboi.tools import get_tools
 from yeaboi.tools.azure_devops import (
     _azdo_error_msg,
     _parse_azdo_url,
+    azdevops_changed_files,
+    azdevops_list_projects,
     azdevops_list_work_items,
     azdevops_read_file,
     azdevops_read_repo,
+    azdevops_recent_commits,
 )
 
 
@@ -79,6 +83,120 @@ class TestParseAzdoUrl:
 
         with pytest.raises(ValueError):
             _parse_azdo_url("https://dev.azure.com/myorg/MyProject/my-repo")
+
+
+class TestAnalysisScopeHelpers:
+    @patch("yeaboi.tools.azure_devops._make_connection")
+    def test_list_projects_is_sorted_and_paginated(self, mock_connection):
+        first = []
+        for idx in range(100):
+            project = MagicMock()
+            project.name = f"P{idx:03}"
+            first.append(project)
+        another = MagicMock()
+        another.name = "Another"
+        second = [another]
+        core = mock_connection.return_value.clients.get_core_client.return_value
+        core.get_projects.side_effect = [first, second]
+
+        result = azdevops_list_projects()
+
+        assert len(result) == 101
+        assert result[0] == "Another"
+        assert core.get_projects.call_count == 2
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_recent_commits_reuses_analysis_inventory(self, mock_git):
+        client = mock_git.return_value
+        commit = MagicMock()
+        commit.commit_id = "abc123"
+        commit.comment = "Selected change"
+        commit.author.name = "Alice"
+        commit.author.email = "alice@example.com"
+        commit.author.date = "2026-07-25"
+        client.get_commits.return_value = [commit]
+
+        items = azdevops_recent_commits(
+            "Project",
+            days=30,
+            include_repository=True,
+            repositories=[
+                {
+                    "provider": "azdo",
+                    "container": "Project",
+                    "name": "api",
+                    "repo_id": "repo-id",
+                    "url": "https://example.test/api",
+                }
+            ],
+        )
+
+        client.get_repositories.assert_not_called()
+        client.get_commits.assert_called_once()
+        assert items[0]["repository"] == "api"
+        assert items[0]["commit_id"] == "abc123"
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_labels_commit_and_pr_attribution(self, mock_git):
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = [commit_change]
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = [pr_change]
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [(f["path"], f["attribution"], f["confidence"]) for f in files] == [
+            ("src/a.py", "authored_commit", "high"),
+            ("src/b.py", "authored_pr", "medium"),
+        ]
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_unwraps_real_sdk_response_models(self, mock_git):
+        from azure.devops.v7_1.git.models import GitCommitChanges, GitPullRequestIterationChanges
+
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = GitCommitChanges(changes=[commit_change])
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = GitPullRequestIterationChanges(
+            change_entries=[pr_change],
+            next_skip=1,
+            next_top=0,
+        )
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [item["path"] for item in files] == ["src/a.py", "src/b.py"]
+        assert not any(item.get("status") == "failed" for item in files)
 
 
 # ---------------------------------------------------------------------------
@@ -850,3 +968,181 @@ class TestAzdevopsUpdateWorkItemFields:
         ok, err = azdevops_update_work_item_fields(101, story_points=5)
         assert ok is False
         assert "AZURE_DEVOPS_ORG_URL" in err
+
+
+class TestPinClientBaseUrl:
+    """SDK resource-area discovery can swap in the legacy {org}.visualstudio.com
+    alias; clients must be pinned back to the configured org URL."""
+
+    @staticmethod
+    def _client(base_url):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(config=SimpleNamespace(base_url=base_url))
+
+    def test_legacy_alias_is_pinned_to_configured_url(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        out = _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert out is client
+        assert client.config.base_url == "https://dev.azure.com/youlend"
+
+    def test_matching_url_untouched(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://dev.azure.com/youlend/")
+        _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert client.config.base_url == "https://dev.azure.com/youlend/"
+
+    def test_none_org_url_is_a_no_op(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        _pin_client_base_url(client, None)
+        assert client.config.base_url == "https://youlend.visualstudio.com/"
+
+    def test_broken_client_never_raises(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        assert _pin_client_base_url(object(), "https://dev.azure.com/youlend") is not None
+
+
+class TestTruncatedCommentRefetch:
+    """get_commits truncates long comments, stripping end-of-message AI trailers."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(sha, comment, truncated=False):
+        return SimpleNamespace(
+            commit_id=sha,
+            comment=comment,
+            comment_truncated=truncated,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_truncated_comment_is_refetched_in_full(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("a" * 16, "fix login\n\nlong bo...", truncated=True)]
+        git.get_commit.return_value = SimpleNamespace(
+            comment="fix login\n\nlong body\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        )
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_called_once_with("a" * 16, "r1", project="Proj")
+        assert "Co-Authored-By: Claude" in items[0]["body"]
+
+    def test_refetch_failure_falls_back_to_truncated_text(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("b" * 16, "fix\n\ntruncated bo...", truncated=True)]
+        git.get_commit.side_effect = RuntimeError("boom")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert items[0]["body"] == "truncated bo..."
+
+    def test_untruncated_comment_never_refetches(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("c" * 16, "fix\n\nfull body")]
+        azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_not_called()
+
+    def test_refetches_capped_per_repo(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _TRUNCATED_COMMENT_REFETCH_CAP
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [
+            self._commit(f"{i:016d}", f"c{i}\n\nbo...", truncated=True)
+            for i in range(_TRUNCATED_COMMENT_REFETCH_CAP + 5)
+        ]
+        git.get_commit.return_value = SimpleNamespace(comment="c\n\nfull body")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert git.get_commit.call_count == _TRUNCATED_COMMENT_REFETCH_CAP
+        assert len(items) == _TRUNCATED_COMMENT_REFETCH_CAP + 5
+
+
+class TestStandupPathBounds:
+    """The standup path (include_repository=False) keeps its legacy API-call
+    bounds; only the exhaustive analysis path walks the whole window."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(index):
+        return SimpleNamespace(
+            commit_id=f"{index:016d}",
+            comment=f"change {index}",
+            comment_truncated=False,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_standup_commit_scan_and_change_lookups_capped(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, _MAX_REPO_COMMITS
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        batches = [[self._commit(index) for index in range(page * 100, page * 100 + 100)] for page in range(3)]
+        git.get_commits.side_effect = lambda **kwargs: batches[kwargs.get("skip", 0) // 100]
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_commit_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_commits("Proj", days=30)
+
+        assert len(items) == _MAX_REPO_COMMITS
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS
+
+    def test_standup_pr_change_lookups_capped(self, monkeypatch):
+        from datetime import UTC, datetime
+
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, azdevops_recent_prs
+
+        repo = SimpleNamespace(id="r1", name="api")
+        self._git_client(monkeypatch, [repo])
+        now = datetime.now(UTC)
+        prs = [
+            SimpleNamespace(
+                pull_request_id=index,
+                title=f"PR {index}",
+                description="",
+                status="active",
+                creation_date=now,
+                closed_date=None,
+                created_by=SimpleNamespace(display_name="Gina", unique_name="g@corp.com"),
+                source_ref_name="refs/heads/feature/x",
+                reviewers=(),
+            )
+            for index in range(_MAX_CHANGED_FILE_LOOKUPS + 10)
+        ]
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops._activity_pull_requests",
+            lambda *args, **kwargs: (("Proj", repo, pr) for pr in prs),
+        )
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_prs("Proj", days=30)
+
+        assert len(items) == _MAX_CHANGED_FILE_LOOKUPS + 10
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS

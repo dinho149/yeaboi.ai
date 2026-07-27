@@ -736,9 +736,17 @@ class TestStandupProgressScreen:
             console.print(panel)
         out = cap.get()
         assert "Generating standup" in out
-        assert "✓ Collecting recent activity" in out  # completed phase
+        assert "• Collecting recent activity" in out  # activity history, not a false completion
+        assert "✓ Collecting recent activity" not in out
         assert "Writing summaries with AI" in out  # current phase
         assert "12s" in out  # elapsed
+
+        rows = [item for item in panel.renderable.renderables if hasattr(item, "plain")]
+        history = next(item for item in rows if "Collecting recent activity" in item.plain)
+        current = next(item for item in rows if "Writing summaries with AI" in item.plain)
+        assert str(history.style) == STANDUP_THEME.accent
+        assert str(current.style) == f"bold {STANDUP_THEME.accent_bright}"
+        assert str(panel.border_style) == STANDUP_THEME.accent
 
     def test_empty_progress_and_small_height(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen

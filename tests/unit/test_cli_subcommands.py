@@ -147,7 +147,8 @@ class TestParsing:
         assert args.sprints == 4
         assert args.samples is True
         assert args.no_insights is False
-        assert args.depth == "quick"
+        assert args.depth == "deep"
+        assert args.window_days == 120
 
 
 class TestReportCommand:
@@ -562,7 +563,8 @@ class TestAnalyzeCommand:
         assert captured["source"] == "jira"
         assert captured["sprint_count"] == 4
         assert captured["include_insights"] is False
-        assert captured["analysis_depth"] == "quick"
+        assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_window_days"] == 120
 
     def test_depth_deep_passthrough(self, monkeypatch):
         captured: dict = {}
@@ -571,9 +573,10 @@ class TestAnalyzeCommand:
             "yeaboi.analysis.run_team_analysis",
             lambda **kwargs: captured.update(kwargs) or {"delivery": {}, "code": None, "docs": None, "warnings": []},
         )
-        args = build_parser().parse_args(["analyze", "--depth", "deep", "--delivery", "jira"])
+        args = build_parser().parse_args(["analyze", "--depth", "deep", "--delivery", "jira", "--features", "delivery"])
         assert _cmd_analyze(args, _console()) == 0
         assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_features"] == ["delivery"]
 
     def test_delivery_banners_and_comparison(self, monkeypatch):
         import io

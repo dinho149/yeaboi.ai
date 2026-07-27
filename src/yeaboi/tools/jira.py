@@ -826,6 +826,66 @@ def jira_recent_activity(
         return []
 
 
+def jira_assignee_roster(project_key: str = "", days: int = 30) -> list[dict]:
+    """Return every recent or in-progress assignee using a minimal Jira query.
+
+    This is deliberately separate from :func:`jira_recent_activity`: roster
+    discovery does not need summaries, comments, or changelogs and must not pay
+    the cost of downloading them. Results are paginated so busy projects are
+    not silently truncated at Jira's usual first page.
+    """
+    jira = _make_jira_client()
+    if jira is None:
+        raise ValueError("Jira is not configured")
+    key = project_key.strip() or (get_jira_project_key() or "")
+    if not key:
+        raise ValueError("No Jira project key configured")
+
+    safe_key = key.replace('"', '\\"')
+    jql = (
+        f'project = "{safe_key}" AND assignee is not EMPTY '
+        f'AND (updated >= -{max(0, int(days))}d OR statusCategory = "In Progress") '
+        "ORDER BY updated DESC"
+    )
+    page_size = 100
+    start_at = 0
+    members: dict[str, dict] = {}
+    while True:
+        try:
+            issues = list(
+                jira.search_issues(
+                    jql,
+                    startAt=start_at,
+                    maxResults=page_size,
+                    fields="assignee",
+                )
+                or []
+            )
+        except JIRAError as exc:
+            _raise_if_auth_error(exc, "jira")
+            raise RuntimeError(_jira_error_msg(exc)) from exc
+        for issue in issues:
+            assignee = getattr(getattr(issue, "fields", None), "assignee", None)
+            name, email = _actor_fields(assignee)
+            if not name:
+                continue
+            identity = (
+                getattr(assignee, "accountId", "")
+                or getattr(assignee, "key", "")
+                or getattr(assignee, "name", "")
+                or email
+                or name.casefold()
+            )
+            members.setdefault(
+                str(identity),
+                {"name": name, "email": email, "identity": str(identity), "source": "jira"},
+            )
+        if len(issues) < page_size:
+            break
+        start_at += len(issues)
+    return list(members.values())
+
+
 def _changelog_items(issue, summary: str, assignee_name: str, cutoff: datetime) -> list[dict]:
     """Emit one item per in-window changelog event, credited to the ACTUAL actor.
 
