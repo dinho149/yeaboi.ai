@@ -9664,7 +9664,6 @@ def select_mode(
             # ── Route: Poker mode → collaborative estimation page ────────
             if chosen["key"] == "poker":
                 logger.info("Poker mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("poker"):
                     _run_poker_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
