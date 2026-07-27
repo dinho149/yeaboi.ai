@@ -362,7 +362,11 @@ class MusicLive(Live):
 
         width, _ = self.console.size
         if build_music_subtitle().cell_len + 10 <= width:
-            return _MusicPocketFrame(renderable)
+            # A screen that already features the mascot (e.g. the too-small guard
+            # with its own centred duck) marks itself so we don't stamp a second,
+            # redundant duck in the corner — it still gets the music pocket.
+            with_duck = not getattr(renderable, "_no_companion_duck", False)
+            return _MusicPocketFrame(renderable, with_duck=with_duck)
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
         renderable.subtitle_align = "right"

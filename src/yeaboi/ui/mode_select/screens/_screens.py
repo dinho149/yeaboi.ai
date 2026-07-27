@@ -918,12 +918,16 @@ def _build_too_small_screen(width: int, height: int) -> Panel:
             Align.center(Text(f"(you're at {width} × {height})", style="rgb(120,130,140)")),
         ]
     )
-    return build_page_panel(
+    panel = build_page_panel(
         Align.center(Group(*rows), vertical="middle"),
         border_style="rgb(226,186,96)",
         height=max(1, height),
         padding=(1, 2),
     )
+    # This screen already shows the mascot centred — tell the app-wide music
+    # chrome not to stamp a second duck in the corner (see MusicLive.get_renderable).
+    panel._no_companion_duck = True
+    return panel
 
 
 # ---------------------------------------------------------------------------

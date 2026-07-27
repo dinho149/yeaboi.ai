@@ -188,6 +188,26 @@ def test_get_renderable_pockets_a_bare_panel():
     assert isinstance(ml.get_renderable(), _MusicPocketFrame)
 
 
+def test_no_companion_duck_panel_pockets_without_duck():
+    # A screen that already shows the mascot (e.g. the too-small guard) marks
+    # itself so the app-wide chrome adds the pocket but not a second corner duck.
+    panel = Panel(Text("body"))
+    panel._no_companion_duck = True
+    ml = _wide_ml(panel)
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    result = ml.get_renderable()
+    assert isinstance(result, _MusicPocketFrame)
+    assert result.with_duck is False
+
+
+def test_too_small_screen_marks_itself_no_companion_duck():
+    from yeaboi.ui.mode_select.screens._screens import _build_too_small_screen
+
+    panel = _build_too_small_screen(60, 20)
+    assert getattr(panel, "_no_companion_duck", False) is True
+
+
 def test_get_renderable_leaves_popup_subtitle_untouched():
     panel = Panel(Text("body"), subtitle="Board required")
     ml = _wide_ml(panel)
