@@ -30,6 +30,7 @@ from yeaboi.ui.shared._components import (
     PAD,
     PLANNING_THEME,
     build_action_buttons,
+    build_page_panel,
     build_progress_dots,
     build_scrollbar,
     calc_viewport,
@@ -146,14 +147,7 @@ def _build_analysis_review_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 _PAD = PAD  # alias for backward compatibility within this module
@@ -485,19 +479,9 @@ def _build_team_analysis_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        # Rich cascades a Panel's style onto every child segment without an
-        # explicit bgcolor, so one background here tints content rows, heading
-        # spacers, scroll filler lines and card interiors alike — no dark seams
-        # between cards regardless of the terminal's own background.
-        style=_ANALYSIS_CARD_BG,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    # The results page keeps the proven card colour (slightly lighter than the
+    # analysis page tint) so its dense card layout reads as one elevated surface.
+    return build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
 
 
 # Component picker — order + friendly labels. Each component runs over its OWN
@@ -532,9 +516,12 @@ _ANALYSIS_FEATURE_LABELS: dict[str, tuple[str, str]] = {
     "documentation": ("Documentation", "clarity, usefulness, structure, and ownership"),
 }
 
-# The only background style in the app: used on the analysis setup/review cards
-# and on the whole analysis results viewport (see _build_team_analysis_screen).
-_ANALYSIS_CARD_BG = "on rgb(13,31,27)"
+# Elevated-surface background for the analysis setup/review cards and the whole
+# analysis results viewport (see _build_team_analysis_screen) — a touch lighter
+# than ANALYSIS_THEME.bg so cards read as raised above the page tint. Page-wide
+# backgrounds now come from Theme.bg via build_page_panel.
+_ANALYSIS_CARD_BG_RGB = "rgb(13,31,27)"
+_ANALYSIS_CARD_BG = f"on {_ANALYSIS_CARD_BG_RGB}"
 
 
 def _analysis_toggle_row(
@@ -681,7 +668,7 @@ def _build_analysis_feature_screen(
         _analysis_toggle_viewport(rows, cursor, height=height),
         Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_component_select_screen(
@@ -758,7 +745,7 @@ def _build_component_select_screen(
         counts = "  ·  ".join(f"{name} {count}" for name, count in per_component)
         sections.insert(0, Text(_PAD + counts, style=theme.muted))
     content = Group(Text(""), title, Text(""), *header, Group(*sections), footer)
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: int = 24) -> Panel:
@@ -795,7 +782,7 @@ def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: 
         *_analysis_setup_header("Depth", "←/→ or ↑/↓ choose · Enter continue · Esc cancel"),
         Group(*rows),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_analysis_model_offer_screen(
@@ -841,7 +828,7 @@ def _build_analysis_model_offer_screen(
         Text(""),
         Group(*rows),
     )
-    return Panel(content, border_style=theme.accent, box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
 
 
 def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height: int = 24) -> Panel:
@@ -866,7 +853,7 @@ def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height:
         *_analysis_setup_header("Time window", "←/→ and ↑/↓ choose · Enter continue · Esc cancel"),
         Group(*rows),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_member_select_screen(
@@ -917,7 +904,7 @@ def _build_member_select_screen(
         Text(""),
         viewport_renderable,
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_code_project_select_screen(
@@ -946,7 +933,7 @@ def _build_code_project_select_screen(
         "Arrows move · Space selects · A selects all · Enter continues",
         message=message,
     )
-    return Panel(
+    return build_page_panel(
         Group(
             Text(""),
             _analysis_setup_title(width, height),
@@ -956,11 +943,8 @@ def _build_code_project_select_screen(
             Text(""),
             _analysis_toggle_viewport(rows, cursor, height=height, header_h=12),
         ),
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
+        theme=ANALYSIS_THEME,
         height=height,
-        padding=(1, 2),
     )
 
 
@@ -1063,14 +1047,7 @@ def _build_analysis_setup_review_screen(
             btn_mid,
             btn_bot,
         )
-    return Panel(
-        content,
-        border_style=theme.accent,
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
 
 
 def _build_instructions_review_screen(
@@ -1836,14 +1813,7 @@ def _build_intake_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_offline_screen(
@@ -1901,14 +1871,7 @@ def _build_offline_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_export_success_screen(
@@ -1955,14 +1918,7 @@ def _build_export_success_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_import_screen(
@@ -2051,14 +2007,7 @@ def _build_import_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_activity_progress_rows(
@@ -2209,14 +2158,7 @@ def _build_analysis_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
 
-    return Panel(
-        content,
-        border_style=theme.accent,
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
 
 
 def _build_project_export_success_screen(
@@ -2270,14 +2212,7 @@ def _build_project_export_success_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -2468,14 +2403,7 @@ def _build_usage_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=USAGE_THEME, height=height)
 
 
 def _build_standup_screen(
@@ -2672,14 +2600,7 @@ def _build_standup_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_standup_team_source_screen(
@@ -2722,7 +2643,7 @@ def _build_standup_team_source_screen(
         Text(""),
         Group(*rows[:viewport_h]),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_standup_team_member_screen(
@@ -2787,7 +2708,7 @@ def _build_standup_team_member_screen(
         Text(""),
         viewport,
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_changelog_screen(
@@ -2925,14 +2846,7 @@ def _build_changelog_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
 
 
 def _build_all_tips_screen(
@@ -3090,14 +3004,7 @@ def _build_all_tips_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
 
 
 def _build_feedback_screen(
@@ -3311,14 +3218,7 @@ def _build_feedback_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style=border_style or "white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=FEEDBACK_THEME, border_style=border_style or "white", height=height)
 
 
 def _performance_roster_window(selected: int, n: int, budget: int) -> tuple[int, int]:
@@ -3467,14 +3367,7 @@ def _build_performance_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
     body_lines: list = []
@@ -3520,14 +3413,7 @@ def _build_performance_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
 
 def _build_reporting_screen(
@@ -3650,14 +3536,7 @@ def _build_reporting_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
     # ── Picker view — choose the reporting period ────────────────────────────────
     if view != "detail":
@@ -3694,14 +3573,7 @@ def _build_reporting_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
     # ── Detail view — the generated report, scrollable ───────────────────────────
     def _styled(line: str) -> Text:
@@ -3759,14 +3631,7 @@ def _build_reporting_screen(
         btn_mid,
         btn_bot,
     )
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
 
 def _build_roadmap_screen(
@@ -3830,13 +3695,10 @@ def _build_roadmap_screen(
     # the source options / buttons underneath don't confuse the user. ─────────────
     if busy:
         spinner = Text(PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
-        return Panel(
+        return build_page_panel(
             Group(Text(""), title, Text(""), sub, Text(""), Text(""), spinner),
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
+            theme=PLANNING_THEME,
             height=height,
-            padding=(1, 2),
         )
 
     # ── Source view — pick where the roadmap lives ───────────────────────────────
@@ -3873,14 +3735,7 @@ def _build_roadmap_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
     # ── Results view — summary + bordered project cards (selected expands) ────
     # Mirrors the list branch above: _Padding-wrapped rounded cards with peek
@@ -4036,14 +3891,7 @@ def _build_roadmap_screen(
         btn_mid,
         btn_bot,
     )
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_retro_screen(
@@ -4218,14 +4066,7 @@ def _build_retro_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=RETRO_THEME, height=height)
 
 
 _voice_hint_cache: str | None = None
@@ -4548,14 +4389,7 @@ def _build_poker_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=POKER_THEME, height=height)
 
 
 def _build_standup_progress_screen(
@@ -4604,14 +4438,9 @@ def _build_standup_progress_screen(
     body.extend(Text("") for _ in range(remaining))
 
     content = Group(Text(""), title, Text(""), *body)
-    return Panel(
-        content,
-        border_style=theme.accent,
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    # theme, not STANDUP_THEME: this loading screen is shared — poker ticket
+    # fetch and the anonymize pass reuse it with their own mode's theme.
+    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
 
 
 def _build_standup_input_screen(
@@ -4711,14 +4540,7 @@ def _build_standup_input_screen(
     body.extend(Text("") for _ in range(pad_rows))
 
     content = Group(Text(""), title, Text(""), sub, Text(""), *body)
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -4867,14 +4689,7 @@ def _build_profile_picker_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -5091,11 +4906,4 @@ def _build_settings_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=SETTINGS_THEME, height=height)

@@ -1374,13 +1374,13 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
     """Move/Leave popup shown after the data directory changes; True = move."""
     from rich.align import Align
     from rich.console import Group
-    from rich.panel import Panel
     from rich.text import Text
 
     from yeaboi.ui.shared._components import (
         PAD,
         SETTINGS_THEME,
         build_action_buttons,
+        build_page_panel,
         build_popup,
         settings_title,
     )
@@ -1405,7 +1405,7 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
         lines.append(Text(""))
         btn_top, btn_mid, btn_bot = build_action_buttons(["Move", "Leave"], sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(Panel(Group(*lines), height=h, padding=(1, 2), border_style=SETTINGS_THEME.sep))
+        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
@@ -1430,10 +1430,9 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
     """
     from rich.align import Align
     from rich.console import Group
-    from rich.panel import Panel
     from rich.text import Text
 
-    from yeaboi.ui.shared._components import SETTINGS_THEME, build_action_buttons, build_popup
+    from yeaboi.ui.shared._components import SETTINGS_THEME, build_action_buttons, build_page_panel, build_popup
 
     sel = 0
     while True:
@@ -1451,7 +1450,7 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
         lines.append(Text(""))
         btn_top, btn_mid, btn_bot = build_action_buttons(["Stop", "Leave"], sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(Panel(Group(*lines), height=h, padding=(1, 2), border_style=SETTINGS_THEME.sep))
+        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
@@ -3064,7 +3063,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, polish_feedback, submit_feedback
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_feedback_screen
     from yeaboi.ui.shared._attachments import referenced_images
-    from yeaboi.ui.shared._components import FEEDBACK_THEME, build_popup, feedback_title
+    from yeaboi.ui.shared._components import FEEDBACK_THEME, build_page_panel, build_popup, feedback_title
 
     with mode_log("feedback"):
         logger.info("feedback: page opened")
@@ -3130,7 +3129,6 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             """Popup guard so Esc can't silently destroy a long draft."""
             from rich.align import Align
             from rich.console import Group
-            from rich.panel import Panel
             from rich.text import Text
 
             while True:
@@ -3145,7 +3143,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
                         )
                     )
                 )
-                live.update(Panel(Group(*lines), height=max(10, h - 1), padding=(1, 2)))
+                live.update(build_page_panel(Group(*lines), theme=FEEDBACK_THEME, height=max(10, h - 1)))
                 k = read_key(timeout=frame_time) if supports_timeout else read_key()
                 if not k:
                     continue
@@ -3403,6 +3401,7 @@ def _run_mode_hub(
                 runs,
                 selected,
                 title_fn=title_fn,
+                theme=share_theme,
                 subtitle=subtitle,
                 message=message,
                 width=w,
@@ -5186,6 +5185,8 @@ def _run_analysis_roster_lookup(
     from rich.panel import Panel
     from rich.text import Text
 
+    from yeaboi.ui.shared._components import ANALYSIS_THEME, build_page_panel
+
     while True:
         result = _prefetch_roster_result(live, console, sources, project_key, db_path)
         if result.status != "failed":
@@ -5194,8 +5195,20 @@ def _run_analysis_roster_lookup(
         body.append("Team members could not be loaded.\n\n", style="bold")
         body.append("\n".join(result.warnings) or "The selected tracker did not return a roster.")
         body.append("\n\nEnter / R  Retry     Esc  Back", style="dim")
-        w, _ = console.size
-        live.update(Align.center(Panel(body, title="Analysis · Team members", width=min(76, max(40, w - 4)))))
+        w, h = console.size
+        # Wrap the dialog in a full-screen page panel: with an Align root,
+        # MusicLive's unstyled-Panel safety net never fires, so the terminal's
+        # own background would bleed through around the popup.
+        live.update(
+            build_page_panel(
+                Align.center(
+                    Panel(body, title="Analysis · Team members", width=min(76, max(40, w - 4))),
+                    vertical="middle",
+                ),
+                theme=ANALYSIS_THEME,
+                height=max(10, h - 1),
+            )
+        )
         key = read_key()
         if key in ("enter", "r", "R"):
             continue

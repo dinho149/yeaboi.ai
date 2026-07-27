@@ -9,14 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-import rich.box
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared._animations import COLOR_RGB, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import PAD
+from yeaboi.ui.shared._components import PAD, build_page_panel
 
 # ---------------------------------------------------------------------------
 # Mode definitions
@@ -419,14 +418,7 @@ def _build_mode_screen(
         version_row,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -465,11 +457,4 @@ def _build_slide_frame(
         *[Text("") for _ in range(below)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, height=height)

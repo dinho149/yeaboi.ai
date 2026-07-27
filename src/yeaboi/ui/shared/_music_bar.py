@@ -30,7 +30,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi import music
-from yeaboi.ui.shared._components import PLANNING_THEME, Theme
+from yeaboi.ui.shared._components import NEUTRAL_BG, PLANNING_THEME, Theme
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,12 @@ class MusicLive(Live):
         if not isinstance(renderable, Panel):
             self._stamped = False
             return
+        # Safety net: no screen may ever show the terminal's own background. A
+        # Panel whose builder didn't set a style (i.e. bypassed build_page_panel)
+        # gets the neutral dark base; styled Panels are left untouched. Rich's
+        # Panel defaults ``style`` to the string "none", not an empty value.
+        if not renderable.style or str(renderable.style) == "none":
+            renderable.style = f"on {NEUTRAL_BG}"
         # A subtitle we didn't set (a popup's own status) is meaningful — don't
         # clobber it. Our own previous stamp is tagged so we can refresh it.
         if getattr(renderable, "subtitle", None) and not getattr(renderable, "_music_stamped", False):

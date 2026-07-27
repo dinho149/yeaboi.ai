@@ -2,6 +2,17 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.38.0",
+      "date": "2026-07-27",
+      "summary": "Every TUI screen now displays with its mode's signature background color — a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",
+      "highlights": [
+        {"text": "Every mode-specific TUI screen now displays with its mode's background tint for a polished, consistent look", "areas": ["general"]},
+        {"text": "Neutral dark base for home, splash, settings, and other cross-mode screens", "areas": ["general"]},
+        {"text": "Appearance is now identical across all terminal themes thanks to baked-in backgrounds", "areas": ["general"]},
+        {"text": "New AST guard + truecolor tests prevent raw full-screen Panels from merging in the future", "areas": ["general"]}
+      ]
+    },
+    {
       "version": "2.37.0",
       "date": "2026-07-27",
       "summary": "Team analysis evolved into a comprehensive, member-scoped investigation of how your team works. The AI Usage card now leads with an engineering-practices table scoring tests-with-changes, documentation clarity, ticket references, and PR description quality across all attributed work — honest denominators, small-sample transparency, and a recomputed team row. The same table appears in markdown and HTML exports. Performance overhaul adds pooled tracker fetching, a schema v19 model-keyed analysis cache, cold-run lookup caps with disclosed truncation, activity-targeted repo scanning, and fan-out dedup. Scope controls let you pick sources per component (delivery reads Jira/Azure DevOps, code scans GitHub/Azure Repos, docs reads Confluence/Notion), pick specific members, run dual-source analyses, and persist analysis features per run. Doc quality now reads page content for clarity and AI usage estimates with evidence links. Default analysis depth is now `deep` on all surfaces. UX gains include wizard Esc back-stepping, Ctrl-C cooperative cancel, AzDO SDK clients pinned to the configured org URL, and render-side caps preventing oversized tables from rendering blank.",

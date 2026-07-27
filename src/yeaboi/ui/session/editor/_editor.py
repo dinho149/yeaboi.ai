@@ -42,7 +42,7 @@ from yeaboi.ui.session.editor._editor_core import (
     _wrap_indent,
 )
 from yeaboi.ui.shared._animations import lerp_color
-from yeaboi.ui.shared._components import PAD, planning_title
+from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -317,9 +317,7 @@ def _render_editor(
     Complex renderer with DoD button grid and AC markers — story-specific.
     shimmer_tick: if set, animates the title's travelling highlight.
     """
-    import rich.box
     from rich.console import Group
-    from rich.panel import Panel
 
     title = planning_title(shimmer_tick)
     sub = Text(justify="left")
@@ -457,14 +455,7 @@ def _render_editor(
         text_content.append("\n")
 
     content = Group(Text(""), title, Text(""), sub, Text(""), text_content)
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    ), scroll_offset
+    return build_page_panel(content, theme=PLANNING_THEME, height=height), scroll_offset
 
 
 # ---------------------------------------------------------------------------

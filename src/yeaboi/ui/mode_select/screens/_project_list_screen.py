@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import rich.box
 from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
@@ -32,7 +31,14 @@ from yeaboi.ui.mode_select.screens._project_cards import (
     _compute_viewport,
 )
 from yeaboi.ui.shared._animations import BLACK_RGB, lerp_color
-from yeaboi.ui.shared._components import PAD, analysis_title, planning_title
+from yeaboi.ui.shared._components import (
+    ANALYSIS_THEME,
+    PAD,
+    PLANNING_THEME,
+    analysis_title,
+    build_page_panel,
+    planning_title,
+)
 
 _PAD = PAD  # alias for backward compatibility within this module
 
@@ -760,11 +766,8 @@ def _build_project_list_screen(
         *popup_after,
     )
 
-    return Panel(
+    return build_page_panel(
         content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
+        theme=ANALYSIS_THEME if mode == "analysis" else PLANNING_THEME,
         height=height,
-        padding=(1, 2),
     )

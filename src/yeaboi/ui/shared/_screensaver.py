@@ -18,6 +18,8 @@ from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from yeaboi.ui.shared._components import NEUTRAL_BG
+
 IDLE_SECONDS = 5 * 60
 
 _P = ParamSpec("_P")
@@ -369,9 +371,9 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         else:
             label = "YEABOI"[:width]
         line = Text(label, style="bold rgb(42,170,105)")
-        return Align.center(line, vertical="middle", height=max(1, height))
+        return Align.center(line, vertical="middle", height=max(1, height), style=f"on {NEUTRAL_BG}")
 
     caption = Text("YEABOI · chilling", style="bold rgb(105,220,235)", justify="center")
     hint = Text("press any key", style="rgb(95,105,115)", justify="center")
     content = Group(art, caption, hint)
-    return Align.center(content, vertical="middle", height=max(1, height))
+    return Align.center(content, vertical="middle", height=max(1, height), style=f"on {NEUTRAL_BG}")

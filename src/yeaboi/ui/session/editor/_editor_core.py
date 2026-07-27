@@ -20,13 +20,12 @@ import re
 import time
 from collections.abc import Callable
 
-import rich.box
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.ui.shared._components import PAD, planning_title
+from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
 
 # ---------------------------------------------------------------------------
 # Shared field label pattern for all editors (story, task, sprint, etc.)
@@ -288,14 +287,7 @@ def render_editor_panel(
         text_content,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    ), scroll_offset
+    return build_page_panel(content, theme=PLANNING_THEME, height=height), scroll_offset
 
 
 # ---------------------------------------------------------------------------

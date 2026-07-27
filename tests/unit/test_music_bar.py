@@ -125,6 +125,22 @@ def test_ignores_non_panel_renderables():
     assert ml._stamped is False
 
 
+def test_unstyled_panel_gains_neutral_background():
+    from yeaboi.ui.shared._components import NEUTRAL_BG
+
+    ml = make_live(Text(""))
+    panel = Panel(Text("body"))  # a screen that bypassed build_page_panel
+    ml._stamp(panel)
+    assert panel.style == f"on {NEUTRAL_BG}"
+
+
+def test_styled_panel_background_is_left_untouched():
+    ml = make_live(Text(""))
+    panel = Panel(Text("body"), style="on rgb(9,23,19)")  # build_page_panel output
+    ml._stamp(panel)
+    assert panel.style == "on rgb(9,23,19)"
+
+
 def test_install_hint_when_unavailable(monkeypatch):
     monkeypatch.setattr(music, "is_music_available", lambda: (False, "no ffplay"))
     text = build_music_subtitle().plain
