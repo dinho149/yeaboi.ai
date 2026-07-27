@@ -355,6 +355,31 @@ def set_data_dir(value: str) -> None:
     _set_env_value("YEABOI_HOME", value.strip())
 
 
+def get_allowed_paths() -> tuple[str, ...]:
+    """Return the user's filesystem whitelist (YEABOI_ALLOWED_PATHS).
+
+    Comma-separated directory/file paths the sandbox (fs_policy.py) allows
+    beyond the data home. Shares _csv_config's limitation: paths containing a
+    comma can't be expressed. Applies to reads and writes alike.
+    """
+    return _csv_config("YEABOI_ALLOWED_PATHS")
+
+
+def set_allowed_paths(values: list[str] | tuple[str, ...]) -> None:
+    """Persist the whitelist (deduplicated, order-preserving) and apply live."""
+    deduped: list[str] = []
+    for raw in values:
+        value = raw.strip()
+        if value and value not in deduped:
+            deduped.append(value)
+    _set_env_value("YEABOI_ALLOWED_PATHS", ",".join(deduped))
+
+
+def add_allowed_path(value: str) -> None:
+    """Append one path to the whitelist ('Always allow' in the consent popup)."""
+    set_allowed_paths([*get_allowed_paths(), value])
+
+
 def get_notion_export_parent_page_id() -> str | None:
     """Return the Notion page ID exports publish under, or None when unavailable.
 

@@ -202,37 +202,50 @@ def get_db_path() -> Path:
     return DB_PATH
 
 
+def _safe_key(key: str, fallback: str) -> str:
+    """Normalize a project/engineer key into a single safe directory name.
+
+    Keys come from project names and tracker ids — app-derived, but defense in
+    depth: a key containing separators or ``..`` must never escape its export
+    root (``EXPORTS_DIR / "a/../../x"`` would). Separator-split segments are
+    re-joined with ``-`` so "team/sub" stays recognisable as ``team-sub``.
+    """
+    cleaned = (key or "").lower().strip().replace("\\", "/")
+    joined = "-".join(part for part in cleaned.split("/") if part not in ("", ".", ".."))
+    return joined or fallback
+
+
 def get_analysis_export_dir(project_key: str) -> Path:
     """Return the analysis export directory for a project, creating it if needed."""
-    d = ANALYSIS_EXPORTS_DIR / project_key.lower()
+    d = ANALYSIS_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_planning_export_dir(project_key: str) -> Path:
     """Return the planning export directory for a project, creating it if needed."""
-    d = PLANNING_EXPORTS_DIR / project_key.lower()
+    d = PLANNING_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_standup_export_dir(project_key: str) -> Path:
     """Return the Daily Standup export directory for a project, creating it if needed."""
-    d = STANDUP_EXPORTS_DIR / project_key.lower()
+    d = STANDUP_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_retro_export_dir(project_key: str) -> Path:
     """Return the Retro export directory for a project, creating it if needed."""
-    d = RETRO_EXPORTS_DIR / project_key.lower()
+    d = RETRO_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_poker_export_dir(project_key: str) -> Path:
     """Return the Scrum Poker export directory for a project, creating it if needed."""
-    d = POKER_EXPORTS_DIR / project_key.lower()
+    d = POKER_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -244,21 +257,21 @@ def get_performance_export_dir(engineer_key: str) -> Path:
     lead can find one person's documents together — mirrors the per-project layout
     the other modes use.
     """
-    d = PERFORMANCE_EXPORTS_DIR / (engineer_key.lower() or "engineer")
+    d = PERFORMANCE_EXPORTS_DIR / _safe_key(engineer_key, "engineer")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_reporting_export_dir(project_key: str) -> Path:
     """Return the Reporting export directory for a project, creating it if needed."""
-    d = REPORTING_EXPORTS_DIR / (project_key.lower() or "report")
+    d = REPORTING_EXPORTS_DIR / _safe_key(project_key, "report")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_roadmap_export_dir(roadmap_key: str) -> Path:
     """Return the Roadmap export directory for a roadmap, creating it if needed."""
-    d = ROADMAP_EXPORTS_DIR / (roadmap_key.lower() or "roadmap")
+    d = ROADMAP_EXPORTS_DIR / _safe_key(roadmap_key, "roadmap")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -269,7 +282,7 @@ def get_anonymize_export_dir(project_key: str) -> Path:
     Holds the privacy-masked copies of a mode's output (the shareable versions), kept
     separate from the un-masked exports so the two can't be confused.
     """
-    d = ANONYMIZE_EXPORTS_DIR / (project_key.lower() or "output")
+    d = ANONYMIZE_EXPORTS_DIR / _safe_key(project_key, "output")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -394,7 +407,7 @@ def get_attachments_dir(scope_id: str) -> Path:
     Only file *paths* are stored in session state — the PNG/JPEG bytes live here,
     so sessions stay small and pasted screenshots survive ``--resume``.
     """
-    d = ATTACHMENTS_DIR / ((scope_id or "misc").lower())
+    d = ATTACHMENTS_DIR / _safe_key(scope_id, "misc")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

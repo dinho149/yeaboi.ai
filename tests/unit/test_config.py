@@ -625,6 +625,40 @@ class TestNotionConfig:
         assert get_notion_root_page_id() is None
 
 
+class TestAllowedPaths:
+    """The sandbox whitelist setting (YEABOI_ALLOWED_PATHS)."""
+
+    def test_empty_by_default(self, monkeypatch):
+        from yeaboi.config import get_allowed_paths
+
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        assert get_allowed_paths() == ()
+
+    def test_csv_parsed_and_deduped(self, monkeypatch):
+        from yeaboi.config import get_allowed_paths
+
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/a, /b ,/a,,  ")
+        assert get_allowed_paths() == ("/a", "/b")
+
+    def test_set_round_trip(self, monkeypatch, tmp_path):
+        from yeaboi.config import get_allowed_paths, set_allowed_paths
+
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        set_allowed_paths(["/x", " /y ", "/x"])
+        assert os.environ["YEABOI_ALLOWED_PATHS"] == "/x,/y"
+        assert get_allowed_paths() == ("/x", "/y")
+        assert "YEABOI_ALLOWED_PATHS" in (tmp_path / ".env").read_text()
+
+    def test_add_allowed_path_appends(self, monkeypatch, tmp_path):
+        from yeaboi.config import add_allowed_path, get_allowed_paths
+
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/existing")
+        add_allowed_path("/new")
+        assert get_allowed_paths() == ("/existing", "/new")
+
+
 class TestStorageAndExportConfig:
     """Data-dir override + setup-owned publish destinations (with natural fallbacks)."""
 

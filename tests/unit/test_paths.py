@@ -38,6 +38,37 @@ class TestExportDirHelpers:
         assert paths.get_reporting_export_dir("").name == "report"
 
 
+class TestSafeKey:
+    """_safe_key must never let a key escape its export root."""
+
+    def test_normal_key_lowercased(self):
+        assert paths._safe_key("MyProj", "project") == "myproj"
+
+    def test_empty_key_falls_back(self):
+        assert paths._safe_key("", "project") == "project"
+        assert paths._safe_key("   ", "project") == "project"
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            ("../evil", "evil"),
+            ("../../etc/passwd", "etc-passwd"),
+            ("a/b", "a-b"),
+            ("a\\b", "a-b"),
+            ("..", "project"),
+            ("./.", "project"),
+            ("/absolute/path", "absolute-path"),
+        ],
+    )
+    def test_traversal_neutralized(self, key, expected):
+        assert paths._safe_key(key, "project") == expected
+
+    def test_export_helper_cannot_escape(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "ANALYSIS_EXPORTS_DIR", tmp_path / "exports" / "analysis")
+        d = paths.get_analysis_export_dir("../../outside")
+        assert d.is_relative_to(tmp_path / "exports" / "analysis")
+
+
 class TestGetDbPathPermissions:
     """get_db_path() hardens the data dir (0o700) and DB file (0o600)."""
 
