@@ -32,7 +32,9 @@ def _sandbox_allows_test_dirs(tmp_path_factory):
     mp = MonkeyPatch()
     basetemp = tmp_path_factory.getbasetemp()
     fixtures_dir = Path(__file__).parent / "fixtures"
-    mp.setenv("YEABOI_ALLOWED_PATHS", f"{basetemp},{fixtures_dir}")
+    # CWD too: the (unmodifiable) REPL integration suite exports scrum-plan.*
+    # into the repo root it runs from.
+    mp.setenv("YEABOI_ALLOWED_PATHS", f"{basetemp},{fixtures_dir},{Path.cwd()}")
     yield
     mp.undo()
 
