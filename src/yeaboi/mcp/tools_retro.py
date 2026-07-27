@@ -36,9 +36,10 @@ def _retro_export(session_id: str) -> dict:
     resolved = resolve_session_id(session_id)
     with RetroStore(get_db_path()) as store:
         report = store.get_latest_report(resolved)
+        run_history = store.get_history(resolved, limit=30)
     if report is None:
         raise ValueError(f"No retro recorded for session {resolved!r} — run a retro board from the yeaboi TUI first.")
-    paths = export_retro(report)
+    paths = export_retro(report, history=run_history)
     logger.info("Retro exported via MCP: session=%s date=%s", resolved, report.date)
     return {
         "session_id": resolved,

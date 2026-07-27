@@ -452,7 +452,13 @@ def build_team_profile_html(
             act_lis = "".join(f"<li>{_e(a)}: {n}</li>" for a, n in ai_sig.per_activity)
             a_html += f"<h4>By activity</h4><ul>{act_lis}</ul>"
         if ai_sig.per_author:
-            auth_lis = "".join(f"<li>{_e(a)}: {n}</li>" for a, n in ai_sig.per_author[:8])
+            from yeaboi.html_theme import avatar as _avatar
+
+            auth_lis = "".join(
+                f"<li><span style='display:inline-flex;align-items:center;gap:.4rem'>"
+                f"{_avatar(a)}{_e(a)}: {n}</span></li>"
+                for a, n in ai_sig.per_author[:8]
+            )
             a_html += f"<h4>By contributor</h4><ul>{auth_lis}</ul>"
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
@@ -800,6 +806,22 @@ def build_team_profile_html(
                         _dcol = "var(--ok)" if _d == 0 else ("var(--warn)" if abs(_d) < 5 else "var(--danger)")
                         _ns = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
                         _nf = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
+                        # Day-by-day scope sparkline (points in scope per snapshot day).
+                        _spark = ""
+                        if len(tl.daily_snapshots) >= 2:
+                            from yeaboi.html_theme import sparkline_svg
+
+                            _vals = [s.total_scope_pts for s in tl.daily_snapshots]
+                            _pad = max((max(_vals) - min(_vals)) * 0.15, 1.0)
+                            _spark = sparkline_svg(
+                                _vals,
+                                vmin=max(0.0, min(_vals) - _pad),
+                                vmax=max(_vals) + _pad,
+                                end_color_var=_dcol[4:-1],
+                                start_label=tl.daily_snapshots[0].date,
+                                end_label=tl.daily_snapshots[-1].date,
+                                title=f"{tl.sprint_name}: scope points per day",
+                            )
                         sprint_content += (
                             f'<div style="margin:1rem 0 0.5rem 0;padding:0.5rem;'
                             f'border-left:3px solid {_dcol};background:rgba(255,255,255,0.02);">'
@@ -807,6 +829,7 @@ def build_team_profile_html(
                             f'<span style="color:{_dcol};">{_ds} scope ({_p:+d}%)</span>'
                             f'<div style="font-size:0.85rem;color:var(--text-muted);margin:0.25rem 0;">'
                             f"committed {tl.committed_pts:g} pts ({_ns} stories)</div>"
+                            f"{_spark}"
                         )
                         for ev in tl.change_events[:5]:
                             ct = ev.change_type.replace("re_estimated_", "re-est ").replace("_", " ")
@@ -879,6 +902,8 @@ def build_team_profile_html(
             "<th>Spill%</th><th>Cycle</th><th>Sprints</th><th>Focus</th><th>Pts/sprint</th>"
             "</tr>"
         )
+        from yeaboi.html_theme import avatar as _avatar
+
         for cs in _h_contrib[:10]:
             sp_r = cs.get("spill_rate", 0)
             sp_col = "var(--ok)" if sp_r < 10 else ("var(--warn)" if sp_r < 25 else "var(--danger)")
@@ -891,7 +916,8 @@ def build_team_profile_html(
             ps_col = "var(--ok)" if ps >= 3 else ("var(--warn)" if ps >= 1.5 else "var(--low)")
             sa = cs.get("sprints_active", 0)
             tm_content += (
-                f"<tr><td>{_e(cs.get('name', ''))}</td>"
+                f"<tr><td><span style='display:inline-flex;align-items:center;gap:.4rem'>"
+                f"{_avatar(cs.get('name', ''))}{_e(cs.get('name', ''))}</span></td>"
                 f'<td style="text-align:right;">{cs.get("delivery_pts", 0)}</td>'
                 f'<td style="text-align:right;">{cs.get("stories_completed", 0)}</td>'
                 f'<td style="text-align:right;color:{sp_col};">{sp_r}%</td>'
@@ -1057,6 +1083,15 @@ def build_team_profile_html(
 
         type_dist = td.get("type_distribution", {})
         if type_dist:
+            # One theme-aware stacked bar reads the mix at a glance; the
+            # per-row table keeps the exact numbers below it.
+            from yeaboi.html_theme import counted_segment_bar
+
+            mix = counted_segment_bar(
+                [(cat, int(round(pct))) for cat, pct in type_dist.items()], title="Task type distribution"
+            )
+            if mix:
+                td_content += f"<div style='margin-top:0.5rem'>{mix}</div>"
             dist_rows = "".join(
                 f"<tr><td>{_e(cat)}</td><td>{_pct_bar_html(pct)}</td></tr>" for cat, pct in type_dist.items()
             )
@@ -1231,7 +1266,14 @@ def build_team_profile_html(
                 f'<td style="color:{ct_color};">{ct_html}</td></tr>'
             )
 
-        repo_content = (
+        # One stacked bar shows where the team's story work concentrates.
+        from yeaboi.html_theme import counted_segment_bar
+
+        repo_mix = counted_segment_bar(
+            [(r.get("repo", ""), int(r.get("stories", 0))) for r in top[:8] if isinstance(r, dict)],
+            title="Stories per repository",
+        )
+        repo_content = (f"<div style='margin-bottom:0.5rem'>{repo_mix}</div>" if repo_mix else "") + (
             f'<div class="card" style="padding:0;overflow:hidden;">'
             f'<table class="data-table">{repo_hdr}{repo_rows_html}</table></div>'
         )

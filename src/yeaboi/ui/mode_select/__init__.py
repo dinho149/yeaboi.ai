@@ -2063,11 +2063,12 @@ def _standup_export(session_id: str, data: dict) -> str:
 
     with StandupStore(_ana_dbp) as store:
         report = store.get_latest_report(session_id)
+        history = store.get_history(session_id, limit=30) if report is not None else []
     if report is None:
         logger.info("standup export: nothing to export yet (session=%s)", session_id)
         return "Nothing to export yet — press Generate first."
     try:
-        paths = export_standup(report, project_name=data.get("session_name", "") or session_id)
+        paths = export_standup(report, project_name=data.get("session_name", "") or session_id, history=history)
         logger.info("standup export: wrote Markdown + HTML to %s (session=%s)", paths["markdown"].parent, session_id)
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
     except Exception as e:
@@ -2606,6 +2607,8 @@ def _standup_team_configure(
             code_scope_configured=merged.get("code_scope_configured", False),
             documentation_sources=merged.get("documentation_sources", []),
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -2766,6 +2769,8 @@ def _standup_code_configure(
             code_scope_configured=True,
             documentation_sources=merged.get("documentation_sources", []),
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     return True, (
         f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
@@ -2860,55 +2865,346 @@ def _standup_documentation_configure(
             code_scope_configured=merged["code_scope_configured"],
             documentation_sources=selected,
             documentation_scope_configured=True,
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
 
-def _standup_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
-    """Collect schedule/delivery settings in-TUI, persist them, and (un)install the OS schedule.
+def _run_schedule_choice_step(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    options: list[tuple[str, str]],
+    initial: int,
+    step_index: int,
+    heading: str,
+) -> int | str:
+    """One single-select (radio) step of the schedule wizard.
 
-    Each field defaults to the existing config (Enter keeps it). Esc at any field
-    cancels the whole flow. Returns a status message for the dashboard.
+    The cursor row IS the selection: Enter returns its index, Esc returns
+    ``"back"`` so the wizard can step backwards (analysis-wizard convention).
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+    cursor = initial if 0 <= initial < len(options) else 0
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_schedule_step_screen(
+                options, cursor, step_index=step_index, heading=heading, width=w, height=max(10, h - 1)
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up", "left"):
+            cursor = (cursor - 1) % len(options)
+        elif key in ("down", "scroll_down", "right"):
+            cursor = (cursor + 1) % len(options)
+        elif key == "enter":
+            return cursor
+        elif key in ("esc", "q"):
+            return "back"
+
+
+def _run_schedule_multi_step(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    options: list[tuple[str, str]],
+    initial: set[int],
+    step_index: int,
+    heading: str,
+    empty_message: str,
+) -> set[int] | str:
+    """One multi-select (checkbox) step of the schedule wizard.
+
+    Space toggles the cursor row, Enter confirms (requires at least one
+    selection), Esc returns ``"back"``.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+    checked = {i for i in initial if 0 <= i < len(options)}
+    cursor = 0
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_schedule_step_screen(
+                options,
+                cursor,
+                checked=checked,
+                step_index=step_index,
+                heading=heading,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up"):
+            cursor = (cursor - 1) % len(options)
+        elif key in ("down", "scroll_down"):
+            cursor = (cursor + 1) % len(options)
+        elif key == " ":
+            checked.symmetric_difference_update({cursor})
+            message = ""
+        elif key == "enter":
+            if not checked:
+                message = empty_message
+                continue
+            return checked
+        elif key in ("esc", "q"):
+            return "back"
+
+
+_SCHEDULE_TIME_PRESETS = ["09:00", "09:30", "10:00", "10:30", "11:00"]
+_SCHEDULE_LEAD_PRESETS = [5, 10, 15, 30]
+_SCHEDULE_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_SCHEDULE_CHANNEL_DESCS = {
+    "terminal": "print in the terminal the run opens",
+    "desktop": "macOS/Linux system notification",
+    "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
+    "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
+}
+
+
+def _run_standup_schedule_wizard(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str
+) -> str:
+    """Option-list schedule wizard: Time → Lead → Days → Channels → Enable.
+
+    Arrow-key driven replacement for the old free-text Configure flow. Esc steps
+    BACK one step (Esc on the first step cancels); Time/Lead offer presets plus a
+    "Custom…" escape hatch into the themed line editor. On completion the config
+    is merge-saved (identity + scope fields untouched) and the OS schedule is
+    installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import install_schedule, remove_schedule
+    from yeaboi.standup.scheduler import install_schedule, parse_time, remove_schedule, weekday_list, weekday_spec
     from yeaboi.standup.store import StandupStore
 
     with StandupStore(_ana_dbp) as store:
         existing = store.load_config(session_id) or {}
-    cur_time = existing.get("time", "10:00")
-    cur_lead = str(existing.get("lead_minutes", 10))
-    cur_days = existing.get("weekdays", "1-5")
-    cur_channels = ", ".join(existing.get("delivery_channels", ["terminal"]))
-    cur_repo = existing.get("repo_path", "")
-    cur_aliases = existing.get("my_aliases", "")
-    cur_enabled = "yes" if existing.get("enabled") else "no"
+    time_val = existing.get("time", "10:00")
+    lead_val = int(existing.get("lead_minutes", 10))
+    days = set(weekday_list(existing.get("weekdays", "1-5")))
+    channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
+    enabled = bool(existing.get("enabled"))
+    logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
-    def _ask(prompt: str, step: str, default: str) -> str | None:
-        value = _standup_read_line(
-            console, live, read_key, frame_time, supports_timeout, prompt=prompt, step=step, default=default
+    def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
+        """Line-input loop for the Custom… options: re-prompts until ``parse``
+        accepts the value; Esc returns None (back to the option list)."""
+        current_prompt = prompt
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=current_prompt,
+                step=step,
+                default=default,
+            )
+            if raw is None:
+                return None
+            try:
+                return parse(raw)
+            except (ValueError, TypeError):
+                current_prompt = f"Invalid value — {prompt}"
+
+    index = 0
+    while index < 5:
+        if index == 0:
+            options = [(t, "") for t in _SCHEDULE_TIME_PRESETS]
+            if time_val in _SCHEDULE_TIME_PRESETS:
+                initial = _SCHEDULE_TIME_PRESETS.index(time_val)
+                options.append(("Custom…", "type any HH:MM"))
+            else:
+                initial = len(options)
+                options.append(("Custom…", f"currently {time_val}"))
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=options,
+                initial=initial,
+                step_index=0,
+                heading="Standup time — when the meeting happens",
+            )
+            if got == "back":
+                logger.info("standup schedule wizard: cancelled at step 1 (session=%s)", session_id)
+                return "Schedule setup cancelled."
+            if isinstance(got, int) and got < len(_SCHEDULE_TIME_PRESETS):
+                time_val = _SCHEDULE_TIME_PRESETS[got]
+                index += 1
+            else:
+
+                def _parse_hhmm(raw: str) -> str:
+                    parse_time(raw)  # raises ValueError on bad input
+                    return raw.strip()
+
+                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/5)", time_val, _parse_hhmm)
+                if custom is not None:
+                    time_val = custom
+                    index += 1
+        elif index == 1:
+            labels = [(f"{m} minutes before", "") for m in _SCHEDULE_LEAD_PRESETS]
+            if lead_val in _SCHEDULE_LEAD_PRESETS:
+                initial = _SCHEDULE_LEAD_PRESETS.index(lead_val)
+                labels.append(("Custom…", "type any number of minutes"))
+            else:
+                initial = len(labels)
+                labels.append(("Custom…", f"currently {lead_val} min"))
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=labels,
+                initial=initial,
+                step_index=1,
+                heading="Deliver how long before the standup?",
+            )
+            if got == "back":
+                index -= 1
+            elif isinstance(got, int) and got < len(_SCHEDULE_LEAD_PRESETS):
+                lead_val = _SCHEDULE_LEAD_PRESETS[got]
+                index += 1
+            else:
+                custom = _custom_text(
+                    "Minutes before the standup",
+                    "Set up schedule  (2/5)",
+                    str(lead_val),
+                    lambda raw: max(0, int(raw)),
+                )
+                if custom is not None:
+                    lead_val = custom
+                    index += 1
+        elif index == 2:
+            got = _run_schedule_multi_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[(name, "") for name in _SCHEDULE_DAY_NAMES],
+                initial={d - 1 for d in days},
+                step_index=2,
+                heading="Which days should it run?",
+                empty_message="Select at least one day.",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                days = {i + 1 for i in got}
+                index += 1
+        elif index == 3:
+            got = _run_schedule_multi_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[(ch, _SCHEDULE_CHANNEL_DESCS.get(ch, "")) for ch in ALL_CHANNELS],
+                initial={i for i, ch in enumerate(ALL_CHANNELS) if ch in channels},
+                step_index=3,
+                heading="Where should the summary go?",
+                empty_message="Select at least one delivery channel.",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                channels = [ALL_CHANNELS[i] for i in sorted(got)]
+                index += 1
+        else:
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("On — install an OS schedule", "launchd/cron runs it automatically"),
+                    ("Off — run on demand only", "no background job"),
+                ],
+                initial=0 if enabled else 1,
+                step_index=4,
+                heading="Enable scheduled runs?",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                enabled = got == 0
+                index += 1
+        logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
+
+    weekdays = weekday_spec(days)
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=enabled,
+            time=time_val,
+            lead_minutes=lead_val,
+            weekdays=weekdays,
+            delivery_channels=channels,
+            repo_path=existing.get("repo_path", ""),
+            my_aliases=existing.get("my_aliases", ""),
+            tracker_sources=existing.get("tracker_sources", ["jira"]),
+            team_members=existing.get("team_members", []),
+            roster_configured=existing.get("roster_configured", False),
+            code_sources=existing.get("code_sources", []),
+            github_repositories=existing.get("github_repositories", []),
+            azdo_projects=existing.get("azdo_projects", []),
+            azdo_repositories=existing.get("azdo_repositories", []),
+            code_scope_configured=existing.get("code_scope_configured", False),
+            documentation_sources=existing.get("documentation_sources", []),
+            documentation_scope_configured=existing.get("documentation_scope_configured", False),
+            automation_markers=existing.get("automation_markers", ""),
+            automation_handling=existing.get("automation_handling", "exclude"),
         )
-        if value is None:
-            logger.info("standup configure: cancelled at %s (session=%s)", step.strip(), session_id)
-        return value
+    msg = install_schedule(session_id, time_val, weekdays, lead_val) if enabled else remove_schedule(session_id)
+    logger.info("standup schedule wizard: saved session=%s enabled=%s -> %s", session_id, enabled, msg)
+    return msg
 
-    # Ask for the STANDUP time (when it happens); the job fires a few minutes before.
-    time_in = _ask("Standup time (HH:MM) — the meeting time", "Configure standup  (1/7)", cur_time)
-    if time_in is None:
-        return "Configure cancelled."
-    lead_in = _ask("Run how many minutes before the standup?", "Configure standup  (2/7)", cur_lead)
-    if lead_in is None:
-        return "Configure cancelled."
-    days_in = _ask("Weekdays (e.g. 1-5 or 1,3,5)", "Configure standup  (3/7)", cur_days)
-    if days_in is None:
-        return "Configure cancelled."
-    channels_in = _ask("Delivery channels (terminal, desktop, slack, email)", "Configure standup  (4/7)", cur_channels)
-    if channels_in is None:
-        return "Configure cancelled."
-    repo_in = _ask("Local git repo path (optional)", "Configure standup  (5/7)", cur_repo)
+
+def _standup_identity_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
+    """Collect identity settings (repo path + aliases) in-TUI and merge-save them.
+
+    Schedule settings moved to the hub wizard (``_run_standup_schedule_wizard``);
+    this slim flow keeps the two fields that attribute YOUR activity. No scheduler
+    calls — the saved schedule/scope fields pass through untouched. Esc at either
+    field cancels. Returns a status message for the dashboard.
+    """
+    from yeaboi.standup.store import StandupStore
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+
+    repo_in = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Local git repo path (optional)",
+        step="Identity  (1/2)",
+        default=existing.get("repo_path", ""),
+    )
     if repo_in is None:
-        return "Configure cancelled."
-    if repo_in.strip() and repo_in.strip() != cur_repo:
+        logger.info("standup identity: cancelled at step 1 (session=%s)", session_id)
+        return "Identity cancelled."
+    if repo_in.strip() and repo_in.strip() != existing.get("repo_path", ""):
         # Sandbox pre-flight (main thread): the scheduled standup runs headless
         # later, where a denial cannot ask — so consent is collected here, at
         # the moment the user types the path.
@@ -2924,35 +3220,31 @@ def _standup_configure(console: Console, live, read_key, frame_time, supports_ti
             mode="read",
             context="Daily Standup — local repo scan",
         ):
-            return "Repo path denied — configure cancelled. Allow it via Settings → Paths."
+            return "Repo path denied — identity cancelled. Allow it via Settings → Paths."
     # Aliases let your activity (GitHub handle, Jira display name, commit email)
     # attach to YOUR standup card even when the names don't match exactly.
-    aliases_in = _ask(
-        "Your aliases across tools (comma-separated, e.g. GitHub handle, Jira name)",
-        "Configure standup  (6/7)",
-        cur_aliases,
+    aliases_in = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Your aliases across tools (comma-separated, e.g. GitHub handle, Jira name)",
+        step="Identity  (2/2)",
+        default=existing.get("my_aliases", ""),
     )
     if aliases_in is None:
-        return "Configure cancelled."
-    enable_in = _ask("Enable scheduled runs? (yes/no)", "Configure standup  (7/7)", cur_enabled)
-    if enable_in is None:
-        return "Configure cancelled."
-
-    enabled = enable_in.strip().lower() in ("y", "yes", "true", "on", "1")
-    channels = [c.strip() for c in channels_in.split(",") if c.strip() in ALL_CHANNELS] or ["terminal"]
-    try:
-        lead_minutes = max(0, int(lead_in))
-    except ValueError:
-        lead_minutes = 10
+        logger.info("standup identity: cancelled at step 2 (session=%s)", session_id)
+        return "Identity cancelled."
 
     with StandupStore(_ana_dbp) as store:
         store.save_config(
             session_id,
-            enabled=enabled,
-            time=time_in,
-            lead_minutes=lead_minutes,
-            weekdays=days_in,
-            delivery_channels=channels,
+            enabled=bool(existing.get("enabled")),
+            time=existing.get("time", "10:00"),
+            lead_minutes=int(existing.get("lead_minutes", 10)),
+            weekdays=existing.get("weekdays", "1-5"),
+            delivery_channels=existing.get("delivery_channels", ["terminal"]),
             repo_path=repo_in,
             my_aliases=aliases_in.strip(),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -2965,11 +3257,11 @@ def _standup_configure(console: Console, live, read_key, frame_time, supports_ti
             code_scope_configured=existing.get("code_scope_configured", False),
             documentation_sources=existing.get("documentation_sources", []),
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
+            automation_markers=existing.get("automation_markers", ""),
+            automation_handling=existing.get("automation_handling", "exclude"),
         )
-
-    msg = install_schedule(session_id, time_in, days_in, lead_minutes) if enabled else remove_schedule(session_id)
-    logger.info("standup configure: session=%s enabled=%s -> %s", session_id, enabled, msg)
-    return msg
+    logger.info("standup identity: saved (session=%s)", session_id)
+    return "Identity saved."
 
 
 def _run_changelog_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -3408,6 +3700,8 @@ def _run_mode_hub(
     get_share_document=None,
     share_theme=None,
     new_breaks_out: bool = False,
+    extra_label=None,
+    extra_action=None,
 ) -> None:
     """Generic saved-runs hub loop shared by standup / retro / reporting.
 
@@ -3430,10 +3724,17 @@ def _run_mode_hub(
     actions, scroll_meta, width, height, message, shimmer_tick) -> Panel`` (or None if
     the run vanished). Standup needs section drill-in beyond plain scroll, so it passes
     an ``open_snapshot`` override instead; the other three use the shared scroll loop.
+
+    ``extra_label``/``extra_action`` (both optional callables) add one fixed card
+    below "+ New run" — standup uses it for "Set up a schedule". ``extra_label()``
+    returns the card text (recomputed on every reload so status stays fresh; empty
+    string hides the card); Enter on it calls ``extra_action()`` and shows the
+    returned message. Modes that pass neither are byte-identical to before.
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
 
     runs = load_runs()
+    extra_text = extra_label() if extra_label is not None else ""
     selected = 0
     focus = 0  # 0 = card, 1 = Delete, 2 = Export (only on a run row)
     message = ""
@@ -3441,10 +3742,14 @@ def _run_mode_hub(
     anim_start = time.monotonic()
     logger.info("%s hub: opened (%d saved run(s))", mode, len(runs))
 
+    def _n_items() -> int:
+        return len(runs) + 1 + (1 if extra_text else 0)
+
     def _reload(msg: str = "") -> None:
-        nonlocal runs, selected, focus, message, confirm
+        nonlocal runs, selected, focus, message, confirm, extra_text
         runs = load_runs()
-        selected = min(selected, max(0, len(runs)))  # keep within [0, new_idx]
+        extra_text = extra_label() if extra_label is not None else ""
+        selected = min(selected, _n_items() - 1)  # keep within the item range
         focus = 0
         confirm = False
         message = msg
@@ -3474,6 +3779,7 @@ def _run_mode_hub(
                 empty_title=empty_title,
                 empty_subtitle=empty_subtitle,
                 shimmer_tick=tick,
+                extra_label=extra_text,
             )
         )
 
@@ -3590,8 +3896,9 @@ def _run_mode_hub(
     _render_list()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        n_items = len(runs) + 1
+        n_items = _n_items()
         on_run = selected < len(runs)
+        on_extra = extra_text and selected == len(runs) + 1
         if confirm:
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):
@@ -3612,6 +3919,13 @@ def _run_mode_hub(
             if on_run:
                 focus = min(2, focus + 1)
         elif k in ("enter", " "):
+            if on_extra:
+                # The fixed extra card (e.g. standup's schedule setup) runs its
+                # action in place, then reloads so its status label refreshes.
+                msg = extra_action() if extra_action is not None else None
+                _reload(msg or "")
+                _render_list()
+                continue
             if not on_run:
                 if new_breaks_out:
                     # Performance: "+ New" hands control back to the roster (where the
@@ -3759,11 +4073,16 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
                 return
             _render()
 
+    def _history_for(report):
+        # Trend for the report's own session, clipped to its date inside the exporter.
+        with StandupStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30) if report.session_id else []
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_standup(report)
+        paths = export_standup(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -3780,11 +4099,62 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
             return None
         from yeaboi.sharing.documents import standup_document
 
-        return standup_document(report)
+        return standup_document(report, history=_history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
+
+    def _schedule_session_id() -> str:
+        """The session the hub schedule targets.
+
+        Prefer a session that already has an ENABLED schedule (most recently
+        updated first) — otherwise a schedule installed for an older session
+        would be invisible here and the wizard would create a duplicate for the
+        latest one. Fall back to the latest session (the live page's targeting).
+        """
+        from yeaboi.sessions import SessionStore
+
+        with StandupStore(_ana_dbp) as store:
+            enabled = store.get_enabled_schedule_sessions()
+        if enabled:
+            return enabled[0]
+        with SessionStore(_ana_dbp) as store:
+            return store.get_latest_session_id() or ""
+
+    def _schedule_label() -> str:
+        """Text for the hub's fixed schedule card, recomputed on every reload."""
+        from yeaboi.standup.scheduler import get_schedule_status, run_time_str, weekday_spec_label
+
+        try:
+            session_id = _schedule_session_id()
+            if not session_id:
+                return "⏰ Set up a schedule"
+            with StandupStore(_ana_dbp) as store:
+                cfg = store.load_config(session_id) or {}
+            if not cfg.get("enabled"):
+                return "⏰ Set up a schedule"
+            installed = bool(get_schedule_status(session_id).get("installed"))
+            state = "On" if installed else "Off (not installed)"
+            fire = run_time_str(cfg.get("time", "10:00"), int(cfg.get("lead_minutes", 10)))
+            days = weekday_spec_label(cfg.get("weekdays", "1-5"))
+            channels = ", ".join(cfg.get("delivery_channels", ["terminal"]))
+            label = f"⏰ Schedule · {state} · {fire} · {days} · {channels}"
+            return label if len(label) <= 52 else label[:51] + "…"
+        except Exception:
+            logger.warning("standup hub: failed to build schedule label", exc_info=True)
+            return "⏰ Set up a schedule"
+
+    def _open_schedule() -> str:
+        """Enter on the schedule card → run the wizard (never crash the hub)."""
+        session_id = _schedule_session_id()
+        if not session_id:
+            return "No session yet — run a standup or create a plan first."
+        try:
+            return _run_standup_schedule_wizard(console, live, read_key, frame_time, supports_timeout, session_id)
+        except Exception as e:
+            logger.error("standup hub: schedule wizard failed", exc_info=True)
+            return f"Schedule setup failed: {e}"
 
     _run_mode_hub(
         console,
@@ -3806,6 +4176,8 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         share_theme=STANDUP_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_standup_page(console, live, read_key, frame_time, supports_timeout),
+        extra_label=_schedule_label,
+        extra_action=_open_schedule,
     )
 
 
@@ -3878,11 +4250,18 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past retros (newest-first rows).
+        if not report.session_id:
+            return []
+        with RetroStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_retro(report)
+        paths = export_retro(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -3895,7 +4274,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
             return None
         from yeaboi.sharing.documents import retro_document
 
-        return retro_document(report)
+        return retro_document(report, history=_history_for(report))
 
     def delete_run(run):
         with RetroStore(_ana_dbp) as store:
@@ -3987,11 +4366,16 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
         return render
 
+    def _history_for(run):
+        # Trend chart data: past reports for the run's session (newest-first rows).
+        with ReportingStore(_ana_dbp) as store:
+            return store.get_history(run.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_report(report)
+        paths = export_report(report, history=_history_for(run))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
 
     def get_document(run):
@@ -4004,7 +4388,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
             return None
         from yeaboi.sharing.documents import reporting_document
 
-        return reporting_document(report)
+        return reporting_document(report, history=_history_for(run))
 
     def delete_run(run):
         with ReportingStore(_ana_dbp) as store:
@@ -4218,7 +4602,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Team", "Anonymize", "Configure", "Back"]
+            base = ["Generate", "Team", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
         if data.get("report") is not None:
@@ -4373,15 +4757,20 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 report = data.get("report")
                 if report is not None:
                     from yeaboi.sharing.documents import standup_document
+                    from yeaboi.standup.store import StandupStore as _SStore
                     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
+                    share_history = []
+                    if anon is None:  # masked shares carry no charts — skip the query
+                        with _SStore(_ana_dbp) as _sstore:
+                            share_history = _sstore.get_history(session_id, limit=30)
                     _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        document=standup_document(report, anon=anon),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
                     )
@@ -4465,10 +4854,10 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     msg = f"Team selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
-            elif act == "Configure":  # in-TUI themed input (stays inside Live)
+            elif act == "Identity":  # in-TUI themed input (stays inside Live)
                 try:
-                    logger.info("standup: Configure pressed (session=%s)", session_id)
-                    msg = _standup_configure(console, live, read_key, frame_time, supports_timeout, session_id)
+                    logger.info("standup: Identity pressed (session=%s)", session_id)
+                    msg = _standup_identity_configure(console, live, read_key, frame_time, supports_timeout, session_id)
                 except Exception as e:  # never let a prompt crash the TUI
                     logger.error("standup action failed: %s", e, exc_info=True)
                     msg = f"Action failed: {e}"
@@ -6705,8 +7094,11 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         report = state.get("report")
         try:
             from yeaboi.reporting.export import export_report
+            from yeaboi.reporting.store import ReportingStore
 
-            paths = export_report(report, theme=state["theme"])
+            with ReportingStore(_ana_dbp) as _store:
+                run_history = _store.get_history(session_id, limit=30)
+            paths = export_report(report, theme=state["theme"], history=run_history)
             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
         except Exception as e:  # noqa: BLE001
             logger.error("reporting export failed: %s", e, exc_info=True)
@@ -7759,7 +8151,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.retro.export import export_retro
 
                             report = board_to_report(board, sprint_name=sprint_name)
-                            paths = export_retro(report, project_name=project_name or session_name)
+                            with RetroStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_retro(report, project_name=project_name or session_name, history=run_history)
                             logger.info("retro: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8294,7 +8688,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.poker.export import export_poker
 
                             report = board_to_report(board)
-                            paths = export_poker(report, project_name=project_name or session_name)
+                            with PokerStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_poker(report, project_name=project_name or session_name, history=run_history)
                             logger.info("poker: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8394,11 +8790,18 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past poker runs (newest-first rows).
+        if not report.session_id:
+            return []
+        with PokerStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_poker(report)
+        paths = export_poker(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):

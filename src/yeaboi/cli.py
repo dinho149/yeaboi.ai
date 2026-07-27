@@ -1417,7 +1417,7 @@ def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
             return 2
         from yeaboi.retro.export import export_retro
 
-        exported = {k: str(v) for k, v in export_retro(latest).items()}
+        exported = {k: str(v) for k, v in export_retro(latest, history=history).items()}
     # Summarise the latest retro's carried-over action items by status.
     carried = list(latest.carried_action_items) if latest else []
     carried_summary = ""
@@ -1481,7 +1481,9 @@ def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
             return 2
         from yeaboi.poker.export import export_poker
 
-        exported = {k: str(v) for k, v in export_poker(latest).items()}
+        with PokerStore(get_db_path()) as _store:
+            run_history = _store.get_history(latest.session_id, limit=30) if latest.session_id else []
+        exported = {k: str(v) for k, v in export_poker(latest, history=run_history).items()}
     if args.format == "json":
         print(json.dumps({"history": rows, "exported": exported}, indent=2))
         return 0

@@ -2204,3 +2204,129 @@ class TestAnalysisEnrichmentCache:
             assert store.load_analysis_enrichment("final_synthesis", "digest-1", "model-a") == {"summary": "ok"}
             assert store.load_analysis_enrichment("final_synthesis", "digest-2", "model-a") is None
             assert store.load_analysis_enrichment("final_synthesis", "digest-1", "model-b") is None
+
+
+class TestExportVisuals:
+    """Shared-design-system visuals rolled out to the team-analysis export."""
+
+    def test_contributor_avatars_in_team_members_table(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        ex = {
+            "contributor_stats": [
+                {
+                    "name": "Ava Lin",
+                    "delivery_pts": 21,
+                    "stories_completed": 7,
+                    "spill_rate": 5,
+                    "avg_cycle_time": 4.0,
+                    "sprints_active": 3,
+                    "top_discipline": "backend",
+                    "per_sprint": 7.0,
+                },
+                {
+                    "name": "Bo Chen",
+                    "delivery_pts": 13,
+                    "stories_completed": 5,
+                    "spill_rate": 12,
+                    "avg_cycle_time": 6.0,
+                    "sprints_active": 3,
+                    "top_discipline": "frontend",
+                    "per_sprint": 4.3,
+                },
+            ]
+        }
+        html = build_team_profile_html(profile, examples=ex)
+        # class attribute, not the bare token — ".avatar" also lives in the stylesheet.
+        assert html.count('class="avatar"') >= 2
+        assert ">AL</span>" in html and ">BC</span>" in html
+
+    def test_ai_by_contributor_avatars(self):
+        from yeaboi.team_profile import AiAdoptionSignal
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        sig = AiAdoptionSignal(
+            scanned_commits=30, ai_commits=6, footprint_pct=20.0, per_author=(("Ava Lin", 4), ("Bo Chen", 2))
+        )
+        profile = TeamProfile(team_id="t", source="jira", project_key="P", ai_adoption=sig)
+        html = build_team_profile_html(profile, examples={"ai_adoption": {}})
+        assert 'class="avatar"' in html
+        assert ">AL</span>" in html
+
+    def test_task_type_distribution_mix_bar(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        ex = {
+            "task_decomposition": {
+                "stories_with_tasks": 6,
+                "total_stories": 8,
+                "total_tasks": 24,
+                "avg_tasks_per_story": 3.0,
+                "task_completion_rate": 80.0,
+                "type_distribution": {"backend": 50.0, "frontend": 30.0, "qa": 20.0},
+            }
+        }
+        html = build_team_profile_html(profile, examples=ex)
+        assert 'class="seg-track"' in html
+        assert "backend 50" in html and "qa 20" in html
+
+    def test_repo_activity_mix_bar(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        ex = {
+            "repositories": {
+                "top_repos": [
+                    {"repo": "acme/api", "stories": 9, "pct": 60.0},
+                    {"repo": "acme/web", "stories": 6, "pct": 40.0},
+                ]
+            }
+        }
+        html = build_team_profile_html(profile, examples=ex)
+        assert 'class="seg-track"' in html
+        assert "acme/api 9" in html and "acme/web 6" in html
+
+    def test_sprint_scope_sparkline_from_daily_snapshots(self):
+        from yeaboi.team_profile import DailyScopeSnapshot, ScopeChangeEvent, SprintScopeTimeline
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        tl = SprintScopeTimeline(
+            sprint_name="Sprint 12",
+            committed_pts=30.0,
+            final_pts=36.0,
+            delivered_pts=28.0,
+            scope_change_total=6.0,
+            daily_snapshots=(
+                DailyScopeSnapshot(date="2026-07-06", total_scope_pts=30.0, stories_in_sprint=(("A-1", 30.0),)),
+                DailyScopeSnapshot(date="2026-07-08", total_scope_pts=33.0, stories_in_sprint=(("A-1", 33.0),)),
+                DailyScopeSnapshot(date="2026-07-10", total_scope_pts=36.0, stories_in_sprint=(("A-1", 36.0),)),
+            ),
+            change_events=(ScopeChangeEvent(issue_key="A-2", change_type="added", delta_pts=6.0),),
+        )
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        ex = {
+            "sprint_details": [{"name": "Sprint 12", "points": 30, "planned": 8, "completed": 7, "rate": 88}],
+            "scope_changes": {
+                "totals": {
+                    "added_mid_sprint": 1,
+                    "re_estimated": 0,
+                    "total_stories": 8,
+                    "avg_committed_velocity": 30.0,
+                    "avg_delivered_velocity": 28.0,
+                },
+                "timelines": [tl],
+            },
+        }
+        html = build_team_profile_html(profile, examples=ex)
+        assert 'class="spark-wrap"' in html
+        assert "2026-07-06" in html and "2026-07-10" in html
+
+    def test_self_contained_with_visuals(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        ex = {"contributor_stats": [{"name": "Ava", "delivery_pts": 5}]}
+        html = build_team_profile_html(profile, examples=ex)
+        assert 'src="http' not in html and "<link" not in html

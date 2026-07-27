@@ -862,6 +862,24 @@ class TestStandupConfigTools:
         assert payload["ok"] is False
         assert "unknown delivery channel" in payload["error"]["message"]
 
+    def test_config_set_automation_fields_merge(self, seeded_session):
+        call_tool("standup_config_set", {"time": "09:15"})
+        payload = call_tool("standup_config_set", {"automation_markers": "wiz", "automation_handling": "off"})
+        config = payload["data"]["config"]
+        assert config["automation_markers"] == "wiz"
+        assert config["automation_handling"] == "off"
+        assert config["time"] == "09:15"  # earlier value preserved
+        # Omitting both keeps the tuned values.
+        payload = call_tool("standup_config_set", {"enabled": True})
+        config = payload["data"]["config"]
+        assert config["automation_markers"] == "wiz"
+        assert config["automation_handling"] == "off"
+
+    def test_config_set_rejects_bad_automation_handling(self, seeded_session):
+        payload = call_tool("standup_config_set", {"automation_handling": "flag"})
+        assert payload["ok"] is False
+        assert "automation_handling" in payload["error"]["message"]
+
 
 class TestServerEntry:
     def test_import_without_mcp_is_safe(self):

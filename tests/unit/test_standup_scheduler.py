@@ -10,13 +10,13 @@ from yeaboi.standup import scheduler
 
 class TestHelpers:
     def test_parse_time(self):
-        assert scheduler._parse_time("09:50") == (9, 50)
+        assert scheduler.parse_time("09:50") == (9, 50)
 
     def test_parse_time_invalid(self):
         with pytest.raises(ValueError):
-            scheduler._parse_time("9am")
+            scheduler.parse_time("9am")
         with pytest.raises(ValueError):
-            scheduler._parse_time("25:00")
+            scheduler.parse_time("25:00")
 
     def test_run_time_subtracts_lead(self):
         # Standup 10:00, 10 min lead → fire 09:50.
@@ -31,13 +31,30 @@ class TestHelpers:
         assert scheduler.run_time("00:05", 10) == (23, 55)
 
     def test_weekday_list_range(self):
-        assert scheduler._weekday_list("1-5") == [1, 2, 3, 4, 5]
+        assert scheduler.weekday_list("1-5") == [1, 2, 3, 4, 5]
 
     def test_weekday_list_commas(self):
-        assert scheduler._weekday_list("1,3,5") == [1, 3, 5]
+        assert scheduler.weekday_list("1,3,5") == [1, 3, 5]
 
     def test_weekday_list_empty_defaults_weekdays(self):
-        assert scheduler._weekday_list("") == [1, 2, 3, 4, 5]
+        assert scheduler.weekday_list("") == [1, 2, 3, 4, 5]
+
+    def test_weekday_spec_compresses_runs(self):
+        assert scheduler.weekday_spec({1, 2, 3, 4, 5}) == "1-5"
+        assert scheduler.weekday_spec({1, 3, 5}) == "1,3,5"
+        assert scheduler.weekday_spec({1, 2, 4, 5}) == "1-2,4-5"
+        assert scheduler.weekday_spec({7}) == "7"
+        assert scheduler.weekday_spec(set()) == "1-5"
+
+    def test_weekday_spec_round_trips_through_weekday_list(self):
+        for days in ({1, 2, 3, 4, 5}, {1, 3, 5}, {2, 3, 4, 6, 7}, {7}):
+            assert set(scheduler.weekday_list(scheduler.weekday_spec(days))) == days
+
+    def test_weekday_spec_label(self):
+        assert scheduler.weekday_spec_label("1-5") == "Mon–Fri"
+        assert scheduler.weekday_spec_label("1-7") == "Every day"
+        assert scheduler.weekday_spec_label("1,3,5") == "Mon, Wed, Fri"
+        assert scheduler.weekday_spec_label("6") == "Sat"
 
     def test_executable_args_shape(self, monkeypatch):
         monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/usr/local/bin/scrum-agent")
@@ -78,17 +95,49 @@ class TestLaunchd:
         assert plist_file.exists()
         with plist_file.open("rb") as fh:
             data = plistlib.load(fh)
-        # Opens Terminal via osascript so the run can prompt for input.
-        assert data["ProgramArguments"][0] == "/usr/bin/osascript"
+        # launchd executes the wrapper directly so macOS Background Task
+        # Management shows "yeaboi-standup" (not "osascript") as the item name.
+        assert data["ProgramArguments"] == [str(tmp_path / "launchers" / "standup-sess-1" / "yeaboi-standup")]
         assert len(data["StartCalendarInterval"]) == 5
         assert data["StartCalendarInterval"][0]["Hour"] == 9
         assert data["StartCalendarInterval"][0]["Minute"] == 50
-        # The launcher script holds the actual interactive CLI command.
-        launcher = tmp_path / "launchers" / "standup-sess-1.sh"
-        assert launcher.exists()
-        script = launcher.read_text()
+        # The wrapper opens Terminal via osascript; run.sh holds the CLI command.
+        wrapper = tmp_path / "launchers" / "standup-sess-1" / "yeaboi-standup"
+        run_script = tmp_path / "launchers" / "standup-sess-1" / "run.sh"
+        assert wrapper.exists() and run_script.exists()
+        assert wrapper.stat().st_mode & 0o111 and run_script.stat().st_mode & 0o111
+        assert "osascript" in wrapper.read_text() and "Terminal" in wrapper.read_text()
+        script = run_script.read_text()
         assert "--standup-run" in script and "--standup-interactive" in script
         assert "launchd" in msg
+
+    def test_wrapper_quotes_paths_with_spaces(self, monkeypatch, tmp_path):
+        # Regression: the real launcher dir lives under "Application Support";
+        # the unquoted path used to split at the space and every fire failed.
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: True)
+        monkeypatch.setattr(scheduler, "_launch_agents_dir", lambda: tmp_path)
+        monkeypatch.setattr(scheduler, "_launcher_dir", lambda: tmp_path / "Application Support" / "yeaboi")
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/scrum-agent")
+        monkeypatch.setattr(scheduler.subprocess, "run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
+
+        scheduler.install_schedule("sess-1", "10:00", "1-5")
+        wrapper_text = (tmp_path / "Application Support" / "yeaboi" / "standup-sess-1" / "yeaboi-standup").read_text()
+        run_path = str(tmp_path / "Application Support" / "yeaboi" / "standup-sess-1" / "run.sh")
+        # The AppleScript hands Terminal a shell-quoted path, so the space survives.
+        assert f"'{run_path}'" in wrapper_text
+        assert f" {run_path}" not in wrapper_text.replace(f"'{run_path}'", "")
+
+    def test_install_removes_legacy_launcher(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: True)
+        monkeypatch.setattr(scheduler, "_launch_agents_dir", lambda: tmp_path)
+        monkeypatch.setattr(scheduler, "_launcher_dir", lambda: tmp_path / "launchers")
+        monkeypatch.setattr(scheduler.subprocess, "run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
+        legacy = tmp_path / "launchers" / "standup-sess-1.sh"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("#!/bin/sh\nold\n")
+
+        scheduler.install_schedule("sess-1", "10:00")
+        assert not legacy.exists()
 
     def test_sunday_maps_to_zero(self, monkeypatch, tmp_path):
         monkeypatch.setattr(scheduler, "_is_macos", lambda: True)
@@ -110,8 +159,8 @@ class TestLaunchd:
         assert scheduler.get_schedule_status("sess-1")["installed"] is True
         scheduler.remove_schedule("sess-1")
         assert scheduler.get_schedule_status("sess-1")["installed"] is False
-        # Launcher script also cleaned up.
-        assert not (tmp_path / "launchers" / "standup-sess-1.sh").exists()
+        # Wrapper + run.sh directory also cleaned up.
+        assert not (tmp_path / "launchers" / "standup-sess-1").exists()
 
 
 class TestCron:

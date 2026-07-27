@@ -391,6 +391,15 @@ def _detail_member(ctx: _StandupCtx, data: dict, name: str) -> None:
         empty="No activity was detected for this member.",
         colour=theme.accent,
     )
+    if getattr(m, "progress_note", ""):
+        ctx.blank()
+        _member_panel(
+            ctx,
+            "↺ Since last standup",
+            m.progress_note,
+            empty="",
+            colour=theme.accent_bright,
+        )
     ctx.blank()
     _member_panel(
         ctx,
@@ -418,6 +427,15 @@ def _detail_member(ctx: _StandupCtx, data: dict, name: str) -> None:
         links=tuple(getattr(m, "documentation_links", ()) or ()),
         colour=theme.warn,
     )
+    if getattr(m, "outlook", ""):
+        ctx.blank()
+        _member_panel(
+            ctx,
+            "→ Outlook",
+            m.outlook,
+            empty="",
+            colour=theme.good,
+        )
     if m.blockers:
         ctx.blank()
         ctx.add_renderable(
@@ -510,8 +528,14 @@ def _detail_schedule(ctx: _StandupCtx, data: dict) -> None:
             ctx.row("Local repo", config["repo_path"])
         if config.get("my_aliases"):
             ctx.row("My aliases", config["my_aliases"])
+        # Service-hook detection (standup/automation.py): only shown when tuned
+        # away from the defaults, to keep the card compact.
+        if config.get("automation_handling", "exclude") == "off":
+            ctx.row("Automation filter", "off", theme.muted)
+        elif config.get("automation_markers"):
+            ctx.row("Automation markers", config["automation_markers"])
     else:
-        ctx.line("Not configured — press Configure to set a time and delivery.", theme.muted)
+        ctx.line("Not configured — set up a schedule from the Standup hub.", theme.muted)
     installed = schedule.get("installed")
     if installed is not None:
         ctx.row(

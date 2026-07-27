@@ -132,6 +132,28 @@ class TestConfig:
         assert cfg["documentation_sources"] == ["confluence", "notion"]
         assert cfg["documentation_scope_configured"] is True
 
+    def test_automation_fields_round_trip(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                automation_markers="wiz, acme-scanner",
+                automation_handling="off",
+            )
+            cfg = store.load_config("s1")
+        assert cfg["automation_markers"] == "wiz, acme-scanner"
+        assert cfg["automation_handling"] == "off"
+
+    def test_automation_fields_default(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config("s1", enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            cfg = store.load_config("s1")
+        assert cfg["automation_markers"] == ""
+        assert cfg["automation_handling"] == "exclude"
+
     def test_my_aliases_column_migrates_old_db(self, db_path):
         """A standup_config table created before my_aliases existed gains the column on open."""
         import sqlite3
@@ -160,6 +182,9 @@ class TestConfig:
         assert cfg["tracker_sources"] == ["jira"]
         assert cfg["team_members"] == []
         assert cfg["roster_configured"] is False
+        # Automation-filter columns also arrive via migration with safe defaults.
+        assert cfg["automation_markers"] == ""
+        assert cfg["automation_handling"] == "exclude"
 
 
 class TestSelfUpdates:
@@ -429,3 +454,101 @@ class TestActivityCountRoundTrip:
             store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
             latest = store.get_latest_report("s1")
         assert latest.member_updates[0].activity_count == 0
+
+
+class TestEnabledScheduleSessions:
+    @staticmethod
+    def _save(store, session_id, enabled, time):
+        store.save_config(session_id, enabled=enabled, time=time, weekdays="1-5", delivery_channels=["terminal"])
+
+    def test_lists_enabled_sessions_most_recent_first(self, db_path):
+        with StandupStore(db_path) as store:
+            self._save(store, "old", True, "09:00")
+            self._save(store, "off", False, "10:00")
+            self._save(store, "new", True, "11:00")
+            # Touch "old" again so it becomes the most recently updated.
+            self._save(store, "old", True, "09:15")
+            assert store.get_enabled_schedule_sessions() == ["old", "new"]
+
+    def test_empty_when_no_enabled_config(self, db_path):
+        with StandupStore(db_path) as store:
+            self._save(store, "s1", False, "10:00")
+            assert store.get_enabled_schedule_sessions() == []
+
+
+class TestDayOverDayRoundTrip:
+    def test_new_fields_round_trip(self, db_path):
+        report = _make_report(
+            confidence_delta=-8,
+            confidence_trend="declining",
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="login",
+                    progress_note="Still on PSOT-9 from yesterday.",
+                    outlook="Likely to finish PSOT-9.",
+                ),
+            ),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        assert latest == report
+        assert latest.confidence_delta == -8
+        assert latest.confidence_trend == "declining"
+        assert latest.member_updates[0].progress_note == "Still on PSOT-9 from yesterday."
+        assert latest.member_updates[0].outlook == "Likely to finish PSOT-9."
+
+    def test_old_report_json_defaults(self, db_path):
+        # Reports recorded before the day-over-day fields existed must still load.
+        report = _make_report()
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            store._conn.execute(
+                "UPDATE standup_history SET report_json = "
+                '\'{"date": "2026-07-10", "member_updates": [{"name": "Alice"}]}\''
+            )
+            latest = store.get_latest_report("s1")
+        assert latest.confidence_delta == 0
+        assert latest.confidence_trend == ""
+        assert latest.member_updates[0].progress_note == ""
+        assert latest.member_updates[0].outlook == ""
+
+
+class TestGetPreviousReport:
+    def test_newest_before_date_wins(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-08", confidence_pct=70))
+            store.record_run(_make_report(date="2026-07-09", confidence_pct=80))
+            store.record_run(_make_report(date="2026-07-10", confidence_pct=90))
+            prev = store.get_previous_report("s1", "2026-07-10")
+        assert prev is not None
+        assert prev.date == "2026-07-09"
+
+    def test_same_day_rerun_excluded(self, db_path):
+        # A rerun earlier TODAY is not "yesterday".
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10", confidence_pct=50))
+            assert store.get_previous_report("s1", "2026-07-10") is None
+
+    def test_failed_runs_excluded(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09"), status="failed")
+            assert store.get_previous_report("s1", "2026-07-10") is None
+
+    def test_partial_runs_included(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09"), status="partial")
+            prev = store.get_previous_report("s1", "2026-07-10")
+        assert prev is not None
+
+    def test_corrupt_json_returns_none(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09"))
+            store._conn.execute("UPDATE standup_history SET report_json = 'garbage'")
+            assert store.get_previous_report("s1", "2026-07-10") is None
+
+    def test_other_session_ignored(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-09", session_id="other"))
+            assert store.get_previous_report("s1", "2026-07-10") is None

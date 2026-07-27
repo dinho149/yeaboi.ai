@@ -36,12 +36,18 @@ def get_standup_summary_prompt(
             "code_activity": [ {kind,title,status,source,repository}, ... ],
             "documentation_activity": [ {kind,title,status,source,repository}, ... ],
             "in_progress": [ {kind,title,status,source}, ... ],
-            "self_report": str, "coverage": dict}] — one entry per team member.
+            "self_report": str, "coverage": dict,
+            "yesterday": {"summary","blockers","outlook"} | {},
+            "blocker_signals": [str, ...]}] — one entry per team member.
             The three activity lists are already classified; "in_progress" holds tickets
             currently assigned to them and in progress (possibly untouched in
             the window); "self_report" is their own typed update ("" when they
             didn't type one), used as supporting context, never as a
-            replacement for the activity analysis.
+            replacement for the activity analysis; "yesterday" is the member's
+            entry from the previous standup ({} when there is none) for the
+            day-over-day progress note; "blocker_signals" are deterministic
+            blocker evidence strings from insights.detect_blocker_signals that
+            MUST be reflected in the member's 'blockers'.
         activity_counts: (source, count) pairs for the "what we looked at" line.
     """
     # --- Context block: everything the model needs to reason over ------------
@@ -85,15 +91,28 @@ def get_standup_summary_prompt(
         "If a person has NO fresh activity and NO self_report but has 'in_progress' items, summarize them as "
         'continuing work on those tickets (e.g. "Continuing work on X") — never say \'No activity '
         "detected' for them. Only when all three are empty use 'No activity detected.' as the summary.\n"
-        "- If their activity or self-report suggests a blocker (e.g. a PR stuck in review, a ticket "
-        "flipped back to 'Blocked'), note it in 'blockers'; otherwise use an empty string.\n"
-        "- Write 'team_summary' as 2-4 sentences: overall momentum, notable progress, and any risks. "
+        "- A member's 'yesterday' object is their entry from the previous standup — comparison "
+        "context, not evidence of new work. When it is non-empty, write a one-sentence "
+        "'progress_note' relating today's evidence to it: what continued, what got finished, what "
+        "appears stalled (e.g. 'Wrapped up the login work from yesterday; PSOT-14 is still in "
+        "review.'). When 'yesterday' is empty, 'progress_note' MUST be an empty string.\n"
+        "- Write a one-sentence 'outlook' predicting the member's likely focus for the day ahead, "
+        "grounded ONLY in their in-progress tickets, open pull requests, and self-report. Phrase it "
+        "as an expectation ('Likely to continue …'), never as fact. Use an empty string when there "
+        "is nothing concrete to predict from.\n"
+        "- 'blocker_signals' are verified signals detected in the data (blocked ticket statuses, "
+        "PRs unmerged across standups, heavy ticket discussions). Reflect EVERY provided signal in "
+        "'blockers' — you may rephrase and merge them, and add blockers you infer yourself (e.g. a "
+        "PR stuck in review, a ticket flipped back to 'Blocked') — but never omit or soften a "
+        "provided signal. With no signals and nothing suggesting a blocker, use an empty string.\n"
+        "- Write 'team_summary' as 2-4 sentences: overall momentum, notable progress, and any risks "
+        "— name members with blockers explicitly. "
         f"Factor in the sprint status (currently '{confidence_label}': {confidence_rationale}).\n"
         "- Be concrete and concise. No filler, no preamble.\n"
         "- Return ONLY a JSON object, no markdown fences, of the exact shape:\n"
         '  {"members": [{"name": "...", "summary": "...", "ticketing_summary": "...", '
-        '"code_summary": "...", "documentation_summary": "...", '
-        '"blockers": "..."}], "team_summary": "..."}'
+        '"code_summary": "...", "documentation_summary": "...", "blockers": "...", '
+        '"progress_note": "...", "outlook": "..."}], "team_summary": "..."}'
     )
 
     # ARC: Context

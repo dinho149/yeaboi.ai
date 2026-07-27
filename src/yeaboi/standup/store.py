@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS standup_config (
     code_scope_configured INTEGER NOT NULL DEFAULT 0,
     documentation_sources TEXT NOT NULL DEFAULT '[]',
     documentation_scope_configured INTEGER NOT NULL DEFAULT 0,
+    automation_markers TEXT NOT NULL DEFAULT '',
+    automation_handling TEXT NOT NULL DEFAULT 'exclude',
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -104,6 +106,8 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
             name=m.get("name", ""),
             summary=m.get("summary", ""),
             blockers=m.get("blockers", ""),
+            progress_note=m.get("progress_note", ""),
+            outlook=m.get("outlook", ""),
             source=m.get("source", "inferred"),
             self_report=m.get("self_report", ""),
             # JSON turned each (label, url) tuple into a list — rebuild tuples.
@@ -136,6 +140,8 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         confidence_pct=d.get("confidence_pct", 0),
         confidence_label=d.get("confidence_label", ""),
         confidence_rationale=d.get("confidence_rationale", ""),
+        confidence_delta=int(d.get("confidence_delta", 0)),
+        confidence_trend=d.get("confidence_trend", ""),
         team_summary=d.get("team_summary", ""),
         member_updates=members,
         activity_counts=counts,
@@ -211,6 +217,14 @@ class StandupStore:
                ADD COLUMN documentation_sources TEXT NOT NULL DEFAULT '[]'""",
             """ALTER TABLE standup_config
                ADD COLUMN documentation_scope_configured INTEGER NOT NULL DEFAULT 0""",
+            # Service-hook/bot detection (see standup/automation.py): the user's
+            # custom comma-separated content markers, and whether detected
+            # automation is excluded from member credit ('exclude') or left
+            # alone ('off').
+            """ALTER TABLE standup_config
+               ADD COLUMN automation_markers TEXT NOT NULL DEFAULT ''""",
+            """ALTER TABLE standup_config
+               ADD COLUMN automation_handling TEXT NOT NULL DEFAULT 'exclude'""",
         ):
             try:
                 self._conn.execute(statement)
@@ -262,13 +276,16 @@ class StandupStore:
         code_scope_configured: bool = False,
         documentation_sources: list[str] | None = None,
         documentation_scope_configured: bool = False,
+        automation_markers: str = "",
+        automation_handling: str = "exclude",
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
         ``time`` is the STANDUP time (e.g. "10:00"); the scheduler fires
         ``lead_minutes`` earlier. ``my_aliases`` is the user's comma-separated
         identity list across tools (GitHub handle, Jira display name, …) used
-        for alias-aware activity attribution.
+        for alias-aware activity attribution. ``automation_markers`` /
+        ``automation_handling`` tune service-hook detection (standup/automation.py).
         """
         now = self._now()
         channels_json = json.dumps(delivery_channels)
@@ -292,8 +309,9 @@ class StandupStore:
                    (session_id, enabled, time, lead_minutes, timezone, weekdays, delivery_channels,
                     repo_path, my_aliases, tracker_sources, team_members, roster_configured,
                     code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured,
-                    documentation_sources, documentation_scope_configured, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    documentation_sources, documentation_scope_configured,
+                    automation_markers, automation_handling, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -313,6 +331,8 @@ class StandupStore:
                    code_scope_configured = excluded.code_scope_configured,
                    documentation_sources = excluded.documentation_sources,
                    documentation_scope_configured = excluded.documentation_scope_configured,
+                   automation_markers = excluded.automation_markers,
+                   automation_handling = excluded.automation_handling,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -334,10 +354,24 @@ class StandupStore:
                 int(code_scope_configured),
                 documentation_sources_json,
                 int(documentation_scope_configured),
+                automation_markers,
+                automation_handling or "exclude",
                 now,
                 now,
             ),
         )
+
+    def get_enabled_schedule_sessions(self) -> list[str]:
+        """Session ids with an enabled schedule, most recently updated first.
+
+        The hub's schedule card prefers one of these over the bare latest session
+        so an already-installed schedule stays visible/editable (instead of the
+        wizard silently creating a second schedule for a newer session).
+        """
+        rows = self._conn.execute(
+            "SELECT session_id FROM standup_config WHERE enabled = 1 ORDER BY updated_at DESC"
+        ).fetchall()
+        return [r[0] for r in rows]
 
     def load_config(self, session_id: str) -> dict | None:
         """Return the standup config for a session as a dict, or None if unset."""
@@ -345,7 +379,7 @@ class StandupStore:
             "SELECT session_id, enabled, time, timezone, weekdays, delivery_channels, repo_path, lead_minutes, "
             "my_aliases, tracker_sources, team_members, roster_configured, "
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
-            "documentation_sources, documentation_scope_configured "
+            "documentation_sources, documentation_scope_configured, automation_markers, automation_handling "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -403,6 +437,8 @@ class StandupStore:
             "code_scope_configured": bool(row[16]),
             "documentation_sources": _json_list(row[17]),
             "documentation_scope_configured": bool(row[18]),
+            "automation_markers": row[19] or "",
+            "automation_handling": row[20] or "exclude",
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────
@@ -510,6 +546,28 @@ class StandupStore:
             return _dict_to_standup_report(json.loads(row[0]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize standup report for %s: %s", session_id, exc)
+            return None
+
+    def get_previous_report(self, session_id: str, before_date: str) -> StandupReport | None:
+        """Return the newest successful/partial report dated strictly BEFORE ``before_date``.
+
+        Date-scoped (not run-scoped) so a same-day rerun never becomes
+        "yesterday" — the engine uses this as the previous standup when
+        comparing each member's update day-over-day.
+        """
+        row = self._conn.execute(
+            "SELECT report_json FROM standup_history "
+            "WHERE session_id = ? AND standup_date != '' AND standup_date < ? "
+            "AND status IN ('success', 'partial') "
+            "ORDER BY standup_date DESC, run_at DESC LIMIT 1",
+            (session_id, before_date),
+        ).fetchone()
+        if row is None or not row[0]:
+            return None
+        try:
+            return _dict_to_standup_report(json.loads(row[0]))
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to deserialize previous standup report for %s: %s", session_id, exc)
             return None
 
     def get_history(self, session_id: str, limit: int = 30) -> list[dict]:

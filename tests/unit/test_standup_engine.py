@@ -337,6 +337,120 @@ class TestRunStandup:
         assert delivered["channels"] == ["terminal"]
 
 
+class TestAutomationFilter:
+    """Service-hook activity posted under a member's identity is excluded, with a notice."""
+
+    @staticmethod
+    def _wiz_items(author="Alice", n=18):
+        repos = ["infra", "onboarding", "credit-risk", "security", "pricing", "automation"]
+        return [
+            {
+                "author": author,
+                "kind": "review",
+                "title": f"reviewed PR !{i}: deploy ({repos[i % 6]})",
+                "body": (
+                    f"Security finding: publicly exposed storage container detected in "
+                    f"{repos[i % 6]}/infra/main.tf line {i}. Severity: High. Review before merging."
+                ),
+                "timestamp": f"2026-07-10T09:00:{i:02d}",
+                "key": f"review-comment-{i}",
+                "repository": repos[i % 6],
+                "source": "azure_devops",
+            }
+            for i in range(n)
+        ]
+
+    def _run(self, monkeypatch, db_path, seeded_session, *, handling=None):
+        items = [
+            *self._wiz_items(),
+            {"author": "Alice", "kind": "commit", "title": "real fix", "source": "github"},
+            {"author": "Bob", "kind": "issue", "title": "API bug", "source": "jira"},
+        ]
+        _patch_common(monkeypatch, items=items, counts=[("azure_devops", 18), ("github", 1), ("jira", 1)])
+        # Deterministic fallback path — no LLM mocking needed for count assertions.
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        if handling is not None:
+            with StandupStore(db_path) as store:
+                store.save_config(
+                    seeded_session,
+                    enabled=False,
+                    time="10:00",
+                    weekdays="1-5",
+                    delivery_channels=["terminal"],
+                    automation_handling=handling,
+                )
+        return engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+
+    def test_burst_excluded_from_counts_and_credit(self, monkeypatch, db_path, seeded_session):
+        report = self._run(monkeypatch, db_path, seeded_session)
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        assert alice.code_activity_count == 1  # only the genuine commit
+        assert dict(report.activity_counts) == {"azure_devops": 0, "github": 1, "jira": 1}
+        notice = next(w for w in report.warnings if w.startswith("Excluded"))
+        assert "18 near-identical review item(s) posted under 'Alice'" in notice
+        assert "across 6 repositories" in notice
+
+    def test_handling_off_keeps_everything(self, monkeypatch, db_path, seeded_session):
+        report = self._run(monkeypatch, db_path, seeded_session, handling="off")
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        assert alice.code_activity_count == 19  # 18 hook comments + 1 commit
+        assert dict(report.activity_counts)["azure_devops"] == 18
+        assert not any(w.startswith("Excluded") for w in report.warnings)
+
+    def test_custom_marker_from_config(self, monkeypatch, db_path, seeded_session):
+        items = [
+            {
+                "author": "Alice",
+                "kind": "review",
+                "title": "reviewed PR !1: deploy",
+                "body": "AcmeScan flagged a finding in this change.",
+                "timestamp": "2026-07-10T09:00:00",
+                "key": "rc-1",
+                "repository": "infra",
+                "source": "azure_devops",
+            }
+        ]
+        _patch_common(monkeypatch, items=items, counts=[("azure_devops", 1)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                automation_markers="acmescan",
+            )
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert dict(report.activity_counts)["azure_devops"] == 0
+        assert any("matched 'acmescan'" in w for w in report.warnings)
+
+    def test_rebuild_bundle_preserves_partial_sources(self):
+        # Regression: the roster-filter rebuild used to drop partial_sources,
+        # silently swallowing partial-coverage warnings.
+        bundle = ActivityBundle(
+            items=[{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}],
+            counts=[("github", 1)],
+            errors=[("jira", "401")],
+            skipped=[("notion", "not configured")],
+            partial_sources=[("azure_devops", "truncated after 100 PRs")],
+        )
+        rebuilt = engine._rebuild_bundle(bundle, bundle.items)
+        assert rebuilt.partial_sources == [("azure_devops", "truncated after 100 PRs")]
+        assert rebuilt.errors == [("jira", "401")]
+        assert rebuilt.skipped == [("notion", "not configured")]
+
+    def test_roster_filter_preserves_partial_sources(self):
+        bundle = ActivityBundle(
+            items=[{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}],
+            counts=[("github", 1)],
+            partial_sources=[("azure_devops", "truncated after 100 PRs")],
+        )
+        filtered = engine._filter_bundle_to_members(bundle, {"Alice": {"alice"}})
+        assert filtered.partial_sources == [("azure_devops", "truncated after 100 PRs")]
+        assert len(filtered.items) == 1
+
+
 class TestAliasMatching:
     def test_normalize_author_case_and_strip(self):
         assert engine._normalize_author("  Alice ") == {"alice"}
@@ -948,3 +1062,191 @@ class TestActivityCount:
         report = engine.run_standup(seeded_session, db_path=db_path, dry_run=True, deliver=False)
         alice = next(m for m in report.member_updates if m.name == "Alice")
         assert alice.activity_count == 2
+
+
+class TestDayOverDay:
+    """Yesterday/today/tomorrow analysis, blocker signals, and confidence trend wiring."""
+
+    @staticmethod
+    def _prompt_text(captured: dict) -> str:
+        """Flatten the captured invoke() payload (str or [HumanMessage]) to text."""
+        m = captured["prompt"]
+        if isinstance(m, str):
+            return m
+        parts = []
+        for msg in m:
+            content = getattr(msg, "content", "")
+            parts.append(content if isinstance(content, str) else json.dumps(content))
+        return "\n".join(parts)
+
+    def _seed_yesterday(self, db_path, **member_kwargs):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+
+        member = MemberUpdate(name="Alice", summary="Started PSOT-9 auth work", **member_kwargs)
+        report = StandupReport(date="2026-07-09", session_id="sess-1", member_updates=(member,))
+        with StandupStore(db_path) as store:
+            store.record_run(report, status="success")
+
+    def test_llm_progress_note_and_outlook_land(self, monkeypatch, db_path, seeded_session):
+        self._seed_yesterday(db_path)
+        items = [{"author": "Alice", "kind": "commit", "title": "auth polish", "source": "github"}]
+        _patch_common(monkeypatch, items=items, counts=[("github", 1)])
+        llm_json = json.dumps(
+            {
+                "members": [
+                    {
+                        "name": "Alice",
+                        "summary": "Polished auth",
+                        "progress_note": "Continued yesterday's PSOT-9 auth work.",
+                        "outlook": "Likely to open the auth PR.",
+                    },
+                    {"name": "Bob", "summary": "quiet", "progress_note": "Invented comparison.", "outlook": ""},
+                ],
+                "team_summary": "ok",
+            }
+        )
+        captured: dict = {}
+
+        def _fake_invoke(self, m):
+            captured["prompt"] = m
+            return _FakeResp(llm_json)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: type("L", (), {"invoke": _fake_invoke})())
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        names = {m.name: m for m in report.member_updates}
+        assert names["Alice"].progress_note == "Continued yesterday's PSOT-9 auth work."
+        assert names["Alice"].outlook == "Likely to open the auth PR."
+        # Bob has no entry in yesterday's report → the model cannot invent one.
+        assert names["Bob"].progress_note == ""
+        # The prompt carried yesterday's context for Alice.
+        prompt_text = self._prompt_text(captured)
+        assert "Started PSOT-9 auth work" in prompt_text
+        assert '"yesterday"' in prompt_text
+
+    def test_no_previous_report_clears_progress_note(self, monkeypatch, db_path, seeded_session):
+        items = [{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}]
+        _patch_common(monkeypatch, items=items, counts=[("github", 1)])
+        llm_json = json.dumps(
+            {
+                "members": [{"name": "Alice", "summary": "s", "progress_note": "Made-up yesterday."}],
+                "team_summary": "ok",
+            }
+        )
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.get_llm",
+            lambda **k: type("L", (), {"invoke": lambda self, m: _FakeResp(llm_json)})(),
+        )
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        assert alice.progress_note == ""
+
+    def test_blocker_signals_fold_in_when_llm_omits(self, monkeypatch, db_path, seeded_session):
+        items = [
+            {
+                "author": "Alice",
+                "kind": "issue",
+                "key": "PSOT-9",
+                "title": "Auth",
+                "status": "Blocked",
+                "source": "jira",
+            }
+        ]
+        _patch_common(monkeypatch, items=items, counts=[("jira", 1)])
+        captured: dict = {}
+        llm_json = json.dumps({"members": [{"name": "Alice", "summary": "s", "blockers": ""}], "team_summary": "ok"})
+
+        def _fake_invoke(self, m):
+            captured["prompt"] = m
+            return _FakeResp(llm_json)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: type("L", (), {"invoke": _fake_invoke})())
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        # The deterministic signal survives even though the model dropped it.
+        assert alice.blockers == "PSOT-9 'Auth' is in Blocked"
+        assert "PSOT-9 'Auth' is in Blocked" in self._prompt_text(captured)
+
+    def test_fallback_sets_blockers_outlook_and_progress_note(self, monkeypatch, db_path, seeded_session):
+        self._seed_yesterday(db_path)
+        items = [
+            {
+                "author": "Alice",
+                "kind": "issue",
+                "key": "PSOT-9",
+                "title": "Auth",
+                "status": "Blocked",
+                "source": "jira",
+            },
+            {
+                "author": "Alice",
+                "kind": "wip",
+                "key": "PSOT-14",
+                "title": "Session store",
+                "status": "In Progress",
+                "source": "jira",
+            },
+        ]
+        _patch_common(monkeypatch, items=items, counts=[("jira", 2)])
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no API key set"))
+
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        assert alice.blockers == "PSOT-9 'Auth' is in Blocked"
+        assert alice.outlook == "Likely continuing: Session store."
+        # Yesterday's summary mentioned PSOT-9 and it's active again today.
+        assert alice.progress_note == "Still on PSOT-9 (carried over from the last standup)."
+
+    def test_confidence_trend_from_seeded_history(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import StandupReport
+
+        with StandupStore(db_path) as store:
+            store.record_run(
+                StandupReport(date="2026-07-09", session_id="sess-1", confidence_pct=80, confidence_label="At risk"),
+                status="success",
+            )
+        items = [{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}]
+        _patch_common(monkeypatch, items=items, counts=[("github", 1)])
+        llm_json = json.dumps({"members": [], "team_summary": "ok"})
+        monkeypatch.setattr(
+            "yeaboi.agent.llm.get_llm",
+            lambda **k: type("L", (), {"invoke": lambda self, m: _FakeResp(llm_json)})(),
+        )
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        # Base burn-down pct is 100 (10/20 points on day 5 of 10); yesterday was 80.
+        assert report.confidence_pct == 100
+        assert report.confidence_trend == "improving"
+        assert report.confidence_delta == 20
+        assert "Up 20 pts since the last standup." in report.confidence_rationale
+
+    def test_same_day_rerun_is_not_yesterday(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+
+        # An earlier run TODAY must not become the comparison baseline.
+        with StandupStore(db_path) as store:
+            store.record_run(
+                StandupReport(
+                    date="2026-07-10",
+                    session_id="sess-1",
+                    confidence_pct=55,
+                    member_updates=(MemberUpdate(name="Alice", summary="Earlier rerun today"),),
+                ),
+                status="success",
+            )
+        items = [{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}]
+        _patch_common(monkeypatch, items=items, counts=[("github", 1)])
+        captured: dict = {}
+        llm_json = json.dumps(
+            {"members": [{"name": "Alice", "summary": "s", "progress_note": "vs earlier today"}], "team_summary": "ok"}
+        )
+
+        def _fake_invoke(self, m):
+            captured["prompt"] = m
+            return _FakeResp(llm_json)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: type("L", (), {"invoke": _fake_invoke})())
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        alice = next(m for m in report.member_updates if m.name == "Alice")
+        assert alice.progress_note == ""  # no true yesterday → clamp wins
+        assert "Earlier rerun today" not in self._prompt_text(captured)
+        assert report.confidence_trend == ""  # same-day pct filtered from the trend

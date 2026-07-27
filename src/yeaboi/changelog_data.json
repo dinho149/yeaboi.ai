@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.40.0",
+      "date": "2026-07-27",
+      "summary": "Daily Standup unlocked six major capabilities that transform how standups work: automated scheduling (set it and run headless), intelligent day-over-day insights (blockers, progress signals, outlook), humanized export cards with ticket links and activity bars, automation detection (bots and scanners excluded from credit), and theme-aware visualizations across all eight modes. The export redesign landed per-member cards instead of tables, readable bullets with hanging indent, theme-aware sparklines and progress bars, and avatar chips. Then the visual system rolled out to Retro, Poker, Performance, Reporting, and Roadmap exports with the same polish.",
+      "highlights": [
+        {"text": "Schedule wizard: set time, lead, weekdays, and channels; runs scheduled standups headless via launchd/cron", "areas": ["standup"]},
+        {"text": "Day-over-day intelligence: blocker detection, previous-day progress notes, AI-written outlook, trend-aware confidence with delta fields", "areas": ["standup"]},
+        {"text": "HTML/Markdown redesign: per-member cards with ticket links, readable sentence-split bullets, badge-chip links, adaptive grid, coverage dots", "areas": ["standup"]},
+        {"text": "Automation detection: filter out bot and scanner comments via content markers and metadata; always surface as Notices", "areas": ["standup", "general"]},
+        {"text": "Theme-aware visual system: sparklines, segment bars, avatars, legends, progress bars in all five themes + print across Standup/Retro/Poker/Performance/Reporting", "areas": ["general", "standup", "retro", "reporting"]}
+      ]
+    },
+    {
       "version": "2.39.0",
       "date": "2026-07-27",
       "summary": "Security-hardened release elevating the app's trust foundation across five independent workstreams. A new filesystem sandbox restricts all reads and writes to ~/.yeaboi unless explicitly allowed, with interactive TUI consent and Settings integration. Sensitive credentials and tokens are now redacted from all logs and tracebacks. Every external write tool (Jira/Azure DevOps ticket creation) now requires human confirmation before executing. HTML exports were hardened against XSS injection across all eight exporters with consolidated escaping. File permissions were tightened (chmod 0o600 for logs and database), and a non-blocking CodeQL workflow adds continuous static analysis. Manual end-to-end testing confirms sandbox denial paths work, and all existing functionality remains backward-compatible.",

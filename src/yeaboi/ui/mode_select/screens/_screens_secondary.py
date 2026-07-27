@@ -2481,6 +2481,12 @@ def _build_standup_screen(
             if report.confidence_label != "Insufficient data":
                 strip.append_text(build_meter(report.confidence_pct, 100, theme=theme, style=conf_style))
                 strip.append(f" {report.confidence_pct}%", style=conf_style)
+                trend = getattr(report, "confidence_trend", "")
+                delta = getattr(report, "confidence_delta", 0)
+                if trend == "improving":
+                    strip.append(f" ▲+{delta}", style=theme.good)
+                elif trend == "declining":
+                    strip.append(f" ▼{abs(delta)}", style=theme.bad)
     else:
         strip.append("No standup yet — Generate creates today's standup", style=theme.muted)
 
@@ -2562,7 +2568,7 @@ def _build_standup_screen(
         padded_lines.append(Text(""))
 
     if actions is None:
-        actions = ["Generate", "Team", "Configure", "Back"] if view == "overview" else ["Back", "Export"]
+        actions = ["Generate", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
     if _sb_text is not None:
@@ -2709,6 +2715,81 @@ def _build_standup_team_member_screen(
         viewport,
     )
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
+
+
+_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable"]
+
+
+def _build_standup_schedule_step_screen(
+    options: list[tuple[str, str]],
+    cursor: int,
+    *,
+    checked: set[int] | None = None,
+    step_index: int = 0,
+    heading: str = "",
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+) -> Panel:
+    """Build one step of the schedule wizard: a radio or checkbox option list.
+
+    ``checked is None`` renders a single-select (radio) step — the cursor row IS
+    the selection, Enter confirms it. A ``set`` renders a multi-select step where
+    Space toggles membership. ``options`` are ``(label, description)`` pairs; the
+    description renders dimmed after the label. Progress dots across the top show
+    the five wizard steps (``_SCHEDULE_STEP_NAMES``).
+    """
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    multi = checked is not None
+    rows: list[Text] = []
+    if message:
+        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+    if multi:
+        rows.append(Text(_PAD + f"{len(checked)} of {len(options)} selected", style=theme.muted))
+        rows.append(Text(""))
+    for idx, (label, desc) in enumerate(options):
+        selected = (idx in checked) if multi else (idx == cursor)
+        active = idx == cursor
+        row = Text(_PAD + "  ")
+        row.append("‹ " if active else "  ", style=theme.accent_bright)
+        row.append("●" if selected else "○", style=theme.accent_bright if selected else theme.dim)
+        row.append(f" {label}", style="bold white" if active else (theme.accent if selected else theme.desc))
+        if active:
+            row.append(" ›", style=theme.accent_bright)
+        if desc:
+            row.append(f"  ·  {desc}", style=theme.muted if active else theme.dim)
+        rows.append(row)
+
+    hints = "↑/↓ move · Space toggle · Enter continue · Esc back" if multi else "↑/↓ move · Enter continue · Esc back"
+    viewport_h = calc_viewport(height, header_h=11, action_h=2)
+    total = len(rows)
+    max_scroll = max(0, total - viewport_h)
+    start = min(max(0, cursor - viewport_h // 2 + 2), max_scroll)
+    visible = rows[start : start + viewport_h]
+    visible.extend(Text("") for _ in range(max(0, viewport_h - len(visible))))
+    scrollbar = build_scrollbar(viewport_h, total, start, max_scroll)
+    if scrollbar is not None:
+        viewport: Table | Group = Table(
+            show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True
+        )
+        viewport.add_column(ratio=1)
+        viewport.add_column(width=1)
+        viewport.add_row(Group(*visible), scrollbar)
+    else:
+        viewport = Group(*visible)
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + heading, style="bold white"),
+        build_progress_dots(_SCHEDULE_STEP_NAMES, step_index, theme=theme),
+        Text(_PAD + hints, style=theme.muted),
+        Text(""),
+        viewport,
+    )
+    return build_page_panel(content, theme=theme, height=height)
 
 
 def _build_changelog_screen(

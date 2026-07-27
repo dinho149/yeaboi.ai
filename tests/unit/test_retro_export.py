@@ -127,3 +127,82 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+def _history(*rows):
+    """Newest-first rows mirroring RetroStore.get_history output."""
+    return [
+        {"id": i, "run_at": f"{d}T18:00:00", "retro_date": d, "project_name": "Demo", "card_count": n}
+        for i, (d, n) in enumerate(rows)
+    ]
+
+
+class TestVisuals:
+    def test_participant_and_card_avatars(self):
+        html = build_retro_html(_report())
+        # class attribute, not the bare token — ".avatar" also lives in the stylesheet.
+        assert html.count('class="avatar"') >= 3  # Sam + Rae participants, plus card authors
+        assert ">S</span>" in html and ">R</span>" in html
+
+    def test_avatar_name_escaped(self):
+        rep = RetroReport(date="2026-07-10", cards=(RetroCard(grid="demos", text="x", author="<b>Eve</b>"),))
+        html = build_retro_html(rep)
+        assert "<b>Eve</b>" not in html
+
+    def test_column_bar_counts_in_board_order(self):
+        html = build_retro_html(_report())
+        assert 'class="seg-track"' in html
+        assert "What went well 1" in html
+        assert "Action items 1" in html
+        # Empty column never appears in the legend.
+        assert "Demos 0" not in html and "Demos 1" not in html
+
+    def test_no_cards_no_column_bar(self):
+        html = build_retro_html(RetroReport(date="2026-07-10"))
+        assert 'class="seg-track"' not in html
+
+    def test_empty_columns_become_footnotes(self):
+        html = build_retro_html(_report())  # demos has no cards
+        assert "class='card-footnote'>Demos — no cards.</p>" in html
+        assert "<h3>Demos</h3>" not in html
+        assert "<h3>What went well</h3>" in html
+
+    def test_all_empty_board_all_footnotes_no_grid(self):
+        html = build_retro_html(RetroReport(date="2026-07-10"))
+        assert "member-grid" not in html.split("</style>")[1]
+        assert html.count("card-footnote") >= 4
+
+    def test_sparkline_from_history(self):
+        history = _history(("2026-07-10", 3), ("2026-06-26", 8), ("2026-06-12", 6))
+        html = build_retro_html(_report(), history=history)
+        assert 'class="spark-wrap"' in html
+        assert "Card volume trend" in html
+        assert "2026-06-12" in html  # oldest label rendered
+
+    def test_no_history_no_sparkline(self):
+        html = build_retro_html(_report())
+        assert 'class="spark-wrap"' not in html
+
+    def test_future_history_rows_excluded(self):
+        # Re-exporting an old retro must not show retros held after it.
+        history = _history(("2026-08-01", 9), ("2026-06-26", 8))
+        html = build_retro_html(_report(), history=history)
+        # Only 2026-06-26 + the report's own date remain → 2 points → chart renders,
+        # but the future date never appears.
+        assert "2026-08-01" not in html
+
+    def test_export_writes_forward_history(self, tmp_path, monkeypatch):
+        target = tmp_path / "demo"
+
+        def _fake_dir(key):
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+
+        monkeypatch.setattr("yeaboi.paths.get_retro_export_dir", _fake_dir)
+        history = _history(("2026-07-10", 3), ("2026-06-26", 8))
+        paths = export_retro(_report(), project_name="Demo", history=history)
+        assert 'class="spark-wrap"' in paths["html"].read_text()
+
+    def test_self_contained_with_history(self):
+        html = build_retro_html(_report(), history=_history(("2026-07-10", 3), ("2026-06-26", 8)))
+        assert 'src="http' not in html and "<link" not in html

@@ -637,6 +637,9 @@ class TestLogLevelButton:
         assert "Log Level" in _BTN_COLORS
         # Same silver scheme as Configure — both are Settings-page actions.
         assert _BTN_COLORS["Log Level"] == _BTN_COLORS["Configure"]
+        # Standup's Identity action (repo path + aliases) shares the silver scheme.
+        assert "Identity" in _BTN_COLORS
+        assert _BTN_COLORS["Identity"] == _BTN_COLORS["Configure"]
 
     def test_settings_screen_renders_log_level_button(self):
         from rich.console import Console

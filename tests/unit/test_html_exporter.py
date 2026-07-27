@@ -59,3 +59,71 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+class TestVisuals:
+    def _state(self):
+        from yeaboi.agent.state import Discipline, Priority, StoryPointValue, UserStory
+
+        def story(sid, discipline, pts):
+            return UserStory(
+                id=sid,
+                feature_id="F-1",
+                persona="user",
+                goal="do things",
+                benefit="value",
+                acceptance_criteria=(),
+                story_points=StoryPointValue(pts),
+                priority=Priority.MEDIUM,
+                title=f"Story {sid}",
+                discipline=discipline,
+            )
+
+        return {
+            "project_description": "Demo",
+            "stories": [
+                story("S-1", Discipline.BACKEND, 5),
+                story("S-2", Discipline.BACKEND, 3),
+                story("S-3", Discipline.FRONTEND, 8),
+            ],
+            "features": [],
+        }
+
+    def test_points_by_discipline_bar(self):
+        html = build_export_html(self._state())
+        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
+        assert 'class="seg-track"' in html
+        assert "backend 8" in html
+        assert "frontend 8" in html
+
+    def test_capacity_split_bar(self):
+        from yeaboi.agent.state import ProjectAnalysis
+
+        state = self._state()
+        state.update(
+            {
+                "project_analysis": ProjectAnalysis(
+                    project_name="Demo",
+                    project_description="Demo",
+                    project_type="greenfield",
+                    goals=(),
+                    end_users=(),
+                    target_state="",
+                    tech_stack=(),
+                    integrations=(),
+                    constraints=(),
+                    sprint_length_weeks=2,
+                    risks=(),
+                    out_of_scope=(),
+                    assumptions=(),
+                    target_sprints=3,
+                ),
+                "team_size": 4,
+                "velocity_per_sprint": 40,
+                "net_velocity_per_sprint": 30,
+                "sprint_length_weeks": 2,
+            }
+        )
+        html = build_export_html(state)
+        assert "Net 30" in html
+        assert "Deducted 10" in html

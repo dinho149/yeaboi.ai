@@ -78,6 +78,7 @@ def _build_run_hub_screen(
     empty_subtitle: str = "Press Enter to start your first run",
     shimmer_tick: float | None = None,
     theme: Theme | None = None,
+    extra_label: str = "",
 ) -> Panel:
     """Build the saved-runs hub: a scrollable list of past runs + a "+ New run" card.
 
@@ -87,6 +88,8 @@ def _build_run_hub_screen(
 
     title_fn: the mode's title function (e.g. ``standup_title``), called with shimmer_tick.
     theme: the mode's Theme — its ``bg`` tints the whole page (None → neutral dark base).
+    extra_label: when non-empty, one more fixed card (index ``len(runs) + 1``) below
+        "+ New run" — standup's "Set up a schedule" entry, showing live status.
     """
     title = title_fn(shimmer_tick)
 
@@ -110,7 +113,7 @@ def _build_run_hub_screen(
     inner_h = height - 4
     header_h = 10  # blank + title(6) + blank + subtitle + blank
 
-    n_items = len(runs) + 1  # runs + "+ New run" card
+    n_items = len(runs) + 1 + (1 if extra_label else 0)  # runs + "+ New run" (+ extra card)
     _new_idx = len(runs)
 
     available_h = inner_h - header_h
@@ -119,7 +122,9 @@ def _build_run_hub_screen(
     def _item_title(idx: int) -> str:
         if idx < len(runs):
             return runs[idx].title
-        return new_label
+        if idx == _new_idx:
+            return new_label
+        return extra_label
 
     if show_above:
         body.append(
@@ -153,10 +158,15 @@ def _build_run_hub_screen(
             )
             body.append(Padding(row, _card_pad))
         else:
+            # Index len(runs) is "+ New run"; len(runs)+1 (when present) is the
+            # extra fixed card — same uniform card so viewport math stays intact.
             body.append(
                 Padding(
                     _build_new_project_card(
-                        selected=(i == selected), box_w=box_w, opacity=card_opacity, label_text=new_label
+                        selected=(i == selected),
+                        box_w=box_w,
+                        opacity=card_opacity,
+                        label_text=new_label if i == _new_idx else extra_label,
                     ),
                     _card_pad,
                 )
@@ -198,6 +208,18 @@ def _build_run_hub_screen(
             )
         )
         body_h += 3
+        if extra_label:
+            body.append(Text(""))
+            body_h += 1
+            body.append(
+                Padding(
+                    _build_new_project_card(
+                        selected=(selected == 1), box_w=box_w, opacity=card_opacity, label_text=extra_label
+                    ),
+                    _card_pad,
+                )
+            )
+            body_h += 3
 
     remaining = max(0, inner_h - header_h - body_h)
 

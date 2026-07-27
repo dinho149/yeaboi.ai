@@ -702,3 +702,77 @@ class TestGithubAnalysisInventory:
         assert rows["acme/dead"]["skip_reason"] == "archived repository"
         assert rows["acme/unknown"]["active"] is False
         assert rows["acme/unknown"]["skip_reason"] == "no recorded push activity"
+
+
+# ---------------------------------------------------------------------------
+# github_recent_reviews
+# ---------------------------------------------------------------------------
+
+
+class TestGithubRecentReviews:
+    @staticmethod
+    def _user(login, type_="User"):
+        user = MagicMock()
+        user.login = login
+        user.type = type_
+        return user
+
+    def _pr(self, number=7):
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        pr = MagicMock()
+        pr.number = number
+        pr.title = f"PR {number}"
+        pr.updated_at = now
+        pr.html_url = ""
+        review = MagicMock()
+        review.user = self._user("bob")
+        review.body = "LGTM overall"
+        review.state = "APPROVED"
+        review.id = 1
+        review.submitted_at = now
+        review.html_url = ""
+        pr.get_reviews.return_value = [review]
+        comment = MagicMock()
+        comment.user = self._user("wiz-scan[bot]", type_="Bot")
+        comment.body = "Automated security scan finding"
+        comment.id = 2
+        comment.created_at = now
+        comment.html_url = ""
+        pr.get_review_comments.return_value = [comment]
+        return pr
+
+    @patch("yeaboi.tools.github._github_changed_files", lambda *a, **k: [])
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_inline_review_comments_are_returned(self, mock_client):
+        # Regression: the comment loop used to append to the enclosing `items`
+        # name (unbound until after the pool ran), so a NameError inside the
+        # worker silently dropped every inline review comment.
+        from yeaboi.tools.github import github_recent_reviews
+
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [self._pr()]
+
+        items = github_recent_reviews("owner/repo", days=120)
+
+        keys = {item["key"] for item in items}
+        assert keys == {"review-1", "review-comment-2"}
+
+    @patch("yeaboi.tools.github._github_changed_files", lambda *a, **k: [])
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_author_type_stamped(self, mock_client):
+        from yeaboi.tools.github import github_recent_reviews
+
+        mock_client.return_value.get_repo.return_value.get_pulls.return_value = [self._pr()]
+
+        items = {item["key"]: item for item in github_recent_reviews("owner/repo", days=120)}
+
+        assert items["review-1"]["author_type"] == ""  # human reviewer
+        assert items["review-comment-2"]["author_type"] == "bot"  # user.type == "Bot"
+
+    def test_author_type_helper_bot_suffix(self):
+        from yeaboi.tools.github import _author_type
+
+        assert _author_type(self._user("acme-scan[bot]")) == "bot"
+        assert _author_type(self._user("alice")) == ""
+        assert _author_type(None) == ""

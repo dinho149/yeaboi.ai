@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import logging
 import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ def _executable_args(session_id: str) -> list[str]:
     return [*base, "--standup-run", "--standup-interactive", "--standup-session", session_id]
 
 
-def _parse_time(hhmm: str) -> tuple[int, int]:
+def parse_time(hhmm: str) -> tuple[int, int]:
     """Parse 'HH:MM' → (hour, minute). Raises ValueError on bad input."""
     parts = hhmm.strip().split(":")
     if len(parts) != 2:
@@ -62,7 +64,7 @@ def run_time(standup_time: str, lead_minutes: int) -> tuple[int, int]:
     Wraps around midnight (mod 1440) if the lead pushes before 00:00, so an early
     standup with a large lead still yields a valid clock time.
     """
-    hour, minute = _parse_time(standup_time)
+    hour, minute = parse_time(standup_time)
     total = (hour * 60 + minute - int(lead_minutes)) % 1440
     return total // 60, total % 60
 
@@ -73,7 +75,7 @@ def run_time_str(standup_time: str, lead_minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
-def _weekday_list(weekdays: str) -> list[int]:
+def weekday_list(weekdays: str) -> list[int]:
     """Expand a weekday spec ('1-5', '1,3,5') into a list of ints (Mon=1..Sun=7)."""
     result: list[int] = []
     for chunk in weekdays.split(","):
@@ -86,6 +88,45 @@ def _weekday_list(weekdays: str) -> list[int]:
         else:
             result.append(int(chunk))
     return result or [1, 2, 3, 4, 5]
+
+
+_DAY_NAMES = {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"}
+
+
+def weekday_spec(days: Iterable[int]) -> str:
+    """Compress a set of weekday ints (Mon=1..Sun=7) into a spec string.
+
+    Inverse of ``weekday_list``: ``{1,2,3,4,5}`` → ``"1-5"``, ``{1,3,5}`` →
+    ``"1,3,5"``, ``{1,2,4,5}`` → ``"1-2,4-5"``. Empty input falls back to the
+    weekday default ``"1-5"`` (matching ``weekday_list("")``).
+    """
+    uniq = sorted({d for d in days if 1 <= int(d) <= 7})
+    if not uniq:
+        return "1-5"
+    parts: list[str] = []
+    start = prev = uniq[0]
+    for d in uniq[1:] + [None]:  # sentinel flushes the last run
+        if d is not None and d == prev + 1:
+            prev = d
+            continue
+        parts.append(str(start) if start == prev else f"{start}-{prev}")
+        if d is not None:
+            start = prev = d
+    return ",".join(parts)
+
+
+def weekday_spec_label(weekdays: str) -> str:
+    """Human-readable form of a weekday spec, for dashboards and the hub card.
+
+    ``"1-5"`` → ``"Mon–Fri"``, ``"1-7"`` → ``"Every day"``, ``"1,3,5"`` →
+    ``"Mon, Wed, Fri"``.
+    """
+    days = sorted(set(weekday_list(weekdays)))
+    if days == list(range(1, 8)):
+        return "Every day"
+    if len(days) >= 2 and days == list(range(days[0], days[-1] + 1)):
+        return f"{_DAY_NAMES[days[0]]}–{_DAY_NAMES[days[-1]]}"
+    return ", ".join(_DAY_NAMES[d] for d in days if d in _DAY_NAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -106,26 +147,73 @@ def _launcher_dir() -> Path:
     return Path.home() / "Library" / "Application Support" / "yeaboi"
 
 
-def _launcher_path(session_id: str) -> Path:
+def _session_launcher_dir(session_id: str) -> Path:
+    safe = session_id.replace("/", "_")
+    return _launcher_dir() / f"standup-{safe}"
+
+
+def _wrapper_path(session_id: str) -> Path:
+    # The filename is what macOS Background Task Management shows in the
+    # "can run in the background" popup / Login Items — keep it "yeaboi-standup"
+    # (session id lives in the parent directory instead).
+    return _session_launcher_dir(session_id) / "yeaboi-standup"
+
+
+def _run_script_path(session_id: str) -> Path:
+    return _session_launcher_dir(session_id) / "run.sh"
+
+
+def _legacy_launcher_path(session_id: str) -> Path:
+    # Pre-overhaul single launcher script; cleaned up on install/remove so a
+    # reinstall fully replaces the old osascript-labeled background item.
     safe = session_id.replace("/", "_")
     return _launcher_dir() / f"standup-{safe}.sh"
 
 
-def _write_launcher_script(session_id: str) -> Path:
-    """Write a tiny shell launcher that runs the interactive standup CLI.
+def _applescript_literal(text: str) -> str:
+    """Escape ``text`` for embedding inside an AppleScript double-quoted string."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
 
-    launchd opens Terminal against this script (via osascript). Using a script
-    file — rather than embedding the command in the AppleScript string — avoids
-    nested-quoting hell and keeps the plist simple.
+
+def _write_launcher_scripts(session_id: str) -> Path:
+    """Write the two launcher scripts; return the wrapper launchd should execute.
+
+    Two files instead of one on purpose:
+
+    - ``yeaboi-standup`` (the wrapper, launchd's ``ProgramArguments[0]``) calls
+      osascript to open a Terminal window. Making it the *first* executable means
+      macOS attributes the background item to "yeaboi-standup", not "osascript".
+    - ``run.sh`` holds the actual interactive CLI command — the thing the new
+      Terminal window runs. Keeping it a separate file (rather than inlining it
+      into the AppleScript string) keeps the quoting layers manageable.
+
+    The run.sh path is shell-quoted (it lives under "Application Support", which
+    contains a space) and then AppleScript-escaped — the missing shell quoting is
+    exactly what used to break every scheduled fire.
     """
-    import shlex
+    session_dir = _session_launcher_dir(session_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
 
-    path = _launcher_path(session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    run_script = _run_script_path(session_id)
     cmd = " ".join(shlex.quote(a) for a in _executable_args(session_id))
-    path.write_text(f"#!/bin/sh\n# Auto-generated by yeaboi — Daily Standup schedule.\n{cmd}\n")
-    path.chmod(0o755)
-    return path
+    run_script.write_text(f"#!/bin/sh\n# Auto-generated by yeaboi — Daily Standup schedule.\n{cmd}\n")
+    run_script.chmod(0o755)
+
+    wrapper = _wrapper_path(session_id)
+    # Layered quoting, inside-out: shell-quote run.sh for the shell Terminal
+    # spawns, escape that for the AppleScript string literal, then shell-quote
+    # the whole -e argument for the wrapper's own shell line.
+    terminal_cmd = _applescript_literal(shlex.quote(str(run_script)))
+    osa = f'tell application "Terminal" to do script "{terminal_cmd}"'
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        "# Auto-generated by yeaboi — Daily Standup schedule.\n"
+        "# Named 'yeaboi-standup' so macOS Background Task Management shows this\n"
+        "# name (not 'osascript') in Login Items & Extensions.\n"
+        f"exec /usr/bin/osascript -e {shlex.quote(osa)}\n"
+    )
+    wrapper.chmod(0o755)
+    return wrapper
 
 
 def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int]) -> str:
@@ -134,14 +222,14 @@ def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int
     # directly except Sunday which we send as 0.
     intervals = [{"Hour": hour, "Minute": minute, "Weekday": (0 if wd == 7 else wd)} for wd in weekdays]
 
-    # Open a Terminal window running the launcher so the run is INTERACTIVE (it can
-    # prompt for the user's update). LaunchAgents run in the GUI session, so
-    # AppleScript to Terminal works while the user is logged in.
-    launcher = _write_launcher_script(session_id)
-    osa = f'tell application "Terminal" to do script "{launcher}"'
+    # The wrapper opens a Terminal window (via osascript) so the run is
+    # INTERACTIVE (it can prompt for the user's update). LaunchAgents run in the
+    # GUI session, so AppleScript to Terminal works while the user is logged in.
+    wrapper = _write_launcher_scripts(session_id)
+    _legacy_launcher_path(session_id).unlink(missing_ok=True)
     plist = {
         "Label": label,
-        "ProgramArguments": ["/usr/bin/osascript", "-e", osa],
+        "ProgramArguments": [str(wrapper)],
         "StartCalendarInterval": intervals,
         "RunAtLoad": False,
     }
@@ -149,7 +237,7 @@ def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as fh:
         plistlib.dump(plist, fh)
-    logger.info("scheduler[launchd]: wrote %s (launcher %s)", path, launcher)
+    logger.info("scheduler[launchd]: wrote %s (wrapper %s)", path, wrapper)
     # Reload: bootout any existing instance, then bootstrap the fresh plist.
     subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
     proc = subprocess.run(["launchctl", "load", str(path)], capture_output=True, text=True, timeout=10, check=False)
@@ -158,15 +246,20 @@ def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int
     return f"Scheduled via launchd at {hour:02d}:{minute:02d} — opens a terminal to prompt ({path.name})"
 
 
+def _cleanup_launchers(session_id: str) -> None:
+    """Remove the wrapper/run.sh pair (and the pre-overhaul .sh launcher)."""
+    shutil.rmtree(_session_launcher_dir(session_id), ignore_errors=True)
+    _legacy_launcher_path(session_id).unlink(missing_ok=True)
+
+
 def _remove_launchd(session_id: str) -> str:
     path = _plist_path(session_id)
-    launcher = _launcher_path(session_id)
     if not path.exists():
-        launcher.unlink(missing_ok=True)
+        _cleanup_launchers(session_id)
         return "No launchd schedule found."
     subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
     path.unlink(missing_ok=True)
-    launcher.unlink(missing_ok=True)
+    _cleanup_launchers(session_id)
     logger.info("scheduler[launchd]: removed %s", path)
     return "Removed launchd schedule."
 
@@ -250,7 +343,7 @@ def install_schedule(session_id: str, standup_time: str, weekdays: str = "1-5", 
     ``lead_minutes`` earlier so the summary is delivered before the meeting.
     """
     hour, minute = run_time(standup_time, lead_minutes)  # lead-adjusted fire time
-    wd = _weekday_list(weekdays)
+    wd = weekday_list(weekdays)
     logger.info(
         "install_schedule: session=%s standup=%s lead=%d fire=%02d:%02d weekdays=%s",
         session_id,
