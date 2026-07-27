@@ -6,12 +6,12 @@ artifacts are available in graph_state — works at any pipeline checkpoint.
 
 from __future__ import annotations
 
-import html
 import logging
 from datetime import datetime
 from pathlib import Path
 
 from yeaboi.html_theme import EXPORT_CSS, html_page
+from yeaboi.html_theme import escape as _e
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,6 @@ _DISCIPLINE_CLASS = {
     "devops": "disc-devops",
     "design": "disc-design",
 }
-
-
-def _e(text: str) -> str:
-    """HTML-escape a string."""
-    return html.escape(str(text), quote=True)
 
 
 # Matches the export-image cap in export_targets._MAX_IMAGE_BYTES — anything
@@ -637,7 +632,9 @@ def export_plan_html(graph_state: dict, stage: str = "complete", path: Path | No
     Returns:
         The path the file was written to.
     """
-    output_path = path or Path("scrum-plan.html")
+    from yeaboi.fs_policy import resolve_and_check
+
+    output_path = resolve_and_check(path or Path("scrum-plan.html"), mode="write", context="HTML plan export")
     output_path.write_text(build_export_html(graph_state, stage=stage), encoding="utf-8")
     sections = sum(
         1

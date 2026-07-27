@@ -516,7 +516,9 @@ def export_project_json(project_id: str, output_dir: Path | None = None) -> Path
             # Sanitize filename: lowercase, replace spaces/special chars with hyphens
             safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name.lower()).strip("-")
             safe_name = safe_name or "project"
-            out_dir = output_dir or Path.cwd()
+            from yeaboi.fs_policy import resolve_and_check
+
+            out_dir = resolve_and_check(output_dir or Path.cwd(), mode="write", context="project export")
             out_path = out_dir / f"{safe_name}-export.json"
             out_path.write_text(json.dumps(proj, indent=2), encoding="utf-8")
             return out_path

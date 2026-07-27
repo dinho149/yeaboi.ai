@@ -1,5 +1,7 @@
 """Tests for questionnaire import/export as Markdown."""
 
+from pathlib import Path
+
 import pytest
 
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
@@ -277,3 +279,19 @@ class TestRoundTrip:
         export_questionnaire_md(qs, path)
         parsed = parse_questionnaire_md(path)
         assert parsed == original
+
+
+class TestSandboxGating:
+    """Questionnaire import/export respect the filesystem sandbox."""
+
+    def test_export_outside_whitelist_denied(self):
+        from yeaboi.fs_policy import SandboxViolationError
+
+        with pytest.raises(SandboxViolationError):
+            export_questionnaire_md(None, Path("/denied-sandbox-dir/q.md"))
+
+    def test_parse_outside_whitelist_denied(self):
+        from yeaboi.fs_policy import SandboxViolationError
+
+        with pytest.raises(SandboxViolationError):
+            parse_questionnaire_md(Path("/denied-sandbox-dir/q.md"))

@@ -359,9 +359,16 @@ _THEME_SCRIPT = """
 """
 
 
-def _e(text: str) -> str:
-    """HTML-escape a string."""
-    return html.escape(str(text), quote=True)
+def escape(text: str, quote: bool = True) -> str:
+    """HTML-escape a value (stringified first) — the one escape helper for every exporter.
+
+    Exporters import this as ``_e`` instead of ``html.escape`` so there is a
+    single definition with a single default (``quote=True``).
+    """
+    return html.escape(str(text), quote)
+
+
+_e = escape
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +430,10 @@ def html_page(
 ) -> str:
     """Build a complete self-contained themed HTML document.
 
-    Everything except ``body`` (trusted, pre-built HTML) is escaped here.
+    Everything except ``body`` is escaped here. ``body`` is trusted ONLY if
+    every interpolated user/LLM string went through the escape helper
+    (``escape``/``_e``) or a primitive (chip/section/stat_tile/stat_bar/
+    notice_block) — enforced by tests/unit/test_export_xss.py.
 
     Args:
         title: Document ``<title>``.

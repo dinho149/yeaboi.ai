@@ -221,3 +221,12 @@ class TestIngestSource:
         text, _label, warnings = _read_local_file(str(tmp_path))
         assert text == ""
         assert warnings
+
+
+class TestSandboxGating:
+    def test_file_outside_whitelist_returns_warning(self):
+        """Denied roadmap files surface as warnings, not crashes."""
+        text, label, warnings = _read_local_file("/denied-sandbox-dir/roadmap.md")
+        assert text == ""
+        assert label == "roadmap.md"
+        assert any("YEABOI_ALLOWED_PATHS" in w for w in warnings)

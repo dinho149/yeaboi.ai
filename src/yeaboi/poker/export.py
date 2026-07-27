@@ -18,10 +18,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
-from html import escape as _e
 from pathlib import Path
 
 from yeaboi.agent.state import PokerReport, PokerTicketResult
+from yeaboi.html_theme import escape as _e
 
 logger = logging.getLogger(__name__)
 

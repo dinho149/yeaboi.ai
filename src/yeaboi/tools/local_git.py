@@ -105,7 +105,16 @@ def local_git_recent_commits(repo_path: str, days: int = 1, since=None) -> list[
     logger.info("local_git_recent_commits: repo_path=%r days=%d since=%s", repo_path, days, since)
     if not repo_path:
         return []
-    path = Path(repo_path).expanduser()
+    # Sandbox check before the git subprocess touches the path. This module's
+    # contract is "never raise" — a denial degrades to [] with a warning (the
+    # standup engine surfaces its own warning for the configured repo_path).
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+    try:
+        path = resolve_and_check(repo_path, mode="read", context="local git activity")
+    except SandboxViolationError as e:
+        logger.warning("local_git_recent_commits skipped — %s", e)
+        return []
     if not path.is_dir():
         logger.warning("local_git_recent_commits skipped — not a directory: %s", path)
         return []

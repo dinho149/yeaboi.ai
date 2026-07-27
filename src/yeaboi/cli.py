@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi import __version__, paths
+from yeaboi import __version__, fs_policy, paths
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
@@ -368,6 +368,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Re-run the first-time setup wizard to update credentials.",
+    )
+
+    parser.add_argument(
+        "--allow-path",
+        metavar="PATH",
+        action="append",
+        default=[],
+        help=(
+            "Allow filesystem access to PATH for this run only (repeatable). "
+            "yeaboi is sandboxed to ~/.yeaboi; persistent allowances live in "
+            "YEABOI_ALLOWED_PATHS or Settings → Allowed Paths."
+        ),
     )
 
     parser.add_argument(
@@ -1331,7 +1343,11 @@ def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
     if args.perf_command == "complete":
         transcript = args.transcript
         if transcript.startswith("@"):
-            path = Path(transcript[1:])
+            try:
+                path = fs_policy.resolve_and_check(transcript[1:], mode="read", context="perf complete @transcript")
+            except fs_policy.SandboxViolationError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
             if not path.exists():
                 print(f"Error: transcript file not found: {path}", file=sys.stderr)
                 return 1
@@ -1756,6 +1772,38 @@ def _run_retro(console: "Console", session_id: str) -> None:
         console.print(f"  [yellow]{data['note']}[/yellow]")
 
 
+def _seed_allowed_paths_from_standup() -> None:
+    """One-time sandbox grandfathering for pre-sandbox standup configs.
+
+    Standup repo paths configured before the filesystem sandbox existed would
+    silently stop being scanned. Exactly once — while YEABOI_ALLOWED_PATHS has
+    never been set (unset, not empty) — copy any configured repo_path values
+    into the whitelist and log it. Users who later edit or clear the whitelist
+    are never re-seeded.
+    """
+    if os.getenv("YEABOI_ALLOWED_PATHS") is not None:
+        return
+    db = paths.DB_PATH
+    if not db.exists():
+        return
+    try:
+        import sqlite3
+
+        with sqlite3.connect(str(db)) as conn:
+            rows = conn.execute("SELECT DISTINCT repo_path FROM standup_config WHERE repo_path != ''").fetchall()
+    except Exception:  # noqa: BLE001 — missing table/old schema: nothing to seed
+        return
+    repo_paths = [r[0] for r in rows if r and r[0]]
+    if not repo_paths:
+        return
+    from yeaboi.config import set_allowed_paths
+
+    set_allowed_paths(repo_paths)
+    logging.getLogger(__name__).info(
+        "sandbox: seeded YEABOI_ALLOWED_PATHS from existing standup repo paths: %s", repo_paths
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the yeaboi CLI."""
     parser = build_parser()
@@ -1776,6 +1824,14 @@ def main(argv: list[str] | None = None) -> None:
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
 
+    # ── Filesystem sandbox: session-scoped --allow-path grants ───────────────
+    # Applied before any flow that might touch user-supplied paths, so every
+    # denial message's "--allow-path" remedy actually works for the same
+    # command re-run. Session-only: nothing is persisted (see fs_policy.py).
+    for allowed in args.allow_path:
+        fs_policy.grant_session(allowed)
+    _seed_allowed_paths_from_standup()
+
     # ── Validation for --non-interactive mode ────────────────────────────────
     if args.non_interactive and not args.description:
         print("Error: --non-interactive requires --description", file=sys.stderr)
@@ -1787,7 +1843,11 @@ def main(argv: list[str] | None = None) -> None:
 
     # Resolve --description @file.txt → read file contents
     if args.description and args.description.startswith("@"):
-        desc_path = Path(args.description[1:])
+        try:
+            desc_path = fs_policy.resolve_and_check(args.description[1:], mode="read", context="--description @file")
+        except fs_policy.SandboxViolationError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         if not desc_path.exists():
             print(f"Error: description file not found: {desc_path}", file=sys.stderr)
             sys.exit(1)

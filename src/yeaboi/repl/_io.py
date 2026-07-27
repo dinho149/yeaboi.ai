@@ -377,7 +377,9 @@ def _export_plan_markdown(graph_state: dict, path: Path | None = None) -> Path:
     Returns:
         The path the file was written to.
     """
-    output_path = path or Path("scrum-plan.md")
+    from yeaboi.fs_policy import resolve_and_check
+
+    output_path = resolve_and_check(path or Path("scrum-plan.md"), mode="write", context="markdown plan export")
     logger.debug("_export_plan_markdown: path=%s", output_path)
     from yeaboi.export_targets import localize_images
 
