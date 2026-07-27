@@ -336,6 +336,30 @@ class TestSetConfigValue:
         assert "SLACK_WEBHOOK_URL='https://hooks.example/secret'" in config_file.read_text()
 
 
+class TestGetSessionsDb:
+    """get_sessions_db() — legacy DB path, hardened to 0o600 when present."""
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_existing_db_perms_repaired(self, monkeypatch, tmp_path):
+        import stat
+
+        from yeaboi.config import get_sessions_db
+
+        monkeypatch.setattr("yeaboi.config.Path.home", lambda: tmp_path)
+        db = tmp_path / ".yeaboi" / "sessions.db"
+        db.parent.mkdir()
+        db.touch(mode=0o644)
+        db.chmod(0o644)
+        assert get_sessions_db() == db
+        assert stat.S_IMODE(db.stat().st_mode) == 0o600
+
+    def test_missing_db_not_created(self, monkeypatch, tmp_path):
+        from yeaboi.config import get_sessions_db
+
+        monkeypatch.setattr("yeaboi.config.Path.home", lambda: tmp_path)
+        assert not get_sessions_db().exists()
+
+
 class TestGetConfigFile:
     """Tests for get_config_file() — returns ~/.yeaboi/.env path."""
 

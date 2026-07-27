@@ -146,8 +146,21 @@ def get_db_path() -> Path:
 
     If both old and new DB exist, merges team_profiles and token_usage from the
     old DB into the new one, then removes the old DB to prevent divergence.
+
+    Also hardens permissions: the DB holds team/performance content, so the
+    data dir is 0o700 and the DB file 0o600 (repaired on every call — cheap,
+    and covers files created before this hardening existed). ``touch(mode=)``
+    applies only at creation, so whichever store connects first inherits an
+    already-restricted file.
     """
+    from yeaboi.config import restrict_permissions
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(DATA_DIR, mode=0o700)
+    if DB_PATH.exists():
+        restrict_permissions(DB_PATH, mode=0o600)
+    elif not LEGACY_DB_PATH.exists():
+        DB_PATH.touch(mode=0o600)
 
     if DB_PATH.exists() and LEGACY_DB_PATH.exists():
         # Both exist — merge legacy data into new DB, then remove legacy

@@ -68,8 +68,16 @@ def get_config_file() -> Path:
 
 
 def get_sessions_db() -> Path:
-    """Return path to ~/.yeaboi/sessions.db (SQLite session store)."""
-    return get_config_dir() / "sessions.db"
+    """Return path to ~/.yeaboi/sessions.db (SQLite session store).
+
+    Legacy location — most stores use ``paths.get_db_path()`` (data/sessions.db)
+    instead; this getter is still used by ceremony history and performance
+    context. Both apply the same 0o600 hardening as the .env file.
+    """
+    db = get_config_dir() / "sessions.db"
+    if db.exists():
+        restrict_permissions(db, mode=0o600)
+    return db
 
 
 def load_user_config() -> None:

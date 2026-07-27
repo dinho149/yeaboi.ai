@@ -1,6 +1,7 @@
 """Tests for the central logging setup module (logging_setup.py)."""
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 import pytest
@@ -151,3 +152,59 @@ class TestApplyLevel:
         configure_logging()
         apply_level("info")
         assert logging.getLogger("yeaboi").level == logging.INFO
+
+
+class TestRedactionAndPermissions:
+    """The security layer: every handler redacts secrets and hardens file perms."""
+
+    def _log_via_handler(self, tmp_path, message, *, exc=None):
+        configure_logging()
+        apply_level("INFO")
+        log = logging.getLogger("yeaboi.test_security")
+        if exc is not None:
+            try:
+                raise exc
+            except Exception:
+                log.exception(message)
+        else:
+            log.info(message)
+        detach("tui")
+        return (tmp_path / "logs" / "tui" / "yeaboi.log").read_text()
+
+    def test_secret_in_message_redacted_in_file(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-abcdefghijklmnop")
+        content = self._log_via_handler(tmp_path, "auth with sk-ant-api03-abcdefghijklmnop failed")
+        assert "sk-ant-api03" not in content
+        assert "[REDACTED]" in content
+
+    def test_secret_in_exception_redacted_in_file(self, tmp_path):
+        content = self._log_via_handler(
+            tmp_path, "call failed", exc=RuntimeError("401 Bearer abcdefghijklmnopqrstuvwx")
+        )
+        assert "abcdefghijklmnopqrstuvwx" not in content
+        assert "[REDACTED]" in content
+        assert "RuntimeError" in content
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_log_file_and_dir_permissions(self, tmp_path):
+        self._log_via_handler(tmp_path, "hello")
+        log_file = tmp_path / "logs" / "tui" / "yeaboi.log"
+        assert (log_file.stat().st_mode & 0o777) == 0o600
+        assert (log_file.parent.stat().st_mode & 0o777) == 0o700
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_rollover_keeps_restricted_permissions(self, tmp_path):
+        path = tmp_path / "logs" / "roll" / "roll.log"
+        path.parent.mkdir(parents=True)
+        handler = logging_setup._SecureRotatingFileHandler(path, maxBytes=64, backupCount=1, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        log = logging.getLogger("yeaboi.test_rollover")
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        try:
+            for _ in range(20):
+                log.info("x" * 32)
+        finally:
+            log.removeHandler(handler)
+            handler.close()
+        assert (path.stat().st_mode & 0o777) == 0o600  # the post-rollover base file
