@@ -173,6 +173,8 @@ section h2 {
 .card-id { font-size: 0.75rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; margin-right: 0.5rem; }
 .card-desc { font-size: 0.875rem; color: var(--muted); margin-top: 0.3rem; }
 .card-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.quote { border-left: 3px solid var(--line); padding-left: 0.75rem; color: var(--muted);
+         font-style: italic; font-size: 0.875rem; margin-top: 0.5rem; }
 
 /* ── Badges / chips ──────────────────────────────────── */
 .badge {
@@ -276,6 +278,24 @@ section h2 {
 .stat .lbl { font-size: 0.75rem; color: var(--muted); text-transform: uppercase;
              letter-spacing: 0.05em; margin-top: 0.15rem; }
 
+/* ── Charts (inline SVG + CSS bars — theme-aware via var(--*)) ── */
+.spark-wrap { margin: 0.25rem 0 1rem; }
+.spark-wrap svg { display: block; width: 100%; height: 48px; }
+.spark-labels { display: flex; justify-content: space-between; font-size: 0.72rem;
+                color: var(--muted); margin-top: 0.2rem; }
+.seg-track { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; min-width: 2px; }
+.seg-track i { display: block; height: 100%; }
+.legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--muted);
+          margin: 0.35rem 0 0.6rem; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 0.3rem; }
+.bar-row { display: grid; grid-template-columns: minmax(80px, 150px) 1fr 2.5rem; gap: 0.6rem;
+           align-items: center; font-size: 0.8rem; margin-bottom: 0.4rem; }
+.bar-row .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row .bar-total { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 0.35rem; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center;
+          justify-content: center; font-size: 0.7rem; font-weight: 700; flex: none; }
+
 /* ── Notices ─────────────────────────────────────────── */
 .notice {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
@@ -294,9 +314,18 @@ section h2 {
   letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;
 }
 .analysis-section ul { list-style: none; padding-left: 0; }
-.analysis-section ul li { font-size: 0.875rem; padding: 0.15rem 0; }
-.analysis-section ul li::before { content: "\\2022 "; color: var(--accent); }
+/* Hanging indent: the bullet sits in the padding gutter so wrapped lines align
+   with the text, and each item gets enough vertical air to scan. */
+.analysis-section ul li { font-size: 0.875rem; padding: 0.3rem 0 0.3rem 1.05rem;
+                          position: relative; line-height: 1.55; }
+.analysis-section ul li::before { content: "\\2022 "; color: var(--accent); position: absolute; left: 0.15rem; }
 .assumption-item::before { content: "\\26A0 " !important; color: var(--warn) !important; }
+/* Standup member cards: wider columns + roomier gutters than the shared grid. */
+.member-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.1rem 1.75rem; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
+a.badge { text-decoration: none; }
+a.badge:hover { border-color: var(--accent); color: var(--accent); }
+.card-footnote { color: var(--muted); font-size: 0.82rem; margin: 0.55rem 0 0; }
 
 /* ── Questionnaire ───────────────────────────────────── */
 .q-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
@@ -392,14 +421,136 @@ def stat_tile(value: str, label: str) -> str:
     return f'<div class="stat"><div class="num">{_e(value)}</div><div class="lbl">{_e(label)}</div></div>'
 
 
+def _safe_css_var(color_var: str, default: str = "--accent") -> str:
+    """Return ``color_var`` if it is a plain ``--token`` name, else ``default``.
+
+    Chart helpers interpolate these into style/SVG attributes — the whitelist
+    shape (dashes + alphanumerics only) makes injection impossible.
+    """
+    if not color_var.startswith("--") or not color_var[2:].replace("-", "").isalnum():
+        return default
+    return color_var
+
+
 def stat_bar(pct: float, *, color_var: str = "--accent") -> str:
     """A horizontal progress bar filled to ``pct`` percent, colored by a CSS token name."""
     width = max(0, min(100, int(pct)))
-    if not color_var.startswith("--") or not color_var[2:].replace("-", "").isalnum():
-        color_var = "--accent"
+    color_var = _safe_css_var(color_var)
     return (
         f'<div class="capacity-bar">'
         f'<div class="capacity-fill" style="width:{width}%;background:var({color_var})"></div></div>'
+    )
+
+
+def sparkline_svg(
+    values: Sequence[float],
+    *,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    color_var: str = "--accent",
+    end_color_var: str = "--accent",
+    start_label: str = "",
+    end_label: str = "",
+    title: str = "",
+) -> str:
+    """A theme-aware inline-SVG sparkline (line + soft area fill + end dot).
+
+    Colors are CSS custom-property tokens so the chart recolors with the page
+    theme and prints correctly — the reason this is hand-built SVG rather than
+    a matplotlib PNG. Returns "" for fewer than two points (no trend to show).
+    Path data is numbers-only; every text/color input is escaped/sanitized.
+    """
+    if len(values) < 2:
+        return ""
+    color_var = _safe_css_var(color_var)
+    end_color_var = _safe_css_var(end_color_var, default=color_var)
+    lo = min(values) if vmin is None else vmin
+    hi = max(values) if vmax is None else vmax
+    width, height, pad = 600.0, 48.0, 6.0
+    span = hi - lo
+
+    def _xy(i: int, v: float) -> tuple[float, float]:
+        x = pad + (i / (len(values) - 1)) * (width - 2 * pad)
+        frac = 0.5 if span <= 0 else (min(max(v, lo), hi) - lo) / span
+        y = pad + (1 - frac) * (height - 2 * pad)
+        return x, y
+
+    pts = [_xy(i, v) for i, v in enumerate(values)]
+    poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    baseline = height - pad
+    area = (
+        f"M {pts[0][0]:.1f},{pts[0][1]:.1f} "
+        + " ".join(f"L {x:.1f},{y:.1f}" for x, y in pts[1:])
+        + f" L {pts[-1][0]:.1f},{baseline:.1f} L {pts[0][0]:.1f},{baseline:.1f} Z"
+    )
+    end_x, end_y = pts[-1]
+    labels = ""
+    if start_label or end_label:
+        labels = f'<div class="spark-labels"><span>{_e(start_label)}</span><span>{_e(end_label)}</span></div>'
+    # vector-effect keeps the 2px stroke and dot ring crisp while
+    # preserveAspectRatio="none" stretches the drawing to the container width.
+    return (
+        f'<div class="spark-wrap">'
+        f'<svg viewBox="0 0 {width:.0f} {height:.0f}" preserveAspectRatio="none" role="img" '
+        f'aria-label="{_e(title)}"><title>{_e(title)}</title>'
+        f'<path d="{area}" fill="var({color_var})" fill-opacity="0.12"/>'
+        f'<polyline points="{poly}" fill="none" stroke="var({color_var})" stroke-width="2" '
+        f'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'
+        f'<circle cx="{end_x:.1f}" cy="{end_y:.1f}" r="4" fill="var({end_color_var})" '
+        f'stroke="var(--panel)" stroke-width="2" vector-effect="non-scaling-stroke"/>'
+        f"</svg>{labels}</div>"
+    )
+
+
+def segment_bar(segments: Sequence[tuple[float, str]], *, title: str = "", width_pct: float = 100.0) -> str:
+    """A segmented horizontal bar from ``(value, color_var)`` pairs (pure CSS).
+
+    Segment widths are proportional to values; ``width_pct`` scales the whole
+    track (how caller normalizes bars against a shared maximum). Returns ""
+    when nothing positive remains to draw.
+    """
+    kept = [(v, _safe_css_var(cv)) for v, cv in segments if v > 0]
+    total = sum(v for v, _ in kept)
+    if total <= 0:
+        return ""
+    width_pct = max(0.0, min(100.0, width_pct))
+    cells = "".join(f'<i style="flex:0 0 {v / total * 100:.1f}%;background:var({cv})"></i>' for v, cv in kept)
+    return f'<div class="seg-track" role="img" aria-label="{_e(title)}" style="width:{width_pct:.1f}%">{cells}</div>'
+
+
+def legend(items: Sequence[tuple[str, str]]) -> str:
+    """A swatch legend row from ``(label, color_var)`` pairs. Empty items → ""."""
+    if not items:
+        return ""
+    spans = "".join(
+        f'<span><i style="background:var({_safe_css_var(cv)})"></i>{_e(label)}</span>' for label, cv in items
+    )
+    return f'<div class="legend">{spans}</div>'
+
+
+# Small token palette for deterministic avatar colors — indexed by a stable
+# name digest (NOT built-in hash(), which is salted per process).
+_AVATAR_VARS = ("--accent", "--accent2", "--info", "--ok", "--warn", "--high")
+
+
+def avatar(name: str) -> str:
+    """A 26px initials circle for a member name, deterministically colored.
+
+    Initials = first alphanumeric of the first and last whitespace tokens
+    ("Alice Johnson" → "AJ", "alice" → "A", no alphanumerics → "?").
+    """
+    tokens = (name or "").split()
+    picks = tokens[:1] if len(tokens) == 1 else [tokens[0], tokens[-1]] if tokens else []
+    letters = []
+    for token in picks:
+        first_alnum = next((ch for ch in token if ch.isalnum()), "")
+        if first_alnum:
+            letters.append(first_alnum.upper())
+    initials = "".join(letters) or "?"
+    var = _AVATAR_VARS[sum(map(ord, name or "")) % len(_AVATAR_VARS)]
+    return (
+        f'<span class="avatar" style="background:color-mix(in srgb, var({var}) 22%, var(--panel));'
+        f'color:var({var})">{_e(initials)}</span>'
     )
 
 

@@ -44,13 +44,14 @@ def analysis_document(
     return ShareDocument(title=title, html=html, source_mode="analysis")
 
 
-def standup_document(report, *, anon=None) -> ShareDocument:
+def standup_document(report, *, anon=None, history=()) -> ShareDocument:
+    """``history`` = StandupStore.get_history rows; feeds the confidence-trend chart."""
     title = f"Daily Standup — {report.date}"
     if anon is not None:
         return _masked_document(anon, title, "standup")
     from yeaboi.standup.export import build_standup_html
 
-    return ShareDocument(title=title, html=build_standup_html(report), source_mode="standup")
+    return ShareDocument(title=title, html=build_standup_html(report, history=history), source_mode="standup")
 
 
 def retro_document(report, *, anon=None) -> ShareDocument:

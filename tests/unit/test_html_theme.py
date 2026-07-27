@@ -2,10 +2,14 @@
 
 from yeaboi.html_theme import (
     EXPORT_CSS,
+    avatar,
     chip,
     html_page,
+    legend,
     notice_block,
     section,
+    segment_bar,
+    sparkline_svg,
     stat_bar,
     stat_tile,
 )
@@ -149,3 +153,113 @@ class TestPrimitives:
 
     def test_notice_block_escapes(self):
         assert "<img" not in notice_block("t", ["<img src=x>"])
+
+
+class TestSparkline:
+    def test_under_two_points_empty(self):
+        assert sparkline_svg([]) == ""
+        assert sparkline_svg([50]) == ""
+
+    def test_basic_structure_and_theme_vars(self):
+        svg = sparkline_svg([10, 50, 90], vmin=0, vmax=100, title="Confidence trend")
+        assert "<svg" in svg and 'viewBox="0 0 600 48"' in svg
+        assert 'role="img"' in svg and "<title>Confidence trend</title>" in svg
+        assert "var(--accent)" in svg  # theme token inside the SVG
+        assert "spark-wrap" in svg
+
+    def test_orientation_higher_values_up(self):
+        svg = sparkline_svg([10, 90], vmin=0, vmax=100)
+        points = svg.split('points="')[1].split('"')[0].split()
+        (x0, y0), (x1, y1) = (tuple(map(float, p.split(","))) for p in points)
+        assert x0 < x1  # oldest on the left
+        assert y0 > y1  # higher value = higher on screen (smaller y)
+
+    def test_end_dot_colored(self):
+        svg = sparkline_svg([10, 90], end_color_var="--warn")
+        circle = svg.split("<circle")[1]
+        assert 'fill="var(--warn)"' in circle
+
+    def test_bogus_color_var_sanitized(self):
+        svg = sparkline_svg([1, 2], color_var="--x;url(evil)", end_color_var="red;}")
+        assert "evil" not in svg and "red" not in svg
+        assert "var(--accent)" in svg
+
+    def test_flat_series_no_crash(self):
+        svg = sparkline_svg([50, 50, 50])
+        assert "<svg" in svg  # vmax == vmin → flat line, no ZeroDivisionError
+
+    def test_labels_escaped(self):
+        svg = sparkline_svg([1, 2], start_label="<b>a</b>", end_label="2026-07-27")
+        assert "<b>" not in svg
+        assert "&lt;b&gt;a&lt;/b&gt;" in svg and "2026-07-27" in svg
+
+    def test_no_labels_no_row(self):
+        assert "spark-labels" not in sparkline_svg([1, 2])
+
+
+class TestSegmentBar:
+    def test_widths_sum_at_most_100(self):
+        bar = segment_bar([(3, "--accent"), (2, "--accent2"), (1, "--info")])
+        widths = [float(w.split("%")[0]) for w in bar.split("flex:0 0 ")[1:]]
+        assert len(widths) == 3
+        assert sum(widths) <= 100.0
+
+    def test_zero_and_negative_dropped(self):
+        assert segment_bar([(0, "--accent"), (-5, "--info")]) == ""
+        bar = segment_bar([(4, "--accent"), (0, "--info")])
+        assert bar.count("<i ") == 1
+
+    def test_width_pct_clamped_and_applied(self):
+        bar = segment_bar([(1, "--accent")], width_pct=250)
+        assert 'style="width:100.0%"' in bar
+        bar = segment_bar([(1, "--accent")], width_pct=42.5)
+        assert 'style="width:42.5%"' in bar
+
+    def test_color_var_sanitized_and_title_escaped(self):
+        bar = segment_bar([(1, "u r l(evil)")], title="<i>t</i>")
+        assert "evil" not in bar and "var(--accent)" in bar
+        assert "&lt;i&gt;t&lt;/i&gt;" in bar
+
+
+class TestLegend:
+    def test_swatches_and_labels(self):
+        html = legend([("Tickets", "--accent"), ("Code", "--accent2")])
+        assert "background:var(--accent)" in html and "Tickets" in html
+        assert html.count("<span>") == 2
+
+    def test_label_escaped_and_empty(self):
+        assert "&lt;s&gt;" in legend([("<s>x</s>", "--ok")])
+        assert legend([]) == ""
+
+
+class TestAvatar:
+    def test_two_token_initials(self):
+        assert ">AJ</span>" in avatar("Alice Johnson")
+        assert ">AA</span>" in avatar("Anna Adams")
+
+    def test_single_token_single_initial(self):
+        assert ">A</span>" in avatar("alice")
+
+    def test_no_alnum_fallback(self):
+        assert ">?</span>" in avatar("")
+        assert ">?</span>" in avatar("—")
+
+    def test_hostile_name_escaped(self):
+        # "<b>Eve</b>" splits to one token whose first alnum is "b" → initial "B";
+        # the point is the raw markup never survives into the output.
+        html = avatar("<b>Eve</b>")
+        assert "<b>Eve</b>" not in html
+        assert ">B</span>" in html
+
+    def test_deterministic(self):
+        assert avatar("Alice Johnson") == avatar("Alice Johnson")
+
+    def test_uses_theme_token(self):
+        html = avatar("Alice Johnson")
+        assert "color-mix(in srgb, var(--" in html
+
+
+class TestChartCss:
+    def test_chart_classes_in_stylesheet(self):
+        for cls in (".spark-wrap", ".seg-track", ".legend", ".bar-row", ".dot", ".avatar"):
+            assert cls in EXPORT_CSS

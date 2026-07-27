@@ -20,6 +20,7 @@ Model:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -28,6 +29,15 @@ logger = logging.getLogger(__name__)
 # Confidence buckets (percent of ideal burn achieved).
 _ON_TRACK_MIN = 90
 _AT_RISK_MIN = 70
+
+# Trend thresholds over previous standups' recorded pcts.
+_TREND_STEADY_BAND = 2  # |delta| ≤ this vs the last standup reads as "steady"
+_DECLINE_STREAK_MIN = 3  # consecutive strict declines (ending today) before we dampen
+_DECLINE_DAMPEN = 0.9  # sustained slide → today's pct is knocked down 10%
+
+TREND_IMPROVING = "improving"
+TREND_STEADY = "steady"
+TREND_DECLINING = "declining"
 
 LABEL_ON_TRACK = "On track"
 LABEL_AT_RISK = "At risk"
@@ -44,6 +54,8 @@ class SprintProgress:
     confidence_pct: int = 0
     confidence_label: str = LABEL_INSUFFICIENT
     confidence_rationale: str = ""
+    confidence_delta: int = 0  # final pct minus the previous standup's pct (0 without usable history)
+    confidence_trend: str = ""  # TREND_* constant, or "" when there is no usable history
 
 
 def working_days_between(start: date, end: date, holidays: set[date] | None = None) -> int:
@@ -73,6 +85,46 @@ def _parse_date(value: str) -> date | None:
         return None
 
 
+def _trend_points(history: Sequence[Mapping], today: date) -> list[int]:
+    """Usable previous-standup pcts, oldest→newest, from ``StandupStore.get_history`` rows.
+
+    Filters: status success/partial only, ``standup_date`` strictly before
+    ``today`` (a same-day earlier rerun is not "the previous standup"), and
+    pct > 0 — "Insufficient data" runs record 0, and letting them into the
+    trend would fabricate a collapse/recovery around a capacity-less day.
+    Rows arrive newest-first; same-date reruns dedupe keeping the newest.
+    """
+    seen_dates: set[str] = set()
+    newest_first: list[tuple[str, int]] = []
+    for row in history:
+        if str(row.get("status") or "") not in ("success", "partial"):
+            continue
+        day = str(row.get("standup_date") or "")
+        parsed = _parse_date(day)
+        if parsed is None or parsed >= today:
+            continue
+        try:
+            pct = int(row.get("confidence_pct") or 0)
+        except (TypeError, ValueError):
+            continue
+        if pct <= 0 or day in seen_dates:
+            continue
+        seen_dates.add(day)
+        newest_first.append((day, pct))
+    return [pct for _day, pct in reversed(newest_first)]
+
+
+def _decline_streak(pcts: Sequence[int]) -> int:
+    """Number of consecutive strict day-over-day drops ending at the last element."""
+    streak = 0
+    for i in range(len(pcts) - 1, 0, -1):
+        if pcts[i] < pcts[i - 1]:
+            streak += 1
+        else:
+            break
+    return streak
+
+
 def compute(
     *,
     sprint_name: str = "",
@@ -83,8 +135,9 @@ def compute(
     activity_count: int = 0,
     today: date | None = None,
     holidays: set[date] | None = None,
+    history: Sequence[Mapping] = (),
 ) -> SprintProgress:
-    """Compute sprint day + confidence from sprint dates and burn-down.
+    """Compute sprint day + confidence from sprint dates, burn-down, and prior standups.
 
     Args:
         start_date: sprint start (ISO). Empty → "insufficient data".
@@ -94,6 +147,10 @@ def compute(
         activity_count: number of recent-activity items detected (drives the silence penalty).
         today: override for testing (defaults to date.today()).
         holidays: set of holiday dates to exclude from working-day counts.
+        history: previous runs' metadata rows (``StandupStore.get_history`` shape,
+            newest-first). Feeds the trend: today's number is still burn-down
+            arithmetic, but a sustained slide across standups dampens it and the
+            rationale explains the day-over-day movement.
     """
     today = today or date.today()
     holidays = holidays or set()
@@ -141,6 +198,31 @@ def compute(
         pct = int(round(pct * 0.7))
         silence_note = " No recent activity detected — work may be stalled."
 
+    # Trend vs previous standups: today's pct stays burn-down arithmetic, but a
+    # sustained slide (3+ strict drops in a row, counting today) dampens it —
+    # momentum is signal the single-day snapshot can't see. Never boosts.
+    trend = ""
+    delta = 0
+    trend_note = ""
+    points = _trend_points(history, today)
+    if points:
+        streak = _decline_streak([*points, pct])
+        if streak >= _DECLINE_STREAK_MIN:
+            pct = max(0, int(round(pct * _DECLINE_DAMPEN)))
+            trend_note = f" Confidence has declined {streak} standups in a row."
+        # Delta uses the final (post-dampen) pct so the displayed movement
+        # always matches the displayed number.
+        delta = pct - points[-1]
+        if abs(delta) <= _TREND_STEADY_BAND:
+            trend = TREND_STEADY
+        elif delta > 0:
+            trend = TREND_IMPROVING
+            trend_note = f" Up {delta} pts since the last standup."
+        else:
+            trend = TREND_DECLINING
+            if not trend_note:  # the streak sentence already explains the slide
+                trend_note = f" Down {abs(delta)} pts since the last standup."
+
     if pct >= _ON_TRACK_MIN:
         label = LABEL_ON_TRACK
     elif pct >= _AT_RISK_MIN:
@@ -150,7 +232,7 @@ def compute(
 
     rationale = (
         f"Day {sprint_day} of {total_days}: {completed_points:.0f} of ~{ideal_points:.0f} "
-        f"ideal points burned ({pct}%).{silence_note}"
+        f"ideal points burned ({pct}%).{silence_note}{trend_note}"
     )
     logger.info(
         "confidence: sprint=%r day=%d/%d completed=%.1f ideal=%.1f pct=%d label=%s",
@@ -168,4 +250,6 @@ def compute(
         confidence_pct=pct,
         confidence_label=label,
         confidence_rationale=rationale,
+        confidence_delta=delta,
+        confidence_trend=trend,
     )

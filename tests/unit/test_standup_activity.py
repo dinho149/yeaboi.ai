@@ -842,6 +842,55 @@ class TestAzdoRepoActivity:
         assert items[0]["url"] == ("https://acme.visualstudio.com/Project%20Space/_git/API%20Service/pullrequest/42")
         git.get_repository.assert_not_called()
 
+    def test_review_skips_system_comments(self, monkeypatch):
+        # AzDO "system" thread comments are vote/status noise (or service-hook
+        # posts) — never a member's review work.
+        from yeaboi.tools.azure_devops import azdevops_recent_reviews
+
+        repo = SimpleNamespace(id="r1", name="api", web_url="")
+        git = self._git_client(monkeypatch, [repo])
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", lambda *a, **k: [])
+        recent = datetime.now(UTC) - timedelta(hours=2)
+        git.get_pull_requests_by_project.return_value = [
+            SimpleNamespace(
+                pull_request_id=1,
+                title="Review me",
+                status="active",
+                creation_date=recent,
+                closed_date=None,
+                repository=repo,
+            )
+        ]
+
+        def _comment(cid, ctype, content):
+            return SimpleNamespace(
+                id=cid,
+                published_date=recent,
+                author=SimpleNamespace(display_name="Rae", unique_name="rae@example.com"),
+                content=content,
+                comment_type=ctype,
+            )
+
+        git.get_threads.return_value = [
+            SimpleNamespace(
+                comments=(
+                    _comment(1, "system", "Rae voted 10"),
+                    _comment(2, "text", "Looks good to me"),
+                    # comment_type absent on old SDK objects → kept (back-compat).
+                    SimpleNamespace(
+                        id=3,
+                        published_date=recent,
+                        author=SimpleNamespace(display_name="Rae", unique_name="rae@example.com"),
+                        content="One more nit",
+                    ),
+                )
+            )
+        ]
+
+        items = azdevops_recent_reviews("Proj", days=1)
+
+        assert [i["key"] for i in items] == ["review-comment-2", "review-comment-3"]
+
     def test_auth_error_raises_source_error(self, monkeypatch):
         from azure.devops.exceptions import AzureDevOpsServiceError
 

@@ -111,6 +111,8 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Jira": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Azure DevOps": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Configure": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Standup identity flow (repo path + aliases; schedule setup lives on the hub).
+    "Identity": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Settings page: cycles LOG_LEVEL (DEBUG → INFO → WARNING → ERROR).
     "Log Level": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Analysis-mode ticket-generation confirmation screen.

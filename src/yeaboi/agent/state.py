@@ -277,6 +277,8 @@ class MemberUpdate:
     name: str = ""
     summary: str = ""  # general overview synthesizing all category evidence + self-report
     blockers: str = ""  # anything blocking them (empty if none)
+    progress_note: str = ""  # one sentence linking yesterday's standup to today (continued/completed/stalled)
+    outlook: str = ""  # one sentence predicting the member's likely focus for the day ahead
     source: str = "inferred"  # "inferred" (activity only) | "self-reported" (typed, no activity) | "combined" (both)
     self_report: str = ""  # the member's own typed update, kept verbatim as supporting context
     links: tuple[tuple[str, str], ...] = ()  # (label, url) refs from their activity — tuple-of-pairs stays frozen
@@ -308,6 +310,8 @@ class StandupReport:
     confidence_pct: int = 0  # 0-100 confidence we'll hit the sprint goal
     confidence_label: str = ""  # "On track" | "At risk" | "Behind" | "Insufficient data"
     confidence_rationale: str = ""  # short human-readable explanation
+    confidence_delta: int = 0  # today's pct minus the previous standup's pct (0 when no usable history)
+    confidence_trend: str = ""  # "improving" | "steady" | "declining" | "" (no usable history)
     team_summary: str = ""  # LLM-synthesized team-level narrative
     member_updates: tuple[MemberUpdate, ...] = ()
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable

@@ -80,3 +80,44 @@ class TestInProgressRules:
         p = _prompt()
         assert "'comment' (engaged in a discussion)" in p
         assert "'page'/'page-created' (wrote documentation)" in p
+
+
+class TestDayOverDayPrompt:
+    def test_yesterday_payload_rendered(self):
+        p = _prompt(
+            members=[
+                {
+                    "name": "Alice",
+                    "activity": [],
+                    "self_report": "",
+                    "yesterday": {"summary": "Shipped the login page", "blockers": "", "outlook": ""},
+                    "blocker_signals": [],
+                }
+            ]
+        )
+        assert "Shipped the login page" in p
+        assert '"yesterday"' in p
+
+    def test_progress_note_and_outlook_requirements(self):
+        p = _prompt()
+        assert "'progress_note'" in p
+        assert "MUST be an empty string" in p
+        assert "'outlook'" in p
+        assert "Likely to continue" in p
+
+    def test_blocker_signals_must_be_reflected(self):
+        p = _prompt(
+            members=[
+                {"name": "Alice", "activity": [], "self_report": "", "blocker_signals": ["PSOT-9 'Auth' is in Blocked"]}
+            ]
+        )
+        assert "PSOT-9 'Auth' is in Blocked" in p
+        assert "never omit or soften" in p
+
+    def test_json_schema_includes_new_fields(self):
+        p = _prompt()
+        assert '"progress_note": "..."' in p
+        assert '"outlook": "..."' in p
+
+    def test_team_summary_names_blocked_members(self):
+        assert "name members with blockers explicitly" in _prompt()
