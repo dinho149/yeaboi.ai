@@ -172,6 +172,26 @@ def _make_connection(org_url: str, token: str | None):
     return Connection(base_url=org_url, creds=creds)
 
 
+def _pin_client_base_url(client, org_url: str | None):
+    """Keep an SDK client on the configured org URL and return it.
+
+    ``Connection.clients.get_*_client()`` resolves the organisation's advertised
+    resource location, which for visualstudio.com-era organisations is the
+    legacy ``https://{org}.visualstudio.com`` alias — a host that can fail DNS
+    on some networks even when ``dev.azure.com`` resolves fine. dev.azure.com
+    serves the same REST surface, so every client is pinned back to the URL the
+    user actually configured.
+    """
+    try:
+        if org_url:
+            wanted = org_url.rstrip("/")
+            if str(getattr(client.config, "base_url", "") or "").rstrip("/") != wanted:
+                client.config.base_url = wanted
+    except Exception:  # defensive: never let pinning break client creation
+        logger.debug("Could not pin AzDO client base URL", exc_info=True)
+    return client
+
+
 @tool
 def azdevops_read_repo(repo_url: str, max_depth: int = 2) -> str:
     """Read the repository file tree from an Azure DevOps repository.
@@ -185,7 +205,7 @@ def azdevops_read_repo(repo_url: str, max_depth: int = 2) -> str:
     try:
         org_url, project, repo = _parse_azdo_url(repo_url)
         conn = _make_connection(org_url, get_azure_devops_token())
-        git_client = conn.clients.get_git_client()
+        git_client = _pin_client_base_url(conn.clients.get_git_client(), org_url)
 
         # get_items with recursion_level="full" fetches the entire tree in one API call.
         # Each GitItem has .path (e.g. "/src/main.py") and .git_object_type ("blob"/"tree").
@@ -249,7 +269,7 @@ def azdevops_read_file(repo_url: str, file_path: str) -> str:
     try:
         org_url, project, repo = _parse_azdo_url(repo_url)
         conn = _make_connection(org_url, get_azure_devops_token())
-        git_client = conn.clients.get_git_client()
+        git_client = _pin_client_base_url(conn.clients.get_git_client(), org_url)
 
         # get_item_content returns a generator of bytes chunks — join and decode.
         chunks = git_client.get_item_content(repository_id=repo, project=project, path=file_path)
@@ -293,7 +313,7 @@ def azdevops_list_work_items(repo_url: str, max_items: int = 20, state: str = "A
 
         org_url, project, _ = _parse_azdo_url(repo_url)
         conn = _make_connection(org_url, get_azure_devops_token())
-        wit_client = conn.clients.get_work_item_tracking_client()
+        wit_client = _pin_client_base_url(conn.clients.get_work_item_tracking_client(), org_url)
 
         # SECURITY: `state` is an LLM/tool-controlled parameter and `project` is parsed from an
         # LLM-supplied URL, both interpolated into a WIQL query. WIQL has no bind-parameter API, so
@@ -377,8 +397,8 @@ def _make_azdo_clients(org_url: str | None = None, token: str | None = None):
     if not org_url:
         raise ValueError("AZURE_DEVOPS_ORG_URL is not set. Add it to your .env file.")
     conn = _make_connection(org_url, token)
-    wit_client = conn.clients.get_work_item_tracking_client()
-    work_client = conn.clients.get_work_client()
+    wit_client = _pin_client_base_url(conn.clients.get_work_item_tracking_client(), org_url)
+    work_client = _pin_client_base_url(conn.clients.get_work_client(), org_url)
     return wit_client, work_client
 
 
@@ -1095,7 +1115,7 @@ def _make_git_client(org_url: str | None = None, token: str | None = None):
     token = token or get_azure_devops_token()
     if not org_url:
         raise ValueError("AZURE_DEVOPS_ORG_URL is not set. Add it to your .env file.")
-    client = _make_connection(org_url, token).clients.get_git_client()
+    client = _pin_client_base_url(_make_connection(org_url, token).clients.get_git_client(), org_url)
     # msrest defaults to 100 seconds per request. A dead DNS route or stale
     # repository must not hold a daily standup for several minutes.
     client.config.connection.timeout = _AZDO_REQUEST_TIMEOUT_SECONDS
@@ -1882,7 +1902,7 @@ def azdevops_recent_reviews(
 def azdevops_list_projects() -> list[str]:
     """Return every accessible, well-formed project in the configured organisation."""
     connection = _make_connection(get_azure_devops_org_url(), get_azure_devops_token())
-    client = connection.clients.get_core_client()
+    client = _pin_client_base_url(connection.clients.get_core_client(), get_azure_devops_org_url())
     out: list[str] = []
     skip = 0
     while True:

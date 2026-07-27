@@ -571,7 +571,10 @@ def _azdo_enrich_repos_from_git_pull_requests(
     except Exception:
         return
 
-    git_client = connection.clients.get_git_client()
+    from yeaboi.config import get_azure_devops_org_url
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    git_client = _pin_client_base_url(connection.clients.get_git_client(), get_azure_devops_org_url())
     allow = get_team_analysis_azdo_repo_allowlist()
     max_repos = get_team_analysis_azdo_pr_search_max_repos()
     pr_top = get_team_analysis_azdo_pr_search_top()
@@ -6437,8 +6440,12 @@ def _fetch_azdevops_history(
 
     credentials = BasicAuthentication("", token)
     connection = Connection(base_url=org_url, creds=credentials)
-    work_client = connection.clients.get_work_client()
-    wit_client = connection.clients.get_work_item_tracking_client()
+    # Pin clients to the configured org URL — the SDK's resource-area discovery
+    # can swap in the legacy {org}.visualstudio.com alias (see _pin_client_base_url).
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    work_client = _pin_client_base_url(connection.clients.get_work_client(), org_url)
+    wit_client = _pin_client_base_url(connection.clients.get_work_item_tracking_client(), org_url)
 
     from azure.devops.v7_1.work.models import TeamContext
 
@@ -6908,7 +6915,9 @@ def _fetch_azdevops_actuals(work_item_ids: list[str], project_key: str) -> dict[
 
     credentials = BasicAuthentication("", token)
     connection = Connection(base_url=org_url, creds=credentials)
-    wit_client = connection.clients.get_work_item_tracking_client()
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    wit_client = _pin_client_base_url(connection.clients.get_work_item_tracking_client(), org_url)
 
     proj_scope = (project_key or "").strip() or (get_azure_devops_project() or "")
 

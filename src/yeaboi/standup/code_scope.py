@@ -62,10 +62,10 @@ def discover_azdo_projects(limit: int = 200) -> list[str]:
         return []
     project_names: set[str] = set()
     try:
-        from yeaboi.tools.azure_devops import _make_connection
+        from yeaboi.tools.azure_devops import _make_connection, _pin_client_base_url
 
         connection = _make_connection(org_url, get_azure_devops_token())
-        core = connection.clients.get_core_client()
+        core = _pin_client_base_url(connection.clients.get_core_client(), org_url)
         projects = list(core.get_projects() or [])
         preferred = (get_azure_devops_project() or "").strip().lower()
         projects.sort(
@@ -94,10 +94,10 @@ def discover_azdo_repositories(limit: int = 200) -> list[str]:
         return []
     repos: set[str] = set()
     try:
-        from yeaboi.tools.azure_devops import _make_connection
+        from yeaboi.tools.azure_devops import _make_connection, _pin_client_base_url
 
         connection = _make_connection(org_url, get_azure_devops_token())
-        git = connection.clients.get_git_client()
+        git = _pin_client_base_url(connection.clients.get_git_client(), org_url)
         for project_name in discover_azdo_projects(limit=limit):
             for repo in git.get_repositories(project_name) or []:
                 repo_name = (getattr(repo, "name", "") or "").strip()

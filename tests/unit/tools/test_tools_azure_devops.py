@@ -967,3 +967,41 @@ class TestAzdevopsUpdateWorkItemFields:
         ok, err = azdevops_update_work_item_fields(101, story_points=5)
         assert ok is False
         assert "AZURE_DEVOPS_ORG_URL" in err
+
+
+class TestPinClientBaseUrl:
+    """SDK resource-area discovery can swap in the legacy {org}.visualstudio.com
+    alias; clients must be pinned back to the configured org URL."""
+
+    @staticmethod
+    def _client(base_url):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(config=SimpleNamespace(base_url=base_url))
+
+    def test_legacy_alias_is_pinned_to_configured_url(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        out = _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert out is client
+        assert client.config.base_url == "https://dev.azure.com/youlend"
+
+    def test_matching_url_untouched(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://dev.azure.com/youlend/")
+        _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert client.config.base_url == "https://dev.azure.com/youlend/"
+
+    def test_none_org_url_is_a_no_op(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        _pin_client_base_url(client, None)
+        assert client.config.base_url == "https://youlend.visualstudio.com/"
+
+    def test_broken_client_never_raises(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        assert _pin_client_base_url(object(), "https://dev.azure.com/youlend") is not None
