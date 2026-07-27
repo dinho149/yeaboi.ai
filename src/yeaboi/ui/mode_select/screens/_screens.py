@@ -174,7 +174,9 @@ _MIN_HEIGHT = 32
 # its left. Only shown above this (wider) threshold; between _MIN_* and here the
 # menu renders full-width with the tip pinned at the bottom as before.
 _COMPANION_MIN_WIDTH = 108
-_COMPANION_MIN_HEIGHT = 40  # duck head + gap + music pocket need vertical room; below this the menu goes compact
+_COMPANION_MIN_HEIGHT = (
+    39  # rows the full companion welcome (menu + tip bubble + duck + pocket) needs; below this the menu goes compact
+)
 _COMPANION_HEAD_W = 13  # tight render width of the duck head (matches _mascot)
 _COMPANION_REVEAL_FROM = 0.72  # entrance progress at which the tip/update box fade in
 _COMPANION_COLS = 44  # right-hand lane width (bubble + duck); wide enough for the
