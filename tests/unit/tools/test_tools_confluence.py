@@ -15,6 +15,7 @@ from yeaboi.tools.confluence import (
     _text_to_storage,
     confluence_create_page,
     confluence_read_page,
+    confluence_read_page_text,
     confluence_read_space,
     confluence_search_docs,
     confluence_update_page,
@@ -79,6 +80,39 @@ class TestStripHtmlTags:
 # ---------------------------------------------------------------------------
 # _text_to_storage
 # ---------------------------------------------------------------------------
+
+
+class TestStripHtmlTagsStructure:
+    """Structure markers must survive extraction — the doc-quality heuristics
+    look for markdown headings/lists/owner lines."""
+
+    def test_headings_become_markdown(self):
+        result = _strip_html_tags("<h1>Title</h1><p>Body</p><h3>Sub</h3>")
+        assert "# Title" in result
+        assert "### Sub" in result
+
+    def test_list_items_become_bullets(self):
+        result = _strip_html_tags("<ul><li>one</li><li>two</li></ul>")
+        assert "- one" in result
+        assert "- two" in result
+
+    def test_table_row_joins_cells_on_one_line(self):
+        result = _strip_html_tags("<table><tr><th>Owner</th><td>Jane</td></tr></table>")
+        assert any(line.startswith("Owner | Jane") for line in result.splitlines())
+
+    def test_code_macro_becomes_fenced_block(self):
+        html = (
+            '<ac:structured-macro ac:name="code" ac:schema-version="1">'
+            "<ac:plain-text-body><![CDATA[def f():\n    return 1]]></ac:plain-text-body>"
+            "</ac:structured-macro>"
+        )
+        result = _strip_html_tags(html)
+        assert result.count("```") == 2
+        assert "def f():" in result
+
+    def test_pre_block_becomes_fenced(self):
+        result = _strip_html_tags("<p>Run this:</p><pre>make test</pre>")
+        assert "```\nmake test\n```" in result
 
 
 class TestTextToStorage:
@@ -344,6 +378,22 @@ class TestConfluenceReadPage:
         result = confluence_read_page.invoke({"page_id": "123"})
 
         assert result == _MISSING_CONFIG_MSG
+
+    def test_page_text_uses_rendered_view_when_storage_is_empty(self):
+        storage_page = _make_page("999", "Macro page", "<ac:structured-macro />")
+        rendered_page = {
+            "id": "999",
+            "title": "Macro page",
+            "body": {"view": {"value": "<p>Rendered macro content</p>"}},
+        }
+        mock_client = MagicMock()
+        mock_client.get_page_by_id.side_effect = [storage_page, rendered_page]
+
+        result = confluence_read_page_text(page_id="999", _client=mock_client)
+
+        assert result["text"] == "Rendered macro content"
+        assert result["error"] == ""
+        assert mock_client.get_page_by_id.call_args_list[1].kwargs["expand"] == "body.view"
 
 
 # ---------------------------------------------------------------------------

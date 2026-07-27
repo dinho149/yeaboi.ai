@@ -93,7 +93,9 @@ class TestExport:
     def test_html_escapes_engineer_name(self):
         rec = OneOnOneRecord(engineer="<script>", date="2026-07-12", email_summary="hi")
         html = export.build_completion_html(rec)
-        assert "<script>" not in html
+        # The only raw <script> allowed is the constant theme-switcher script.
+        assert html.count("<script>") == 1
+        assert "yeaboi-export-theme" in html
         assert "&lt;script&gt;" in html
 
 
@@ -140,3 +142,11 @@ class TestDelivery:
         rec = OneOnOneRecord(engineer="Ada", date="2026-07-12", email_subject="1:1", email_summary="hi")
         assert delivery.send_completion_email(rec) is True
         assert sent["to"] == "boss@example.com"
+
+
+class TestSharedDesignSystem:
+    def test_prep_html_uses_shared_theme(self):
+        html = export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-12", talking_points=("point",)))
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

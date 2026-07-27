@@ -284,6 +284,43 @@ class TestTranscribe:
         assert voice._MODEL_CACHE["base"] is first_model  # not reloaded
 
 
+class TestTranscribeMedia:
+    """Browser MediaRecorder blobs (webm/mp4) go straight to the model's PyAV decoder."""
+
+    def test_empty_bytes_short_circuits(self):
+        assert voice.transcribe_media(b"") == ""
+
+    def test_passes_bytesio_to_model(self, monkeypatch):
+        captured: dict = {}
+
+        class _Segment:
+            def __init__(self, text):
+                self.text = text
+
+        class _Model:
+            def transcribe(self, audio, beam_size=None):
+                captured["audio"] = audio
+                captured["beam_size"] = beam_size
+                return ([_Segment(" who "), _Segment(" said what ")], object())
+
+        monkeypatch.setattr(voice, "_get_model", lambda: _Model())
+        assert voice.transcribe_media(b"\x1aE\xdf\xa3fake-webm") == "who said what"
+        # The blob must reach the model as a file-like object so faster-whisper's
+        # PyAV path sniffs the container format (webm/opus, Safari mp4).
+        assert isinstance(captured["audio"], io.BytesIO)
+        assert captured["audio"].getvalue() == b"\x1aE\xdf\xa3fake-webm"
+        assert captured["beam_size"] == 5
+
+    def test_decode_error_propagates(self, monkeypatch):
+        class _Model:
+            def transcribe(self, audio, beam_size=None):
+                raise ValueError("cannot decode container")
+
+        monkeypatch.setattr(voice, "_get_model", lambda: _Model())
+        with pytest.raises(ValueError, match="cannot decode"):
+            voice.transcribe_media(b"garbage-bytes")
+
+
 # ---------------------------------------------------------------------------
 # record_voice_input (TUI overlay)
 # ---------------------------------------------------------------------------

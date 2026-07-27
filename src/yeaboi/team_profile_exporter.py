@@ -66,15 +66,92 @@ def _e(text: str) -> str:
 def _pct_bar_html(pct: float, width_px: int = 120) -> str:
     """Render a thin percentage bar as inline HTML."""
     fill = min(int(pct), 100)
-    color = "#22c55e" if pct >= 80 else ("#eab308" if pct >= 50 else "#ef4444")
+    color = "var(--ok)" if pct >= 80 else ("var(--warn)" if pct >= 50 else "var(--danger)")
     return (
         f'<span style="display:inline-flex;align-items:center;gap:6px;">'
         f'<span style="display:inline-block;width:{width_px}px;height:6px;'
-        f'background:#e2e8f0;border-radius:3px;overflow:hidden;">'
+        f'background:var(--line);border-radius:3px;overflow:hidden;">'
         f'<span style="display:block;width:{fill}%;height:100%;background:{color};'
         f'border-radius:3px;"></span></span>'
         f'<span style="font-size:0.8rem;color:var(--text-muted);">{_format_pct(pct)}</span></span>'
     )
+
+
+def _small_pct(value: float) -> str:
+    if 0 < value < 0.1:
+        return "<0.1%"
+    return f"{value:.1f}%".replace(".0%", "%")
+
+
+def _footprint_value(ai_sig) -> str:
+    """Footprint stat for export: a % — or a raw count when the sample is too
+    small for a stable percentage (same rule as the TUI/CLI, Surface Parity)."""
+    from yeaboi.analysis.ai_usage import footprint_small_sample
+
+    scanned = getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)
+    marked = getattr(ai_sig, "ai_commits", 0) + getattr(ai_sig, "ai_prs", 0)
+    if footprint_small_sample(ai_sig):
+        return f"{marked} of {scanned} AI-marked (small sample — % suppressed)"
+    return _small_pct(ai_sig.footprint_pct)
+
+
+def _practice_cell_text(row: dict, prefix: str, min_sample: int) -> str:
+    """One practices cell for export: n/a without data, a raw fraction under
+    the sample floor (same rule as the TUI table, Surface Parity), else a %."""
+    den = int(row.get(f"{prefix}_den", 0) or 0)
+    if not den:
+        return "n/a"
+    num = int(row.get(f"{prefix}_num", 0) or 0)
+    rate = row.get(f"{prefix}_rate")
+    if den < min_sample or not isinstance(rate, (int, float)):
+        return f"{num}/{den}"
+    return f"{rate:.0f}%"
+
+
+def _practice_rows(ai_blob) -> tuple[list[dict], dict | None, int, dict]:
+    """Unpack blob["member_practices"] for export; empty members = old profile."""
+    practices = ai_blob.get("member_practices") if isinstance(ai_blob, dict) else None
+    if not isinstance(practices, dict) or not practices.get("members"):
+        return [], None, 5, {}
+    team = practices.get("team")
+    return (
+        list(practices["members"]),
+        team if isinstance(team, dict) else None,
+        int(practices.get("min_sample", 5) or 5),
+        practices.get("file_data") or {},
+    )
+
+
+def _doc_pages_value(dq_sig, dq_pages: int) -> str:
+    """Pages-scanned stat for export, flagged when too few pages for a trend."""
+    from yeaboi.analysis.doc_quality import doc_small_sample
+
+    platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
+    suffix = "; small sample — read as examples" if doc_small_sample(dq_sig) else ""
+    return f"{dq_pages} ({platforms}{suffix})"
+
+
+def _coverage_message(report: dict) -> str:
+    status = str(report.get("status", "complete")).replace("_", " ")
+    completed = int(report.get("completed", 0) or 0)
+    eligible = int(report.get("eligible", 0) or 0)
+    if status == "complete":
+        return f"Complete — {completed:,} of {eligible:,} eligible items analysed"
+    if status == "no data":
+        return "No matching data was found in the selected scope and time window"
+    return f"{status.title()} — {completed:,} of {eligible:,} eligible items analysed"
+
+
+def _coverage_errors(report: dict) -> list[str]:
+    errors = report.get("grouped_errors") or []
+    return [
+        (
+            f"{item.get('provider', '')}: {int(item.get('count', 1) or 1):,} item(s) — "
+            f"{item.get('detail', item.get('status', 'failed'))}"
+        )
+        for item in errors
+        if isinstance(item, dict)
+    ]
 
 
 def _section(id_: str, title: str, content: str) -> str:
@@ -113,6 +190,32 @@ def _insight_md(it: dict) -> str:
     return line
 
 
+def _action_html(action: dict) -> str:
+    scope = ", ".join(str(value) for value in action.get("affected_scope", []))
+    link = str(action.get("link", "") or "")
+    title = _e(str(action.get("title", "")))
+    title_html = f'<a href="{_e(link)}">{title}</a>' if link else title
+    return (
+        f"<li><strong>{_e(str(action.get('priority', '')).upper())}: {title_html}</strong>"
+        f" — {_e(str(action.get('detail', '')))}"
+        f"<br><em>Scope: {_e(scope)} · Owner: {_e(str(action.get('owner_role', '')))}"
+        f" · Effort: {_e(str(action.get('effort', '')))}</em></li>"
+    )
+
+
+def _action_md(action: dict) -> str:
+    title = str(action.get("title", ""))
+    link = str(action.get("link", "") or "")
+    if link:
+        title = f"[{title}]({link})"
+    scope = ", ".join(str(value) for value in action.get("affected_scope", []))
+    return (
+        f"- **{str(action.get('priority', '')).upper()}: {title}** — {action.get('detail', '')} "
+        f"_(Scope: {scope}; Owner: {action.get('owner_role', '')}; Effort: {action.get('effort', '')}; "
+        f"Done when: {action.get('completion_check', '')})_"
+    )
+
+
 def _ai_example_md(s: dict) -> str:
     """Render one AI-adoption sample as a Markdown bullet (link when available, else SHA)."""
     tool = "unlabelled AI" if s.get("tool") == "other_ai" else str(s.get("tool", ""))
@@ -129,7 +232,7 @@ def _doc_example_md(s: dict) -> str:
     title = str(s.get("title", "Untitled"))
     url = str(s.get("url", "") or "")
     head = f"[{title}]({url})" if url else title
-    meta = f"{s.get('platform', '')} · clarity {s.get('clarity', 0):.0f} · AI-est {s.get('ai_likelihood', 0):.0f}"
+    meta = f"{s.get('platform', '')} · clarity {s.get('clarity', 0):.0f} · usefulness {s.get('usefulness', 0):.0f}"
     return f"- {head} ({meta})"
 
 
@@ -150,7 +253,8 @@ def _doc_example_html(s: dict) -> str:
     """Render one documentation sample as an <li> (linked page title + scores)."""
     title = _e(str(s.get("title", "Untitled")))
     meta = (
-        f"{_e(str(s.get('platform', '')))} · clarity {s.get('clarity', 0):.0f} · AI-est {s.get('ai_likelihood', 0):.0f}"
+        f"{_e(str(s.get('platform', '')))} · clarity {s.get('clarity', 0):.0f} "
+        f"· usefulness {s.get('usefulness', 0):.0f}"
     )
     url = str(s.get("url", "") or "")
     head = f'<a href="{_e(url)}">{title}</a>' if url else title
@@ -212,11 +316,11 @@ def build_team_profile_html(
     ``ceremony`` is an optional CeremonyContext (agent/ceremony_history.py). When
     present and non-empty, a "Ceremony Cadence & Trends" section is added.
     """
-    from yeaboi.html_exporter import _CSS
+    from yeaboi.html_theme import html_page
 
     ex = examples or {}
     sections: list[str] = []
-    nav_links: list[str] = []
+    nav_links: list[tuple[str, str]] = []
     depth = str(ex.get("analysis_depth", "")).strip().lower()
     if depth in ("quick", "deep"):
         _depth_html = f"<p><strong>Analysis depth:</strong> {_e(depth.capitalize())}</p>"
@@ -224,7 +328,7 @@ def build_team_profile_html(
         _depth_html = ""
 
     def _nav(id_: str, label: str) -> None:
-        nav_links.append(f'<a href="#{id_}">{_e(label)}</a>')
+        nav_links.append((id_, label))
 
     # ── Executive Summary (AI narrative, generated at analysis time) ─
     narrative = ex.get("narrative", {})
@@ -266,24 +370,70 @@ def build_team_profile_html(
     # ── AI Adoption (detectable AI-tool footprint — lower bound) ─────
     ai_sig = getattr(profile, "ai_adoption", None)
     ai_blob = ex.get("ai_adoption", {})
+    code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
-    if ai_sig and ai_scanned:
+    if "ai_footprint" in code_features and ai_sig and ai_scanned:
         disclaimer = (
             '<p class="muted"><em>Lower bound — only AI tools that leave a marker in commit '
             "messages or PR descriptions are counted. Inline IDE assist (Copilot ghost-text, "
             "Cursor Tab) leaves no trace, so real usage is at least this.</em></p>"
         )
+        activity_coverage = ai_blob.get("activity_coverage", {}) if isinstance(ai_blob, dict) else {}
         a_rows = [
-            ("Detectable footprint", f"{ai_sig.footprint_pct:.0f}%"),
+            ("Coverage", _e(_coverage_message(activity_coverage))),
+            ("Detectable footprint", _e(_footprint_value(ai_sig))),
             ("Commits with AI marker", f"{ai_sig.ai_commits} of {ai_sig.scanned_commits}"),
         ]
         if ai_sig.scanned_prs:
             a_rows.append(("PRs with AI marker", f"{ai_sig.ai_prs} of {ai_sig.scanned_prs}"))
         if ai_sig.sources_scanned:
             a_rows.append(("Sources scanned", ", ".join(_source_label(s) for s in ai_sig.sources_scanned)))
-        for repo in getattr(ai_sig, "repos_scanned", ()):
-            a_rows.append(("Scanned", repo))
+        if isinstance(ai_blob, dict) and ai_blob.get("selected_users"):
+            a_rows.append(("Selected users", ", ".join(str(u) for u in ai_blob["selected_users"])))
+            a_rows.append(
+                (
+                    "Matched identities",
+                    f"{len(ai_blob.get('matched_identities') or {})} of {len(ai_blob['selected_users'])}",
+                )
+            )
+        if getattr(ai_sig, "repos_scanned", ()):
+            a_rows.append(("Repositories scanned", str(len(ai_sig.repos_scanned))))
+            repo_preview = ", ".join(ai_sig.repos_scanned[:5])
+            if len(ai_sig.repos_scanned) > 5:
+                repo_preview += f" (+{len(ai_sig.repos_scanned) - 5} more)"
+            a_rows.append(("Repository scope", _e(repo_preview)))
         a_html = disclaimer + _kv_table(a_rows)
+        p_members, p_team, p_min, p_file_data = _practice_rows(ai_blob)
+        if p_members:
+            headers = ("Member", "Commits", "PRs", "Tests", "Docs", "Tickets", "Descriptions")
+            head = "".join(
+                f"<th style='text-align:{'left' if i == 0 else 'right'};'>{h}</th>" for i, h in enumerate(headers)
+            )
+            body = ""
+            for row in p_members + ([p_team] if p_team else []):
+                cells = (
+                    _e(str(row.get("member", ""))),
+                    str(row.get("commits", 0)),
+                    str(row.get("prs", 0)),
+                    _practice_cell_text(row, "tests", p_min),
+                    _practice_cell_text(row, "docs", p_min),
+                    _practice_cell_text(row, "ticket", p_min),
+                    _practice_cell_text(row, "desc", p_min),
+                )
+                body += (
+                    "<tr>"
+                    + "".join(
+                        f"<td style='text-align:{'left' if i == 0 else 'right'};'>{c}</td>" for i, c in enumerate(cells)
+                    )
+                    + "</tr>"
+                )
+            a_html += f"<h4>Engineering practices by member</h4><table><tr>{head}</tr>{body}</table>"
+            if p_file_data.get("total") and p_file_data.get("with_file_data", 0) < p_file_data["total"]:
+                a_html += (
+                    f'<p class="muted"><em>File-based columns (Tests, Docs) cover '
+                    f"{p_file_data.get('with_file_data', 0)} of {p_file_data['total']} items "
+                    f"with change metadata.</em></p>"
+                )
         if ai_sig.per_tool:
             tool_lis = "".join(
                 f"<li>{_e('unlabelled AI' if t == 'other_ai' else t)}: {n}</li>" for t, n in ai_sig.per_tool
@@ -300,11 +450,11 @@ def build_team_profile_html(
             a_html += f"<h4>By contributor</h4><ul>{auth_lis}</ul>"
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
-            gap_lis = "".join(f"<li>{_e(g)}</li>" for g in ai_coverage[:4])
+            gap_lis = "".join(f"<li>{_e(g)}</li>" for g in ai_coverage)
             a_html += f"<h4>Not scanned</h4><ul>{gap_lis}</ul>"
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
-            ex_lis = "".join(_ai_example_html(s) for s in ai_samples[:5])
+            ex_lis = "".join(_ai_example_html(s) for s in ai_samples)
             a_html += f"<h4>Examples</h4><ul>{ex_lis}</ul>"
         ai_insights = ai_blob.get("insights", {}) if isinstance(ai_blob, dict) else {}
         if isinstance(ai_insights, dict) and any(ai_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
@@ -315,38 +465,81 @@ def build_team_profile_html(
                 i_lis = "".join(_insight_html(it) for it in i_items if isinstance(it, dict) and it.get("title"))
                 if i_lis:
                     a_html += f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>'
-        _nav("ai-adoption", "AI Adoption")
-        sections.append(_section("ai-adoption", "AI Adoption", a_html))
+        _nav("ai-adoption", "AI Usage")
+        sections.append(_section("ai-adoption", "AI Usage", a_html))
 
-    # ── Documentation (Notion/Confluence clarity + AI-usage estimate) ─────
+    file_health = ai_blob.get("repository_health", {}) if isinstance(ai_blob, dict) else {}
+    if "code_health" in code_features and file_health:
+        health_coverage = ai_blob.get("coverage_report", {})
+        health_failed = health_coverage.get("status") in {"failed", "no_data"}
+        h_rows = [("Coverage", _e(_coverage_message(health_coverage)))]
+        if not health_failed:
+            h_rows.extend(
+                [
+                    ("Changed files analysed", str(file_health.get("files_analysed", 0))),
+                    ("Repositories touched", str(file_health.get("repositories_touched", 0))),
+                    ("Findings", str(file_health.get("findings", 0))),
+                ]
+            )
+        h_html = (
+            '<p class="muted"><em>Scoped to files attributable to the selected users. '
+            "Untouched repositories and unrelated contributors are not analysed.</em></p>" + _kv_table(h_rows)
+        )
+        errors = _coverage_errors(health_coverage)
+        if errors:
+            h_html += "<h4>Collection errors</h4><ul>" + "".join(f"<li>{_e(error)}</li>" for error in errors) + "</ul>"
+        health_actions = ai_blob.get("action_plan", []) if isinstance(ai_blob, dict) else []
+        if health_actions and not health_failed:
+            h_html += (
+                "<h4>Prioritized action plan</h4><ol>"
+                + "".join(_action_html(action) for action in health_actions)
+                + "</ol>"
+            )
+        _nav("code-health", "Code Health")
+        sections.append(_section("code-health", "Code Health", h_html))
+
+    # ── Documentation (Notion/Confluence clarity + usefulness) ────────────
     dq_sig = getattr(profile, "doc_quality", None)
     dq_blob = ex.get("doc_quality", {})
     dq_pages = getattr(dq_sig, "pages_scanned", 0) if dq_sig else 0
-    if dq_sig and dq_pages:
+    if dq_sig and isinstance(dq_blob, dict):
+        doc_coverage = dq_blob.get("coverage_report", {})
+        doc_failed = doc_coverage.get("status") in {"failed", "no_data"}
         dq_disclaimer = (
-            '<p class="muted"><em>Clarity is a readability score. AI-likelihood is a heuristic '
-            "estimate from writing style, not a detection — prose has no reliable AI marker. "
-            "Explicit AI markers are a lower bound.</em></p>"
+            '<p class="muted"><em>Clarity is a readability score. Usefulness measures purpose, '
+            "ownership, structure, and actionability. Explicit AI markers are a lower bound.</em></p>"
         )
-        d_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
-        d_ai = f"{dq_sig.avg_ai_likelihood:.0f}/100 — ~{dq_sig.likely_ai_pages} page(s) look AI-drafted"
-        d_rows = [
-            ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
-            ("Pages scanned", f"{dq_pages} ({', '.join(dq_sig.platforms_scanned) or 'n/a'})"),
-            ("Clarity split", d_split),
-            ("AI-likelihood (estimate)", d_ai),
-            ("Explicit AI markers", f"{dq_sig.ai_marked_pages} page(s) (lower bound)"),
-        ]
+        d_rows = [("Coverage", _e(_coverage_message(doc_coverage)))]
+        if not doc_failed:
+            d_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
+            d_rows.extend(
+                [
+                    ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
+                    ("Average usefulness", f"{getattr(dq_sig, 'avg_usefulness', 0):.0f}/100"),
+                    ("Pages scanned", _doc_pages_value(dq_sig, dq_pages)),
+                    ("Clarity split", d_split),
+                    (
+                        "Owned / actionable",
+                        f"{getattr(dq_sig, 'owned_pages', 0)} / {getattr(dq_sig, 'actionable_pages', 0)}",
+                    ),
+                    ("Explicit AI markers", f"{dq_sig.ai_marked_pages} page(s) (lower bound)"),
+                ]
+            )
         d_html = dq_disclaimer + _kv_table(d_rows)
-        if dq_sig.flagged_pages:
+        doc_errors = _coverage_errors(doc_coverage)
+        if doc_errors:
+            d_html += (
+                "<h4>Collection errors</h4><ul>" + "".join(f"<li>{_e(error)}</li>" for error in doc_errors) + "</ul>"
+            )
+        if dq_sig.flagged_pages and not doc_failed:
             flag_lis = "".join(f"<li>{_e(title)}: {_e(reason)}</li>" for title, reason in dq_sig.flagged_pages)
             d_html += f"<h4>Flagged pages</h4><ul>{flag_lis}</ul>"
         dq_samples = dq_blob.get("samples") if isinstance(dq_blob, dict) else None
-        if dq_samples:
-            ex_lis = "".join(_doc_example_html(s) for s in dq_samples[:5])
+        if dq_samples and not doc_failed:
+            ex_lis = "".join(_doc_example_html(s) for s in dq_samples)
             d_html += f"<h4>Examples</h4><ul>{ex_lis}</ul>"
         dq_insights = dq_blob.get("insights", {}) if isinstance(dq_blob, dict) else {}
-        if isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
+        if not doc_failed and isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
             for ik, ilabel in INSIGHT_CATEGORIES:
                 i_items = dq_insights.get(ik)
                 if not isinstance(i_items, list) or not i_items:
@@ -354,6 +547,9 @@ def build_team_profile_html(
                 i_lis = "".join(_insight_html(it) for it in i_items if isinstance(it, dict) and it.get("title"))
                 if i_lis:
                     d_html += f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>'
+        dq_actions = dq_blob.get("action_plan", []) if isinstance(dq_blob, dict) else []
+        if dq_actions and not doc_failed:
+            d_html += "<h4>Prioritized action plan</h4><ol>" + "".join(_action_html(a) for a in dq_actions) + "</ol>"
         _nav("documentation", "Documentation")
         sections.append(_section("documentation", "Documentation", d_html))
 
@@ -392,7 +588,7 @@ def build_team_profile_html(
         _hdv = _html_scope["totals"].get("avg_delivered_velocity", 0.0)
         if _hcv > 0:
             _hdp = round(_hdv / _hcv * 100)
-            _hdc = "#22c55e" if _hdp >= 85 else ("#eab308" if _hdp >= 70 else "#ef4444")
+            _hdc = "var(--ok)" if _hdp >= 85 else ("var(--warn)" if _hdp >= 70 else "var(--danger)")
             vel_rows.append(("Committed avg", f"{_hcv:g} pts/sprint"))
             vel_rows.append(
                 (
@@ -424,7 +620,7 @@ def build_team_profile_html(
         first_v = vt.get("first_velocity", 0)
         last_v = vt.get("last_velocity", 0)
         icon = {"improving": "&#x2197;", "degrading": "&#x2198;"}.get(trend, "&#x2192;")
-        color = {"improving": "#22c55e", "degrading": "#ef4444"}.get(trend, "var(--text-muted)")
+        color = {"improving": "var(--ok)", "degrading": "var(--danger)"}.get(trend, "var(--text-muted)")
         vel_rows.append(
             (
                 "Trend",
@@ -434,12 +630,12 @@ def build_team_profile_html(
         )
 
     _nav("velocity", "Velocity")
-    sections.append(_section("velocity", "Team &amp; Velocity", _kv_table(vel_rows)))
+    sections.append(_section("velocity", "Team & Velocity", _kv_table(vel_rows)))
 
     # ── Ceremony cadence & trends (Standup + Retro history) ─────────
     if ceremony is not None and not ceremony.is_empty:
         _nav("ceremonies", "Ceremonies")
-        sections.append(_section("ceremonies", "Ceremony Cadence &amp; Trends", _ceremony_html(ceremony)))
+        sections.append(_section("ceremonies", "Ceremony Cadence & Trends", _ceremony_html(ceremony)))
 
     # ── Recurring work ──────────────────────────────────────────────
     rec_count = ex.get("recurring_count", 0)
@@ -497,8 +693,8 @@ def build_team_profile_html(
             done = sd.get("done", False)
             has_shadow = sd.get("has_shadow", False)
             icon = "&#x2713;" if done else ("&#x25cb;" if has_shadow else "&#x2717;")
-            icon_color = "#22c55e" if done else ("#eab308" if has_shadow else "#ef4444")
-            rate_color = "#22c55e" if rate >= 80 else ("#eab308" if rate >= 50 else "#ef4444")
+            icon_color = "var(--ok)" if done else ("var(--warn)" if has_shadow else "var(--danger)")
+            rate_color = "var(--ok)" if rate >= 80 else ("var(--warn)" if rate >= 50 else "var(--danger)")
             sp_rows_html.append(
                 f"<tr><td>{name}</td><td>{pts}</td><td>{completed}/{planned}</td>"
                 f'<td style="color:{rate_color};font-weight:600;">{rate}%</td>'
@@ -545,8 +741,8 @@ def build_team_profile_html(
                     if has_sh:
                         label_parts.append("shadow spillover")
                     sprint_content += (
-                        f'<div class="card" style="border-left:3px solid #eab308;margin:0.5rem 0;">'
-                        f'<strong style="color:#eab308;">{sname}</strong>'
+                        f'<div class="card" style="border-left:3px solid var(--warn);margin:0.5rem 0;">'
+                        f'<strong style="color:var(--warn);">{sname}</strong>'
                         f'<span style="color:var(--text-muted);margin-left:0.5rem;">{" + ".join(label_parts)}</span>'
                     )
                     for item in sd.get("incomplete", [])[:3]:
@@ -560,7 +756,7 @@ def build_team_profile_html(
                         sprint_content += (
                             f'<div style="margin-left:1rem;font-size:0.85rem;color:var(--text-muted);">'
                             f"<code>{ek}</code> {sm}"
-                            f'<span style="color:#eab308;">{detail}</span></div>'
+                            f'<span style="color:var(--warn);">{detail}</span></div>'
                         )
                     sprint_content += "</div>"
 
@@ -577,7 +773,7 @@ def build_team_profile_html(
                     sprint_content += '<hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">'
                     if _sc_cv > 0:
                         _dp = round(_sc_dv / _sc_cv * 100)
-                        _dc = "#22c55e" if _dp >= 85 else ("#eab308" if _dp >= 70 else "#ef4444")
+                        _dc = "var(--ok)" if _dp >= 85 else ("var(--warn)" if _dp >= 70 else "var(--danger)")
                         sprint_content += (
                             f"<p>Committed <strong>{_sc_cv:g}</strong> &rarr; "
                             f"Delivered <strong>{_sc_dv:g}</strong> pts/sprint avg "
@@ -595,7 +791,7 @@ def build_team_profile_html(
                         _d = tl.scope_change_total
                         _p = round(_d / tl.committed_pts * 100) if tl.committed_pts else 0
                         _ds = f"+{_d:g}" if _d > 0 else f"{_d:g}"
-                        _dcol = "#22c55e" if _d == 0 else ("#eab308" if abs(_d) < 5 else "#ef4444")
+                        _dcol = "var(--ok)" if _d == 0 else ("var(--warn)" if abs(_d) < 5 else "var(--danger)")
                         _ns = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
                         _nf = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
                         sprint_content += (
@@ -610,7 +806,9 @@ def build_team_profile_html(
                             ct = ev.change_type.replace("re_estimated_", "re-est ").replace("_", " ")
                             evd = f"+{ev.delta_pts:g}" if ev.delta_pts > 0 else f"{ev.delta_pts:g}"
                             evc = (
-                                "#22c55e" if ev.delta_pts < 0 else ("#eab308" if abs(ev.delta_pts) <= 3 else "#ef4444")
+                                "var(--ok)"
+                                if ev.delta_pts < 0
+                                else ("var(--warn)" if abs(ev.delta_pts) <= 3 else "var(--danger)")
                             )
                             sprint_content += (
                                 f'<div style="font-size:0.85rem;margin:0.1rem 0 0 1rem;">'
@@ -635,7 +833,7 @@ def build_team_profile_html(
                     _sc_chains = _sc_scope.get("carry_over_chains", [])
                     if _sc_chains:
                         sprint_content += (
-                            f'<h3 style="font-size:0.85rem;color:#eab308;margin-top:0.75rem;">'
+                            f'<h3 style="font-size:0.85rem;color:var(--warn);margin-top:0.75rem;">'
                             f"{len(_sc_chains)} stories bounced across 3+ sprints</h3>"
                         )
                         for ch in _sc_chains[:5]:
@@ -677,14 +875,14 @@ def build_team_profile_html(
         )
         for cs in _h_contrib[:10]:
             sp_r = cs.get("spill_rate", 0)
-            sp_col = "#22c55e" if sp_r < 10 else ("#eab308" if sp_r < 25 else "#ef4444")
+            sp_col = "var(--ok)" if sp_r < 10 else ("var(--warn)" if sp_r < 25 else "var(--danger)")
             ct_v = cs.get("avg_cycle_time", 0)
             ct_s = f"{ct_v:.0f}d" if ct_v > 0 else "&mdash;"
             disc = cs.get("top_discipline", "fullstack")
             wt = cs.get("top_work_type", "")
             focus = f"{disc}/{wt.split('/')[0]}" if wt else disc
             ps = cs.get("per_sprint", 0)
-            ps_col = "#22c55e" if ps >= 3 else ("#eab308" if ps >= 1.5 else "#888")
+            ps_col = "var(--ok)" if ps >= 3 else ("var(--warn)" if ps >= 1.5 else "var(--low)")
             sa = cs.get("sprints_active", 0)
             tm_content += (
                 f"<tr><td>{_e(cs.get('name', ''))}</td>"
@@ -703,7 +901,7 @@ def build_team_profile_html(
             top_pct = round(top["delivery_pts"] / _h_total_del * 100)
             if top_pct >= 40:
                 tm_content += (
-                    f'<p style="color:#eab308;">&#x26a0; {_e(top["name"])} carries {top_pct}% of delivery work</p>'
+                    f'<p style="color:var(--warn);">&#x26a0; {_e(top["name"])} carries {top_pct}% of delivery work</p>'
                 )
         _nav("team-members", "Team")
         sections.append(_section("team-members", "Team Members", tm_content))
@@ -712,8 +910,8 @@ def build_team_profile_html(
     shadow = ex.get("shadow_spillover", [])
     if isinstance(shadow, list) and shadow:
         shadow_html = (
-            f'<div class="card" style="border-left:3px solid #eab308;">'
-            f'<strong style="color:#eab308;">&#x26a0; {len(shadow)} re-created stories detected</strong>'
+            f'<div class="card" style="border-left:3px solid var(--warn);">'
+            f'<strong style="color:var(--warn);">&#x26a0; {len(shadow)} re-created stories detected</strong>'
             f'<p style="color:var(--text-muted);">Closed in one sprint but re-created in the next:</p>'
         )
         for sh in shadow[:5]:
@@ -752,7 +950,7 @@ def build_team_profile_html(
                 samples = e.get("samples", 0)
                 sp = e.get("spill_pct", 0)
                 var_html = f"&pm;{var:.0f}d" if var > 0 else "&mdash;"
-                sp_color = "#22c55e" if sp < 10 else ("#eab308" if sp < 25 else "#ef4444")
+                sp_color = "var(--ok)" if sp < 10 else ("var(--warn)" if sp < 25 else "var(--danger)")
                 sp_html = f'<span style="color:{sp_color};">{sp:.0f}%</span>' if sp > 0 else "&mdash;"
                 disc_rows += (
                     f"<tr><td>{pts}pt{'s' if pts != 1 else ''}</td>"
@@ -786,7 +984,7 @@ def build_team_profile_html(
         cal_rows_html = []
         for c in cals:
             conf = conf_levels.get(c.point_value, "")
-            conf_color = {"high": "#22c55e", "medium": "var(--text-muted)", "low": "#eab308"}.get(conf, "")
+            conf_color = {"high": "var(--ok)", "medium": "var(--text-muted)", "low": "var(--warn)"}.get(conf, "")
             conf_html = f'<span style="color:{conf_color};font-weight:600;">{conf.upper()}</span>' if conf else ""
             cal_rows_html.append(
                 f"<tr><td><strong>{c.point_value} pt{'s' if c.point_value != 1 else ''}</strong></td>"
@@ -865,8 +1063,8 @@ def build_team_profile_html(
         bottlenecks = td.get("bottlenecks", [])
         for cat, rate_val, count in bottlenecks:
             td_content += (
-                f'<div class="card" style="border-left:3px solid #eab308;margin-top:0.5rem;">'
-                f'<strong style="color:#eab308;">&#x26a0; {_e(str(cat))} bottleneck</strong>'
+                f'<div class="card" style="border-left:3px solid var(--warn);margin-top:0.5rem;">'
+                f'<strong style="color:var(--warn);">&#x26a0; {_e(str(cat))} bottleneck</strong>'
                 f'<p style="color:var(--text-muted);">'
                 f"Only {rate_val}% completion ({count} tasks)</p></div>"
             )
@@ -947,19 +1145,23 @@ def build_team_profile_html(
     if isinstance(pdod, dict) and pdod.get("items"):
         pdod_summary = pdod.get("summary", "")
         pdod_health = pdod.get("health", "weak")
-        h_col = "#22c55e" if pdod_health == "strong" else ("#eab308" if pdod_health == "moderate" else "#ef4444")
+        h_col = (
+            "var(--ok)"
+            if pdod_health == "strong"
+            else ("var(--warn)" if pdod_health == "moderate" else "var(--danger)")
+        )
         pdod_html = f'<p style="color:{h_col};font-weight:bold;">{_e(pdod_summary)}</p>'
         pdod_html += (
             '<table class="data-table"><tr><th>Practice</th><th>Status</th><th>Evidence</th><th>Action</th></tr>'
         )
         _pst_icon = {"established": "&#x2713;", "emerging": "&#x25cb;", "missing": "&#x2717;"}
-        _pst_col = {"established": "#22c55e", "emerging": "#eab308", "missing": "#ef4444"}
+        _pst_col = {"established": "var(--ok)", "emerging": "var(--warn)", "missing": "var(--danger)"}
         for item in pdod["items"]:
             st = item.get("status", "missing")
             sig = item.get("signals", "no evidence")
             pdod_html += (
                 f"<tr><td>{_e(item.get('practice', ''))}</td>"
-                f'<td style="color:{_pst_col.get(st, "#888")};">'
+                f'<td style="color:{_pst_col.get(st, "var(--low)")};">'
                 f"{_pst_icon.get(st, '?')} {_e(st)}</td>"
                 f'<td style="color:var(--text-muted);">{_e(sig)}</td>'
                 f'<td style="color:var(--text-muted);font-size:0.85rem;">'
@@ -1014,8 +1216,8 @@ def build_team_profile_html(
             pct = r.get("pct", 0)
             avg_ct = avg_cts.get(rname) if isinstance(avg_cts, dict) else None
             ct_html = f"{avg_ct:.0f}d" if avg_ct else "&mdash;"
-            ct_color = "#eab308" if avg_ct and avg_ct > 15 else "var(--text-muted)"
-            name_style = "color:#eab308;font-weight:600;" if rname in spill_repos_set else ""
+            ct_color = "var(--warn)" if avg_ct and avg_ct > 15 else "var(--text-muted)"
+            name_style = "color:var(--warn);font-weight:600;" if rname in spill_repos_set else ""
             repo_rows_html += (
                 f'<tr><td style="{name_style}"><strong>{_e(rname)}</strong></td>'
                 f"<td>{cnt}</td><td>{_pct_bar_html(pct, 80)}</td>"
@@ -1039,7 +1241,7 @@ def build_team_profile_html(
                     continue
                 repo_content += (
                     f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
-                    f'<strong style="color:#eab308;">{_e(sr.get("repo", ""))}</strong>'
+                    f'<strong style="color:var(--warn);">{_e(sr.get("repo", ""))}</strong>'
                     f' <span style="color:var(--text-muted);">'
                     f"{sr.get('spill_rate', 0)}% spillover ({sr.get('spills', 0)} times)</span></div>"
                 )
@@ -1097,7 +1299,7 @@ def build_team_profile_html(
             _nm_ss = " &rarr; ".join(f"&ldquo;{_e(s)}&rdquo;" for s, _ in _nm_secs[:5])
             nm_rows.append(("Description template", _nm_ss))
         _nav("naming", "Naming")
-        sections.append(_section("naming", "Ticket Naming &amp; Organisation", _kv_table(nm_rows)))
+        sections.append(_section("naming", "Ticket Naming & Organisation", _kv_table(nm_rows)))
 
     # ── Story & Epic Structure ──────────────────────────────────────
     _h_struct = ex.get("story_structure", {})
@@ -1137,7 +1339,7 @@ def build_team_profile_html(
                 )
         if st_rows:
             _nav("structure", "Structure")
-            sections.append(_section("structure", "Story &amp; Epic Structure", _kv_table(st_rows)))
+            sections.append(_section("structure", "Story & Epic Structure", _kv_table(st_rows)))
 
     # ── Acceptance Criteria Patterns ──────────────────────────────────
     ac_pat = ex.get("ac_patterns", {})
@@ -1469,8 +1671,8 @@ def build_team_profile_html(
 
     if recs:
         rec_html_items = "".join(
-            f'<div class="card" style="border-left:3px solid #eab308;margin-bottom:0.5rem;">'
-            f'<strong style="color:#eab308;">&#x26a0; {title}</strong>'
+            f'<div class="card" style="border-left:3px solid var(--warn);margin-bottom:0.5rem;">'
+            f'<strong style="color:var(--warn);">&#x26a0; {title}</strong>'
             f'<p style="color:var(--text-muted);margin-top:0.3rem;">{desc}</p></div>'
             for title, desc in recs
         )
@@ -1478,51 +1680,21 @@ def build_team_profile_html(
         sections.append(_section("recommendations", "Recommendations", rec_html_items))
 
     # ── Assemble page ───────────────────────────────────────────────
-    esc_key = _e(profile.project_key)
-    esc_src = _e(profile.source)
     gen_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    nav_html = ""
-    if nav_links:
-        nav_html = f'<nav class="toc">{"".join(nav_links)}</nav>'
-
-    sprint_names_html = ""
-    if sprint_names:
-        sprint_names_html = (
-            f'<span class="badge" style="background:rgba(255,255,255,0.15);padding:0.1rem 0.6rem;'
-            f'border-radius:999px;font-size:0.78rem;">'
-            f"{', '.join(_e(n) for n in sprint_names)}</span>"
-        )
-
-    body_content = f'<div class="container">{"".join(sections)}</div>'
-
-    page = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team Profile &mdash; {esc_key}</title>
-<style>{_CSS}</style>
-</head>
-<body>
-<header class="site-header">
-  <h1>Team Profile &mdash; {esc_src}/{esc_key}</h1>
-  <div class="meta">
-    <span>{profile.sample_sprints} sprints analysed</span>
-    <span>{profile.sample_stories} stories</span>
-    <span>Generated {_e(gen_ts)}</span>
-    {sprint_names_html}
-  </div>
-</header>
-{nav_html}
-{body_content}
-<footer class="site-footer">
-  Generated by yeaboi.ai &bull; {_e(datetime.now().strftime("%Y-%m-%d"))}
-</footer>
-</body>
-</html>"""
-
-    return page
+    return html_page(
+        title=f"Team Profile — {profile.project_key}",
+        heading=f"Team Profile — {profile.source}/{profile.project_key}",
+        meta=[
+            f"{profile.sample_sprints} sprints analysed",
+            f"{profile.sample_stories} stories",
+            f"Generated {gen_ts}",
+        ],
+        badges=[", ".join(sprint_names)] if sprint_names else [],
+        nav=nav_links,
+        body="".join(sections),
+        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+    )
 
 
 def export_team_profile_html(
@@ -1640,23 +1812,36 @@ def build_team_profile_markdown(
     # ── AI Adoption (detectable AI-tool footprint — lower bound) ─────
     ai_sig = getattr(profile, "ai_adoption", None)
     ai_blob = ex.get("ai_adoption", {})
+    code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
-    if ai_sig and ai_scanned:
-        lines.extend(["## AI Adoption", ""])
+    if "ai_footprint" in code_features and ai_sig and ai_scanned:
+        lines.extend(["## AI Usage", ""])
         lines.append(
             "> _Lower bound — only AI tools that leave a marker in commit messages or PR "
             "descriptions are counted. Inline IDE assist (Copilot ghost-text, Cursor Tab) "
             "leaves no trace, so real usage is at least this._"
         )
         lines.append("")
-        lines.append(f"- **Detectable footprint:** {ai_sig.footprint_pct:.0f}%")
+        activity_coverage = ai_blob.get("activity_coverage", {}) if isinstance(ai_blob, dict) else {}
+        lines.append(f"- **Coverage:** {_coverage_message(activity_coverage)}")
+        lines.append(f"- **Detectable footprint:** {_footprint_value(ai_sig).replace('<', '&lt;')}")
         lines.append(f"- **Commits with AI marker:** {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:
             lines.append(f"- **PRs with AI marker:** {ai_sig.ai_prs} of {ai_sig.scanned_prs}")
         if ai_sig.sources_scanned:
             lines.append(f"- **Sources scanned:** {', '.join(_source_label(s) for s in ai_sig.sources_scanned)}")
-        for repo in getattr(ai_sig, "repos_scanned", ()):
-            lines.append(f"- **Scanned:** {repo}")
+        if isinstance(ai_blob, dict) and ai_blob.get("selected_users"):
+            lines.append(f"- **Selected users:** {', '.join(str(u) for u in ai_blob['selected_users'])}")
+            lines.append(
+                f"- **Matched identities:** {len(ai_blob.get('matched_identities') or {})} "
+                f"of {len(ai_blob['selected_users'])}"
+            )
+        if getattr(ai_sig, "repos_scanned", ()):
+            lines.append(f"- **Repositories scanned:** {len(ai_sig.repos_scanned)}")
+            repo_preview = ", ".join(ai_sig.repos_scanned[:5])
+            if len(ai_sig.repos_scanned) > 5:
+                repo_preview += f" (+{len(ai_sig.repos_scanned) - 5} more)"
+            lines.append(f"- **Repository scope:** {repo_preview}")
         if ai_sig.per_tool:
             tools = ", ".join(f"{'unlabelled AI' if t == 'other_ai' else t} ({n})" for t, n in ai_sig.per_tool)
             lines.append(f"- **By tool:** {tools}")
@@ -1668,12 +1853,30 @@ def build_team_profile_markdown(
             lines.append(f"- **By contributor:** {', '.join(f'{a} ({n})' for a, n in ai_sig.per_author[:8])}")
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
-            lines.append(f"- **Not scanned:** {'; '.join(ai_coverage[:4])}")
+            lines.append(f"- **Not scanned:** {'; '.join(ai_coverage)}")
         lines.append("")
+        p_members, p_team, p_min, p_file_data = _practice_rows(ai_blob)
+        if p_members:
+            lines.extend(["### Engineering practices by member", ""])
+            lines.append("| Member | Commits | PRs | Tests | Docs | Tickets | Descriptions |")
+            lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+            for row in p_members + ([p_team] if p_team else []):
+                lines.append(
+                    f"| {row.get('member', '')} | {row.get('commits', 0)} | {row.get('prs', 0)} | "
+                    f"{_practice_cell_text(row, 'tests', p_min)} | {_practice_cell_text(row, 'docs', p_min)} | "
+                    f"{_practice_cell_text(row, 'ticket', p_min)} | {_practice_cell_text(row, 'desc', p_min)} |"
+                )
+            lines.append("")
+            if p_file_data.get("total") and p_file_data.get("with_file_data", 0) < p_file_data["total"]:
+                lines.append(
+                    f"_File-based columns (Tests, Docs) cover {p_file_data.get('with_file_data', 0)} "
+                    f"of {p_file_data['total']} items with change metadata._"
+                )
+                lines.append("")
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
             lines.extend(["### Examples", ""])
-            lines.extend(_ai_example_md(s) for s in ai_samples[:5])
+            lines.extend(_ai_example_md(s) for s in ai_samples)
             lines.append("")
         ai_insights = ai_blob.get("insights", {}) if isinstance(ai_blob, dict) else {}
         if isinstance(ai_insights, dict) and any(ai_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
@@ -1684,39 +1887,70 @@ def build_team_profile_markdown(
                 lines.extend([f"### {ilabel}", ""])
                 lines.extend(_insight_md(it) for it in i_items if isinstance(it, dict) and it.get("title"))
                 lines.append("")
+    file_health = ai_blob.get("repository_health", {}) if isinstance(ai_blob, dict) else {}
+    if "code_health" in code_features and file_health:
+        health_coverage = ai_blob.get("coverage_report", {})
+        health_failed = health_coverage.get("status") in {"failed", "no_data"}
+        lines.extend(["## Code Health", ""])
+        lines.append(
+            "> _Scoped to files attributable to the selected users. Untouched repositories "
+            "and unrelated contributors are not analysed._"
+        )
+        lines.extend(["", f"- **Coverage:** {_coverage_message(health_coverage)}"])
+        if not health_failed:
+            lines.extend(
+                [
+                    f"- **Changed files analysed:** {file_health.get('files_analysed', 0)}",
+                    f"- **Repositories touched:** {file_health.get('repositories_touched', 0)}",
+                    f"- **Findings:** {file_health.get('findings', 0)}",
+                ]
+            )
+        for error in _coverage_errors(health_coverage):
+            lines.append(f"- **Collection error:** {error}")
+        lines.append("")
+        health_actions = ai_blob.get("action_plan", []) if isinstance(ai_blob, dict) else []
+        if health_actions and not health_failed:
+            lines.extend(["### Prioritized action plan", ""])
+            lines.extend(_action_md(action) for action in health_actions)
+            lines.append("")
 
-    # ── Documentation (Notion/Confluence clarity + AI-usage estimate) ─────
+    # ── Documentation (Notion/Confluence clarity + usefulness) ────────────
     dq_sig = getattr(profile, "doc_quality", None)
     dq_blob = ex.get("doc_quality", {})
     dq_pages = getattr(dq_sig, "pages_scanned", 0) if dq_sig else 0
-    if dq_sig and dq_pages:
+    if dq_sig and isinstance(dq_blob, dict):
+        doc_coverage = dq_blob.get("coverage_report", {})
+        doc_failed = doc_coverage.get("status") in {"failed", "no_data"}
         lines.extend(["## Documentation", ""])
         lines.append(
-            "> _Clarity is a readability score. AI-likelihood is a heuristic estimate from "
-            "writing style, not a detection — prose has no reliable AI marker. Explicit AI "
-            "markers are a lower bound._"
+            "> _Clarity is a readability score. Usefulness measures purpose, ownership, "
+            "structure, and actionability. Explicit AI markers are a lower bound._"
         )
         lines.append("")
-        dq_platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
-        dq_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
-        lines.append(f"- **Average clarity:** {dq_sig.avg_clarity:.0f}/100")
-        lines.append(f"- **Pages scanned:** {dq_pages} ({dq_platforms})")
-        lines.append(f"- **Clarity split:** {dq_split}")
-        lines.append(
-            f"- **AI-likelihood (estimate):** {dq_sig.avg_ai_likelihood:.0f}/100 — "
-            f"~{dq_sig.likely_ai_pages} page(s) look AI-drafted"
-        )
-        lines.append(f"- **Explicit AI markers:** {dq_sig.ai_marked_pages} page(s) (lower bound)")
-        if dq_sig.flagged_pages:
+        lines.append(f"- **Coverage:** {_coverage_message(doc_coverage)}")
+        if not doc_failed:
+            dq_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
+            lines.append(f"- **Average clarity:** {dq_sig.avg_clarity:.0f}/100")
+            lines.append(f"- **Average usefulness:** {getattr(dq_sig, 'avg_usefulness', 0):.0f}/100")
+            lines.append(f"- **Pages scanned:** {_doc_pages_value(dq_sig, dq_pages)}")
+            lines.append(f"- **Clarity split:** {dq_split}")
+            lines.append(
+                f"- **Owned / actionable pages:** {getattr(dq_sig, 'owned_pages', 0)} / "
+                f"{getattr(dq_sig, 'actionable_pages', 0)}"
+            )
+            lines.append(f"- **Explicit AI markers:** {dq_sig.ai_marked_pages} page(s) (lower bound)")
+        for error in _coverage_errors(doc_coverage):
+            lines.append(f"- **Collection error:** {error}")
+        if dq_sig.flagged_pages and not doc_failed:
             lines.append(f"- **Flagged:** {', '.join(f'{t} ({r})' for t, r in dq_sig.flagged_pages)}")
         lines.append("")
         dq_samples = dq_blob.get("samples") if isinstance(dq_blob, dict) else None
-        if dq_samples:
+        if dq_samples and not doc_failed:
             lines.extend(["### Examples", ""])
-            lines.extend(_doc_example_md(s) for s in dq_samples[:5])
+            lines.extend(_doc_example_md(s) for s in dq_samples)
             lines.append("")
         dq_insights = dq_blob.get("insights", {}) if isinstance(dq_blob, dict) else {}
-        if isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
+        if not doc_failed and isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
             for ik, ilabel in INSIGHT_CATEGORIES:
                 i_items = dq_insights.get(ik)
                 if not isinstance(i_items, list) or not i_items:
@@ -1724,6 +1958,11 @@ def build_team_profile_markdown(
                 lines.extend([f"### {ilabel}", ""])
                 lines.extend(_insight_md(it) for it in i_items if isinstance(it, dict) and it.get("title"))
                 lines.append("")
+        dq_actions = dq_blob.get("action_plan", []) if isinstance(dq_blob, dict) else []
+        if dq_actions and not doc_failed:
+            lines.extend(["### Prioritized action plan", ""])
+            lines.extend(_action_md(action) for action in dq_actions)
+            lines.append("")
 
     # ── Recurring work ──────────────────────────────────────────────
     rec_count = ex.get("recurring_count", 0)
@@ -2641,17 +2880,36 @@ def write_analysis_log(
     # AI-adoption footprint (lower bound — commit/PR markers only)
     ai_sig = getattr(profile, "ai_adoption", None)
     ai_blob = examples.get("ai_adoption", {}) if examples else {}
+    code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
-    if ai_sig and ai_scanned:
-        sections.extend(["", "AI Adoption (lower bound — commit/PR markers only):"])
-        sections.append(f"  Detectable footprint: {ai_sig.footprint_pct:.0f}%")
+    if "ai_footprint" in code_features and ai_sig and ai_scanned:
+        sections.extend(["", "AI Usage (footprint is a lower bound — commit/PR markers only):"])
+        _p_members, p_team, p_min, _p_file_data = _practice_rows(ai_blob)
+        if p_team:
+            sections.append(
+                "  Practices (team): "
+                f"tests {_practice_cell_text(p_team, 'tests', p_min)} · "
+                f"docs {_practice_cell_text(p_team, 'docs', p_min)} · "
+                f"tickets {_practice_cell_text(p_team, 'ticket', p_min)} · "
+                f"descriptions {_practice_cell_text(p_team, 'desc', p_min)}"
+            )
+        sections.append(f"  Detectable footprint: {_footprint_value(ai_sig)}")
         sections.append(f"  Commits with AI marker: {ai_sig.ai_commits} of {ai_sig.scanned_commits}")
         if ai_sig.scanned_prs:
             sections.append(f"  PRs with AI marker: {ai_sig.ai_prs} of {ai_sig.scanned_prs}")
         if ai_sig.sources_scanned:
             sections.append(f"  Sources: {', '.join(_source_label(s) for s in ai_sig.sources_scanned)}")
-        for repo in getattr(ai_sig, "repos_scanned", ()):
+        if isinstance(ai_blob, dict) and ai_blob.get("selected_users"):
+            sections.append(f"  Selected users: {', '.join(str(u) for u in ai_blob['selected_users'])}")
+            sections.append(
+                f"  Matched identities: {len(ai_blob.get('matched_identities') or {})} "
+                f"of {len(ai_blob['selected_users'])}"
+            )
+        log_repos = list(getattr(ai_sig, "repos_scanned", ()) or ())
+        for repo in log_repos[:5]:
             sections.append(f"  Scanned: {repo}")
+        if len(log_repos) > 5:
+            sections.append(f"  Scanned: +{len(log_repos) - 5} more repositories")
         if ai_sig.per_tool:
             sections.append(
                 "  By tool: "
@@ -2661,11 +2919,11 @@ def write_analysis_log(
             sections.append("  By source: " + ", ".join(f"{_source_label(s)}={n}" for s, n in ai_sig.per_source))
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
-            sections.append(f"  Not scanned: {'; '.join(ai_coverage[:4])}")
+            sections.append(f"  Not scanned: {'; '.join(ai_coverage)}")
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
-            sections.append("  Examples:")
-            for s in ai_samples[:5]:
+            sections.append(f"  Examples ({len(ai_samples)}):")
+            for s in ai_samples:
                 ref = s.get("url") or (f"commit {s.get('key')}" if s.get("key") else "")
                 sections.append(f"    [{s.get('tool', '')}] {s.get('title', '')} {ref}".rstrip())
         ai_insights = ai_blob.get("insights", {}) if isinstance(ai_blob, dict) else {}
@@ -2677,28 +2935,51 @@ def write_analysis_log(
                         link = f" [{it['link']}]" if it.get("link") else ""
                         sections.append(f"  {ilabel.upper():<14s}{it['title']}{ev}{link}")
 
-    # Documentation quality (clarity score + AI-likelihood estimate + explicit-marker lower bound)
+    file_health = ai_blob.get("repository_health", {}) if isinstance(ai_blob, dict) else {}
+    if "code_health" in code_features and file_health:
+        health_coverage = ai_blob.get("coverage_report", {})
+        health_failed = health_coverage.get("status") in {"failed", "no_data"}
+        sections.extend(["", "Code Health (selected-user changed files only):"])
+        sections.append(f"  Coverage: {_coverage_message(health_coverage)}")
+        if not health_failed:
+            sections.append(f"  Changed files analysed: {file_health.get('files_analysed', 0)}")
+            sections.append(f"  Repositories touched: {file_health.get('repositories_touched', 0)}")
+            sections.append(f"  Findings: {file_health.get('findings', 0)}")
+            for action in ai_blob.get("action_plan", []) if isinstance(ai_blob, dict) else []:
+                sections.append(f"  {str(action.get('priority', 'medium')).upper():<10s}{action.get('title', '')}")
+        for error in _coverage_errors(health_coverage):
+            sections.append(f"  Collection error: {error}")
+
+    # Documentation quality (clarity + usefulness + explicit-marker lower bound)
     dq_sig = getattr(profile, "doc_quality", None)
     dq_blob = examples.get("doc_quality", {}) if examples else {}
     dq_pages = getattr(dq_sig, "pages_scanned", 0) if dq_sig else 0
-    if dq_sig and dq_pages:
-        dq_platforms = ", ".join(dq_sig.platforms_scanned) or "n/a"
+    if dq_sig and isinstance(dq_blob, dict):
+        doc_coverage = dq_blob.get("coverage_report", {})
+        doc_failed = doc_coverage.get("status") in {"failed", "no_data"}
         dq_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
-        dq_ai = f"{dq_sig.avg_ai_likelihood:.0f}/100, ~{dq_sig.likely_ai_pages} page(s) look AI-drafted"
-        sections.extend(["", "Documentation (clarity score; AI-likelihood is an estimate, markers a lower bound):"])
-        sections.append(f"  Average clarity: {dq_sig.avg_clarity:.0f}/100")
-        sections.append(f"  Pages scanned: {dq_pages} ({dq_platforms})")
-        sections.append(f"  Clarity split: {dq_split}")
-        sections.append(f"  AI-likelihood (estimate): {dq_ai}")
-        sections.append(f"  Explicit AI markers: {dq_sig.ai_marked_pages} page(s)")
+        sections.extend(["", "Documentation (clarity and usefulness; explicit markers are a lower bound):"])
+        sections.append(f"  Coverage: {_coverage_message(doc_coverage)}")
+        if not doc_failed:
+            sections.append(f"  Average clarity: {dq_sig.avg_clarity:.0f}/100")
+            sections.append(f"  Average usefulness: {getattr(dq_sig, 'avg_usefulness', 0):.0f}/100")
+            sections.append(f"  Pages scanned: {_doc_pages_value(dq_sig, dq_pages)}")
+            sections.append(f"  Clarity split: {dq_split}")
+            sections.append(
+                f"  Owned / actionable pages: {getattr(dq_sig, 'owned_pages', 0)} / "
+                f"{getattr(dq_sig, 'actionable_pages', 0)}"
+            )
+            sections.append(f"  Explicit AI markers: {dq_sig.ai_marked_pages} page(s)")
+        for error in _coverage_errors(doc_coverage):
+            sections.append(f"  Collection error: {error}")
         dq_samples = dq_blob.get("samples") if isinstance(dq_blob, dict) else None
-        if dq_samples:
+        if dq_samples and not doc_failed:
             sections.append("  Examples:")
-            for s in dq_samples[:5]:
+            for s in dq_samples:
                 ref = f" {s['url']}" if s.get("url") else ""
                 sections.append(f"    {s.get('title', '')} ({s.get('platform', '')}){ref}".rstrip())
         dq_insights = dq_blob.get("insights", {}) if isinstance(dq_blob, dict) else {}
-        if isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
+        if not doc_failed and isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
             for ik, ilabel in INSIGHT_CATEGORIES:
                 for it in dq_insights.get(ik) or []:
                     if isinstance(it, dict) and it.get("title"):

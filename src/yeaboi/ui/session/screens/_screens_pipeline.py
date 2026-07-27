@@ -18,7 +18,7 @@ from yeaboi.ui.session._utils import _pad_left, _wrap_text
 from yeaboi.ui.session.screens._screens import _build_action_bar, _planning_title
 from yeaboi.ui.session.screens._screens_input import _image_hint
 from yeaboi.ui.shared._animations import scrollbar_column
-from yeaboi.ui.shared._components import PAD
+from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel
 from yeaboi.ui.shared._scroll import publish_geometry
 
 _PAD = PAD
@@ -273,14 +273,7 @@ def _build_pipeline_screen(
         *popup_rendered,
     )
 
-    return Panel(
-        content,
-        border_style=border_style,
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, border_style=border_style, height=height)
 
 
 def _build_popup_overlay(
@@ -484,14 +477,7 @@ def _build_chat_screen(
         *body,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -557,11 +543,4 @@ def _build_edit_prompt_screen(
         *[Text("") for _ in range(remaining_h)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)

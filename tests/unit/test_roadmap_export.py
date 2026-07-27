@@ -114,3 +114,11 @@ class TestSlug:
     def test_slug_basic(self):
         assert _slug("Q3 2026 Roadmap") == "q3-2026-roadmap"
         assert _slug("") == "roadmap"
+
+
+class TestSharedDesignSystem:
+    def test_roadmap_html_uses_shared_theme(self):
+        html = build_roadmap_html(_analysis())
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

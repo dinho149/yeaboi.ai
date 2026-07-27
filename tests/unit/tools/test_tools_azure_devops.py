@@ -6,6 +6,7 @@ edge cases for each tool and the _parse_azdo_url helper.
 """
 
 from datetime import UTC
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from azure.devops.exceptions import AzureDevOpsServiceError
@@ -14,9 +15,12 @@ from yeaboi.tools import get_tools
 from yeaboi.tools.azure_devops import (
     _azdo_error_msg,
     _parse_azdo_url,
+    azdevops_changed_files,
+    azdevops_list_projects,
     azdevops_list_work_items,
     azdevops_read_file,
     azdevops_read_repo,
+    azdevops_recent_commits,
 )
 
 
@@ -79,6 +83,120 @@ class TestParseAzdoUrl:
 
         with pytest.raises(ValueError):
             _parse_azdo_url("https://dev.azure.com/myorg/MyProject/my-repo")
+
+
+class TestAnalysisScopeHelpers:
+    @patch("yeaboi.tools.azure_devops._make_connection")
+    def test_list_projects_is_sorted_and_paginated(self, mock_connection):
+        first = []
+        for idx in range(100):
+            project = MagicMock()
+            project.name = f"P{idx:03}"
+            first.append(project)
+        another = MagicMock()
+        another.name = "Another"
+        second = [another]
+        core = mock_connection.return_value.clients.get_core_client.return_value
+        core.get_projects.side_effect = [first, second]
+
+        result = azdevops_list_projects()
+
+        assert len(result) == 101
+        assert result[0] == "Another"
+        assert core.get_projects.call_count == 2
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_recent_commits_reuses_analysis_inventory(self, mock_git):
+        client = mock_git.return_value
+        commit = MagicMock()
+        commit.commit_id = "abc123"
+        commit.comment = "Selected change"
+        commit.author.name = "Alice"
+        commit.author.email = "alice@example.com"
+        commit.author.date = "2026-07-25"
+        client.get_commits.return_value = [commit]
+
+        items = azdevops_recent_commits(
+            "Project",
+            days=30,
+            include_repository=True,
+            repositories=[
+                {
+                    "provider": "azdo",
+                    "container": "Project",
+                    "name": "api",
+                    "repo_id": "repo-id",
+                    "url": "https://example.test/api",
+                }
+            ],
+        )
+
+        client.get_repositories.assert_not_called()
+        client.get_commits.assert_called_once()
+        assert items[0]["repository"] == "api"
+        assert items[0]["commit_id"] == "abc123"
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_labels_commit_and_pr_attribution(self, mock_git):
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = [commit_change]
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = [pr_change]
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [(f["path"], f["attribution"], f["confidence"]) for f in files] == [
+            ("src/a.py", "authored_commit", "high"),
+            ("src/b.py", "authored_pr", "medium"),
+        ]
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_unwraps_real_sdk_response_models(self, mock_git):
+        from azure.devops.v7_1.git.models import GitCommitChanges, GitPullRequestIterationChanges
+
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = GitCommitChanges(changes=[commit_change])
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = GitPullRequestIterationChanges(
+            change_entries=[pr_change],
+            next_skip=1,
+            next_top=0,
+        )
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [item["path"] for item in files] == ["src/a.py", "src/b.py"]
+        assert not any(item.get("status") == "failed" for item in files)
 
 
 # ---------------------------------------------------------------------------
@@ -618,3 +736,413 @@ class TestGetTools:
             "analyze_team_history",
             "compare_plan_to_actuals",
         }
+
+
+# ---------------------------------------------------------------------------
+# Poker helpers — per-work-item fetch + field update
+# ---------------------------------------------------------------------------
+
+
+def _make_poker_work_item(
+    wi_id: int,
+    title: str = "Do the thing",
+    points=None,
+    assignee=None,
+    type_name: str = "User Story",
+    acceptance: str = "",
+):
+    item = MagicMock()
+    item.id = wi_id
+    item.fields = {
+        "System.Id": wi_id,
+        "System.Title": title,
+        "System.Description": "<div>Details<br>here</div>",
+        "System.State": "New",
+        "System.AssignedTo": assignee,
+        "System.WorkItemType": type_name,
+        "Microsoft.VSTS.Scheduling.StoryPoints": points,
+        "Microsoft.VSTS.Common.AcceptanceCriteria": acceptance,
+    }
+    return item
+
+
+class TestAzdevopsSprintIssues:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_normalizes_rows(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rel1, rel2 = MagicMock(), MagicMock()
+        rel1.target.id = 101
+        rel2.target.id = 102
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=[rel1, rel2])
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, points=5, assignee={"displayName": "Alex"}),
+            _make_poker_work_item(102),
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject")
+        assert len(out) == 2
+        assert out[0] == {
+            "source": "azdevops",
+            "key": "101",
+            "summary": "Do the thing",
+            "description": "<div>Details<br>here</div>",
+            "story_points": 5.0,
+            "state": "New",
+            "assignee": "Alex",
+            "url": "https://dev.azure.com/org/MyProject/_workitems/edit/101",
+            "type": "User Story",
+            "acceptance": "",
+        }
+        assert out[1]["story_points"] is None
+        assert out[1]["assignee"] == ""
+        mock_wit.get_work_items.assert_called_once()
+        # The acceptance-criteria field rides in the batch fetch.
+        assert "Microsoft.VSTS.Common.AcceptanceCriteria" in mock_wit.get_work_items.call_args.kwargs["fields"]
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_include_types_drops_tasks_keeps_unknown(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rels = []
+        for wid in (101, 102, 103, 104):
+            rel = MagicMock()
+            rel.target.id = wid
+            rels.append(rel)
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=rels)
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, type_name="User Story"),
+            _make_poker_work_item(102, type_name="Task"),  # child work item — the reported leak
+            _make_poker_work_item(103, type_name="Bug"),
+            _make_poker_work_item(104, type_name="Impediment"),  # unknown type — kept
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject", include_types=("story", "bug"))
+        assert [r["key"] for r in out] == ["101", "103", "104"]
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_acceptance_carried_on_row(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        rel = MagicMock()
+        rel.target.id = 101
+        mock_work.get_iteration_work_items.return_value = MagicMock(work_item_relations=[rel])
+        mock_wit.get_work_items.return_value = [
+            _make_poker_work_item(101, acceptance="<div>Given a user<br>Then it works</div>")
+        ]
+
+        out = azdevops_sprint_issues("iter-guid", "MyProject")
+        assert out[0]["acceptance"] == "<div>Given a user<br>Then it works</div>"
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="")
+    def test_missing_project_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        assert azdevops_sprint_issues("iter-guid") == []
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    def test_missing_iteration_id_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        assert azdevops_sprint_issues("") == []
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_team", return_value="MyTeam")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_empty_on_api_error(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_sprint_issues
+
+        mock_wit, mock_work = MagicMock(), MagicMock()
+        mock_clients.return_value = (mock_wit, mock_work)
+        mock_work.get_iteration_work_items.side_effect = _FakeAzdoError("boom")
+        assert azdevops_sprint_issues("iter-guid") == []
+
+
+class TestAzdevopsBacklogIssues:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_backlog_wiql_targets_root_iteration(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        ref = MagicMock()
+        ref.id = 201
+        mock_wit.query_by_wiql.return_value = MagicMock(work_items=[ref])
+        mock_wit.get_work_items.return_value = [_make_poker_work_item(201)]
+
+        out = azdevops_backlog_issues("MyProject")
+        assert [r["key"] for r in out] == ["201"]
+        query = mock_wit.query_by_wiql.call_args[0][0].query
+        assert "[System.IterationPath] = 'MyProject'" in query
+        assert "'User Story'" in query
+        assert "NOT IN" in query
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value="https://dev.azure.com/org")
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_wiql_types_from_selection(self, mock_clients, *_):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        mock_wit.query_by_wiql.return_value = MagicMock(work_items=[])
+
+        azdevops_backlog_issues("MyProject", include_types=("story",))
+        query = mock_wit.query_by_wiql.call_args[0][0].query
+        assert "'User Story'" in query and "'Product Backlog Item'" in query
+        assert "'Bug'" not in query and "'Task'" not in query
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="")
+    def test_missing_project_returns_empty(self, _):
+        from yeaboi.tools.azure_devops import azdevops_backlog_issues
+
+        assert azdevops_backlog_issues() == []
+
+
+class TestAzdevopsUpdateWorkItemFields:
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_updates_all_fields_with_add_ops(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+
+        ok, err = azdevops_update_work_item_fields(101, summary="New", description="<div>D</div>", story_points=8)
+        assert (ok, err) == (True, "")
+        kwargs = mock_wit.update_work_item.call_args.kwargs
+        assert kwargs["id"] == 101
+        assert kwargs["project"] == "MyProject"
+        ops = {op.path: (op.op, op.value) for op in kwargs["document"]}
+        # op="add" is AzDO's add-or-replace — "replace" fails on unset StoryPoints.
+        assert ops == {
+            "/fields/System.Title": ("add", "New"),
+            "/fields/System.Description": ("add", "<div>D</div>"),
+            "/fields/Microsoft.VSTS.Scheduling.StoryPoints": ("add", 8.0),
+        }
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_noop_when_nothing_to_update(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        assert azdevops_update_work_item_fields(101) == (True, "")
+        mock_wit.update_work_item.assert_not_called()
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    @patch("yeaboi.tools.azure_devops._make_azdo_clients")
+    def test_api_error_folded_into_tuple(self, mock_clients, _):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        mock_wit = MagicMock()
+        mock_clients.return_value = (mock_wit, MagicMock())
+        mock_wit.update_work_item.side_effect = _FakeAzdoError("denied")
+        ok, err = azdevops_update_work_item_fields(101, story_points=5)
+        assert ok is False
+        assert err.startswith("Error")
+
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_org_url", return_value=None)
+    @patch("yeaboi.tools.azure_devops.get_azure_devops_project", return_value="MyProject")
+    def test_unconfigured_returns_error_tuple(self, *_):
+        from yeaboi.tools.azure_devops import azdevops_update_work_item_fields
+
+        ok, err = azdevops_update_work_item_fields(101, story_points=5)
+        assert ok is False
+        assert "AZURE_DEVOPS_ORG_URL" in err
+
+
+class TestPinClientBaseUrl:
+    """SDK resource-area discovery can swap in the legacy {org}.visualstudio.com
+    alias; clients must be pinned back to the configured org URL."""
+
+    @staticmethod
+    def _client(base_url):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(config=SimpleNamespace(base_url=base_url))
+
+    def test_legacy_alias_is_pinned_to_configured_url(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        out = _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert out is client
+        assert client.config.base_url == "https://dev.azure.com/youlend"
+
+    def test_matching_url_untouched(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://dev.azure.com/youlend/")
+        _pin_client_base_url(client, "https://dev.azure.com/youlend")
+        assert client.config.base_url == "https://dev.azure.com/youlend/"
+
+    def test_none_org_url_is_a_no_op(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        client = self._client("https://youlend.visualstudio.com/")
+        _pin_client_base_url(client, None)
+        assert client.config.base_url == "https://youlend.visualstudio.com/"
+
+    def test_broken_client_never_raises(self):
+        from yeaboi.tools.azure_devops import _pin_client_base_url
+
+        assert _pin_client_base_url(object(), "https://dev.azure.com/youlend") is not None
+
+
+class TestTruncatedCommentRefetch:
+    """get_commits truncates long comments, stripping end-of-message AI trailers."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(sha, comment, truncated=False):
+        return SimpleNamespace(
+            commit_id=sha,
+            comment=comment,
+            comment_truncated=truncated,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_truncated_comment_is_refetched_in_full(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("a" * 16, "fix login\n\nlong bo...", truncated=True)]
+        git.get_commit.return_value = SimpleNamespace(
+            comment="fix login\n\nlong body\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        )
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_called_once_with("a" * 16, "r1", project="Proj")
+        assert "Co-Authored-By: Claude" in items[0]["body"]
+
+    def test_refetch_failure_falls_back_to_truncated_text(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("b" * 16, "fix\n\ntruncated bo...", truncated=True)]
+        git.get_commit.side_effect = RuntimeError("boom")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert items[0]["body"] == "truncated bo..."
+
+    def test_untruncated_comment_never_refetches(self, monkeypatch):
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [self._commit("c" * 16, "fix\n\nfull body")]
+        azdevops_recent_commits("Proj", days=1, include_repository=True)
+        git.get_commit.assert_not_called()
+
+    def test_refetches_capped_per_repo(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _TRUNCATED_COMMENT_REFETCH_CAP
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        git.get_commits.return_value = [
+            self._commit(f"{i:016d}", f"c{i}\n\nbo...", truncated=True)
+            for i in range(_TRUNCATED_COMMENT_REFETCH_CAP + 5)
+        ]
+        git.get_commit.return_value = SimpleNamespace(comment="c\n\nfull body")
+        items = azdevops_recent_commits("Proj", days=1, include_repository=True)
+        assert git.get_commit.call_count == _TRUNCATED_COMMENT_REFETCH_CAP
+        assert len(items) == _TRUNCATED_COMMENT_REFETCH_CAP + 5
+
+
+class TestStandupPathBounds:
+    """The standup path (include_repository=False) keeps its legacy API-call
+    bounds; only the exhaustive analysis path walks the whole window."""
+
+    def _git_client(self, monkeypatch, repos):
+        git = MagicMock()
+        git.get_repositories.return_value = repos
+        monkeypatch.setattr("yeaboi.tools.azure_devops._make_git_client", lambda: git)
+        monkeypatch.setattr("yeaboi.tools.azure_devops.get_azure_devops_project", lambda: "Proj")
+        return git
+
+    @staticmethod
+    def _commit(index):
+        return SimpleNamespace(
+            commit_id=f"{index:016d}",
+            comment=f"change {index}",
+            comment_truncated=False,
+            author=SimpleNamespace(name="Gina", email="g@corp.com", date="2026-07-17T08:00:00Z"),
+        )
+
+    def test_standup_commit_scan_and_change_lookups_capped(self, monkeypatch):
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, _MAX_REPO_COMMITS
+
+        repo = SimpleNamespace(id="r1", name="api")
+        git = self._git_client(monkeypatch, [repo])
+        batches = [[self._commit(index) for index in range(page * 100, page * 100 + 100)] for page in range(3)]
+        git.get_commits.side_effect = lambda **kwargs: batches[kwargs.get("skip", 0) // 100]
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_commit_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_commits("Proj", days=30)
+
+        assert len(items) == _MAX_REPO_COMMITS
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS
+
+    def test_standup_pr_change_lookups_capped(self, monkeypatch):
+        from datetime import UTC, datetime
+
+        from yeaboi.tools.azure_devops import _MAX_CHANGED_FILE_LOOKUPS, azdevops_recent_prs
+
+        repo = SimpleNamespace(id="r1", name="api")
+        self._git_client(monkeypatch, [repo])
+        now = datetime.now(UTC)
+        prs = [
+            SimpleNamespace(
+                pull_request_id=index,
+                title=f"PR {index}",
+                description="",
+                status="active",
+                creation_date=now,
+                closed_date=None,
+                created_by=SimpleNamespace(display_name="Gina", unique_name="g@corp.com"),
+                source_ref_name="refs/heads/feature/x",
+                reviewers=(),
+            )
+            for index in range(_MAX_CHANGED_FILE_LOOKUPS + 10)
+        ]
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops._activity_pull_requests",
+            lambda *args, **kwargs: (("Proj", repo, pr) for pr in prs),
+        )
+        lookups = {"count": 0}
+
+        def _fake_changed_files(*args, **kwargs):
+            lookups["count"] += 1
+            return []
+
+        monkeypatch.setattr("yeaboi.tools.azure_devops._azdo_pr_changed_files", _fake_changed_files)
+
+        items = azdevops_recent_prs("Proj", days=30)
+
+        assert len(items) == _MAX_CHANGED_FILE_LOOKUPS + 10
+        assert lookups["count"] == _MAX_CHANGED_FILE_LOOKUPS

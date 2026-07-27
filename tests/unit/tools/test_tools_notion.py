@@ -70,11 +70,43 @@ class TestBlocksToText:
             {"type": "heading_2", "heading_2": {"rich_text": [{"plain_text": "Section"}]}},
         ]
         result = _blocks_to_text(blocks)
-        assert "Intro\n\nSection" in result
+        assert "Intro\n\n## Section" in result
 
     def test_list_items_get_bullets(self):
         blocks = [{"type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"plain_text": "one"}]}}]
         assert _blocks_to_text(blocks) == "- one"
+
+    def test_heading_levels_get_markdown_prefixes(self):
+        blocks = [
+            {"type": "heading_1", "heading_1": {"rich_text": [{"plain_text": "Top"}]}},
+            {"type": "heading_3", "heading_3": {"rich_text": [{"plain_text": "Deep"}]}},
+        ]
+        result = _blocks_to_text(blocks)
+        assert "# Top" in result
+        assert "### Deep" in result
+
+    def test_to_do_renders_checkbox_state(self):
+        blocks = [
+            {"type": "to_do", "to_do": {"rich_text": [{"plain_text": "done thing"}], "checked": True}},
+            {"type": "to_do", "to_do": {"rich_text": [{"plain_text": "open thing"}], "checked": False}},
+        ]
+        result = _blocks_to_text(blocks)
+        assert "- [x] done thing" in result
+        assert "- [ ] open thing" in result
+
+    def test_code_block_is_fenced(self):
+        blocks = [{"type": "code", "code": {"rich_text": [{"plain_text": "print(1)"}], "language": "python"}}]
+        result = _blocks_to_text(blocks)
+        assert result == "```\nprint(1)\n```"
+
+    def test_table_row_joins_cells(self):
+        blocks = [
+            {
+                "type": "table_row",
+                "table_row": {"cells": [[{"plain_text": "Owner"}], [{"plain_text": "Jane"}]]},
+            }
+        ]
+        assert _blocks_to_text(blocks) == "Owner | Jane"
 
     def test_unknown_block_types_skipped(self):
         blocks = [{"type": "image", "image": {}}, _para_block("kept")]

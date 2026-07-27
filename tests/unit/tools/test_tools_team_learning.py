@@ -527,3 +527,227 @@ class TestFallbackPointDescriptions:
         from yeaboi.tools.team_learning import _fallback_point_descriptions
 
         assert _fallback_point_descriptions(()) == {}
+
+
+# ---------------------------------------------------------------------------
+# Pooled per-story fetch (Jira extras / AzDO revisions)
+# ---------------------------------------------------------------------------
+
+
+class _FakeJiraClient:
+    """Minimal JIRA stand-in with per-endpoint call counters."""
+
+    def __init__(self):
+        self.calls: dict[str, int] = {}
+        self._options: dict = {}
+
+    def _count(self, key):
+        self.calls[key] = self.calls.get(key, 0) + 1
+
+    def fields(self):
+        return []
+
+    def boards(self, projectKeyOrID=None):  # noqa: N803 - mirrors jira-lib API
+        return [SimpleNamespace(id=1, name="Board")]
+
+    def sprints(self, board_id, state=""):
+        return [
+            SimpleNamespace(
+                id=10,
+                name="Sprint 1",
+                startDate="2024-01-01T00:00:00.000+0000",
+                endDate="2024-01-14T00:00:00.000+0000",
+            )
+        ]
+
+    def sprint_info(self, board_id, sprint_id):
+        return {"completedPoints": 3}
+
+    def _issue_row(self, key):
+        fields = SimpleNamespace(
+            customfield_10016=3.0,
+            story_points=None,
+            issuetype=SimpleNamespace(name="Story"),
+            resolutiondate="2024-01-10T00:00:00.000+0000",
+            created="2024-01-02T00:00:00.000+0000",
+            subtasks=[],
+            customfield_10014="",
+            summary="Do thing",
+            description="",
+            labels=[],
+            assignee=None,
+            status=SimpleNamespace(name="Done"),
+        )
+        return SimpleNamespace(key=key, id="1001", fields=fields)
+
+    def search_issues(self, jql, maxResults=0, fields=""):  # noqa: N803 - mirrors jira-lib API
+        self._count("search")
+        return [self._issue_row("PROJ-1")]
+
+    def comments(self, key):
+        self._count(f"comments:{key}")
+        return [SimpleNamespace(body="done note", created="2024-01-03T00:00:00.000+0000")]
+
+    def issue(self, key, expand=""):
+        self._count(f"changelog:{key}")
+        return SimpleNamespace(
+            key=key,
+            changelog=SimpleNamespace(histories=[]),
+            fields=SimpleNamespace(created="2024-01-02T00:00:00.000+0000"),
+        )
+
+
+class TestFetchJiraHistoryPooled:
+    def _run(self, monkeypatch, progress=None, cancel_event=None):
+        from yeaboi.tools.team_learning import _fetch_jira_history
+
+        fake = _FakeJiraClient()
+        monkeypatch.setenv("JIRA_BASE_URL", "https://example.atlassian.net")
+        monkeypatch.setenv("JIRA_EMAIL", "t@example.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "token")
+        monkeypatch.setattr("jira.JIRA", lambda server=None, basic_auth=None: fake)
+        result = _fetch_jira_history("PROJ", 8, progress=progress, cancel_event=cancel_event)
+        return fake, result
+
+    def test_changelog_fetched_exactly_once_per_story(self, monkeypatch):
+        """Regression: scope enrichment + timeline used to fetch the same changelog twice."""
+        fake, result = self._run(monkeypatch)
+        assert fake.calls["changelog:PROJ-1"] == 1
+        assert fake.calls["comments:PROJ-1"] == 1
+
+    def test_comments_backfilled_into_story(self, monkeypatch):
+        fake, result = self._run(monkeypatch)
+        assert len(result) == 1
+        (story,) = [s for s in result[0]["stories"] if not s.get("carried_over")]
+        assert story["comments"] == ["done note"]
+        assert story["comments_timed"] == [("2024-01-03T00:00:00.000+0000", "done note")]
+
+    def test_progress_events_emitted_on_delivery_row(self, monkeypatch):
+        progress: list = []
+        self._run(monkeypatch, progress=progress)
+        events = [e for e in progress if isinstance(e, dict) and e.get("component_id") == "delivery:jira"]
+        assert events, "expected delivery:jira lifecycle events during fetch"
+        assert all(e["phase"] == "Reading sprint history" for e in events)
+        assert events[0]["total"] == 1
+        assert events[-1]["secondary_count"] >= 1
+
+    def test_pre_set_cancel_event_raises_before_fetch(self, monkeypatch):
+        import threading
+
+        import pytest
+
+        from yeaboi.analysis.cancellation import AnalysisCancelledError
+
+        event = threading.Event()
+        event.set()
+        with pytest.raises(AnalysisCancelledError):
+            self._run(monkeypatch, cancel_event=event)
+
+
+class TestFetchJiraStoryExtras:
+    def test_spillover_gets_changelog_only(self):
+        from yeaboi.tools.team_learning import _fetch_jira_story_extras
+
+        fake = _FakeJiraClient()
+        done = [fake._issue_row("PROJ-1")]
+        extras = _fetch_jira_story_extras(fake, done, ["PROJ-2"])
+        assert set(extras) == {"PROJ-1", "PROJ-2"}
+        assert extras["PROJ-1"]["comments_timed"]
+        assert extras["PROJ-2"]["comments_timed"] == []
+        assert "comments:PROJ-2" not in fake.calls
+        assert fake.calls["changelog:PROJ-2"] == 1
+
+    def test_each_subfetch_degrades_independently(self):
+        from yeaboi.tools.team_learning import _fetch_jira_story_extras
+
+        fake = _FakeJiraClient()
+
+        def _boom(key):
+            raise RuntimeError("throttled")
+
+        fake.comments = _boom
+        extras = _fetch_jira_story_extras(fake, [fake._issue_row("PROJ-1")], [])
+        assert extras["PROJ-1"]["comments_timed"] == []
+        assert extras["PROJ-1"]["changelog_issue"] is not None
+
+        fake2 = _FakeJiraClient()
+        fake2.issue = lambda key, expand="": (_ for _ in ()).throw(RuntimeError("throttled"))
+        extras2 = _fetch_jira_story_extras(fake2, [fake2._issue_row("PROJ-1")], [])
+        assert extras2["PROJ-1"]["changelog_issue"] is None
+        assert extras2["PROJ-1"]["comments_timed"]
+
+
+class TestPrefetchedScopeConsumers:
+    def test_enrich_skips_story_with_missing_changelog(self):
+        from yeaboi.tools.team_learning import _enrich_jira_scope_changes
+
+        story = {"issue_key": "PROJ-1", "points": 3}
+        _enrich_jira_scope_changes([story], "Sprint 1", "2024-01-01", "2024-01-14", {"PROJ-1": None})
+        assert "point_changed" not in story or story["point_changed"] is False
+
+    def test_enrich_detects_point_change_from_prefetched_changelog(self):
+        from yeaboi.tools.team_learning import _enrich_jira_scope_changes
+
+        history = SimpleNamespace(
+            created="2024-01-05T10:00:00.000+0000",
+            items=[SimpleNamespace(field="Story Points", fromString="3", toString="5")],
+        )
+        issue = SimpleNamespace(
+            changelog=SimpleNamespace(histories=[history]),
+            fields=SimpleNamespace(created="2023-12-01T00:00:00.000+0000"),
+        )
+        story = {"issue_key": "PROJ-1", "points": 5.0}
+        _enrich_jira_scope_changes(
+            [story],
+            "Sprint 1",
+            "2024-01-01T00:00:00.000+0000",
+            "2024-01-14T00:00:00.000+0000",
+            {"PROJ-1": issue},
+        )
+        assert story["point_changed"] is True
+        assert story["original_points"] == 3.0
+
+    def test_timeline_missing_changelog_assumes_in_scope_all_sprint(self):
+        from yeaboi.tools.team_learning import _build_jira_sprint_scope_timeline
+
+        story = {"issue_key": "PROJ-1", "points": 5.0, "summary": "Thing", "issue_url": ""}
+        timeline = _build_jira_sprint_scope_timeline([story], "Sprint 1", "2024-01-01", "2024-01-14", 5.0, {})
+        assert timeline is not None
+        assert timeline.committed_pts == 5.0
+        assert timeline.final_pts == 5.0
+
+
+class TestFetchAzdoRevisions:
+    def test_one_get_revisions_call_per_story_and_failures_omitted(self):
+        from yeaboi.tools.team_learning import _fetch_azdo_revisions
+
+        calls: list[int] = []
+
+        class _Wit:
+            def get_revisions(self, wi_id, project=""):
+                calls.append(wi_id)
+                if wi_id == 102:
+                    raise RuntimeError("boom")
+                return [SimpleNamespace(fields={})]
+
+        stories = [{"issue_key": "101"}, {"issue_key": "102"}, {"issue_key": "abc"}, {"issue_key": ""}]
+        out = _fetch_azdo_revisions(_Wit(), "Proj", stories)
+        assert sorted(calls) == [101, 102]
+        assert set(out) == {"101"}
+
+    def test_cancel_event_raises(self):
+        import threading
+
+        import pytest
+
+        from yeaboi.analysis.cancellation import AnalysisCancelledError
+        from yeaboi.tools.team_learning import _fetch_azdo_revisions
+
+        class _Wit:
+            def get_revisions(self, wi_id, project=""):
+                return [SimpleNamespace(fields={})]
+
+        event = threading.Event()
+        event.set()
+        with pytest.raises(AnalysisCancelledError):
+            _fetch_azdo_revisions(_Wit(), "Proj", [{"issue_key": "101"}], cancel_event=event)

@@ -18,6 +18,7 @@ import logging
 import math
 import re
 import statistics
+import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
@@ -45,7 +46,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
+def _llm_invoke(
+    prompt: str,
+    *,
+    temperature: float = 0.0,
+    max_reasks: int = 1,
+    model: str | None = None,
+    task: str = "analysis",
+    records: int = 0,
+    request_timeout: float | None = None,
+):
     """Invoke the LLM expecting a JSON reply; tracks token usage internally.
 
     Every caller of this wrapper parses the response as JSON, so it routes
@@ -53,8 +63,22 @@ def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
     # See docs: "Local Mode (Ollama)" — reliability layer.
     """
     from yeaboi.agent.llm import invoke_json
+    from yeaboi.analysis.llm_runtime import analysis_llm_slot
+    from yeaboi.config import (
+        get_llm_model,
+        get_llm_provider,
+        get_team_analysis_enrichment_timeout_seconds,
+    )
 
-    return invoke_json(prompt, temperature=temperature, max_reasks=max_reasks)
+    recorded_model = model or get_llm_model() or f"{get_llm_provider()}:default"
+    with analysis_llm_slot(task, model=recorded_model, records=records):
+        return invoke_json(
+            prompt,
+            temperature=temperature,
+            max_reasks=max_reasks,
+            request_timeout=request_timeout or get_team_analysis_enrichment_timeout_seconds(),
+            model=model,
+        )
 
 
 def _safe_float(val: object) -> float:
@@ -547,7 +571,10 @@ def _azdo_enrich_repos_from_git_pull_requests(
     except Exception:
         return
 
-    git_client = connection.clients.get_git_client()
+    from yeaboi.config import get_azure_devops_org_url
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    git_client = _pin_client_base_url(connection.clients.get_git_client(), get_azure_devops_org_url())
     allow = get_team_analysis_azdo_repo_allowlist()
     max_repos = get_team_analysis_azdo_pr_search_max_repos()
     pr_top = get_team_analysis_azdo_pr_search_top()
@@ -705,7 +732,7 @@ def _strip_html(text: str) -> str:
 def _parse_tickets_with_llm(
     stories: list[dict],
     progress: list[str],
-    batch_size: int = 12,
+    batch_size: int = 32,
     *,
     source: str = "",
     project_key: str = "",
@@ -719,11 +746,15 @@ def _parse_tickets_with_llm(
     if not stories:
         return {}
 
-    parser_version = "compact-v1"
+    from yeaboi.agent.llm import estimate_tokens, get_analysis_fast_model
+
+    parser_version = "adaptive-v2"
+    fast_model = get_analysis_fast_model()
 
     def _content_hash(story: dict) -> str:
         material = {
             "parser": parser_version,
+            "model": fast_model or "primary",
             "summary": story.get("summary", ""),
             "description": _strip_html(story.get("description", "") or ""),
             "points": story.get("points", 0),
@@ -745,6 +776,16 @@ def _parse_tickets_with_llm(
             logger.debug("Ticket parse cache read failed", exc_info=True)
 
     uncached = [s for s in stories if str(s.get("issue_key", "")) not in results]
+    from yeaboi.analysis.llm_runtime import (
+        record_analysis_cache_hit,
+        record_analysis_completed,
+        record_analysis_input,
+        record_analysis_retry,
+    )
+
+    record_analysis_input(records=len(stories))
+    if results:
+        record_analysis_cache_hit(records=len(results))
     if results:
         logger.info("Ticket parse cache: %d hit(s), %d miss(es)", len(results), len(uncached))
     if not uncached:
@@ -752,36 +793,72 @@ def _parse_tickets_with_llm(
             cache_updates.update({key: (content_hashes[key], value) for key, value in results.items()})
         return results
 
-    # Build batches from cache misses only.
+    # Pack every cache miss against a conservative prompt budget. This keeps
+    # exhaustive coverage while avoiding the many tiny fixed-size calls that
+    # dominate slow/local runs.
+    from yeaboi.config import get_llm_provider, get_team_analysis_enrichment_timeout_seconds
+
+    prompt_budget = 3500 if get_llm_provider() == "ollama" else 6500
+    max_batch = max(1, min(int(batch_size), 32))
+
+    def _story_prompt_text(story: dict) -> str:
+        key = story.get("issue_key", "?")
+        title = story.get("summary", "")
+        desc = _strip_html(story.get("description", "") or "")
+        if len(desc) > 800:
+            desc = desc[:800] + "..."
+        pts = story.get("points", 0)
+        tasks = story.get("task_count", 0)
+        carried = "yes" if story.get("carried_over") else "no"
+        return f"--- {key}: {title} [{pts}pts, {tasks} tasks, carried_over={carried}] ---\n{desc}"
+
     batches: list[list[dict]] = []
-    for i in range(0, len(uncached), batch_size):
-        batches.append(uncached[i : i + batch_size])
+    current: list[dict] = []
+    current_tokens = estimate_tokens(_TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=""))
+    for story in uncached:
+        item_tokens = estimate_tokens(_story_prompt_text(story)) + 160  # output reserve
+        if current and (len(current) >= max_batch or current_tokens + item_tokens > prompt_budget):
+            batches.append(current)
+            current = []
+            current_tokens = estimate_tokens(_TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=""))
+        current.append(story)
+        current_tokens += item_tokens
+    if current:
+        batches.append(current)
 
-    def _parse_batch(batch: list[dict]) -> dict[str, dict]:
+    def _checkpoint(batch_results: dict[str, dict]) -> None:
+        if not batch_results:
+            return
+        entries = {key: (content_hashes[key], value) for key, value in batch_results.items() if key in content_hashes}
+        if cache_updates is not None:
+            cache_updates.update(entries)
+        if source and project_key and db_path and entries:
+            try:
+                from yeaboi.team_profile import TeamProfileStore
+
+                with TeamProfileStore(db_path) as store:
+                    store.save_ticket_parse_cache(source, project_key, entries)
+            except Exception:
+                logger.debug("Ticket parse checkpoint failed", exc_info=True)
+
+    def _parse_batch_once(batch: list[dict]) -> dict[str, dict]:
         """Parse a single batch of stories."""
-        items_parts: list[str] = []
-        for s in batch:
-            key = s.get("issue_key", "?")
-            title = s.get("summary", "")
-            desc = _strip_html(s.get("description", "") or "")
-            # Truncate to avoid token bloat
-            if len(desc) > 800:
-                desc = desc[:800] + "..."
-            # Include metadata for better classification
-            pts = s.get("points", 0)
-            tasks = s.get("task_count", 0)
-            carried = "yes" if s.get("carried_over") else "no"
-            meta = f"[{pts}pts, {tasks} tasks, carried_over={carried}]"
-            items_parts.append(f"--- {key}: {title} {meta} ---\n{desc}")
-
-        items_block = "\n\n".join(items_parts)
+        items_block = "\n\n".join(_story_prompt_text(s) for s in batch)
         prompt = _TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=items_block)
 
         try:
             # A malformed batch falls back deterministically. Repair re-asks can
             # double the dominant cost on large boards, so ticket parsing does not
             # retry; narrative/insight calls retain the shared repair behaviour.
-            response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
+            response = _llm_invoke(
+                prompt,
+                temperature=0.0,
+                max_reasks=0,
+                model=fast_model,
+                task="ticket_classification",
+                records=0,
+                request_timeout=min(get_team_analysis_enrichment_timeout_seconds(), 60),
+            )
             text = response.content if hasattr(response, "content") else str(response)
             # Extract JSON from response (handle markdown fences)
             text = text.strip()
@@ -800,15 +877,61 @@ def _parse_tickets_with_llm(
             logger.debug("LLM ticket parse batch failed: %s", exc)
             return {}
 
-    # Run batches in parallel
+    def _parse_batch_resilient(batch: list[dict], depth: int = 0) -> dict[str, dict]:
+        parsed = _parse_batch_once(batch)
+        expected = {str(item.get("issue_key", "")) for item in batch}
+        if expected and expected.issubset(parsed):
+            return parsed
+        # One failed large response should not discard a whole batch. Bisect it
+        # until the individual records have each had an independent chance.
+        if len(batch) > 1 and depth < 2:
+            record_analysis_retry()
+            midpoint = len(batch) // 2
+            left = _parse_batch_resilient(batch[:midpoint], depth + 1)
+            right = _parse_batch_resilient(batch[midpoint:], depth + 1)
+            return {**left, **right}
+        return parsed
+
+    # Run adaptive batches in parallel; the shared scheduler applies the lower
+    # provider-specific limit (one for Ollama, configurable for cloud).
     progress.append("Parsing ticket structure\u2026")
+    from yeaboi.analysis.progress import append_component_progress
+
+    append_component_progress(
+        progress,
+        component_id="enrichment:ticket_classification",
+        label="AI enrichment · ticket classification",
+        status="running",
+        detail=f"{len(results)}/{len(stories)} cached · {len(batches)} batch(es)",
+    )
+
+    def _progress_detail() -> str:
+        from yeaboi.analysis.llm_runtime import get_analysis_llm_execution
+
+        execution = get_analysis_llm_execution()
+        eta = int(execution.get("eta_seconds", 0))
+        eta_text = f" · ETA {max(1, round(eta / 60))}m" if eta >= 30 else (f" · ETA {eta}s" if eta else "")
+        return f"{len(results)}/{len(stories)} tickets{eta_text}"
+
     try:
-        with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
-            futures = {executor.submit(_parse_batch, b): i for i, b in enumerate(batches)}
+        from yeaboi.config import get_team_analysis_llm_max_concurrency
+
+        workers = 1 if get_llm_provider() == "ollama" else get_team_analysis_llm_max_concurrency()
+        with ThreadPoolExecutor(max_workers=min(workers, len(batches))) as executor:
+            futures = {executor.submit(_parse_batch_resilient, b): i for i, b in enumerate(batches)}
             for future in as_completed(futures):
                 try:
-                    batch_result = future.result(timeout=30)
+                    batch_result = future.result()
                     results.update(batch_result)
+                    _checkpoint(batch_result)
+                    record_analysis_completed(records=len(batch_result))
+                    append_component_progress(
+                        progress,
+                        component_id="enrichment:ticket_classification",
+                        label="AI enrichment · ticket classification",
+                        status="running",
+                        detail=_progress_detail(),
+                    )
                 except Exception:
                     logger.debug("LLM ticket-parse batch %d failed — skipping", futures[future], exc_info=True)
     except Exception as exc:
@@ -820,6 +943,18 @@ def _parse_tickets_with_llm(
             {key: (content_hashes[key], value) for key, value in results.items() if key in content_hashes}
         )
     logger.info("Deep parser resolved %d/%d stories", len(results), len(stories))
+    missing_count = max(0, len(stories) - len(results))
+    if missing_count:
+        from yeaboi.analysis.llm_runtime import record_analysis_degraded
+
+        record_analysis_degraded(records=missing_count)
+    append_component_progress(
+        progress,
+        component_id="enrichment:ticket_classification",
+        label="AI enrichment · ticket classification",
+        status="completed" if len(results) == len(stories) else "fallback",
+        detail=f"{len(results)}/{len(stories)} tickets",
+    )
     return results
 
 
@@ -1341,7 +1476,7 @@ def _generate_point_descriptions(
     prompt += "Do not include point values that have no data."
 
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -1919,7 +2054,7 @@ def _generate_analysis_narrative(profile: TeamProfile, examples: dict | None) ->
 
     fallback = _fallback_narrative(profile, ex)
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -2106,7 +2241,7 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
 
     fallback = _fallback_team_insights(profile, ex)
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -2140,6 +2275,219 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
         logger.warning("LLM team insights generation failed: %s", exc)
 
     return fallback
+
+
+# Illustrative story examples per point value in the synthesis prompt. The
+# digest's aggregate calibrations already include EVERY story, so the evidence
+# list is examples, not the statistical basis — an uncapped list grows the
+# prompt linearly with board size (slower call, higher parse-failure risk).
+_MAX_POINT_EVIDENCE_PER_VALUE = 6
+
+
+def _generate_analysis_synthesis(
+    profile: TeamProfile,
+    examples: dict,
+    point_inputs: tuple,
+    *,
+    include_insights: bool,
+    db_path=None,
+) -> dict:
+    """Generate all final prose in one coherent, cacheable LLM call."""
+    point_stories, point_calibrations, discipline_calibration, spillover_correlation = point_inputs
+    point_evidence = [
+        {
+            "key": story.get("issue_key", ""),
+            "title": story.get("summary", ""),
+            "points": story.get("points", 0),
+            "discipline": story.get("discipline", ""),
+            "cycle_days": story.get("cycle_time_days"),
+            "tasks": story.get("task_count", 0),
+            "carried_over": bool(story.get("carried_over")),
+        }
+        for story in point_stories
+    ]
+    # Keep only the LAST N examples per point value — stories arrive in
+    # oldest→newest sprint order, so recency wins; relative order is preserved.
+    grouped_counts: dict[str, int] = {}
+    for entry in point_evidence:
+        value = str(entry.get("points", 0))
+        grouped_counts[value] = grouped_counts.get(value, 0) + 1
+    evidence_omitted = {
+        value: count - _MAX_POINT_EVIDENCE_PER_VALUE
+        for value, count in grouped_counts.items()
+        if count > _MAX_POINT_EVIDENCE_PER_VALUE
+    }
+    if evidence_omitted:
+        kept: list[dict] = []
+        kept_counts: dict[str, int] = {}
+        for entry in reversed(point_evidence):
+            value = str(entry.get("points", 0))
+            if kept_counts.get(value, 0) < _MAX_POINT_EVIDENCE_PER_VALUE:
+                kept_counts[value] = kept_counts.get(value, 0) + 1
+                kept.append(entry)
+        point_evidence = list(reversed(kept))
+    fallback = {
+        "point_descriptions": _fallback_point_descriptions(point_calibrations),
+        "narrative": _fallback_narrative(profile, examples),
+        "insights": _fallback_team_insights(profile, examples),
+    }
+    digest = _build_narrative_digest(profile, examples)
+    # v2: evidence capped per point value + evidence_omitted counts — bumping the
+    # version keeps v1 cache entries (built from the uncapped shape) from matching.
+    prompt_version = "analysis-synthesis-v2"
+    material = json.dumps(
+        {
+            "version": prompt_version,
+            "digest": digest,
+            "point_evidence": point_evidence,
+            "evidence_omitted": evidence_omitted,
+            "discipline_calibration": discipline_calibration,
+            "spillover_correlation": spillover_correlation,
+            "include_insights": include_insights,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    cache_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    from yeaboi.config import get_llm_model, get_llm_provider
+
+    cache_model = get_llm_model() or f"{get_llm_provider()}:default"
+    from yeaboi.analysis.llm_runtime import record_analysis_input
+
+    record_analysis_input(records=1)
+    if db_path:
+        try:
+            from yeaboi.team_profile import TeamProfileStore
+
+            with TeamProfileStore(db_path) as store:
+                cached = store.load_analysis_enrichment("final_synthesis", cache_key, cache_model)
+            if cached:
+                from yeaboi.analysis.llm_runtime import record_analysis_cache_hit
+
+                record_analysis_cache_hit()
+                cached["_cache_hit"] = True
+                return cached
+        except Exception:
+            logger.debug("Analysis synthesis cache read failed", exc_info=True)
+
+    prompt = (
+        "You are an experienced Scrum coach. Turn the complete metrics digest below into "
+        "one internally consistent analysis. Do not omit or contradict evidence.\n\n"
+        "Return ONLY a JSON object with:\n"
+        '- "point_descriptions": an object keyed by observed point value; one concrete sentence each.\n'
+        '- "narrative": {"executive_summary": "...", "sections": {...}} with section keys '
+        "velocity, team, estimation, workflow, writing, trends, recommendations.\n"
+    )
+    if include_insights:
+        prompt += (
+            '- "insights": start/stop/keep/try arrays, 2-4 evidence-backed items each. '
+            'Every item is {"title": "...", "detail": "...", "evidence": "..."}.\n'
+        )
+    else:
+        prompt += '- "insights": {}.\n'
+    prompt += (
+        "\nUse plain English, cite concrete numbers, and give actions the team can take next.\n\n"
+        "## Complete metrics digest\n" + digest + "\n\n## Story-point evidence (recent examples per point value)\n"
+        "Counts in evidence_omitted are additional stories at that point value not "
+        "shown; the digest's aggregates already include them.\n"
+        + json.dumps(
+            {
+                "stories": point_evidence,
+                "evidence_omitted": evidence_omitted,
+                "discipline_calibration": discipline_calibration,
+                "spillover_correlation": spillover_correlation,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    fallback_sections: list[str] = []
+    try:
+        response = _llm_invoke(
+            prompt,
+            temperature=0.0,
+            max_reasks=0,
+            task="final_synthesis",
+            records=1,
+        )
+        text = response.content if hasattr(response, "content") else str(response)
+        result = json.loads(text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+        if not isinstance(result, dict):
+            raise ValueError("synthesis response is not an object")
+    except Exception as exc:
+        logger.warning("LLM analysis synthesis failed: %s", exc)
+        result = {}
+
+    raw_points = result.get("point_descriptions")
+    points = (
+        {str(k): v for k, v in raw_points.items() if isinstance(v, str) and v.strip()}
+        if isinstance(raw_points, dict)
+        else {}
+    )
+    if not points:
+        points = fallback["point_descriptions"]
+        fallback_sections.append("point_descriptions")
+
+    raw_narrative = result.get("narrative")
+    narrative = fallback["narrative"]
+    if isinstance(raw_narrative, dict) and isinstance(raw_narrative.get("sections"), dict):
+        sections = {
+            key: value
+            for key, value in raw_narrative["sections"].items()
+            if key in _NARRATIVE_KEYS and isinstance(value, str) and value.strip()
+        }
+        for key in _NARRATIVE_KEYS:
+            sections.setdefault(key, fallback["narrative"]["sections"][key])
+        summary = raw_narrative.get("executive_summary")
+        narrative = {
+            "executive_summary": (
+                summary if isinstance(summary, str) and summary.strip() else fallback["narrative"]["executive_summary"]
+            ),
+            "sections": sections,
+        }
+    else:
+        fallback_sections.append("narrative")
+
+    insights = fallback["insights"]
+    raw_insights = result.get("insights")
+    if include_insights and isinstance(raw_insights, dict):
+        normalized: dict[str, list[dict]] = {}
+        for key in _INSIGHT_KEYS:
+            items = []
+            for item in raw_insights.get(key, []) if isinstance(raw_insights.get(key), list) else []:
+                if isinstance(item, dict) and isinstance(item.get("title"), str) and item["title"].strip():
+                    items.append(
+                        _insight_item(
+                            item["title"].strip(),
+                            item.get("detail", "").strip() if isinstance(item.get("detail"), str) else "",
+                            item.get("evidence", "").strip() if isinstance(item.get("evidence"), str) else "",
+                        )
+                    )
+            normalized[key] = items[:_INSIGHT_MAX_ITEMS] if items else fallback["insights"][key]
+        insights = normalized
+    elif include_insights:
+        fallback_sections.append("insights")
+    else:
+        insights = {}
+
+    output = {
+        "point_descriptions": points,
+        "narrative": narrative,
+        "insights": insights,
+        "_fallback_sections": fallback_sections,
+    }
+    # Cache only a fully valid model result; deterministic backfills should get
+    # another chance after a transient failure on the next run.
+    if db_path and not fallback_sections:
+        try:
+            from yeaboi.team_profile import TeamProfileStore
+
+            with TeamProfileStore(db_path) as store:
+                store.save_analysis_enrichment("final_synthesis", cache_key, cache_model, output)
+        except Exception:
+            logger.debug("Analysis synthesis cache write failed", exc_info=True)
+    return output
 
 
 def _worker_writing_patterns(all_stories: list[dict], progress: list[str]) -> WritingPatterns:
@@ -2311,27 +2659,63 @@ def _run_ai_usage_component(
     progress: list[str],
     sub_sources: list[str] | None = None,
     analysis_depth: str = "deep",
+    window_days: int = 120,
+    analysis_scope: dict[str, list[str]] | None = None,
+    db_path=None,
+    code_features: list[str] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[object | None, dict | None]:
     """Run the AI-adoption ('code') sub-analysis over ``sub_sources`` (github/azdo;
     None = all). Returns ``(signal, blob)`` or ``(None, None)`` on failure. Best-effort
-    — never raises. The engine runs this ONCE globally; it's also reused inline by the
-    delivery pipeline for back-compat."""
-    progress.append("Scanning AI-tool footprint…")
+    — never raises, EXCEPT ``AnalysisCancelledError`` (cancellation must propagate so
+    the engine discards the run instead of recording an empty result). The engine runs
+    this ONCE globally; it's also reused inline by the delivery pipeline for back-compat."""
+    from yeaboi.analysis.cancellation import AnalysisCancelledError
+
+    enabled = set(code_features or ("ai_footprint", "code_health"))
     try:
         from yeaboi.analysis.ai_usage import generate_ai_adoption_insights, run_ai_adoption
 
-        signal, ai_examples = run_ai_adoption(
-            source, project_key, delivery_stories, all_stories, members=members, sub_sources=sub_sources
-        )
+        kwargs = {
+            "members": members,
+            "sub_sources": sub_sources,
+            "code_features": sorted(enabled),
+            "db_path": db_path,
+            "generate_insights": analysis_depth == "deep",
+        }
+        # Always forward the window — a "default means don't pass it" guard let
+        # the callee's own default diverge from the engine's (code 120d vs docs 90d).
+        kwargs["window_days"] = window_days
+        if analysis_scope is not None:
+            kwargs["analysis_scope"] = analysis_scope
+        kwargs["progress"] = progress
+        if cancel_event is not None:
+            kwargs["cancel_event"] = cancel_event
+        try:
+            signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
+        except TypeError:
+            kwargs.pop("progress", None)
+            kwargs.pop("code_features", None)
+            kwargs.pop("db_path", None)
+            kwargs.pop("generate_insights", None)
+            kwargs.pop("cancel_event", None)
+            signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
         # Only spend an LLM call on coaching when something was actually scanned;
         # an empty footprint (no repos/creds) coaches deterministically.
-        if analysis_depth == "deep" and signal.scanned_commits + signal.scanned_prs > 0:
-            ai_examples["insights"] = generate_ai_adoption_insights(signal, ai_examples)
-        else:
+        if (
+            "ai_footprint" in enabled
+            and analysis_depth == "deep"
+            and signal.scanned_commits + signal.scanned_prs > 0
+            and "insights" not in ai_examples
+        ):
+            ai_examples["insights"] = generate_ai_adoption_insights(signal, ai_examples, db_path=db_path)
+        elif "ai_footprint" in enabled:
             from yeaboi.analysis.ai_usage import _fallback_ai_adoption_insights
 
             ai_examples["insights"] = _fallback_ai_adoption_insights(signal, ai_examples.get("samples"))
-        return signal, ai_examples
+        return (signal if "ai_footprint" in enabled else None), ai_examples
+    except AnalysisCancelledError:
+        raise  # cancellation is not a failure — the engine discards the run
     except Exception:  # pragma: no cover - defensive; run_ai_adoption already guards
         logger.exception("AI-adoption analysis failed; continuing without it")
         return None, None
@@ -2343,22 +2727,43 @@ def _run_doc_quality_component(
     progress: list[str],
     sub_sources: list[str] | None = None,
     analysis_depth: str = "deep",
+    window_days: int = 120,
+    analysis_scope: dict[str, list[str]] | None = None,
+    db_path=None,
 ) -> tuple[object | None, dict | None]:
     """Run the documentation-quality ('docs') sub-analysis over ``sub_sources``
     (confluence/notion; None = all). Returns ``(signal, blob)`` or ``(None, None)`` on
     failure. Best-effort — never raises."""
     progress.append("Assessing documentation clarity…")
     try:
-        from yeaboi.analysis.doc_quality import generate_doc_quality_insights, run_doc_quality
+        from yeaboi.analysis.doc_quality import run_doc_quality
 
-        dq_signal, dq_examples = run_doc_quality(source, project_key, sub_sources=sub_sources)
-        # Only spend an LLM call on coaching when pages were actually read.
-        if analysis_depth == "deep" and dq_signal.pages_scanned > 0:
-            dq_examples["insights"] = generate_doc_quality_insights(dq_signal, dq_examples)
+        # Always forward the window — the old "!= 120" guard silently let default
+        # runs scan docs over run_doc_quality's own 90-day default while the code
+        # component scanned 120 days, shown side by side undisclosed.
+        kwargs = {"sub_sources": sub_sources, "window_days": window_days}
+        if analysis_scope is not None:
+            kwargs["analysis_scope"] = analysis_scope
+        kwargs["progress"] = progress
+        kwargs["db_path"] = db_path
+        try:
+            dq_signal, dq_examples = run_doc_quality(source, project_key, **kwargs)
+        except TypeError:
+            kwargs.pop("progress", None)
+            kwargs.pop("db_path", None)
+            dq_signal, dq_examples = run_doc_quality(source, project_key, **kwargs)
+        # Documentation recommendations are derived from every structured page
+        # result; the removed stylometric AI detector is never sent to an LLM.
+        from yeaboi.analysis.doc_quality import _fallback_doc_quality_insights
+
+        coverage = dq_examples.get("coverage_report", {})
+        if dq_signal.pages_scanned > 0 and coverage.get("status") not in {"failed", "no_data"}:
+            dq_examples["insights"] = _fallback_doc_quality_insights(
+                dq_signal,
+                dq_examples.get("samples"),
+            )
         else:
-            from yeaboi.analysis.doc_quality import _fallback_doc_quality_insights
-
-            dq_examples["insights"] = _fallback_doc_quality_insights(dq_signal, dq_examples.get("samples"))
+            dq_examples["insights"] = {}
         return dq_signal, dq_examples
     except Exception:  # pragma: no cover - defensive; run_doc_quality already guards
         logger.exception("Doc-quality analysis failed; continuing without it")
@@ -2389,8 +2794,8 @@ def _run_parallel_analysis(
     profile plus an ``examples["ai_adoption"]`` blob (see ``analysis/ai_usage.py``).
 
     When ``include_doc_quality`` is set, another best-effort step reads the team's
-    recently-changed Notion/Confluence pages, scores their clarity + a stylometric
-    AI-likelihood estimate, and attaches a ``DocQualitySignal`` plus an
+    recently-changed Notion/Confluence pages, scores their clarity and practical
+    usefulness, and attaches a ``DocQualitySignal`` plus an
     ``examples["doc_quality"]`` blob (see ``analysis/doc_quality.py``).
 
     When ``members`` (a subset of assignee names) is given the analysis is
@@ -2891,6 +3296,7 @@ def _run_parallel_analysis(
             members,
             progress,
             analysis_depth=analysis_depth,
+            db_path=db_path,
         )
         if signal is not None:
             from dataclasses import replace
@@ -2918,28 +3324,49 @@ def _run_parallel_analysis(
         if include_insights:
             examples["insights"] = _fallback_team_insights(profile, examples)
     else:
-        progress.append("Generating AI enrichments in parallel…")
-        enrichment: dict[str, object] = {}
-        with ThreadPoolExecutor(max_workers=3 if include_insights else 2) as executor:
-            futures = {
-                executor.submit(_generate_point_descriptions, *point_description_args): "point_descriptions",
-                executor.submit(_generate_analysis_narrative, profile, examples): "narrative",
-            }
-            if include_insights:
-                futures[executor.submit(_generate_team_insights, profile, examples)] = "insights"
-            for future in as_completed(futures):
-                key = futures[future]
-                try:
-                    enrichment[key] = future.result()
-                except Exception:
-                    logger.exception("Final analysis enrichment %s failed", key)
-        examples["point_descriptions"] = enrichment.get(
-            "point_descriptions",
-            _fallback_point_descriptions(point_description_args[1]),
+        progress.append("Generating AI enrichments in one coherent pass…")
+        from yeaboi.analysis.progress import append_component_progress
+        from yeaboi.config import get_team_analysis_enrichment_timeout_seconds
+
+        timeout_seconds = get_team_analysis_enrichment_timeout_seconds()
+        labels = {
+            "point_descriptions": "AI enrichment · point descriptions",
+            "narrative": "AI enrichment · analysis narrative",
+            "insights": "AI enrichment · recommendations",
+        }
+        keys = ["point_descriptions", "narrative"] + (["insights"] if include_insights else [])
+        for key in keys:
+            append_component_progress(
+                progress,
+                component_id=f"enrichment:{key}",
+                label=labels[key],
+                status="running",
+                detail=f"shared synthesis · {timeout_seconds}s deadline",
+            )
+        synthesis = _generate_analysis_synthesis(
+            profile,
+            examples,
+            point_description_args,
+            include_insights=include_insights,
+            db_path=db_path,
         )
-        examples["narrative"] = enrichment.get("narrative", _fallback_narrative(profile, examples))
+        fallback_sections = set(synthesis.pop("_fallback_sections", []))
+        cache_hit = bool(synthesis.pop("_cache_hit", False))
+        for key in keys:
+            used_fallback = key in fallback_sections
+            append_component_progress(
+                progress,
+                component_id=f"enrichment:{key}",
+                label=labels[key],
+                status="fallback" if used_fallback else "completed",
+                detail=(
+                    "deterministic fallback" if used_fallback else ("cache hit" if cache_hit else "shared synthesis")
+                ),
+            )
+        examples["point_descriptions"] = synthesis["point_descriptions"]
+        examples["narrative"] = synthesis["narrative"]
         if include_insights:
-            examples["insights"] = enrichment.get("insights", _fallback_team_insights(profile, examples))
+            examples["insights"] = synthesis["insights"]
 
     return profile, examples
 
@@ -4720,17 +5147,18 @@ def _normalize_iter_path(path: str) -> str:
 
 
 def _build_azdo_sprint_scope_timeline(
-    wit_client: object,
-    project: str,
     stories: list[dict],
     iter_path: str,
     iter_start: str,
     iter_end: str,
     completed_pts: float,
+    revisions_by_id: dict[str, list],
 ) -> SprintScopeTimeline | None:
     """Walk AzDO work item revisions to build a day-by-day scope timeline.
 
-    For each story currently in the sprint, fetches revisions and records:
+    ``revisions_by_id`` maps issue key → prefetched revisions (missing on fetch
+    failure — see ``_fetch_azdo_revisions``; the fetch is shared with
+    ``_enrich_azdo_scope_changes``). For each story in the sprint it records:
     - When it entered this iteration (date + points at that time)
     - When its points changed (re-estimation events)
     - The daily scope total for every day of the sprint
@@ -4758,20 +5186,12 @@ def _build_azdo_sprint_scope_timeline(
         wi_id_str = story.get("issue_key", "")
         if not wi_id_str:
             continue
-        try:
-            wi_id = int(wi_id_str)
-        except (ValueError, TypeError):
+        revisions = revisions_by_id.get(wi_id_str)
+        if not revisions:
             continue
 
         summary = (story.get("summary", "") or "")[:60]
         issue_url = story.get("issue_url", "")
-
-        try:
-            revisions = wit_client.get_revisions(wi_id, project=project)  # type: ignore[union-attr]
-            if not revisions:
-                continue
-        except Exception:
-            continue
 
         # Walk revisions to build a timeline of (date, in_iteration, points)
         # Each entry: (date_str, in_this_iter: bool, points: float)
@@ -4895,17 +5315,18 @@ def _build_azdo_sprint_scope_timeline(
 
 
 def _build_jira_sprint_scope_timeline(
-    jira_client: object,
     stories: list[dict],
     sprint_name: str,
     sprint_start: str,
     sprint_end: str,
     completed_pts: float,
+    changelog_issues: dict[str, object],
 ) -> SprintScopeTimeline | None:
     """Walk Jira changelogs to build a day-by-day scope timeline for a sprint.
 
-    For each story, fetches the changelog and reconstructs when it entered/left
-    the sprint and when its points changed.
+    ``changelog_issues`` maps issue key → issue fetched with ``expand="changelog"``
+    (``None``/missing on fetch failure). The fetch happens once in
+    ``_fetch_jira_story_extras`` and is shared with ``_enrich_jira_scope_changes``.
     """
     s_dt = _parse_date(sprint_start)
     e_dt = _parse_date(sprint_end)
@@ -4928,16 +5349,16 @@ def _build_jira_sprint_scope_timeline(
         summary = (story.get("summary", "") or "")[:60]
         issue_url = story.get("issue_url", "")
 
-        try:
-            issue = jira_client.issue(issue_key, expand="changelog")  # type: ignore[union-attr]
-            changelog = getattr(issue, "changelog", None)
-        except Exception:
-            # Fallback: use story data as-is, assume in scope for full sprint
+        issue = changelog_issues.get(issue_key)
+        if issue is None:
+            # Fallback (changelog fetch failed): use story data as-is, assume in
+            # scope for the full sprint — same semantics as the old except path.
             pts = _safe_float(story.get("points", 0))
             if pts > 0:
                 for day in days:
                     day_scope[day][issue_key] = pts
             continue
+        changelog = getattr(issue, "changelog", None)
 
         # Build timeline of (date, in_sprint, points) from changelog
         # Start with the story's current points and assume it was in sprint initially
@@ -5093,15 +5514,17 @@ def _build_jira_sprint_scope_timeline(
 
 
 def _enrich_jira_scope_changes(
-    jira_client: object,
     stories: list[dict],
     sprint_name: str,
     sprint_start: str,
     sprint_end: str,
+    changelog_issues: dict[str, object],
 ) -> None:
     """Enrich story dicts with mid-sprint scope change data from Jira changelog.
 
-    For each story, fetches the issue changelog and detects:
+    ``changelog_issues`` maps issue key → issue fetched with ``expand="changelog"``
+    (``None``/missing on fetch failure — that story is skipped, as before).
+    For each story, reads the prefetched changelog and detects:
     - point_changed: True if story points were modified during the sprint
     - original_points: points value at sprint start (before any mid-sprint change)
     - added_mid_sprint: True if the story was added to this sprint after it started
@@ -5117,9 +5540,10 @@ def _enrich_jira_scope_changes(
         if not issue_key:
             continue
 
+        issue = changelog_issues.get(issue_key)
+        if issue is None:
+            continue
         try:
-            # Fetch issue with changelog expanded
-            issue = jira_client.issue(issue_key, expand="changelog")
             changelog = getattr(issue, "changelog", None)
             if not changelog:
                 continue
@@ -5196,16 +5620,17 @@ def _enrich_jira_scope_changes(
 
 
 def _enrich_azdo_scope_changes(
-    wit_client: object,
-    project: str,
     stories: list[dict],
     iter_path: str,
     iter_start: str,
     iter_end: str,
+    revisions_by_id: dict[str, list],
 ) -> None:
     """Enrich story dicts with mid-sprint scope change data from AzDO revisions.
 
-    For each story, fetches work item revisions and detects:
+    ``revisions_by_id`` maps issue key → prefetched revisions (missing on fetch
+    failure — that story is skipped, as before; see ``_fetch_azdo_revisions``).
+    For each story, reads the revisions and detects:
     - point_changed: True if story points were modified during the iteration
     - original_points: points value at iteration start
     - added_mid_sprint: True if moved into this iteration after it started
@@ -5223,16 +5648,11 @@ def _enrich_azdo_scope_changes(
         wi_id_str = story.get("issue_key", "")
         if not wi_id_str:
             continue
-        try:
-            wi_id = int(wi_id_str)
-        except (ValueError, TypeError):
+        revisions = revisions_by_id.get(wi_id_str)
+        if not revisions:
             continue
 
         try:
-            revisions = wit_client.get_revisions(wi_id, project=project)
-            if not revisions:
-                continue
-
             point_changes: list[dict] = []
             was_added_mid_sprint = False
             original_pts = story.get("points", 0)
@@ -5440,10 +5860,86 @@ def _analyse_scope_changes(sprint_data: list[dict]) -> dict:
     }
 
 
-def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
+def _fetch_jira_story_extras(
+    jira: object,
+    done_issues: list,
+    spillover_keys: list[str],
+    *,
+    cancel_event: threading.Event | None = None,
+    on_story_done=None,
+) -> dict[str, dict]:
+    """Pooled per-story Jira reads: comments, dev-status links, and ONE changelog fetch.
+
+    Returns ``{issue_key: {"comments_timed": [(iso_date, body), ...], "dev_blob": str,
+    "changelog_issue": obj | None}}``. Each sub-fetch degrades independently, exactly
+    like the old inline calls (comments failure → [], dev-status failure → "",
+    changelog failure → None) — a throttled call costs one story's enrichment,
+    never the sprint. Workers only fetch; story-dict mutation stays on the calling
+    thread, and results are keyed by issue key so pool completion order cannot
+    change the output.
+
+    The changelog issue is fetched here once and shared by both consumers
+    (``_enrich_jira_scope_changes`` and ``_build_jira_sprint_scope_timeline``),
+    which previously each fetched it — halving per-story changelog traffic.
+    Spillover (carried-over) stories only need the changelog, not comments/dev links.
+    """
+    from yeaboi.analysis.cancellation import AnalysisCancelledError, raise_if_cancelled
+    from yeaboi.config import get_team_analysis_tracker_max_concurrency
+
+    tasks: list[tuple[str, object | None]] = [(issue.key, issue) for issue in done_issues]
+    tasks += [(key, None) for key in spillover_keys]
+    if not tasks:
+        return {}
+
+    def _one(issue_key: str, issue: object | None) -> dict:
+        # Checked at pickup only — an in-flight HTTP call always finishes; its
+        # result is discarded by the engine's pre-persist cancel gate.
+        raise_if_cancelled(cancel_event)
+        comments_timed: list[tuple[str, str]] = []
+        dev_blob = ""
+        if issue is not None:
+            try:
+                for c in jira.comments(issue_key) or []:  # type: ignore[attr-defined]
+                    body = getattr(c, "body", "") or ""
+                    if body:
+                        comments_timed.append((getattr(c, "created", "") or "", body))
+            except Exception:
+                pass
+            dev_blob = _jira_development_url_blob(jira, issue)
+        try:
+            changelog_issue = jira.issue(issue_key, expand="changelog")  # type: ignore[attr-defined]
+        except Exception:
+            changelog_issue = None
+        return {"comments_timed": comments_timed, "dev_blob": dev_blob, "changelog_issue": changelog_issue}
+
+    extras: dict[str, dict] = {}
+    workers = max(1, min(get_team_analysis_tracker_max_concurrency(), len(tasks)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="jira-story") as pool:
+        futures = {pool.submit(_one, key, issue): key for key, issue in tasks}
+        try:
+            for future in as_completed(futures):
+                extras[futures[future]] = future.result()
+                if on_story_done is not None:
+                    on_story_done(len(extras))
+        except AnalysisCancelledError:
+            for pending in futures:
+                pending.cancel()
+            raise
+    return extras
+
+
+def _fetch_jira_history(
+    project_key: str,
+    sprint_count: int,
+    *,
+    progress: list | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict]:
     """Fetch historical sprint data from Jira.
 
     Returns a list of sprint dicts with story-level detail for profile building.
+    ``progress``/``cancel_event`` are the engine's injection seams: structured
+    per-sprint/per-story lifecycle events, and the cooperative Ctrl-C cancel.
     """
     from jira import JIRA, JIRAError
 
@@ -5504,8 +6000,31 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
     if not sample:
         return []
 
+    from yeaboi.analysis.cancellation import raise_if_cancelled
+    from yeaboi.analysis.progress import append_component_progress
+
+    _stories_done = 0
+
+    def _emit_progress(sprints_read: int) -> None:
+        # component_id/label must match the engine's _job_progress values so the
+        # TUI updates the existing "delivery:jira" row instead of adding one.
+        append_component_progress(
+            progress,
+            component_id="delivery:jira",
+            label="Fetching sprint history · Jira",
+            status="running",
+            phase="Reading sprint history",
+            current=sprints_read,
+            total=len(sample),
+            unit="sprints",
+            secondary_count=_stories_done,
+            secondary_unit="stories",
+        )
+
     sprint_data = []
-    for sp in sample:
+    for _sprint_idx, sp in enumerate(sample):
+        raise_if_cancelled(cancel_event)
+        _emit_progress(_sprint_idx)
         # Fetch completed points and sprint dates
         info = jira.sprint_info(board.id, sp.id)
         completed_pts = _safe_float(info.get("completedPoints", 0))
@@ -5548,6 +6067,7 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
             completed_pts = jql_total
 
         stories = []
+        done_issue_objs: list = []  # issue objects for the pooled per-story pass
         for issue in done_issues:
             issue_type = getattr(issue.fields, "issuetype", None)
             type_name = getattr(issue_type, "name", "").lower() if issue_type else ""
@@ -5627,19 +6147,11 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
             if _all_ac_sources.strip():
                 description = description + "\n" + _all_ac_sources
 
-            # Fetch comments for DoD signal analysis (with timestamps for ordering)
+            # Comments (for DoD signal analysis) and dev-status links are fetched
+            # in the pooled per-story pass below and back-filled — see
+            # _fetch_jira_story_extras. Rows start with empty placeholders.
             comments_text: list[str] = []
             comments_timed: list[tuple[str, str]] = []  # (iso_date, body)
-            try:
-                issue_comments = jira.comments(issue.key)
-                for c in issue_comments or []:
-                    body = getattr(c, "body", "") or ""
-                    if body:
-                        comments_text.append(body)
-                        c_date = getattr(c, "created", "") or ""
-                        comments_timed.append((c_date, body))
-            except Exception:
-                pass
 
             labels = [
                 lbl.lower() if isinstance(lbl, str) else getattr(lbl, "name", "").lower()
@@ -5666,7 +6178,6 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                     discipline = lbl
                     break
 
-            base_text = description + " " + " ".join(comments_text)
             story_row: dict = {
                 "points": pts,
                 "cycle_time_days": ct,
@@ -5697,13 +6208,10 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                 )
                 or "",
             }
-            _story_add_repos(story_row, _extract_repos(base_text), "jira_text")
-            _story_add_repos(
-                story_row,
-                _extract_repos(_jira_development_url_blob(jira, issue)),
-                "jira_development",
-            )
+            # repo extraction happens after the pooled back-fill below — base_text
+            # includes comments, which aren't fetched yet at this point.
             stories.append(story_row)
+            done_issue_objs.append(issue)
 
         # Add spillover entries for issues NOT completed in this sprint
         for issue in all_in_sprint:
@@ -5743,9 +6251,42 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
                 }
             )
 
+        # Pooled per-story reads (comments, dev-status links, one changelog fetch
+        # per story) — this was ~4-5 sequential HTTP calls per story and dominated
+        # the whole analysis wall clock.
+        def _story_done(_completed: int, _read_sprints: int = _sprint_idx) -> None:
+            nonlocal _stories_done
+            _stories_done += 1
+            _emit_progress(_read_sprints)
+
+        _spillover_keys = [s["issue_key"] for s in stories if s.get("carried_over") and s.get("issue_key")]
+        extras = _fetch_jira_story_extras(
+            jira,
+            done_issue_objs,
+            _spillover_keys,
+            cancel_event=cancel_event,
+            on_story_done=_story_done,
+        )
+
+        # Back-fill on this thread: comments, comment-derived repo extraction, and
+        # dev-panel repo links (order of stories is unchanged — deterministic).
+        for story in stories:
+            if story.get("carried_over"):
+                continue
+            ex = extras.get(story.get("issue_key", ""), {})
+            comments_timed = ex.get("comments_timed", [])
+            comments_text = [body for _, body in comments_timed]
+            story["comments"] = comments_text
+            story["comments_timed"] = comments_timed
+            base_text = story.get("description", "") + " " + " ".join(comments_text)
+            _story_add_repos(story, _extract_repos(base_text), "jira_text")
+            _story_add_repos(story, _extract_repos(ex.get("dev_blob", "")), "jira_development")
+
+        changelog_issues = {key: (ex or {}).get("changelog_issue") for key, ex in extras.items()}
+
         # Enrich stories with mid-sprint scope change data from changelog
         try:
-            _enrich_jira_scope_changes(jira, stories, sp.name, sprint_start, sprint_end)
+            _enrich_jira_scope_changes(stories, sp.name, sprint_start, sprint_end, changelog_issues)
         except Exception as _sc_err:
             logger.debug("Scope change enrichment failed for %s: %s", sp.name, _sc_err)
 
@@ -5753,12 +6294,12 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
         scope_timeline: SprintScopeTimeline | None = None
         try:
             scope_timeline = _build_jira_sprint_scope_timeline(
-                jira,
                 stories,
                 sp.name,
                 sprint_start,
                 sprint_end,
                 completed_pts,
+                changelog_issues,
             )
         except Exception as _tl_err:
             logger.debug("Jira scope timeline failed for %s: %s", sp.name, _tl_err)
@@ -5812,10 +6353,70 @@ def _fetch_jira_history(project_key: str, sprint_count: int) -> list[dict]:
     return sprint_data
 
 
-def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
+def _fetch_azdo_revisions(
+    wit_client: object,
+    project: str,
+    stories: list[dict],
+    *,
+    cancel_event: threading.Event | None = None,
+    on_story_done=None,
+) -> dict[str, list]:
+    """Pooled per-story AzDO revision fetch: ``{issue_key: revisions}``.
+
+    One ``get_revisions`` call per story, fetched here once and shared by both
+    consumers (``_enrich_azdo_scope_changes`` and
+    ``_build_azdo_sprint_scope_timeline``), which previously each fetched it —
+    halving per-story revision traffic. Failed/empty fetches are omitted from the
+    result, so consumers skip that story exactly like the old inline except path.
+    """
+    from yeaboi.analysis.cancellation import AnalysisCancelledError, raise_if_cancelled
+    from yeaboi.config import get_team_analysis_tracker_max_concurrency
+
+    ids = [s["issue_key"] for s in stories if s.get("issue_key")]
+    if not ids:
+        return {}
+
+    def _one(wi_id_str: str):
+        # Checked at pickup only — an in-flight HTTP call always finishes; its
+        # result is discarded by the engine's pre-persist cancel gate.
+        raise_if_cancelled(cancel_event)
+        try:
+            return wit_client.get_revisions(int(wi_id_str), project=project)  # type: ignore[attr-defined]
+        except Exception:
+            return None
+
+    out: dict[str, list] = {}
+    workers = max(1, min(get_team_analysis_tracker_max_concurrency(), len(ids)))
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="azdo-story") as pool:
+        futures = {pool.submit(_one, wi_id): wi_id for wi_id in ids}
+        try:
+            done = 0
+            for future in as_completed(futures):
+                revisions = future.result()
+                done += 1
+                if revisions:
+                    out[futures[future]] = revisions
+                if on_story_done is not None:
+                    on_story_done(done)
+        except AnalysisCancelledError:
+            for pending in futures:
+                pending.cancel()
+            raise
+    return out
+
+
+def _fetch_azdevops_history(
+    project_key: str,
+    sprint_count: int,
+    *,
+    progress: list | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict]:
     """Fetch historical sprint data from Azure DevOps.
 
     Returns a list of sprint dicts with story-level detail for profile building.
+    ``progress``/``cancel_event`` are the engine's injection seams: structured
+    per-iteration/per-story lifecycle events, and the cooperative Ctrl-C cancel.
     """
     from azure.devops.connection import Connection
     from msrest.authentication import BasicAuthentication
@@ -5839,8 +6440,12 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
 
     credentials = BasicAuthentication("", token)
     connection = Connection(base_url=org_url, creds=credentials)
-    work_client = connection.clients.get_work_client()
-    wit_client = connection.clients.get_work_item_tracking_client()
+    # Pin clients to the configured org URL — the SDK's resource-area discovery
+    # can swap in the legacy {org}.visualstudio.com alias (see _pin_client_base_url).
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    work_client = _pin_client_base_url(connection.clients.get_work_client(), org_url)
+    wit_client = _pin_client_base_url(connection.clients.get_work_item_tracking_client(), org_url)
 
     from azure.devops.v7_1.work.models import TeamContext
 
@@ -5870,7 +6475,30 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
     sample = past_iterations[-sprint_count:]
     sprint_data = []
 
-    for iteration in sample:
+    from yeaboi.analysis.cancellation import raise_if_cancelled
+    from yeaboi.analysis.progress import append_component_progress
+
+    _stories_done = 0
+
+    def _emit_progress(sprints_read: int) -> None:
+        # component_id/label must match the engine's _job_progress values so the
+        # TUI updates the existing "delivery:azdevops" row instead of adding one.
+        append_component_progress(
+            progress,
+            component_id="delivery:azdevops",
+            label="Fetching sprint history · Azure DevOps",
+            status="running",
+            phase="Reading sprint history",
+            current=sprints_read,
+            total=len(sample),
+            unit="sprints",
+            secondary_count=_stories_done,
+            secondary_unit="stories",
+        )
+
+    for _iter_idx, iteration in enumerate(sample):
+        raise_if_cancelled(cancel_event)
+        _emit_progress(_iter_idx)
         iter_id = iteration.id
 
         # Capture iteration dates for cycle time calculation and scope change detection
@@ -6112,15 +6740,29 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
             )
             stories.append(story_row)
 
+        # Pooled per-story revision fetch — previously the enrichment and the
+        # timeline below each fetched every story's revisions sequentially.
+        def _story_done(_completed: int, _read_sprints: int = _iter_idx) -> None:
+            nonlocal _stories_done
+            _stories_done += 1
+            _emit_progress(_read_sprints)
+
+        _revisions_by_id = _fetch_azdo_revisions(
+            wit_client,
+            project,
+            stories,
+            cancel_event=cancel_event,
+            on_story_done=_story_done,
+        )
+
         # Enrich stories with mid-sprint scope change data from revisions
         try:
             _enrich_azdo_scope_changes(
-                wit_client,
-                project,
                 stories,
                 iter_path,
                 iter_start_str,
                 iter_end_str,
+                _revisions_by_id,
             )
         except Exception as _sc_err:
             logger.debug("AzDO scope change enrichment failed for %s: %s", getattr(iteration, "name", "?"), _sc_err)
@@ -6129,13 +6771,12 @@ def _fetch_azdevops_history(project_key: str, sprint_count: int) -> list[dict]:
         _azdo_timeline: SprintScopeTimeline | None = None
         try:
             _azdo_timeline = _build_azdo_sprint_scope_timeline(
-                wit_client,
-                project,
                 stories,
                 iter_path,
                 iter_start_str,
                 iter_end_str,
                 completed_pts,
+                _revisions_by_id,
             )
         except Exception as _tl_err:
             logger.debug("AzDO scope timeline failed for %s: %s", getattr(iteration, "name", "?"), _tl_err)
@@ -6274,7 +6915,9 @@ def _fetch_azdevops_actuals(work_item_ids: list[str], project_key: str) -> dict[
 
     credentials = BasicAuthentication("", token)
     connection = Connection(base_url=org_url, creds=credentials)
-    wit_client = connection.clients.get_work_item_tracking_client()
+    from yeaboi.tools.azure_devops import _pin_client_base_url
+
+    wit_client = _pin_client_base_url(connection.clients.get_work_item_tracking_client(), org_url)
 
     proj_scope = (project_key or "").strip() or (get_azure_devops_project() or "")
 

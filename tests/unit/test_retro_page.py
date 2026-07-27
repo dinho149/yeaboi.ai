@@ -4,6 +4,13 @@ from yeaboi.retro.page import build_board_html
 
 
 class TestBuildBoardHtml:
+    def test_esc_escapes_attribute_breakers(self):
+        # esc()'d values land inside double-quoted HTML attributes: quotes must
+        # be escaped or a participant-chosen name breaks out of the attribute.
+        html = build_board_html()
+        assert '"&quot;"' in html
+        assert '"&#39;"' in html
+
     def test_self_contained(self):
         html = build_board_html()
         assert "<!DOCTYPE html>" in html

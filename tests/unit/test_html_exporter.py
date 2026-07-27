@@ -51,3 +51,11 @@ class TestAttachmentsSection:
         html = build_export_html({"pasted_images": [str(img)]}, stage="complete")
         assert "Attachments" in html
         assert "data:image/png;base64," in html
+
+
+class TestSharedDesignSystem:
+    def test_plan_html_uses_shared_theme(self):
+        html = build_export_html({}, stage="complete")
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained

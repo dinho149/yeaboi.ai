@@ -49,6 +49,7 @@ from yeaboi.ui.shared._components import (
     STANDUP_THEME,
     analysis_title,
     build_action_buttons,
+    build_page_panel,
     build_popup,
     performance_title,
     planning_title,
@@ -188,12 +189,7 @@ def _build_export_picker_screen(
         btn_top, btn_mid, btn_bot = build_action_buttons(labels, selected)
     lines += [btn_top, btn_mid, btn_bot]
 
-    return Panel(
-        Group(*lines),
-        height=height,
-        padding=(1, 2),
-        border_style=theme.sep,
-    )
+    return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
 
 
 def pick_export_destination(

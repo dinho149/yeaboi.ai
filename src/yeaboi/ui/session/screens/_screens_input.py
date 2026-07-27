@@ -15,7 +15,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.session._utils import _pad_left, _wrap_text
-from yeaboi.ui.shared._components import PAD, planning_title
+from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
 
 _PAD = PAD
 
@@ -205,14 +205,7 @@ def _build_description_screen(
         *[Text("") for _ in range(remaining_h)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -398,11 +391,4 @@ def _build_question_screen(
         *[Text("") for _ in range(remaining_h)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)

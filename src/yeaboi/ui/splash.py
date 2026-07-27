@@ -25,6 +25,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
+from yeaboi.ui.shared._components import NEUTRAL_BG
 from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
 logger = logging.getLogger(__name__)
@@ -97,8 +98,11 @@ def _center_in_panel(rendered: Text, *, width: int, height: int, block_h: int) -
         *[Text("") for _ in range(bot_pad)],
     )
 
+    # Neutral dark base — the splash owns its background like every other page,
+    # so all users see the same boot screen regardless of terminal theme.
     return Panel(
         content,
+        style=f"on {NEUTRAL_BG}",
         border_style="white",
         box=rich.box.ROUNDED,
         expand=True,

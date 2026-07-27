@@ -1392,13 +1392,13 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
     """Move/Leave popup shown after the data directory changes; True = move."""
     from rich.align import Align
     from rich.console import Group
-    from rich.panel import Panel
     from rich.text import Text
 
     from yeaboi.ui.shared._components import (
         PAD,
         SETTINGS_THEME,
         build_action_buttons,
+        build_page_panel,
         build_popup,
         settings_title,
     )
@@ -1423,7 +1423,7 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
         lines.append(Text(""))
         btn_top, btn_mid, btn_bot = build_action_buttons(["Move", "Leave"], sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(Panel(Group(*lines), height=h, padding=(1, 2), border_style=SETTINGS_THEME.sep))
+        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
@@ -1448,10 +1448,9 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
     """
     from rich.align import Align
     from rich.console import Group
-    from rich.panel import Panel
     from rich.text import Text
 
-    from yeaboi.ui.shared._components import SETTINGS_THEME, build_action_buttons, build_popup
+    from yeaboi.ui.shared._components import SETTINGS_THEME, build_action_buttons, build_page_panel, build_popup
 
     sel = 0
     while True:
@@ -1469,7 +1468,7 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
         lines.append(Text(""))
         btn_top, btn_mid, btn_bot = build_action_buttons(["Stop", "Leave"], sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(Panel(Group(*lines), height=h, padding=(1, 2), border_style=SETTINGS_THEME.sep))
+        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
@@ -3082,7 +3081,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, polish_feedback, submit_feedback
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_feedback_screen
     from yeaboi.ui.shared._attachments import referenced_images
-    from yeaboi.ui.shared._components import FEEDBACK_THEME, build_popup, feedback_title
+    from yeaboi.ui.shared._components import FEEDBACK_THEME, build_page_panel, build_popup, feedback_title
 
     with mode_log("feedback"):
         logger.info("feedback: page opened")
@@ -3148,7 +3147,6 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             """Popup guard so Esc can't silently destroy a long draft."""
             from rich.align import Align
             from rich.console import Group
-            from rich.panel import Panel
             from rich.text import Text
 
             while True:
@@ -3163,7 +3161,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
                         )
                     )
                 )
-                live.update(Panel(Group(*lines), height=max(10, h - 1), padding=(1, 2)))
+                live.update(build_page_panel(Group(*lines), theme=FEEDBACK_THEME, height=max(10, h - 1)))
                 k = read_key(timeout=frame_time) if supports_timeout else read_key()
                 if not k:
                     continue
@@ -3421,6 +3419,7 @@ def _run_mode_hub(
                 runs,
                 selected,
                 title_fn=title_fn,
+                theme=share_theme,
                 subtitle=subtitle,
                 message=message,
                 width=w,
@@ -4625,14 +4624,96 @@ def _performance_export(engineer: str) -> str:
         return f"Export failed: {e}"
 
 
-def _run_component_select(live, console: Console, read_key, frame_time: float, supports_timeout: bool, grid: dict):
+def _move_analysis_list_cursor(cursor: int, key: str, count: int) -> int:
+    """Single-column list navigation for every Analysis setup picker.
+
+    The setup screens always render one toggle row per line (there is no wide
+    two-column layout), so movement is a plain ±1 with wraparound — the same
+    convention as the standup and reporting pickers."""
+    if count <= 1:
+        return 0
+    if key in ("up", "left", "scroll_up"):
+        return (cursor - 1) % count
+    if key in ("down", "right", "scroll_down"):
+        return (cursor + 1) % count
+    return cursor
+
+
+def _run_analysis_feature_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    available: dict[str, bool],
+    initial_features: list[str] | None = None,
+):
+    """Choose analysis result areas; every runnable area starts selected.
+
+    ``initial_features`` restores a previous selection when the setup wizard
+    re-enters this step (Esc back-navigation)."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _ANALYSIS_FEATURE_KEYS,
+        _build_analysis_feature_screen,
+    )
+
+    runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
+    if not runnable:
+        return "cancel"
+    checked = set(initial_features) & runnable if initial_features is not None else set(runnable)
+    cursor = 0
+    rows = ("all",) + _ANALYSIS_FEATURE_KEYS
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_analysis_feature_screen(
+                available,
+                checked,
+                cursor,
+                width=w,
+                height=h,
+                message=message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
+            cursor = _move_analysis_list_cursor(cursor, key, len(rows))
+        elif key in (" ", "a", "A"):
+            feature = rows[cursor]
+            if feature == "all" or key in ("a", "A"):
+                checked = set() if runnable <= checked else set(runnable)
+            elif feature in runnable:
+                checked.symmetric_difference_update({feature})
+            message = ""
+        elif key == "enter":
+            if not checked:
+                message = "Select at least one analysis area."
+                continue
+            return [feature for feature in _ANALYSIS_FEATURE_KEYS if feature in checked]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _run_component_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    grid: dict,
+    descriptions: dict[str, str] | None = None,
+    initial: dict[str, list[str]] | None = None,
+):
     """Blocking ragged component × sub-source picker.
 
     ``grid`` maps each component ('delivery'/'code'/'docs') to its CONFIGURED
     sub-sources. Returns a ``{component: [selected sub-sources]}`` dict (only
     components with a selection; ready to pass straight to ``run_team_analysis`` as
     ``components=``) or the string ``"cancel"`` on Esc. Everything is checked by
-    default; at least one source overall must stay selected."""
+    default; at least one source overall must stay selected. ``initial`` restores a
+    previous selection on wizard re-entry; a component absent from it (newly enabled
+    by a feature change) defaults to all-checked, matching the first visit."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _COMPONENT_KEYS,
         _build_component_select_screen,
@@ -4641,7 +4722,10 @@ def _run_component_select(live, console: Console, read_key, frame_time: float, s
     rows = [c for c in _COMPONENT_KEYS if grid.get(c)]
     if not rows:  # nothing configured at all
         return "cancel"
-    checked: dict[str, set[int]] = {c: set(range(len(grid[c]))) for c in rows}
+    if initial is None:
+        checked: dict[str, set[int]] = {c: set(range(len(grid[c]))) for c in rows}
+    else:
+        checked = {c: {i for i, s in enumerate(grid[c]) if s in set(initial.get(c, grid[c]))} for c in rows}
     row_idx = 0
     col_idx = 0
     message = ""
@@ -4653,7 +4737,17 @@ def _run_component_select(live, console: Console, read_key, frame_time: float, s
         col_idx = min(col_idx, _ncols(row_idx) - 1)
         w, h = console.size
         live.update(
-            _build_component_select_screen(grid, rows, checked, row_idx, col_idx, width=w, height=h, message=message)
+            _build_component_select_screen(
+                grid,
+                rows,
+                checked,
+                row_idx,
+                col_idx,
+                width=w,
+                height=h,
+                message=message,
+                descriptions=descriptions,
+            )
         )
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
         if kk in ("up", "scroll_up"):
@@ -4677,26 +4771,102 @@ def _run_component_select(live, console: Console, read_key, frame_time: float, s
             return "cancel"
 
 
-def _run_analysis_depth_select(live, console: Console, read_key, frame_time: float, supports_timeout: bool):
-    """Choose Quick/Deep analysis. Quick is preselected; Esc returns ``cancel``."""
+def _run_analysis_depth_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    initial_depth: str = "deep",
+):
+    """Choose Quick/Deep analysis. Deep is preselected; Esc returns ``cancel``."""
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_depth_screen
 
-    selected = 0
+    selected = 0 if initial_depth == "quick" else 1
     while True:
         w, h = console.size
         live.update(_build_analysis_depth_screen(selected, width=w, height=h))
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if key in ("up", "left", "scroll_up"):
-            selected = (selected - 1) % 2
-        elif key in ("down", "right", "scroll_down"):
-            selected = (selected + 1) % 2
+        if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
+            selected = _move_analysis_list_cursor(selected, key, 2)
         elif key == "enter":
             return ("quick", "deep")[selected]
         elif key in ("esc", "q"):
             return "cancel"
 
 
-def _run_member_select(live, console: Console, read_key, frame_time: float, supports_timeout: bool, roster: list):
+def _run_analysis_model_offer(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    preflight,
+    initial_model: str | None = None,
+):
+    """Let an Ollama user explicitly accept a faster installed Analysis model."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_model_offer_screen
+
+    if not preflight.get("offer"):
+        return None
+    selected = 1 if initial_model and initial_model == preflight.get("model") else 0
+    options = (preflight["recommended_model"], preflight["model"])
+    while True:
+        w, h = console.size
+        live.update(
+            _build_analysis_model_offer_screen(
+                preflight["model"],
+                preflight["recommended_model"],
+                int(preflight["predicted_seconds"]),
+                selected,
+                target_seconds=int(preflight.get("target_seconds", 600)),
+                width=w,
+                height=h,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
+            selected = _move_analysis_list_cursor(selected, key, 2)
+        elif key == "enter":
+            return options[selected]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _run_analysis_window_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    initial_days: int = 120,
+):
+    """Choose the changed-content window. 120 days is preselected."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_window_screen
+
+    options = (30, 90, 120, 365)
+    selected = options.index(initial_days) if initial_days in options else 2
+    while True:
+        w, h = console.size
+        live.update(_build_analysis_window_screen(selected, width=w, height=h))
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
+            selected = _move_analysis_list_cursor(selected, key, len(options))
+        elif key == "enter":
+            return options[selected]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _run_member_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    roster: list,
+    initial_members: list[str] | None = None,
+):
     """Blocking roster picker.
 
     Every member starts selected. Returns at least one selected name, ``None`` only
@@ -4704,17 +4874,16 @@ def _run_member_select(live, console: Console, read_key, frame_time: float, supp
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_member_select_screen
 
-    checked: set[int] = set(range(len(roster)))
+    initial = set(initial_members) if initial_members is not None else set(roster)
+    checked: set[int] = {index for index, name in enumerate(roster) if name in initial}
     cursor = 0
     message = ""
     while True:
         w, h = console.size
         live.update(_build_member_select_screen(roster, checked, cursor, width=w, height=h, message=message))
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if kk in ("up", "scroll_up"):
-            cursor = (cursor - 1) % len(roster) if roster else 0
-        elif kk in ("down", "scroll_down"):
-            cursor = (cursor + 1) % len(roster) if roster else 0
+        if kk in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
+            cursor = _move_analysis_list_cursor(cursor, kk, len(roster)) if roster else 0
         elif kk == " " and roster:
             checked.symmetric_difference_update({cursor})
             message = ""
@@ -4728,6 +4897,152 @@ def _run_member_select(live, console: Console, read_key, frame_time: float, supp
             return sorted(roster[i] for i in checked) or None
         elif kk in ("esc", "q"):
             return "cancel"
+
+
+def _run_code_project_select(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    initial_projects: list[str] | None = None,
+) -> list[str] | str:
+    """Discover accessible Azure projects and choose the code scope for this run.
+
+    ``initial_projects`` restores a previous selection on wizard re-entry (discovery
+    itself re-runs; only the checked state carries over)."""
+    import threading
+
+    from yeaboi.config import get_team_analysis_azdo_projects
+    from yeaboi.tools.azure_devops import azdevops_list_projects
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _build_analysis_progress_screen,
+        _build_code_project_select_screen,
+    )
+
+    result: list = [None]
+    error: list[str] = [""]
+    done = threading.Event()
+
+    def _discover() -> None:
+        try:
+            result[0] = azdevops_list_projects()
+        except Exception as exc:
+            error[0] = str(exc)
+            result[0] = list(get_team_analysis_azdo_projects())
+        finally:
+            done.set()
+
+    started = time.monotonic()
+    threading.Thread(target=_discover, name="analysis-azdo-projects", daemon=True).start()
+    tick = 0.0
+    while not done.is_set():
+        tick += frame_time
+        w, h = console.size
+        live.update(
+            _build_analysis_progress_screen(
+                ["Discovering accessible Azure projects…"],
+                width=w,
+                height=h,
+                elapsed=time.monotonic() - started,
+                anim_tick=tick,
+                source="azdo",
+                mode="analysis",
+            )
+        )
+        time.sleep(frame_time)
+
+    projects = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
+    if not projects:
+        return "cancel"
+    if initial_projects is not None:
+        wanted = {name.lower() for name in initial_projects}
+        checked = {idx for idx, name in enumerate(projects) if name.lower() in wanted}
+    else:
+        checked = set()
+    if not checked:
+        defaults = {name.lower() for name in get_team_analysis_azdo_projects()}
+        checked = {idx for idx, name in enumerate(projects) if name.lower() in defaults}
+    if not checked:
+        checked = set(range(len(projects)))
+    cursor = 0
+    message = f"Discovery warning: {error[0]}" if error[0] else ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_code_project_select_screen(
+                projects,
+                checked,
+                cursor,
+                width=w,
+                height=h,
+                message=message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
+            cursor = _move_analysis_list_cursor(cursor, key, len(projects))
+        elif key == " ":
+            checked.symmetric_difference_update({cursor})
+            message = ""
+        elif key in ("a", "A"):
+            checked = set() if len(checked) == len(projects) else set(range(len(projects)))
+            message = ""
+        elif key == "enter":
+            if not checked:
+                message = "Select at least one Azure project."
+                continue
+            return [projects[idx] for idx in sorted(checked)]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _run_analysis_setup_review(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    features: list[str],
+    components: dict[str, list[str]],
+    members: list[str] | None,
+    analysis_scope: dict[str, list[str]],
+    depth: str,
+    window_days: int,
+    model: str | None,
+) -> str:
+    """Review the exact setup payload before starting any analysis work."""
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _build_analysis_setup_review_screen,
+    )
+
+    selected = 0
+    while True:
+        w, h = console.size
+        live.update(
+            _build_analysis_setup_review_screen(
+                features=features,
+                components=components,
+                members=members,
+                analysis_scope=analysis_scope,
+                depth=depth,
+                window_days=window_days,
+                model=model,
+                action_sel=selected,
+                width=w,
+                height=h,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("left", "up", "scroll_up"):
+            selected = 0
+        elif key in ("right", "down", "scroll_down"):
+            selected = 1
+        elif key == "enter":
+            return ("run", "back")[selected]
+        elif key in ("esc", "q"):
+            return "back"
 
 
 def _prefetch_roster(live, console: Console, sources: list, project_key: str, db_path) -> list:
@@ -4795,6 +5110,381 @@ def _prefetch_roster(live, console: Console, sources: list, project_key: str, db
     return names_box[0] or []
 
 
+def _prefetch_roster_result(live, console: Console, sources: list, project_key: str, db_path):
+    """Status-aware roster lookup used by Analysis setup."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from yeaboi.analysis import get_team_roster_result
+    from yeaboi.team_roster import RosterResult
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_analysis_progress_screen
+
+    result_box: list = [None]
+
+    def _work():
+        source_results = []
+        if sources:
+            with ThreadPoolExecutor(
+                max_workers=min(2, len(sources)),
+                thread_name_prefix="analysis-roster",
+            ) as executor:
+                futures = {
+                    executor.submit(
+                        get_team_roster_result,
+                        source,
+                        project_key if len(sources) == 1 else "",
+                        db_path=db_path,
+                    ): source
+                    for source in sources
+                }
+                for future in as_completed(futures):
+                    source = futures[future]
+                    try:
+                        source_results.append(future.result())
+                    except Exception as exc:
+                        logger.warning("Roster prefetch failed for %s: %s", source, exc)
+        provider_results = tuple(provider for result in source_results for provider in result.sources)
+        members_by_name = {}
+        for result in source_results:
+            for member in result.members:
+                members_by_name.setdefault(member.name.casefold(), member)
+        members = tuple(sorted(members_by_name.values(), key=lambda item: item.name.casefold()))
+        warnings = tuple(warning for result in source_results for warning in result.warnings)
+        if sources and not source_results:
+            status = "failed"
+        elif any(result.status in {"failed", "partial"} for result in source_results):
+            status = "partial" if members else "failed"
+        elif members:
+            status = "complete"
+        else:
+            status = "empty"
+        result_box[0] = RosterResult(members, status, provider_results, warnings)
+
+    done = threading.Event()
+
+    def _runner():
+        try:
+            _work()
+        finally:
+            done.set()
+
+    started = time.monotonic()
+    threading.Thread(target=_runner, daemon=True).start()
+    tick = 0.0
+    while not done.is_set():
+        tick += _FRAME_TIME
+        w, h = console.size
+        labels = ", ".join("Azure DevOps" if source == "azdevops" else source.title() for source in sources)
+        live.update(
+            _build_analysis_progress_screen(
+                [f"Fetching team members · {labels or 'tracker'}"],
+                width=w,
+                height=h,
+                elapsed=time.monotonic() - started,
+                anim_tick=tick,
+                source=sources[0] if sources else "",
+                mode="analysis",
+            )
+        )
+        time.sleep(_FRAME_TIME)
+    return result_box[0] or RosterResult((), "failed", (), ("Roster lookup did not complete",))
+
+
+def _run_analysis_roster_lookup(
+    live,
+    console: Console,
+    read_key,
+    sources: list,
+    project_key: str,
+    db_path,
+):
+    """Retry a failed lookup explicitly; never convert failure into unscoped analysis."""
+    from rich.align import Align
+    from rich.panel import Panel
+    from rich.text import Text
+
+    from yeaboi.ui.shared._components import ANALYSIS_THEME, build_page_panel
+
+    while True:
+        result = _prefetch_roster_result(live, console, sources, project_key, db_path)
+        if result.status != "failed":
+            return result
+        body = Text()
+        body.append("Team members could not be loaded.\n\n", style="bold")
+        body.append("\n".join(result.warnings) or "The selected tracker did not return a roster.")
+        body.append("\n\nEnter / R  Retry     Esc  Back", style="dim")
+        w, h = console.size
+        # Wrap the dialog in a full-screen page panel: with an Align root,
+        # MusicLive's unstyled-Panel safety net never fires, so the terminal's
+        # own background would bleed through around the popup.
+        live.update(
+            build_page_panel(
+                Align.center(
+                    Panel(body, title="Analysis · Team members", width=min(76, max(40, w - 4))),
+                    vertical="middle",
+                ),
+                theme=ANALYSIS_THEME,
+                height=max(10, h - 1),
+            )
+        )
+        key = read_key()
+        if key in ("enter", "r", "R"):
+            continue
+        return None
+
+
+# The Analysis setup flow is a WIZARD: an ordered tuple of steps, each with an
+# applicability predicate over the live selections. This replaces two duplicated
+# ~200-line linear call sequences whose Esc handling fell out of the restart
+# loops (and exited the app). Esc/"cancel" moves the index backward; steps whose
+# predicate no longer holds are transparent in BOTH directions, so backing over
+# e.g. the model offer after switching to Quick depth skips it cleanly.
+_WIZARD_STEPS = ("features", "sources", "code_projects", "depth", "model", "window", "members", "review")
+
+
+def _run_analysis_setup_wizard(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    grid: dict[str, list[str]],
+    roster_fallback: list[str],
+    project_key: str = "",
+    db_path=None,
+) -> dict | None:
+    """Walk the Analysis setup steps with Esc-back navigation and state carry-over.
+
+    ``grid`` is the FULL configured component → sub-source map (pre feature
+    filtering); ``roster_fallback`` names the delivery trackers to fetch the
+    roster from when no delivery component is selected. Returns the run config
+    dict, or ``None`` when the user backs out of the first step (the caller
+    returns to the analysis landing screen).
+
+    Choices for steps that later become inapplicable stay in ``state`` (so
+    re-enabling a feature restores them) but ``_config()`` coerces them out of
+    the run payload — a stale Deep depth can never leak into a docs-only run."""
+    state: dict = {
+        "features": None,
+        "components": None,
+        "azdo_projects": None,
+        "depth": "deep",
+        "model": None,
+        "window_days": 120,
+        "members": None,
+        "roster": None,
+        "roster_key": None,
+    }
+    preflight_box: list = [None]  # ollama preflight, probed at most once per wizard run
+
+    def _feature_set() -> set[str]:
+        return set(state["features"] or [])
+
+    def _filtered_grid() -> dict[str, list[str]]:
+        fs = _feature_set()
+        return {
+            "delivery": grid["delivery"] if "delivery" in fs else [],
+            "code": grid["code"] if fs & {"ai_footprint", "code_health"} else [],
+            "docs": grid["docs"] if "documentation" in fs else [],
+        }
+
+    def _preflight() -> dict:
+        if preflight_box[0] is None:
+            from yeaboi.analysis.llm_runtime import get_ollama_analysis_preflight
+
+            preflight_box[0] = get_ollama_analysis_preflight(db_path)
+        return preflight_box[0]
+
+    def _depth_applicable() -> bool:
+        return bool(_feature_set() & {"delivery", "ai_footprint"})
+
+    def _effective_depth() -> str:
+        return state["depth"] if _depth_applicable() else "quick"
+
+    def _applicable(step: str) -> bool:
+        fs = _feature_set()
+        comps = state["components"] or {}
+        if step in ("features", "sources", "review"):
+            return True
+        if step == "code_projects":
+            return bool(fs & {"ai_footprint", "code_health"}) and "azdo" in (comps.get("code") or [])
+        if step == "depth":
+            return _depth_applicable()
+        if step == "model":
+            return _effective_depth() == "deep" and bool(_preflight().get("offer"))
+        if step == "window":
+            return bool(fs & {"ai_footprint", "code_health", "documentation"})
+        if step == "members":
+            return bool(fs & {"delivery", "ai_footprint", "code_health"})
+        return False
+
+    def _config() -> dict:
+        comps = state["components"] or {}
+        members = state["members"] if _applicable("members") else None
+        trackers = comps.get("delivery") or roster_fallback
+        return {
+            "features": state["features"],
+            "components": comps,
+            "analysis_scope": (
+                {"azdo": state["azdo_projects"]} if _applicable("code_projects") and state["azdo_projects"] else {}
+            ),
+            "depth": _effective_depth(),
+            "model": state["model"] if _applicable("model") else None,
+            "window_days": state["window_days"] if _applicable("window") else 120,
+            "members": members,
+            "members_map": {tracker: members for tracker in trackers} if members else None,
+        }
+
+    def _members_step(direction: int) -> str:
+        sources = (state["components"] or {}).get("delivery") or roster_fallback
+        key = tuple(sources)
+        if state["roster_key"] != key:  # cache — don't re-fetch on back/forward
+            result = _run_analysis_roster_lookup(live, console, read_key, sources, project_key, db_path)
+            if result is None:  # lookup failed and the user declined the retry
+                return "back"
+            state["roster"] = [member.name for member in result.members]
+            state["roster_key"] = key
+            state["members"] = None  # roster changed — the old subset is invalid
+        if not state["roster"]:
+            # Nothing to pick: stay transparent in the direction of travel so Esc
+            # from review doesn't ping-pong against an auto-advancing step.
+            return "next" if direction >= 0 else "back"
+        selected = _run_member_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            state["roster"],
+            initial_members=state["members"],
+        )
+        if selected == "cancel":
+            return "back"
+        state["members"] = selected
+        return "next"
+
+    def _run_step(step: str, direction: int) -> str:
+        if step == "features":
+            chosen = _run_analysis_feature_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                {
+                    "delivery": bool(grid["delivery"]),
+                    "ai_footprint": bool(grid["code"]),
+                    "code_health": bool(grid["code"]),
+                    "documentation": bool(grid["docs"]),
+                },
+                initial_features=state["features"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["features"] = chosen
+            return "next"
+        if step == "sources":
+            fs = _feature_set()
+            chosen = _run_component_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                _filtered_grid(),
+                descriptions={
+                    "code": (
+                        "AI footprint + selected-user code-change health"
+                        if fs >= {"ai_footprint", "code_health"}
+                        else "detectable AI markers in selected-user activity"
+                        if "ai_footprint" in fs
+                        else "selected-user code-change health"
+                    )
+                },
+                initial=state["components"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["components"] = chosen
+            return "next"
+        if step == "code_projects":
+            chosen = _run_code_project_select(
+                live,
+                console,
+                read_key,
+                frame_time,
+                supports_timeout,
+                initial_projects=state["azdo_projects"],
+            )
+            if chosen == "cancel":
+                return "back"
+            state["azdo_projects"] = chosen
+            return "next"
+        if step == "depth":
+            chosen = _run_analysis_depth_select(
+                live, console, read_key, frame_time, supports_timeout, initial_depth=state["depth"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["depth"] = chosen
+            return "next"
+        if step == "model":
+            chosen = _run_analysis_model_offer(
+                live, console, read_key, frame_time, supports_timeout, _preflight(), initial_model=state["model"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["model"] = chosen
+            return "next"
+        if step == "window":
+            chosen = _run_analysis_window_select(
+                live, console, read_key, frame_time, supports_timeout, initial_days=state["window_days"]
+            )
+            if chosen == "cancel":
+                return "back"
+            state["window_days"] = chosen
+            return "next"
+        if step == "members":
+            return _members_step(direction)
+        config = _config()
+        verdict = _run_analysis_setup_review(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            features=config["features"],
+            components=config["components"],
+            members=config["members"],
+            analysis_scope=config["analysis_scope"],
+            depth=config["depth"],
+            window_days=config["window_days"],
+            model=config["model"],
+        )
+        return "run" if verdict == "run" else "back"
+
+    index = 0
+    direction = 1
+    while True:
+        step = _WIZARD_STEPS[index]
+        if not _applicable(step):
+            index += direction  # inapplicable steps are transparent in both directions
+            continue
+        outcome = _run_step(step, direction)
+        logger.info("Analysis setup wizard: step=%s outcome=%s", step, outcome)
+        if outcome == "run":
+            return _config()
+        if outcome == "back":
+            if index == 0:
+                return None  # Esc on the first step → analysis landing screen
+            direction = -1
+            index -= 1
+        else:
+            direction = 1
+            index += 1
+
+
 def _run_team_analysis_results(
     live,
     console: Console,
@@ -4810,9 +5500,11 @@ def _run_team_analysis_results(
     code: dict | None = None,
     docs: dict | None = None,
     comparison: list | None = None,
+    analysis_features: list[str] | None = None,
     active_box: list | None = None,
     source: str = "",
     project_key: str = "",
+    retry_config: dict | None = None,
 ) -> str:
     """Event loop for the team-analysis results screen (overview + section cards).
 
@@ -4834,7 +5526,9 @@ def _run_team_analysis_results(
 
     delivery_order = list(delivery.keys()) if delivery else []
     code_signal = code.get("signal") if code else None
+    code_examples = code.get("examples") if code else None
     doc_signal = docs.get("signal") if docs else None
+    doc_examples = docs.get("examples") if docs else {}
     src_idx = 0
     base_team_name = team_name  # caller-passed fallback; never let one tracker's team bleed into another
     # Fallback source/project for a delivery-off single-source run (profile is None).
@@ -4855,6 +5549,24 @@ def _run_team_analysis_results(
         getattr(profile, "source", "") or base_source,
         getattr(profile, "project_key", "") or base_project,
     )
+
+    def _failed_features() -> list[str]:
+        failed: list[str] = []
+        if code_examples:
+            enabled = set(code_examples.get("enabled_features") or ())
+            if "ai_footprint" in enabled and code_examples.get("activity_coverage", {}).get("status") in {
+                "partial",
+                "failed",
+            }:
+                failed.append("ai_footprint")
+            if "code_health" in enabled and code_examples.get("coverage_report", {}).get("status") in {
+                "partial",
+                "failed",
+            }:
+                failed.append("code_health")
+        if doc_examples.get("coverage_report", {}).get("status") in {"partial", "failed"}:
+            failed.append("documentation")
+        return failed
 
     def _anon_doc() -> tuple[str, str]:
         from yeaboi.team_profile_exporter import build_team_profile_markdown
@@ -4891,6 +5603,9 @@ def _run_team_analysis_results(
                 if view == "overview"
                 else ["Back", "Export", "Share Online", "Anonymize", "Continue"]
             )
+        retry_features = _failed_features()
+        if retry_config and retry_features:
+            actions.insert(1, "Retry failed")
         if anon is not None and "Anonymize" in actions:  # swap Anonymize → Adjust + Revert while masked
             i = actions.index("Anonymize")
             actions[i : i + 1] = ["Adjust", "Revert"]
@@ -4898,8 +5613,19 @@ def _run_team_analysis_results(
         _pa = getattr(profile, "ai_adoption", None)
         _pd = getattr(profile, "doc_quality", None)
         _has_code = code_signal is not None or bool(_pa and (_pa.scanned_commits + _pa.scanned_prs) > 0)
+        _has_code_health = bool(
+            (code_examples or {}).get("repository_health")
+            or (examples or {}).get("ai_adoption", {}).get("repository_health")
+            or (code is not None and "code_health" in set(analysis_features or ()))
+        )
         _has_docs = doc_signal is not None or bool(_pd and _pd.pages_scanned > 0)
-        order = visible_card_order(profile, _has_code, _has_docs)
+        order = visible_card_order(
+            profile,
+            _has_code,
+            _has_docs,
+            has_code_health=_has_code_health,
+            analysis_features=analysis_features,
+        )
 
         # When anonymized, render from a masked copy of the profile (and its sample
         # ``examples``) so the SAME cards/tables re-render with only the words swapped.
@@ -4934,7 +5660,10 @@ def _run_team_analysis_results(
                 source=cur_source,
                 project_key=cur_project,
                 code_signal=code_signal,
+                code_examples=code_examples,
                 doc_signal=doc_signal,
+                doc_examples=doc_examples,
+                analysis_features=analysis_features,
             )
         )
 
@@ -4971,6 +5700,87 @@ def _run_team_analysis_results(
                 view = "overview"
                 scroll = 0
                 sel = 0
+            elif act == "Retry failed":
+                import threading
+
+                retry_progress: list = []
+                retry_result: list = [None]
+                retry_error: list[str] = [""]
+                retry_done = threading.Event()
+
+                def _retry():
+                    try:
+                        from yeaboi.analysis import run_team_analysis
+
+                        configured_components = retry_config.get("components", {})
+                        retry_components = {
+                            "delivery": [],
+                            "code": (
+                                configured_components.get("code", [])
+                                if set(retry_features) & {"ai_footprint", "code_health"}
+                                else []
+                            ),
+                            "docs": (
+                                configured_components.get("docs", []) if "documentation" in retry_features else []
+                            ),
+                        }
+                        retry_result[0] = run_team_analysis(
+                            source=retry_config.get("source", ""),
+                            project_key=retry_config.get("project_key", ""),
+                            team_name=retry_config.get("team_name", ""),
+                            analysis_depth=retry_config.get("analysis_depth", "deep"),
+                            analysis_window_days=retry_config.get("analysis_window_days", 120),
+                            analysis_scope=retry_config.get("analysis_scope"),
+                            analysis_model=retry_config.get("analysis_model"),
+                            analysis_features=retry_features,
+                            components=retry_components,
+                            members=retry_config.get("members"),
+                            progress=retry_progress,
+                            db_path=retry_config.get("db_path"),
+                        )
+                    except Exception as exc:
+                        retry_error[0] = str(exc)
+                    finally:
+                        retry_done.set()
+
+                threading.Thread(target=_retry, daemon=True).start()
+                retry_started = time.monotonic()
+                while not retry_done.is_set():
+                    from yeaboi.ui.mode_select.screens._screens_secondary import (
+                        _build_analysis_progress_screen,
+                    )
+
+                    w, h = console.size
+                    live.update(
+                        _build_analysis_progress_screen(
+                            retry_progress,
+                            width=w,
+                            height=h,
+                            elapsed=time.monotonic() - retry_started,
+                            anim_tick=time.monotonic() - retry_started,
+                            source=source,
+                            mode="analysis",
+                        )
+                    )
+                    time.sleep(frame_time)
+                if retry_error[0]:
+                    logger.warning("Retry failed analyses: %s", retry_error[0])
+                    continue
+                retried = retry_result[0] or {}
+                code = retried.get("code") or code
+                docs = retried.get("docs") or docs
+                code_signal = code.get("signal") if code else None
+                code_examples = code.get("examples") if code else None
+                doc_signal = docs.get("signal") if docs else None
+                doc_examples = docs.get("examples") if docs else {}
+                if delivery:
+                    from yeaboi.analysis.engine import _persist_delivery
+
+                    _persist_delivery(delivery, code, docs, retry_config.get("db_path"))
+                view = "overview"
+                scroll = 0
+                sel = 0
+                card_idx = 0
             elif act == "Export":
                 logger.info("Analysis results: Export pressed (view=%s)", view)
                 if anon is not None:  # export the masked copy, matching the screen
@@ -7062,6 +7872,567 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
             return
 
 
+def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
+    """Poker setup wizard: source → scope → sprint → ticket types → fetch.
+
+    Returns ``{"source", "scope_label", "tickets"}`` ready for the live page, or
+    None when the user backs out. Each step is a view of ``_build_poker_screen``
+    (the dict-driven picker convention); the ticket fetch runs on a worker
+    thread behind the shared progress screen because it makes tracker network
+    calls that can take seconds.
+    """
+    from yeaboi.poker import tickets as poker_tickets
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+    anim_start = time.monotonic()
+
+    def _pick(title: str, hint: str, options: list[tuple[str, str]], preselect: int = 0) -> int | None:
+        """Arrow-key option picker. Returns the chosen index, or None on back/esc."""
+        sel = max(0, min(preselect, len(options) - 1))
+        action_sel = 0
+        actions = ["Select", "Back"]
+
+        def _render() -> None:
+            w, h = console.size
+            elapsed = time.monotonic() - anim_start
+            live.update(
+                _build_poker_screen(
+                    {
+                        "subtitle": "Set up a poker session",
+                        "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
+                        "actions": actions,
+                    },
+                    width=w,
+                    height=max(10, h - 1),
+                    action_sel=action_sel,
+                    shimmer_tick=elapsed,
+                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                )
+            )
+
+        _render()
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k == "up":
+                sel = max(0, sel - 1)
+            elif k == "down":
+                sel = min(len(options) - 1, sel + 1)
+            elif k == "left":
+                action_sel = max(0, action_sel - 1)
+            elif k == "right":
+                action_sel = min(len(actions) - 1, action_sel + 1)
+            elif k in ("enter", " "):
+                if actions[action_sel] == "Back":
+                    return None
+                return sel
+            elif k in ("esc", "q"):
+                return None
+            _render()
+
+    def _toggle(title: str, hint: str, options: list[tuple[str, str]], checked: set[int]) -> set[int] | None:
+        """Multi-select toggle on the same pick view (space flips, enter continues).
+
+        The pick view has no checkbox concept — the [✓]/[ ] state is baked
+        into the option labels on every render, the same trick the standup
+        source multi-select uses. Returns the checked set, or None on back.
+        """
+        sel = 0
+        action_sel = 0
+        actions = ["Continue", "Back"]
+        warn = ""
+
+        def _render() -> None:
+            w, h = console.size
+            elapsed = time.monotonic() - anim_start
+            opts = [(("[✓] " if i in checked else "[ ] ") + label, sub) for i, (label, sub) in enumerate(options)]
+            live.update(
+                _build_poker_screen(
+                    {
+                        "subtitle": "Set up a poker session",
+                        "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
+                        "actions": actions,
+                    },
+                    width=w,
+                    height=max(10, h - 1),
+                    action_sel=action_sel,
+                    shimmer_tick=elapsed,
+                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                )
+            )
+
+        _render()
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k == "up":
+                sel = max(0, sel - 1)
+            elif k == "down":
+                sel = min(len(options) - 1, sel + 1)
+            elif k == "left":
+                action_sel = max(0, action_sel - 1)
+            elif k == "right":
+                action_sel = min(len(actions) - 1, action_sel + 1)
+            elif k == " ":
+                checked ^= {sel}
+                warn = ""
+            elif k == "enter":
+                if actions[action_sel] == "Back":
+                    return None
+                if not checked:
+                    warn = "Select at least one type."
+                else:
+                    return checked
+            elif k in ("esc", "q"):
+                return None
+            _render()
+
+    # ── Step 1: source (Jira / Azure DevOps / Demo) ───────────────────────
+    sources = poker_tickets.available_sources()
+    options = [(poker_tickets.source_label(s), "") for s in sources]
+    # Demo is always offered last — a no-tracker playground (write-back is a no-op).
+    options.append(("Demo tickets", "no tracker needed — try the flow with sample tickets"))
+    hint = (
+        "Both boards are configured — pick which one this session estimates against."
+        if len(sources) > 1
+        else ("No tracker configured — add Jira or Azure DevOps credentials in Settings." if not sources else "")
+    )
+    idx = _pick("Where do the tickets come from?", hint, options)
+    if idx is None:
+        return None
+    source = sources[idx] if idx < len(sources) else poker_tickets.SOURCE_DEMO
+    logger.info("poker setup: source=%s", source)
+
+    sprint = None
+    scope_label = "Demo"
+    if source != poker_tickets.SOURCE_DEMO:
+        # ── Step 2: scope (a sprint or the backlog) ───────────────────────
+        idx = _pick(
+            "Which tickets should the team estimate?",
+            "",
+            [("A sprint", "pick one from the board's sprint list"), ("The backlog", "open items not in any sprint")],
+        )
+        if idx is None:
+            return None
+        if idx == 0:
+            # ── Step 3: sprint list ───────────────────────────────────────
+            sprints = poker_tickets.list_sprints(source)
+            if not sprints:
+                logger.warning("poker setup: no sprints found for %s", source)
+                _pick(
+                    "No sprints found",
+                    "Check the board's credentials/logs, or estimate the backlog instead.",
+                    [("Back", "")],
+                )
+                return None
+            sprint_opts = [
+                (
+                    s.get("name", "?"),
+                    " · ".join(p for p in (s.get("start_date"), s.get("end_date"), s.get("state")) if p),
+                )
+                for s in sprints
+            ]
+            active = next((i for i, s in enumerate(sprints) if s.get("state") == "active"), len(sprints) - 1)
+            idx = _pick("Which sprint?", "", sprint_opts, preselect=active)
+            if idx is None:
+                return None
+            sprint = sprints[idx]
+            scope_label = sprint.get("name", "Sprint")
+        else:
+            scope_label = "Backlog"
+    logger.info("poker setup: scope=%s", scope_label)
+
+    # ── Step 4: ticket types (multi-toggle; demo skips) ───────────────────
+    include_types: tuple[str, ...] | None = None
+    if source != poker_tickets.SOURCE_DEMO:
+        if source == poker_tickets.SOURCE_JIRA:
+            sublabels = {"story": "issuetype Story", "bug": "issuetype Bug", "task": "issuetype Task"}
+            type_hint = "Space toggles · Sub-tasks are never included."
+        else:
+            sublabels = {
+                "story": "User Story / Product Backlog Item",
+                "bug": "Bug",
+                "task": "child tasks — usually not estimated",
+            }
+            type_hint = "Space toggles · pick the work-item types to estimate."
+        type_defaults = poker_tickets.default_include_types(source)
+        checked = _toggle(
+            "Which ticket types should be estimated?",
+            type_hint,
+            [(poker_tickets.TICKET_TYPE_LABELS[t], sublabels[t]) for t in poker_tickets.TICKET_TYPES],
+            {i for i, t in enumerate(poker_tickets.TICKET_TYPES) if t in type_defaults},
+        )
+        if checked is None:
+            return None
+        include_types = tuple(t for i, t in enumerate(poker_tickets.TICKET_TYPES) if i in checked)
+        logger.info("poker setup: include_types=%s", ",".join(include_types))
+
+    # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
+    import threading as _thr
+
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+    from yeaboi.ui.shared._components import POKER_THEME, poker_title
+
+    result: dict = {}
+    progress = [f"Fetching tickets from {poker_tickets.source_label(source)} ({scope_label})"]
+
+    def _fetch() -> None:
+        result["tickets"] = poker_tickets.fetch_tickets(source, sprint=sprint, include_types=include_types)
+
+    worker = _thr.Thread(target=_fetch, name="poker-fetch", daemon=True)
+    started = time.monotonic()
+    worker.start()
+    while worker.is_alive():
+        w, h = console.size
+        elapsed = time.monotonic() - started
+        live.update(
+            _build_standup_progress_screen(
+                progress,
+                width=w,
+                height=max(10, h - 1),
+                elapsed=elapsed,
+                anim_tick=elapsed,
+                theme=POKER_THEME,
+                title=poker_title(),
+                label="Fetching tickets",
+            )
+        )
+        read_key(timeout=frame_time) if supports_timeout else time.sleep(frame_time)
+    tickets = result.get("tickets") or []
+    if not tickets:
+        logger.warning("poker setup: no tickets fetched (source=%s scope=%s)", source, scope_label)
+        _pick(
+            "No tickets found",
+            f"{poker_tickets.source_label(source)} returned nothing for {scope_label} — check credentials (see logs).",
+            [("Back", "")],
+        )
+        return None
+    logger.info("poker setup: fetched %d ticket(s)", len(tickets))
+    return {"source": source, "scope_label": scope_label, "tickets": tickets}
+
+
+def _run_poker_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Event loop for the collaborative Scrum Poker page.
+
+    Runs the setup wizard (source → sprint/backlog → fetch), then starts the LAN
+    web server so teammates can vote from a browser. Like retro, the TUI is a
+    monitoring view refreshed every frame; the host DRIVES the session (reveal /
+    finalize / edit / AI) from their own browser via the private admin link —
+    duplicating those controls in the terminal would double the admin surface.
+    Buttons: [Share Remotely, Export, Close]. On exit the session is flushed to
+    PokerStore and the server torn down (in a finally, so Ctrl-C still persists).
+
+    # See docs: "Poker" — TUI page, LAN collaboration
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+
+    setup = _run_poker_setup(console, live, read_key, frame_time, supports_timeout)
+    if setup is None:
+        return
+
+    anim_start = time.monotonic()
+    _scroll_meta: dict = {}
+
+    def _render(data: dict, scroll: int, sel: int) -> None:
+        w, h = console.size
+        elapsed = time.monotonic() - anim_start
+        live.update(
+            _build_poker_screen(
+                data,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                action_sel=sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            )
+        )
+
+    # A poker session doesn't need a planning session to exist — fall back to a
+    # stable quick-session id so history still records and groups sensibly.
+    session_id, session_name, project_name, _sprint = _resolve_retro_session()
+    if not session_id:
+        session_id, session_name, project_name = "quick-poker", "", ""
+
+    from yeaboi.config import get_poker_server_port
+    from yeaboi.poker.board import PokerBoard, board_to_report
+    from yeaboi.poker.server import PokerServer
+    from yeaboi.poker.store import PokerStore
+
+    board = PokerBoard(
+        session_id,
+        project_name=project_name,
+        source=setup["source"],
+        scope_label=setup["scope_label"],
+        tickets=setup["tickets"],
+    )
+    server = PokerServer(board, port=get_poker_server_port())
+    try:
+        server.start()
+        logger.info("poker: server started on port %s (session=%s)", server.port, session_id)
+    except OSError as e:
+        logger.error("poker: failed to start server: %s", e, exc_info=True)
+        data = {
+            "session_name": session_name,
+            "message": f"Could not start the poker server: {e}",
+            "state": board.state_snapshot(),
+            "actions": ["Close"],
+        }
+        _render(data, 0, 0)
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k in ("enter", " ", "esc", "q"):
+                return
+            _render(data, 0, 0)
+
+    logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
+    scroll, sel = 0, 0
+    message = "Server ready — open the Host link in your browser to run the session; share the code with the team."
+
+    import threading as _thr
+
+    remote: dict = {"tunnel": None, "url": "", "status": "", "active": False, "starting": False}
+
+    def _start_remote() -> None:
+        def _worker() -> None:
+            try:
+                from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+
+                remote["status"] = "Setting up remote link — fetching cloudflared (first use, ~40MB)…"
+                binary = ensure_cloudflared()
+                if binary is None:
+                    logger.warning("poker: remote link failed — could not obtain cloudflared binary")
+                    remote["status"] = "Remote link failed — could not obtain cloudflared (see logs)."
+                    return
+                remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
+                tunnel = CloudflareTunnel(server.port, binary=binary)
+                public = tunnel.start(timeout=45)
+                if not public:
+                    tunnel.stop()
+                    logger.warning("poker: remote link failed — tunnel did not start within timeout")
+                    remote["status"] = "Remote link failed — tunnel did not start (see logs)."
+                    return
+                logger.info("poker: remote tunnel ready (port=%s)", server.port)
+                remote["tunnel"] = tunnel
+                remote["url"] = f"{public}/"
+                remote["active"] = True
+                remote["status"] = "Remote link ready — share the Remote URL with off-network teammates."
+            except Exception as e:
+                logger.error("poker: remote tunnel setup failed: %s", e, exc_info=True)
+                remote["status"] = f"Remote link failed — {e}"
+            finally:
+                remote["starting"] = False
+
+        logger.info("poker: Share Remotely pressed — starting tunnel setup (session=%s)", session_id)
+        remote["starting"] = True
+        remote["status"] = "Setting up remote link…"
+        _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
+
+    def _stop_remote() -> None:
+        logger.info("poker: Stop Sharing pressed — stopping remote tunnel (session=%s)", session_id)
+        tunnel = remote.get("tunnel")
+        if tunnel is not None:
+            tunnel.stop()
+        remote.update({"tunnel": None, "url": "", "active": False, "starting": False})
+        remote["status"] = "Remote link stopped — LAN sharing still on."
+
+    def _share_label() -> str:
+        if remote["active"]:
+            return "Stop Sharing"
+        if remote["starting"]:
+            return "Sharing…"
+        return "Share Remotely"
+
+    def _actions() -> list[str]:
+        return [_share_label(), "Export", "Close"]
+
+    def _data() -> dict:
+        return {
+            "session_name": session_name or setup["scope_label"],
+            "display_code": server.display_code,
+            "url": server.share_url,
+            "host_url": server.url,
+            "public_url": remote["url"],
+            "message": remote["status"] or message,
+            "state": board.state_snapshot(),
+            "actions": _actions(),
+        }
+
+    def _poker_document() -> tuple[str, str]:
+        from yeaboi.poker.export import build_poker_markdown
+
+        report = board_to_report(board)
+        name = project_name or session_name or setup["scope_label"]
+        return (f"Poker — {name}" if name else "Poker", build_poker_markdown(report))
+
+    try:
+        _render(_data(), scroll, sel)
+        while True:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if k in SCROLL_KEYS:
+                _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
+                if _ns == scroll:
+                    continue
+                scroll = _ns
+            elif k == "left":
+                sel = max(0, sel - 1)
+            elif k == "right":
+                sel = min(len(_actions()) - 1, sel + 1)
+            elif k in ("enter", " "):
+                acts = _actions()
+                label = acts[sel] if sel < len(acts) else "Close"
+                if label == "Close":
+                    break
+                if label in ("Share Remotely", "Stop Sharing", "Sharing…"):
+                    if remote["active"]:
+                        _stop_remote()
+                    elif not remote["starting"]:
+                        _start_remote()
+                    scroll = 0
+                elif label == "Export":
+                    logger.info("poker: Export pressed (session=%s)", session_id)
+
+                    def _poker_files() -> str:
+                        try:
+                            from yeaboi.poker.export import export_poker
+
+                            report = board_to_report(board)
+                            paths = export_poker(report, project_name=project_name or session_name)
+                            logger.info("poker: exported to %s", paths["markdown"].parent)
+                            return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
+                        except Exception as e:
+                            logger.error("poker: export failed: %s", e, exc_info=True)
+                            return f"Export failed: {e}"
+
+                    msg = _export_via_picker(
+                        console,
+                        live,
+                        read_key,
+                        frame_time,
+                        supports_timeout,
+                        mode="poker",
+                        files_export=_poker_files,
+                        get_document=_poker_document,
+                    )
+                    if msg is not None:
+                        message = msg
+                        scroll = 0
+            elif k in ("esc", "q"):
+                break
+            _render(_data(), scroll, sel)
+    finally:
+        # Always flush the session and tear the server down — even on exception
+        # or Ctrl-C — so the estimates' record persists and no process leaks.
+        try:
+            report = board_to_report(board)
+            with PokerStore(_ana_dbp) as store:
+                store.record_run(report)
+        except Exception as e:
+            logger.warning("poker: flush to store failed: %s", e)
+        if remote.get("tunnel") is not None:
+            remote["tunnel"].stop()
+        server.stop()
+        logger.info("poker: page closed for session=%s", session_id)
+
+
+def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
+    """Poker saved-runs hub → landing for the Poker card.
+
+    Opening a saved session renders the recorded report as a read-only snapshot;
+    "+ New session" runs the setup wizard + live page.
+    """
+    from yeaboi.persistence import _relative_time
+    from yeaboi.poker.export import _title, build_poker_markdown, export_poker
+    from yeaboi.poker.store import PokerStore
+    from yeaboi.ui.mode_select.screens._project_cards import RunSummary
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
+    from yeaboi.ui.shared._components import POKER_THEME, poker_title
+
+    def _report(run_id: int):
+        with PokerStore(_ana_dbp) as store:
+            return store.get_run_by_id(run_id)
+
+    def load_runs():
+        with PokerStore(_ana_dbp) as store:
+            rows = store.get_all_history(100)
+        out = []
+        for r in rows:
+            date = r.get("poker_date") or ""
+            scope = r.get("scope_label") or ""
+            n, done = r.get("ticket_count", 0), r.get("estimated_count", 0)
+            sub = " · ".join(p for p in (scope, f"{done}/{n} estimated") if p)
+            out.append(
+                RunSummary(
+                    "poker",
+                    r["id"],
+                    f"Poker — {date or _relative_time(r['run_at'])}",
+                    sub,
+                    _relative_time(r["run_at"]),
+                    session_id=r.get("session_id", ""),
+                )
+            )
+        return out
+
+    def make_detail(run):
+        report = _report(run.run_id)
+        if report is None:
+            return None
+
+        def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
+            return _build_poker_screen(
+                {
+                    "report": report,
+                    "session_name": report.project_name or report.scope_label,
+                    "snapshot": True,
+                    "actions": actions,
+                    "message": message,
+                },
+                scroll_offset=scroll,
+                scroll_meta=scroll_meta,
+                action_sel=action_sel,
+                width=width,
+                height=height,
+                shimmer_tick=shimmer_tick,
+            )
+
+        return render
+
+    def files_export(run):
+        report = _report(run.run_id)
+        if report is None:
+            return "That run is no longer available."
+        paths = export_poker(report)
+        return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
+
+    def get_document(run):
+        report = _report(run.run_id)
+        return "That run is no longer available." if report is None else (_title(report), build_poker_markdown(report))
+
+    def delete_run(run):
+        with PokerStore(_ana_dbp) as store:
+            store.delete_run(run.run_id)
+
+    _run_mode_hub(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        mode="poker",
+        title_fn=poker_title,
+        subtitle="Saved poker sessions",
+        empty_title="No poker sessions yet",
+        empty_subtitle="Press Enter to start estimating tickets with your team",
+        new_label="+ New session",
+        load_runs=load_runs,
+        make_detail=make_detail,
+        files_export=files_export,
+        get_document=get_document,
+        share_theme=POKER_THEME,
+        delete_run=delete_run,
+        run_new=lambda: _run_poker_page(console, live, read_key, frame_time, supports_timeout),
+    )
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -7856,6 +9227,7 @@ def select_mode(
 
                         from yeaboi.analysis import run_team_analysis
                         from yeaboi.analysis.engine import (
+                            AnalysisCancelledError,
                             _available_code_sources,
                             _available_doc_sources,
                             _available_sources,
@@ -7863,48 +9235,45 @@ def select_mode(
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
-                        # \u2190 confluence/notion). Esc returns to the analysis screen.
-                        _ta_grid = {
-                            "delivery": _available_sources(),
-                            "code": _available_code_sources(),
-                            "docs": _available_doc_sources(),
-                        }
-                        _ta_components = _run_component_select(
-                            live, console, read_key, _FRAME_TIME, _supports_timeout, _ta_grid
+                        # \u2190 confluence/notion). The wizard owns Esc-back navigation;
+                        # backing out of its first step returns to the analysis screen.
+                        _ta_setup = _run_analysis_setup_wizard(
+                            live,
+                            console,
+                            read_key,
+                            _FRAME_TIME,
+                            _supports_timeout,
+                            grid={
+                                "delivery": _available_sources(),
+                                "code": _available_code_sources(),
+                                "docs": _available_doc_sources(),
+                            },
+                            roster_fallback=_available_sources(),
+                            project_key="",
+                            db_path=_ana_dbp,
                         )
-                        if _ta_components == "cancel":
+                        if _ta_setup is None:
+                            _ana_restart = True
                             _team_popup_result = ""
                             continue
-
-                        _ta_depth = _run_analysis_depth_select(live, console, read_key, _FRAME_TIME, _supports_timeout)
-                        if _ta_depth == "cancel":
-                            _team_popup_result = ""
-                            continue
-
-                        # Member subset \u2014 only meaningful for delivery (velocity) or code
-                        # (authors). Prefetch the roster over the selected delivery trackers.
+                        _ta_features = _ta_setup["features"]
+                        _ta_components = _ta_setup["components"]
+                        _ta_analysis_scope = _ta_setup["analysis_scope"]
+                        _ta_depth = _ta_setup["depth"]
+                        _ta_analysis_model = _ta_setup["model"]
+                        _ta_window_days = _ta_setup["window_days"]
+                        _ta_members_map = _ta_setup["members_map"]
                         _ta_dlv = _ta_components.get("delivery") or []
-                        _ta_members_map = None
-                        if _ta_dlv or _ta_components.get("code"):
-                            _roster = _prefetch_roster(live, console, _ta_dlv or _available_sources(), "", _ana_dbp)
-                            if _roster:
-                                _sel = _run_member_select(
-                                    live, console, read_key, _FRAME_TIME, _supports_timeout, _roster
-                                )
-                                if _sel == "cancel":
-                                    _team_popup_result = ""
-                                    continue
-                                if _sel:
-                                    _ta_members_map = {t: _sel for t in (_ta_dlv or _available_sources())}
                         _ta_disp_source = _ta_dlv[0] if _ta_dlv else "analysis"
 
-                        _ta_progress: list[str] = ["Fetching sprint history\u2026"]
+                        _ta_progress: list = []
                         _ta_profile_box: list = [None]
                         _ta_examples_box: list = [None]
                         _ta_sprint_names_box: list = [[]]
                         _ta_result_box: list = [None]  # full engine dict (carries 'both' results)
                         _ta_error_box: list[str] = [""]
                         _ta_done = threading.Event()
+                        _ta_cancel_event = threading.Event()
 
                         def _run_team_analysis_mode():
                             try:
@@ -7912,10 +9281,15 @@ def select_mode(
                                 # analyses, saves the profile, and writes the log.
                                 _res = run_team_analysis(
                                     analysis_depth=_ta_depth,
+                                    analysis_window_days=_ta_window_days,
                                     components=_ta_components,
                                     members=_ta_members_map,
+                                    analysis_scope=_ta_analysis_scope or None,
+                                    analysis_model=_ta_analysis_model,
+                                    analysis_features=_ta_features,
                                     progress=_ta_progress,
                                     db_path=_ana_dbp,
+                                    cancel_event=_ta_cancel_event,
                                 )
                                 _ta_result_box[0] = _res
                                 # Seed the boxes with the first delivery tracker (the
@@ -7926,6 +9300,8 @@ def select_mode(
                                 _ta_profile_box[0] = _first.get("profile")
                                 _ta_examples_box[0] = _first.get("examples") or {}
                                 _ta_sprint_names_box[0] = _first.get("sprint_names") or []
+                            except AnalysisCancelledError:
+                                pass  # cancelled — boxes stay empty; the poll loop owns the notice
                             except ValueError as exc:
                                 _ta_error_box[0] = str(exc)
                             except Exception as exc:
@@ -7948,22 +9324,71 @@ def select_mode(
                         )
 
                         _ta_anim_tick = 0.0
-                        while not _ta_done.is_set():
-                            _ta_anim_tick += _FRAME_TIME
+                        _ta_cancelled = False
+                        try:
+                            while not _ta_done.is_set():
+                                _ta_anim_tick += _FRAME_TIME
+                                w, h = console.size
+                                live.update(
+                                    _build_analysis_progress_screen(
+                                        _ta_progress,
+                                        width=w,
+                                        height=h,
+                                        elapsed=time.monotonic() - _ta_thread_start,
+                                        anim_tick=_ta_anim_tick,
+                                        source=_ta_disp_source,
+                                        mode="analysis",
+                                    )
+                                )
+                                time.sleep(_FRAME_TIME)
+                        except KeyboardInterrupt:
+                            # First Ctrl-C: cooperative cancel. The bounded wait below is
+                            # NOT wrapped, so a second Ctrl-C re-raises out of select_mode
+                            # and quits the app via cli.py's existing handler.
+                            logger.info("Analysis: Ctrl-C received — cancelling run")
+                            _ta_cancel_event.set()
+                            _ta_progress.append("Cancelling — waiting for running work to stop…")
+                            _ta_deadline = time.monotonic() + 10.0
+                            while not _ta_done.is_set() and time.monotonic() < _ta_deadline:
+                                _ta_anim_tick += _FRAME_TIME
+                                w, h = console.size
+                                live.update(
+                                    _build_analysis_progress_screen(
+                                        _ta_progress,
+                                        width=w,
+                                        height=h,
+                                        elapsed=time.monotonic() - _ta_thread_start,
+                                        anim_tick=_ta_anim_tick,
+                                        source=_ta_disp_source,
+                                        mode="analysis",
+                                    )
+                                )
+                                time.sleep(_FRAME_TIME)
+                            _ta_cancelled = True
+                        # Daemon thread — abandoned after the bounded wait if a job is
+                        # still busy; the engine's pre-persist gate still guarantees
+                        # nothing is saved once the cancel event is set.
+                        _ta_thread.join(timeout=0.1 if _ta_cancelled else None)
+
+                        if _ta_cancelled:
                             w, h = console.size
                             live.update(
-                                _build_analysis_progress_screen(
-                                    _ta_progress,
+                                _build_project_export_success_screen(
+                                    "Analysis cancelled — no results were saved.",
                                     width=w,
                                     height=h,
-                                    elapsed=time.monotonic() - _ta_thread_start,
-                                    anim_tick=_ta_anim_tick,
-                                    source=_ta_disp_source,
+                                    subtitle="Analysis cancelled",
+                                    hint="Press any key to continue.",
                                     mode="analysis",
                                 )
                             )
-                            time.sleep(_FRAME_TIME)
-                        _ta_thread.join()
+                            while True:
+                                _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                                if _k:
+                                    break
+                            _ana_restart = True
+                            _team_popup_result = ""
+                            continue
 
                         _ta_profile = _ta_profile_box[0]
                         _ta_duration = time.monotonic() - _ta_thread_start
@@ -8008,8 +9433,21 @@ def select_mode(
                                     code=_ta_full.get("code"),
                                     docs=_ta_full.get("docs"),
                                     comparison=_ta_full.get("comparison"),
+                                    analysis_features=_ta_full.get("analysis_features"),
                                     active_box=_ta_active_box,
                                     source=_ta_disp_source,
+                                    retry_config={
+                                        "source": "",
+                                        "project_key": "",
+                                        "team_name": "",
+                                        "analysis_depth": _ta_depth,
+                                        "analysis_window_days": _ta_window_days,
+                                        "analysis_scope": _ta_analysis_scope or None,
+                                        "analysis_model": _ta_analysis_model,
+                                        "components": _ta_components,
+                                        "members": _ta_members_map,
+                                        "db_path": _ana_dbp,
+                                    },
                                 )
                                 # Downstream insights/ticket steps operate on the
                                 # delivery tracker the user last viewed.
@@ -8219,6 +9657,16 @@ def select_mode(
                 logger.info("Retro mode selected")
                 with mode_log("retro"):
                     _run_retro_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
+
+            # ── Route: Poker mode → collaborative estimation page ────────
+            if chosen["key"] == "poker":
+                logger.info("Poker mode selected")
+                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
+                with mode_log("poker"):
+                    _run_poker_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -9143,18 +10591,50 @@ def select_mode(
                     except Exception:
                         pass
 
-                    _ta_depth = _run_analysis_depth_select(live, console, read_key, _FRAME_TIME, _supports_timeout)
-                    if _ta_depth == "cancel":
+                    from yeaboi.analysis.engine import (
+                        AnalysisCancelledError,
+                        _available_code_sources,
+                        _available_doc_sources,
+                    )
+
+                    # The wizard owns the whole setup sequence (Esc steps back one
+                    # screen; backing out of the first step returns to this list).
+                    _delivery_grid = ["jira", "azdevops"] if _ta_source == "both" else [_ta_source]
+                    _ta_setup = _run_analysis_setup_wizard(
+                        live,
+                        console,
+                        read_key,
+                        _FRAME_TIME,
+                        _supports_timeout,
+                        grid={
+                            "delivery": _delivery_grid,
+                            "code": _available_code_sources(),
+                            "docs": _available_doc_sources(),
+                        },
+                        roster_fallback=_delivery_grid,
+                        project_key=_ta_project_key,
+                        db_path=_ana_dbp,
+                    )
+                    if _ta_setup is None:
+                        _restart_project_list = True
                         _team_popup_result = ""
                         continue
+                    _ta_features = _ta_setup["features"]
+                    _ta_components = _ta_setup["components"]
+                    _ta_analysis_scope = _ta_setup["analysis_scope"]
+                    _ta_depth = _ta_setup["depth"]
+                    _ta_analysis_model = _ta_setup["model"]
+                    _ta_window_days = _ta_setup["window_days"]
+                    _ta_members_map = _ta_setup["members_map"]
 
-                    _ta_progress: list[str] = ["Fetching sprint history\u2026"]
+                    _ta_progress: list = []
                     _ta_profile_box: list = [None]
                     _ta_examples_box: list = [None]
                     _ta_sprint_names_box: list = [[]]
                     _ta_result_box: list = [None]  # full engine dict (carries 'both' results)
                     _ta_error_box: list[str] = [""]
                     _ta_done = threading.Event()
+                    _ta_cancel_event = threading.Event()
 
                     def _run_team_analysis():
                         try:
@@ -9165,8 +10645,15 @@ def select_mode(
                                 project_key=_ta_project_key,
                                 team_name=_ta_team_name,
                                 analysis_depth=_ta_depth,
+                                analysis_window_days=_ta_window_days,
+                                analysis_scope=_ta_analysis_scope or None,
+                                analysis_model=_ta_analysis_model,
+                                analysis_features=_ta_features,
+                                components=_ta_components,
+                                members=_ta_members_map,
                                 progress=_ta_progress,
                                 db_path=_ana_dbp,
+                                cancel_event=_ta_cancel_event,
                             )
                             _ta_result_box[0] = _res
                             _dlv = _res.get("delivery") or {}
@@ -9174,6 +10661,8 @@ def select_mode(
                             _ta_profile_box[0] = _first.get("profile")
                             _ta_examples_box[0] = _first.get("examples") or {}
                             _ta_sprint_names_box[0] = _first.get("sprint_names") or []
+                        except AnalysisCancelledError:
+                            pass  # cancelled — boxes stay empty; the poll loop owns the notice
                         except ValueError as exc:
                             _ta_error_box[0] = str(exc)
                         except Exception as exc:
@@ -9198,22 +10687,71 @@ def select_mode(
                     )
 
                     _ta_anim_tick = 0.0
-                    while not _ta_done.is_set():
-                        _ta_anim_tick += _FRAME_TIME
+                    _ta_cancelled = False
+                    try:
+                        while not _ta_done.is_set():
+                            _ta_anim_tick += _FRAME_TIME
+                            w, h = console.size
+                            live.update(
+                                _build_analysis_progress_screen(
+                                    _ta_progress,
+                                    width=w,
+                                    height=h,
+                                    elapsed=time.monotonic() - _ta_thread_start,
+                                    anim_tick=_ta_anim_tick,
+                                    source=_ta_source,
+                                    mode="analysis",
+                                )
+                            )
+                            time.sleep(_FRAME_TIME)
+                    except KeyboardInterrupt:
+                        # First Ctrl-C: cooperative cancel. The bounded wait below is
+                        # NOT wrapped, so a second Ctrl-C re-raises out of select_mode
+                        # and quits the app via cli.py's existing handler.
+                        logger.info("Analysis: Ctrl-C received — cancelling run")
+                        _ta_cancel_event.set()
+                        _ta_progress.append("Cancelling — waiting for running work to stop…")
+                        _ta_deadline = time.monotonic() + 10.0
+                        while not _ta_done.is_set() and time.monotonic() < _ta_deadline:
+                            _ta_anim_tick += _FRAME_TIME
+                            w, h = console.size
+                            live.update(
+                                _build_analysis_progress_screen(
+                                    _ta_progress,
+                                    width=w,
+                                    height=h,
+                                    elapsed=time.monotonic() - _ta_thread_start,
+                                    anim_tick=_ta_anim_tick,
+                                    source=_ta_source,
+                                    mode="analysis",
+                                )
+                            )
+                            time.sleep(_FRAME_TIME)
+                        _ta_cancelled = True
+                    # Daemon thread — abandoned after the bounded wait if a job is
+                    # still busy; the engine's pre-persist gate still guarantees
+                    # nothing is saved once the cancel event is set.
+                    _ta_thread.join(timeout=0.1 if _ta_cancelled else None)
+
+                    if _ta_cancelled:
                         w, h = console.size
                         live.update(
-                            _build_analysis_progress_screen(
-                                _ta_progress,
+                            _build_project_export_success_screen(
+                                "Analysis cancelled — no results were saved.",
                                 width=w,
                                 height=h,
-                                elapsed=time.monotonic() - _ta_thread_start,
-                                anim_tick=_ta_anim_tick,
-                                source=_ta_source,
+                                subtitle="Analysis cancelled",
+                                hint="Press any key to continue.",
                                 mode="analysis",
                             )
                         )
-                        time.sleep(_FRAME_TIME)
-                    _ta_thread.join()
+                        while True:
+                            _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                            if _k:
+                                break
+                        _restart_project_list = True
+                        _team_popup_result = ""
+                        continue
 
                     _ta_profile = _ta_profile_box[0]
                     _ta_duration = time.monotonic() - _ta_thread_start
@@ -9252,9 +10790,22 @@ def select_mode(
                                 code=_ta_full.get("code"),
                                 docs=_ta_full.get("docs"),
                                 comparison=_ta_full.get("comparison"),
+                                analysis_features=_ta_full.get("analysis_features"),
                                 active_box=_ta_active_box,
                                 source=_ta_source,
                                 project_key=_ta_project_key,
+                                retry_config={
+                                    "source": _ta_source,
+                                    "project_key": _ta_project_key,
+                                    "team_name": _ta_team_name,
+                                    "analysis_depth": _ta_depth,
+                                    "analysis_window_days": _ta_window_days,
+                                    "analysis_scope": _ta_analysis_scope or None,
+                                    "analysis_model": _ta_analysis_model,
+                                    "components": _ta_components,
+                                    "members": _ta_members_map,
+                                    "db_path": _ana_dbp,
+                                },
                             )
                             if _ta_active_box[0] is not None:
                                 _ta_profile, _ta_examples, _ta_sprint_names, _ta_team_name = _ta_active_box[0]

@@ -33,6 +33,12 @@ PAD = "    "
 # Theme — centralised color palette for both modes
 # ---------------------------------------------------------------------------
 
+# Neutral dark page background for screens that don't belong to a tinted mode
+# (home, splash, provider select, settings/changelog/feedback). Every page paints
+# its own background so all users see the same TUI regardless of their
+# terminal's color scheme.
+NEUTRAL_BG = "rgb(16,16,20)"
+
 
 @dataclass(frozen=True)
 class Theme:
@@ -49,16 +55,23 @@ class Theme:
     sep: str = "rgb(50,60,80)"
     id: str = "cyan"
     desc: str = "rgb(160,160,160)"
+    # Page background: a dark tint of the mode's accent hue, applied by
+    # build_page_panel as "on {bg}" so the whole terminal shows the mode's
+    # colour instead of the user's terminal background.
+    bg: str = NEUTRAL_BG
 
 
-ANALYSIS_THEME = Theme()
-PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)")
-USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
+ANALYSIS_THEME = Theme(bg="rgb(9,23,19)")
+PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", bg="rgb(13,17,30)")
+USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)", bg="rgb(29,21,9)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
-STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
-RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
-PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)")
-REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)")
+STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)", bg="rgb(26,13,23)")
+RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)", bg="rgb(10,25,25)")
+# Gold, not table-felt green — analysis owns green, and the two cards sat side
+# by side looking like twins. Gold keeps the casino identity (chips) instead.
+POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)", bg="rgb(27,24,10)")
+PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)", bg="rgb(29,15,12)")
+REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)", bg="rgb(19,16,30)")
 # Silver chrome on purpose — the changelog page's per-feature area tags carry the
 # colour (each tag uses its mode's accent), so the page frame stays neutral.
 CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
@@ -71,6 +84,7 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Accept": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Done": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Continue": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Run Analysis": ("rgb(60,160,80)", "rgb(80,220,120)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Edit": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Regenerate": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Export": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
@@ -130,6 +144,9 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Anonymize": ("rgb(120,110,170)", "rgb(165,150,220)", "rgb(44,42,54)", "rgb(54,52,64)"),
     "Copy": ("rgb(120,110,170)", "rgb(165,150,220)", "rgb(44,42,54)", "rgb(54,52,64)"),
     "Adjust": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
+    # Poker mode actions (green accent).
+    "Start Session": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "New Session": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     # Saved-runs hub actions (standup / retro / reporting / performance history).
     "Delete": ("rgb(220,60,60)", "rgb(240,90,90)", "rgb(52,38,38)", "rgb(62,48,48)"),
     "Run again": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
@@ -142,6 +159,41 @@ _BTN_GAP = 2
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def build_page_panel(
+    content,
+    *,
+    theme: Theme | None = None,
+    bg: str | None = None,
+    border_style: str = "white",
+    height: int,
+    padding: tuple[int, int] = (1, 2),
+    **panel_kwargs,
+) -> Panel:
+    """Build the full-screen root Panel every TUI page must return.
+
+    Rich cascades a Panel's ``style`` onto every child segment that has no
+    explicit background of its own, so setting ``style="on {bg}"`` here tints
+    content rows, heading spacers, scroll filler lines and padding alike — the
+    whole terminal shows the mode's background colour with no seams, instead of
+    the user's terminal default.
+
+    ``bg`` overrides ``theme.bg``; with neither, the neutral dark base is used.
+    Never return a raw full-screen ``Panel`` from a screen builder — a unit test
+    (tests/unit/test_screen_backgrounds.py) enforces this.
+    """
+    color = bg or (theme.bg if theme is not None else NEUTRAL_BG)
+    return Panel(
+        content,
+        style=f"on {color}",
+        border_style=border_style,
+        box=rich.box.ROUNDED,
+        expand=True,
+        height=height,
+        padding=padding,
+        **panel_kwargs,
+    )
 
 
 def center_label(label: str, width: int) -> str:
@@ -258,6 +310,11 @@ def standup_title(shimmer_tick: float | None = None, *, width: int | None = None
 def retro_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Retro ASCII title (teal accent). Optionally shimmering."""
     return build_ascii_title("Retro", "rgb(80,190,190)", shimmer_tick=shimmer_tick, width=width)
+
+
+def poker_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Poker ASCII title (gold accent). Optionally shimmering."""
+    return build_ascii_title("Poker", "rgb(230,200,70)", shimmer_tick=shimmer_tick, width=width)
 
 
 def performance_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

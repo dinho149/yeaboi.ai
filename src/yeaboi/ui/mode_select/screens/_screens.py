@@ -20,7 +20,7 @@ from rich.text import Text
 
 from yeaboi.ui.shared._animations import BLACK_RGB, COLOR_RGB, lerp_color, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import PAD
+from yeaboi.ui.shared._components import PAD, build_page_panel
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
 from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
 
@@ -61,6 +61,13 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "description": "Run a collaborative sprint retro: teammates add cards from a browser, then AI drafts actions.",
         "available": True,
         "color": "rgb(80,190,190)",
+    },
+    {
+        "key": "poker",
+        "title": "Poker",
+        "description": "Run planning poker: the team votes on sprint or backlog tickets in a browser; points sync.",
+        "available": True,
+        "color": "rgb(230,200,70)",
     },
     {
         "key": "performance",
@@ -631,16 +638,11 @@ def _build_mode_screen(
         )
         body_renderable = content
 
-    panel = Panel(
-        body_renderable,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        # No bottom padding: the last content row (the music pocket's row) sits
-        # directly on the bottom border, which the frame reroutes up over it.
-        padding=(1, 2, 0, 2),
-    )
+    # No bottom padding: the last content row (the music pocket's row) sits
+    # directly on the bottom border, which the frame reroutes up over it.
+    # build_page_panel (main #104) applies the neutral base tint so the main
+    # menu never shows the terminal's own background.
+    panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2))
     if not is_welcome:
         return panel
     # Draw the music pocket over the reserved bottom rows. Returning a frame (not a
@@ -889,11 +891,9 @@ def _build_update_screen(
             rows.append(Align.center(Text(detail.splitlines()[-1][: max(10, width - 12)], style="rgb(120,130,140)")))
         rows.append(Align.center(Text("press any key", style="rgb(120,130,140)")))
         border = "rgb(226,110,90)"
-    return Panel(
+    return build_page_panel(
         Align.center(Group(*rows), vertical="middle"),
         border_style=border,
-        box=rich.box.ROUNDED,
-        expand=True,
         height=max(1, height),
         padding=(1, 2),
     )
@@ -916,11 +916,9 @@ def _build_too_small_screen(width: int, height: int) -> Panel:
             Align.center(Text(f"(you're at {width} × {height})", style="rgb(120,130,140)")),
         ]
     )
-    return Panel(
+    return build_page_panel(
         Align.center(Group(*rows), vertical="middle"),
         border_style="rgb(226,186,96)",
-        box=rich.box.ROUNDED,
-        expand=True,
         height=max(1, height),
         padding=(1, 2),
     )
@@ -962,11 +960,4 @@ def _build_slide_frame(
         *[Text("") for _ in range(below)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, height=height)

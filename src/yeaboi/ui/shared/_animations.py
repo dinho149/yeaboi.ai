@@ -34,6 +34,7 @@ COLOR_RGB: dict[str, tuple[int, int, int]] = {
     "rgb(80,190,190)": (80, 190, 190),  # Retro accent (teal)
     "rgb(220,110,90)": (220, 110, 90),  # Performance accent (coral)
     "rgb(140,120,230)": (140, 120, 230),  # Reporting accent (indigo)
+    "rgb(230,200,70)": (230, 200, 70),  # Poker accent (gold)
 }
 
 # Grey levels for fade-out (bright → invisible) and fade-in (invisible → bright).

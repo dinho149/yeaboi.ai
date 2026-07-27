@@ -202,6 +202,22 @@ def test_get_renderable_passes_non_panels_through():
     assert ml.get_renderable() is text  # e.g. the welcome screen's own frame
 
 
+def test_unstyled_panel_gains_neutral_background():
+    from yeaboi.ui.shared._components import NEUTRAL_BG
+
+    panel = Panel(Text("body"))  # a screen that bypassed build_page_panel
+    ml = _wide_ml(panel)
+    ml.get_renderable()  # the neutral-base safety net is applied in place here
+    assert panel.style == f"on {NEUTRAL_BG}"
+
+
+def test_styled_panel_background_is_left_untouched():
+    panel = Panel(Text("body"), style="on rgb(9,23,19)")  # build_page_panel output
+    ml = _wide_ml(panel)
+    ml.get_renderable()
+    assert panel.style == "on rgb(9,23,19)"
+
+
 def test_install_hint_when_unavailable(monkeypatch):
     monkeypatch.setattr(music, "is_music_available", lambda: (False, "no ffplay"))
     text = build_music_subtitle().plain

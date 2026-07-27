@@ -7,14 +7,13 @@
 
 from __future__ import annotations
 
-import rich.box
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared._animations import lerp_color as _shared_lerp_color
 from yeaboi.ui.shared._animations import scrollbar_column
-from yeaboi.ui.shared._components import PAD, planning_title
+from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
 from yeaboi.ui.shared._scroll import publish_geometry
 
 # ---------------------------------------------------------------------------
@@ -202,11 +201,4 @@ def _build_summary_screen(
         *body,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)

@@ -12,6 +12,7 @@ import rich.box
 from rich.console import Group
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.mode_select.screens._analysis_sections import (
@@ -27,7 +28,9 @@ from yeaboi.ui.mode_select.screens._screens import _INTAKE_CARDS, _OFFLINE_CARDS
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
+    PLANNING_THEME,
     build_action_buttons,
+    build_page_panel,
     build_progress_dots,
     build_scrollbar,
     calc_viewport,
@@ -144,14 +147,7 @@ def _build_analysis_review_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 _PAD = PAD  # alias for backward compatibility within this module
@@ -290,7 +286,10 @@ def _build_team_analysis_screen(
     source: str = "",
     project_key: str = "",
     code_signal=None,
+    code_examples: dict | None = None,
     doc_signal=None,
+    doc_examples: dict | None = None,
+    analysis_features: list[str] | None = None,
 ) -> Panel:
     """Build the team analysis results screen (overview + section cards).
 
@@ -326,9 +325,15 @@ def _build_team_analysis_screen(
     else:
         _ex = examples or {}
         bits = []
-        if _ex.get("ai_adoption"):
-            bits.append("code scan")
-        if _ex.get("doc_quality"):
+        if code_examples or _ex.get("ai_adoption"):
+            enabled = set((code_examples or {}).get("enabled_features", ()))
+            if "ai_footprint" in enabled:
+                bits.append("AI footprint")
+            if "code_health" in enabled:
+                bits.append("code health")
+            if not enabled:
+                bits.append("code scan")
+        if doc_signal is not None or _ex.get("doc_quality"):
             bits.append("docs")
         header_str = f"Team Analysis  ·  {src}/{board_label}  ·  {' + '.join(bits) or 'components'} only"
     sub = Text(_PAD + header_str, style="bold white", justify="left")
@@ -359,11 +364,25 @@ def _build_team_analysis_screen(
     # the global scan was persisted.
     ctx.ai_sig = code_signal
     ctx.doc_sig = doc_signal
+    ctx.code_blob = code_examples or {}
+    ctx.doc_blob = doc_examples or {}
+    ctx.analysis_features = tuple(analysis_features or ())
     _prof_ai = getattr(profile, "ai_adoption", None)
     _prof_doc = getattr(profile, "doc_quality", None)
     has_code = code_signal is not None or bool(_prof_ai and (_prof_ai.scanned_commits + _prof_ai.scanned_prs) > 0)
+    has_code_health = bool(
+        (code_examples or {}).get("repository_health")
+        or (examples or {}).get("ai_adoption", {}).get("repository_health")
+        or (code_examples is not None and "code_health" in set(analysis_features or ()))
+    )
     has_docs = doc_signal is not None or bool(_prof_doc and _prof_doc.pages_scanned > 0)
-    ctx.visible_order = visible_card_order(profile, has_code, has_docs)
+    ctx.visible_order = visible_card_order(
+        profile,
+        has_code,
+        has_docs,
+        has_code_health=has_code_health,
+        analysis_features=analysis_features,
+    )
 
     if view == "overview":
         crumb_text = "Overview  ·  ↑/↓ choose a section, Enter to open"
@@ -460,14 +479,9 @@ def _build_team_analysis_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    # The results page keeps the proven card colour (slightly lighter than the
+    # analysis page tint) so its dense card layout reads as one elevated surface.
+    return build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
 
 
 # Component picker — order + friendly labels. Each component runs over its OWN
@@ -477,8 +491,8 @@ _COMPONENT_KEYS: tuple[str, ...] = ("delivery", "code", "docs")
 _COMPONENT_NAMES: dict[str, str] = {"delivery": "Delivery", "code": "Code", "docs": "Docs"}
 _COMPONENT_DESCS: dict[str, str] = {
     "delivery": "velocity, calibration, contributors",
-    "code": "remote AI-usage scan",
-    "docs": "clarity + AI-likelihood",
+    "code": "AI footprint + repository health",
+    "docs": "clarity + usefulness + ownership",
 }
 _COMPONENT_LABELS: dict[str, str] = {k: f"{_COMPONENT_NAMES[k]} — {_COMPONENT_DESCS[k]}" for k in _COMPONENT_KEYS}
 _SUBSOURCE_TITLES: dict[str, str] = {
@@ -489,6 +503,172 @@ _SUBSOURCE_TITLES: dict[str, str] = {
     "confluence": "Confluence",
     "notion": "Notion",
 }
+_ANALYSIS_FEATURE_KEYS: tuple[str, ...] = (
+    "delivery",
+    "ai_footprint",
+    "code_health",
+    "documentation",
+)
+_ANALYSIS_FEATURE_LABELS: dict[str, tuple[str, str]] = {
+    "delivery": ("Delivery", "velocity, estimation, workflow, and team patterns"),
+    "ai_footprint": ("AI footprint", "detectable AI markers in selected-user commits and PRs"),
+    "code_health": ("Code health", "health of files changed by the selected users"),
+    "documentation": ("Documentation", "clarity, usefulness, structure, and ownership"),
+}
+
+# Elevated-surface background for the analysis setup/review cards and the whole
+# analysis results viewport (see _build_team_analysis_screen) — a touch lighter
+# than ANALYSIS_THEME.bg so cards read as raised above the page tint. Page-wide
+# backgrounds now come from Theme.bg via build_page_panel.
+_ANALYSIS_CARD_BG_RGB = "rgb(13,31,27)"
+_ANALYSIS_CARD_BG = f"on {_ANALYSIS_CARD_BG_RGB}"
+
+
+def _analysis_toggle_row(
+    title: str,
+    description: str,
+    *,
+    focused: bool,
+    selected: bool = False,
+    enabled: bool = True,
+    note: str = "",
+) -> Text:
+    """Match the inline toggle style used by Reporting and questionnaire cards."""
+    theme = ANALYSIS_THEME
+    row = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+    row.append("‹ " if focused else "  ", style=theme.accent_bright if enabled else theme.dim)
+    row.append(
+        "●" if selected and enabled else "○",
+        style=theme.accent_bright if selected and enabled else theme.dim,
+    )
+    row.append(
+        f" {title} ",
+        style="bold white" if focused and enabled else theme.accent if selected and enabled else theme.desc,
+    )
+    if focused:
+        row.append("›", style=theme.accent_bright if enabled else theme.dim)
+    detail = "Unavailable" if not enabled else note or description
+    if detail:
+        row.append(f"  ·  {detail}", style=theme.dim if not enabled else theme.muted)
+    return row
+
+
+def _analysis_toggle_viewport(
+    rows: list[Text],
+    cursor: int,
+    *,
+    height: int,
+    header_h: int = 11,
+) -> object:
+    """Window long toggle lists using the same one-column list treatment."""
+    visible_h = max(1, height - header_h)
+    total = len(rows)
+    max_start = max(0, total - visible_h)
+    start = max(0, min(cursor - visible_h // 2, max_start))
+    visible = list(rows[start : start + visible_h])
+    visible.extend(Text("") for _ in range(max(0, visible_h - len(visible))))
+    scrollbar = build_scrollbar(visible_h, total, start, max_start)
+    if scrollbar is None:
+        return Group(*visible)
+    shell = Table.grid(expand=True, padding=0)
+    shell.add_column(ratio=1)
+    shell.add_column(width=1)
+    shell.add_row(Group(*visible), scrollbar)
+    return shell
+
+
+def _analysis_card_grid(
+    cards: list[Panel],
+    *,
+    width: int,
+    columns: int | None = None,
+) -> Table:
+    """Responsive card grid shared by every Analysis setup selector."""
+    ncols = columns or (2 if width >= 88 else 1)
+    ncols = max(1, min(ncols, max(1, len(cards))))
+    grid = Table.grid(expand=True, padding=(0, 1))
+    for _ in range(ncols):
+        grid.add_column(ratio=1)
+    for start in range(0, len(cards), ncols):
+        row = list(cards[start : start + ncols])
+        row.extend(Text("") for _ in range(ncols - len(row)))
+        grid.add_row(*row)
+    return grid
+
+
+def _analysis_setup_header(section: str, help_text: str, *, message: str = "") -> list:
+    """Consistent hierarchy for every pre-run Analysis selector."""
+    theme = ANALYSIS_THEME
+    out: list = [
+        Text(_PAD + f"ANALYSIS SETUP  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
+        Text(_PAD + help_text, style=theme.muted),
+    ]
+    if message:
+        out.extend((Text(_PAD + "⚠  " + message, style=theme.warn), Text("")))
+    else:
+        out.append(Text(""))
+    return out
+
+
+def _analysis_setup_title(width: int, height: int):
+    """Use compact branding when the full wordmark would crowd out choices."""
+    if height < 28:
+        return Text(_PAD + "ANALYSIS", style=f"bold {ANALYSIS_THEME.accent_bright}")
+    from yeaboi.ui.shared._components import analysis_title
+
+    return analysis_title(width=width)
+
+
+def _build_analysis_feature_screen(
+    available: dict[str, bool],
+    checked: set[str],
+    cursor: int,
+    *,
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+) -> Panel:
+    """First Analysis card: choose independently runnable result areas."""
+    theme = ANALYSIS_THEME
+    runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
+    all_checked = bool(runnable) and runnable <= checked
+    rows = [
+        _analysis_toggle_row(
+            "Analyse all",
+            "Select every available analysis area",
+            focused=cursor == 0,
+            selected=all_checked,
+            enabled=bool(runnable),
+            note=f"{len(checked)}/{len(runnable)} selected" if runnable else "",
+        )
+    ]
+    for index, feature in enumerate(_ANALYSIS_FEATURE_KEYS, start=1):
+        label, detail = _ANALYSIS_FEATURE_LABELS[feature]
+        enabled = feature in runnable
+        rows.append(
+            _analysis_toggle_row(
+                label,
+                detail,
+                focused=index == cursor,
+                selected=feature in checked,
+                enabled=enabled,
+            )
+        )
+    footer = f"{len(checked)} selected" if checked else "Select at least one available area"
+    header = _analysis_setup_header(
+        "Areas",
+        "Arrows move · Space selects · A selects all · Enter continues",
+        message=message,
+    )
+    content = Group(
+        Text(""),
+        _analysis_setup_title(width, height),
+        Text(""),
+        *header,
+        _analysis_toggle_viewport(rows, cursor, height=height),
+        Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
+    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_component_select_screen(
@@ -501,6 +681,7 @@ def _build_component_select_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
+    descriptions: dict[str, str] | None = None,
 ) -> Panel:
     """Ragged component × sub-source multi-select.
 
@@ -508,64 +689,42 @@ def _build_component_select_screen(
     jira/azdevops, code ← github/azdo, docs ← confluence/notion). ``rows_order`` is
     the components with at least one sub-source. ``checked`` maps component → set of
     selected sub-source indices. ``row_idx``/``col_idx`` locate the focused cell."""
-    from yeaboi.ui.shared._components import analysis_title
-
     theme = ANALYSIS_THEME
-    title = analysis_title()
-    sub = Text(_PAD + "Choose what to analyse — each part scans its own sources", style="bold white", justify="left")
-    crumb = Text(
-        _PAD + "↑/↓ · ←/→ · Space toggle · Enter continue · Esc cancel",
-        style="rgb(120,120,140)",
-        justify="left",
-    )
-
-    rule_w = min(max(20, width - len(_PAD) - 4), 40)
-    cell_w = 20  # fixed column width so the second source lines up across rows
-
-    lines: list = []
-    if message:
-        lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        lines.append(Text(""))
+    title = _analysis_setup_title(width, height)
+    sections: list = []
 
     per_component: list[tuple[str, int]] = []
     total_selected = 0
     for ci, ckey in enumerate(rows_order):
         subs = grid.get(ckey, [])
         focused_row = ci == row_idx
-        # Header: NAME · description (name brighter when this row is focused).
         header = Text(_PAD + "  ", justify="left")
         header.append(
             _COMPONENT_NAMES.get(ckey, ckey).upper(),
             style=f"bold {theme.accent_bright if focused_row else theme.accent}",
         )
-        header.append(f"  ·  {_COMPONENT_DESCS.get(ckey, '')}", style=theme.dim)
-        lines.append(header)
-        lines.append(Text(_PAD + "  " + "─" * rule_w, style=theme.sep))
-
+        header.append(
+            f"  ·  {(descriptions or {}).get(ckey, _COMPONENT_DESCS.get(ckey, ''))}",
+            style=theme.dim,
+        )
         n_checked = 0
-        boxline = Text(_PAD + "  ", justify="left")
+        source_rows: list[Text] = []
         for si, s in enumerate(subs):
             is_focused = focused_row and si == col_idx
             is_checked = si in checked.get(ckey, set())
             if is_checked:
                 n_checked += 1
                 total_selected += 1
-            dot = "●" if is_checked else "○"
             name = _SUBSOURCE_TITLES.get(s, s)
-            if is_focused:
-                boxline.append("‹ ", style=theme.accent_bright)
-                boxline.append(dot, style=theme.accent_bright)
-                boxline.append(f" {name} ", style="bold white")
-                boxline.append("›", style=theme.accent_bright)
-                vis = 2 + 1 + 1 + len(name) + 1 + 1  # "‹ " + dot + " name " + "›"
-            else:
-                boxline.append("  ")
-                boxline.append(dot, style=theme.accent_bright if is_checked else theme.dim)
-                boxline.append(f" {name}", style=theme.accent if is_checked else theme.dim)
-                vis = 2 + 1 + 1 + len(name)
-            boxline.append(" " * max(2, cell_w - vis))
-        lines.append(boxline)
-        lines.append(Text(""))
+            source_rows.append(
+                _analysis_toggle_row(
+                    name,
+                    "",
+                    focused=is_focused,
+                    selected=is_checked,
+                )
+            )
+        sections.extend((header, Group(*source_rows), Text("")))
         per_component.append((_COMPONENT_NAMES.get(ckey, ckey), n_checked))
 
     # Status footer: total + per-component counts (or the at-least-one guard).
@@ -576,55 +735,125 @@ def _build_component_select_screen(
         footer.append("     Enter ⏎", style=theme.dim)
     else:
         footer.append("Select at least one source to analyse", style=theme.accent_bright)
-    lines.append(footer)
-
-    viewport_h = calc_viewport(height, header_h=7, action_h=2)
-    padded = list(lines[:viewport_h])
-    for _ in range(max(0, viewport_h - len(padded))):
-        padded.append(Text(""))
-
-    content = Group(Text(""), title, Text(""), sub, crumb, Text(""), Group(*padded))
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    header = _analysis_setup_header(
+        "Sources",
+        "Arrows move · Space selects · Enter continues",
+        message=message,
+    )
+    if width < 70 or height < 28:
+        sections = list(sections[row_idx * 3 : row_idx * 3 + 3])
+        counts = "  ·  ".join(f"{name} {count}" for name, count in per_component)
+        sections.insert(0, Text(_PAD + counts, style=theme.muted))
+    content = Group(Text(""), title, Text(""), *header, Group(*sections), footer)
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: int = 24) -> Panel:
     """Choose Quick (zero LLM calls) or Deep (cached AI enrichment)."""
-    from yeaboi.ui.shared._components import analysis_title
-
-    theme = ANALYSIS_THEME
     options = (
         (
             "QUICK",
-            "Recommended · fastest",
+            "Metrics only · fastest",
             "Computed metrics, deterministic summaries and coaching. No LLM wait.",
         ),
         (
             "DEEP",
-            "Richer AI enrichment",
-            "Classifies ticket structure and writes AI explanations. Cached, but slower.",
+            "Recommended · exhaustive",
+            "Covers every eligible asset and produces evidence-backed actions. Slower.",
         ),
     )
-    lines: list[Text] = []
+    rows: list[Text] = []
     for idx, (name, label, detail) in enumerate(options):
         focused = idx == selected
-        line = Text(_PAD + "  ", justify="left")
-        line.append("› " if focused else "  ", style=theme.accent_bright)
-        line.append(name, style=f"bold {theme.accent_bright if focused else theme.accent}")
-        line.append(f"  {label}", style="bold white" if focused else theme.muted)
-        lines.append(line)
-        lines.append(Text(_PAD + "    " + detail, style=theme.dim, justify="left"))
-        lines.append(Text(""))
+        rows.append(
+            _analysis_toggle_row(
+                name,
+                detail,
+                focused=focused,
+                selected=focused,
+                note=f"{label} · {detail}",
+            )
+        )
 
     content = Group(
         Text(""),
-        analysis_title(),
+        _analysis_setup_title(width, height),
         Text(""),
-        Text(_PAD + "Choose analysis depth", style="bold white", justify="left"),
-        Text(_PAD + "↑/↓ or ←/→ · Enter continue · Esc cancel", style=theme.muted, justify="left"),
-        Text(""),
-        Group(*lines),
+        *_analysis_setup_header("Depth", "←/→ or ↑/↓ choose · Enter continue · Esc cancel"),
+        Group(*rows),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+
+
+def _build_analysis_model_offer_screen(
+    current_model: str,
+    recommended_model: str,
+    predicted_seconds: int,
+    selected: int = 0,
+    *,
+    target_seconds: int = 600,
+    width: int = 80,
+    height: int = 24,
+) -> Panel:
+    """Offer a faster installed Ollama model when preflight predicts a slow run."""
+    theme = ANALYSIS_THEME
+    minutes = max(1, round(predicted_seconds / 60))
+    target_minutes = max(1, round(target_seconds / 60))
+    options = (
+        (recommended_model, "Use for structured Analysis calls"),
+        (current_model, f"Keep current model · estimated {minutes} min"),
+    )
+    rows: list[Text] = []
+    for index, (model, detail) in enumerate(options):
+        focused = index == selected
+        rows.append(
+            _analysis_toggle_row(
+                model or "current model",
+                detail,
+                focused=focused,
+                selected=focused,
+                note=f"{'Faster' if index == 0 else 'Current'} · {detail}",
+            )
+        )
+    content = Group(
+        Text(""),
+        _analysis_setup_title(width, height),
+        Text(""),
+        *_analysis_setup_header("Model", "←/→ or ↑/↓ choose · Enter continue · Esc cancel"),
+        Text(
+            _PAD + f"The current model is unlikely to finish Deep analysis within {target_minutes} minutes.",
+            style=theme.muted,
+        ),
+        Text(_PAD + "Choose a faster installed model or continue with the original ETA.", style=theme.dim),
+        Text(""),
+        Group(*rows),
+    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
+
+
+def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height: int = 24) -> Panel:
+    """Choose the changed-content window shared by Code and Docs."""
+    options = ((30, "Last month"), (90, "Last quarter"), (120, "Recommended"), (365, "Last year"))
+    rows: list[Text] = []
+    for idx, (days, label) in enumerate(options):
+        focused = idx == selected
+        rows.append(
+            _analysis_toggle_row(
+                f"{days} DAYS",
+                label,
+                focused=focused,
+                selected=focused,
+                note=label,
+            )
+        )
+    content = Group(
+        Text(""),
+        _analysis_setup_title(width, height),
+        Text(""),
+        *_analysis_setup_header("Time window", "←/→ and ↑/↓ choose · Enter continue · Esc cancel"),
+        Group(*rows),
+    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_member_select_screen(
@@ -637,66 +866,188 @@ def _build_member_select_screen(
     message: str = "",
 ) -> Panel:
     """Roster multi-select with an explicit checked state for every member."""
-    from yeaboi.ui.shared._components import analysis_title
-
     theme = ANALYSIS_THEME
-    title = analysis_title()
-    sub = Text(_PAD + "Choose who to include in the analysis", style="bold white", justify="left")
-    crumb = Text(
-        _PAD + "↑/↓ move · Space toggle · A toggle all · Enter run · Esc cancel",
-        style="rgb(120,120,140)",
-        justify="left",
-    )
-
-    rows: list = []
-    if message:
-        rows.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        rows.append(Text(""))
+    title = _analysis_setup_title(width, height)
     n_checked = len(checked)
     scope = f"{n_checked} of {len(roster)} selected"
-    rows.append(Text(_PAD + f"  Space to toggle · A select/deselect all · {scope}", style=theme.muted))
-    rows.append(Text(""))
+    rows: list[Text] = []
     for idx, name in enumerate(roster):
-        is_cursor = idx == cursor
-        is_checked = idx in checked
-        dot = "●" if is_checked else "○"
-        row = Text(_PAD + "  ", justify="left")
-        if is_cursor:
-            row.append("‹ ", style=theme.accent_bright)
-            row.append(dot, style=theme.accent_bright if is_checked else theme.dim)
-            row.append(f" {name} ", style="bold white")
-            row.append("›", style=theme.accent_bright)
-        else:
-            row.append("  ")
-            row.append(dot, style=theme.accent_bright if is_checked else theme.dim)
-            row.append(f" {name}", style=theme.accent if is_checked else theme.desc)
-        rows.append(row)
+        rows.append(
+            _analysis_toggle_row(
+                name,
+                "",
+                focused=idx == cursor,
+                selected=idx in checked,
+            )
+        )
     if not roster:
-        rows.append(Text(_PAD + "  No members found — the analysis will cover the whole team.", style=theme.muted))
-
-    viewport_h = calc_viewport(height, header_h=6, action_h=2)
-    total = len(rows)
-    cursor_line = min(total - 1, cursor + 2) if roster else 0
-    max_scroll = max(0, total - viewport_h)
-    start = 0 if total <= viewport_h else max(0, min(cursor_line - viewport_h // 2, max_scroll))
-    visible = rows[start : start + viewport_h]
-    _sb = build_scrollbar(viewport_h, total, start, max_scroll, always_show=True)
-    padded = list(visible)
-    for _ in range(max(0, viewport_h - len(visible))):
-        padded.append(Text(""))
-    if _sb is not None:
-        from rich.table import Table as _SbTable
-
-        _vp = _SbTable(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True)
-        _vp.add_column(ratio=1)
-        _vp.add_column(width=1)
-        _vp.add_row(Group(*padded), _sb)
-        viewport_renderable = _vp
+        viewport_renderable = _analysis_toggle_row(
+            "No members found",
+            "",
+            focused=False,
+            enabled=False,
+        )
     else:
-        viewport_renderable = Group(*padded)
+        viewport_renderable = _analysis_toggle_viewport(rows, cursor, height=height, header_h=12)
 
-    content = Group(Text(""), title, Text(""), sub, crumb, Text(""), viewport_renderable)
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    header = _analysis_setup_header(
+        "People",
+        "Arrows move · Space selects · A selects all · Enter continues",
+        message=message,
+    )
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        *header,
+        Text(_PAD + scope, style=theme.accent_bright),
+        Text(""),
+        viewport_renderable,
+    )
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+
+
+def _build_code_project_select_screen(
+    projects: list[str],
+    checked: set[int],
+    cursor: int,
+    *,
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+) -> Panel:
+    """Azure code-project multi-select for one Analysis run."""
+    theme = ANALYSIS_THEME
+    rows: list[Text] = []
+    for idx, project in enumerate(projects):
+        rows.append(
+            _analysis_toggle_row(
+                project,
+                "",
+                focused=idx == cursor,
+                selected=idx in checked,
+            )
+        )
+    header = _analysis_setup_header(
+        "Azure projects",
+        "Arrows move · Space selects · A selects all · Enter continues",
+        message=message,
+    )
+    return build_page_panel(
+        Group(
+            Text(""),
+            _analysis_setup_title(width, height),
+            Text(""),
+            *header,
+            Text(_PAD + f"{len(checked)} of {len(projects)} projects selected", style=theme.accent_bright),
+            Text(""),
+            _analysis_toggle_viewport(rows, cursor, height=height, header_h=12),
+        ),
+        theme=ANALYSIS_THEME,
+        height=height,
+    )
+
+
+def _build_analysis_setup_review_screen(
+    *,
+    features: list[str],
+    components: dict[str, list[str]],
+    members: list[str] | None,
+    analysis_scope: dict[str, list[str]],
+    depth: str,
+    window_days: int,
+    model: str | None = None,
+    action_sel: int = 0,
+    width: int = 80,
+    height: int = 24,
+) -> Panel:
+    """Final, non-destructive review of the exact Analysis engine payload."""
+    theme = ANALYSIS_THEME
+
+    def _summary(title: str, value: str, symbol: str) -> Panel:
+        head = Text()
+        head.append(f"{symbol} ", style=theme.accent_bright)
+        head.append(title, style=f"bold {theme.accent_bright}")
+        return Panel(
+            Group(head, Text(value or "None", style="white")),
+            box=rich.box.ROUNDED,
+            border_style=theme.accent,
+            style=_ANALYSIS_CARD_BG,
+            padding=(0, 1),
+            expand=True,
+        )
+
+    def _summarize(values: list[str], limit: int = 4) -> str:
+        shown = values[:limit]
+        suffix = f" +{len(values) - limit} more" if len(values) > limit else ""
+        return ", ".join(shown) + suffix
+
+    feature_names = [_ANALYSIS_FEATURE_LABELS[key][0] for key in features]
+    source_names = [
+        _SUBSOURCE_TITLES.get(source, source)
+        for component in ("delivery", "code", "docs")
+        for source in components.get(component, [])
+    ]
+    projects = analysis_scope.get("azdo") or []
+    source_value = _summarize(source_names)
+    if projects:
+        source_value += f"\nAzure projects: {_summarize(projects)}"
+    people_value = _summarize(members) if members else "All available team members"
+    settings = f"{depth.title()} · {window_days} days"
+    if model:
+        settings += f"\nModel: {model}"
+    cards = [
+        _summary("Analysis areas", _summarize(feature_names), "✦"),
+        _summary("Sources and scope", source_value, "◆"),
+        _summary("People", people_value, "●"),
+        _summary("Run settings", settings, "◷"),
+    ]
+    if width < 88 or height < 30:
+        compact = []
+        for label, value in (
+            ("Areas", _summarize(feature_names)),
+            ("Sources", source_value.replace("\n", " · ")),
+            ("People", people_value),
+            ("Settings", settings.replace("\n", " · ")),
+        ):
+            line = Text()
+            line.append(f"{label:<10}", style=f"bold {theme.accent_bright}")
+            line.append(value or "None", style="white")
+            compact.append(line)
+        summary_renderable = Panel(
+            Group(*compact),
+            box=rich.box.ROUNDED,
+            border_style=theme.accent,
+            style=_ANALYSIS_CARD_BG,
+            padding=(0, 1),
+        )
+    else:
+        summary_renderable = _analysis_card_grid(cards, width=width)
+    btn_top, btn_mid, btn_bot = build_action_buttons(["Run Analysis", "Back"], action_sel)
+    if height < 24:
+        content = Group(
+            _analysis_setup_title(width, height),
+            Text(_PAD + "REVIEW  ·  ←/→ choose  ·  Enter confirm", style=theme.muted),
+            summary_renderable,
+            btn_top,
+            btn_mid,
+            btn_bot,
+        )
+    else:
+        content = Group(
+            Text(""),
+            _analysis_setup_title(width, height),
+            Text(""),
+            *_analysis_setup_header("Review", "←/→ choose · Enter confirm · Esc back"),
+            summary_renderable,
+            Text(""),
+            Text(_PAD + "Nothing starts until you confirm Run Analysis.", style=theme.muted),
+            Text(""),
+            btn_top,
+            btn_mid,
+            btn_bot,
+        )
+    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
 
 
 def _build_instructions_review_screen(
@@ -1462,14 +1813,7 @@ def _build_intake_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_offline_screen(
@@ -1527,14 +1871,7 @@ def _build_offline_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_export_success_screen(
@@ -1581,14 +1918,7 @@ def _build_export_success_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_import_screen(
@@ -1677,18 +2007,109 @@ def _build_import_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
+
+
+def _build_activity_progress_rows(
+    progress: list,
+    *,
+    theme,
+    anim_tick: float,
+) -> list[Text]:
+    """Render honest, theme-aware lifecycle rows for a worker's activity.
+
+    Structured component events carry an authoritative lifecycle state. Plain
+    string callbacks only announce that work started, so earlier strings remain
+    activity history instead of being incorrectly promoted to "completed".
+    """
+    from yeaboi.analysis.progress import is_component_progress
+
+    component_states: dict[str, dict] = {}
+    component_order: list[str] = []
+    legacy_activity: list[str] = []
+    for item in progress:
+        if is_component_progress(item):
+            component_id = item["component_id"]
+            if component_id not in component_states:
+                component_order.append(component_id)
+            component_states[component_id] = item
+        elif isinstance(item, str):
+            legacy_activity.append(item)
+
+    dots = "." * (int(anim_tick * 2) % 4)
+    rows: list[Text] = []
+    if component_order:
+        for component_id in component_order:
+            event = component_states[component_id]
+            status = event["status"]
+            label = event["label"]
+            detail = str(event.get("detail", "") or "")
+            if status == "completed":
+                marker, style, suffix = "✓", theme.accent, f" · {detail}" if detail else ""
+            elif status == "partial":
+                partial_detail = f" · {detail}" if detail else ""
+                marker, style, suffix = "!", theme.warn, f" · partial{partial_detail}"
+            elif status == "no_data":
+                no_data_detail = f" · {detail}" if detail else ""
+                marker, style, suffix = "○", theme.muted, f" · no matching data{no_data_detail}"
+            elif status == "fallback":
+                fallback_detail = f" ({detail})" if detail else ""
+                marker, style, suffix = "~", theme.warn, f" · deterministic fallback{fallback_detail}"
+            elif status == "failed":
+                marker, style, suffix = "✗", theme.bad, f" · {detail}" if detail else ""
+            else:
+                phase = str(event.get("phase", "") or "")
+                current = event.get("current")
+                total = event.get("total")
+                unit = str(event.get("unit", "") or "")
+                secondary_count = event.get("secondary_count")
+                secondary_unit = str(event.get("secondary_unit", "") or "")
+                parts: list[str] = []
+                if phase:
+                    parts.append(phase)
+                if isinstance(current, int) and isinstance(total, int) and total > 0:
+                    pct = min(100, max(0, round(current / total * 100)))
+                    count_label = f"{current:,}/{total:,}"
+                    if unit:
+                        count_label += f" {unit}"
+                    parts.append(f"{pct}% · {count_label}")
+                elif isinstance(current, int) and unit:
+                    parts.append(f"{current:,} {unit}")
+                if isinstance(secondary_count, int) and secondary_unit:
+                    parts.append(f"{secondary_count:,} {secondary_unit}")
+                if detail:
+                    parts.append(detail)
+                suffix = f"{dots} · " + " · ".join(parts) if parts else dots
+                marker, style = "▸", f"bold {theme.accent_bright}"
+            rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
+
+        if any(bool(component_states[item].get("read_only")) for item in component_order):
+            rows.append(
+                Text(
+                    _PAD + "      Repository access is read-only — no files are modified.",
+                    style=theme.muted,
+                    justify="left",
+                )
+            )
+        if legacy_activity:
+            rows.append(Text(_PAD + f"      ↳ {legacy_activity[-1]}", style=theme.muted, justify="left"))
+        return rows
+
+    for activity in legacy_activity[:-1]:
+        rows.append(Text(_PAD + f"  • {activity}", style=theme.accent, justify="left"))
+    if legacy_activity:
+        rows.append(
+            Text(
+                _PAD + f"  ▸ {legacy_activity[-1]}{dots}",
+                style=f"bold {theme.accent_bright}",
+                justify="left",
+            )
+        )
+    return rows
 
 
 def _build_analysis_progress_screen(
-    progress: list[str],
+    progress: list,
     *,
     width: int = 80,
     height: int = 24,
@@ -1703,6 +2124,7 @@ def _build_analysis_progress_screen(
     """
     from yeaboi.ui.shared._components import analysis_title
 
+    theme = ANALYSIS_THEME if mode == "analysis" else PLANNING_THEME
     title = analysis_title() if mode == "analysis" else planning_title()
 
     # Spinner frames
@@ -1719,47 +2141,24 @@ def _build_analysis_progress_screen(
     body: list = [
         Text(
             _PAD + f"{spinner}  Analysing team board{source_label}",
-            style="bold bright_green",
+            style=f"bold {theme.accent_bright}",
             justify="left",
         ),
-        Text(_PAD + f"   Elapsed: {time_str}", style="dim", justify="left"),
+        Text(_PAD + f"   Elapsed: {time_str}", style=theme.dim, justify="left"),
         Text(""),
     ]
 
-    # Progress steps with status indicators
-    _done_steps = progress[:-1] if len(progress) > 1 else []
-    _current = progress[-1] if progress else ""
-
-    for step in _done_steps:
-        body.append(Text(_PAD + f"  \u2713 {step}", style="#22c55e", justify="left"))
-
-    if _current:
-        # Animated dots for current step
-        dots = "." * (int(anim_tick * 2) % 4)
-        body.append(
-            Text(
-                _PAD + f"  \u25b8 {_current}{dots}",
-                style="bold white",
-                justify="left",
-            )
-        )
+    body.extend(_build_activity_progress_rows(progress, theme=theme, anim_tick=anim_tick))
 
     # Fill remaining space
-    body_h = 4 + len(progress)
+    body_h = 4 + len(body)
     inner_h = height - 4
     remaining = max(0, inner_h - 4 - body_h)
     body.extend([Text("") for _ in range(remaining)])
 
     content = Group(Text(""), title, Text(""), *body)
 
-    return Panel(
-        content,
-        border_style="#22c55e",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
 
 
 def _build_project_export_success_screen(
@@ -1813,14 +2212,7 @@ def _build_project_export_success_screen(
         *[Text("") for _ in range(remaining)],
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -2011,14 +2403,7 @@ def _build_usage_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=USAGE_THEME, height=height)
 
 
 def _build_standup_screen(
@@ -2215,14 +2600,7 @@ def _build_standup_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_standup_team_source_screen(
@@ -2265,7 +2643,7 @@ def _build_standup_team_source_screen(
         Text(""),
         Group(*rows[:viewport_h]),
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_standup_team_member_screen(
@@ -2330,7 +2708,7 @@ def _build_standup_team_member_screen(
         Text(""),
         viewport,
     )
-    return Panel(content, border_style="white", box=rich.box.ROUNDED, expand=True, height=height, padding=(1, 2))
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 def _build_changelog_screen(
@@ -2468,14 +2846,7 @@ def _build_changelog_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
 
 
 def _build_all_tips_screen(
@@ -2633,14 +3004,7 @@ def _build_all_tips_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
 
 
 def _build_feedback_screen(
@@ -2854,14 +3218,7 @@ def _build_feedback_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style=border_style or "white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=FEEDBACK_THEME, border_style=border_style or "white", height=height)
 
 
 def _performance_roster_window(selected: int, n: int, budget: int) -> tuple[int, int]:
@@ -3010,14 +3367,7 @@ def _build_performance_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
     body_lines: list = []
@@ -3063,14 +3413,7 @@ def _build_performance_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
 
 def _build_reporting_screen(
@@ -3193,14 +3536,7 @@ def _build_reporting_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
     # ── Picker view — choose the reporting period ────────────────────────────────
     if view != "detail":
@@ -3237,14 +3573,7 @@ def _build_reporting_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
     # ── Detail view — the generated report, scrollable ───────────────────────────
     def _styled(line: str) -> Text:
@@ -3302,14 +3631,7 @@ def _build_reporting_screen(
         btn_mid,
         btn_bot,
     )
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
 
 def _build_roadmap_screen(
@@ -3373,13 +3695,10 @@ def _build_roadmap_screen(
     # the source options / buttons underneath don't confuse the user. ─────────────
     if busy:
         spinner = Text(PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
-        return Panel(
+        return build_page_panel(
             Group(Text(""), title, Text(""), sub, Text(""), Text(""), spinner),
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
+            theme=PLANNING_THEME,
             height=height,
-            padding=(1, 2),
         )
 
     # ── Source view — pick where the roadmap lives ───────────────────────────────
@@ -3416,14 +3735,7 @@ def _build_roadmap_screen(
             btn_mid,
             btn_bot,
         )
-        return Panel(
-            content,
-            border_style="white",
-            box=rich.box.ROUNDED,
-            expand=True,
-            height=height,
-            padding=(1, 2),
-        )
+        return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
     # ── Results view — summary + bordered project cards (selected expands) ────
     # Mirrors the list branch above: _Padding-wrapped rounded cards with peek
@@ -3579,14 +3891,7 @@ def _build_roadmap_screen(
         btn_mid,
         btn_bot,
     )
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 def _build_retro_screen(
@@ -3761,14 +4066,330 @@ def _build_retro_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
+    return build_page_panel(content, theme=RETRO_THEME, height=height)
+
+
+_voice_hint_cache: str | None = None
+
+
+def _voice_download_hint() -> str:
+    """First-run speech-model hint, probed ONCE per process.
+
+    Screen builders run per frame — importlib probes inside the render loop
+    would run dozens of times per second while the transcribing state shows.
+    """
+    global _voice_hint_cache
+    if _voice_hint_cache is None:
+        try:
+            from yeaboi import voice
+
+            _voice_hint_cache = (
+                " (downloading the speech model on first run)"
+                if voice.is_voice_available()[0] and not voice.is_model_loaded()
+                else ""
+            )
+        except Exception:  # a broken optional dep must never kill a render
+            _voice_hint_cache = ""
+    return _voice_hint_cache
+
+
+def _build_poker_screen(
+    poker_data: dict,
+    *,
+    scroll_offset: int = 0,
+    scroll_meta: dict | None = None,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+) -> Panel:
+    """Build the Scrum Poker screen using shared TUI components.
+
+    Three dict-driven views (the retro/reporting convention):
+      * ``pick``     — the setup wizard's ↑/↓ option list (source / scope / sprint).
+      * ``state``    — the live monitoring view: join info + the current ticket,
+                       who has voted (values only after the reveal — the same
+                       secrecy the browser gets), and the ticket list. The host
+                       *drives* the session from their browser (the admin link);
+                       this view is for monitoring, like retro's.
+      * ``snapshot`` — a saved run replayed from its PokerReport (the hub).
+
+    poker_data keys: message, actions, session_name, display_code, url, host_url,
+    public_url, pick {title, hint, options[(label, sub)], sel}, state (a
+    ``PokerBoard.state_snapshot()`` dict), report (a PokerReport for snapshots).
+
+    # See docs: "Poker" — TUI page
+    """
+    from yeaboi.ui.shared._components import POKER_THEME, build_reveal_subtitle, poker_title
+
+    theme = POKER_THEME
+    title = poker_title(shimmer_tick)
+    session_name = poker_data.get("session_name", "")
+    sub_text = poker_data.get("subtitle") or (
+        f"Planning poker for {session_name}" if session_name else "Planning poker"
     )
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+
+    body_lines: list = []
+
+    def _heading(text: str) -> None:
+        body_lines.append(Text(""))
+        h = Text(_PAD + "  ", justify="left")
+        h.append(text, style=f"bold {theme.accent}")
+        body_lines.append(h)
+        body_lines.append(Text(_PAD + "  " + "─" * min(len(text), 40), style=theme.sep, justify="left"))
+
+    def _row(label: str, value: str, value_style: str = "") -> None:
+        r = Text(_PAD + "    ", justify="left")
+        r.append(f"{label}:  ", style=theme.muted)
+        r.append(str(value), style=value_style or theme.value)
+        body_lines.append(r)
+
+    def _line(text: str, style: str = "") -> None:
+        body_lines.append(Text(_PAD + "    " + text, style=style or theme.value, justify="left"))
+
+    def _wrapped(text: str, style: str, *, indent: str = "      ") -> None:
+        import textwrap
+
+        wrap_w = max(24, width - len(_PAD) - len(indent) - 6)
+        for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
+
+    def _pts(value) -> str:
+        if value is None:
+            return "—"
+        return str(int(value)) if float(value) == int(value) else str(value)
+
+    message = poker_data.get("message", "")
+    if message:
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+
+    pick = poker_data.get("pick")
+    state = poker_data.get("state")
+    report = poker_data.get("report")
+    sel_line: int | None = None  # pick view: the selected row's line index (auto-scroll target)
+
+    if pick is not None:
+        # ── Wizard picker view ────────────────────────────────────
+        _heading(pick.get("title", "Choose"))
+        if pick.get("hint"):
+            _line(pick["hint"], theme.muted)
+            body_lines.append(Text(""))
+        sel_i = pick.get("sel", 0)
+        for i, (label, sublabel) in enumerate(pick.get("options", [])):
+            if i == sel_i:
+                sel_line = len(body_lines)
+            marker = "►" if i == sel_i else " "
+            style = f"bold {theme.accent_bright}" if i == sel_i else theme.value
+            r = Text(_PAD + f"  {marker} ", style=style, justify="left")
+            r.append(label, style=style)
+            if sublabel:
+                r.append(f"   {sublabel}", style=theme.muted)
+            body_lines.append(r)
+
+    elif state is not None:
+        # ── Live monitoring view ──────────────────────────────────
+        if not poker_data.get("snapshot"):
+            _heading("Join this session")
+            _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
+            _row("LAN URL", poker_data.get("url", "—"), theme.value)
+            _line("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
+            public_url = poker_data.get("public_url", "")
+            if public_url:
+                _row("Remote URL", public_url, f"bold {theme.accent_bright}")
+                _line(
+                    "Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted
+                )
+            host_url = poker_data.get("host_url", "")
+            if host_url:
+                _row("Host link (private)", host_url, theme.muted)
+                _line("Open this in YOUR browser — it holds the admin controls (reveal, save, edit, AI).", theme.muted)
+
+        notice = state.get("notice", "")
+        if notice:
+            body_lines.append(Text(""))
+            body_lines.append(Text(_PAD + "  ⚠ " + notice, style=theme.bad, justify="left"))
+
+        progress = state.get("progress") or {}
+        ticket = state.get("ticket")
+        revealed = state.get("phase") == "revealed"
+        dueling = state.get("phase") == "duel"
+        _heading(
+            f"Ticket {state.get('ticket_index', 0) + 1}/{state.get('ticket_count', 0)}"
+            f"  ·  {progress.get('estimated', 0)} estimated"
+        )
+        if ticket is None:
+            _line("No tickets loaded.", theme.muted)
+        else:
+            _wrapped(f"{ticket.get('key', '')}  {ticket.get('summary', '')}", f"bold {theme.value}", indent="    ")
+            bits = [f"points {_pts(ticket.get('story_points'))}"]
+            if ticket.get("type"):
+                bits.append(ticket["type"])
+            if ticket.get("state"):
+                bits.append(ticket["state"])
+            if ticket.get("assignee"):
+                bits.append(ticket["assignee"])
+            _line(" · ".join(bits), theme.muted)
+            acceptance = (ticket.get("acceptance_text") or "").strip()
+            if acceptance:
+                excerpt = acceptance[:240] + ("…" if len(acceptance) > 240 else "")
+                _line("Acceptance criteria", theme.muted)
+                _wrapped(excerpt, theme.value, indent="      ")
+            phase_label = "duel — the floor is open" if dueling else ("votes revealed" if revealed else "voting")
+            _row("Phase", phase_label, theme.accent_bright if (revealed or dueling) else theme.value)
+            votes = state.get("votes") or []
+            # During a duel the votes are already public (post-reveal shape).
+            if revealed or dueling:
+                if votes:
+                    _line("   ".join(f"{v.get('name', 'anon')} → {v.get('value', '?')}" for v in votes), theme.value)
+                    if state.get("suggestion") is not None:
+                        _row("Suggested", _pts(state.get("suggestion")), f"bold {theme.accent_bright}")
+                else:
+                    _line("No votes were cast this round.", theme.muted)
+            elif votes:
+                voted_n = sum(1 for v in votes if v.get("voted"))
+                _line(
+                    "   ".join(f"{v.get('name', 'anon')} {'✓' if v.get('voted') else '…'}" for v in votes),
+                    theme.value,
+                )
+                _line(f"{voted_n}/{len(votes)} voted — reveal from your admin browser link.", theme.muted)
+            else:
+                _line("Waiting for teammates to join…", theme.muted)
+            duel = state.get("duel") or {}
+            duel_status = duel.get("status", "")
+            if duel_status == "live":
+                low, high = duel.get("low") or {}, duel.get("high") or {}
+                _line(
+                    f"⚔ Duel — {low.get('name', '?')} ({low.get('value', '?')})"
+                    f" vs {high.get('name', '?')} ({high.get('value', '?')})",
+                    theme.accent_bright,
+                )
+                speaker = low if duel.get("turn") == "low" else high
+                _line(f"    Turn {duel.get('turn_no', 1)}/2 — {speaker.get('name', '?')} has the floor", theme.value)
+                rec = duel.get("recording") or {}
+                mics = sum(1 for r in ("low", "high") if rec.get(r))
+                if rec.get("host") or mics:
+                    # Recording must never be invisible — mirror the browser's REC pill.
+                    _line(
+                        f"    ● RECORDING — host mic {'on' if rec.get('host') else 'off'} · {mics} browser mic(s)",
+                        theme.bad,
+                    )
+                else:
+                    _line("    Not recording — no mic source available.", theme.muted)
+            elif duel_status == "transcribing":
+                _line(f"⚔ Duel — transcribing the debate…{_voice_download_hint()}", theme.muted)
+            elif duel_status == "done":
+                transcript = duel.get("transcript") or ""
+                _line(f"⚔ Duel transcript captured ({len(transcript)} chars)", theme.accent)
+                if transcript:
+                    _wrapped(transcript[:160] + ("…" if len(transcript) > 160 else ""), theme.muted, indent="      ")
+            elif duel_status == "failed":
+                _line(f"⚔ Duel — {duel.get('error') or 'recording failed'}", theme.bad)
+            ai = state.get("ai") or {}
+            if ai.get("pending"):
+                _line("🤖 AI perspective — thinking…", theme.muted)
+            elif ai.get("note"):
+                _wrapped(f"🤖 {ai['note']}", theme.accent, indent="    ")
+                if ai.get("confidence"):
+                    _line(f"    AI confidence: {ai['confidence']}", theme.muted)
+                for ev in ai.get("evidence") or ():
+                    _wrapped(f"• {ev}", theme.muted, indent="      ")
+
+        tickets_meta = state.get("tickets_meta") or []
+        if tickets_meta:
+            _heading("Tickets")
+            for i, t in enumerate(tickets_meta):
+                current = i == state.get("ticket_index")
+                mark = "►" if current else ("✓" if t.get("estimated") else "·")
+                style = (
+                    f"bold {theme.accent_bright}" if current else (theme.value if t.get("estimated") else theme.muted)
+                )
+                pts = f"  [{_pts(t.get('final_points'))}]" if t.get("estimated") else ""
+                _wrapped(f"{mark} {t.get('key', '')}  {t.get('summary', '')}{pts}", style, indent="    ")
+
+    elif report is not None:
+        # ── Saved-run snapshot view ───────────────────────────────
+        estimated = sum(1 for t in report.tickets if t.estimated)
+        _heading(f"Session summary  ({estimated}/{len(report.tickets)} estimated)")
+        _row("Source", f"{report.source or '—'} · {report.scope_label or '—'}", theme.value)
+        if report.participants:
+            _row("Participants", ", ".join(report.participants), theme.value)
+        for t in report.tickets:
+            body_lines.append(Text(""))
+            _wrapped(f"{t.key}  {t.summary}", f"bold {theme.value}", indent="    ")
+            if t.estimated:
+                move = f"{_pts(t.initial_points)} → {_pts(t.final_points)} points"
+                _line(move, theme.accent_bright)
+                if t.votes:
+                    _line("   ".join(f"{v.voter} {v.value}" for v in t.votes), theme.muted)
+            else:
+                _line("not estimated", theme.muted)
+            if t.ai_note:
+                _wrapped(f"🤖 {t.ai_note}", theme.accent, indent="      ")
+            if t.duel_transcript:
+                _line(f"⚔ Duel: {t.duel_low} vs {t.duel_high}", theme.accent)
+                _wrapped(
+                    t.duel_transcript[:160] + ("…" if len(t.duel_transcript) > 160 else ""),
+                    theme.muted,
+                    indent="      ",
+                )
+
+    # ── Layout using shared components ────────────────────────────
+    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    total_lines = len(body_lines)
+    max_scroll = max(0, total_lines - viewport_h)
+    actual_scroll = min(scroll_offset, max_scroll)
+    # Pick view: ↑/↓ move the selection, so auto-scroll to keep it visible
+    # (a long sprint list must never leave the ► row off-screen).
+    if sel_line is not None:
+        if sel_line < actual_scroll:
+            actual_scroll = sel_line
+        elif sel_line >= actual_scroll + viewport_h:
+            actual_scroll = min(max_scroll, sel_line - viewport_h + 1)
+    publish_geometry(scroll_meta, max_scroll, viewport_h)
+    visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    padded_lines: list = list(visible)
+    for _ in range(max(0, viewport_h - len(visible))):
+        padded_lines.append(Text(""))
+
+    actions = poker_data.get("actions") or ["Close"]
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+
+    if _sb_text is not None:
+        from rich.table import Table as _SbTable
+
+        _vp_table = _SbTable(
+            show_header=False,
+            show_edge=False,
+            box=None,
+            padding=0,
+            pad_edge=False,
+            expand=True,
+        )
+        _vp_table.add_column(ratio=1)
+        _vp_table.add_column(width=1)
+        _vp_table.add_row(Group(*padded_lines), _sb_text)
+        viewport_renderable = _vp_table
+    else:
+        viewport_renderable = Group(*padded_lines)
+
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        viewport_renderable,
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+
+    return build_page_panel(content, theme=POKER_THEME, height=height)
 
 
 def _build_standup_progress_screen(
@@ -3808,32 +4429,18 @@ def _build_standup_progress_screen(
         Text(""),
     ]
 
-    # Completed phases get a check; the current phase gets animated dots.
-    # Source-level collection can emit many completions; keep the latest rows
-    # visible instead of letting an ever-growing history push the current task
-    # below the fixed-height panel.
+    progress_rows = _build_activity_progress_rows(progress, theme=theme, anim_tick=anim_tick)
     max_visible_steps = max(2, height - 15)
-    done_steps = progress[:-1][-max_visible_steps:] if len(progress) > 1 else []
-    current = progress[-1] if progress else ""
-    for step in done_steps:
-        body.append(Text(_PAD + f"  ✓ {step}", style=theme.good, justify="left"))
-    if current:
-        dots = "." * (int(anim_tick * 2) % 4)
-        body.append(Text(_PAD + f"  ▸ {current}{dots}", style=f"bold {theme.value}", justify="left"))
+    body.extend(progress_rows[-max_visible_steps:])
 
     inner_h = height - 4
     remaining = max(0, inner_h - 8 - len(body))
     body.extend(Text("") for _ in range(remaining))
 
     content = Group(Text(""), title, Text(""), *body)
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    # theme, not STANDUP_THEME: this loading screen is shared — poker ticket
+    # fetch and the anonymize pass reuse it with their own mode's theme.
+    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
 
 
 def _build_standup_input_screen(
@@ -3933,14 +4540,7 @@ def _build_standup_input_screen(
     body.extend(Text("") for _ in range(pad_rows))
 
     content = Group(Text(""), title, Text(""), sub, Text(""), *body)
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -4089,14 +4689,7 @@ def _build_profile_picker_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -4313,11 +4906,4 @@ def _build_settings_screen(
         btn_bot,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=SETTINGS_THEME, height=height)

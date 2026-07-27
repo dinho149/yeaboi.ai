@@ -11,209 +11,17 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from yeaboi.html_theme import EXPORT_CSS, html_page
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# CSS — embedded once in <head>
+# CSS — the shared design system (html_theme), embedded once in <head>
 # ---------------------------------------------------------------------------
 
-_CSS = """
-:root {
-  --bg: #f1f5f9;
-  --surface: #ffffff;
-  --border: #e2e8f0;
-  --text: #1e293b;
-  --text-muted: #64748b;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
-  --critical: #ef4444;
-  --high: #f97316;
-  --medium: #3b82f6;
-  --low: #94a3b8;
-  --tag-bg: #f1f5f9;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  font-size: 14px;
-}
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-/* ── Header ─────────────────────────────────────────── */
-.site-header {
-  background: var(--accent-dark);
-  color: #fff;
-  padding: 2rem 3rem;
-}
-.site-header h1 { font-size: 1.75rem; font-weight: 700; }
-.site-header .meta {
-  margin-top: 0.35rem;
-  font-size: 0.85rem;
-  opacity: 0.8;
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-}
-.site-header .badge {
-  background: rgba(255,255,255,0.15);
-  padding: 0.1rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
-}
-
-/* ── Nav ─────────────────────────────────────────────── */
-.toc {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0.6rem 3rem;
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.toc a { color: var(--text-muted); font-weight: 500; }
-.toc a:hover { color: var(--accent); }
-
-/* ── Layout ──────────────────────────────────────────── */
-.container { max-width: 1100px; margin: 0 auto; padding: 2rem 3rem; }
-section { margin-bottom: 3rem; }
-section h2 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--text);
-  border-bottom: 2px solid var(--accent);
-  padding-bottom: 0.4rem;
-  margin-bottom: 1.25rem;
-}
-
-/* ── Cards ───────────────────────────────────────────── */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 1rem;
-}
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-.card-title { font-weight: 600; font-size: 0.95rem; }
-.card-id { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; margin-right: 0.5rem; }
-.card-desc { font-size: 0.875rem; color: var(--text-muted); margin-top: 0.3rem; }
-.card-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
-
-/* ── Priority badges ─────────────────────────────────── */
-.badge {
-  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px;
-  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; white-space: nowrap;
-}
-.badge-critical { background: #fee2e2; color: #b91c1c; }
-.badge-high     { background: #ffedd5; color: #c2410c; }
-.badge-medium   { background: #dbeafe; color: #1d4ed8; }
-.badge-low      { background: #f1f5f9; color: #475569; }
-.badge-tag      { background: var(--tag-bg); color: var(--text-muted); border: 1px solid var(--border); }
-.badge-pts      { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
-
-/* ── Discipline colours ──────────────────────────────── */
-.disc-fullstack  { background: #f3e8ff; color: #7e22ce; }
-.disc-frontend   { background: #e0f2fe; color: #0369a1; }
-.disc-backend    { background: #dcfce7; color: #15803d; }
-.disc-qa         { background: #fef9c3; color: #854d0e; }
-.disc-devops     { background: #ffedd5; color: #c2410c; }
-.disc-design     { background: #fce7f3; color: #be185d; }
-
-/* ── Tables ──────────────────────────────────────────── */
-.data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.data-table th {
-  background: var(--bg);
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-}
-.data-table td {
-  padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-}
-.data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #f8fafc; }
-.data-table .mono { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); }
-
-/* ── Story cards ─────────────────────────────────────── */
-.story-card { border-left: 3px solid var(--accent); }
-.story-card.critical { border-left-color: var(--critical); }
-.story-card.high     { border-left-color: var(--high); }
-.story-card.medium   { border-left-color: var(--medium); }
-.story-card.low      { border-left-color: var(--low); }
-
-/* ── Acceptance criteria ─────────────────────────────── */
-.ac-list { list-style: none; margin-top: 0.6rem; }
-.ac-list li { font-size: 0.82rem; padding: 0.2rem 0; color: var(--text-muted); }
-.ac-list li + li { border-top: 1px dotted var(--border); padding-top: 0.3rem; }
-.ac-given { color: #059669; font-weight: 600; }
-.ac-when  { color: #d97706; font-weight: 600; }
-.ac-then  { color: #7c3aed; font-weight: 600; }
-
-/* ── Sprint cards ────────────────────────────────────── */
-.sprint-card { border-top: 3px solid var(--accent); }
-.sprint-header { display: flex; justify-content: space-between; align-items: center; }
-.sprint-goal { font-size: 0.875rem; color: var(--text-muted); margin: 0.5rem 0; }
-.capacity-bar { height: 6px; background: var(--border); border-radius: 999px; margin: 0.5rem 0 0.75rem; }
-.capacity-fill { height: 100%; background: var(--accent); border-radius: 999px; max-width: 100%; }
-.sprint-stories { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-
-/* ── Analysis grid ───────────────────────────────────── */
-.analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
-.analysis-section h3 {
-  font-size: 0.8rem; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.4rem;
-}
-.analysis-section ul { list-style: none; }
-.analysis-section ul li { font-size: 0.875rem; padding: 0.15rem 0; }
-.analysis-section ul li::before { content: "• "; color: var(--accent); }
-.assumption-item::before { content: "⚠ " !important; color: #d97706 !important; }
-
-/* ── Questionnaire ───────────────────────────────────── */
-.q-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.q-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-.q-table td:first-child { width: 2.5rem; font-weight: 600; color: var(--accent); font-family: monospace; }
-.q-table td:nth-child(2) { width: 40%; color: var(--text-muted); }
-.q-table td:nth-child(3) { font-weight: 500; }
-.q-table tr:last-child td { border-bottom: none; }
-
-/* ── Footer ──────────────────────────────────────────── */
-.site-footer {
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  padding: 2rem;
-  border-top: 1px solid var(--border);
-  margin-top: 2rem;
-}
-
-/* ── Responsive ──────────────────────────────────────── */
-@media (max-width: 640px) {
-  .site-header, .toc, .container { padding-left: 1rem; padding-right: 1rem; }
-  .analysis-grid { grid-template-columns: 1fr; }
-}
-"""
+# Kept under the old name so existing `from yeaboi.html_exporter import _CSS`
+# call sites keep working; the stylesheet itself now lives in html_theme.
+_CSS = EXPORT_CSS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -513,7 +321,7 @@ def _build_stories_section(graph_state: dict) -> str:
                 confidence = getattr(story, "points_confidence", "")
                 conf_badge = ""
                 if confidence:
-                    conf_color = {"high": "#22c55e", "medium": "#eab308", "low": "#ef4444"}.get(
+                    conf_color = {"high": "var(--ok)", "medium": "var(--warn)", "low": "var(--danger)"}.get(
                         confidence.lower(), "var(--text-muted)"
                     )
                     conf_badge = (
@@ -656,20 +464,20 @@ def _build_sprints_section(graph_state: dict) -> str:
         used = sum(story_pts.get(sid, 0) for sid in sprint.story_ids)
         capacity = sprint.capacity_points
         fill_pct = min(int(used / capacity * 100), 100) if capacity else 0
-        fill_color = "#ef4444" if fill_pct > 100 else "#eab308" if fill_pct > 80 else "var(--accent)"
+        fill_color = "var(--danger)" if fill_pct > 100 else "var(--warn)" if fill_pct > 80 else "var(--accent)"
 
         # Show reduced capacity annotation when sprint has deductions
         deduction_note = ""
         if capacity < velocity:
             deduction_note = (
-                f'<div style="font-size:0.75rem;color:#eab308;margin-top:0.25rem;">'
+                f'<div style="font-size:0.75rem;color:var(--warn);margin-top:0.25rem;">'
                 f"Reduced from {velocity} pts (bank holidays / deductions)</div>"
             )
 
         story_chips = "".join(f'<span class="badge badge-tag">{_e(sid)}</span>' for sid in sprint.story_ids)
 
         cards.append(f"""
-  <div class="card sprint-card"{' style="border-color:#eab308;"' if capacity < velocity else ""}>
+  <div class="card sprint-card"{' style="border-color:var(--warn);"' if capacity < velocity else ""}>
     <div class="sprint-header">
       <span class="card-title">{_e(sprint.name)}</span>
       <span class="badge badge-tag">{used} / {capacity} pts</span>
@@ -714,67 +522,49 @@ def _build_attachments_section(graph_state: dict) -> str:
     return f'<section id="attachments"><h2>Attachments</h2>{tags}</section>'
 
 
-def _build_nav(graph_state: dict) -> str:
-    """Build a sticky top-nav with links to available sections."""
-    links: list[str] = []
+def _nav_links(graph_state: dict) -> list[tuple[str, str]]:
+    """(section id, label) pairs for the sticky top-nav, one per available section."""
+    links: list[tuple[str, str]] = []
     qs = graph_state.get("questionnaire")
     if qs and qs.answers:
-        links.append('<a href="#questionnaire">Questionnaire</a>')
+        links.append(("questionnaire", "Questionnaire"))
     if graph_state.get("project_analysis"):
-        links.append('<a href="#analysis">Analysis</a>')
+        links.append(("analysis", "Analysis"))
     if graph_state.get("features"):
-        links.append('<a href="#features">Features</a>')
+        links.append(("features", "Features"))
     if graph_state.get("stories"):
-        links.append('<a href="#stories">Stories</a>')
+        links.append(("stories", "Stories"))
     if graph_state.get("tasks"):
-        links.append('<a href="#tasks">Tasks</a>')
+        links.append(("tasks", "Tasks"))
     if graph_state.get("sprints"):
-        links.append('<a href="#sprints">Sprint Plan</a>')
-    return f'<nav class="toc">{"".join(links)}</nav>' if links else ""
+        links.append(("sprints", "Sprint Plan"))
+    return links
 
 
-def _build_header(graph_state: dict, stage_label: str) -> str:
-    """Build the page header with project name and export metadata."""
-    analysis = graph_state.get("project_analysis")
-    project_name = analysis.project_name if analysis else "Scrum Plan"
-
+def _header_meta(graph_state: dict, stage_label: str) -> tuple[list[str], list[str]]:
+    """(meta lines, stage badges) for the page header."""
     now = datetime.now().strftime("%B %d, %Y %H:%M")
-    stages_done = []
-    for key, label in [
-        ("project_analysis", "Analysis"),
-        ("features", "Features"),
-        ("stories", "Stories"),
-        ("tasks", "Tasks"),
-        ("sprints", "Sprints"),
-    ]:
-        val = graph_state.get(key)
-        if val:
-            stages_done.append(label)
-
-    badges = "".join(f'<span class="badge">{_e(s)}</span>' for s in stages_done)
+    meta = [f"Exported: {now}", f"Stage: {stage_label}"]
 
     # Analysis profile provenance
-    profile_banner = ""
     profile_id = graph_state.get("analysis_profile_id", "")
     if profile_id:
         display_name = profile_id.split("-", 1)[1] if "-" in profile_id else profile_id
         source = profile_id.split("-", 1)[0] if "-" in profile_id else ""
-        profile_banner = (
-            f'\n  <div class="meta" style="margin-top:0.3rem;">'
-            f"<span>Calibrated with: <strong>{_e(display_name)}</strong>"
-            f"{f' ({_e(source)})' if source else ''}</span></div>"
-        )
+        meta.append(f"Calibrated with: {display_name}{f' ({source})' if source else ''}")
 
-    return f"""
-<header class="site-header">
-  <h1>{_e(project_name)}</h1>
-  <div class="meta">
-    <span>Exported: {_e(now)}</span>
-    <span>Stage: {_e(stage_label)}</span>
-    {badges}
-  </div>{profile_banner}
-</header>
-"""
+    badges = [
+        label
+        for key, label in [
+            ("project_analysis", "Analysis"),
+            ("features", "Features"),
+            ("stories", "Stories"),
+            ("tasks", "Tasks"),
+            ("sprints", "Sprints"),
+        ]
+        if graph_state.get(key)
+    ]
+    return meta, badges
 
 
 # ---------------------------------------------------------------------------
@@ -821,29 +611,19 @@ def build_export_html(graph_state: dict, stage: str = "complete") -> str:
         _build_attachments_section(graph_state),
     ]
     body_content = "".join(s for s in sections if s)
-
     if not body_content:
-        body_content = '<div class="container"><p style="color:var(--text-muted)">No artifacts to export yet.</p></div>'
-    else:
-        body_content = f'<div class="container">{body_content}</div>'
+        body_content = '<p style="color:var(--text-muted)">No artifacts to export yet.</p>'
 
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{_e(title)}</title>
-  <style>{_CSS}</style>
-</head>
-<body>
-{_build_header(graph_state, stage_label)}
-{_build_nav(graph_state)}
-{body_content}
-<footer class="site-footer">
-  Generated by yeaboi.ai &bull; {_e(datetime.now().strftime("%Y-%m-%d"))}
-</footer>
-</body>
-</html>"""
+    meta, badges = _header_meta(graph_state, stage_label)
+    return html_page(
+        title=title,
+        heading=analysis.project_name if analysis else "Scrum Plan",
+        body=body_content,
+        meta=meta,
+        badges=badges,
+        nav=_nav_links(graph_state),
+        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+    )
 
 
 def export_plan_html(graph_state: dict, stage: str = "complete", path: Path | None = None) -> Path:

@@ -27,6 +27,7 @@ from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
 from yeaboi.prompts.intake import QUESTION_SHORT_LABELS
 from yeaboi.ui.session._utils import _pad_left, _wrap_text
 from yeaboi.ui.session.screens._screens import _INPUT_BOX_W_MAX, _PAD, _planning_title
+from yeaboi.ui.shared._components import PLANNING_THEME, build_page_panel
 
 # ---------------------------------------------------------------------------
 # Accordion item renderers
@@ -498,11 +499,4 @@ def _build_accordion_question_screen(
         *pad_lines,
     )
 
-    return Panel(
-        content,
-        border_style="white",
-        box=rich.box.ROUNDED,
-        expand=True,
-        height=height,
-        padding=(1, 2),
-    )
+    return build_page_panel(content, theme=PLANNING_THEME, height=height)

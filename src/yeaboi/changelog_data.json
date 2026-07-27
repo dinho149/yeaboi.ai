@@ -2,6 +2,41 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.38.0",
+      "date": "2026-07-27",
+      "summary": "Every TUI screen now displays with its mode's signature background color — a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",
+      "highlights": [
+        {"text": "Every mode-specific TUI screen now displays with its mode's background tint for a polished, consistent look", "areas": ["general"]},
+        {"text": "Neutral dark base for home, splash, settings, and other cross-mode screens", "areas": ["general"]},
+        {"text": "Appearance is now identical across all terminal themes thanks to baked-in backgrounds", "areas": ["general"]},
+        {"text": "New AST guard + truecolor tests prevent raw full-screen Panels from merging in the future", "areas": ["general"]}
+      ]
+    },
+    {
+      "version": "2.37.0",
+      "date": "2026-07-27",
+      "summary": "Team analysis evolved into a comprehensive, member-scoped investigation of how your team works. The AI Usage card now leads with an engineering-practices table scoring tests-with-changes, documentation clarity, ticket references, and PR description quality across all attributed work — honest denominators, small-sample transparency, and a recomputed team row. The same table appears in markdown and HTML exports. Performance overhaul adds pooled tracker fetching, a schema v19 model-keyed analysis cache, cold-run lookup caps with disclosed truncation, activity-targeted repo scanning, and fan-out dedup. Scope controls let you pick sources per component (delivery reads Jira/Azure DevOps, code scans GitHub/Azure Repos, docs reads Confluence/Notion), pick specific members, run dual-source analyses, and persist analysis features per run. Doc quality now reads page content for clarity and AI usage estimates with evidence links. Default analysis depth is now `deep` on all surfaces. UX gains include wizard Esc back-stepping, Ctrl-C cooperative cancel, AzDO SDK clients pinned to the configured org URL, and render-side caps preventing oversized tables from rendering blank.",
+      "highlights": [
+        {"text": "AI Usage card redesigned: per-member practices table (tests, docs, tickets, PR quality) replacing simple footprint", "areas": ["analysis"]},
+        {"text": "Member-scoped analysis with explicit source selection and dual-source runs (Jira + Azure DevOps together)", "areas": ["analysis"]},
+        {"text": "Doc quality reads page content for clarity + AI-usage estimates with evidence links", "areas": ["analysis"]},
+        {"text": "Performance overhaul: pooled fetching, analysis cache (v19), lookup caps with transparent truncation, activity-targeted scanning", "areas": ["analysis"]},
+        {"text": "Default analysis depth is now `deep` on all surfaces; scope controls, feature selection, and render-side caps prevent blank viewports", "areas": ["analysis"]}
+      ]
+    },
+    {
+      "version": "2.36.0",
+      "date": "2026-07-25",
+      "summary": "All shareable HTML exports now share a cohesive, polished design system. Every mode's export page — planning, standup, retro, performance, reporting, roadmap, team profile, and anonymize — uses unified five-theme palettes (midnight, light, solarized, synthwave, forest) with a persistent theme switcher. A self-contained header button cycles themes and remembers your choice in localStorage; printing always forces light tokens. New semantic color tokens (`--ok`, `--warn`, `--danger`, priority ramps, text variants) replace scattered hardcoded hex values across eight exporters, and shared page chrome primitives (`html_page()`, `chip()`, `section()`, `stat_tile()`, `stat_bar()`, `notice_block()`) unify markup and reduce duplication. The design is self-contained with no external CDN or requests. Incidentally fixes an unstyled container in the anonymize export and corrects four double-escaped ampersands in team-profile titles.",
+      "highlights": [
+        {"text": "Five unified theme palettes (midnight default, light, solarized, synthwave, forest) across all eight export pages", "areas": ["general", "planning", "standup", "retro", "performance", "reporting", "usage"]},
+        {"text": "Persistent theme switcher in a header button; localStorage remembers choice and printing forces light tokens", "areas": ["general", "usage"]},
+        {"text": "Shared semantic color tokens and page chrome primitives reduce duplication across exporters", "areas": ["general"]},
+        {"text": "Self-contained design with no CDN or external requests; all resources inline", "areas": ["general"]},
+        {"text": "Bug fixes: unstyled anonymize export container and corrected double-escaped ampersands in team profile", "areas": ["general"]}
+      ]
+    },
+    {
       "version": "2.35.0",
       "date": "2026-07-24",
       "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan — letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",

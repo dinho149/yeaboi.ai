@@ -47,6 +47,8 @@ EXPECTED_TOOLS = {
     "perf_note_add",
     "retro_history",
     "retro_export",
+    "poker_history",
+    "poker_export",
     "team_profile_get",
     "team_compare_plan_to_actuals",
     "team_analyze",
@@ -210,6 +212,29 @@ class TestHistoryTools:
         payload = call_tool("retro_history")
         assert payload["ok"] is True
         assert payload["data"]["history"] == []
+
+    def test_poker_history_empty(self, seeded_session):
+        payload = call_tool("poker_history")
+        assert payload["ok"] is True
+        assert payload["data"]["history"] == []
+        assert payload["data"]["latest_report"] is None
+
+    def test_poker_history_after_run(self, seeded_session, tmp_db):
+        from yeaboi.agent.state import PokerReport, PokerTicketResult
+        from yeaboi.poker.store import PokerStore
+
+        report = PokerReport(
+            date="2026-07-25",
+            session_id=seeded_session,
+            scope_label="Sprint 42",
+            tickets=(PokerTicketResult(key="PROJ-1", summary="S", final_points=5.0, estimated=True),),
+        )
+        with PokerStore(tmp_db) as store:
+            store.record_run(report)
+        payload = call_tool("poker_history", {"session_id": seeded_session})
+        assert payload["ok"] is True
+        assert len(payload["data"]["history"]) == 1
+        assert payload["data"]["latest_report"]["scope_label"] == "Sprint 42"
 
     def test_reporting_history_empty(self, seeded_session):
         payload = call_tool("reporting_history")
@@ -437,7 +462,8 @@ class TestEngineTools:
         assert payload["warnings"] == ["log skipped"]
         assert captured["sprint_count"] == 4
         assert captured["generate_samples"] is True
-        assert captured["analysis_depth"] == "quick"
+        assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_window_days"] == 120
 
     def test_team_analyze_deep_passthrough(self, tmp_db, provider_mode, monkeypatch):
         captured: dict = {}
@@ -446,9 +472,13 @@ class TestEngineTools:
             "yeaboi.analysis.run_team_analysis",
             lambda **kwargs: captured.update(kwargs) or {"warnings": []},
         )
-        payload = call_tool("team_analyze", {"analysis_depth": "deep"})
+        payload = call_tool(
+            "team_analyze",
+            {"analysis_depth": "deep", "analysis_features": ["code_health"]},
+        )
         assert payload["ok"] is True
         assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_features"] == ["code_health"]
 
     def test_anonymize_text(self, tmp_db, provider_mode, monkeypatch):
         captured: dict = {}

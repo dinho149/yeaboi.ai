@@ -14,12 +14,11 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import ParamSpec, TypeVar
 
-import rich.box
 from rich.align import Align
 from rich.console import Group, RenderableType
-from rich.panel import Panel
 from rich.text import Text
 
+from yeaboi.ui.shared._components import build_page_panel
 from yeaboi.ui.shared._mascot import render_full, render_head, walk_cells
 
 IDLE_SECONDS = 5 * 60
@@ -219,13 +218,9 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
             rows += [Text("") for _ in range(max(0, duck_top - cap_top))]
         rows += duck_rows
         rows += [Text("") for _ in range(below)]
-        return Panel(
-            Group(*rows),
-            border_style="white",
-            box=rich.box.ROUNDED,
-            height=max(1, height),
-            padding=(0, 2),
-        )
+        # build_page_panel (main #104) gives the rounded white border + neutral
+        # base tint so the saver never shows the terminal's own background.
+        return build_page_panel(Group(*rows), height=max(1, height), padding=(0, 2))
 
     # Thresholds account for the surrounding Panel: the full duck is 18 half-block
     # rows + caption + hint = 20, plus 2 border rows = 22. Between 22 and the walk
@@ -252,12 +247,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
 
     # Wrap in the app's rounded Panel so the border stays put when the saver takes
     # over the screen — otherwise the frame vanishes on idle. Border-only chrome
-    # (no vertical padding) so the duck keeps as much height as possible.
+    # (no vertical padding) so the duck keeps as much height as possible. The
+    # neutral base tint (main #104) keeps the saver off the terminal background.
     pad = (0, 2) if width >= 8 else (0, 0)
-    return Panel(
-        Align.center(inner, vertical="middle"),
-        border_style="white",
-        box=rich.box.ROUNDED,
-        height=max(1, height),
-        padding=pad,
-    )
+    return build_page_panel(Align.center(inner, vertical="middle"), height=max(1, height), padding=pad)

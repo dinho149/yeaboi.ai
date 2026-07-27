@@ -200,17 +200,10 @@ class AiAdoptionSignal:
 class DocQualitySignal:
     """How clear the team's *written* knowledge is, and how AI shows up in it.
 
-    Built by reading recently-changed Notion & Confluence pages and, per page,
-    computing a deterministic clarity score plus a heuristic AI-likelihood estimate
-    from prose features. Explicit AI markers (e.g. a pasted "Generated with Claude"
-    disclosure) are also counted as a genuine lower bound.
-
-    IMPORTANT — two different confidence levels, never conflate them:
-    - ``avg_clarity`` is a **heuristic readability score** (0–100, higher = clearer).
-    - ``avg_ai_likelihood`` / ``likely_ai_pages`` are a **stylometric ESTIMATE**, not a
-      detection — prose has no reliable AI marker. ``is_ai_estimate`` stays True to
-      force honest framing everywhere this is rendered.
-    - ``ai_marked_pages`` is a **lower bound** — pages carrying an explicit AI trailer.
+    Built by reading every recently changed Notion & Confluence page in configured
+    containers and computing deterministic clarity and usefulness signals.
+    Explicit AI disclosures are counted separately as a genuine lower bound; prose
+    authorship is not guessed from writing style.
 
     All fields default so old saved profiles (no ``doc_quality`` key) deserialize to
     an empty signal. Collection fields are tuple-of-pairs to stay JSON-round-trippable.
@@ -219,15 +212,21 @@ class DocQualitySignal:
     pages_scanned: int = 0  # doc pages whose body we read
     platforms_scanned: tuple[str, ...] = ()  # ("confluence", "notion")
     avg_clarity: float = 0.0  # mean readability score 0–100 (higher = clearer)
+    avg_usefulness: float = 0.0  # actionable documentation usefulness score
     clear_pages: int = 0  # pages scoring clear
     mixed_pages: int = 0  # pages scoring mixed
     unclear_pages: int = 0  # pages scoring unclear
-    avg_ai_likelihood: float = 0.0  # mean stylometric AI-likelihood ESTIMATE 0–100
-    likely_ai_pages: int = 0  # pages whose estimate crosses the "likely AI" threshold
+    owned_pages: int = 0  # pages with an explicit owner/maintainer signal
+    actionable_pages: int = 0  # pages with procedures, decisions, or next steps
+    structured_pages: int = 0  # pages with headings/lists
+    # Legacy fields are retained only so pre-upgrade profiles deserialize. New
+    # analysis leaves them at zero and no surface renders them.
+    avg_ai_likelihood: float = 0.0
+    likely_ai_pages: int = 0
     ai_marked_pages: int = 0  # pages with an EXPLICIT AI marker (lower bound)
     per_platform: tuple[tuple[str, int], ...] = ()  # (("confluence", 12), ("notion", 3))
     flagged_pages: tuple[tuple[str, str], ...] = ()  # ((title, reason), …) sample call-outs
-    is_ai_estimate: bool = True  # always True — honesty flag, see class docstring
+    is_ai_estimate: bool = False  # legacy compatibility; new analysis never estimates authorship
 
 
 @dataclass(frozen=True)
@@ -394,6 +393,46 @@ CREATE TABLE IF NOT EXISTS analysis_ticket_cache (
     parsed_json    TEXT NOT NULL,
     last_used_at   TEXT NOT NULL,
     PRIMARY KEY (source, project_key, issue_key)
+);"""
+
+_ANALYSIS_ENRICHMENT_CACHE_SCHEMA = """\
+CREATE TABLE IF NOT EXISTS analysis_enrichment_cache (
+    task           TEXT NOT NULL,
+    cache_key      TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    result_json    TEXT NOT NULL,
+    last_used_at   TEXT NOT NULL,
+    PRIMARY KEY (task, cache_key, model)
+);"""
+
+_ANALYSIS_RUNS_SCHEMA = """\
+CREATE TABLE IF NOT EXISTS analysis_runs (
+    run_id          TEXT PRIMARY KEY,
+    created_at      TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    window_days     INTEGER NOT NULL,
+    scope_json      TEXT NOT NULL,
+    features_json   TEXT NOT NULL DEFAULT '[]',
+    coverage_json   TEXT NOT NULL DEFAULT '{}',
+    execution_json  TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS analysis_assets (
+    run_id          TEXT NOT NULL,
+    component       TEXT NOT NULL,
+    provider        TEXT NOT NULL,
+    container_name  TEXT NOT NULL,
+    asset_name      TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    PRIMARY KEY (run_id, component, provider, container_name, asset_name)
+);
+CREATE TABLE IF NOT EXISTS analysis_findings (
+    run_id          TEXT NOT NULL,
+    component       TEXT NOT NULL,
+    finding_id      TEXT NOT NULL,
+    priority        TEXT NOT NULL,
+    finding_json    TEXT NOT NULL,
+    PRIMARY KEY (run_id, component, finding_id)
 );"""
 
 
@@ -606,15 +645,19 @@ def _dict_to_doc_quality(d: dict) -> DocQualitySignal:
         pages_scanned=d.get("pages_scanned", 0),
         platforms_scanned=tuple(str(p) for p in d.get("platforms_scanned", ())),
         avg_clarity=d.get("avg_clarity", 0.0),
+        avg_usefulness=d.get("avg_usefulness", 0.0),
         clear_pages=d.get("clear_pages", 0),
         mixed_pages=d.get("mixed_pages", 0),
         unclear_pages=d.get("unclear_pages", 0),
+        owned_pages=d.get("owned_pages", 0),
+        actionable_pages=d.get("actionable_pages", 0),
+        structured_pages=d.get("structured_pages", 0),
         avg_ai_likelihood=d.get("avg_ai_likelihood", 0.0),
         likely_ai_pages=d.get("likely_ai_pages", 0),
         ai_marked_pages=d.get("ai_marked_pages", 0),
         per_platform=_pairs(d.get("per_platform", ())),
         flagged_pages=_str_pairs(d.get("flagged_pages", ())),
-        is_ai_estimate=d.get("is_ai_estimate", True),
+        is_ai_estimate=d.get("is_ai_estimate", False),
     )
 
 
@@ -677,6 +720,19 @@ class TeamProfileStore:
         self._conn.isolation_level = None
         self._conn.execute(_TEAM_PROFILES_SCHEMA)
         self._conn.execute(_ANALYSIS_TICKET_CACHE_SCHEMA)
+        self._conn.execute(_ANALYSIS_ENRICHMENT_CACHE_SCHEMA)
+        self._conn.executescript(_ANALYSIS_RUNS_SCHEMA)
+        # CLI/MCP may open this store without first opening SessionStore, so keep
+        # the additive v20 migration (sessions.py) safe on this direct path too.
+        try:
+            self._conn.execute("ALTER TABLE analysis_runs ADD COLUMN features_json TEXT NOT NULL DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass
+        for column in ("coverage_json", "execution_json"):
+            try:
+                self._conn.execute(f"ALTER TABLE analysis_runs ADD COLUMN {column} TEXT NOT NULL DEFAULT '{{}}'")
+            except sqlite3.OperationalError:
+                pass
         # Migrate: add examples_json column if missing
         try:
             self._conn.execute(_ADD_EXAMPLES_COL)
@@ -721,6 +777,63 @@ class TeamProfileStore:
             (profile.team_id, profile.project_key, profile.source, json_str, ex_str, now, now),
         )
         logger.info("Saved team profile: %s", profile.team_id)
+
+    def save_analysis_run(self, result: dict) -> str:
+        """Persist normalized coverage and findings for one exhaustive run."""
+        import uuid
+
+        run_id = str(uuid.uuid4())
+        coverage = result.get("coverage", {})
+        self._conn.execute(
+            """INSERT INTO analysis_runs
+               (run_id, created_at, status, window_days, scope_json, features_json,
+                coverage_json, execution_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                datetime.now(UTC).isoformat(),
+                str(coverage.get("status", "complete")),
+                int(result.get("analysis_window_days", 120)),
+                json.dumps(result.get("analysis_scope", {}), ensure_ascii=False),
+                json.dumps(result.get("analysis_features", []), ensure_ascii=False),
+                json.dumps(coverage, ensure_ascii=False),
+                json.dumps(result.get("llm_execution", {}), ensure_ascii=False),
+            ),
+        )
+        for component, report in coverage.get("components", {}).items():
+            for asset in report.get("assets", []):
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO analysis_assets
+                       (run_id, component, provider, container_name, asset_name, status, detail)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        run_id,
+                        component,
+                        str(asset.get("provider", "")),
+                        str(asset.get("container", "")),
+                        str(asset.get("asset", "")),
+                        str(asset.get("status", "")),
+                        str(asset.get("detail", "")),
+                    ),
+                )
+        for component in ("code", "docs"):
+            payload = result.get(component) or {}
+            findings = payload.get("examples", {}).get("findings", [])
+            for index, finding in enumerate(findings):
+                finding_id = str(finding.get("id", "") or f"{component}-{index}")
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO analysis_findings
+                       (run_id, component, finding_id, priority, finding_json)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        run_id,
+                        component,
+                        finding_id,
+                        str(finding.get("priority", "")),
+                        json.dumps(finding, ensure_ascii=False),
+                    ),
+                )
+        return run_id
 
     def load_ticket_parse_cache(
         self,
@@ -770,6 +883,43 @@ class TeamProfileStore:
             )
         self._conn.execute(
             "DELETE FROM analysis_ticket_cache WHERE julianday(last_used_at) < julianday('now', '-90 days')"
+        )
+
+    def load_analysis_enrichment(self, task: str, cache_key: str, model: str) -> dict | None:
+        """Load one unchanged, versioned Analysis enrichment."""
+        row = self._conn.execute(
+            """SELECT result_json FROM analysis_enrichment_cache
+               WHERE task = ? AND cache_key = ? AND model = ?""",
+            (task, cache_key, model),
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            result = json.loads(row[0])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(result, dict):
+            return None
+        self._conn.execute(
+            """UPDATE analysis_enrichment_cache SET last_used_at = ?
+               WHERE task = ? AND cache_key = ? AND model = ?""",
+            (datetime.now(UTC).isoformat(), task, cache_key, model),
+        )
+        return result
+
+    def save_analysis_enrichment(self, task: str, cache_key: str, model: str, result: dict) -> None:
+        """Checkpoint one successful Analysis enrichment."""
+        self._conn.execute(
+            """INSERT INTO analysis_enrichment_cache
+                   (task, cache_key, model, result_json, last_used_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(task, cache_key, model) DO UPDATE SET
+                   result_json = excluded.result_json,
+                   last_used_at = excluded.last_used_at""",
+            (task, cache_key, model, json.dumps(result, ensure_ascii=False), datetime.now(UTC).isoformat()),
+        )
+        self._conn.execute(
+            "DELETE FROM analysis_enrichment_cache WHERE julianday(last_used_at) < julianday('now', '-90 days')"
         )
 
     def delete(self, team_id: str) -> bool:

@@ -13,7 +13,7 @@ from rich.text import Text
 
 from yeaboi.sharing.server import OutputShareServer, ShareDocument
 from yeaboi.ui.shared._animations import loading_border_color
-from yeaboi.ui.shared._components import PAD, Theme, build_action_buttons
+from yeaboi.ui.shared._components import PAD, Theme, build_action_buttons, build_page_panel
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def _build_output_share_screen(
     while len(visible) < body_rows:
         visible.append(Text(""))
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
-    return Panel(
+    return build_page_panel(
         Group(
             Text(""),
             title,
@@ -109,9 +109,9 @@ def _build_output_share_screen(
             btn_mid,
             btn_bot,
         ),
-        height=height,
-        padding=(1, 2),
+        theme=theme,
         border_style=loading_border_color(shimmer_tick or 0.0) if loading else theme.sep,
+        height=height,
     )
 
 

@@ -147,7 +147,8 @@ class TestParsing:
         assert args.sprints == 4
         assert args.samples is True
         assert args.no_insights is False
-        assert args.depth == "quick"
+        assert args.depth == "deep"
+        assert args.window_days == 120
 
 
 class TestReportCommand:
@@ -468,6 +469,77 @@ class TestRetroCommand:
         assert _cmd_retro(args, _console()) == 2
 
 
+def _poker_report(session_id: str = "sid", date: str = "2026-07-25"):
+    from yeaboi.agent.state import PokerReport, PokerTicketResult
+
+    return PokerReport(
+        date=date,
+        session_id=session_id,
+        source="jira",
+        scope_label="Sprint 42",
+        tickets=(
+            PokerTicketResult(key="PROJ-1", summary="S", final_points=5.0, estimated=True),
+            PokerTicketResult(key="PROJ-2", summary="T"),
+        ),
+    )
+
+
+class TestPokerCommand:
+    def test_poker_parses(self):
+        args = build_parser().parse_args(["poker", "--session", "sid", "--limit", "5", "--export-latest"])
+        assert args.command == "poker"
+        assert args.session == "sid"
+        assert args.limit == 5
+        assert args.export is True
+
+    def test_empty_history_ok(self, monkeypatch, tmp_path, capsys):
+        from yeaboi.cli import _cmd_poker
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        assert _cmd_poker(build_parser().parse_args(["poker"]), _console()) == 0
+
+    def test_history_json_and_session_filter(self, monkeypatch, tmp_path, capsys):
+        import json
+
+        from yeaboi.cli import _cmd_poker
+        from yeaboi.poker.store import PokerStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        with PokerStore(db) as store:
+            store.record_run(_poker_report("sid-a"))
+            store.record_run(_poker_report("sid-b"))
+        assert _cmd_poker(build_parser().parse_args(["poker", "--format", "json"]), _console()) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert len(payload["history"]) == 2
+        assert payload["history"][0]["estimated_count"] == 1
+        # --session narrows to one recorded session.
+        assert (
+            _cmd_poker(build_parser().parse_args(["poker", "--session", "sid-a", "--format", "json"]), _console()) == 0
+        )
+        payload = json.loads(capsys.readouterr().out)
+        assert {r["session_id"] for r in payload["history"]} == {"sid-a"}
+
+    def test_export_writes_files(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_poker
+        from yeaboi.poker.store import PokerStore
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: db)
+        monkeypatch.setattr("yeaboi.paths.get_poker_export_dir", lambda key: tmp_path / "out")
+        (tmp_path / "out").mkdir()
+        with PokerStore(db) as store:
+            store.record_run(_poker_report())
+        assert _cmd_poker(build_parser().parse_args(["poker", "--export-latest"]), _console()) == 0
+        assert (tmp_path / "out" / "poker-2026-07-25.md").exists()
+
+    def test_export_without_session_exits_2(self, monkeypatch, tmp_path):
+        from yeaboi.cli import _cmd_poker
+
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        assert _cmd_poker(build_parser().parse_args(["poker", "--export-latest"]), _console()) == 2
+
+
 def _delivery_sub(src, key):
     from yeaboi.team_profile import TeamProfile
 
@@ -491,7 +563,8 @@ class TestAnalyzeCommand:
         assert captured["source"] == "jira"
         assert captured["sprint_count"] == 4
         assert captured["include_insights"] is False
-        assert captured["analysis_depth"] == "quick"
+        assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_window_days"] == 120
 
     def test_depth_deep_passthrough(self, monkeypatch):
         captured: dict = {}
@@ -500,9 +573,10 @@ class TestAnalyzeCommand:
             "yeaboi.analysis.run_team_analysis",
             lambda **kwargs: captured.update(kwargs) or {"delivery": {}, "code": None, "docs": None, "warnings": []},
         )
-        args = build_parser().parse_args(["analyze", "--depth", "deep", "--delivery", "jira"])
+        args = build_parser().parse_args(["analyze", "--depth", "deep", "--delivery", "jira", "--features", "delivery"])
         assert _cmd_analyze(args, _console()) == 0
         assert captured["analysis_depth"] == "deep"
+        assert captured["analysis_features"] == ["delivery"]
 
     def test_delivery_banners_and_comparison(self, monkeypatch):
         import io

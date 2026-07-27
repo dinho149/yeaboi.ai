@@ -877,7 +877,13 @@ class TestJiraListSprints:
 
         out = jira_list_sprints("PROJ")
         assert [s["name"] for s in out] == ["Sprint 1", "Sprint 2"]  # sorted by start, newest last
-        assert out[0] == {"name": "Sprint 1", "start_date": "2026-06-01", "end_date": "2026-06-14", "state": "closed"}
+        assert out[0] == {
+            "id": 1,
+            "name": "Sprint 1",
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-14",
+            "state": "closed",
+        }
         assert out[1]["state"] == "active"
 
     def test_empty_when_unconfigured(self, monkeypatch):
@@ -901,3 +907,256 @@ class TestJiraToolsRegistered:
         names = {t.name for t in tools}
         expected = {"jira_read_board", "jira_create_epic", "jira_create_story", "jira_create_sprint"}
         assert expected.issubset(names), f"Missing Jira tools: {expected - names}"
+
+
+# ---------------------------------------------------------------------------
+# Poker helpers — per-issue fetch + field update
+# ---------------------------------------------------------------------------
+
+
+def _make_poker_issue(
+    key: str,
+    summary: str = "Do the thing",
+    description: str = "Details",
+    points=None,
+    status_name: str = "To Do",
+    assignee_name: str = "",
+    type_name: str = "Story",
+    acceptance_field: str = "",
+    acceptance: str = "",
+):
+    issue = MagicMock(spec=["fields", "key"])
+    issue.key = key
+    spec = ["summary", "description", "status", "assignee", "customfield_10016", "story_points", "issuetype"]
+    if acceptance_field:
+        spec.append(acceptance_field)
+    issue.fields = MagicMock(spec=spec)
+    issue.fields.summary = summary
+    issue.fields.description = description
+    issue.fields.customfield_10016 = points
+    issue.fields.story_points = None
+    itype = MagicMock()
+    itype.name = type_name  # post-creation assignment — the name= ctor kwarg means something else on mocks
+    issue.fields.issuetype = itype
+    if acceptance_field:
+        setattr(issue.fields, acceptance_field, acceptance)
+    status = MagicMock()
+    status.name = status_name
+    issue.fields.status = status
+    if assignee_name:
+        assignee = MagicMock(spec=["displayName", "emailAddress", "accountType"])
+        assignee.displayName = assignee_name
+        assignee.emailAddress = ""
+        assignee.accountType = "atlassian"
+        issue.fields.assignee = assignee
+    else:
+        issue.fields.assignee = None
+    return issue
+
+
+class TestJiraSprintIssues:
+    def test_normalizes_rows(self, monkeypatch):
+        from yeaboi.tools.jira import jira_sprint_issues
+
+        mock_client = MagicMock()
+        mock_client.search_issues.return_value = [
+            _make_poker_issue("PROJ-1", points=5, assignee_name="Alex"),
+            _make_poker_issue("PROJ-2"),
+        ]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_base_url", lambda: "https://x.atlassian.net")
+
+        out = jira_sprint_issues(42, "PROJ")
+        assert len(out) == 2
+        assert out[0] == {
+            "source": "jira",
+            "key": "PROJ-1",
+            "summary": "Do the thing",
+            "description": "Details",
+            "story_points": 5.0,
+            "state": "To Do",
+            "assignee": "Alex",
+            "url": "https://x.atlassian.net/browse/PROJ-1",
+            "type": "Story",
+            "acceptance": "",
+        }
+        assert out[1]["story_points"] is None
+        assert out[1]["assignee"] == ""
+        # The sprint id is interpolated as an int and the project scopes the JQL.
+        jql = mock_client.search_issues.call_args[0][0]
+        assert "sprint = 42" in jql and 'project = "PROJ"' in jql
+        # Sub-tasks are excluded server-side, before the ORDER BY clause.
+        assert "issuetype NOT IN subTaskIssueTypes()" in jql
+        assert jql.index("subTaskIssueTypes()") < jql.index("ORDER BY")
+
+    def test_include_types_filters_by_name_unknown_kept(self, monkeypatch):
+        from yeaboi.tools.jira import jira_sprint_issues
+
+        mock_client = MagicMock()
+        mock_client.search_issues.return_value = [
+            _make_poker_issue("P-1", type_name="Story"),
+            _make_poker_issue("P-2", type_name="Bug"),
+            _make_poker_issue("P-3", type_name="Task"),
+            _make_poker_issue("P-4", type_name="Spike"),  # custom type — must survive any filter
+        ]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira._acceptance_field_cache", "")
+
+        out = jira_sprint_issues(42, "PROJ", include_types=("story",))
+        assert [r["key"] for r in out] == ["P-1", "P-4"]
+        out = jira_sprint_issues(42, "PROJ", include_types=("story", "bug", "task"))
+        assert [r["key"] for r in out] == ["P-1", "P-2", "P-3", "P-4"]
+
+    def test_acceptance_field_discovered_and_requested(self, monkeypatch):
+        from yeaboi.tools import jira as jira_mod
+
+        mock_client = MagicMock()
+        mock_client.fields.return_value = [
+            {"id": "customfield_10500", "name": "Sprint"},
+            {"id": "customfield_10101", "name": "Acceptance Criteria"},
+        ]
+        mock_client.search_issues.return_value = [
+            _make_poker_issue("P-1", acceptance_field="customfield_10101", acceptance="AC1: works offline")
+        ]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira._acceptance_field_cache", None)
+
+        out = jira_mod.jira_sprint_issues(42, "PROJ")
+        assert out[0]["acceptance"] == "AC1: works offline"
+        fields_param = mock_client.search_issues.call_args.kwargs["fields"]
+        assert fields_param.endswith(",customfield_10101")
+        # Successful scan is cached — a second fetch must not re-list fields.
+        assert jira_mod._acceptance_field_cache == "customfield_10101"
+
+    def test_no_acceptance_field_caches_empty(self, monkeypatch):
+        from yeaboi.tools import jira as jira_mod
+
+        mock_client = MagicMock()
+        mock_client.fields.return_value = [{"id": "customfield_10500", "name": "Sprint"}]
+        mock_client.search_issues.return_value = [_make_poker_issue("P-1")]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira._acceptance_field_cache", None)
+
+        out = jira_mod.jira_sprint_issues(42, "PROJ")
+        assert out[0]["acceptance"] == ""
+        assert mock_client.search_issues.call_args.kwargs["fields"] == jira_mod._POKER_ISSUE_FIELDS
+        assert jira_mod._acceptance_field_cache == ""  # "no such field" is a stable answer
+
+    def test_discovery_failure_not_cached(self, monkeypatch):
+        from yeaboi.tools import jira as jira_mod
+
+        mock_client = MagicMock()
+        mock_client.fields.side_effect = RuntimeError("api down")
+        mock_client.search_issues.return_value = [_make_poker_issue("P-1")]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira._acceptance_field_cache", None)
+
+        out = jira_mod.jira_sprint_issues(42, "PROJ")
+        assert out[0]["acceptance"] == ""
+        assert jira_mod._acceptance_field_cache is None  # transient failure → retry next fetch
+
+    def test_empty_when_unconfigured(self, monkeypatch):
+        from yeaboi.tools.jira import jira_sprint_issues
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: None)
+        assert jira_sprint_issues(42) == []
+
+    def test_empty_on_bad_sprint_id(self, monkeypatch):
+        from yeaboi.tools.jira import jira_sprint_issues
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: MagicMock())
+        assert jira_sprint_issues("not-a-number") == []
+
+    def test_empty_on_api_error(self, monkeypatch):
+        from yeaboi.tools.jira import jira_sprint_issues
+
+        mock_client = MagicMock()
+        mock_client.search_issues.side_effect = _make_jira_error(500, "boom")
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        assert jira_sprint_issues(42) == []
+
+
+class TestJiraBacklogIssues:
+    def test_uses_backlog_jql(self, monkeypatch):
+        from yeaboi.tools.jira import jira_backlog_issues
+
+        mock_client = MagicMock()
+        mock_client.search_issues.return_value = [_make_poker_issue("PROJ-9")]
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_base_url", lambda: "https://x.atlassian.net")
+
+        out = jira_backlog_issues("PROJ")
+        assert [r["key"] for r in out] == ["PROJ-9"]
+        jql = mock_client.search_issues.call_args[0][0]
+        assert "sprint IS EMPTY" in jql and "statusCategory != Done" in jql
+        assert "issuetype NOT IN subTaskIssueTypes()" in jql
+        assert jql.index("subTaskIssueTypes()") < jql.index("ORDER BY")
+
+    def test_empty_without_project_key(self, monkeypatch):
+        from yeaboi.tools.jira import jira_backlog_issues
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: MagicMock())
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_project_key", lambda: None)
+        assert jira_backlog_issues("") == []
+
+
+class TestJiraUpdateIssueFields:
+    def _client_with_issue(self, monkeypatch):
+        mock_client = MagicMock()
+        mock_issue = MagicMock()
+        mock_client.issue.return_value = mock_issue
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: mock_client)
+        return mock_client, mock_issue
+
+    def test_updates_all_fields(self, monkeypatch):
+        from yeaboi.tools.jira import jira_update_issue_fields
+
+        _client, issue = self._client_with_issue(monkeypatch)
+        ok, err = jira_update_issue_fields("PROJ-1", summary="New", description="Desc", story_points=8)
+        assert (ok, err) == (True, "")
+        fields = issue.update.call_args.kwargs["fields"]
+        assert fields == {"summary": "New", "description": "Desc", "customfield_10016": 8.0}
+
+    def test_noop_when_nothing_to_update(self, monkeypatch):
+        from yeaboi.tools.jira import jira_update_issue_fields
+
+        _client, issue = self._client_with_issue(monkeypatch)
+        assert jira_update_issue_fields("PROJ-1") == (True, "")
+        issue.update.assert_not_called()
+
+    def test_unconfigured_returns_error_tuple(self, monkeypatch):
+        from yeaboi.tools.jira import jira_update_issue_fields
+
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: None)
+        ok, err = jira_update_issue_fields("PROJ-1", story_points=5)
+        assert ok is False
+        assert "not configured" in err
+
+    def test_auth_error_folded_into_tuple(self, monkeypatch):
+        from yeaboi.tools.jira import jira_update_issue_fields
+
+        _client, issue = self._client_with_issue(monkeypatch)
+        issue.update.side_effect = _make_jira_error(401)
+        ok, err = jira_update_issue_fields("PROJ-1", story_points=5)
+        assert ok is False
+        assert "authentication" in err.lower()
+
+    def test_discovers_story_points_field_and_retries(self, monkeypatch):
+        import yeaboi.tools.jira as jira_mod
+        from yeaboi.tools.jira import jira_update_issue_fields
+
+        monkeypatch.setattr(jira_mod, "_story_points_field_cache", "")
+        mock_client, issue = self._client_with_issue(monkeypatch)
+        # First update rejects the default field id; discovery finds the real one.
+        issue.update.side_effect = [_make_jira_error(400, "Field 'customfield_10016' cannot be set"), None]
+        mock_client.fields.return_value = [
+            {"id": "customfield_10999", "name": "Story point estimate"},
+            {"id": "customfield_10014", "name": "Epic Link"},
+        ]
+
+        ok, err = jira_update_issue_fields("PROJ-1", story_points=5)
+        assert (ok, err) == (True, "")
+        retry_fields = issue.update.call_args_list[1].kwargs["fields"]
+        assert retry_fields == {"customfield_10999": 5.0}
+        # The discovered id is cached for subsequent updates.
+        assert jira_mod._story_points_field_cache == "customfield_10999"
