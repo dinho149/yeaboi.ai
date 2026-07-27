@@ -43,9 +43,10 @@ class TestSchemaVersion:
         # (roadmap_config, roadmap_history); v11 added the multi-row roadmaps
         # list; v12 added the token_usage performance columns (duration_ms /
         # eval_duration_ms / load_duration_ms / tokens_per_sec) for local metrics;
-        # v13 added the Deep-analysis ticket parse cache; v18 added the Scrum Poker
-        # table (poker_history).
-        assert CURRENT_SCHEMA_VERSION == 18
+        # v13 added the ticket cache; v14-v17 add Standup scopes; v18 added the
+        # Scrum Poker table (poker_history); v19 adds the Analysis enrichment
+        # cache; v20 records selected Analysis features.
+        assert CURRENT_SCHEMA_VERSION == 20
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""
@@ -60,6 +61,19 @@ class TestSchemaVersion:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='analysis_ticket_cache'"
         ).fetchone()
         assert row == ("analysis_ticket_cache",)
+
+    def test_new_db_has_analysis_enrichment_cache(self, store: SessionStore):
+        row = store._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='analysis_enrichment_cache'"
+        ).fetchone()
+        assert row == ("analysis_enrichment_cache",)
+
+    def test_new_db_records_analysis_run_features(self, tmp_path: Path):
+        from yeaboi.team_profile import TeamProfileStore
+
+        with TeamProfileStore(tmp_path / "features.db") as profiles:
+            cols = {row[1] for row in profiles._conn.execute("PRAGMA table_info(analysis_runs)").fetchall()}
+        assert "features_json" in cols
 
     def test_v12_db_migrates_analysis_ticket_cache(self, tmp_path: Path):
         import sqlite3

@@ -371,6 +371,116 @@ def get_standup_github_repo() -> str:
     return os.getenv("STANDUP_GITHUB_REPO", "") or ""
 
 
+def _csv_config(name: str) -> tuple[str, ...]:
+    """Return a stable, de-duplicated comma-separated configuration value."""
+    values: list[str] = []
+    for raw in os.getenv(name, "").split(","):
+        value = raw.strip()
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+
+
+def get_team_analysis_github_owners() -> tuple[str, ...]:
+    """GitHub owners/orgs whose repositories form the analysis estate.
+
+    Falls back to the owner of ``STANDUP_GITHUB_REPO`` for compatibility.
+    """
+    configured = _csv_config("TEAM_ANALYSIS_GITHUB_OWNERS")
+    if configured:
+        return configured
+    repo = get_standup_github_repo()
+    return (repo.split("/", 1)[0],) if "/" in repo else ()
+
+
+def get_team_analysis_azdo_projects() -> tuple[str, ...]:
+    configured = _csv_config("TEAM_ANALYSIS_AZDO_PROJECTS")
+    if configured:
+        return configured
+    project = get_azure_devops_project() or ""
+    return (project,) if project else ()
+
+
+def get_team_analysis_confluence_spaces() -> tuple[str, ...]:
+    configured = _csv_config("TEAM_ANALYSIS_CONFLUENCE_SPACES")
+    if configured:
+        return configured
+    space = get_confluence_space_key() or ""
+    return (space,) if space else ()
+
+
+def get_team_analysis_notion_roots() -> tuple[str, ...]:
+    configured = _csv_config("TEAM_ANALYSIS_NOTION_ROOTS")
+    if configured:
+        return configured
+    root = get_notion_root_page_id() or ""
+    return (root,) if root else ()
+
+
+def get_team_analysis_enrichment_timeout_seconds() -> int:
+    """Maximum seconds for one Analysis-mode AI enrichment request."""
+    raw = os.getenv("TEAM_ANALYSIS_ENRICHMENT_TIMEOUT_SECONDS", "120")
+    try:
+        return max(10, min(int(raw), 600))
+    except ValueError:
+        return 120
+
+
+def get_team_analysis_fast_model() -> str | None:
+    """Optional model override for lightweight Analysis-mode enrichment calls.
+
+    Unset selects the provider-specific fast default. ``default``/``off`` keeps
+    the user's primary model instead.
+    """
+    raw = os.getenv("TEAM_ANALYSIS_FAST_MODEL", "").strip()
+    return raw or None
+
+
+def get_team_analysis_llm_target_seconds() -> int:
+    """Target wall-clock time for the LLM portion of a Deep analysis run."""
+    raw = os.getenv("TEAM_ANALYSIS_LLM_TARGET_SECONDS", "600")
+    try:
+        return max(60, min(int(raw), 7200))
+    except ValueError:
+        return 600
+
+
+def get_team_analysis_llm_max_concurrency() -> int:
+    """Maximum concurrent cloud LLM requests used by Analysis mode."""
+    raw = os.getenv("TEAM_ANALYSIS_LLM_MAX_CONCURRENCY", "6")
+    try:
+        return max(1, min(int(raw), 12))
+    except ValueError:
+        return 6
+
+
+def get_team_analysis_doc_request_timeout_seconds() -> int:
+    """Maximum seconds for one documentation-provider request in Analysis."""
+    raw = os.getenv("TEAM_ANALYSIS_DOC_REQUEST_TIMEOUT_SECONDS", "30")
+    try:
+        return max(5, min(int(raw), 120))
+    except ValueError:
+        return 30
+
+
+def get_team_analysis_doc_max_concurrency() -> int:
+    """Maximum concurrent documentation body reads per provider."""
+    raw = os.getenv("TEAM_ANALYSIS_DOC_MAX_CONCURRENCY", "8")
+    try:
+        return max(1, min(int(raw), 16))
+    except ValueError:
+        return 8
+
+
+def get_team_analysis_code_max_concurrency() -> int:
+    """Maximum concurrent code-provider reads used by Analysis mode."""
+    raw = os.getenv("TEAM_ANALYSIS_CODE_MAX_CONCURRENCY", "6")
+    try:
+        return max(1, min(int(raw), 16))
+    except ValueError:
+        return 6
+
+
 def get_retro_server_port() -> int:
     """Return the base port for the Retro collaboration server (default 5173).
 

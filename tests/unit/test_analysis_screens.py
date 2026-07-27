@@ -25,8 +25,13 @@ from rich.text import Text
 
 from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_analysis_depth_screen,
+    _build_analysis_feature_screen,
+    _build_analysis_model_offer_screen,
     _build_analysis_progress_screen,
     _build_analysis_review_screen,
+    _build_analysis_setup_review_screen,
+    _build_analysis_window_screen,
+    _build_code_project_select_screen,
     _build_component_select_screen,
     _build_generate_confirm_screen,
     _build_instructions_review_screen,
@@ -38,6 +43,18 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_team_analysis_screen,
     _build_team_insights_screen,
 )
+from yeaboi.ui.shared._components import ANALYSIS_THEME, PLANNING_THEME
+
+
+def test_analysis_model_offer_names_models_and_eta():
+    output = _render(
+        _build_analysis_model_offer_screen("qwen3:14b", "qwen3:4b", 1200, height=30),
+        width=100,
+    )
+    assert "qwen3:14b" in output
+    assert "qwen3:4b" in output
+    assert "estimated 20 min" in output
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,6 +72,21 @@ def _render(panel: Panel, width: int = 100) -> str:
 def _make_body_lines(n: int = 10, prefix: str = "Line") -> list:
     """Create a list of Text objects for use as body_lines."""
     return [Text(f"    {prefix} {i}", justify="left") for i in range(n)]
+
+
+def test_code_project_picker_shows_selected_scope():
+    rendered = _render(
+        _build_code_project_select_screen(
+            ["Infrastructure", "Product"],
+            {1},
+            1,
+            width=90,
+            height=24,
+        )
+    )
+    assert "ANALYSIS SETUP" in rendered and "AZURE PROJECTS" in rendered
+    assert "1 of 2 projects selected" in rendered
+    assert "Product" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -658,6 +690,105 @@ class TestBuildAnalysisProgressScreen:
         result = _build_analysis_progress_screen(steps, width=80, height=24)
         output = _render(result)
         assert "Fetching sprints" in output
+        assert "✓ Fetching sprints" not in output
+        assert "• Fetching sprints" in output
+        assert "▸ Building profile" in output
+
+    def test_legacy_activity_uses_planning_card_theme(self):
+        result = _build_analysis_progress_screen(
+            ["Fetching sprints...", "Building profile..."],
+            mode="planning",
+            width=80,
+            height=24,
+        )
+        rows = [item for item in result.renderable.renderables if isinstance(item, Text)]
+        history = next(item for item in rows if "Fetching sprints" in item.plain)
+        current = next(item for item in rows if "Building profile" in item.plain)
+        assert str(history.style) == PLANNING_THEME.accent
+        assert str(current.style) == f"bold {PLANNING_THEME.accent_bright}"
+        assert str(result.border_style) == PLANNING_THEME.accent
+
+    def test_structured_running_components_do_not_render_as_completed(self):
+        progress = [
+            {
+                "kind": "analysis_component",
+                "component_id": "delivery:jira",
+                "label": "Fetching sprint history · Jira",
+                "status": "running",
+                "detail": "",
+            },
+            {
+                "kind": "analysis_component",
+                "component_id": "code:code",
+                "label": "Scanning AI footprint & repository health",
+                "status": "running",
+                "detail": "",
+            },
+            "Docs · Confluence space: PSO",
+        ]
+        output = _render(_build_analysis_progress_screen(progress, width=100, height=24))
+        assert "▸ Fetching sprint history" in output
+        assert "▸ Scanning AI footprint" in output
+        assert "✓ Fetching sprint history" not in output
+        assert "Docs · Confluence space: PSO" in output
+
+    def test_structured_component_only_checks_on_completed_event(self):
+        progress = [
+            {
+                "kind": "analysis_component",
+                "component_id": "delivery:jira",
+                "label": "Fetching sprint history · Jira",
+                "status": "running",
+                "detail": "",
+            },
+            {
+                "kind": "analysis_component",
+                "component_id": "delivery:jira",
+                "label": "Fetching sprint history · Jira",
+                "status": "completed",
+                "detail": "",
+            },
+        ]
+        output = _render(_build_analysis_progress_screen(progress, width=100, height=24))
+        assert "✓ Fetching sprint history" in output
+        assert "▸ Fetching sprint history" not in output
+
+        result = _build_analysis_progress_screen(progress, mode="analysis", width=100, height=24)
+        completed = next(
+            item
+            for item in result.renderable.renderables
+            if isinstance(item, Text) and "Fetching sprint history" in item.plain
+        )
+        assert str(completed.style) == ANALYSIS_THEME.accent
+
+    def test_code_progress_is_counted_and_explicitly_read_only(self):
+        progress = [
+            {
+                "kind": "analysis_component",
+                "component_id": "code:code_health",
+                "label": "Analysing selected-user code-change health",
+                "status": "running",
+                "detail": "",
+                "phase": "Reading code-change metadata",
+                "current": 3,
+                "total": 5,
+                "unit": "changes inspected",
+                "secondary_count": 27,
+                "secondary_unit": "file records found",
+                "read_only": True,
+            }
+        ]
+
+        output = _render(
+            _build_analysis_progress_screen(progress, width=160, height=24),
+            width=160,
+        )
+
+        assert "60% · 3/5 changes inspected" in output
+        assert "27 file records found" in output
+        assert "Repository access is read-only" in output
+        assert "no files are modified" in output
+        assert "Changed files:" not in output
 
     def test_elapsed_time(self):
         result = _build_analysis_progress_screen(["Working..."], elapsed=12.5, width=80, height=24)
@@ -1014,6 +1145,46 @@ class TestRunTeamAnalysisResultsBoth:
         # Toggling tracker keeps a real (per-tracker) delivery profile in active_box.
         assert active_box[0][0].source == "azdevops"
 
+    def test_failed_feature_offers_retry_action(self, monkeypatch):
+        from rich.text import Text
+
+        from yeaboi.team_profile import AiAdoptionSignal
+        from yeaboi.ui.mode_select import _run_team_analysis_results
+
+        both = self._both()
+        captured = {}
+
+        def screen(*args, **kwargs):
+            captured["actions"] = kwargs["actions"]
+            return Text("results")
+
+        monkeypatch.setattr("yeaboi.ui.mode_select._build_team_analysis_screen", screen)
+        code = {
+            "signal": AiAdoptionSignal(scanned_commits=10),
+            "examples": {
+                "enabled_features": ["code_health"],
+                "coverage_report": {"status": "failed", "completed": 0, "eligible": 10},
+                "repository_health": {"files_analysed": 0},
+            },
+        }
+
+        result = _run_team_analysis_results(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["esc"]),
+            0.01,
+            True,
+            both["jira"]["profile"],
+            {},
+            delivery=both,
+            code=code,
+            analysis_features=["delivery", "code_health"],
+            retry_config={"components": {"code": ["azdo"], "docs": []}},
+        )
+
+        assert result == "back"
+        assert "Retry failed" in captured["actions"]
+
 
 class TestDeliveryOffScreen:
     """_build_team_analysis_screen with profile=None (a code/docs-only run) — the
@@ -1059,7 +1230,7 @@ class TestDeliveryOffScreen:
             code_signal=self._code_signal(),
         )
         out = _render(panel, width=100)
-        assert "AI Adoption" in out
+        assert "AI Footprint" in out
         assert "45%" in out  # footprint rendered from the global code_signal
 
     def test_ai_adoption_dashboard_breakdowns_evidence_and_actions(self):
@@ -1143,6 +1314,17 @@ class TestDeliveryOffScreen:
         assert visible_card_order(None, has_code=True, has_docs=False) == ("ai-adoption",)
         assert visible_card_order(None, has_code=False, has_docs=True) == ("documentation",)
 
+    def test_code_health_only_hides_ai_footprint(self):
+        from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
+
+        assert visible_card_order(
+            None,
+            has_code=False,
+            has_docs=False,
+            has_code_health=True,
+            analysis_features=["code_health"],
+        ) == ("code-health",)
+
     def test_visible_card_order_delivery_plus_globals(self):
         from yeaboi.team_profile import TeamProfile
         from yeaboi.ui.mode_select.screens._analysis_sections import visible_card_order
@@ -1152,6 +1334,49 @@ class TestDeliveryOffScreen:
         assert order[0] == "velocity"
         assert "ai-adoption" in order and "documentation" in order
         assert order[-1] == "insights"
+
+
+class TestAnalysisFeatureScreen:
+    _AVAILABLE = {
+        "delivery": True,
+        "ai_footprint": True,
+        "code_health": True,
+        "documentation": False,
+    }
+
+    def test_all_runnable_areas_start_selected(self):
+        out = _render(
+            _build_analysis_feature_screen(
+                self._AVAILABLE,
+                {"delivery", "ai_footprint", "code_health"},
+                0,
+                width=100,
+                height=32,
+            ),
+            width=100,
+        )
+        assert "Analyse all" in out
+        assert "AI footprint" in out and "Code health" in out
+        assert "Unavailable" in out
+        assert "3/3 selected" in out
+
+    def test_narrow_screen_keeps_focused_feature_visible(self):
+        out = _render(
+            _build_analysis_feature_screen(
+                {key: True for key in ("delivery", "ai_footprint", "code_health", "documentation")},
+                {"documentation"},
+                4,
+                width=48,
+                height=20,
+            ),
+            width=48,
+        )
+        assert "‹ ● Documentation ›" in out
+
+
+def test_narrow_window_screen_keeps_focused_tile_visible():
+    out = _render(_build_analysis_window_screen(3, width=48, height=20), width=48)
+    assert "‹ ● 365 DAYS ›" in out
 
 
 class TestComponentSelectScreen:
@@ -1170,7 +1395,7 @@ class TestComponentSelectScreen:
         assert "DELIVERY" in out and "CODE" in out and "DOCS" in out
         # Each component shows its OWN sub-sources.
         assert "Jira" in out and "GitHub" in out and "Confluence" in out
-        # ●/○ dots distinguish checked vs unchecked; footer shows per-component counts.
+        # Match the app-wide filled/empty toggle states.
         assert "●" in out and "○" in out
         assert "Delivery 1" in out and "sources" in out
 
@@ -1182,7 +1407,7 @@ class TestComponentSelectScreen:
             ),
             width=110,
         )
-        assert "‹" in out and "›" in out  # focused cell (code / azdo) wrapped in brackets
+        assert "‹ ● Azure Repos ›" in out
 
     def test_no_selection_shows_hint(self):
         checked = {"delivery": set(), "code": set(), "docs": set()}
@@ -1203,14 +1428,88 @@ class TestComponentSelectScreen:
 
 
 class TestAnalysisDepthScreen:
-    def test_quick_is_rendered_as_recommended(self):
+    def test_deep_is_rendered_as_recommended(self):
         out = _render(_build_analysis_depth_screen(0, width=100, height=30), width=100)
         assert "QUICK" in out and "Recommended" in out
-        assert "DEEP" in out and "cached" in out.lower()
+        assert "DEEP" in out and "exhaustive" in out.lower()
 
     def test_deep_can_be_focused(self):
         out = _render(_build_analysis_depth_screen(1, width=100, height=30), width=100)
-        assert "› DEEP" in out
+        assert "‹ ● DEEP ›" in out
+
+
+class TestAnalysisSetupReviewScreen:
+    def test_summarizes_exact_run_scope(self):
+        out = _render(
+            _build_analysis_setup_review_screen(
+                features=["ai_footprint", "documentation"],
+                components={"code": ["github", "azdo"], "docs": ["confluence"]},
+                members=["Alice", "Bob"],
+                analysis_scope={"azdo": ["Infrastructure", "Product"]},
+                depth="deep",
+                window_days=120,
+                model="qwen3:4b",
+                width=100,
+                height=34,
+            ),
+            width=100,
+        )
+        assert "REVIEW" in out and "Run Analysis" in out and "Back" in out
+        assert "AI footprint" in out and "Documentation" in out
+        assert "GitHub" in out and "Infrastructure" in out
+        assert "Alice, Bob" in out
+        assert "Deep · 120 days" in out and "qwen3:4b" in out
+
+    def test_review_loop_can_go_back_or_run(self):
+        from yeaboi.ui.mode_select import _run_analysis_setup_review
+
+        args = {
+            "features": ["documentation"],
+            "components": {"docs": ["confluence"]},
+            "members": None,
+            "analysis_scope": {},
+            "depth": "quick",
+            "window_days": 120,
+            "model": None,
+        }
+        assert (
+            _run_analysis_setup_review(
+                TestComponentAndMemberLoops._FakeLive(),
+                TestComponentAndMemberLoops._console(),
+                TestComponentAndMemberLoops._reader(["enter"]),
+                0.01,
+                True,
+                **args,
+            )
+            == "run"
+        )
+        assert (
+            _run_analysis_setup_review(
+                TestComponentAndMemberLoops._FakeLive(),
+                TestComponentAndMemberLoops._console(),
+                TestComponentAndMemberLoops._reader(["right", "enter"]),
+                0.01,
+                True,
+                **args,
+            )
+            == "back"
+        )
+
+    def test_short_review_keeps_actions_visible(self):
+        out = _render(
+            _build_analysis_setup_review_screen(
+                features=["documentation"],
+                components={"docs": ["confluence"]},
+                members=None,
+                analysis_scope={},
+                depth="quick",
+                window_days=120,
+                width=48,
+                height=20,
+            ),
+            width=48,
+        )
+        assert "Run Analysis" in out and "Back" in out
 
 
 class TestMemberSelectScreen:
@@ -1218,7 +1517,7 @@ class TestMemberSelectScreen:
         out = _render(_build_member_select_screen(["Alice", "Bob"], {0}, 0, width=100, height=30), width=100)
         assert "Alice" in out and "Bob" in out
         assert "1 of 2 selected" in out
-        assert "A select/deselect all" in out
+        assert "A selects all" in out
 
     def test_empty_selection_is_explicit(self):
         out = _render(_build_member_select_screen(["Alice"], set(), 0, width=100, height=30), width=100)
@@ -1259,6 +1558,23 @@ class TestComponentAndMemberLoops:
             self._FakeLive(), self._console(), self._reader(keys), 0.01, True, grid or self._GRID
         )
 
+    def _features(self, keys):
+        from yeaboi.ui.mode_select import _run_analysis_feature_select
+
+        return _run_analysis_feature_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(keys),
+            0.01,
+            True,
+            {
+                "delivery": True,
+                "ai_footprint": True,
+                "code_health": True,
+                "documentation": True,
+            },
+        )
+
     def _members(self, keys, roster):
         from yeaboi.ui.mode_select import _run_member_select
 
@@ -1277,11 +1593,29 @@ class TestComponentAndMemberLoops:
             "docs": ["confluence"],
         }
 
-    def test_depth_defaults_to_quick(self):
-        assert self._depth(["enter"]) == "quick"
+    def test_all_features_are_selected_by_default(self):
+        assert self._features(["enter"]) == [
+            "delivery",
+            "ai_footprint",
+            "code_health",
+            "documentation",
+        ]
 
-    def test_depth_can_select_deep_or_cancel(self):
-        assert self._depth(["right", "enter"]) == "deep"
+    def test_feature_can_be_removed(self):
+        assert self._features(["down", "right", " ", "enter"]) == [
+            "delivery",
+            "code_health",
+            "documentation",
+        ]
+
+    def test_feature_picker_blocks_empty_selection(self):
+        assert self._features([" ", "enter", "down", " ", "enter"]) == ["delivery"]
+
+    def test_depth_defaults_to_deep(self):
+        assert self._depth(["enter"]) == "deep"
+
+    def test_depth_can_select_quick_or_cancel(self):
+        assert self._depth(["left", "enter"]) == "quick"
         assert self._depth(["esc"]) == "cancel"
 
     def test_deselecting_a_subsource(self):
@@ -1324,7 +1658,7 @@ class TestComponentAndMemberLoops:
         assert self._members([" ", "enter"], ["Alice", "Bob"]) == ["Bob"]
 
     def test_member_select_toggle_all(self):
-        assert self._members(["a", "down", " ", "enter"], ["Alice", "Bob"]) == ["Bob"]
+        assert self._members(["a", "right", " ", "enter"], ["Alice", "Bob"]) == ["Bob"]
 
     def test_member_select_cannot_confirm_nobody(self):
         assert self._members(["a", "enter", " ", "enter"], ["Alice"]) == ["Alice"]
@@ -1334,6 +1668,23 @@ class TestComponentAndMemberLoops:
 
     def test_member_cancel(self):
         assert self._members(["esc"], ["Alice"]) == "cancel"
+
+    def test_wide_member_grid_uses_two_dimensional_navigation(self):
+        assert self._members(["right", " ", "enter"], ["Alice", "Bob", "Zoe"]) == ["Alice", "Zoe"]
+
+    def test_member_selection_can_be_restored_after_review_back(self):
+        from yeaboi.ui.mode_select import _run_member_select
+
+        result = _run_member_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            ["Alice", "Bob"],
+            initial_members=["Bob"],
+        )
+        assert result == ["Bob"]
 
     def test_prefetch_roster_unions_sources(self, monkeypatch):
         from yeaboi.ui.mode_select import _prefetch_roster
@@ -1377,6 +1728,47 @@ class TestComponentAndMemberLoops:
 
         monkeypatch.setattr("yeaboi.analysis.get_team_roster", boom)
         assert _prefetch_roster(self._FakeLive(), self._console(), ["jira"], "", None) == []
+
+    def test_status_aware_prefetch_unions_sources(self, monkeypatch):
+        from yeaboi.team_roster import RosterMember, RosterResult
+        from yeaboi.ui.mode_select import _prefetch_roster_result
+
+        def roster(source, project, db_path=None):
+            names = {"jira": ("Ada", "Bob"), "azdevops": ("Ada", "Carol")}[source]
+            return RosterResult(
+                tuple(RosterMember(name, source, f"{source}:{name}") for name in names),
+                "complete",
+                (),
+            )
+
+        monkeypatch.setattr("yeaboi.analysis.get_team_roster_result", roster)
+        result = _prefetch_roster_result(
+            self._FakeLive(),
+            self._console(),
+            ["jira", "azdevops"],
+            "",
+            None,
+        )
+        assert result.status == "complete"
+        assert [member.name for member in result.members] == ["Ada", "Bob", "Carol"]
+
+    def test_failed_status_asks_instead_of_continuing_unscoped(self, monkeypatch):
+        from yeaboi.team_roster import RosterResult
+        from yeaboi.ui.mode_select import _run_analysis_roster_lookup
+
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select._prefetch_roster_result",
+            lambda *args, **kwargs: RosterResult((), "failed", (), ("Jira unavailable",)),
+        )
+        result = _run_analysis_roster_lookup(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["esc"]),
+            ["jira"],
+            "PROJ",
+            None,
+        )
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -1578,6 +1970,10 @@ class TestAnalysisOverview:
             height=height,
             # Global code/docs scans present → the two standalone cards render.
             code_signal=AiAdoptionSignal(scanned_commits=20, ai_commits=8, footprint_pct=40.0),
+            code_examples={
+                "enabled_features": ["ai_footprint", "code_health"],
+                "repository_health": {"files_analysed": 12, "findings": 2},
+            },
             doc_signal=DocQualitySignal(pages_scanned=5, avg_clarity=70.0),
         )
         assert isinstance(panel, Panel)
@@ -1597,7 +1993,7 @@ class TestAnalysisOverview:
         # Selection auto-scrolls, so check the top half with card 0 selected
         # and the bottom half with the last card selected.
         top = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=0)
-        bottom = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=9)
+        bottom = self._render_view(examples=_NARRATIVE_EXAMPLES, selected_card=10)
         combined = top + bottom
         for title in (
             "Velocity & Sprints",
@@ -1607,7 +2003,8 @@ class TestAnalysisOverview:
             "Writing Style",
             "Trends & Repos",
             "Recommendations",
-            "AI Adoption",
+            "AI Footprint",
+            "Code Health",
             "Documentation",
             "Team Insights",
         ):
@@ -1803,6 +2200,7 @@ class TestDocumentationCard:
             pages_scanned=6,
             platforms_scanned=("confluence", "notion"),
             avg_clarity=52.0,
+            avg_usefulness=45.0,
             clear_pages=2,
             mixed_pages=2,
             unclear_pages=2,
@@ -1819,7 +2217,7 @@ class TestDocumentationCard:
                         "title": "Onboarding guide",
                         "platform": "confluence",
                         "clarity": 30,
-                        "ai_likelihood": 12,
+                        "usefulness": 40,
                         "url": "https://wiki/onboarding",
                     }
                 ],
@@ -1853,7 +2251,7 @@ class TestDocumentationCard:
         )
         assert "Documentation" in output
         assert "52/100" in output  # clarity score
-        assert "estimate" in output.lower()  # AI-likelihood is framed as an estimate
+        assert "usefulness" in output.lower()
         assert "lower bound" in output.lower()  # explicit-marker framing
         assert "Onboarding guide" in output  # flagged page
         assert "Tighten the least-clear pages" in bottom  # coaching

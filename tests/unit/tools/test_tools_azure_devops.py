@@ -14,9 +14,12 @@ from yeaboi.tools import get_tools
 from yeaboi.tools.azure_devops import (
     _azdo_error_msg,
     _parse_azdo_url,
+    azdevops_changed_files,
+    azdevops_list_projects,
     azdevops_list_work_items,
     azdevops_read_file,
     azdevops_read_repo,
+    azdevops_recent_commits,
 )
 
 
@@ -79,6 +82,120 @@ class TestParseAzdoUrl:
 
         with pytest.raises(ValueError):
             _parse_azdo_url("https://dev.azure.com/myorg/MyProject/my-repo")
+
+
+class TestAnalysisScopeHelpers:
+    @patch("yeaboi.tools.azure_devops._make_connection")
+    def test_list_projects_is_sorted_and_paginated(self, mock_connection):
+        first = []
+        for idx in range(100):
+            project = MagicMock()
+            project.name = f"P{idx:03}"
+            first.append(project)
+        another = MagicMock()
+        another.name = "Another"
+        second = [another]
+        core = mock_connection.return_value.clients.get_core_client.return_value
+        core.get_projects.side_effect = [first, second]
+
+        result = azdevops_list_projects()
+
+        assert len(result) == 101
+        assert result[0] == "Another"
+        assert core.get_projects.call_count == 2
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_recent_commits_reuses_analysis_inventory(self, mock_git):
+        client = mock_git.return_value
+        commit = MagicMock()
+        commit.commit_id = "abc123"
+        commit.comment = "Selected change"
+        commit.author.name = "Alice"
+        commit.author.email = "alice@example.com"
+        commit.author.date = "2026-07-25"
+        client.get_commits.return_value = [commit]
+
+        items = azdevops_recent_commits(
+            "Project",
+            days=30,
+            include_repository=True,
+            repositories=[
+                {
+                    "provider": "azdo",
+                    "container": "Project",
+                    "name": "api",
+                    "repo_id": "repo-id",
+                    "url": "https://example.test/api",
+                }
+            ],
+        )
+
+        client.get_repositories.assert_not_called()
+        client.get_commits.assert_called_once()
+        assert items[0]["repository"] == "api"
+        assert items[0]["commit_id"] == "abc123"
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_labels_commit_and_pr_attribution(self, mock_git):
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = [commit_change]
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = [pr_change]
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [(f["path"], f["attribution"], f["confidence"]) for f in files] == [
+            ("src/a.py", "authored_commit", "high"),
+            ("src/b.py", "authored_pr", "medium"),
+        ]
+
+    @patch("yeaboi.tools.azure_devops._make_git_client")
+    def test_changed_files_unwraps_real_sdk_response_models(self, mock_git):
+        from azure.devops.v7_1.git.models import GitCommitChanges, GitPullRequestIterationChanges
+
+        client = mock_git.return_value
+        commit_change = MagicMock()
+        commit_change.item.path = "/src/a.py"
+        commit_change.change_type = "edit"
+        pr_change = MagicMock()
+        pr_change.item.path = "/src/b.py"
+        pr_change.change_type = "add"
+        client.get_changes.return_value = GitCommitChanges(changes=[commit_change])
+        iteration = MagicMock()
+        iteration.id = 2
+        client.get_pull_request_iterations.return_value = [iteration]
+        client.get_pull_request_iteration_changes.return_value = GitPullRequestIterationChanges(
+            change_entries=[pr_change],
+            next_skip=1,
+            next_top=0,
+        )
+
+        files = azdevops_changed_files(
+            "Project",
+            "repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [item["path"] for item in files] == ["src/a.py", "src/b.py"]
+        assert not any(item.get("status") == "failed" for item in files)
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,13 @@ from yeaboi.config import (
     get_config_file,
     get_log_level,
     get_session_prune_days,
+    get_team_analysis_code_max_concurrency,
+    get_team_analysis_doc_max_concurrency,
+    get_team_analysis_doc_request_timeout_seconds,
+    get_team_analysis_enrichment_timeout_seconds,
+    get_team_analysis_fast_model,
+    get_team_analysis_llm_max_concurrency,
+    get_team_analysis_llm_target_seconds,
     is_langsmith_enabled,
     is_tips_enabled,
     load_user_config,
@@ -24,6 +31,53 @@ from yeaboi.config import (
 def test_get_anthropic_api_key_returns_key(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-123")
     assert get_anthropic_api_key() == "test-key-123"
+
+
+def test_analysis_enrichment_timeout_defaults_and_is_bounded(monkeypatch):
+    monkeypatch.delenv("TEAM_ANALYSIS_ENRICHMENT_TIMEOUT_SECONDS", raising=False)
+    assert get_team_analysis_enrichment_timeout_seconds() == 120
+    monkeypatch.setenv("TEAM_ANALYSIS_ENRICHMENT_TIMEOUT_SECONDS", "2")
+    assert get_team_analysis_enrichment_timeout_seconds() == 10
+    monkeypatch.setenv("TEAM_ANALYSIS_ENRICHMENT_TIMEOUT_SECONDS", "9999")
+    assert get_team_analysis_enrichment_timeout_seconds() == 600
+
+
+def test_analysis_fast_model_override(monkeypatch):
+    monkeypatch.delenv("TEAM_ANALYSIS_FAST_MODEL", raising=False)
+    assert get_team_analysis_fast_model() is None
+    monkeypatch.setenv("TEAM_ANALYSIS_FAST_MODEL", " custom-fast-model ")
+    assert get_team_analysis_fast_model() == "custom-fast-model"
+
+
+def test_analysis_llm_runtime_defaults_and_bounds(monkeypatch):
+    monkeypatch.delenv("TEAM_ANALYSIS_LLM_TARGET_SECONDS", raising=False)
+    monkeypatch.delenv("TEAM_ANALYSIS_LLM_MAX_CONCURRENCY", raising=False)
+    assert get_team_analysis_llm_target_seconds() == 600
+    assert get_team_analysis_llm_max_concurrency() == 6
+    monkeypatch.setenv("TEAM_ANALYSIS_LLM_TARGET_SECONDS", "2")
+    monkeypatch.setenv("TEAM_ANALYSIS_LLM_MAX_CONCURRENCY", "99")
+    assert get_team_analysis_llm_target_seconds() == 60
+    assert get_team_analysis_llm_max_concurrency() == 12
+
+
+def test_analysis_documentation_runtime_defaults_and_bounds(monkeypatch):
+    monkeypatch.delenv("TEAM_ANALYSIS_DOC_REQUEST_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("TEAM_ANALYSIS_DOC_MAX_CONCURRENCY", raising=False)
+    assert get_team_analysis_doc_request_timeout_seconds() == 30
+    assert get_team_analysis_doc_max_concurrency() == 8
+    monkeypatch.setenv("TEAM_ANALYSIS_DOC_REQUEST_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("TEAM_ANALYSIS_DOC_MAX_CONCURRENCY", "99")
+    assert get_team_analysis_doc_request_timeout_seconds() == 5
+    assert get_team_analysis_doc_max_concurrency() == 16
+
+
+def test_analysis_code_runtime_defaults_and_bounds(monkeypatch):
+    monkeypatch.delenv("TEAM_ANALYSIS_CODE_MAX_CONCURRENCY", raising=False)
+    assert get_team_analysis_code_max_concurrency() == 6
+    monkeypatch.setenv("TEAM_ANALYSIS_CODE_MAX_CONCURRENCY", "99")
+    assert get_team_analysis_code_max_concurrency() == 16
+    monkeypatch.setenv("TEAM_ANALYSIS_CODE_MAX_CONCURRENCY", "invalid")
+    assert get_team_analysis_code_max_concurrency() == 6
 
 
 def test_get_anthropic_api_key_raises_when_missing(monkeypatch):

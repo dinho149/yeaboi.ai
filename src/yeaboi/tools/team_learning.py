@@ -45,7 +45,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
+def _llm_invoke(
+    prompt: str,
+    *,
+    temperature: float = 0.0,
+    max_reasks: int = 1,
+    model: str | None = None,
+    task: str = "analysis",
+    records: int = 0,
+    request_timeout: float | None = None,
+):
     """Invoke the LLM expecting a JSON reply; tracks token usage internally.
 
     Every caller of this wrapper parses the response as JSON, so it routes
@@ -53,8 +62,22 @@ def _llm_invoke(prompt: str, *, temperature: float = 0.0, max_reasks: int = 1):
     # See docs: "Local Mode (Ollama)" — reliability layer.
     """
     from yeaboi.agent.llm import invoke_json
+    from yeaboi.analysis.llm_runtime import analysis_llm_slot
+    from yeaboi.config import (
+        get_llm_model,
+        get_llm_provider,
+        get_team_analysis_enrichment_timeout_seconds,
+    )
 
-    return invoke_json(prompt, temperature=temperature, max_reasks=max_reasks)
+    recorded_model = model or get_llm_model() or f"{get_llm_provider()}:default"
+    with analysis_llm_slot(task, model=recorded_model, records=records):
+        return invoke_json(
+            prompt,
+            temperature=temperature,
+            max_reasks=max_reasks,
+            request_timeout=request_timeout or get_team_analysis_enrichment_timeout_seconds(),
+            model=model,
+        )
 
 
 def _safe_float(val: object) -> float:
@@ -705,7 +728,7 @@ def _strip_html(text: str) -> str:
 def _parse_tickets_with_llm(
     stories: list[dict],
     progress: list[str],
-    batch_size: int = 12,
+    batch_size: int = 32,
     *,
     source: str = "",
     project_key: str = "",
@@ -719,11 +742,15 @@ def _parse_tickets_with_llm(
     if not stories:
         return {}
 
-    parser_version = "compact-v1"
+    from yeaboi.agent.llm import estimate_tokens, get_analysis_fast_model
+
+    parser_version = "adaptive-v2"
+    fast_model = get_analysis_fast_model()
 
     def _content_hash(story: dict) -> str:
         material = {
             "parser": parser_version,
+            "model": fast_model or "primary",
             "summary": story.get("summary", ""),
             "description": _strip_html(story.get("description", "") or ""),
             "points": story.get("points", 0),
@@ -745,6 +772,16 @@ def _parse_tickets_with_llm(
             logger.debug("Ticket parse cache read failed", exc_info=True)
 
     uncached = [s for s in stories if str(s.get("issue_key", "")) not in results]
+    from yeaboi.analysis.llm_runtime import (
+        record_analysis_cache_hit,
+        record_analysis_completed,
+        record_analysis_input,
+        record_analysis_retry,
+    )
+
+    record_analysis_input(records=len(stories))
+    if results:
+        record_analysis_cache_hit(records=len(results))
     if results:
         logger.info("Ticket parse cache: %d hit(s), %d miss(es)", len(results), len(uncached))
     if not uncached:
@@ -752,36 +789,72 @@ def _parse_tickets_with_llm(
             cache_updates.update({key: (content_hashes[key], value) for key, value in results.items()})
         return results
 
-    # Build batches from cache misses only.
+    # Pack every cache miss against a conservative prompt budget. This keeps
+    # exhaustive coverage while avoiding the many tiny fixed-size calls that
+    # dominate slow/local runs.
+    from yeaboi.config import get_llm_provider, get_team_analysis_enrichment_timeout_seconds
+
+    prompt_budget = 3500 if get_llm_provider() == "ollama" else 6500
+    max_batch = max(1, min(int(batch_size), 32))
+
+    def _story_prompt_text(story: dict) -> str:
+        key = story.get("issue_key", "?")
+        title = story.get("summary", "")
+        desc = _strip_html(story.get("description", "") or "")
+        if len(desc) > 800:
+            desc = desc[:800] + "..."
+        pts = story.get("points", 0)
+        tasks = story.get("task_count", 0)
+        carried = "yes" if story.get("carried_over") else "no"
+        return f"--- {key}: {title} [{pts}pts, {tasks} tasks, carried_over={carried}] ---\n{desc}"
+
     batches: list[list[dict]] = []
-    for i in range(0, len(uncached), batch_size):
-        batches.append(uncached[i : i + batch_size])
+    current: list[dict] = []
+    current_tokens = estimate_tokens(_TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=""))
+    for story in uncached:
+        item_tokens = estimate_tokens(_story_prompt_text(story)) + 160  # output reserve
+        if current and (len(current) >= max_batch or current_tokens + item_tokens > prompt_budget):
+            batches.append(current)
+            current = []
+            current_tokens = estimate_tokens(_TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=""))
+        current.append(story)
+        current_tokens += item_tokens
+    if current:
+        batches.append(current)
 
-    def _parse_batch(batch: list[dict]) -> dict[str, dict]:
+    def _checkpoint(batch_results: dict[str, dict]) -> None:
+        if not batch_results:
+            return
+        entries = {key: (content_hashes[key], value) for key, value in batch_results.items() if key in content_hashes}
+        if cache_updates is not None:
+            cache_updates.update(entries)
+        if source and project_key and db_path and entries:
+            try:
+                from yeaboi.team_profile import TeamProfileStore
+
+                with TeamProfileStore(db_path) as store:
+                    store.save_ticket_parse_cache(source, project_key, entries)
+            except Exception:
+                logger.debug("Ticket parse checkpoint failed", exc_info=True)
+
+    def _parse_batch_once(batch: list[dict]) -> dict[str, dict]:
         """Parse a single batch of stories."""
-        items_parts: list[str] = []
-        for s in batch:
-            key = s.get("issue_key", "?")
-            title = s.get("summary", "")
-            desc = _strip_html(s.get("description", "") or "")
-            # Truncate to avoid token bloat
-            if len(desc) > 800:
-                desc = desc[:800] + "..."
-            # Include metadata for better classification
-            pts = s.get("points", 0)
-            tasks = s.get("task_count", 0)
-            carried = "yes" if s.get("carried_over") else "no"
-            meta = f"[{pts}pts, {tasks} tasks, carried_over={carried}]"
-            items_parts.append(f"--- {key}: {title} {meta} ---\n{desc}")
-
-        items_block = "\n\n".join(items_parts)
+        items_block = "\n\n".join(_story_prompt_text(s) for s in batch)
         prompt = _TICKET_PARSE_PROMPT.format(schema=_TICKET_PARSE_SCHEMA, items=items_block)
 
         try:
             # A malformed batch falls back deterministically. Repair re-asks can
             # double the dominant cost on large boards, so ticket parsing does not
             # retry; narrative/insight calls retain the shared repair behaviour.
-            response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
+            response = _llm_invoke(
+                prompt,
+                temperature=0.0,
+                max_reasks=0,
+                model=fast_model,
+                task="ticket_classification",
+                records=0,
+                request_timeout=min(get_team_analysis_enrichment_timeout_seconds(), 60),
+            )
             text = response.content if hasattr(response, "content") else str(response)
             # Extract JSON from response (handle markdown fences)
             text = text.strip()
@@ -800,15 +873,61 @@ def _parse_tickets_with_llm(
             logger.debug("LLM ticket parse batch failed: %s", exc)
             return {}
 
-    # Run batches in parallel
+    def _parse_batch_resilient(batch: list[dict], depth: int = 0) -> dict[str, dict]:
+        parsed = _parse_batch_once(batch)
+        expected = {str(item.get("issue_key", "")) for item in batch}
+        if expected and expected.issubset(parsed):
+            return parsed
+        # One failed large response should not discard a whole batch. Bisect it
+        # until the individual records have each had an independent chance.
+        if len(batch) > 1 and depth < 2:
+            record_analysis_retry()
+            midpoint = len(batch) // 2
+            left = _parse_batch_resilient(batch[:midpoint], depth + 1)
+            right = _parse_batch_resilient(batch[midpoint:], depth + 1)
+            return {**left, **right}
+        return parsed
+
+    # Run adaptive batches in parallel; the shared scheduler applies the lower
+    # provider-specific limit (one for Ollama, configurable for cloud).
     progress.append("Parsing ticket structure\u2026")
+    from yeaboi.analysis.progress import append_component_progress
+
+    append_component_progress(
+        progress,
+        component_id="enrichment:ticket_classification",
+        label="AI enrichment · ticket classification",
+        status="running",
+        detail=f"{len(results)}/{len(stories)} cached · {len(batches)} batch(es)",
+    )
+
+    def _progress_detail() -> str:
+        from yeaboi.analysis.llm_runtime import get_analysis_llm_execution
+
+        execution = get_analysis_llm_execution()
+        eta = int(execution.get("eta_seconds", 0))
+        eta_text = f" · ETA {max(1, round(eta / 60))}m" if eta >= 30 else (f" · ETA {eta}s" if eta else "")
+        return f"{len(results)}/{len(stories)} tickets{eta_text}"
+
     try:
-        with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
-            futures = {executor.submit(_parse_batch, b): i for i, b in enumerate(batches)}
+        from yeaboi.config import get_team_analysis_llm_max_concurrency
+
+        workers = 1 if get_llm_provider() == "ollama" else get_team_analysis_llm_max_concurrency()
+        with ThreadPoolExecutor(max_workers=min(workers, len(batches))) as executor:
+            futures = {executor.submit(_parse_batch_resilient, b): i for i, b in enumerate(batches)}
             for future in as_completed(futures):
                 try:
-                    batch_result = future.result(timeout=30)
+                    batch_result = future.result()
                     results.update(batch_result)
+                    _checkpoint(batch_result)
+                    record_analysis_completed(records=len(batch_result))
+                    append_component_progress(
+                        progress,
+                        component_id="enrichment:ticket_classification",
+                        label="AI enrichment · ticket classification",
+                        status="running",
+                        detail=_progress_detail(),
+                    )
                 except Exception:
                     logger.debug("LLM ticket-parse batch %d failed — skipping", futures[future], exc_info=True)
     except Exception as exc:
@@ -820,6 +939,18 @@ def _parse_tickets_with_llm(
             {key: (content_hashes[key], value) for key, value in results.items() if key in content_hashes}
         )
     logger.info("Deep parser resolved %d/%d stories", len(results), len(stories))
+    missing_count = max(0, len(stories) - len(results))
+    if missing_count:
+        from yeaboi.analysis.llm_runtime import record_analysis_degraded
+
+        record_analysis_degraded(records=missing_count)
+    append_component_progress(
+        progress,
+        component_id="enrichment:ticket_classification",
+        label="AI enrichment · ticket classification",
+        status="completed" if len(results) == len(stories) else "fallback",
+        detail=f"{len(results)}/{len(stories)} tickets",
+    )
     return results
 
 
@@ -1341,7 +1472,7 @@ def _generate_point_descriptions(
     prompt += "Do not include point values that have no data."
 
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -1919,7 +2050,7 @@ def _generate_analysis_narrative(profile: TeamProfile, examples: dict | None) ->
 
     fallback = _fallback_narrative(profile, ex)
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -2106,7 +2237,7 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
 
     fallback = _fallback_team_insights(profile, ex)
     try:
-        response = _llm_invoke(prompt, temperature=0.0)
+        response = _llm_invoke(prompt, temperature=0.0, max_reasks=0)
         text = response.content if hasattr(response, "content") else str(response)
         text = text.strip()
         if text.startswith("```"):
@@ -2140,6 +2271,188 @@ def _generate_team_insights(profile: TeamProfile, examples: dict | None) -> dict
         logger.warning("LLM team insights generation failed: %s", exc)
 
     return fallback
+
+
+def _generate_analysis_synthesis(
+    profile: TeamProfile,
+    examples: dict,
+    point_inputs: tuple,
+    *,
+    include_insights: bool,
+    db_path=None,
+) -> dict:
+    """Generate all final prose in one coherent, cacheable LLM call."""
+    point_stories, point_calibrations, discipline_calibration, spillover_correlation = point_inputs
+    point_evidence = [
+        {
+            "key": story.get("issue_key", ""),
+            "title": story.get("summary", ""),
+            "points": story.get("points", 0),
+            "discipline": story.get("discipline", ""),
+            "cycle_days": story.get("cycle_time_days"),
+            "tasks": story.get("task_count", 0),
+            "carried_over": bool(story.get("carried_over")),
+        }
+        for story in point_stories
+    ]
+    fallback = {
+        "point_descriptions": _fallback_point_descriptions(point_calibrations),
+        "narrative": _fallback_narrative(profile, examples),
+        "insights": _fallback_team_insights(profile, examples),
+    }
+    digest = _build_narrative_digest(profile, examples)
+    prompt_version = "analysis-synthesis-v1"
+    material = json.dumps(
+        {
+            "version": prompt_version,
+            "digest": digest,
+            "point_evidence": point_evidence,
+            "discipline_calibration": discipline_calibration,
+            "spillover_correlation": spillover_correlation,
+            "include_insights": include_insights,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    cache_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
+    from yeaboi.config import get_llm_model, get_llm_provider
+
+    cache_model = get_llm_model() or f"{get_llm_provider()}:default"
+    from yeaboi.analysis.llm_runtime import record_analysis_input
+
+    record_analysis_input(records=1)
+    if db_path:
+        try:
+            from yeaboi.team_profile import TeamProfileStore
+
+            with TeamProfileStore(db_path) as store:
+                cached = store.load_analysis_enrichment("final_synthesis", cache_key, cache_model)
+            if cached:
+                from yeaboi.analysis.llm_runtime import record_analysis_cache_hit
+
+                record_analysis_cache_hit()
+                cached["_cache_hit"] = True
+                return cached
+        except Exception:
+            logger.debug("Analysis synthesis cache read failed", exc_info=True)
+
+    prompt = (
+        "You are an experienced Scrum coach. Turn the complete metrics digest below into "
+        "one internally consistent analysis. Do not omit or contradict evidence.\n\n"
+        "Return ONLY a JSON object with:\n"
+        '- "point_descriptions": an object keyed by observed point value; one concrete sentence each.\n'
+        '- "narrative": {"executive_summary": "...", "sections": {...}} with section keys '
+        "velocity, team, estimation, workflow, writing, trends, recommendations.\n"
+    )
+    if include_insights:
+        prompt += (
+            '- "insights": start/stop/keep/try arrays, 2-4 evidence-backed items each. '
+            'Every item is {"title": "...", "detail": "...", "evidence": "..."}.\n'
+        )
+    else:
+        prompt += '- "insights": {}.\n'
+    prompt += (
+        "\nUse plain English, cite concrete numbers, and give actions the team can take next.\n\n"
+        "## Complete metrics digest\n"
+        + digest
+        + "\n\n## Complete story-point evidence\n"
+        + json.dumps(
+            {
+                "stories": point_evidence,
+                "discipline_calibration": discipline_calibration,
+                "spillover_correlation": spillover_correlation,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    fallback_sections: list[str] = []
+    try:
+        response = _llm_invoke(
+            prompt,
+            temperature=0.0,
+            max_reasks=0,
+            task="final_synthesis",
+            records=1,
+        )
+        text = response.content if hasattr(response, "content") else str(response)
+        result = json.loads(text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+        if not isinstance(result, dict):
+            raise ValueError("synthesis response is not an object")
+    except Exception as exc:
+        logger.warning("LLM analysis synthesis failed: %s", exc)
+        result = {}
+
+    raw_points = result.get("point_descriptions")
+    points = (
+        {str(k): v for k, v in raw_points.items() if isinstance(v, str) and v.strip()}
+        if isinstance(raw_points, dict)
+        else {}
+    )
+    if not points:
+        points = fallback["point_descriptions"]
+        fallback_sections.append("point_descriptions")
+
+    raw_narrative = result.get("narrative")
+    narrative = fallback["narrative"]
+    if isinstance(raw_narrative, dict) and isinstance(raw_narrative.get("sections"), dict):
+        sections = {
+            key: value
+            for key, value in raw_narrative["sections"].items()
+            if key in _NARRATIVE_KEYS and isinstance(value, str) and value.strip()
+        }
+        for key in _NARRATIVE_KEYS:
+            sections.setdefault(key, fallback["narrative"]["sections"][key])
+        summary = raw_narrative.get("executive_summary")
+        narrative = {
+            "executive_summary": (
+                summary if isinstance(summary, str) and summary.strip() else fallback["narrative"]["executive_summary"]
+            ),
+            "sections": sections,
+        }
+    else:
+        fallback_sections.append("narrative")
+
+    insights = fallback["insights"]
+    raw_insights = result.get("insights")
+    if include_insights and isinstance(raw_insights, dict):
+        normalized: dict[str, list[dict]] = {}
+        for key in _INSIGHT_KEYS:
+            items = []
+            for item in raw_insights.get(key, []) if isinstance(raw_insights.get(key), list) else []:
+                if isinstance(item, dict) and isinstance(item.get("title"), str) and item["title"].strip():
+                    items.append(
+                        _insight_item(
+                            item["title"].strip(),
+                            item.get("detail", "").strip() if isinstance(item.get("detail"), str) else "",
+                            item.get("evidence", "").strip() if isinstance(item.get("evidence"), str) else "",
+                        )
+                    )
+            normalized[key] = items[:_INSIGHT_MAX_ITEMS] if items else fallback["insights"][key]
+        insights = normalized
+    elif include_insights:
+        fallback_sections.append("insights")
+    else:
+        insights = {}
+
+    output = {
+        "point_descriptions": points,
+        "narrative": narrative,
+        "insights": insights,
+        "_fallback_sections": fallback_sections,
+    }
+    # Cache only a fully valid model result; deterministic backfills should get
+    # another chance after a transient failure on the next run.
+    if db_path and not fallback_sections:
+        try:
+            from yeaboi.team_profile import TeamProfileStore
+
+            with TeamProfileStore(db_path) as store:
+                store.save_analysis_enrichment("final_synthesis", cache_key, cache_model, output)
+        except Exception:
+            logger.debug("Analysis synthesis cache write failed", exc_info=True)
+    return output
 
 
 def _worker_writing_patterns(all_stories: list[dict], progress: list[str]) -> WritingPatterns:
@@ -2311,27 +2624,53 @@ def _run_ai_usage_component(
     progress: list[str],
     sub_sources: list[str] | None = None,
     analysis_depth: str = "deep",
+    window_days: int = 120,
+    analysis_scope: dict[str, list[str]] | None = None,
+    db_path=None,
+    code_features: list[str] | None = None,
 ) -> tuple[object | None, dict | None]:
     """Run the AI-adoption ('code') sub-analysis over ``sub_sources`` (github/azdo;
     None = all). Returns ``(signal, blob)`` or ``(None, None)`` on failure. Best-effort
     — never raises. The engine runs this ONCE globally; it's also reused inline by the
     delivery pipeline for back-compat."""
-    progress.append("Scanning AI-tool footprint…")
+    enabled = set(code_features or ("ai_footprint", "code_health"))
     try:
         from yeaboi.analysis.ai_usage import generate_ai_adoption_insights, run_ai_adoption
 
-        signal, ai_examples = run_ai_adoption(
-            source, project_key, delivery_stories, all_stories, members=members, sub_sources=sub_sources
-        )
+        kwargs = {
+            "members": members,
+            "sub_sources": sub_sources,
+            "code_features": sorted(enabled),
+            "db_path": db_path,
+            "generate_insights": analysis_depth == "deep",
+        }
+        if window_days != 120:
+            kwargs["window_days"] = window_days
+        if analysis_scope is not None:
+            kwargs["analysis_scope"] = analysis_scope
+        kwargs["progress"] = progress
+        try:
+            signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
+        except TypeError:
+            kwargs.pop("progress", None)
+            kwargs.pop("code_features", None)
+            kwargs.pop("db_path", None)
+            kwargs.pop("generate_insights", None)
+            signal, ai_examples = run_ai_adoption(source, project_key, delivery_stories, all_stories, **kwargs)
         # Only spend an LLM call on coaching when something was actually scanned;
         # an empty footprint (no repos/creds) coaches deterministically.
-        if analysis_depth == "deep" and signal.scanned_commits + signal.scanned_prs > 0:
-            ai_examples["insights"] = generate_ai_adoption_insights(signal, ai_examples)
-        else:
+        if (
+            "ai_footprint" in enabled
+            and analysis_depth == "deep"
+            and signal.scanned_commits + signal.scanned_prs > 0
+            and "insights" not in ai_examples
+        ):
+            ai_examples["insights"] = generate_ai_adoption_insights(signal, ai_examples, db_path=db_path)
+        elif "ai_footprint" in enabled:
             from yeaboi.analysis.ai_usage import _fallback_ai_adoption_insights
 
             ai_examples["insights"] = _fallback_ai_adoption_insights(signal, ai_examples.get("samples"))
-        return signal, ai_examples
+        return (signal if "ai_footprint" in enabled else None), ai_examples
     except Exception:  # pragma: no cover - defensive; run_ai_adoption already guards
         logger.exception("AI-adoption analysis failed; continuing without it")
         return None, None
@@ -2343,22 +2682,42 @@ def _run_doc_quality_component(
     progress: list[str],
     sub_sources: list[str] | None = None,
     analysis_depth: str = "deep",
+    window_days: int = 120,
+    analysis_scope: dict[str, list[str]] | None = None,
+    db_path=None,
 ) -> tuple[object | None, dict | None]:
     """Run the documentation-quality ('docs') sub-analysis over ``sub_sources``
     (confluence/notion; None = all). Returns ``(signal, blob)`` or ``(None, None)`` on
     failure. Best-effort — never raises."""
     progress.append("Assessing documentation clarity…")
     try:
-        from yeaboi.analysis.doc_quality import generate_doc_quality_insights, run_doc_quality
+        from yeaboi.analysis.doc_quality import run_doc_quality
 
-        dq_signal, dq_examples = run_doc_quality(source, project_key, sub_sources=sub_sources)
-        # Only spend an LLM call on coaching when pages were actually read.
-        if analysis_depth == "deep" and dq_signal.pages_scanned > 0:
-            dq_examples["insights"] = generate_doc_quality_insights(dq_signal, dq_examples)
+        kwargs = {"sub_sources": sub_sources}
+        if window_days != 120:
+            kwargs["window_days"] = window_days
+        if analysis_scope is not None:
+            kwargs["analysis_scope"] = analysis_scope
+        kwargs["progress"] = progress
+        kwargs["db_path"] = db_path
+        try:
+            dq_signal, dq_examples = run_doc_quality(source, project_key, **kwargs)
+        except TypeError:
+            kwargs.pop("progress", None)
+            kwargs.pop("db_path", None)
+            dq_signal, dq_examples = run_doc_quality(source, project_key, **kwargs)
+        # Documentation recommendations are derived from every structured page
+        # result; the removed stylometric AI detector is never sent to an LLM.
+        from yeaboi.analysis.doc_quality import _fallback_doc_quality_insights
+
+        coverage = dq_examples.get("coverage_report", {})
+        if dq_signal.pages_scanned > 0 and coverage.get("status") not in {"failed", "no_data"}:
+            dq_examples["insights"] = _fallback_doc_quality_insights(
+                dq_signal,
+                dq_examples.get("samples"),
+            )
         else:
-            from yeaboi.analysis.doc_quality import _fallback_doc_quality_insights
-
-            dq_examples["insights"] = _fallback_doc_quality_insights(dq_signal, dq_examples.get("samples"))
+            dq_examples["insights"] = {}
         return dq_signal, dq_examples
     except Exception:  # pragma: no cover - defensive; run_doc_quality already guards
         logger.exception("Doc-quality analysis failed; continuing without it")
@@ -2389,8 +2748,8 @@ def _run_parallel_analysis(
     profile plus an ``examples["ai_adoption"]`` blob (see ``analysis/ai_usage.py``).
 
     When ``include_doc_quality`` is set, another best-effort step reads the team's
-    recently-changed Notion/Confluence pages, scores their clarity + a stylometric
-    AI-likelihood estimate, and attaches a ``DocQualitySignal`` plus an
+    recently-changed Notion/Confluence pages, scores their clarity and practical
+    usefulness, and attaches a ``DocQualitySignal`` plus an
     ``examples["doc_quality"]`` blob (see ``analysis/doc_quality.py``).
 
     When ``members`` (a subset of assignee names) is given the analysis is
@@ -2891,6 +3250,7 @@ def _run_parallel_analysis(
             members,
             progress,
             analysis_depth=analysis_depth,
+            db_path=db_path,
         )
         if signal is not None:
             from dataclasses import replace
@@ -2918,28 +3278,49 @@ def _run_parallel_analysis(
         if include_insights:
             examples["insights"] = _fallback_team_insights(profile, examples)
     else:
-        progress.append("Generating AI enrichments in parallel…")
-        enrichment: dict[str, object] = {}
-        with ThreadPoolExecutor(max_workers=3 if include_insights else 2) as executor:
-            futures = {
-                executor.submit(_generate_point_descriptions, *point_description_args): "point_descriptions",
-                executor.submit(_generate_analysis_narrative, profile, examples): "narrative",
-            }
-            if include_insights:
-                futures[executor.submit(_generate_team_insights, profile, examples)] = "insights"
-            for future in as_completed(futures):
-                key = futures[future]
-                try:
-                    enrichment[key] = future.result()
-                except Exception:
-                    logger.exception("Final analysis enrichment %s failed", key)
-        examples["point_descriptions"] = enrichment.get(
-            "point_descriptions",
-            _fallback_point_descriptions(point_description_args[1]),
+        progress.append("Generating AI enrichments in one coherent pass…")
+        from yeaboi.analysis.progress import append_component_progress
+        from yeaboi.config import get_team_analysis_enrichment_timeout_seconds
+
+        timeout_seconds = get_team_analysis_enrichment_timeout_seconds()
+        labels = {
+            "point_descriptions": "AI enrichment · point descriptions",
+            "narrative": "AI enrichment · analysis narrative",
+            "insights": "AI enrichment · recommendations",
+        }
+        keys = ["point_descriptions", "narrative"] + (["insights"] if include_insights else [])
+        for key in keys:
+            append_component_progress(
+                progress,
+                component_id=f"enrichment:{key}",
+                label=labels[key],
+                status="running",
+                detail=f"shared synthesis · {timeout_seconds}s deadline",
+            )
+        synthesis = _generate_analysis_synthesis(
+            profile,
+            examples,
+            point_description_args,
+            include_insights=include_insights,
+            db_path=db_path,
         )
-        examples["narrative"] = enrichment.get("narrative", _fallback_narrative(profile, examples))
+        fallback_sections = set(synthesis.pop("_fallback_sections", []))
+        cache_hit = bool(synthesis.pop("_cache_hit", False))
+        for key in keys:
+            used_fallback = key in fallback_sections
+            append_component_progress(
+                progress,
+                component_id=f"enrichment:{key}",
+                label=labels[key],
+                status="fallback" if used_fallback else "completed",
+                detail=(
+                    "deterministic fallback" if used_fallback else ("cache hit" if cache_hit else "shared synthesis")
+                ),
+            )
+        examples["point_descriptions"] = synthesis["point_descriptions"]
+        examples["narrative"] = synthesis["narrative"]
         if include_insights:
-            examples["insights"] = enrichment.get("insights", _fallback_team_insights(profile, examples))
+            examples["insights"] = synthesis["insights"]
 
     return profile, examples
 

@@ -437,7 +437,7 @@ class TestExtendedProfileSerialisation:
         # Pair lists survive as tuples-of-tuples, not lists-of-lists.
         assert dq.per_platform == (("confluence", 4), ("notion", 2))
         assert dq.flagged_pages == (("Onboarding guide", "clarity 30/100 — dense or long-winded"),)
-        assert dq.is_ai_estimate is True
+        assert dq.is_ai_estimate is False
 
     def test_doc_quality_backward_compat_default(self):
         """An old profile with no doc_quality key deserializes to an empty signal."""
@@ -1224,6 +1224,94 @@ class TestTeamProfileExporter:
         assert "[Fix login](https://github.com/o/r/commit/a1b2c3d4)" in md  # linked example
         assert "[↳ example](https://github.com/o/r/commit/a1b2c3d4)" in md  # linked coaching
 
+    def test_code_health_only_exports_without_ai_footprint(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html, build_team_profile_markdown
+
+        profile = TeamProfile(team_id="t", source="jira", project_key="P")
+        examples = {
+            "ai_adoption": {
+                "enabled_features": ["code_health"],
+                "repository_health": {
+                    "files_analysed": 12,
+                    "repositories_touched": 2,
+                    "findings": 3,
+                },
+                "action_plan": [{"priority": "high", "title": "Add focused tests"}],
+            }
+        }
+        markdown = build_team_profile_markdown(profile, examples=examples)
+        html = build_team_profile_html(profile, examples=examples)
+        assert "## Code Health" in markdown
+        assert "## AI Footprint" not in markdown
+        assert "Code Health" in html
+        assert "AI Footprint" not in html
+
+    def test_failed_code_and_docs_export_status_without_zero_metrics_or_advice(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html, build_team_profile_markdown
+
+        profile = TeamProfile(
+            team_id="t",
+            source="jira",
+            project_key="P",
+            doc_quality=DocQualitySignal(),
+        )
+        failed = {
+            "status": "failed",
+            "completed": 0,
+            "eligible": 15929,
+            "has_data": False,
+            "grouped_errors": [
+                {
+                    "provider": "azdo",
+                    "status": "failed",
+                    "count": 15929,
+                    "detail": "SDK wrapper mismatch",
+                }
+            ],
+        }
+        examples = {
+            "ai_adoption": {
+                "enabled_features": ["code_health"],
+                "coverage_report": failed,
+                "repository_health": {
+                    "files_analysed": 0,
+                    "repositories_touched": 0,
+                    "findings": 0,
+                },
+                "action_plan": [{"priority": "high", "title": "Fabricated action"}],
+            },
+            "doc_quality": {
+                "coverage_report": {
+                    **failed,
+                    "eligible": 1,
+                    "grouped_errors": [
+                        {
+                            "provider": "confluence",
+                            "status": "inaccessible",
+                            "count": 1,
+                            "detail": "repeated page IDs",
+                        }
+                    ],
+                },
+                "insights": {
+                    "start": [{"title": "Fabricated docs advice", "detail": "x", "evidence": "0 pages"}],
+                },
+            },
+        }
+
+        markdown = build_team_profile_markdown(profile, examples=examples)
+        html = build_team_profile_html(profile, examples=examples)
+
+        assert "Failed — 0 of 15,929 eligible items analysed" in markdown
+        assert "SDK wrapper mismatch" in markdown
+        assert "## Documentation" in markdown
+        assert "repeated page IDs" in markdown
+        assert "Changed files analysed" not in markdown
+        assert "Average clarity" not in markdown
+        assert "Fabricated action" not in markdown
+        assert "Fabricated docs advice" not in markdown
+        assert "Failed" in html and "repeated page IDs" in html
+
     def test_build_markdown_embeds_velocity_chart(self, tmp_path):
         import pytest
 
@@ -1633,7 +1721,7 @@ class TestNarrativeInParallelAnalysis:
         assert isinstance(narrative, dict)
         assert narrative["executive_summary"]
         assert len(narrative["sections"]) == 7
-        assert "Generating AI enrichments in parallel…" in progress
+        assert "Generating AI enrichments in one coherent pass…" in progress
 
 
 class TestInsightsPersistenceAndExport:
@@ -1761,7 +1849,7 @@ class TestInsightsInParallelAnalysis:
         insights = examples.get("insights")
         assert isinstance(insights, dict)
         assert all(insights[k] for k in ("start", "stop", "keep", "try"))
-        assert "Generating AI enrichments in parallel…" in progress
+        assert "Generating AI enrichments in one coherent pass…" in progress
 
 
 class TestAnalysisDepth:
@@ -1827,39 +1915,22 @@ class TestAnalysisDepth:
         )
         assert "insights" not in examples
 
-    def test_deep_final_enrichments_overlap(self, monkeypatch):
-        import threading
-
+    def test_deep_final_enrichments_use_one_synthesis(self, monkeypatch):
         from yeaboi.tools.team_learning import _run_parallel_analysis
 
-        barrier = threading.Barrier(3)
-        active = {"value": 0, "peak": 0}
-        lock = threading.Lock()
-
-        def overlap(result):
-            with lock:
-                active["value"] += 1
-                active["peak"] = max(active["peak"], active["value"])
-            try:
-                barrier.wait(timeout=2)
-                return result
-            finally:
-                with lock:
-                    active["value"] -= 1
-
+        calls = {"count": 0}
         monkeypatch.setattr("yeaboi.tools.team_learning._parse_tickets_with_llm", lambda *a, **k: {})
-        monkeypatch.setattr(
-            "yeaboi.tools.team_learning._generate_point_descriptions",
-            lambda *a, **k: overlap({"3": "Three points"}),
-        )
-        monkeypatch.setattr(
-            "yeaboi.tools.team_learning._generate_analysis_narrative",
-            lambda *a, **k: overlap({"executive_summary": "Summary", "sections": {}}),
-        )
-        monkeypatch.setattr(
-            "yeaboi.tools.team_learning._generate_team_insights",
-            lambda *a, **k: overlap({"start": [], "stop": [], "keep": [], "try": []}),
-        )
+
+        def synthesis(*args, **kwargs):
+            calls["count"] += 1
+            return {
+                "point_descriptions": {"3": "Three points"},
+                "narrative": {"executive_summary": "Summary", "sections": {}},
+                "insights": {"start": [], "stop": [], "keep": [], "try": []},
+                "_fallback_sections": [],
+            }
+
+        monkeypatch.setattr("yeaboi.tools.team_learning._generate_analysis_synthesis", synthesis)
 
         _run_parallel_analysis(
             "jira",
@@ -1869,7 +1940,42 @@ class TestAnalysisDepth:
             include_doc_quality=False,
             analysis_depth="deep",
         )
-        assert active["peak"] == 3
+        assert calls["count"] == 1
+
+    def test_deep_progress_marks_deterministic_fallbacks(self, monkeypatch):
+        from yeaboi.tools import team_learning
+
+        monkeypatch.setattr("yeaboi.tools.team_learning._parse_tickets_with_llm", lambda *a, **k: {})
+        monkeypatch.setattr(
+            "yeaboi.tools.team_learning._generate_point_descriptions",
+            lambda _stories, calibrations, *_rest: team_learning._fallback_point_descriptions(calibrations),
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.team_learning._generate_analysis_narrative",
+            lambda profile, examples: team_learning._fallback_narrative(profile, examples),
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.team_learning._generate_team_insights",
+            lambda profile, examples: team_learning._fallback_team_insights(profile, examples),
+        )
+        progress = []
+
+        team_learning._run_parallel_analysis(
+            "jira",
+            "PROJ",
+            self._sprint_data(),
+            progress=progress,
+            include_ai_usage=False,
+            include_doc_quality=False,
+            analysis_depth="deep",
+        )
+
+        fallback_events = [item for item in progress if isinstance(item, dict) and item.get("status") == "fallback"]
+        assert {item["component_id"] for item in fallback_events} == {
+            "enrichment:point_descriptions",
+            "enrichment:narrative",
+            "enrichment:insights",
+        }
 
 
 class TestTicketParseCache:
@@ -1931,7 +2037,7 @@ class TestTicketParseCache:
         assert changed["P-1"]["discipline"] == "backend"
         assert calls["count"] == 2
 
-    def test_deep_parser_uses_compact_twelve_ticket_batches(self, monkeypatch):
+    def test_deep_parser_uses_token_aware_batches(self, monkeypatch):
         import re
         from types import SimpleNamespace
 
@@ -1949,7 +2055,30 @@ class TestTicketParseCache:
         result = _parse_tickets_with_llm(stories, [])
 
         assert len(result) == 25
-        assert calls["count"] == 3
+        assert calls["count"] == 1
+
+    def test_failed_large_batch_is_split_and_recovered(self, monkeypatch):
+        import re
+        from types import SimpleNamespace
+
+        from yeaboi.tools.team_learning import _parse_tickets_with_llm
+
+        calls = {"count": 0}
+
+        def invoke(prompt, **kwargs):
+            calls["count"] += 1
+            keys = re.findall(r"--- ([A-Z]+-\d+):", prompt)
+            if len(keys) > 4:
+                return SimpleNamespace(content="[]")
+            return SimpleNamespace(content=json.dumps([{"key": key} for key in keys]))
+
+        monkeypatch.setattr("yeaboi.tools.team_learning._llm_invoke", invoke)
+        stories = [{**self._story(), "issue_key": f"P-{idx}"} for idx in range(12)]
+
+        result = _parse_tickets_with_llm(stories, [])
+
+        assert len(result) == 12
+        assert calls["count"] == 7
 
 
 class TestSharedDesignSystem:
@@ -1960,3 +2089,13 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+class TestAnalysisEnrichmentCache:
+    def test_round_trip_is_scoped_by_task_key_and_model(self, tmp_path):
+        with TeamProfileStore(tmp_path / "sessions.db") as store:
+            store.save_analysis_enrichment("final_synthesis", "digest-1", "model-a", {"summary": "ok"})
+
+            assert store.load_analysis_enrichment("final_synthesis", "digest-1", "model-a") == {"summary": "ok"}
+            assert store.load_analysis_enrichment("final_synthesis", "digest-2", "model-a") is None
+            assert store.load_analysis_enrichment("final_synthesis", "digest-1", "model-b") is None

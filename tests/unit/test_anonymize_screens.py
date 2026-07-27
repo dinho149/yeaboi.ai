@@ -88,6 +88,13 @@ class TestProgressScreenTheming:
         )
         out = _render(panel, width=90, height=30)
         assert "Anonymizing output" in out
+        current = next(
+            item
+            for item in panel.renderable.renderables
+            if hasattr(item, "plain") and "Masking sensitive data" in item.plain
+        )
+        assert str(current.style) == f"bold {REPORTING_THEME.accent_bright}"
+        assert str(panel.border_style) == REPORTING_THEME.accent
 
     def test_default_is_standup(self):
         panel = _build_standup_progress_screen(["Starting"], width=90, height=24)

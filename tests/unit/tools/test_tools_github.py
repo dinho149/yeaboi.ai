@@ -12,6 +12,7 @@ import github as _gh_import_check  # noqa: F401 — ensures PyGithub is installe
 from yeaboi.tools import detect_platform, get_tools
 from yeaboi.tools.github import (
     _parse_repo,
+    github_changed_files,
     github_list_issues,
     github_read_file,
     github_read_readme,
@@ -45,6 +46,29 @@ class TestParseRepo:
 
     def test_whitespace_stripped(self):
         assert _parse_repo("  https://github.com/owner/repo  ") == "owner/repo"
+
+
+class TestChangedFiles:
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_commit_and_pr_attribution_are_separate(self, mock_client):
+        repo = mock_client.return_value.get_repo.return_value
+        commit_file = MagicMock(filename="src/a.py", status="modified", additions=4, deletions=1, patch="+x")
+        pr_file = MagicMock(filename="src/b.py", status="added", additions=8, deletions=0, patch="+y")
+        repo.get_commit.return_value.files = [commit_file]
+        repo.get_pull.return_value.get_files.return_value = [pr_file]
+
+        files = github_changed_files(
+            "owner/repo",
+            [
+                {"kind": "commit", "commit_id": "abc", "author": "Alice"},
+                {"kind": "pr", "pr_id": 7, "author": "Alice"},
+            ],
+        )
+
+        assert [(f["path"], f["attribution"], f["confidence"]) for f in files] == [
+            ("src/a.py", "authored_commit", "high"),
+            ("src/b.py", "authored_pr", "medium"),
+        ]
 
 
 # ---------------------------------------------------------------------------

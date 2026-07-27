@@ -15,6 +15,7 @@ from yeaboi.tools.confluence import (
     _text_to_storage,
     confluence_create_page,
     confluence_read_page,
+    confluence_read_page_text,
     confluence_read_space,
     confluence_search_docs,
     confluence_update_page,
@@ -344,6 +345,22 @@ class TestConfluenceReadPage:
         result = confluence_read_page.invoke({"page_id": "123"})
 
         assert result == _MISSING_CONFIG_MSG
+
+    def test_page_text_uses_rendered_view_when_storage_is_empty(self):
+        storage_page = _make_page("999", "Macro page", "<ac:structured-macro />")
+        rendered_page = {
+            "id": "999",
+            "title": "Macro page",
+            "body": {"view": {"value": "<p>Rendered macro content</p>"}},
+        }
+        mock_client = MagicMock()
+        mock_client.get_page_by_id.side_effect = [storage_page, rendered_page]
+
+        result = confluence_read_page_text(page_id="999", _client=mock_client)
+
+        assert result["text"] == "Rendered macro content"
+        assert result["error"] == ""
+        assert mock_client.get_page_by_id.call_args_list[1].kwargs["expand"] == "body.view"
 
 
 # ---------------------------------------------------------------------------

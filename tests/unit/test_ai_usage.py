@@ -10,6 +10,8 @@ and the TUI card builder (populated + empty state).
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 from dataclasses import asdict
 
 from yeaboi.analysis.ai_usage import (
@@ -192,6 +194,21 @@ class TestGenerateInsights:
         assert out["start"][0]["title"] == "Do X"
         assert all(out[c] for c in ("start", "stop", "keep", "try"))
 
+    def test_uses_analysis_fast_model(self, monkeypatch):
+        payload = (
+            '{"start": [{"title": "S"}], "stop": [{"title": "X"}], "keep": [{"title": "K"}], "try": [{"title": "T"}]}'
+        )
+        captured = {}
+
+        def _invoke(*args, **kwargs):
+            captured.update(kwargs)
+            return _FakeResp(payload)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_analysis_fast_model", lambda: "fast-model")
+        monkeypatch.setattr("yeaboi.tools.team_learning._llm_invoke", _invoke)
+        generate_ai_adoption_insights(self._SIG, {})
+        assert captured["model"] == "fast-model"
+
     def test_llm_failure_falls_back(self, monkeypatch):
         def boom(*a, **k):
             raise RuntimeError("no llm")
@@ -295,6 +312,8 @@ class TestRunAiAdoption:
                         "title": "x",
                         "body": "Co-Authored-By: Claude",
                         "source": "github",
+                        "container": "o",
+                        "repository": "o/r",
                         "key": "a1b2c3d4",
                         "url": "https://github.com/o/r/commit/a1b2c3d4",
                     }
@@ -304,7 +323,7 @@ class TestRunAiAdoption:
                 ["GitHub (remote): o/r"],
             ),
         )
-        sig, blob = run_ai_adoption("jira", "P", [], [])
+        sig, blob = run_ai_adoption("jira", "P", [], [], members=["A"])
         assert sig.ai_commits == 1 and sig.footprint_pct == 100.0
         assert sig.sources_scanned == ("github",)
         assert sig.repos_scanned == ("GitHub (remote): o/r",)
@@ -371,14 +390,309 @@ class TestRunAiAdoption:
         sig, _ = run_ai_adoption("jira", "P", [], [], members=["alice"])
         assert sig.scanned_commits == 1  # matched via email local-part
 
-    def test_member_filter_no_match_keeps_whole_team(self, monkeypatch):
+    def test_member_filter_no_match_stays_empty(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.analysis.ai_usage.collect_ai_activity", lambda s, p, sub_sources=None: self._two_author_items()
         )
         sig, blob = run_ai_adoption("jira", "P", [], [], members=["Nobody"])
-        # Falls back to the whole-team scan rather than reporting a false 0%.
-        assert sig.scanned_commits == 2
-        assert any("member filter" in c for c in blob["coverage"])
+        assert sig.scanned_commits == 0
+        assert blob["unmatched_users"] == ["Nobody"]
+        assert any("no commits or authored PRs matched" in c for c in blob["coverage"])
+
+    def test_changed_files_are_fetched_only_after_member_filter(self, monkeypatch):
+        items = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "commit_id": "alice-sha",
+                "title": "Selected change",
+                "body": "",
+            },
+            {
+                "kind": "commit",
+                "author": "Bob",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "commit_id": "bob-sha",
+                "title": "Unselected change",
+                "body": "",
+            },
+        ]
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                items,
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        captured = {}
+
+        def changed(repo, activity):
+            captured["ids"] = [item["commit_id"] for item in activity]
+            return [
+                {
+                    "provider": "github",
+                    "container": "acme",
+                    "repository": repo,
+                    "path": "src/api.py",
+                    "status": "modified",
+                    "attribution": "authored_commit",
+                    "confidence": "high",
+                    "change_id": "alice-sha",
+                }
+            ]
+
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", changed)
+
+        sig, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"])
+
+        assert sig.scanned_commits == 1
+        assert captured["ids"] == ["alice-sha"]
+        assert [item["path"] for item in blob["changed_files"]] == ["src/api.py"]
+
+    def test_ai_footprint_only_skips_changed_file_fetch(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [
+                    {
+                        "kind": "commit",
+                        "author": "Alice",
+                        "source": "github",
+                        "container": "acme",
+                        "repository": "acme/api",
+                        "commit_id": "sha",
+                        "title": "AI change",
+                        "body": "Co-Authored-By: Claude",
+                    }
+                ],
+                ["github"],
+                [],
+                [],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.github.github_changed_files",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not fetch files")),
+        )
+        signal, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"], code_features=["ai_footprint"])
+        assert signal.ai_commits == 1
+        assert blob["enabled_features"] == ["ai_footprint"]
+        assert blob["changed_files"] == []
+        assert blob["repository_health"] == {}
+
+    def test_code_health_only_skips_marker_output(self, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [],
+                ["github"],
+                [],
+                [],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        signal, blob = run_ai_adoption("jira", "P", [], [], members=["Alice"], code_features=["code_health"])
+        assert signal == AiAdoptionSignal()
+        assert blob["enabled_features"] == ["code_health"]
+        assert blob["samples"] == []
+        assert "repository_health" in blob
+
+    def test_changed_file_metadata_is_bounded_parallel_and_reports_counts(self, monkeypatch):
+        items = [
+            {
+                "kind": "commit",
+                "author": "Alice",
+                "source": "github",
+                "container": "acme",
+                "repository": "acme/api",
+                "commit_id": f"sha-{index}",
+                "title": f"Change {index}",
+                "body": "",
+            }
+            for index in range(4)
+        ]
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                items,
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_code_max_concurrency", lambda: 2)
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def changed(repo, activity):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.02)
+            with lock:
+                active -= 1
+            item = activity[0]
+            return [
+                {
+                    "provider": "github",
+                    "container": "acme",
+                    "repository": repo,
+                    "path": f"src/{item['commit_id']}.py",
+                    "status": "modified",
+                    "attribution": "authored_commit",
+                    "confidence": "high",
+                    "change_id": item["commit_id"],
+                }
+            ]
+
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", changed)
+        progress = []
+
+        _signal, blob = run_ai_adoption(
+            "jira",
+            "P",
+            [],
+            [],
+            members=["Alice"],
+            progress=progress,
+            code_features=["code_health"],
+        )
+
+        assert maximum == 2
+        assert [item["path"] for item in blob["changed_files"]] == [f"src/sha-{index}.py" for index in range(4)]
+        updates = [
+            event
+            for event in progress
+            if isinstance(event, dict)
+            and event.get("component_id") == "code:code_health"
+            and event.get("phase") == "Reading code-change metadata"
+        ]
+        assert updates[-1]["current"] == updates[-1]["total"] == 4
+        assert updates[-1]["secondary_count"] == 4
+        assert updates[-1]["read_only"] is True
+
+    def test_immutable_commit_file_metadata_is_reused(self, monkeypatch, tmp_path):
+        item = {
+            "kind": "commit",
+            "author": "Alice",
+            "source": "github",
+            "container": "acme",
+            "repository": "acme/api",
+            "commit_id": "immutable-sha",
+            "title": "Change",
+            "body": "",
+        }
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [item],
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        calls = 0
+
+        def changed(repo, activity):
+            nonlocal calls
+            calls += 1
+            return [
+                {
+                    "provider": "github",
+                    "container": "acme",
+                    "repository": repo,
+                    "path": "src/api.py",
+                    "status": "modified",
+                    "attribution": "authored_commit",
+                    "confidence": "high",
+                    "change_id": activity[0]["commit_id"],
+                }
+            ]
+
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", changed)
+        db_path = tmp_path / "analysis.db"
+
+        first = run_ai_adoption("jira", "P", [], [], members=["Alice"], code_features=["code_health"], db_path=db_path)[
+            1
+        ]
+        second = run_ai_adoption(
+            "jira", "P", [], [], members=["Alice"], code_features=["code_health"], db_path=db_path
+        )[1]
+
+        assert calls == 1
+        assert first["changed_files"][0]["path"] == second["changed_files"][0]["path"]
+        assert second["changed_files"][0]["cache_status"] == "hit"
+        assert second["repository_health"]["cached_change_lookups"] == 1
+
+    def test_recommendations_overlap_code_change_collection(self, monkeypatch):
+        item = {
+            "kind": "commit",
+            "author": "Alice",
+            "source": "github",
+            "container": "acme",
+            "repository": "acme/api",
+            "commit_id": "sha",
+            "title": "AI change",
+            "body": "Co-Authored-By: Claude",
+        }
+        monkeypatch.setattr(
+            "yeaboi.analysis.ai_usage.collect_ai_activity",
+            lambda *args, **kwargs: (
+                [item],
+                ["github"],
+                [],
+                ["GitHub (remote): acme/api"],
+                [],
+                {"component": "code", "status": "complete", "assets": []},
+            ),
+        )
+        insight_started = threading.Event()
+        change_started = threading.Event()
+        overlapped = []
+
+        def insights(*args, **kwargs):
+            insight_started.set()
+            overlapped.append(change_started.wait(timeout=1))
+            return {"start": [], "stop": [], "keep": [], "try": []}
+
+        def changed(repo, activity):
+            change_started.set()
+            overlapped.append(insight_started.wait(timeout=1))
+            return []
+
+        monkeypatch.setattr("yeaboi.analysis.ai_usage.generate_ai_adoption_insights", insights)
+        monkeypatch.setattr("yeaboi.tools.github.github_changed_files", changed)
+
+        _signal, blob = run_ai_adoption(
+            "jira",
+            "P",
+            [],
+            [],
+            members=["Alice"],
+            code_features=["ai_footprint", "code_health"],
+            generate_insights=True,
+        )
+
+        assert overlapped == [True, True]
+        assert "insights" in blob
 
 
 # ── Serialization round-trip ───────────────────────────────────────────────

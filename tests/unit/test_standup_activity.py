@@ -675,6 +675,7 @@ class TestAzdoRepoActivity:
                 "body": "body",
                 "timestamp": "2026-07-17T08:00:00",
                 "key": "abcdef12",
+                "commit_id": "abcdef1234567890",
                 "url": "https://dev.azure.com/org/Proj/_git/api/commit/abcdef1234567890",
                 "repository": "Proj/api",
                 "changed_files": ["/docs/api.md"],
@@ -899,6 +900,164 @@ class TestConfluenceMultiEditor:
         assert authors == ["Eve", "Omar"]
         assert items[1]["title"] == "edited 'Runbook'"
         assert items[1]["author_email"] == "omar@corp.com"
+
+    def test_analysis_discovery_can_skip_version_history(self, monkeypatch):
+        conf = MagicMock()
+        conf.cql.return_value = {"results": [self._page()]}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda: conf)
+        monkeypatch.setattr("yeaboi.tools.confluence.get_confluence_space_key", lambda: "SPACE")
+
+        items = confluence_recent_pages("SPACE", days=1, include_version_history=False)
+
+        assert [item["author"] for item in items] == ["Eve"]
+        conf.get.assert_not_called()
+
+    def test_analysis_discovery_counts_first_and_reports_batches(self, monkeypatch):
+        conf = MagicMock()
+        conf.cql.side_effect = [
+            {"results": [self._page()], "total": 1},
+            {"results": [self._page()], "total": 1},
+        ]
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda *args: conf)
+        updates = []
+
+        items = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            include_version_history=False,
+            count_first=True,
+            progress_callback=lambda discovered, total, batch: updates.append((discovered, total, batch)),
+        )
+
+        assert len(items) == 1
+        assert updates == [(0, 1, 0), (1, 1, 1)]
+
+    def test_analysis_discovery_follows_provider_next_link(self, monkeypatch):
+        conf = MagicMock()
+
+        def page(page_id):
+            value = self._page()
+            value["content"]["id"] = str(page_id)
+            return value
+
+        first = [page(index) for index in range(100)]
+        second = [page(100), page(101)]
+        conf.cql.return_value = {
+            "results": first,
+            "total": 102,
+            "_links": {"base": "https://example.atlassian.net/wiki", "next": "/wiki/rest/api/search?cursor=next"},
+        }
+        conf.get.return_value = {"results": second, "total": 102, "_links": {}}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda *args: conf)
+
+        result = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            include_version_history=False,
+            return_metadata=True,
+        )
+
+        assert result.complete is True
+        assert len(result.items) == 102
+        conf.get.assert_called_once_with(
+            "https://example.atlassian.net/wiki/rest/api/search?cursor=next",
+            absolute=True,
+        )
+
+    def test_analysis_discovery_preserves_wiki_context_for_rest_next_link(self, monkeypatch):
+        conf = MagicMock()
+
+        def page(page_id):
+            value = self._page()
+            value["content"]["id"] = str(page_id)
+            return value
+
+        first = [page(index) for index in range(100)]
+        conf.cql.return_value = {
+            "results": first,
+            "total": 101,
+            "_links": {
+                "base": "https://example.atlassian.net/wiki",
+                "next": "/rest/api/search?cursor=next",
+            },
+        }
+        conf.get.return_value = {"results": [page(100)], "total": 101, "_links": {}}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda *args: conf)
+
+        result = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            include_version_history=False,
+            return_metadata=True,
+        )
+
+        assert result.complete is True
+        assert len(result.items) == 101
+        conf.get.assert_called_once_with(
+            "https://example.atlassian.net/wiki/rest/api/search?cursor=next",
+            absolute=True,
+        )
+
+    def test_analysis_discovery_falls_back_when_next_link_repeats_first_page(self, monkeypatch):
+        conf = MagicMock()
+
+        def page(page_id):
+            value = self._page()
+            value["content"]["id"] = str(page_id)
+            return value
+
+        first = [page(index) for index in range(100)]
+        second = [page(index) for index in range(100, 200)]
+        conf.cql.side_effect = [
+            {
+                "results": first,
+                "total": 200,
+                "_links": {
+                    "base": "https://example.atlassian.net/wiki",
+                    "next": "/rest/api/search?cursor=stale",
+                },
+            },
+            {"results": second, "total": 200, "_links": {}},
+        ]
+        conf.get.return_value = {"results": first, "total": 200, "_links": {}}
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda *args: conf)
+
+        result = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            include_version_history=False,
+            return_metadata=True,
+        )
+
+        assert result.complete is True
+        assert len(result.items) == 200
+        assert conf.cql.call_args_list[1].kwargs["start"] == 100
+
+    def test_analysis_discovery_retains_unique_pages_when_pagination_stalls(self, monkeypatch):
+        conf = MagicMock()
+
+        def page(page_id):
+            value = self._page()
+            value["content"]["id"] = str(page_id)
+            return value
+
+        first = [page(index) for index in range(100)]
+        conf.cql.side_effect = [
+            {"results": first, "total": 200},
+            {"results": first, "total": 200},
+        ]
+        monkeypatch.setattr("yeaboi.tools.confluence._make_confluence_client", lambda *args: conf)
+
+        result = confluence_recent_pages(
+            "SPACE",
+            days=1,
+            include_version_history=False,
+            return_metadata=True,
+        )
+
+        assert result.complete is False
+        assert len(result.items) == 100
+        assert "repeated page IDs" in result.error
 
     def test_created_in_window_emits_page_created(self, monkeypatch):
         conf = MagicMock()

@@ -60,7 +60,7 @@ _TEXT_BLOCK_TYPES = (
 )
 
 
-def _make_notion_client() -> Client | None:
+def _make_notion_client(request_timeout_seconds: int | None = None) -> Client | None:
     """Return an authenticated Notion client, or None if the token is missing.
 
     Notion authenticates with a single Bearer integration token; the SDK sets the
@@ -71,7 +71,8 @@ def _make_notion_client() -> Client | None:
         logger.warning("Notion client not created — missing config")
         return None
     logger.debug("Creating Notion client")
-    client = Client(auth=token)
+    kwargs = {"timeout_ms": request_timeout_seconds * 1000} if request_timeout_seconds is not None else {}
+    client = Client(auth=token, **kwargs)
     logger.debug("Notion client created successfully")
     return client
 
@@ -89,6 +90,14 @@ def _notion_error_msg(e: APIResponseError) -> str:
     if code == 429:
         return "Error: Notion rate limit reached. Wait a moment and try again."
     return f"Error: Notion API error {code}: {e}"
+
+
+def _notion_retry_after(e) -> str:
+    """Return a provider Retry-After value when the SDK exposes response headers."""
+    headers = getattr(e, "headers", {}) or {}
+    if not headers:
+        headers = getattr(getattr(e, "response", None), "headers", {}) or {}
+    return str(headers.get("Retry-After", "") or "")
 
 
 def _rich_text_to_plain(rich_text: list) -> str:
@@ -407,7 +416,15 @@ def notion_update_page(page_id: str, body: str, title: str = "") -> str:
 # See docs: "Daily Standup" — recent-activity collection
 
 
-def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[dict]:
+def notion_recent_pages(
+    root_id: str = "",
+    days: int = 1,
+    since=None,
+    *,
+    request_timeout_seconds: int | None = None,
+    progress_callback=None,
+    raise_on_error: bool = False,
+) -> list[dict]:
     """Return Notion pages edited since the window start.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
@@ -419,7 +436,10 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
     workspace-wide (scoped by integration grants).
     """
     logger.info("notion_recent_pages: root=%r days=%d since=%s", root_id, days, since)
-    client = _make_notion_client()
+    try:
+        client = _make_notion_client(request_timeout_seconds)
+    except TypeError:
+        client = _make_notion_client()
     if client is None:
         logger.warning("notion_recent_pages skipped — Notion not configured")
         return []
@@ -443,14 +463,59 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
         return name
 
     try:
-        results = client.search(
-            filter={"property": "object", "value": "page"},
-            sort={"direction": "descending", "timestamp": "last_edited_time"},
-            page_size=50,
-        )
-        pages = results.get("results", []) if isinstance(results, dict) else []
+        pages: list[dict] = []
+        cursor = None
+        seen_cursors: set[str] = set()
+        batch = 0
+        while True:
+            kwargs = {
+                "filter": {"property": "object", "value": "page"},
+                "sort": {"direction": "descending", "timestamp": "last_edited_time"},
+                "page_size": 100,
+            }
+            if cursor:
+                kwargs["start_cursor"] = cursor
+            results = client.search(**kwargs)
+            chunk = results.get("results", []) if isinstance(results, dict) else []
+            pages.extend(chunk)
+            batch += 1
+            next_cursor = results.get("next_cursor") if isinstance(results, dict) else None
+            if progress_callback is not None:
+                progress_callback(len(pages), None, batch)
+            if not results.get("has_more", False) if isinstance(results, dict) else True:
+                break
+            if not next_cursor or next_cursor in seen_cursors:
+                raise RuntimeError("Notion pagination made no progress")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
         items: list[dict] = []
+        by_id = {str(page.get("id", "")): page for page in pages if isinstance(page, dict)}
+
+        def _inside_root(page: dict) -> bool:
+            if not root_id:
+                return True
+            target = root_id.replace("-", "").lower()
+            current = page
+            visited: set[str] = set()
+            while isinstance(current, dict):
+                current_id = str(current.get("id", "")).replace("-", "").lower()
+                if current_id == target:
+                    return True
+                if current_id in visited:
+                    return False
+                visited.add(current_id)
+                parent = current.get("parent", {})
+                if not isinstance(parent, dict):
+                    return False
+                parent_id = str(parent.get("page_id") or parent.get("database_id") or "")
+                if parent_id.replace("-", "").lower() == target:
+                    return True
+                current = by_id.get(parent_id) or by_id.get(parent_id.replace("-", ""))
+            return False
+
         for page in pages:
+            if not _inside_root(page):
+                continue
             edited = page.get("last_edited_time", "")
             # last_edited_time is ISO 8601 (e.g. 2026-07-14T10:20:00.000Z).
             try:
@@ -458,8 +523,7 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
             except ValueError:
                 edited_dt = None
             if edited_dt is not None and edited_dt < cutoff:
-                # Results are newest-first, so once we pass the cutoff we can stop.
-                break
+                continue
             author_id = (
                 page.get("last_edited_by", {}).get("id", "") if isinstance(page.get("last_edited_by"), dict) else ""
             )
@@ -469,6 +533,7 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
                     "kind": "page",
                     "title": _page_title(page),
                     "timestamp": (edited or "")[:19],
+                    "version": edited or "",
                     "key": page.get("id", ""),
                     "url": page.get("url", "") or "",
                 }
@@ -481,9 +546,13 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
             from yeaboi.standup.errors import StandupSourceError
 
             raise StandupSourceError("notion", "authentication failed — check NOTION_TOKEN") from e
+        if raise_on_error:
+            raise RuntimeError(_notion_error_msg(e)) from e
         logger.warning("notion_recent_pages failed: %s", _notion_error_msg(e))
         return []
     except Exception as e:
+        if raise_on_error:
+            raise
         logger.warning("notion_recent_pages unexpected error: %s", e)
         return []
 
@@ -498,14 +567,27 @@ def notion_recent_pages(root_id: str = "", days: int = 1, since=None) -> list[di
 # into blocks that have children.
 
 
-def notion_read_page_text(page_id: str, max_chars: int = 30_000) -> dict:
+def notion_read_page_text(
+    page_id: str,
+    max_chars: int = 100_000,
+    *,
+    request_timeout_seconds: int | None = None,
+    _client=None,
+) -> dict:
     """Read a full Notion page (one level deep) as plain text for roadmap ingestion.
 
     Returns {"title", "text", "truncated", "error"} — never raises; any failure
     lands in "error" with empty text so the caller can surface it as a warning.
     """
     logger.info("notion_read_page_text: page_id=%r max_chars=%d", page_id, max_chars)
-    client = _make_notion_client()
+    client = _client
+    if client is None:
+        try:
+            client = _make_notion_client(request_timeout_seconds)
+        except TypeError:
+            # Compatibility with injected/test client factories using the historical
+            # no-argument signature.
+            client = _make_notion_client()
     if client is None:
         return {"title": "", "text": "", "truncated": False, "error": _MISSING_CONFIG_MSG}
     if not page_id.strip():
@@ -515,36 +597,53 @@ def notion_read_page_text(page_id: str, max_chars: int = 30_000) -> dict:
         page = client.pages.retrieve(page_id)
         title = _page_title(page)
 
-        children = client.blocks.children.list(page_id, page_size=100)
-        blocks = children.get("results", []) if isinstance(children, dict) else []
+        def _children(block_id: str) -> list[dict]:
+            found: list[dict] = []
+            cursor = None
+            while True:
+                kwargs = {"block_id": block_id, "page_size": 100}
+                if cursor:
+                    kwargs["start_cursor"] = cursor
+                response = client.blocks.children.list(**kwargs)
+                found.extend(response.get("results", []) if isinstance(response, dict) else [])
+                cursor = response.get("next_cursor") if isinstance(response, dict) else None
+                if not isinstance(response, dict) or not response.get("has_more") or not cursor:
+                    break
+            return found
 
-        # Roadmaps commonly nest their real content under toggle/section blocks.
-        # Recurse exactly one level into blocks with children (bounded by
-        # max_chars) — deep trees are cut off rather than walked exhaustively.
-        parts: list[str] = [_blocks_to_text(blocks)]
-        for block in blocks:
-            if not isinstance(block, dict) or not block.get("has_children"):
-                continue
-            if sum(len(p) for p in parts) >= max_chars:
-                break
-            try:
-                sub = client.blocks.children.list(block.get("id", ""), page_size=100)
-                sub_blocks = sub.get("results", []) if isinstance(sub, dict) else []
-                sub_text = _blocks_to_text(sub_blocks)
-                if sub_text:
-                    parts.append(sub_text)
-            except Exception as e:  # one bad child block never sinks the read
-                logger.debug("notion_read_page_text: child fetch failed for %r: %s", block.get("id"), e)
+        # Walk all nested blocks breadth-first. Content is only cut at the explicit,
+        # reported safety ceiling rather than at an arbitrary nesting depth.
+        queue = [page_id]
+        parts: list[str] = []
+        while queue and sum(len(p) for p in parts) < max_chars:
+            parent = queue.pop(0)
+            blocks = _children(parent)
+            rendered = _blocks_to_text(blocks)
+            if rendered:
+                parts.append(rendered)
+            queue.extend(
+                str(block.get("id", ""))
+                for block in blocks
+                if isinstance(block, dict) and block.get("has_children") and block.get("id")
+            )
 
         text = "\n".join(p for p in parts if p).strip()
-        truncated = len(text) > max_chars
+        # Queue entries remaining means the explicit ceiling stopped traversal,
+        # even when the rendered prefix happens to be exactly ``max_chars``.
+        truncated = bool(queue) or len(text) > max_chars
         if truncated:
             text = text[:max_chars]
         logger.info("notion_read_page_text: fetched %r (%d chars, truncated=%s)", title, len(text), truncated)
         return {"title": title, "text": text, "truncated": truncated, "error": ""}
     except APIResponseError as e:
         logger.error("notion_read_page_text API error: %s", e)
-        return {"title": "", "text": "", "truncated": False, "error": _notion_error_msg(e)}
+        return {
+            "title": "",
+            "text": "",
+            "truncated": False,
+            "error": _notion_error_msg(e),
+            "retry_after": _notion_retry_after(e),
+        }
     except Exception as e:
         logger.error("notion_read_page_text unexpected error: %s", e)
         return {"title": "", "text": "", "truncated": False, "error": f"Notion read failed: {e}"}

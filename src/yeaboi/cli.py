@@ -635,9 +635,33 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_p.add_argument(
         "--depth",
         choices=["quick", "deep"],
-        default="quick",
-        help="Analysis depth: quick uses no LLM calls; deep adds cached AI enrichment (default quick)",
+        default="deep",
+        help="Analysis depth: deep provides exhaustive AI enrichment; quick is metrics-only (default deep)",
     )
+    analyze_p.add_argument(
+        "--window-days",
+        type=int,
+        default=120,
+        help="Changed-content window shared by Code and Docs (default 120)",
+    )
+    analyze_p.add_argument(
+        "--analysis-model",
+        default=None,
+        metavar="MODEL",
+        help="Per-run model for structured Analysis tasks (final synthesis still uses the primary model)",
+    )
+    analyze_p.add_argument(
+        "--features",
+        nargs="+",
+        choices=["delivery", "ai_footprint", "code_health", "documentation"],
+        default=None,
+        metavar="FEATURE",
+        help="Analysis areas to run (default: all supported by the selected integrations)",
+    )
+    analyze_p.add_argument("--github-owner", action="append", default=None, metavar="OWNER")
+    analyze_p.add_argument("--azdo-code-project", action="append", default=None, metavar="PROJECT")
+    analyze_p.add_argument("--confluence-space", action="append", default=None, metavar="SPACE")
+    analyze_p.add_argument("--notion-root", action="append", default=None, metavar="PAGE_ID")
     analyze_p.add_argument(
         "--samples",
         action="store_true",
@@ -654,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-doc-quality",
         dest="include_doc_quality",
         action="store_false",
-        help="Skip the documentation scan (Notion/Confluence clarity + AI-likelihood)",
+        help="Skip the documentation usefulness and clarity scan",
     )
     # Each component runs over its OWN sub-sources (not the tracker): delivery ←
     # jira/azdevops boards, code ← github/azdo repos, docs ← confluence/notion.
@@ -680,14 +704,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["confluence", "notion"],
         default=None,
         metavar="PLATFORM",
-        help="Doc platforms for the clarity/AI-likelihood read. e.g. --docs confluence",
+        help="Doc platforms for the clarity/usefulness read. e.g. --docs confluence",
     )
     analyze_p.add_argument(
         "--members",
         nargs="+",
         default=None,
         metavar="NAME",
-        help="Re-scope delivery velocity/contributors + code authors to these members (default: whole team)",
+        help=(
+            "Selected members for delivery and code. Code analysis is empty without "
+            "an explicit member scope; it never falls back to whole-team activity."
+        ),
     )
     analyze_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     analyze_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
@@ -1471,6 +1498,16 @@ def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
     if args.docs:
         components["docs"] = args.docs
     members = {"jira": args.members, "azdevops": args.members} if args.members else None
+    analysis_scope = {
+        provider: values
+        for provider, values in {
+            "github": getattr(args, "github_owner", None),
+            "azdo": getattr(args, "azdo_code_project", None),
+            "confluence": getattr(args, "confluence_space", None),
+            "notion": getattr(args, "notion_root", None),
+        }.items()
+        if values
+    }
 
     # An explicit components map is authoritative for delivery, so --source only takes
     # effect when delivery is left to the default. Warn rather than silently ignore it.
@@ -1490,6 +1527,10 @@ def _cmd_analyze(args: argparse.Namespace, console: "Console") -> int:
         include_ai_usage=args.include_ai_usage,
         include_doc_quality=args.include_doc_quality,
         analysis_depth=args.depth,
+        analysis_window_days=getattr(args, "window_days", 120),
+        analysis_scope=analysis_scope or None,
+        analysis_model=getattr(args, "analysis_model", None),
+        analysis_features=getattr(args, "features", None),
         components=components or None,
         members=members,
     )
@@ -1536,21 +1577,53 @@ def _print_profile_summary(console: "Console", sub: dict) -> None:
 
 
 def _print_code_summary(console: "Console", code: dict) -> None:
-    """Print the global Code (AI-adoption) scan summary."""
+    """Print selected-user Code activity, changed-file, and coverage summary."""
     sig = code.get("signal")
-    console.rule("[bold cyan]Code — AI adoption[/bold cyan]")
-    fp = getattr(sig, "footprint_pct", 0.0)
-    scanned = getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)
-    console.print(f"  AI footprint: [bold]{fp:.0f}%[/bold] of {scanned} commits/PRs (lower bound)")
+    examples = code.get("examples") or {}
+    enabled = set(examples.get("enabled_features") or ("ai_footprint", "code_health"))
+    console.rule("[bold cyan]Code — selected-user analysis[/bold cyan]")
+    if "ai_footprint" in enabled:
+        fp = getattr(sig, "footprint_pct", 0.0)
+        scanned = getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)
+        console.print(f"  AI footprint: [bold]{fp:.0f}%[/bold] of {scanned} commits/PRs (lower bound)")
+    health = examples.get("repository_health") or {}
+    if "code_health" in enabled:
+        console.print(
+            f"  Changed files: [bold]{health.get('files_analysed', 0)}[/bold] analysed · "
+            f"{health.get('repositories_touched', 0)} repositories touched · {health.get('findings', 0)} findings"
+        )
+    selected = examples.get("selected_users") or []
+    unmatched = examples.get("unmatched_users") or []
+    if selected:
+        console.print(f"  Selected users: {', '.join(selected)}")
+    if unmatched:
+        console.print(f"  Unmatched users: [yellow]{', '.join(unmatched)}[/yellow]")
+    coverage = examples.get("coverage_report") or {}
+    console.print(
+        f"  Coverage: [bold]{str(coverage.get('status', 'complete')).upper()}[/bold] · "
+        f"{coverage.get('succeeded', 0)}/{coverage.get('eligible', 0)} eligible assets succeeded"
+    )
+    for action in (examples.get("action_plan") or [])[:5]:
+        console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
 def _print_docs_summary(console: "Console", docs: dict) -> None:
     """Print the global Docs (clarity) scan summary."""
     sig = docs.get("signal")
+    examples = docs.get("examples") or {}
     console.rule("[bold cyan]Docs — clarity[/bold cyan]")
     console.print(
-        f"  Clarity: [bold]{getattr(sig, 'avg_clarity', 0):.0f}/100[/bold] · {getattr(sig, 'pages_scanned', 0)} pages"
+        f"  Clarity: [bold]{getattr(sig, 'avg_clarity', 0):.0f}/100[/bold] · "
+        f"Usefulness: [bold]{getattr(sig, 'avg_usefulness', 0):.0f}/100[/bold] · "
+        f"{getattr(sig, 'pages_scanned', 0)} pages"
     )
+    coverage = examples.get("coverage_report") or {}
+    console.print(
+        f"  Coverage: [bold]{str(coverage.get('status', 'complete')).upper()}[/bold] · "
+        f"{coverage.get('succeeded', 0)}/{coverage.get('eligible', 0)} eligible assets succeeded"
+    )
+    for action in (examples.get("action_plan") or [])[:5]:
+        console.print(f"  [bold]{str(action.get('priority', '')).upper()}[/bold]: {action.get('title', '')}")
 
 
 def _run_learn(console: "Console") -> None:

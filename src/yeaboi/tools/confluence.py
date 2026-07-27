@@ -26,6 +26,8 @@ import math
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 from atlassian import Confluence
 from langchain_core.tools import tool
@@ -54,7 +56,7 @@ _MISSING_CONFIG_MSG = (
 _MAX_CONTENT_CHARS = 8_000
 
 
-def _make_confluence_client() -> Confluence | None:
+def _make_confluence_client(request_timeout_seconds: int | None = None) -> Confluence | None:
     """Return an authenticated Confluence client, or None if any required config is missing.
 
     Uses HTTP Basic Auth with the Atlassian account email and API token — the same
@@ -66,7 +68,8 @@ def _make_confluence_client() -> Confluence | None:
         logger.warning("Confluence client not created — missing config")
         return None
     logger.debug("Creating Confluence client for %s", base_url)
-    client = Confluence(url=base_url, username=email, password=token, cloud=True)
+    kwargs = {"timeout": request_timeout_seconds} if request_timeout_seconds is not None else {}
+    client = Confluence(url=base_url, username=email, password=token, cloud=True, **kwargs)
     logger.debug("Confluence client created successfully")
     return client
 
@@ -84,6 +87,12 @@ def _confluence_error_msg(e: HTTPError) -> str:
     if code == 429:
         return "Error: Confluence rate limit reached. Wait a moment and try again."
     return f"Error: Confluence API error {code}: {e}"
+
+
+def _http_retry_after(e) -> str:
+    """Return a provider Retry-After value when the exception exposes one."""
+    headers = getattr(getattr(e, "response", None), "headers", {}) or {}
+    return str(headers.get("Retry-After", "") or "")
 
 
 def _strip_html_tags(html: str) -> str:
@@ -408,6 +417,101 @@ def confluence_update_page(
 # strict wall-clock budget and only the newest cache misses go to the network.
 _STANDUP_COLLECTION_BUDGET_SECONDS = 8.0
 _MAX_LIVE_VERSION_LOOKUPS = 5
+# Cap on per-page version-history lookups (1 extra API call each) so a busy
+# space can't stall the standup; pages arrive newest-first so the cap keeps
+# the most recently edited ones.
+_MAX_VERSION_LOOKUPS = 25
+_DISCOVERY_PAGE_SIZE = 100
+_DISCOVERY_ATTEMPTS = 2
+
+
+class ConfluenceDiscoveryError(RuntimeError):
+    """A bounded discovery failure that Analysis must report as partial coverage."""
+
+
+@dataclass(frozen=True)
+class ConfluenceDiscoveryResult:
+    """Recent-page discovery plus an honest completeness signal."""
+
+    items: list[dict]
+    expected_total: int | None
+    complete: bool
+    error: str = ""
+
+
+def _retry_after_seconds(exc: Exception, attempt: int) -> float:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    if "Retry-After" not in headers:
+        return float(2**attempt)
+    try:
+        return max(0.0, min(float(headers.get("Retry-After", 0)), 30.0))
+    except (TypeError, ValueError):
+        return float(2**attempt)
+
+
+def _cql_with_retry(conf, cql: str, **kwargs) -> dict:
+    """Run one bounded CQL request, respecting Atlassian Retry-After."""
+    last_error: Exception | None = None
+    for attempt in range(_DISCOVERY_ATTEMPTS):
+        try:
+            result = conf.cql(cql, **kwargs)
+            if not isinstance(result, dict):
+                raise ConfluenceDiscoveryError("Confluence returned an invalid CQL response")
+            return result
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 >= _DISCOVERY_ATTEMPTS:
+                break
+            time.sleep(_retry_after_seconds(exc, attempt))
+    raise ConfluenceDiscoveryError(f"Confluence CQL discovery failed: {last_error}") from last_error
+
+
+def _cql_next_with_retry(conf, response: dict) -> dict | None:
+    """Follow Confluence's next link when numeric offsets are unreliable."""
+    links = response.get("_links", {}) if isinstance(response, dict) else {}
+    next_link = links.get("next", "") if isinstance(links, dict) else ""
+    if not next_link:
+        return None
+    base = links.get("base", "") if isinstance(links, dict) else ""
+    base = base or (get_confluence_base_url() or "")
+    next_link = str(next_link)
+    parsed_next = urlsplit(next_link)
+    if parsed_next.scheme and parsed_next.netloc:
+        absolute_url = next_link
+    else:
+        parsed_base = urlsplit(base)
+        base_path = parsed_base.path.rstrip("/")
+        next_path = parsed_next.path
+        # Confluence Cloud commonly returns ``base=https://host/wiki`` with either
+        # ``next=/rest/...`` or ``next=/wiki/rest/...``.  ``urljoin`` treats both
+        # as origin-rooted paths and drops ``/wiki`` in the former case, which can
+        # redirect to the first result page and make discovery appear to loop.
+        if base_path and (next_path == base_path or next_path.startswith(f"{base_path}/")):
+            resolved_path = next_path
+        else:
+            resolved_path = f"{base_path}/{next_path.lstrip('/')}"
+        absolute_url = urlunsplit(
+            (
+                parsed_base.scheme,
+                parsed_base.netloc,
+                resolved_path,
+                parsed_next.query,
+                parsed_next.fragment,
+            )
+        )
+    last_error: Exception | None = None
+    for attempt in range(_DISCOVERY_ATTEMPTS):
+        try:
+            result = conf.get(absolute_url, absolute=True)
+            if not isinstance(result, dict):
+                raise ConfluenceDiscoveryError("Confluence returned an invalid next-page response")
+            return result
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < _DISCOVERY_ATTEMPTS:
+                time.sleep(_retry_after_seconds(exc, attempt))
+    raise ConfluenceDiscoveryError(f"Confluence next-page discovery failed: {last_error}") from last_error
 
 
 def _iso_to_dt(ts: str):
@@ -506,7 +610,13 @@ def confluence_recent_pages(
     *,
     enrichment_budget_seconds: float = _STANDUP_COLLECTION_BUDGET_SECONDS,
     on_partial=None,
-) -> list[dict]:
+    include_version_history: bool = True,
+    request_timeout_seconds: int | None = None,
+    count_first: bool = False,
+    progress_callback=None,
+    raise_on_error: bool = False,
+    return_metadata: bool = False,
+) -> list[dict] | ConfluenceDiscoveryResult:
     """Return Confluence page activity since the window start — every editor, not just the last.
 
     The window is ``since → now`` when ``since`` (a datetime — always a midnight
@@ -517,21 +627,29 @@ def confluence_recent_pages(
                          (the last editor from CQL plus cached/live version enrichment)
     - ``page-created`` — the creator of a page created in-window (no extra call)
 
+    ``include_version_history=False`` keeps discovery metadata-only by skipping
+    the extra per-page editor-history calls. Analysis mode uses that fast path;
+    Standup keeps the default so its activity attribution is unchanged.
+
     Each item: {author, author_email?, kind, title, timestamp, key(id)}.
     Returns [] when Confluence is unconfigured or the CQL query fails.
     """
     logger.info("confluence_recent_pages: space=%r days=%d since=%s", space_key, days, since)
-    conf = _make_confluence_client()
+    try:
+        conf = _make_confluence_client(request_timeout_seconds)
+    except TypeError:
+        conf = _make_confluence_client()
     if conf is None:
         logger.warning("confluence_recent_pages skipped — Confluence not configured")
-        return []
+        empty = ConfluenceDiscoveryResult([], None, False, "Confluence is not configured")
+        return empty if return_metadata else []
 
     budget = max(0.0, float(enrichment_budget_seconds))
     started = time.monotonic()
     deadline = started + budget
     # atlassian-python-api stores the requests timeout on the client. Bounding
     # each request prevents abandoned enrichment workers from lingering.
-    if hasattr(conf, "timeout"):
+    if include_version_history and hasattr(conf, "timeout"):
         conf.timeout = max(1, math.ceil(budget))
 
     key = space_key.strip() or (get_confluence_space_key() or "")
@@ -543,8 +661,103 @@ def confluence_recent_pages(
     cutoff = _page_cutoff(days, since)
     try:
         cql = f"type = page AND {modified_clause}{space_filter} ORDER BY lastModified DESC"
-        results = conf.cql(cql, limit=50, expand="history.lastUpdated,history.createdBy,history.createdDate")
-        pages = results.get("results", []) if isinstance(results, dict) else []
+        expected_total: int | None = None
+        if count_first:
+            count_result = _cql_with_retry(
+                conf,
+                cql,
+                limit=1,
+                start=0,
+                expand="history.lastUpdated",
+            )
+            raw_total = count_result.get("total")
+            expected_total = raw_total if isinstance(raw_total, int) else None
+            if progress_callback is not None:
+                progress_callback(0, expected_total, 0)
+        pages: list[dict] = []
+        start = 0
+        seen_page_ids: set[str] = set()
+        batch = 0
+        previous_response: dict | None = None
+        incomplete_reason = ""
+        while True:
+            follow_next_link = previous_response is not None
+            results_from_next = False
+            results = None
+            if follow_next_link:
+                try:
+                    results = _cql_next_with_retry(conf, previous_response)
+                    results_from_next = results is not None
+                except ConfluenceDiscoveryError as exc:
+                    logger.warning(
+                        "Confluence next-link request failed at offset %d; retrying with numeric pagination: %s",
+                        start,
+                        exc,
+                    )
+            if results is None:
+                results = _cql_with_retry(
+                    conf,
+                    cql,
+                    limit=_DISCOVERY_PAGE_SIZE,
+                    start=start,
+                    expand="history.lastUpdated,history.createdBy,history.createdDate",
+                )
+            chunk = results.get("results", []) if isinstance(results, dict) else []
+            if not chunk:
+                break
+            batch += 1
+            chunk_ids = {
+                str((page.get("content", page) or {}).get("id", "")) for page in chunk if isinstance(page, dict)
+            }
+            nonempty_ids = {page_id for page_id in chunk_ids if page_id}
+            if nonempty_ids and nonempty_ids <= seen_page_ids:
+                # Some Confluence deployments return a stale/incorrect cursor link.
+                # Retry this one page with the numeric offset before giving up.  The
+                # repeated-ID guard below remains the hard stop, so this is bounded.
+                if results_from_next:
+                    logger.warning(
+                        "Confluence next link repeated page IDs at offset %d; retrying with numeric pagination",
+                        start,
+                    )
+                    results = _cql_with_retry(
+                        conf,
+                        cql,
+                        limit=_DISCOVERY_PAGE_SIZE,
+                        start=start,
+                        expand="history.lastUpdated,history.createdBy,history.createdDate",
+                    )
+                    chunk = results.get("results", []) if isinstance(results, dict) else []
+                    chunk_ids = {
+                        str((page.get("content", page) or {}).get("id", "")) for page in chunk if isinstance(page, dict)
+                    }
+                    nonempty_ids = {page_id for page_id in chunk_ids if page_id}
+                    if not chunk:
+                        incomplete_reason = (
+                            f"Confluence pagination returned no results at offset {start} "
+                            "after the provider next link repeated page IDs"
+                        )
+                        logger.warning("confluence_recent_pages incomplete: %s", incomplete_reason)
+                        break
+                if nonempty_ids and nonempty_ids <= seen_page_ids:
+                    incomplete_reason = (
+                        f"Confluence pagination made no progress at offset {start}; provider repeated page IDs"
+                    )
+                    logger.warning("confluence_recent_pages incomplete: %s", incomplete_reason)
+                    break
+            seen_page_ids.update(nonempty_ids)
+            pages.extend(chunk)
+            previous_start = start
+            start += len(chunk)
+            if start <= previous_start:
+                raise ConfluenceDiscoveryError(f"Confluence pagination made no progress at offset {start}")
+            total = results.get("total") if isinstance(results, dict) else None
+            if isinstance(total, int):
+                expected_total = total
+            if progress_callback is not None:
+                progress_callback(len(pages), expected_total, batch)
+            if (isinstance(total, int) and start >= total) or len(chunk) < _DISCOVERY_PAGE_SIZE:
+                break
+            previous_response = results if (results.get("_links") or {}).get("next") else None
         items: list[dict] = []
         version_candidates: list[dict] = []
         for page in pages:
@@ -563,6 +776,13 @@ def confluence_recent_pages(
                     "kind": "page",
                     "title": title,
                     "timestamp": (last_updated.get("when", "") or "")[:19] if isinstance(last_updated, dict) else "",
+                    "version": (
+                        str(last_updated.get("number", ""))
+                        if isinstance(last_updated, dict) and last_updated.get("number") is not None
+                        else (last_updated.get("when", "") or "")
+                        if isinstance(last_updated, dict)
+                        else ""
+                    ),
                     "key": page_id,
                     "url": page_url,
                 }
@@ -589,7 +809,7 @@ def confluence_recent_pages(
             # A first revision cannot have an earlier editor. A missing revision
             # number remains eligible because older Confluence responses omit it.
             page_number = last_updated.get("number") if isinstance(last_updated, dict) else None
-            if page_id and page_number != 1:
+            if include_version_history and page_id and page_number != 1:
                 page_revision = str(last_updated.get("number") or last_updated.get("when") or "current")
                 version_candidates.append(
                     {
@@ -691,7 +911,15 @@ def confluence_recent_pages(
             len(pages),
             time.monotonic() - started,
         )
-        return items
+        result = ConfluenceDiscoveryResult(
+            items=items,
+            expected_total=expected_total,
+            complete=not incomplete_reason,
+            error=incomplete_reason,
+        )
+        if incomplete_reason and raise_on_error and not return_metadata:
+            raise ConfluenceDiscoveryError(incomplete_reason)
+        return result if return_metadata else items
     except Timeout as e:
         from yeaboi.standup.errors import StandupSourceError
 
@@ -702,11 +930,23 @@ def confluence_recent_pages(
             from yeaboi.standup.errors import StandupSourceError
 
             raise StandupSourceError("confluence", "authentication failed — check Atlassian API token") from e
+        if raise_on_error:
+            raise ConfluenceDiscoveryError(_confluence_error_msg(e)) from e
         logger.warning("confluence_recent_pages failed: %s", _confluence_error_msg(e))
-        return []
+        empty = ConfluenceDiscoveryResult([], None, False, _confluence_error_msg(e))
+        return empty if return_metadata else []
     except Exception as e:
+        if include_version_history and isinstance(e, ConfluenceDiscoveryError) and isinstance(e.__cause__, Timeout):
+            from yeaboi.standup.errors import StandupSourceError
+
+            raise StandupSourceError("confluence", f"request timed out after {budget:g} seconds") from e
+        if raise_on_error:
+            if isinstance(e, ConfluenceDiscoveryError):
+                raise
+            raise ConfluenceDiscoveryError(str(e)) from e
         logger.warning("confluence_recent_pages unexpected error: %s", e)
-        return []
+        empty = ConfluenceDiscoveryResult([], None, False, str(e))
+        return empty if return_metadata else []
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +958,14 @@ def confluence_recent_pages(
 # explicit max_chars and returns structured data instead of display text.
 
 
-def confluence_read_page_text(page_id: str = "", page_title: str = "", max_chars: int = 30_000) -> dict:
+def confluence_read_page_text(
+    page_id: str = "",
+    page_title: str = "",
+    max_chars: int = 30_000,
+    *,
+    request_timeout_seconds: int | None = None,
+    _client=None,
+) -> dict:
     """Read a full Confluence page as plain text for roadmap ingestion.
 
     Provide either page_id or page_title (title lookup needs CONFLUENCE_SPACE_KEY).
@@ -726,7 +973,14 @@ def confluence_read_page_text(page_id: str = "", page_title: str = "", max_chars
     lands in "error" with empty text so the caller can surface it as a warning.
     """
     logger.info("confluence_read_page_text: page_id=%r title=%r max_chars=%d", page_id, page_title, max_chars)
-    conf = _make_confluence_client()
+    conf = _client
+    if conf is None:
+        try:
+            conf = _make_confluence_client(request_timeout_seconds)
+        except TypeError:
+            # Compatibility with injected/test client factories using the historical
+            # no-argument signature.
+            conf = _make_confluence_client()
     if conf is None:
         return {"title": "", "text": "", "truncated": False, "error": _MISSING_CONFIG_MSG}
     if not page_id and not page_title:
@@ -750,7 +1004,28 @@ def confluence_read_page_text(page_id: str = "", page_title: str = "", max_chars
             return {"title": "", "text": "", "truncated": False, "error": f"Confluence page {ref} not found."}
 
         title = page.get("title", "Untitled")
-        text = _strip_html_tags(page.get("body", {}).get("storage", {}).get("value", ""))
+        storage_html = page.get("body", {}).get("storage", {}).get("value", "")
+        text = _strip_html_tags(storage_html)
+        if not text.strip():
+            # Macro-only pages can have no useful storage-format text while their
+            # rendered view contains the content a reader sees.  Fetch that
+            # representation only for storage-empty pages, preserving the normal
+            # one-request path for the vast majority of the estate.
+            try:
+                if page_id:
+                    rendered_page = conf.get_page_by_id(page_id, expand="body.view")
+                else:
+                    rendered_page = conf.get_page_by_title(space=key, title=page_title, expand="body.view")
+                rendered_html = (
+                    rendered_page.get("body", {}).get("view", {}).get("value", "")
+                    if isinstance(rendered_page, dict)
+                    else ""
+                )
+                rendered_text = _strip_html_tags(rendered_html)
+                if rendered_text.strip():
+                    text = rendered_text
+            except Exception:
+                logger.debug("Confluence rendered-view fallback failed for %s", page_id or page_title, exc_info=True)
         truncated = len(text) > max_chars
         if truncated:
             text = text[:max_chars]
@@ -758,7 +1033,13 @@ def confluence_read_page_text(page_id: str = "", page_title: str = "", max_chars
         return {"title": title, "text": text, "truncated": truncated, "error": ""}
     except HTTPError as e:
         logger.error("confluence_read_page_text HTTP error: %s", e)
-        return {"title": "", "text": "", "truncated": False, "error": _confluence_error_msg(e)}
+        return {
+            "title": "",
+            "text": "",
+            "truncated": False,
+            "error": _confluence_error_msg(e),
+            "retry_after": _http_retry_after(e),
+        }
     except Exception as e:
         logger.error("confluence_read_page_text unexpected error: %s", e)
         return {"title": "", "text": "", "truncated": False, "error": f"Confluence read failed: {e}"}

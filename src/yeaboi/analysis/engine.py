@@ -46,6 +46,29 @@ _COMPONENT_SOURCES: dict[str, tuple[str, ...]] = {
     "code": _CODE_SOURCES,
     "docs": _DOC_SOURCES,
 }
+_ANALYSIS_FEATURES = ("delivery", "ai_footprint", "code_health", "documentation")
+_CODE_FEATURES = ("ai_footprint", "code_health")
+
+
+def _resolve_analysis_features(
+    analysis_features: list[str] | tuple[str, ...] | set[str] | None,
+    comps: dict[str, list[str]],
+) -> list[str]:
+    """Validate feature selection and intersect it with selected integrations."""
+    requested = list(_ANALYSIS_FEATURES if analysis_features is None else analysis_features)
+    unknown = [feature for feature in requested if feature not in _ANALYSIS_FEATURES]
+    if unknown:
+        raise ValueError(f"analysis_features must be a subset of {_ANALYSIS_FEATURES!r} — got {unknown!r}")
+    selected = []
+    for feature in _ANALYSIS_FEATURES:
+        if feature not in requested:
+            continue
+        component = "delivery" if feature == "delivery" else "docs" if feature == "documentation" else "code"
+        if comps[component]:
+            selected.append(feature)
+    if not selected:
+        raise ValueError("Nothing to analyse — select at least one analysis feature with a configured integration.")
+    return selected
 
 
 def _resolve_components(
@@ -79,11 +102,12 @@ def _resolve_components(
 
         detected = _detect_source()
         delivery = [detected] if detected in _DELIVERY_SOURCES else []
-    return {
+    result = {
         "delivery": delivery,
         "code": _available_code_sources() if include_ai_usage else [],
         "docs": _available_doc_sources() if include_doc_quality else [],
     }
+    return result
 
 
 def _resolve_source(source: str) -> str:
@@ -163,16 +187,16 @@ def _available_code_sources() -> list[str]:
     the picker's Code row and to default ``components=None``."""
     out: list[str] = []
     try:
-        from yeaboi.config import get_github_token, get_standup_github_repo
+        from yeaboi.config import get_github_token, get_team_analysis_github_owners
 
-        if get_standup_github_repo() and get_github_token():
+        if get_team_analysis_github_owners() and get_github_token():
             out.append("github")
     except Exception:
         pass
     try:
-        from yeaboi.config import get_azure_devops_project, get_azure_devops_token
+        from yeaboi.config import get_azure_devops_token, get_team_analysis_azdo_projects
 
-        if get_azure_devops_project() and get_azure_devops_token():
+        if get_team_analysis_azdo_projects() and get_azure_devops_token():
             out.append("azdo")
     except Exception:
         pass
@@ -223,34 +247,65 @@ def _build_comparison(delivery: dict) -> list[tuple[str, str, str]]:
     return rows
 
 
-def get_team_roster(source: str = "", project_key: str = "", sprint_count: int = 8, db_path=None) -> list[str]:
-    """Discover the team roster (assignee names) for a tracker — cheap, no LLM.
+def get_team_roster_result(
+    source: str = "",
+    project_key: str = "",
+    sprint_count: int = 8,
+    db_path=None,
+    *,
+    days: int = 30,
+    force_refresh: bool = False,
+):
+    """Return status-aware recent/WIP assignee discovery for one tracker.
 
-    Fetches ``sprint_count`` closed sprints (network only, via the same ``_fetch_*``
-    helpers the full run uses) and returns the sorted, unique assignee display names.
-    The expensive ``_run_parallel_analysis`` LLM step is skipped — this exists so the
-    UI can present a member multi-select before committing to a full analysis.
-
-    Raises the same ``ValueError`` as ``run_team_analysis`` when no tracker is
-    configured; returns ``[]`` for a board with no closed sprints (the caller can then
-    offer an unscoped run). ``db_path`` is accepted for signature parity (unused here).
+    ``sprint_count`` is retained for API compatibility but no longer controls
+    roster discovery. Unlike a full analysis, this path never reads sprint
+    history, comments, documentation, repositories, or an LLM.
     """
-    from yeaboi.tools.team_learning import _fetch_azdevops_history, _fetch_jira_history
+    del sprint_count
+    from yeaboi.team_roster import fetch_roster_result
 
     resolved_source = _resolve_source(source)
     resolved_project, _ = _resolve_project(resolved_source, project_key, "")
-    fetch = _fetch_jira_history if resolved_source == "jira" else _fetch_azdevops_history
-    sprint_data = fetch(resolved_project, sprint_count)
-    roster = sorted(
-        {
-            (s.get("assignee", "") or "").strip()
-            for sd in sprint_data
-            for s in sd.get("stories", [])
-            if (s.get("assignee", "") or "").strip()
-        }
+    result = fetch_roster_result(
+        jira_project=resolved_project if resolved_source == "jira" else "",
+        azdo_project=resolved_project if resolved_source == "azdevops" else "",
+        days=days,
+        db_path=db_path,
+        force_refresh=force_refresh,
     )
-    logger.info("Roster for %s/%s: %d member(s)", resolved_source, resolved_project, len(roster))
-    return roster
+    logger.info(
+        "Roster for %s/%s: %d member(s), status=%s",
+        resolved_source,
+        resolved_project,
+        len(result.members),
+        result.status,
+    )
+    return result
+
+
+def get_team_roster(
+    source: str = "",
+    project_key: str = "",
+    sprint_count: int = 8,
+    db_path=None,
+    *,
+    days: int = 30,
+    force_refresh: bool = False,
+) -> list[str]:
+    """Return sorted assignee names while preserving the legacy list API."""
+    result = get_team_roster_result(
+        source,
+        project_key,
+        sprint_count,
+        db_path,
+        days=days,
+        force_refresh=force_refresh,
+    )
+    return sorted(
+        {member.name.strip() for member in result.members if member.name.strip()},
+        key=str.casefold,
+    )
 
 
 def run_team_analysis(
@@ -265,7 +320,11 @@ def run_team_analysis(
     components: dict[str, list[str]] | None = None,
     members: dict[str, list[str]] | None = None,
     *,
-    analysis_depth: str = "quick",
+    analysis_depth: str = "deep",
+    analysis_window_days: int = 120,
+    analysis_scope: dict[str, list[str]] | None = None,
+    analysis_model: str | None = None,
+    analysis_features: list[str] | None = None,
     progress: list | None = None,
     db_path=None,
 ) -> dict:
@@ -276,7 +335,7 @@ def run_team_analysis(
     per selected tracker (jira/azdevops; never blended). **Code** (remote AI-usage
     scan over github/azdo) and **Docs** (doc-quality over confluence/notion) are each
     a single **global** scan. Returns:
-    ``{"delivery": {tracker: {profile, examples, ...}}, "code": {signal, examples}|None,
+    ``{"delivery": {tracker: {profile, examples, ...}}, "code": {signal|None, examples}|None,
     "docs": {signal, examples}|None, "comparison": [...], "components": {...},
     "warnings": [...]}``. The global code/docs signals are also attached to every
     saved delivery profile (so the stored-profile browser keeps showing them).
@@ -297,7 +356,15 @@ def run_team_analysis(
             recent Notion/Confluence pages (Docs component).
         analysis_depth: ``quick`` makes no LLM calls and uses deterministic
             explanations; ``deep`` adds cached ticket classification and AI-written
-            enrichments. Defaults to ``quick``.
+            enrichments. Defaults to ``deep``.
+        analysis_window_days: changed-content window shared by Code and Docs.
+        analysis_scope: provider → configured containers, such as GitHub owners,
+            Azure projects, Confluence spaces, and Notion roots.
+        analysis_model: optional per-run model for lightweight structured Analysis
+            tasks. The primary model still writes the final synthesis.
+        analysis_features: independently selectable result areas: ``delivery``,
+            ``ai_footprint``, ``code_health``, and ``documentation``. ``None``
+            enables every feature supported by the selected component integrations.
         components: component → sub-source map, e.g.
             ``{"delivery": ["jira"], "code": ["github", "azdo"], "docs": ["confluence"]}``.
             Each component runs over ONLY its listed sub-sources; an absent/empty
@@ -306,10 +373,11 @@ def run_team_analysis(
             sub-sources).
         members: per delivery-tracker subset of assignee names, e.g.
             ``{"jira": ["Alice", "Bob"]}`` — re-scopes that tracker's velocity/
-            contributors. The single global code scan filters commit authors by the
-            union of all selected members. Blank/missing = whole team.
-        progress: optional shared list the analysis workers append status
-            strings to (the TUI reads it from its frame loop).
+            contributors. The global code scan strictly filters activity and changed
+            files by the union of selected members. A blank or unmatched code scope
+            stays empty and never broadens to whole-team code.
+        progress: optional shared list the analysis workers append activity strings
+            and explicit component lifecycle events to.
         db_path: sessions DB override (tests). Defaults to paths.get_db_path().
 
     Raises ValueError when nothing at all can be analysed (no tracker/component
@@ -317,12 +385,26 @@ def run_team_analysis(
     """
     if analysis_depth not in ("quick", "deep"):
         raise ValueError(f"analysis_depth must be 'quick' or 'deep' — got {analysis_depth!r}")
+    if not 1 <= int(analysis_window_days) <= 3650:
+        raise ValueError("analysis_window_days must be between 1 and 3650")
     if analysis_depth == "quick" and generate_samples:
         raise ValueError("generate_samples requires analysis_depth='deep' because sample generation uses the LLM.")
     from yeaboi.paths import get_db_path
 
     effective_db_path = db_path or get_db_path()
+    from yeaboi.analysis.llm_runtime import reset_analysis_llm_execution
+
+    reset_analysis_llm_execution(model=analysis_model)
     comps = _resolve_components(source, components, include_ai_usage, include_doc_quality)
+    if not any(comps.values()):
+        _resolve_source("")  # preserve the canonical no-integration error
+    features = _resolve_analysis_features(analysis_features, comps)
+    feature_set = set(features)
+    comps = {
+        "delivery": comps["delivery"] if "delivery" in feature_set else [],
+        "code": comps["code"] if feature_set & set(_CODE_FEATURES) else [],
+        "docs": comps["docs"] if "documentation" in feature_set else [],
+    }
     members = members or {}
     warnings: list[str] = []
     progress_list = progress if progress is not None else []
@@ -341,7 +423,7 @@ def run_team_analysis(
     single = len(comps["delivery"]) == 1
     union_members = sorted({m for names in members.values() for m in (names or [])}) or None
     jobs: list[tuple[str, str, tuple, dict]] = []
-    for tracker in comps["delivery"]:
+    for tracker in comps["delivery"] if "delivery" in feature_set else []:
         jobs.append(
             (
                 "delivery",
@@ -362,7 +444,8 @@ def run_team_analysis(
             )
         )
 
-    if comps["code"]:
+    selected_code_features = [feature for feature in _CODE_FEATURES if feature in feature_set]
+    if comps["code"] and selected_code_features:
         from yeaboi.tools.team_learning import _run_ai_usage_component
 
         jobs.append(
@@ -370,10 +453,17 @@ def run_team_analysis(
                 "code",
                 "code",
                 ("", "", [], [], union_members, progress_list),
-                {"sub_sources": comps["code"], "analysis_depth": analysis_depth},
+                {
+                    "sub_sources": comps["code"],
+                    "analysis_depth": analysis_depth,
+                    "window_days": analysis_window_days,
+                    "analysis_scope": analysis_scope,
+                    "db_path": effective_db_path,
+                    "code_features": selected_code_features,
+                },
             )
         )
-    if comps["docs"]:
+    if comps["docs"] and "documentation" in feature_set:
         from yeaboi.tools.team_learning import _run_doc_quality_component
 
         jobs.append(
@@ -381,18 +471,49 @@ def run_team_analysis(
                 "docs",
                 "docs",
                 ("", "", progress_list),
-                {"sub_sources": comps["docs"], "analysis_depth": analysis_depth},
+                {
+                    "sub_sources": comps["docs"],
+                    "analysis_depth": analysis_depth,
+                    "window_days": analysis_window_days,
+                    "analysis_scope": analysis_scope,
+                    "db_path": effective_db_path,
+                },
             )
         )
 
     code = None
     docs = None
     if jobs:
+        from yeaboi.analysis.progress import append_component_progress
+
+        def _job_progress(kind: str, key: str) -> list[tuple[str, str]]:
+            if kind == "delivery":
+                label = f"Fetching sprint history · {_SOURCE_NAMES.get(key, key)}"
+                return [(f"{kind}:{key}", label)]
+            elif kind == "code":
+                labels = {
+                    "ai_footprint": "Scanning selected-user AI footprint",
+                    "code_health": "Analysing selected-user code-change health",
+                }
+                return [(f"code:{feature}", labels[feature]) for feature in selected_code_features]
+            else:
+                label = "Assessing documentation quality"
+                return [("docs:documentation", label)]
+
         max_workers = min(4, len(jobs))
         logger.info("Running %d top-level analysis job(s) with %d worker(s)", len(jobs), max_workers)
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="team-analysis") as executor:
             futures = {}
             for kind, key, args, kwargs in jobs:
+                for component_id, label in _job_progress(kind, key):
+                    append_component_progress(
+                        progress_list,
+                        component_id=component_id,
+                        label=label,
+                        status="running",
+                        phase="Discovering read-only repository scope" if kind == "code" else "",
+                        read_only=kind == "code",
+                    )
                 if kind == "delivery":
                     future = executor.submit(_run_delivery, *args, **kwargs)
                 elif kind == "code":
@@ -406,6 +527,14 @@ def run_team_analysis(
                 try:
                     result = future.result()
                 except Exception as exc:
+                    for component_id, label in _job_progress(kind, key):
+                        append_component_progress(
+                            progress_list,
+                            component_id=component_id,
+                            label=label,
+                            status="failed",
+                            detail=str(exc),
+                        )
                     if kind == "delivery":
                         logger.warning("Delivery analysis failed for %s: %s", key, exc)
                         warnings.append(f"{_SOURCE_NAMES.get(key, key)} delivery analysis failed: {exc}")
@@ -419,12 +548,66 @@ def run_team_analysis(
                     delivery_results[key] = result
                 elif kind == "code":
                     signal, blob = result
-                    if signal is not None:
+                    if blob is not None:
                         code = {"signal": signal, "examples": blob}
                 else:
                     signal, blob = result
                     if signal is not None:
                         docs = {"signal": signal, "examples": blob}
+
+                for component_id, label in _job_progress(kind, key):
+                    lifecycle_status = "completed"
+                    detail = ""
+                    if kind in {"code", "docs"}:
+                        blob = result[1]
+                        if blob is None:
+                            lifecycle_status = "failed"
+                            detail = "analysis failed"
+                        else:
+                            coverage_key = (
+                                "activity_coverage" if component_id == "code:ai_footprint" else "coverage_report"
+                            )
+                            coverage_report = blob.get(coverage_key, {})
+                            coverage_status = coverage_report.get("status", "complete")
+                            lifecycle_status = {
+                                "complete": "completed",
+                                "partial": "partial",
+                                "failed": "failed",
+                                "no_data": "no_data",
+                            }.get(coverage_status, "failed")
+                            if kind == "code" and lifecycle_status == "completed":
+                                if component_id == "code:ai_footprint":
+                                    summary = blob.get("summary", {})
+                                    detail = (
+                                        f"{int(summary.get('scanned_commits', 0)):,} commits · "
+                                        f"{int(summary.get('scanned_prs', 0)):,} authored PRs"
+                                    )
+                                else:
+                                    health = blob.get("repository_health", {})
+                                    detail = (
+                                        f"{int(health.get('files_analysed', 0)):,} file records analysed · "
+                                        f"{int(health.get('repositories_touched', 0)):,} repositories"
+                                    )
+                                    cached = int(health.get("cached_change_lookups", 0))
+                                    if cached:
+                                        detail += f" · {cached:,} cached changes reused"
+                            if lifecycle_status != "completed":
+                                detail = (
+                                    f"{coverage_report.get('completed', 0):,}/"
+                                    f"{coverage_report.get('eligible', 0):,} completed"
+                                )
+                                grouped_errors = coverage_report.get("grouped_errors") or []
+                                if grouped_errors:
+                                    error_detail = str(grouped_errors[0].get("detail", "")).strip()
+                                    if error_detail:
+                                        detail = f"{detail} · {error_detail}"
+                    append_component_progress(
+                        progress_list,
+                        component_id=component_id,
+                        label=label,
+                        status=lifecycle_status,
+                        detail=detail,
+                    )
 
     # Futures complete in arbitrary order. Rebuild delivery in configured order so
     # the comparison table and TUI's initial tracker stay deterministic.
@@ -444,15 +627,72 @@ def run_team_analysis(
         raise ValueError("Nothing to analyse — no component produced a result (see warnings).")
 
     ran = [t for t in delivery if delivery[t].get("profile") is not None]
-    return {
+    component_coverages: dict[str, dict] = {}
+    if code:
+        code_examples = code.get("examples", {})
+        enabled_code = set(code_examples.get("enabled_features") or _CODE_FEATURES)
+        if "ai_footprint" in enabled_code:
+            component_coverages["ai_footprint"] = code_examples.get("activity_coverage", {})
+        if "code_health" in enabled_code:
+            component_coverages["code_health"] = code_examples.get("coverage_report", {})
+    if docs:
+        component_coverages["documentation"] = docs.get("examples", {}).get("coverage_report", {})
+    incomplete = any(report.get("status") in {"partial", "failed"} for report in component_coverages.values())
+    for name, report in component_coverages.items():
+        if report.get("status") in {"partial", "failed"}:
+            warnings.append(
+                f"{name.replace('_', ' ').title()} coverage is {report.get('status')}: "
+                f"{report.get('failed', 0)} failed, "
+                f"{report.get('inaccessible', 0)} inaccessible, {report.get('truncated', 0)} truncated."
+            )
+    all_actions: list[dict] = []
+    for payload in (code, docs):
+        if payload:
+            all_actions.extend(payload.get("examples", {}).get("action_plan", []))
+    result = {
         "delivery": delivery,
         "code": code,
         "docs": docs,
         "comparison": _build_comparison(delivery) if len(ran) >= 2 else [],
         "components": comps,
+        "analysis_features": features,
         "analysis_depth": analysis_depth,
+        "analysis_window_days": analysis_window_days,
+        "analysis_scope": analysis_scope or {},
+        "coverage": {
+            "status": (
+                "failed"
+                if incomplete
+                and not delivery
+                and not any(report.get("has_data") for report in component_coverages.values())
+                else "partial"
+                if incomplete
+                else "complete"
+            ),
+            "components": component_coverages,
+        },
+        "action_plan": sorted(
+            all_actions,
+            key=lambda action: (
+                {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(action.get("priority"), 9),
+                -int(action.get("breadth", 1)),
+                str(action.get("title", "")),
+            ),
+        ),
         "warnings": warnings,
     }
+    from yeaboi.analysis.llm_runtime import get_analysis_llm_execution
+
+    result["llm_execution"] = get_analysis_llm_execution()
+    try:
+        from yeaboi.team_profile import TeamProfileStore
+
+        with TeamProfileStore(effective_db_path) as store:
+            result["analysis_run_id"] = store.save_analysis_run(result)
+    except Exception as exc:
+        logger.warning("Could not persist normalized analysis run: %s", exc)
+        warnings.append(f"Could not persist normalized analysis run: {exc}")
+    return result
 
 
 def _run_delivery(
@@ -567,6 +807,7 @@ def _persist_delivery(delivery: dict, code: dict | None, docs: dict | None, db_p
                 store.save_ticket_parse_cache(profile.source, profile.project_key, cache_updates)
             if code_sig is not None:
                 profile = replace(profile, ai_adoption=code_sig)
+            if code is not None:
                 examples["ai_adoption"] = code["examples"]
             if docs_sig is not None:
                 profile = replace(profile, doc_quality=docs_sig)

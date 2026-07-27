@@ -74,7 +74,7 @@ _usage_stats: dict[str, int] = {
 }
 
 
-def track_usage(response) -> None:
+def track_usage(response, *, model: str | None = None, duration_ms: float | None = None) -> None:
     """Extract token usage from an LLM response and accumulate it.
 
     Call this after every LLM invoke() to track token consumption.
@@ -132,6 +132,8 @@ def track_usage(response) -> None:
     # touching response_metadata, and the timing would otherwise be lost. Cloud
     # providers lack these keys → perf stays empty and the columns stay NULL.
     perf = _extract_local_perf(getattr(response, "response_metadata", None), _as_int)
+    if duration_ms is not None and "duration_ms" not in perf:
+        perf["duration_ms"] = duration_ms
 
     if inp or out:
         _usage_stats["input_tokens"] += inp
@@ -150,16 +152,16 @@ def track_usage(response) -> None:
             from yeaboi.sessions import SessionStore
 
             provider = get_llm_provider()
-            model = get_llm_model() or _PROVIDER_DEFAULTS.get(provider, "")
+            recorded_model = model or get_llm_model() or _PROVIDER_DEFAULTS.get(provider, "")
             from yeaboi.paths import get_db_path
 
             db = get_db_path()
             with SessionStore(db) as store:
-                store.record_token_usage(inp, out, model=model, provider=provider, **perf)
+                store.record_token_usage(inp, out, model=recorded_model, provider=provider, **perf)
             if perf:
                 logger.info(
                     "local call: model=%s in=%d out=%d duration=%.0fms tok/s=%s",
-                    model,
+                    recorded_model,
                     inp,
                     out,
                     perf.get("duration_ms") or 0.0,
@@ -221,6 +223,15 @@ _PROVIDER_DEFAULTS: dict[str, str] = {
     "ollama": "qwen3:8b",
 }
 
+# Lightweight cloud models for short, grounded Analysis-mode JSON coaching.
+# Bedrock is intentionally absent because model access/profile IDs are account
+# specific. Ollama is absent to avoid loading a second local model into RAM.
+_ANALYSIS_FAST_MODELS: dict[str, str] = {
+    "anthropic": "claude-haiku-4-5-20251001",
+    "openai": "gpt-4o-mini",
+    "google": "gemini-2.5-flash-lite",
+}
+
 # Kept for backward compatibility — callers that imported DEFAULT_MODEL still work.
 DEFAULT_MODEL = _PROVIDER_DEFAULTS["anthropic"]
 
@@ -247,7 +258,30 @@ def _supports_temperature(model: str) -> bool:
     return not re.search(r"opus-4-[6-9]|(fable|sonnet|haiku|opus)-5(?!\d)", model)
 
 
-def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool = False) -> BaseChatModel:
+def get_analysis_fast_model() -> str | None:
+    """Resolve the lightweight model used for low-risk Analysis enrichments."""
+    from yeaboi.analysis.llm_runtime import get_selected_analysis_model
+    from yeaboi.config import get_team_analysis_fast_model
+
+    selected = get_selected_analysis_model()
+    if selected:
+        return selected
+    if _llm_override.get() is not None:
+        return None
+    configured = get_team_analysis_fast_model()
+    if configured:
+        if configured.lower() in {"default", "off", "none"}:
+            return None
+        return configured
+    return _ANALYSIS_FAST_MODELS.get(get_llm_provider())
+
+
+def get_llm(
+    model: str | None = None,
+    temperature: float = 0.0,
+    json_mode: bool = False,
+    request_timeout: float | None = None,
+) -> BaseChatModel:
     """Create an LLM instance for the configured provider.
 
     # See docs: "Agentic Blueprint Reference" — Core Graph Setup
@@ -311,6 +345,8 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
         llm = ChatAnthropic(
             model=resolved_model,
             api_key=get_anthropic_api_key(),
+            timeout=request_timeout,
+            max_retries=0 if request_timeout is not None else 2,
             **_sampling,
         )
         logger.info("LLM ready: provider=anthropic, model=%s", resolved_model)
@@ -329,7 +365,13 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
         if not api_key:
             raise OSError("OPENAI_API_KEY is not set. Add it to your .env file.")
         logger.info("LLM ready: provider=openai, model=%s", resolved_model)
-        return ChatOpenAI(model=resolved_model, api_key=api_key, temperature=temperature)
+        return ChatOpenAI(
+            model=resolved_model,
+            api_key=api_key,
+            temperature=temperature,
+            timeout=request_timeout,
+            max_retries=0 if request_timeout is not None else 2,
+        )
 
     if provider == "google":
         # langchain-google-genai is an optional dependency (install with: uv add langchain-google-genai)
@@ -371,7 +413,11 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
         # Increase read timeout for large prompts (story writer, task decomposer).
         # The default 60s is too short for cross-region inference profiles
         # (global.*) which route through US regions and back.
-        boto_config = BotoConfig(read_timeout=300, connect_timeout=10, retries={"max_attempts": 2})
+        boto_config = BotoConfig(
+            read_timeout=request_timeout or 300,
+            connect_timeout=10,
+            retries={"max_attempts": 1 if request_timeout is not None else 2},
+        )
 
         session = boto3.Session(profile_name=profile, region_name=region)
         bedrock_client = session.client("bedrock-runtime", region_name=region, config=boto_config)
@@ -412,7 +458,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0, json_mode: bool 
             # loaded in RAM between them instead of reloading every call.
             keep_alive="10m",
             # Local inference on CPU can be slow; mirror bedrock's read_timeout.
-            client_kwargs={"timeout": 300},
+            client_kwargs={"timeout": request_timeout or 300},
             # format="json" is Ollama's constrained decoding — see json_mode docs.
             format="json" if json_mode else "",
             # Thinking models (qwen3) spend generation budget on a reasoning
@@ -606,7 +652,16 @@ def strip_json_fences(raw: str) -> str:
     return raw.strip()
 
 
-def invoke_json(prompt: str, *, temperature: float = 0.0, image_paths=None, max_reasks: int = 1, get_llm_fn=None):
+def invoke_json(
+    prompt: str,
+    *,
+    temperature: float = 0.0,
+    image_paths=None,
+    max_reasks: int = 1,
+    get_llm_fn=None,
+    request_timeout: float | None = None,
+    model: str | None = None,
+):
     """Invoke the configured LLM expecting a JSON reply, with a repair re-ask.
 
     Drop-in replacement for ``get_llm(temperature=...).invoke([HumanMessage(prompt)])``
@@ -623,6 +678,8 @@ def invoke_json(prompt: str, *, temperature: float = 0.0, image_paths=None, max_
         get_llm_fn: Optional factory used instead of this module's get_llm().
             nodes.py passes its own module-level reference so the established
             test seam (patching ``yeaboi.agent.nodes.get_llm``) keeps working.
+        model: Optional per-call model override. The configured provider and
+            credentials remain unchanged.
 
     Returns:
         The last LLM response object. Its ``.content`` is best-effort valid
@@ -634,9 +691,34 @@ def invoke_json(prompt: str, *, temperature: float = 0.0, image_paths=None, max_
     from langchain_core.messages import AIMessage, HumanMessage
 
     warn_if_context_overflow(prompt)
-    llm = (get_llm_fn or get_llm)(temperature=temperature, json_mode=True)
+    factory = get_llm_fn or get_llm
+    try:
+        llm = factory(
+            model=model,
+            temperature=temperature,
+            json_mode=True,
+            request_timeout=request_timeout,
+        )
+    except TypeError:
+        # Compatibility for test/integration factories that implement the older
+        # provider-neutral signature.
+        try:
+            llm = factory(model=model, temperature=temperature, json_mode=True)
+        except TypeError:
+            llm = factory(temperature=temperature, json_mode=True)
+    import time
+
+    def _record_usage(reply, elapsed_ms: float) -> None:
+        try:
+            track_usage(reply, model=model, duration_ms=elapsed_ms)
+        except TypeError:
+            # Preserve the long-standing test/integration seam where callers
+            # replace track_usage with a one-argument callback.
+            track_usage(reply)
+
+    started = time.monotonic()
     response = invoke_with_images(llm, prompt, image_paths)
-    track_usage(response)
+    _record_usage(response, (time.monotonic() - started) * 1000)
 
     for attempt in range(1, max_reasks + 1):
         try:
@@ -647,6 +729,7 @@ def invoke_json(prompt: str, *, temperature: float = 0.0, image_paths=None, max_
         except (json.JSONDecodeError, TypeError) as err:
             logger.warning("invoke_json: reply is not valid JSON (attempt %d): %s — re-asking", attempt, err)
             previous = response.content if isinstance(response.content, str) else str(response.content)
+            started = time.monotonic()
             response = llm.invoke(
                 [
                     # Rebuild the original message with its image blocks — a
@@ -662,7 +745,7 @@ def invoke_json(prompt: str, *, temperature: float = 0.0, image_paths=None, max_
                     ),
                 ]
             )
-            track_usage(response)
+            _record_usage(response, (time.monotonic() - started) * 1000)
 
     # Final validation purely for logging — the caller's parser + deterministic
     # fallback handle an invalid reply gracefully either way.

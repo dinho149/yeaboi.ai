@@ -17,8 +17,9 @@
 
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC
+from types import SimpleNamespace
 from urllib.parse import quote
 
 from azure.devops.exceptions import AzureDevOpsServiceError
@@ -974,6 +975,65 @@ def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> li
         return []
 
 
+def azdevops_assignee_roster(project: str = "", days: int = 30) -> list[dict]:
+    """Return every recent or active assignee with no activity-detail payload.
+
+    WIQL discovers the complete ID set and work items are then fetched in
+    bounded batches with only ``AssignedTo``. In particular, ``ChangedBy`` is
+    not used as team-membership evidence.
+    """
+    project = project.strip() or (get_azure_devops_project() or "")
+    if not project:
+        raise ValueError("No Azure DevOps project configured")
+    try:
+        from azure.devops.v7_1.work_item_tracking.models import Wiql
+
+        wit_client, _ = _make_azdo_clients()
+        safe_project = project.replace("'", "''")
+        wiql = Wiql(
+            query=(
+                "SELECT [System.Id] FROM WorkItems"  # noqa: S608 - escaped config + integer window
+                f" WHERE [System.TeamProject] = '{safe_project}'"
+                " AND [System.AssignedTo] <> ''"
+                f" AND ([System.ChangedDate] >= @Today - {max(0, int(days))}"
+                " OR [System.State] IN ('Active', 'In Progress', 'Doing', 'Committed'))"
+                " ORDER BY [System.ChangedDate] DESC"
+            )
+        )
+        result = wit_client.query_by_wiql(wiql)
+        ids = [wi.id for wi in (getattr(result, "work_items", None) or [])]
+        members: dict[str, dict] = {}
+        batch_size = 200
+        for offset in range(0, len(ids), batch_size):
+            work_items = wit_client.get_work_items(
+                ids[offset : offset + batch_size],
+                fields=["System.Id", "System.AssignedTo"],
+            )
+            for item in work_items or []:
+                raw = (getattr(item, "fields", None) or {}).get("System.AssignedTo")
+                name, email = _identity_fields(raw)
+                if not name:
+                    continue
+                if isinstance(raw, dict):
+                    identity = raw.get("descriptor") or raw.get("id") or raw.get("uniqueName")
+                else:
+                    identity = ""
+                identity = identity or email or name.casefold()
+                members.setdefault(
+                    str(identity),
+                    {
+                        "name": name,
+                        "email": email,
+                        "identity": str(identity),
+                        "source": "azuredevops",
+                    },
+                )
+        return list(members.values())
+    except AzureDevOpsServiceError as exc:
+        _raise_if_azdo_auth(exc)
+        raise RuntimeError(_azdo_error_msg(exc)) from exc
+
+
 def _azdo_wip_items(wit_client, project: str, safe_project: str, seen_ids: set[str], fields: list[str]) -> list[dict]:
     """Assigned in-progress work items — best-effort, degrades to [] on any failure."""
     try:
@@ -1040,6 +1100,80 @@ def _make_git_client(org_url: str | None = None, token: str | None = None):
     # repository must not hold a daily standup for several minutes.
     client.config.connection.timeout = _AZDO_REQUEST_TIMEOUT_SECONDS
     return client
+
+
+def azdevops_analysis_inventory(
+    projects: list[str] | tuple[str, ...],
+    *,
+    include_trees: bool = True,
+) -> list[dict]:
+    """Discover every repository in configured Azure DevOps projects."""
+    out: list[dict] = []
+    try:
+        git_client = _make_git_client()
+    except Exception as exc:
+        return [
+            {
+                "provider": "azdo",
+                "container": project,
+                "name": project,
+                "active": True,
+                "paths": [],
+                "error": f"repository discovery failed: {exc}",
+                "discovery_error": True,
+            }
+            for project in projects
+        ]
+    for project in projects:
+        try:
+            repositories = git_client.get_repositories(project) or []
+        except Exception as exc:
+            out.append(
+                {
+                    "provider": "azdo",
+                    "container": project,
+                    "name": project,
+                    "active": True,
+                    "paths": [],
+                    "error": f"repository discovery failed: {exc}",
+                    "discovery_error": True,
+                }
+            )
+            continue
+        for repo in repositories:
+            paths: list[str] = []
+            tree_error = ""
+            if include_trees:
+                try:
+                    tree = git_client.get_items(
+                        repository_id=repo.id,
+                        project=project,
+                        scope_path="/",
+                        recursion_level="Full",
+                        include_content_metadata=True,
+                    )
+                    paths = [
+                        str(getattr(item, "path", "") or "").lstrip("/")
+                        for item in tree or []
+                        if not bool(getattr(item, "is_folder", False))
+                    ]
+                except Exception as exc:
+                    tree_error = str(exc)
+            out.append(
+                {
+                    "provider": "azdo",
+                    "container": project,
+                    "name": str(getattr(repo, "name", "") or getattr(repo, "id", "")),
+                    "repo_id": str(getattr(repo, "id", "") or ""),
+                    "url": getattr(repo, "web_url", "") or "",
+                    "default_branch": str(getattr(repo, "default_branch", "") or "").removeprefix("refs/heads/"),
+                    "archived": bool(getattr(repo, "is_disabled", False)),
+                    "active": True,
+                    "paths": paths,
+                    "error": tree_error,
+                }
+            )
+    return out
 
 
 def _repo_activity_cutoff(days: int, since):
@@ -1265,14 +1399,32 @@ def _azdo_pr_changed_files(
         return []
 
 
+def _analysis_repository(value):
+    """Normalize an inventory dictionary into the SDK-like shape collectors use."""
+    if not isinstance(value, dict):
+        return value
+    return SimpleNamespace(
+        id=value.get("repo_id") or value.get("name", ""),
+        name=value.get("name", ""),
+        web_url=value.get("url", ""),
+    )
+
+
 def azdevops_recent_commits(
-    project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
+    project: str = "",
+    days: int = 1,
+    since=None,
+    *,
+    include_repository: bool = False,
+    repositories: list[dict] | list[str] | None = None,
+    progress_callback=None,
+    metadata_cache=None,
 ) -> list[dict]:
     """Return commits pushed to the project's repos since the window start.
 
-    Scans every accessible repository in the project (all branches are NOT
-    walked — the commit search covers the default branch per repo, which is
-    where merged work lands). Each item: {author, author_email,
+    Scans every repository in the project (all branches are NOT walked — the
+    commit search covers the default branch per
+    repo, which is where merged work lands). Each item: {author, author_email,
     kind='commit', title(first line + repo name), body, timestamp, key(sha[:8])}.
     ``body`` is the commit message body (Co-Authored-By / AI-tool trailers).
     Returns [] when Azure DevOps is unconfigured or the API fails.
@@ -1284,55 +1436,119 @@ def azdevops_recent_commits(
     try:
         from azure.devops.v7_1.git.models import GitQueryCommitsCriteria
 
-        git_client = _make_git_client()
+        discovery_client = _make_git_client() if repositories is None else None
         cutoff = _repo_activity_cutoff(days, since)
-        criteria = GitQueryCommitsCriteria(from_date=cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"), top=50)
-        items: list[dict] = []
-        file_lookups = 0
-        for selected_project, repo in _activity_repositories(git_client, project, repositories, metadata_cache):
-            try:
-                commits = git_client.get_commits(
-                    repository_id=repo.id, search_criteria=criteria, project=selected_project
+        criteria = GitQueryCommitsCriteria(from_date=cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        if repositories and isinstance(repositories[0], str):
+            selector_client = _make_git_client()
+            repo_list = _activity_repositories(selector_client, project, repositories, metadata_cache)
+        else:
+            repo_list = [
+                (project, _analysis_repository(repo))
+                for repo in (
+                    repositories if repositories is not None else discovery_client.get_repositories(project) or []
                 )
+                if not isinstance(repo, dict) or not repo.get("discovery_error")
+            ]
+
+        def _read_repo(selected_project, repo) -> list[dict]:
+            git_client = _make_git_client()
+            try:
+                commits: list = []
+                skip = 0
+                seen_commit_ids: set[str] = set()
+                while True:
+                    try:
+                        chunk = (
+                            git_client.get_commits(
+                                repository_id=repo.id,
+                                search_criteria=criteria,
+                                project=selected_project,
+                                skip=skip,
+                                top=100,
+                            )
+                            or []
+                        )
+                    except TypeError:
+                        chunk = (
+                            git_client.get_commits(
+                                repository_id=repo.id,
+                                search_criteria=criteria,
+                                project=selected_project,
+                            )
+                            or []
+                        )
+                    new_chunk = [
+                        commit
+                        for commit in chunk
+                        if str(getattr(commit, "commit_id", "") or id(commit)) not in seen_commit_ids
+                    ]
+                    for commit in new_chunk:
+                        seen_commit_ids.add(str(getattr(commit, "commit_id", "") or id(commit)))
+                    commits.extend(new_chunk)
+                    if chunk and not new_chunk:
+                        break
+                    if len(chunk) < 100 or skip > 0 and not chunk:
+                        break
+                    skip += len(chunk)
             except Exception as e:  # one bad/empty repo must not hide the others
                 logger.warning("azdevops_recent_commits: repo %s failed: %s", getattr(repo, "name", "?"), e)
-                continue
-            # Query every repository for coverage, while bounding the report payload.
-            if len(items) >= _MAX_REPO_COMMITS:
-                continue
+                return []
             repo_web = _activity_repo_web_url(repo, selected_project)
+            repo_items: list[dict] = []
             for commit in commits or []:
                 author = getattr(commit, "author", None)
                 message = (getattr(commit, "comment", "") or "").splitlines()
                 body = "\n".join(message[1:]).strip()  # Co-Authored-By / AI-tool trailers live here
                 sha = getattr(commit, "commit_id", "") or ""
-                items.append(
-                    {
-                        "author": getattr(author, "name", "") or "",
-                        "author_email": getattr(author, "email", "") or "",
-                        "kind": "commit",
-                        "title": f"{message[0] if message else ''} ({repo.name})",
-                        "body": body,
-                        "timestamp": str(getattr(author, "date", "") or "")[:19],
-                        "key": sha[:8],
-                        "url": f"{repo_web}/commit/{sha}" if repo_web and sha else "",
-                        "repository": f"{selected_project}/{repo.name}",
-                        "changed_files": (
-                            _azdo_commit_changed_files(
-                                git_client,
-                                project=selected_project,
-                                repository_id=repo.id,
-                                commit_id=sha,
-                                metadata_cache=metadata_cache,
-                            )
-                            if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
-                            else []
-                        ),
-                    }
-                )
-                file_lookups += 1
-                if len(items) >= _MAX_REPO_COMMITS:
-                    break
+                item = {
+                    "author": getattr(author, "name", "") or "",
+                    "author_email": getattr(author, "email", "") or "",
+                    "kind": "commit",
+                    "title": f"{message[0] if message else ''} ({repo.name})",
+                    "body": body,
+                    "timestamp": str(getattr(author, "date", "") or "")[:19],
+                    "key": sha[:8],
+                    "commit_id": sha,
+                    "url": f"{repo_web}/commit/{sha}" if repo_web and sha else "",
+                    "changed_files": (
+                        _azdo_commit_changed_files(
+                            git_client,
+                            project=selected_project,
+                            repository_id=repo.id,
+                            commit_id=sha,
+                            metadata_cache=metadata_cache,
+                        )
+                        if not include_repository
+                        else []
+                    ),
+                }
+                if include_repository:
+                    item["repository"] = repo.name
+                else:
+                    item["repository"] = f"{selected_project}/{repo.name}"
+                repo_items.append(item)
+            return repo_items
+
+        from yeaboi.config import get_team_analysis_code_max_concurrency
+
+        results: dict[int, list[dict]] = {}
+        if repo_list:
+            with ThreadPoolExecutor(
+                max_workers=min(get_team_analysis_code_max_concurrency(), len(repo_list)),
+                thread_name_prefix="azdo-commits",
+            ) as executor:
+                futures = {
+                    executor.submit(_read_repo, selected_project, repo): index
+                    for index, (selected_project, repo) in enumerate(repo_list)
+                }
+                completed = 0
+                for future in as_completed(futures):
+                    results[futures[future]] = future.result()
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(repo_list))
+        items = [item for index in range(len(repo_list)) for item in results.get(index, [])]
         logger.info("azdevops_recent_commits: %d commit(s)", len(items))
         return items
     except ValueError as e:
@@ -1348,7 +1564,14 @@ def azdevops_recent_commits(
 
 
 def azdevops_recent_prs(
-    project: str = "", days: int = 1, since=None, repositories: list[str] | None = None, metadata_cache=None
+    project: str = "",
+    days: int = 1,
+    since=None,
+    *,
+    include_repository: bool = False,
+    repositories: list[dict] | list[str] | None = None,
+    progress_callback=None,
+    metadata_cache=None,
 ) -> list[dict]:
     """Return pull requests created or closed in the project's repos since the window start.
 
@@ -1365,30 +1588,117 @@ def azdevops_recent_prs(
     try:
         from azure.devops.v7_1.git.models import GitPullRequestSearchCriteria
 
-        git_client = _make_git_client()
+        discovery_client = _make_git_client() if repositories is None else None
         cutoff = _repo_activity_cutoff(days, since)
         criteria = GitPullRequestSearchCriteria(status="all")
-        items: list[dict] = []
-        file_lookups = 0
-        for selected_project, repo, pr in _activity_pull_requests(
-            git_client,
-            project,
-            repositories,
-            criteria,
-            metadata_cache,
-        ):
-            if len(items) >= _MAX_REPO_PRS:
-                break
-            created = _aware(getattr(pr, "creation_date", None))
-            closed = _aware(getattr(pr, "closed_date", None))
-            if not ((created and created >= cutoff) or (closed and closed >= cutoff)):
-                continue
-            creator = getattr(pr, "created_by", None)
-            status = getattr(pr, "status", "") or ""
-            pr_id = getattr(pr, "pull_request_id", "")
-            repo_web = _activity_repo_web_url(repo, selected_project)
-            items.append(
-                {
+        if not include_repository:
+            git_client = _make_git_client()
+            items: list[dict] = []
+            for selected_project, repo, pr in _activity_pull_requests(
+                git_client,
+                project,
+                repositories,
+                criteria,
+                metadata_cache,
+            ):
+                created = _aware(getattr(pr, "creation_date", None))
+                closed = _aware(getattr(pr, "closed_date", None))
+                if not ((created and created >= cutoff) or (closed and closed >= cutoff)):
+                    continue
+                creator = getattr(pr, "created_by", None)
+                status = getattr(pr, "status", "") or ""
+                pr_id = getattr(pr, "pull_request_id", "")
+                repo_web = _activity_repo_web_url(repo, selected_project)
+                items.append(
+                    {
+                        "author": getattr(creator, "display_name", "") or "",
+                        "author_email": getattr(creator, "unique_name", "") or "",
+                        "kind": "pr",
+                        "title": f"{getattr(pr, 'title', '') or ''} ({repo.name})",
+                        "body": getattr(pr, "description", "") or "",
+                        "status": "merged" if status == "completed" else status,
+                        "timestamp": str(closed or created or "")[:19],
+                        "key": f"!{pr_id}",
+                        "pr_id": pr_id,
+                        "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                        "repository": f"{selected_project}/{repo.name}",
+                        "changed_files": _azdo_pr_changed_files(
+                            git_client,
+                            project=selected_project,
+                            repository_id=repo.id,
+                            pr_id=pr_id,
+                            metadata_cache=metadata_cache,
+                        ),
+                    }
+                )
+            logger.info("azdevops_recent_prs: %d PR(s)", len(items))
+            return items
+
+        if repositories and isinstance(repositories[0], str):
+            selector_client = _make_git_client()
+            repo_list = _activity_repositories(selector_client, project, repositories, metadata_cache)
+        else:
+            repo_list = [
+                (project, _analysis_repository(repo))
+                for repo in (
+                    repositories if repositories is not None else discovery_client.get_repositories(project) or []
+                )
+                if not isinstance(repo, dict) or not repo.get("discovery_error")
+            ]
+
+        def _read_repo(selected_project, repo) -> list[dict]:
+            git_client = _make_git_client()
+            try:
+                prs: list = []
+                skip = 0
+                seen_pr_ids: set[str] = set()
+                while True:
+                    try:
+                        chunk = (
+                            git_client.get_pull_requests(
+                                repo.id,
+                                criteria,
+                                project=selected_project,
+                                skip=skip,
+                                top=100,
+                            )
+                            or []
+                        )
+                    except TypeError:
+                        chunk = (
+                            git_client.get_pull_requests(
+                                repo.id,
+                                criteria,
+                                project=selected_project,
+                                top=100,
+                            )
+                            or []
+                        )
+                    new_chunk = [
+                        pr for pr in chunk if str(getattr(pr, "pull_request_id", "") or id(pr)) not in seen_pr_ids
+                    ]
+                    for pr in new_chunk:
+                        seen_pr_ids.add(str(getattr(pr, "pull_request_id", "") or id(pr)))
+                    prs.extend(new_chunk)
+                    if chunk and not new_chunk:
+                        break
+                    if len(chunk) < 100 or skip > 0 and not chunk:
+                        break
+                    skip += len(chunk)
+            except Exception as e:
+                logger.warning("azdevops_recent_prs: repo %s failed: %s", getattr(repo, "name", "?"), e)
+                return []
+            repo_items: list[dict] = []
+            for pr in prs or []:
+                created = _aware(getattr(pr, "creation_date", None))
+                closed = _aware(getattr(pr, "closed_date", None))
+                if not ((created and created >= cutoff) or (closed and closed >= cutoff)):
+                    continue
+                creator = getattr(pr, "created_by", None)
+                status = getattr(pr, "status", "") or ""
+                pr_id = getattr(pr, "pull_request_id", "")
+                repo_web = _activity_repo_web_url(repo, selected_project)
+                item = {
                     "author": getattr(creator, "display_name", "") or "",
                     "author_email": getattr(creator, "unique_name", "") or "",
                     "kind": "pr",
@@ -1397,8 +1707,8 @@ def azdevops_recent_prs(
                     "status": "merged" if status == "completed" else status,
                     "timestamp": str(closed or created or "")[:19],
                     "key": f"!{pr_id}",
+                    "pr_id": pr_id,
                     "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
-                    "repository": f"{selected_project}/{repo.name}",
                     "changed_files": (
                         _azdo_pr_changed_files(
                             git_client,
@@ -1407,12 +1717,57 @@ def azdevops_recent_prs(
                             pr_id=pr_id,
                             metadata_cache=metadata_cache,
                         )
-                        if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
+                        if metadata_cache is not None
                         else []
                     ),
                 }
-            )
-            file_lookups += 1
+                if include_repository:
+                    item["repository"] = repo.name
+                else:
+                    item["repository"] = f"{selected_project}/{repo.name}"
+                repo_items.append(item)
+                for reviewer in getattr(pr, "reviewers", ()) or ():
+                    vote = int(getattr(reviewer, "vote", 0) or 0)
+                    if vote == 0:
+                        continue
+                    review_item = {
+                        "author": getattr(reviewer, "display_name", "") or "",
+                        "author_email": getattr(reviewer, "unique_name", "") or "",
+                        "kind": "review",
+                        "title": f"Reviewed PR !{pr_id}: {getattr(pr, 'title', '') or ''}",
+                        "body": "",
+                        "status": str(vote),
+                        "timestamp": str(closed or created or "")[:19],
+                        "key": f"review:{pr_id}:{getattr(reviewer, 'id', '')}",
+                        "pr_id": pr_id,
+                        "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
+                    }
+                    if include_repository:
+                        review_item["repository"] = repo.name
+                    else:
+                        review_item["repository"] = f"{selected_project}/{repo.name}"
+                    repo_items.append(review_item)
+            return repo_items
+
+        from yeaboi.config import get_team_analysis_code_max_concurrency
+
+        results: dict[int, list[dict]] = {}
+        if repo_list:
+            with ThreadPoolExecutor(
+                max_workers=min(get_team_analysis_code_max_concurrency(), len(repo_list)),
+                thread_name_prefix="azdo-prs",
+            ) as executor:
+                futures = {
+                    executor.submit(_read_repo, selected_project, repo): index
+                    for index, (selected_project, repo) in enumerate(repo_list)
+                }
+                completed = 0
+                for future in as_completed(futures):
+                    results[futures[future]] = future.result()
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(repo_list))
+        items = [item for index in range(len(repo_list)) for item in results.get(index, [])]
         logger.info("azdevops_recent_prs: %d PR(s)", len(items))
         return items
     except ValueError as e:
@@ -1522,6 +1877,162 @@ def azdevops_recent_reviews(
     except Exception as exc:
         logger.warning("azdevops_recent_reviews unexpected error: %s", exc)
         return []
+
+
+def azdevops_list_projects() -> list[str]:
+    """Return every accessible, well-formed project in the configured organisation."""
+    connection = _make_connection(get_azure_devops_org_url(), get_azure_devops_token())
+    client = connection.clients.get_core_client()
+    out: list[str] = []
+    skip = 0
+    while True:
+        page = client.get_projects(state_filter="wellFormed", top=100, skip=skip) or []
+        for project in page:
+            name = str(getattr(project, "name", "") or "").strip()
+            if name and name not in out:
+                out.append(name)
+        if len(page) < 100:
+            break
+        skip += len(page)
+    return sorted(out, key=str.lower)
+
+
+def _azdo_change_page_items(page, attribute: str) -> list:
+    """Normalize Azure SDK page wrappers and legacy list responses."""
+    if page is None:
+        return []
+    if isinstance(page, (list, tuple)):
+        return list(page)
+    items = getattr(page, attribute, None)
+    if items is None and isinstance(page, dict):
+        items = page.get(attribute)
+        if items is None:
+            wire_name = "changeEntries" if attribute == "change_entries" else attribute
+            items = page.get(wire_name)
+    return list(items or [])
+
+
+def _azdo_value(value, name: str, default=""):
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def azdevops_changed_files(project: str, repository: str, activity: list[dict]) -> list[dict]:
+    """Fetch files changed by already member-scoped commits and authored PRs."""
+    git_client = _make_git_client()
+    out: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in activity:
+        try:
+            if item.get("kind") == "commit" and item.get("commit_id"):
+                origin = str(item["commit_id"])
+                changes = []
+                skip = 0
+                while True:
+                    page = git_client.get_changes(
+                        commit_id=origin,
+                        repository_id=repository,
+                        project=project,
+                        top=2000,
+                        skip=skip,
+                    )
+                    page_items = _azdo_change_page_items(page, "changes")
+                    changes.extend(page_items)
+                    if len(page_items) < 2000:
+                        break
+                    skip += len(page_items)
+                attribution = "authored_commit"
+                confidence = "high"
+            elif item.get("kind") == "pr" and item.get("pr_id"):
+                pr_id = int(item["pr_id"])
+                iterations = (
+                    git_client.get_pull_request_iterations(
+                        repository_id=repository,
+                        pull_request_id=pr_id,
+                        project=project,
+                    )
+                    or []
+                )
+                if not iterations:
+                    changes = []
+                else:
+                    iteration_id = int(getattr(iterations[-1], "id", 0) or 0)
+                    changes = []
+                    skip = 0
+                    while True:
+                        page = git_client.get_pull_request_iteration_changes(
+                            repository_id=repository,
+                            pull_request_id=pr_id,
+                            iteration_id=iteration_id,
+                            project=project,
+                            top=2000,
+                            skip=skip,
+                        )
+                        page_items = _azdo_change_page_items(page, "change_entries")
+                        changes.extend(page_items)
+                        next_skip = _azdo_value(page, "next_skip", None)
+                        next_top = _azdo_value(page, "next_top", None)
+                        if next_skip is not None and int(next_skip) > skip:
+                            skip = int(next_skip)
+                            if not next_top:
+                                break
+                            continue
+                        if len(page_items) < 2000:
+                            break
+                        skip += len(page_items)
+                origin = f"pr:{pr_id}"
+                attribution = "authored_pr"
+                confidence = "medium"
+            else:
+                continue
+            for change in changes:
+                changed_item = _azdo_value(change, "item", None)
+                path = str(_azdo_value(changed_item, "path", "") or "").lstrip("/")
+                dedupe = (origin, path, attribution)
+                if not path or dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                change_type = str(
+                    _azdo_value(change, "change_type", _azdo_value(change, "changeType", "")) or "edit"
+                ).lower()
+                out.append(
+                    {
+                        "provider": "azdo",
+                        "container": project,
+                        "repository": repository,
+                        "path": path,
+                        "status": change_type,
+                        "additions": 0,
+                        "deletions": 0,
+                        "patch": "",
+                        "truncated": False,
+                        "author": item.get("author", ""),
+                        "author_email": item.get("author_email", ""),
+                        "attribution": attribution,
+                        "confidence": confidence,
+                        "change_id": origin,
+                        "url": item.get("url", ""),
+                        "error": "",
+                    }
+                )
+        except Exception as exc:
+            out.append(
+                {
+                    "provider": "azdo",
+                    "container": project,
+                    "repository": repository,
+                    "path": str(item.get("key", "unknown change")),
+                    "status": "failed",
+                    "author": item.get("author", ""),
+                    "attribution": "authored_commit" if item.get("kind") == "commit" else "authored_pr",
+                    "confidence": "high" if item.get("kind") == "commit" else "medium",
+                    "change_id": str(item.get("commit_id") or f"pr:{item.get('pr_id', '')}"),
+                    "url": item.get("url", ""),
+                    "error": str(exc),
+                }
+            )
+    return out
 
 
 def azdevops_active_sprint_progress(project: str = "") -> dict:

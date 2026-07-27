@@ -145,9 +145,11 @@ class TestDelivery:
         assert any("Analysis log" in w for w in r["warnings"])
 
     def test_progress_list_is_shared(self, wired, db):
-        progress: list[str] = []
+        progress: list = []
         run_team_analysis(components={"delivery": ["jira"]}, progress=progress, db_path=db)
         assert "Analysing…" in progress
+        lifecycle = [item for item in progress if isinstance(item, dict)]
+        assert [item["status"] for item in lifecycle] == ["running", "completed"]
 
     def test_no_sprints_degrades_to_warning(self, wired, db, monkeypatch):
         monkeypatch.setattr("yeaboi.tools.team_learning._fetch_jira_history", lambda project, count: [])
@@ -162,14 +164,14 @@ class TestDelivery:
         with pytest.raises(ValueError, match="No tracker configured"):
             run_team_analysis(components={"delivery": [], "code": [], "docs": []}, db_path=db)
 
-    def test_quick_is_default_and_metadata_is_persisted(self, wired, db):
+    def test_deep_is_default_and_metadata_is_persisted(self, wired, db):
         result = run_team_analysis(components={"delivery": ["jira"]}, db_path=db)
         sub = result["delivery"]["jira"]
-        assert result["analysis_depth"] == "quick"
-        assert sub["analysis_depth"] == "quick"
-        assert sub["examples"]["analysis_depth"] == "quick"
+        assert result["analysis_depth"] == "deep"
+        assert sub["analysis_depth"] == "deep"
+        assert sub["examples"]["analysis_depth"] == "deep"
         assert set(sub["stage_timings"]) == {"fetch_secs", "analysis_secs", "total_secs"}
-        assert wired["analysis_depth"] == "quick"
+        assert wired["analysis_depth"] == "deep"
 
     def test_rejects_unknown_analysis_depth(self, db):
         with pytest.raises(ValueError, match="analysis_depth"):
@@ -177,10 +179,150 @@ class TestDelivery:
 
     def test_quick_rejects_llm_generated_samples(self, db):
         with pytest.raises(ValueError, match="requires analysis_depth='deep'"):
-            run_team_analysis(generate_samples=True, components={"delivery": []}, db_path=db)
+            run_team_analysis(
+                generate_samples=True,
+                analysis_depth="quick",
+                components={"delivery": []},
+                db_path=db,
+            )
 
 
 class TestGlobalCodeDocs:
+    def test_feature_selection_skips_unselected_jobs(self, wired, db):
+        progress = []
+        result = run_team_analysis(
+            components=_ALL,
+            analysis_features=["documentation"],
+            progress=progress,
+            db_path=db,
+        )
+        assert result["analysis_features"] == ["documentation"]
+        assert result["delivery"] == {}
+        assert result["code"] is None
+        assert result["docs"] is not None
+        assert wired["code_calls"] == 0
+        assert wired["docs_calls"] == 1
+        ids = {item["component_id"] for item in progress if isinstance(item, dict)}
+        assert ids == {"docs:documentation"}
+
+    def test_unknown_feature_is_rejected(self, wired, db):
+        with pytest.raises(ValueError, match="analysis_features"):
+            run_team_analysis(
+                components=_ALL,
+                analysis_features=["security_audit"],
+                db_path=db,
+            )
+
+    def test_feature_lifecycle_uses_each_coverage_report(self, wired, db, monkeypatch):
+        def code_component(*args, **kwargs):
+            return AiAdoptionSignal(scanned_commits=10), {
+                "enabled_features": ["ai_footprint", "code_health"],
+                "activity_coverage": {
+                    "status": "complete",
+                    "completed": 2,
+                    "eligible": 2,
+                    "has_data": True,
+                    "assets": [],
+                },
+                "coverage_report": {
+                    "status": "failed",
+                    "completed": 0,
+                    "eligible": 10,
+                    "failed": 10,
+                    "inaccessible": 0,
+                    "truncated": 0,
+                    "has_data": False,
+                    "grouped_errors": [
+                        {
+                            "provider": "azdo",
+                            "status": "failed",
+                            "detail": "provider pagination repeated results",
+                        }
+                    ],
+                    "assets": [],
+                },
+                "repository_health": {"files_analysed": 0},
+                "findings": [],
+                "action_plan": [],
+            }
+
+        monkeypatch.setattr("yeaboi.tools.team_learning._run_ai_usage_component", code_component)
+        progress = []
+
+        result = run_team_analysis(
+            components={"delivery": ["jira"], "code": ["azdo"]},
+            analysis_features=["delivery", "ai_footprint", "code_health"],
+            progress=progress,
+            db_path=db,
+        )
+
+        latest = {item["component_id"]: item for item in progress if isinstance(item, dict)}
+        assert latest["code:ai_footprint"]["status"] == "completed"
+        assert latest["code:code_health"]["status"] == "failed"
+        assert latest["code:code_health"]["detail"] == ("0/10 completed · provider pagination repeated results")
+        assert result["coverage"]["status"] == "partial"
+        assert result["coverage"]["components"]["ai_footprint"]["status"] == "complete"
+        assert result["coverage"]["components"]["code_health"]["status"] == "failed"
+
+    def test_partial_documentation_does_not_stop_other_analysis_jobs(self, wired, db, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.tools.team_learning._run_doc_quality_component",
+            lambda *args, **kwargs: (
+                DocQualitySignal(pages_scanned=1),
+                {
+                    "coverage_report": {
+                        "status": "partial",
+                        "completed": 1,
+                        "eligible": 2,
+                        "failed": 1,
+                        "inaccessible": 0,
+                        "truncated": 0,
+                        "grouped_errors": [{"detail": "one unreadable page"}],
+                        "assets": [],
+                    },
+                    "action_plan": [],
+                },
+            ),
+        )
+        monkeypatch.setattr(
+            "yeaboi.tools.team_learning._run_ai_usage_component",
+            lambda *args, **kwargs: (
+                None,
+                {
+                    "enabled_features": ["code_health"],
+                    "coverage_report": {
+                        "status": "complete",
+                        "completed": 3,
+                        "eligible": 3,
+                        "assets": [],
+                    },
+                    "repository_health": {"files_analysed": 3},
+                    "action_plan": [],
+                },
+            ),
+        )
+
+        result = run_team_analysis(
+            components={"code": ["azdo"], "docs": ["confluence"]},
+            analysis_features=["code_health", "documentation"],
+            db_path=db,
+        )
+
+        assert result["docs"] is not None
+        assert result["code"] is not None
+        assert result["coverage"]["components"]["documentation"]["status"] == "partial"
+        assert result["coverage"]["components"]["code_health"]["status"] == "complete"
+
+    def test_code_health_can_run_without_ai_footprint_signal(self, wired, db):
+        result = run_team_analysis(
+            components={"delivery": ["jira"], "code": ["github"]},
+            analysis_features=["delivery", "code_health"],
+            db_path=db,
+        )
+        assert result["code"] is not None
+        assert result["code"]["signal"] is None
+        assert "ai_adoption" in result["delivery"]["jira"]["examples"]
+
     def test_code_and_docs_run_once_and_attach(self, wired, db):
         r = run_team_analysis(components=_ALL, db_path=db)
         assert wired["code_calls"] == 1 and wired["docs_calls"] == 1
@@ -408,24 +550,35 @@ class TestSelectedMemberVelocity:
 
 
 class TestGetTeamRoster:
-    def test_returns_sorted_unique_assignees(self, monkeypatch):
+    def test_returns_sorted_unique_assignees_without_history_scan(self, monkeypatch, tmp_path):
+        from yeaboi.team_roster import RosterMember, RosterResult
+
         monkeypatch.setattr(
             "yeaboi.tools.team_learning._fetch_jira_history",
-            lambda project, count: [
-                {"sprint_name": "S1", "stories": [{"assignee": "Bob"}, {"assignee": "Alice"}]},
-                {"sprint_name": "S2", "stories": [{"assignee": "Alice"}, {"assignee": ""}]},
-            ],
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("roster must not scan sprint history")),
         )
+        monkeypatch.setattr(
+            "yeaboi.team_roster.fetch_roster_result",
+            lambda **kwargs: RosterResult(
+                (
+                    RosterMember("Bob", "jira", "2"),
+                    RosterMember("Alice", "jira", "1"),
+                    RosterMember("Alice", "jira", "1"),
+                ),
+                "complete",
+                (),
+            ),
+        )
+        assert get_team_roster(source="jira", project_key="PROJ", db_path=tmp_path / "db") == ["Alice", "Bob"]
 
-        def boom(*a, **k):
-            raise AssertionError("roster must not run the LLM analysis")
+    def test_empty_board_returns_empty(self, monkeypatch, tmp_path):
+        from yeaboi.team_roster import RosterResult
 
-        monkeypatch.setattr("yeaboi.tools.team_learning._run_parallel_analysis", boom)
-        assert get_team_roster(source="jira", project_key="PROJ") == ["Alice", "Bob"]
-
-    def test_empty_board_returns_empty(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.tools.team_learning._fetch_jira_history", lambda project, count: [])
-        assert get_team_roster(source="jira", project_key="PROJ") == []
+        monkeypatch.setattr(
+            "yeaboi.team_roster.fetch_roster_result",
+            lambda **kwargs: RosterResult((), "empty", ()),
+        )
+        assert get_team_roster(source="jira", project_key="PROJ", db_path=tmp_path / "db") == []
 
     def test_no_tracker_raises(self, monkeypatch):
         monkeypatch.setattr("yeaboi.tools.team_learning._detect_source", lambda: "")

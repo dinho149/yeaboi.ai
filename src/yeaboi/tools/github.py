@@ -16,6 +16,7 @@
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 
 import github
 from langchain_core.tools import tool
@@ -85,6 +86,77 @@ def _get_github_client() -> github.Github:
         logger.warning("No GITHUB_TOKEN set — using unauthenticated access (60 req/hr)")
     logger.debug("Creating GitHub client (authenticated=%s)", bool(token))
     return github.Github(auth=github.Auth.Token(token) if token else None)
+
+
+def github_analysis_inventory(
+    owners: list[str] | tuple[str, ...],
+    days: int = 120,
+    *,
+    include_trees: bool = True,
+) -> list[dict]:
+    """Discover every repository in configured owners/orgs for Analysis mode.
+
+    PyGithub paginates lazily, so iterating the returned lists avoids the old
+    first-100/one-repository bias.  Recently active repositories also include a
+    deterministic tree inventory used by repository-health analysis.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=max(1, int(days)))
+    client = _get_github_client()
+    out: list[dict] = []
+    seen: set[str] = set()
+    for owner_name in owners:
+        try:
+            try:
+                owner = client.get_organization(owner_name)
+            except Exception:
+                owner = client.get_user(owner_name)
+            repos = owner.get_repos()
+            for repo in repos:
+                slug = str(getattr(repo, "full_name", "") or "").strip()
+                if not slug or slug.lower() in seen:
+                    continue
+                seen.add(slug.lower())
+                pushed = getattr(repo, "pushed_at", None) or getattr(repo, "updated_at", None)
+                if pushed is not None and pushed.tzinfo is None:
+                    pushed = pushed.replace(tzinfo=UTC)
+                active = pushed is None or pushed >= cutoff
+                paths: list[str] = []
+                tree_error = ""
+                if include_trees and active and not bool(getattr(repo, "empty", False)):
+                    try:
+                        tree = repo.get_git_tree(sha=getattr(repo, "default_branch", "") or "HEAD", recursive=True)
+                        paths = [str(item.path) for item in tree.tree if getattr(item, "type", "") == "blob"]
+                        if bool(getattr(tree, "truncated", False)):
+                            tree_error = "GitHub tree response was truncated"
+                    except Exception as exc:
+                        tree_error = str(exc)
+                out.append(
+                    {
+                        "provider": "github",
+                        "container": owner_name,
+                        "name": slug,
+                        "url": getattr(repo, "html_url", "") or "",
+                        "default_branch": getattr(repo, "default_branch", "") or "",
+                        "archived": bool(getattr(repo, "archived", False)),
+                        "updated_at": pushed.isoformat() if pushed else "",
+                        "active": active,
+                        "paths": paths,
+                        "error": tree_error,
+                    }
+                )
+        except Exception as exc:
+            out.append(
+                {
+                    "provider": "github",
+                    "container": owner_name,
+                    "name": owner_name,
+                    "active": True,
+                    "paths": [],
+                    "error": f"repository discovery failed: {exc}",
+                    "discovery_error": True,
+                }
+            )
+    return out
 
 
 @tool
@@ -413,7 +485,14 @@ def _github_changed_files(
 _MAX_CHANGED_FILE_LOOKUPS = 25
 
 
-def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cache=None) -> list[dict]:
+def github_recent_commits(
+    repo_url: str,
+    days: int = 1,
+    since=None,
+    metadata_cache=None,
+    *,
+    include_changed_files: bool = True,
+) -> list[dict]:
     """Return commits pushed to the default branch since the window start.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
@@ -428,7 +507,7 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cac
         repo = _get_github_client().get_repo(slug)
         commits = repo.get_commits(since=_since_dt(days, since))
         items: list[dict] = []
-        for index, c in enumerate(commits[:100]):
+        for index, c in enumerate(commits):
             commit = c.commit
             author = commit.author.name if commit.author else ""
             email = (getattr(commit.author, "email", "") or "") if commit.author else ""
@@ -446,6 +525,7 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cac
                     "body": body,
                     "timestamp": ts,
                     "key": c.sha[:8],
+                    "commit_id": c.sha,
                     "url": getattr(c, "html_url", "") or "",
                     "changed_files": (
                         _github_changed_files(
@@ -454,7 +534,7 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cac
                             object_key=f"{slug}:{c.sha}",
                             revision=c.sha,
                         )
-                        if index < _MAX_CHANGED_FILE_LOOKUPS
+                        if include_changed_files and index < _MAX_CHANGED_FILE_LOOKUPS
                         else []
                     ),
                 }
@@ -470,13 +550,6 @@ def github_recent_commits(repo_url: str, days: int = 1, since=None, metadata_cac
         return []
 
 
-# Caps for the PR-branch commit scan: each PR costs 1-2 extra API requests, so
-# only the newest in-window PRs are expanded and each contributes a bounded
-# number of commits.
-_MAX_PR_COMMIT_LOOKUPS = 10
-_MAX_COMMITS_PER_PR = 60
-
-
 def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
     """In-window commits on a PR's branch — feature work invisible on the default branch.
 
@@ -484,7 +557,7 @@ def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
     pass drops shas that already arrived via the default-branch scan.
     """
     try:
-        commits = list(pr.get_commits()[:_MAX_COMMITS_PER_PR])
+        commits = list(pr.get_commits())
     except Exception as e:
         logger.debug("github pr #%s commit lookup failed: %s", getattr(pr, "number", "?"), e)
         return []
@@ -507,6 +580,7 @@ def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
                 "body": body,
                 "timestamp": commit.author.date.isoformat()[:19],
                 "key": c.sha[:8],
+                "commit_id": c.sha,
                 "url": getattr(c, "html_url", "") or "",
                 # The parent PR event carries its complete changed-file scope;
                 # avoid an API call for every branch commit.
@@ -516,7 +590,14 @@ def _pr_branch_commit_items(pr, cutoff) -> list[dict]:
     return items
 
 
-def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=None) -> list[dict]:
+def github_recent_prs(
+    repo_url: str,
+    days: int = 1,
+    since=None,
+    metadata_cache=None,
+    *,
+    include_changed_files: bool = True,
+) -> list[dict]:
     """Return pull requests updated since the window start, plus their branch commits.
 
     The window is ``since → now`` when ``since`` (tz-aware datetime) is given,
@@ -534,7 +615,8 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=N
         cutoff = _since_dt(days, since)
 
         def _list_prs():
-            return list(repo.get_pulls(state="all", sort="updated", direction="desc")[:100])
+            pulls = repo.get_pulls(state="all", sort="updated", direction="desc")
+            return list(pulls[:100] if metadata_cache is not None else pulls)
 
         prs = (
             metadata_cache.memoize(("github", "pull_requests", slug), _list_prs)
@@ -542,7 +624,6 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=N
             else _list_prs()
         )
         items: list[dict] = []
-        commit_lookups = 0
         file_lookups = 0
         for pr in prs:
             updated = pr.updated_at
@@ -559,7 +640,7 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=N
                     object_key=f"{slug}:#{pr.number}",
                     revision=revision,
                 )
-                if file_lookups < _MAX_CHANGED_FILE_LOOKUPS
+                if include_changed_files and file_lookups < _MAX_CHANGED_FILE_LOOKUPS
                 else []
             )
             file_lookups += 1
@@ -572,12 +653,48 @@ def github_recent_prs(repo_url: str, days: int = 1, since=None, metadata_cache=N
                     "status": status,
                     "timestamp": ts,
                     "key": f"#{pr.number}",
+                    "pr_id": pr.number,
                     "url": getattr(pr, "html_url", "") or "",
                     "changed_files": changed_files,
                 }
             )
-            if status in ("open", "merged") and commit_lookups < _MAX_PR_COMMIT_LOOKUPS:
-                commit_lookups += 1
+            try:
+                for review in pr.get_reviews():
+                    submitted = getattr(review, "submitted_at", None)
+                    if submitted and submitted.tzinfo is not None and submitted < cutoff:
+                        continue
+                    items.append(
+                        {
+                            "author": getattr(getattr(review, "user", None), "login", "") or "",
+                            "kind": "review",
+                            "title": f"Reviewed PR #{pr.number}: {pr.title or ''}",
+                            "body": getattr(review, "body", "") or "",
+                            "status": str(getattr(review, "state", "") or "").lower(),
+                            "timestamp": submitted.isoformat()[:19] if submitted else ts,
+                            "key": f"review:{getattr(review, 'id', '')}",
+                            "pr_id": pr.number,
+                            "url": getattr(review, "html_url", "") or getattr(pr, "html_url", "") or "",
+                        }
+                    )
+                for comment in pr.get_issue_comments():
+                    updated_comment = getattr(comment, "updated_at", None)
+                    if updated_comment and updated_comment.tzinfo is not None and updated_comment < cutoff:
+                        continue
+                    items.append(
+                        {
+                            "author": getattr(getattr(comment, "user", None), "login", "") or "",
+                            "kind": "comment",
+                            "title": f"Commented on PR #{pr.number}: {pr.title or ''}",
+                            "body": getattr(comment, "body", "") or "",
+                            "timestamp": updated_comment.isoformat()[:19] if updated_comment else ts,
+                            "key": f"comment:{getattr(comment, 'id', '')}",
+                            "pr_id": pr.number,
+                            "url": getattr(comment, "html_url", "") or getattr(pr, "html_url", "") or "",
+                        }
+                    )
+            except Exception as exc:
+                logger.debug("github PR #%s review/comment lookup failed: %s", pr.number, exc)
+            if status in ("open", "merged"):
                 items.extend(_pr_branch_commit_items(pr, cutoff))
         logger.info("github_recent_prs: %d item(s) in last %d day(s)", len(items), days)
         return items
@@ -686,3 +803,74 @@ def github_recent_reviews(repo_url: str, days: int = 1, since=None, metadata_cac
         _raise_if_github_auth(exc)
         logger.warning("github_recent_reviews failed: %s", exc)
         return []
+
+
+def github_changed_files(repo_url: str, activity: list[dict]) -> list[dict]:
+    """Fetch files changed by already-scoped commits and authored PRs.
+
+    This deliberately runs *after* member filtering. Commit files are
+    high-confidence authored changes; whole-PR files are lower-confidence because
+    a PR may contain commits from collaborators.
+    """
+    slug = _parse_repo(repo_url)
+    repo = _get_github_client().get_repo(slug)
+    out: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in activity:
+        try:
+            if item.get("kind") == "commit" and item.get("commit_id"):
+                origin = str(item["commit_id"])
+                files = getattr(repo.get_commit(origin), "files", ()) or ()
+                attribution = "authored_commit"
+                confidence = "high"
+            elif item.get("kind") == "pr" and item.get("pr_id"):
+                origin = f"pr:{item['pr_id']}"
+                files = repo.get_pull(int(item["pr_id"])).get_files()
+                attribution = "authored_pr"
+                confidence = "medium"
+            else:
+                continue
+            for changed in files:
+                path = str(getattr(changed, "filename", "") or "")
+                dedupe = (origin, path, attribution)
+                if not path or dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                patch = getattr(changed, "patch", None)
+                out.append(
+                    {
+                        "provider": "github",
+                        "container": slug.split("/", 1)[0],
+                        "repository": slug,
+                        "path": path,
+                        "status": str(getattr(changed, "status", "") or "modified"),
+                        "additions": int(getattr(changed, "additions", 0) or 0),
+                        "deletions": int(getattr(changed, "deletions", 0) or 0),
+                        "patch": patch if isinstance(patch, str) else "",
+                        "truncated": patch is None,
+                        "author": item.get("author", ""),
+                        "author_email": item.get("author_email", ""),
+                        "attribution": attribution,
+                        "confidence": confidence,
+                        "change_id": origin,
+                        "url": item.get("url", ""),
+                        "error": "" if patch is not None else "provider did not return a text patch",
+                    }
+                )
+        except Exception as exc:
+            out.append(
+                {
+                    "provider": "github",
+                    "container": slug.split("/", 1)[0],
+                    "repository": slug,
+                    "path": str(item.get("key", "unknown change")),
+                    "status": "failed",
+                    "author": item.get("author", ""),
+                    "attribution": "authored_commit" if item.get("kind") == "commit" else "authored_pr",
+                    "confidence": "high" if item.get("kind") == "commit" else "medium",
+                    "change_id": str(item.get("commit_id") or f"pr:{item.get('pr_id', '')}"),
+                    "url": item.get("url", ""),
+                    "error": str(exc),
+                }
+            )
+    return out

@@ -83,6 +83,9 @@ class _TaCtx:
         # the active tracker's own (empty) profile signals.
         self.ai_sig = None
         self.doc_sig = None
+        self.code_blob: dict = {}
+        self.doc_blob: dict = {}
+        self.analysis_features: tuple[str, ...] = ()
         # Composed card order (delivery cards for the active tracker + global cards),
         # set by the screen builder and shared with the results-loop navigation.
         self.visible_order: tuple[str, ...] = _TA_CARD_ORDER
@@ -1796,27 +1799,28 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     # Prefer the profile's signal; fall back to ctx.ai_sig for a delivery-off run
     # (no profile) where the signal is carried on the context instead.
     sig = getattr(profile, "ai_adoption", None) or ctx.ai_sig
-    blob = _ex.get("ai_adoption", {})
+    blob = ctx.code_blob or _ex.get("ai_adoption", {})
     scanned = (getattr(sig, "scanned_commits", 0) + getattr(sig, "scanned_prs", 0)) if sig else 0
 
-    ctx.heading("AI Adoption")
+    ctx.heading("AI Footprint")
     if not sig or scanned == 0:
-        coverage = (blob.get("coverage") or [])[:4] if isinstance(blob, dict) else []
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
         detail = (
             "No AI-usage scan for this analysis. Run a new analysis with a repository or "
             "tracker configured to generate one."
         )
         if coverage:
             detail += " Coverage: " + " · ".join(str(gap) for gap in coverage)
-        _ta_callout(ctx, "NO AI-USAGE DATA", detail, colour=c_muted)
+        _ta_callout(ctx, "NO RECENT CODE DATA", detail, colour=c_muted)
         return
-    _ta_callout(
-        ctx,
-        "LOWER BOUND SIGNAL",
-        "Only AI tools that leave a marker in commits or PR descriptions are counted. "
-        "Inline IDE assistance leaves no trace, so actual usage may be higher.",
-        colour=c_warn,
-    )
+    if scanned:
+        _ta_callout(
+            ctx,
+            "LOWER BOUND SIGNAL",
+            "Only AI tools that leave a marker in commits or PR descriptions are counted. "
+            "Inline IDE assistance leaves no trace, so actual usage may be higher.",
+            colour=c_warn,
+        )
 
     fp = getattr(sig, "footprint_pct", 0.0)
     fp_sty = c_good if fp >= 40 else (c_warn if fp >= 15 else c_bad)
@@ -1834,6 +1838,14 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     hero.append_text(_ta_meter(fp, 100, width=24 if ctx.width >= 72 else 14, style=fp_sty))
     hero.append(f"  {fp:.0f}%", style=f"bold {fp_sty}")
     _add(hero)
+
+    if isinstance(blob, dict) and blob.get("selected_users"):
+        ctx.heading("Selected-user scope")
+        ctx.kv("Selected", ", ".join(str(user) for user in blob.get("selected_users", [])))
+        matched = blob.get("matched_identities") or {}
+        ctx.kv("Matched", f"{len(matched)}/{len(blob.get('selected_users', []))}")
+        if blob.get("unmatched_users"):
+            ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
 
     if sig.sources_scanned or getattr(sig, "repos_scanned", ()):
         ctx.heading("Scan coverage")
@@ -1856,7 +1868,7 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
     coverage = blob.get("coverage") if isinstance(blob, dict) else None
     if coverage:
         ctx.heading("Not scanned")
-        for gap in coverage[:4]:
+        for gap in coverage:
             g = Text(PAD + "  ", justify="left")
             g.append(f"• {gap}", style=c_dim)
             _add(g)
@@ -1869,7 +1881,7 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         table.add_column("Tool", width=14)
         table.add_column("Tracked work", ratio=1)
         table.add_column("Reference", ratio=1)
-        for s in samples[:5]:
+        for s in samples:
             tool = "unlabelled AI" if s.get("tool") == "other_ai" else s.get("tool", "")
             title = str(s.get("title", "")).strip()
             ref = s.get("url") or (f"commit {s.get('key')}" if s.get("key") else "")
@@ -1883,22 +1895,71 @@ def _ta_ai_adoption(ctx: _TaCtx, profile) -> None:
         _ta_coaching_dashboard(ctx, insights)
 
 
+def _ta_code_health(ctx: _TaCtx, profile) -> None:
+    """Selected-user code-change health, deliberately separate from AI markers."""
+    blob = ctx.code_blob or ctx.ex.get("ai_adoption", {})
+    health = blob.get("repository_health", {}) if isinstance(blob, dict) else {}
+    ctx.heading("Code Health — Selected-user Changed Files")
+    if not health:
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
+        detail = "No attributable changed files were available for the selected users."
+        if coverage:
+            detail += " Coverage: " + " · ".join(str(gap) for gap in coverage)
+        _ta_callout(ctx, "NO RECENT CODE-HEALTH DATA", detail, colour=c_muted)
+        return
+    _ta_callout(
+        ctx,
+        "SELECTED-USER SCOPE",
+        "These findings cover files attributable to the selected users' commits and authored PRs. "
+        "Untouched repositories and unrelated contributors are not analysed.",
+        colour=c_warn,
+    )
+    _ta_metric_tiles(
+        ctx,
+        [
+            ("Files analysed", str(health.get("files_analysed", 0)), "selected-user changes", c_accent),
+            ("Repositories touched", str(health.get("repositories_touched", 0)), "by selected users", c_value),
+            ("Change findings", str(health.get("findings", 0)), "evidence-backed indicators", c_warn),
+        ],
+    )
+    _ta_ranked_bars(ctx, "Findings by category", tuple((health.get("by_category") or {}).items()))
+    selected = blob.get("selected_users") or []
+    if selected:
+        ctx.heading("Selected-user scope")
+        ctx.kv("Selected", ", ".join(str(user) for user in selected))
+        matched = blob.get("matched_identities") or {}
+        ctx.kv("Matched", f"{len(matched)}/{len(selected)}")
+        if blob.get("unmatched_users"):
+            ctx.kv("Unmatched", ", ".join(str(user) for user in blob["unmatched_users"]), c_warn)
+    actions = blob.get("action_plan", []) if isinstance(blob, dict) else []
+    if actions:
+        ctx.heading("Prioritized action plan")
+        for action in actions[:8]:
+            _ta_callout(
+                ctx,
+                f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
+                f"{action.get('detail', '')} Scope: {', '.join(action.get('affected_scope', []))}. "
+                f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
+                colour=c_warn if action.get("priority") == "high" else c_accent,
+            )
+
+
 def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     """Documentation quality: how clear the team's written pages are + how AI shows up.
 
     Reads ``profile.doc_quality`` for the numbers and ``examples["doc_quality"]`` for
-    coaching insights + coverage. Clarity is a readability score; the AI-likelihood is
-    a stylometric ESTIMATE (never a detection). Old profiles (no scan) show the same
+    coaching insights + coverage. Clarity is a readability score and usefulness
+    measures purpose, ownership, structure, and actionability. Old profiles show the same
     "run a new analysis" empty state as the other cards.
     """
     _add, _ex = ctx.add, ctx.ex
     sig = getattr(profile, "doc_quality", None) or ctx.doc_sig
-    blob = _ex.get("doc_quality", {})
+    blob = ctx.doc_blob or _ex.get("doc_quality", {})
     pages = getattr(sig, "pages_scanned", 0) if sig else 0
 
     ctx.heading("Documentation")
     if not sig or pages == 0:
-        coverage = (blob.get("coverage") or [])[:4] if isinstance(blob, dict) else []
+        coverage = (blob.get("coverage") or []) if isinstance(blob, dict) else []
         detail = (
             "No documentation scan for this analysis. Run a new analysis with Notion or "
             "Confluence configured to generate one."
@@ -1910,24 +1971,25 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     _ta_callout(
         ctx,
         "HOW TO READ THESE SIGNALS",
-        "Clarity is a readability score. AI-likelihood is a writing-style estimate, not a "
-        "detection. Explicit AI markers are shown separately as a lower bound fact.",
+        "Clarity measures readability. Usefulness measures whether pages state their purpose, "
+        "owner, structure, and concrete actions. Explicit AI disclosures remain a lower bound.",
         colour=c_warn,
     )
 
     clarity = getattr(sig, "avg_clarity", 0.0)
     cl_sty = c_good if clarity >= 60 else (c_warn if clarity >= 40 else c_bad)
-    ai_sty = c_bad if sig.avg_ai_likelihood >= 55 else c_muted
+    usefulness = getattr(sig, "avg_usefulness", 0.0)
+    useful_sty = c_good if usefulness >= 70 else (c_warn if usefulness >= 50 else c_bad)
     _ta_metric_tiles(
         ctx,
         [
             ("Average clarity", f"{clarity:.0f}/100", "higher means easier to read", cl_sty),
             ("Pages scanned", str(pages), ", ".join(sig.platforms_scanned) or "platform unavailable", c_accent),
             (
-                "AI-likelihood estimate",
-                f"{sig.avg_ai_likelihood:.0f}/100",
-                f"~{sig.likely_ai_pages} pages above threshold",
-                ai_sty,
+                "Average usefulness",
+                f"{usefulness:.0f}/100",
+                f"{getattr(sig, 'actionable_pages', 0)} actionable · {getattr(sig, 'owned_pages', 0)} owned",
+                useful_sty,
             ),
             (
                 "Explicit AI markers",
@@ -1980,8 +2042,8 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
         sample_table.add_column("Page", ratio=2)
         sample_table.add_column("Platform", width=12)
         sample_table.add_column("Clarity", width=9)
-        sample_table.add_column("AI est.", width=8)
-        for s in samples[:5]:
+        sample_table.add_column("Useful", width=8)
+        for s in samples:
             title = str(s.get("title", "")).strip()
             url = str(s.get("url", "") or "")
             page = Text(title, style=f"underline {c_accent} link {url}" if url else c_value)
@@ -1991,7 +2053,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
                 page,
                 Text(str(s.get("platform", "")), style=c_muted),
                 Text(f"{s.get('clarity', 0):.0f}/100", style=c_value),
-                Text(f"{s.get('ai_likelihood', 0):.0f}/100", style=c_dim),
+                Text(f"{s.get('usefulness', 0):.0f}/100", style=c_dim),
             )
         ctx.add_table(sample_table)
 
@@ -1999,6 +2061,17 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
     if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):
         ctx.heading("Recommended actions")
         _ta_coaching_dashboard(ctx, insights)
+    actions = blob.get("action_plan", []) if isinstance(blob, dict) else []
+    if actions:
+        ctx.heading("Prioritized action plan")
+        for action in actions[:8]:
+            _ta_callout(
+                ctx,
+                f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
+                f"{action.get('detail', '')} Scope: {', '.join(action.get('affected_scope', []))}. "
+                f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
+                colour=c_warn if action.get("priority") == "high" else c_accent,
+            )
 
 
 # The overview cards: title, section builders (render order), glossary terms.
@@ -2053,8 +2126,13 @@ _TA_CARDS: dict[str, dict] = {
         "glossary": (),
     },
     "ai-adoption": {
-        "title": "AI Adoption",
+        "title": "AI Footprint",
         "builders": (_ta_ai_adoption,),
+        "glossary": (),
+    },
+    "code-health": {
+        "title": "Code Health",
+        "builders": (_ta_code_health,),
         "glossary": (),
     },
     "documentation": {
@@ -2072,10 +2150,19 @@ _TA_CARD_ORDER: tuple[str, ...] = tuple(_TA_CARDS)
 
 
 # Delivery cards (everything except the two global cards + the insights coach).
-_DELIVERY_CARD_ORDER: tuple[str, ...] = tuple(k for k in _TA_CARDS if k not in ("ai-adoption", "documentation"))
+_DELIVERY_CARD_ORDER: tuple[str, ...] = tuple(
+    k for k in _TA_CARDS if k not in ("ai-adoption", "code-health", "documentation")
+)
 
 
-def visible_card_order(profile, has_code: bool, has_docs: bool) -> tuple[str, ...]:
+def visible_card_order(
+    profile,
+    has_code: bool,
+    has_docs: bool,
+    *,
+    has_code_health: bool = False,
+    analysis_features: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
     """Which section cards to show, composing per-tracker delivery cards with the
     global code/docs cards.
 
@@ -2089,9 +2176,13 @@ def visible_card_order(profile, has_code: bool, has_docs: bool) -> tuple[str, ..
     order: list[str] = []
     if profile is not None:
         order.extend(k for k in _DELIVERY_CARD_ORDER if k != "insights")
-    if has_code:
+    features = set(analysis_features or ())
+    explicit = analysis_features is not None
+    if has_code and (not explicit or "ai_footprint" in features):
         order.append("ai-adoption")
-    if has_docs:
+    if has_code_health and (not explicit or "code_health" in features):
+        order.append("code-health")
+    if has_docs and (not explicit or "documentation" in features):
         order.append("documentation")
     if profile is not None:
         order.append("insights")
@@ -2150,6 +2241,11 @@ def _ta_card_teaser(ctx: _TaCtx, profile, key: str) -> str:
         if scanned:
             return f"{sig.footprint_pct:.0f}% AI footprint"
         return "not scanned"
+    if key == "code-health":
+        health = (ctx.code_blob or ex.get("ai_adoption", {})).get("repository_health", {})
+        if health:
+            return f"{health.get('files_analysed', 0)} files · {health.get('findings', 0)} findings"
+        return "no attributable changes"
     if key == "documentation":
         sig = getattr(profile, "doc_quality", None) or ctx.doc_sig
         pages = getattr(sig, "pages_scanned", 0) if sig else 0
