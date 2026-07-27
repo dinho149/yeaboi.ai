@@ -167,16 +167,16 @@ _PAD = PAD  # alias for backward compatibility within this module
 # dimension the loop shows the "too small" duck instead (see
 # :func:`_build_too_small_screen`). Tunable.
 _MIN_WIDTH = 84
-_MIN_HEIGHT = 32
+_MIN_HEIGHT = 40
 
 # The bottom-right duck companion + its speech-bubble tip need extra room: the
 # bubble reserves a right-hand lane, so the longest mode title must still fit to
-# its left. Only shown above this (wider) threshold; between _MIN_* and here the
-# menu renders full-width with the tip pinned at the bottom as before.
+# its left. Only shown at/above these thresholds. On the WIDTH axis, _MIN_WIDTH
+# (84) to _COMPANION_MIN_WIDTH-1 renders the full-width compact menu (tip pinned
+# at the bottom). On height, _MIN_HEIGHT (40) already clears the companion's
+# vertical need (39), so a tall-enough-but-narrow terminal is the only compact case.
 _COMPANION_MIN_WIDTH = 108
-_COMPANION_MIN_HEIGHT = (
-    39  # rows the full companion welcome (menu + tip bubble + duck + pocket) needs; below this the menu goes compact
-)
+_COMPANION_MIN_HEIGHT = 39  # rows the full companion welcome (menu + tip bubble + duck + pocket) needs to fit
 _COMPANION_HEAD_W = 13  # tight render width of the duck head (matches _mascot)
 _COMPANION_REVEAL_FROM = 0.72  # entrance progress at which the tip/update box fade in
 _COMPANION_COLS = 44  # right-hand lane width (bubble + duck); wide enough for the
