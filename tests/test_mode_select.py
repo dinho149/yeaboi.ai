@@ -358,8 +358,8 @@ class TestModeScreenCompanion:
     def test_companion_present_when_wide(self):
         # Companion layout: the tip controls sit ON the speech-bubble border, so the
         # "prev/next" line carries the bubble's rounded corners.
-        panel = _build_mode_screen(0, width=110, height=34, shimmer_tick=0.0, desc_reveal=999)
-        line = next(ln for ln in _text_of(panel, 110, 34).splitlines() if "prev" in ln and "next" in ln)
+        panel = _build_mode_screen(0, width=110, height=36, shimmer_tick=0.0, desc_reveal=999)
+        line = next(ln for ln in _text_of(panel, 110, 36).splitlines() if "prev" in ln and "next" in ln)
         assert "╰" in line and "╯" in line
 
     def test_companion_absent_when_narrow(self):
@@ -369,9 +369,9 @@ class TestModeScreenCompanion:
         assert "╰" not in line and "╯" not in line
 
     def test_mode_screen_exact_height_with_companion(self):
-        panel = _build_mode_screen(0, width=110, height=34, shimmer_tick=0.0)
-        text = _text_of(panel, 110, 34)
-        assert len(text.splitlines()) == 34
+        panel = _build_mode_screen(0, width=110, height=36, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 36)
+        assert len(text.splitlines()) == 36
 
     def test_tip_controls_live_on_the_bubble_border(self):
         # The tip controls sit ON the speech-bubble's bottom border (subtitle),
