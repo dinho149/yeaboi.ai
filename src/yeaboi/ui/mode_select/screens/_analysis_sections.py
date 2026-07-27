@@ -185,10 +185,17 @@ def _ta_meter(value: float, total: float = 100, *, width: int = 18, style: str =
     return out
 
 
+_TA_CALLOUT_MAX_LINES = 10  # callouts are atomic renderables — one taller than the viewport renders as blank
+
+
 def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -> None:
     """Render a compact, bordered explanatory callout."""
     lines = [Text(title, style=f"bold {colour}")]
-    for wrapped in _ta_wrap(body, max(28, ctx.width - len(PAD) - 16)):
+    wrapped_lines = _ta_wrap(body, max(28, ctx.width - len(PAD) - 16))
+    if len(wrapped_lines) > _TA_CALLOUT_MAX_LINES:
+        wrapped_lines = wrapped_lines[:_TA_CALLOUT_MAX_LINES]
+        wrapped_lines.append("… (full detail in export)")
+    for wrapped in wrapped_lines:
         lines.append(Text(wrapped, style=c_muted))
     ctx.add_renderable(
         Panel(
@@ -201,6 +208,14 @@ def _ta_callout(ctx: _TaCtx, title: str, body: str, *, colour: str = c_accent) -
 
 
 _TA_LIST_LIMIT = 6  # scan-coverage repo rows shown before collapsing to "+ N more"
+
+
+def _ta_scope_text(scopes: list, limit: int = _TA_LIST_LIMIT) -> str:
+    """Summarise an action's affected repos/platforms — cross-repo actions can span hundreds."""
+    names = [str(scope) for scope in scopes if scope]
+    if len(names) <= limit:
+        return ", ".join(names)
+    return ", ".join(names[:limit]) + f" and {len(names) - limit} more (full list in export)"
 
 
 def _ta_more_row(ctx: _TaCtx, hidden: int, noun: str) -> None:
@@ -2083,7 +2098,7 @@ def _ta_code_health(ctx: _TaCtx, profile) -> None:
             _ta_callout(
                 ctx,
                 f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
-                f"{action.get('detail', '')} Scope: {', '.join(action.get('affected_scope', []))}. "
+                f"{action.get('detail', '')} Scope: {_ta_scope_text(action.get('affected_scope', []))}. "
                 f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
                 colour=c_warn if action.get("priority") == "high" else c_accent,
             )
@@ -2236,7 +2251,7 @@ def _ta_doc_quality(ctx: _TaCtx, profile) -> None:
             _ta_callout(
                 ctx,
                 f"{str(action.get('priority', 'medium')).upper()} · {action.get('title', '')}",
-                f"{action.get('detail', '')} Scope: {', '.join(action.get('affected_scope', []))}. "
+                f"{action.get('detail', '')} Scope: {_ta_scope_text(action.get('affected_scope', []))}. "
                 f"Owner: {action.get('owner_role', '')} · Effort: {action.get('effort', '')}.",
                 colour=c_warn if action.get("priority") == "high" else c_accent,
             )

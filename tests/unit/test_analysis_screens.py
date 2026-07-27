@@ -2816,6 +2816,93 @@ class TestDocumentationCard:
         assert "NOTION_TOKEN not set" in output
 
 
+class TestCodeHealthCard:
+    """The deterministic code-health card (selected-user changed files)."""
+
+    def _code_examples(self, action):
+        return {
+            "repository_health": {
+                "files_analysed": 5578,
+                "repositories_touched": 231,
+                "findings": 1834,
+                "by_category": {"hotspot": 623, "testing": 1211},
+            },
+            "selected_users": ["Ava"],
+            "matched_identities": {"Ava": ["ava"]},
+            "action_plan": [action],
+        }
+
+    def _frames(self, code_examples):
+        from yeaboi.team_profile import TeamProfile
+
+        prof = TeamProfile(team_id="t", source="jira", project_key="P")
+        combined = "\n".join(
+            _render(
+                _build_team_analysis_screen(
+                    prof,
+                    examples=None,
+                    code_examples=code_examples,
+                    view="code-health",
+                    scroll_offset=offset,
+                    width=100,
+                    height=40,
+                ),
+                width=100,
+            )
+            for offset in range(0, 40, 5)
+        )
+        # Collapse panel borders + wrapping so phrases can be matched across lines.
+        return " ".join(combined.replace("│", " ").split())
+
+    def test_scope_text_caps(self):
+        from yeaboi.ui.mode_select.screens._analysis_sections import _ta_scope_text
+
+        assert _ta_scope_text(["a", "b"]) == "a, b"
+        assert _ta_scope_text([f"r{i}" for i in range(10)]) == (
+            "r0, r1, r2, r3, r4, r5 and 4 more (full list in export)"
+        )
+
+    def test_wide_scope_action_plan_renders_not_blank(self):
+        # Regression: cross-repo actions merge affected_scope over every touched
+        # repository (231 on the real run). The full join wrapped one callout to
+        # hundreds of lines; callouts are atomic renderables for the viewport
+        # packer, so every action rendered as blank scroll space under the
+        # "Prioritized action plan" heading.
+        flat = self._frames(
+            self._code_examples(
+                {
+                    "priority": "high",
+                    "title": "Add tests to hot files",
+                    "detail": "Files changed repeatedly without accompanying tests.",
+                    "affected_scope": [f"YL.Repo.{i:03d}" for i in range(231)],
+                    "owner_role": "tech lead",
+                    "effort": "medium",
+                }
+            )
+        )
+        assert "Prioritized action plan" in flat
+        assert "Add tests to hot files" in flat  # the callout really renders
+        assert "and 225 more (full list in export)" in flat
+
+    def test_oversized_callout_body_truncated_not_blank(self):
+        # Backstop: even a pathological detail string must never make a callout
+        # taller than the viewport.
+        flat = self._frames(
+            self._code_examples(
+                {
+                    "priority": "medium",
+                    "title": "Reduce churn",
+                    "detail": "hotspot detail " * 400,
+                    "affected_scope": ["YL.Repo.001"],
+                    "owner_role": "tech lead",
+                    "effort": "medium",
+                }
+            )
+        )
+        assert "Reduce churn" in flat
+        assert "… (full detail in export)" in flat
+
+
 # ---------------------------------------------------------------------------
 # Team insights screen (results → insights → generate-tickets confirm)
 # ---------------------------------------------------------------------------
