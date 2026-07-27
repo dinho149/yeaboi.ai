@@ -27,6 +27,7 @@ import time
 
 from rich.live import Live
 from rich.panel import Panel
+from rich.style import Style
 from rich.text import Text
 
 from yeaboi import music
@@ -130,6 +131,12 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
         return
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
     bstyle = lines[-1][0].style
+    # The bottom-border segment carries `border_style on page_bg`, so its bgcolor
+    # is the page's own tint. Use it as the base style for every row we render here
+    # so blank padding cells inherit the page background (main #104) instead of
+    # falling through to the terminal's default — otherwise the pocket band and the
+    # gaps beside it show as an untinted (black) strip once the page is tinted.
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
     # Many pages build their panel one row short (a legacy `h - 1` safety margin
     # from before the Live cropped overflow). Pad it back up to the true terminal
     # height so the pocket border lands on the BOTTOM row — otherwise it sits a row
@@ -141,7 +148,7 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
         blank.append("│", style=bstyle)
         blank.append(" " * max(0, width - 2))
         blank.append("│", style=bstyle)
-        blank_line = console.render_lines(blank, options.update_width(width), pad=True)[0]
+        blank_line = console.render_lines(blank, options.update_width(width), pad=True, style=bg_style)[0]
         lines[-1:-1] = [blank_line for _ in range(term_h - len(lines))]
     music = build_music_subtitle()
     mw = music.cell_len + 4  # ╭ + space + music + space + ╮
@@ -173,7 +180,7 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
     border.append(" " * (right - left - 1))
     border.append("╰" + "─" * (width - right - 2) + "╯", style=bstyle)
     sized = options.update_width(width)
-    lines[-1] = console.render_lines(border, sized, pad=True)[0]
+    lines[-1] = console.render_lines(border, sized, pad=True, style=bg_style)[0]
     if preserve_content:
         # Splice ONLY the alcove columns onto the roof/text rows, leaving the rest of
         # those rows as-is — so e.g. the screensaver duck can walk right down at the
@@ -188,12 +195,12 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
         text_alcove.append(" │", style=bstyle)
         asized = options.update_width(right - left + 1)
         for idx, alcove in ((-3, roof_alcove), (-2, text_alcove)):
-            seg = console.render_lines(alcove, asized, pad=True)[0]
+            seg = console.render_lines(alcove, asized, pad=True, style=bg_style)[0]
             lft, _mid, rgt = Segment.divide(lines[idx], [left, right + 1, width])
             lines[idx] = list(lft) + list(seg) + list(rgt)
     else:
-        lines[-3] = console.render_lines(roof, sized, pad=True)[0]
-        lines[-2] = console.render_lines(textrow, sized, pad=True)[0]
+        lines[-3] = console.render_lines(roof, sized, pad=True, style=bg_style)[0]
+        lines[-2] = console.render_lines(textrow, sized, pad=True, style=bg_style)[0]
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
@@ -223,7 +230,12 @@ def draw_companion_duck(console, options, lines: list) -> None:
     if not lines or not lines[-1]:
         return
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
-    duck_rows = console.render_lines(render_head(0, flip=True), options.update_width(_DUCK_W), pad=True)
+    # Render the sprite over the page's own background tint (main #104): the head's
+    # empty cells carry no colour, so without a base bg they'd punch a black box
+    # through the tinted page around the duck.
+    bstyle = lines[-1][0].style
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+    duck_rows = console.render_lines(render_head(0, flip=True), options.update_width(_DUCK_W), pad=True, style=bg_style)
     dh = len(duck_rows)
     # Need room for the duck + a gap + the 3-row pocket; skip on tiny panels.
     if len(lines) < dh + 5 or width < _DUCK_W + _DUCK_RIGHT_MARGIN + 4:
