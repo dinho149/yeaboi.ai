@@ -80,10 +80,13 @@ class TestThemeBackgrounds:
         out = _render(build_page_panel(Text("hello"), theme=theme, height=10))
         assert _bg_escape(theme.bg) in out
 
-    def test_mode_tints_are_distinct(self):
+    def test_mode_backgrounds_are_unified(self):
+        # Per-mode background tints were dropped for one consistent backdrop across
+        # every screen: all modes now share the neutral base. Accents stay distinct.
         bgs = [t.bg for t in self.MODE_THEMES.values()]
-        assert len(set(bgs)) == len(bgs)
-        assert NEUTRAL_BG not in bgs  # every mode overrides the neutral base
+        assert set(bgs) == {NEUTRAL_BG}
+        accents = [t.accent for t in self.MODE_THEMES.values()]
+        assert len(set(accents)) == len(accents)  # each mode keeps its own accent hue
 
     def test_mode_tints_are_dark(self):
         # Foreground styles are designed for dark backgrounds; keep tints deep.

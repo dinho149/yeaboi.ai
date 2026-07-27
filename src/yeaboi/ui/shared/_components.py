@@ -55,23 +55,25 @@ class Theme:
     sep: str = "rgb(50,60,80)"
     id: str = "cyan"
     desc: str = "rgb(160,160,160)"
-    # Page background: a dark tint of the mode's accent hue, applied by
-    # build_page_panel as "on {bg}" so the whole terminal shows the mode's
-    # colour instead of the user's terminal background.
+    # Page background: one neutral dark base shared by every screen, applied by
+    # build_page_panel as "on {bg}" so the whole terminal shows a single
+    # consistent colour rather than the user's terminal background. Modes keep
+    # their distinct accent hues (titles, separators) but share this backdrop —
+    # per-mode background tints were dropped for a uniform look across screens.
     bg: str = NEUTRAL_BG
 
 
-ANALYSIS_THEME = Theme(bg="rgb(9,23,19)")
-PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", bg="rgb(13,17,30)")
-USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)", bg="rgb(29,21,9)")
+ANALYSIS_THEME = Theme()
+PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)")
+USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
-STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)", bg="rgb(26,13,23)")
-RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)", bg="rgb(10,25,25)")
+STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
+RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
 # Gold, not table-felt green — analysis owns green, and the two cards sat side
 # by side looking like twins. Gold keeps the casino identity (chips) instead.
-POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)", bg="rgb(27,24,10)")
-PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)", bg="rgb(29,15,12)")
-REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)", bg="rgb(19,16,30)")
+POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)")
+PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)")
+REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)")
 # Silver chrome on purpose — the changelog page's per-feature area tags carry the
 # colour (each tag uses its mode's accent), so the page frame stays neutral.
 CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")

@@ -57,9 +57,14 @@ class TestTheme:
 
         assert Theme().bg == NEUTRAL_BG
 
-    def test_mode_themes_carry_dark_tints(self):
-        assert ANALYSIS_THEME.bg == "rgb(9,23,19)"
-        assert PLANNING_THEME.bg == "rgb(13,17,30)"
+    def test_mode_themes_share_neutral_background(self):
+        # Per-mode background tints were dropped for one consistent backdrop; every
+        # mode now shares the neutral base (accents stay per-mode).
+        from yeaboi.ui.shared._components import NEUTRAL_BG
+
+        assert ANALYSIS_THEME.bg == NEUTRAL_BG
+        assert PLANNING_THEME.bg == NEUTRAL_BG
+        assert ANALYSIS_THEME.accent != PLANNING_THEME.accent
 
 
 class TestBuildPagePanel:
