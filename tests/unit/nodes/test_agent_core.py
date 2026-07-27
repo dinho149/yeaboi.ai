@@ -670,17 +670,57 @@ class TestShouldContinueRiskRouting:
         state = {"messages": [user_msg, tool_call_msg]}
         assert should_continue(state) == "human_review"
 
+    def test_azdevops_create_epic_routes_to_human_review(self):
+        """azdevops_create_epic is a write — must pause for confirmation."""
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "azdevops_create_epic", "args": {}, "id": "call_1", "type": "tool_call"}],
+        )
+        state = {"messages": [msg]}
+        assert should_continue(state) == "human_review"
+
+    def test_azdevops_create_story_and_iteration_route_to_human_review(self):
+        for name in ("azdevops_create_story", "azdevops_create_iteration"):
+            msg = AIMessage(content="", tool_calls=[{"name": name, "args": {}, "id": "c1", "type": "tool_call"}])
+            assert should_continue({"messages": [msg]}) == "human_review"
+
+    def test_confirmed_azdevops_write_routes_to_tools(self):
+        """The confirmation round-trip works for the newly gated Azure DevOps writes too."""
+        state = {
+            "messages": [
+                AIMessage(content="Create the epic in Azure DevOps — confirm?"),
+                HumanMessage(content="yes"),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "azdevops_create_epic", "args": {}, "id": "c2", "type": "tool_call"}],
+                ),
+            ]
+        }
+        assert should_continue(state) == "tools"
+
     def test_high_risk_tools_constant_contains_expected_names(self):
-        """_HIGH_RISK_TOOLS should list all Jira/Confluence write operations."""
+        """_HIGH_RISK_TOOLS should list all Jira/AzDO/Confluence/Notion write operations."""
         assert "jira_create_epic" in _HIGH_RISK_TOOLS
         assert "jira_create_story" in _HIGH_RISK_TOOLS
         assert "jira_create_sprint" in _HIGH_RISK_TOOLS
         assert "confluence_create_page" in _HIGH_RISK_TOOLS
         assert "confluence_update_page" in _HIGH_RISK_TOOLS
+        assert "azdevops_create_epic" in _HIGH_RISK_TOOLS
+        assert "azdevops_create_story" in _HIGH_RISK_TOOLS
+        assert "azdevops_create_iteration" in _HIGH_RISK_TOOLS
+        assert "notion_create_page" in _HIGH_RISK_TOOLS
+        assert "notion_update_page" in _HIGH_RISK_TOOLS
         # Read tools must NOT be in the set
         assert "jira_read_board" not in _HIGH_RISK_TOOLS
         assert "confluence_read_page" not in _HIGH_RISK_TOOLS
         assert "read_codebase" not in _HIGH_RISK_TOOLS
+        assert "azdevops_read_repo" not in _HIGH_RISK_TOOLS
+
+    def test_high_risk_tools_derived_from_risk_registry(self):
+        """The gate set is exactly the WRITE rows of tools/risk.py."""
+        from yeaboi.tools.risk import high_risk_tool_names
+
+        assert _HIGH_RISK_TOOLS == high_risk_tool_names()
 
 
 class TestUserConfirmed:
@@ -710,6 +750,40 @@ class TestUserConfirmed:
     def test_case_insensitive(self):
         assert _user_confirmed("YES")
         assert _user_confirmed("Yes please")
+
+    # Negation veto — a qualified or negated "yes" is NOT consent. The old
+    # prefix matcher accepted all of these; each was a real false positive
+    # that would have written to an external tracker.
+    def test_surely_not_is_not_consent(self):
+        assert not _user_confirmed("surely not")
+
+    def test_yes_but_cancel_is_not_consent(self):
+        assert not _user_confirmed("yes but actually cancel it")
+
+    def test_y_not_is_not_consent(self):
+        assert not _user_confirmed("y not do something else instead")
+
+    def test_hold_on_is_not_consent(self):
+        assert not _user_confirmed("ok wait, hold on")
+
+    def test_dont_is_not_consent(self):
+        assert not _user_confirmed("don't")
+        assert not _user_confirmed("please don't proceed")
+
+    def test_affirmative_with_elaboration_still_confirms(self):
+        assert _user_confirmed("yes please")
+        assert _user_confirmed("ok go for it")
+        assert _user_confirmed("go ahead")
+        assert _user_confirmed("please proceed")
+        assert _user_confirmed("yes, create the epic")
+
+    def test_okay_and_punctuation(self):
+        assert _user_confirmed("okay!")
+        assert _user_confirmed("yes.")
+
+    def test_unrelated_text_is_not_consent(self):
+        assert not _user_confirmed("what does this tool do?")
+        assert not _user_confirmed("show me the plan first")
 
 
 # ── make_call_model factory ───────────────────────────────────────────

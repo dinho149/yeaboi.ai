@@ -1,5 +1,9 @@
 """Tools module — factory that returns all available tools.
 
+Every new @tool must also be classified READ or WRITE in ``tools/risk.py`` —
+WRITE tools are gated behind human confirmation in the agent graph. Enforced
+two-way by ``tests/unit/tools/test_risk.py``.
+
 # See docs: "Tools" — tool registration pattern
 """
 
