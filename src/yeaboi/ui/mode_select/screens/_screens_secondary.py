@@ -4789,8 +4789,10 @@ def settings_tab_action(active_tab: int) -> str:
 
 def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tuple[list, list]:
     """Render the underline-style tab bar: a row of labels over one continuous
-    horizontal rule. The rule under the active tab is accent-bright; the two
-    chars flanking it are dimmer; the rest is the neutral separator colour. No
+    horizontal rule. Under the active tab the rule is accent-bright, tapering in
+    three steps: the last char on either end steps down to the mid accent, the two
+    chars flanking it are dimmer still, and the rest is the neutral separator
+    colour — so the bright bar fades out instead of ending on a hard edge. No
     vertical dividers.
 
     Returns ``(lines, spans)`` where ``spans[i]`` is the 0-based ``(start, end)``
@@ -4817,7 +4819,10 @@ def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tupl
     underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
     for c in range(rule_start, rule_end):
         if a_start <= c < a_end:
-            style = f"bold {theme.accent_bright}"  # highlighted under the active tab
+            if c == a_start or c == a_end - 1:
+                style = theme.accent  # taper: the last char on either end steps down
+            else:
+                style = f"bold {theme.accent_bright}"  # full brightness across the middle
         elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
             style = theme.dim  # slightly dimmer just to either side
         else:
