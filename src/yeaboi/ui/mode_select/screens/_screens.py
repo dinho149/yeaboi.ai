@@ -507,6 +507,7 @@ def _build_mode_screen(
     selected_style: str = "",
     tip_offset: int = 0,
     sweep_front: float | None = None,
+    sweep_skip: int | None = None,
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
@@ -516,6 +517,8 @@ def _build_mode_screen(
     sweep_front: optional diagonal intro-reveal front (see _build_mode_row). None
     → every title fully shown. All titles share one front, so the menu wipes in as
     a single coherent top-left → bottom-right sweep.
+    sweep_skip: index of one title to leave fully shown while the sweep reveals the
+    rest — used by the return transition (the mode you came from is already home).
     """
     show = visible if visible is not None else list(range(len(_MODE_CARDS)))
     fading = fade_indices or []
@@ -551,7 +554,10 @@ def _build_mode_screen(
             desc_reveal=desc_reveal if is_sel else 0,
             override_style=override,
             desc_width=desc_width,
-            sweep_front=sweep_front,
+            # sweep_skip keeps one title fully shown while the rest wipe in — used by
+            # the return transition so the mode you came from stays put as the others
+            # scroll back in around it.
+            sweep_front=None if i == sweep_skip else sweep_front,
             row_base=row_base,
             desc_max_lines=2,  # welcome copy wraps to 2 lines rather than truncating
         )

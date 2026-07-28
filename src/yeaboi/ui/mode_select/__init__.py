@@ -8445,14 +8445,14 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
     )
 
 
-def _sweep_menu_in(console: Console, live, selected: int, n: int) -> None:
-    """Play the diagonal intro wipe that reveals every mode title top-left →
+def _sweep_menu_in(console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None) -> None:
+    """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
 
-    Shared by the fresh-load intro, every cold return to the menu, and the
-    changelog/feedback/all-tips overlay returns — so the menu items always
-    animate back in rather than snapping. A no-op wipe (straight to the final
-    frame) when the terminal is too small to show the full menu.
+    Shared by the fresh-load intro and the return transitions. ``sweep_skip``
+    leaves that one title fully shown throughout (used after the return slide, when
+    the mode you came from is already home and only the rest scroll in). A no-op
+    wipe (straight to the final frame) when the terminal is too small.
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
@@ -8477,6 +8477,7 @@ def _sweep_menu_in(console: Console, live, selected: int, n: int) -> None:
                     shimmer_tick=0.0,
                     desc_reveal=0,
                     sweep_front=_front,
+                    sweep_skip=sweep_skip,
                     companion_intro=0.0,  # duck waits off-screen until the wipe ends
                 )
             )
@@ -8490,52 +8491,33 @@ def _sweep_menu_in(console: Console, live, selected: int, n: int) -> None:
 
 def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
-    rest load in around it.
+    rest scroll in around it exactly like the fresh-load intro.
 
-    The exact inverse of the select→page lift — the selected title drops from the
-    top row (where that lift left it) down to its resting position, and only in the
-    last stretch of the drop do the other titles fade up from black. So returning
-    reads as "the one you picked comes home, then the menu rebuilds itself" rather
-    than everything flashing in at once. A no-op (straight to the final frame) when
-    the terminal is too small to show the full menu.
+    Phase 1 is the inverse of the select→page lift — the selected title drops from
+    the top row (where that lift left it) down to its resting position, alone.
+    Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
+    so every OTHER title reveals top-left → bottom-right while the one you picked
+    stays put. A no-op (straight to the final frame) when the terminal is too small.
     """
-    from yeaboi.ui.shared._animations import BLACK_RGB, lerp_color
-
     w, h = console.size
     if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
         chosen = _MODE_CARDS[selected]
         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
         base_style = f"bold rgb({base_r},{base_g},{base_b})"
-        others = [i for i in range(n) if i != selected]
         start_offset = 1  # the top row the select→page lift left the title on
         target_offset = selected_title_offset(selected, width=w, height=h)
-        slide_frames = 18
+        # Phase 1: the selected title slides home, on its own.
+        slide_frames = 14
         for frame in range(slide_frames + 1):
             t = frame / slide_frames
             eased = ease_out_cubic(t)
             current_offset = int(start_offset + (target_offset - start_offset) * eased)
-            # Others stay hidden until the selected title is ~most of the way home,
-            # then fade from black to their resting dim over the last 40%.
-            fade_t = max(0.0, (t - 0.6) / 0.4)
             w, h = console.size
-            if fade_t <= 0:
-                live.update(_build_slide_frame(chosen, top_offset=current_offset, width=w, height=h, style=base_style))
-            else:
-                fade_rgb = lerp_color(fade_t, BLACK_RGB, (100, 100, 100))
-                live.update(
-                    _build_mode_screen(
-                        selected,
-                        width=w,
-                        height=h,
-                        shimmer_tick=0.0,
-                        desc_reveal=0,
-                        fade_style=fade_rgb,
-                        fade_indices=others,
-                    )
-                )
+            live.update(_build_slide_frame(chosen, top_offset=current_offset, width=w, height=h, style=base_style))
             time.sleep(_FRAME_TIME)
-    w, h = console.size
-    live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0))
+    # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
+    # the selected title (already home) is held fully shown.
+    _sweep_menu_in(console, live, selected, n, sweep_skip=selected)
 
 
 def select_mode(
