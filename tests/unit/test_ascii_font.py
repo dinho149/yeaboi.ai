@@ -72,12 +72,18 @@ class TestRenderAsciiTextLarge:
         assert any(ch in "█▀▄" for line in big for ch in line)
 
     def test_texture_dithers_the_fill(self):
-        # texture=True introduces the ▓ shade the solid version doesn't have, so the
-        # enlarged font keeps the menu titles' pixel texture instead of flat blocks.
+        # texture=True scatters half-blocks through the solid fill, so the enlarged
+        # font keeps the menu titles' pixel texture instead of flat blocks.
         solid = render_ascii_text_large("YEABOI", 3)
         textured = render_ascii_text_large("YEABOI", 3, texture=True)
-        assert "▓" not in "".join(solid)
-        assert "▓" in "".join(textured)
+        assert textured != solid  # the fill was dithered
+        # The dither replaces some solid █ with half-blocks → fewer full blocks.
+        assert "".join(textured).count("█") < "".join(solid).count("█")
+
+    def test_texture_uses_a_halfblock_not_a_dark_shade(self):
+        # The shade must be a half-block (same colour) — a darker ▓/▒ reads as lego.
+        textured = "".join(render_ascii_text_large("YEABOI", 3, texture=True))
+        assert "▓" not in textured and "▒" not in textured
 
     def test_texture_preserves_dimensions(self):
         # Dithering must not change the block's size — same rows and width.

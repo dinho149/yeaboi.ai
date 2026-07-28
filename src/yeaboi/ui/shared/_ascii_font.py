@@ -113,13 +113,20 @@ def scale_halfblock_lines(lines: list[str], scale: int = 2) -> list[str]:
     return out
 
 
-def _checker_texture(lines: list[str], shade: str = "▓") -> list[str]:
+# The dither shade: a *half-block* (same colour, half-height cell) — NOT a darker
+# shade like ▓ — so the texture reads like the menu titles' own ▀▄ half-blocks
+# rather than high-contrast lego studs.
+_TEXTURE_SHADE = "▄"
+
+
+def _checker_texture(lines: list[str], shade: str = _TEXTURE_SHADE) -> list[str]:
     """Dither every solid ``█`` cell on a checkerboard to ``shade``.
 
     Scaling the menu font up fills the stroke interiors with flat ``█`` blocks,
-    which reads as heavy/blocky. Alternating ``█``/``▓`` on a fine checker restores
-    the pixel texture the small menu titles have — the ▀▄ edges stay crisp (only
-    ``█`` is dithered), so the letterforms are unchanged, just textured.
+    which reads as heavy/blocky. Alternating ``█`` with a half-block scatters
+    half-height cells through the fill — the same subtle pixel texture the small
+    menu titles get from their own ▀▄ glyphs — without the lego-stud contrast a
+    darker shade (▓) gives. Only ``█`` is dithered, so the letterforms are intact.
     """
     return [
         "".join(shade if (ch == "█" and (r + c) % 2) else ch for c, ch in enumerate(line))
