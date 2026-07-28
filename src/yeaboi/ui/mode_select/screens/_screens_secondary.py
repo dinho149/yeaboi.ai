@@ -4001,12 +4001,85 @@ def _build_retro_screen(
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
             body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
+    def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
+        """Flatten a renderable to a list of Text lines (so the four-column grid
+        table still scrolls line-by-line with everything else), each prefixed with
+        ``left_pad`` so the block lines up with the rest of the content."""
+        from rich.console import Console as _Console
+
+        _c = _Console(width=render_w, height=400)
+        out: list = []
+        for seg_line in _c.render_lines(renderable, _c.options.update_width(render_w), pad=True):
+            t = Text(left_pad, justify="left")
+            for seg in seg_line:
+                t.append(seg.text, style=seg.style)
+            out.append(t)
+        return out
+
     # ── Transient status message (e.g. after Generate / Export) ───
     message = retro_data.get("message", "")
     if message:
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
 
-    # ── Join info ─────────────────────────────────────────────────
+    # ── The four grids, as a four-column table across the top ─────
+    from rich.table import Table as _GridTable
+
+    grids = retro_data.get("grids") or {}
+    _grid_indent = _PAD + "  "
+    grid_w = max(40, width - 4 - len(_grid_indent) - 2)  # panel/pad + left indent + scrollbar gutter
+    # Four columns with a 2-space gap between each (padding (0,1), no edge pad):
+    # total = 4·col_w + 3·2, so the table always fits grid_w and never wraps.
+    col_w = max(12, (grid_w - 6) // 4)
+
+    def _grid_column(key: str):
+        import textwrap
+
+        cards = grids.get(key, [])
+        col: list = []
+        head = Text(no_wrap=True, overflow="crop")
+        head.append(RETRO_GRID_LABELS[key], style=f"bold {theme.accent}")
+        head.append(f"  ({len(cards)})", style=theme.muted)
+        col.append(head)
+        col.append(Text("─" * col_w, style=theme.sep, no_wrap=True, overflow="crop"))
+        if not cards:
+            col.append(Text("No cards yet.", style=theme.muted, no_wrap=True, overflow="crop"))
+        for c in cards:
+            origin = getattr(c, "origin", "web")
+            if origin == "ai":
+                who, card_style = "🤖 AI", theme.accent
+            elif origin == "carryover":
+                who, card_style = "↩ carried", theme.accent
+            else:
+                who, card_style = (getattr(c, "author", "") or "anon"), theme.value
+            for i, chunk in enumerate(textwrap.wrap(c.text, width=max(6, col_w - 2)) or [""]):
+                line = Text(no_wrap=True, overflow="crop")
+                line.append(("• " if i == 0 else "  "), style=card_style)
+                line.append(chunk, style=card_style)
+                col.append(line)
+            col.append(Text(f"  — {who}", style=theme.dim, no_wrap=True, overflow="crop"))
+        return Group(*col)
+
+    _table = _GridTable(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+    for _ in range(len(RETRO_GRIDS)):
+        _table.add_column(width=col_w, overflow="crop")
+    _table.add_row(*[_grid_column(key) for key in RETRO_GRIDS])
+    body_lines.extend(_render_to_lines(_table, grid_w, _grid_indent))
+
+    # ── Last sprint's actions (progress review) ───────────────────
+    # Set from teammates' browsers (the review column); the host view is read-only,
+    # matching the live-board-is-browser model. Hidden when there's no prior retro.
+    carried = retro_data.get("carried") or []
+    if carried:
+        done_n = sum(1 for c in carried if getattr(c, "status", "") in ("done", "not_relevant"))
+        _heading(f"Last sprint's actions  ({done_n}/{len(carried)} resolved)")
+        _line("Teammates set each status in the browser — review before generating new actions.", theme.muted)
+        for c in carried:
+            status = getattr(c, "status", "") or "pending"
+            badge = CARRIED_STATUS_LABELS.get(status, status)
+            _wrapped(c.text, theme.value, indent="    • ")
+            body_lines.append(Text(_PAD + "        " + f"[{badge}]", style=theme.dim, justify="left"))
+
+    # ── Join info, at the bottom ──────────────────────────────────
     # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
     # hub passes snapshot=True to suppress this whole block (the report replays
     # the grids + carried actions, not a resumable board).
@@ -4023,44 +4096,6 @@ def _build_retro_screen(
         if host_url:
             _row("Host link (private)", host_url, theme.muted)
             _line("For you only — this link skips the code. Don't share it.", theme.muted)
-
-    # ── Last sprint's actions (progress review) ───────────────────
-    # Set from teammates' browsers (the review column); the host view is read-only,
-    # matching the live-board-is-browser model. Hidden when there's no prior retro.
-    carried = retro_data.get("carried") or []
-    if carried:
-        done_n = sum(1 for c in carried if getattr(c, "status", "") in ("done", "not_relevant"))
-        _heading(f"Last sprint's actions  ({done_n}/{len(carried)} resolved)")
-        _line("Teammates set each status in the browser — review before generating new actions.", theme.muted)
-        for c in carried:
-            status = getattr(c, "status", "") or "pending"
-            badge = CARRIED_STATUS_LABELS.get(status, status)
-            _wrapped(c.text, theme.value, indent="    • ")
-            body_lines.append(Text(_PAD + "        " + f"[{badge}]", style=theme.dim, justify="left"))
-
-    # ── The four grids ────────────────────────────────────────────
-    grids = retro_data.get("grids") or {}
-    total_cards = 0
-    for key in RETRO_GRIDS:
-        cards = grids.get(key, [])
-        total_cards += len(cards)
-        _heading(f"{RETRO_GRID_LABELS[key]}  ({len(cards)})")
-        if cards:
-            for c in cards:
-                origin = getattr(c, "origin", "web")
-                if origin == "ai":
-                    who = "🤖 AI"
-                    card_style = theme.accent
-                elif origin == "carryover":
-                    who = "↩ carried over"
-                    card_style = theme.accent
-                else:
-                    who = getattr(c, "author", "") or "anon"
-                    card_style = theme.value
-                _wrapped(c.text, card_style, indent="    • ")
-                body_lines.append(Text(_PAD + "        " + f"— {who}", style=theme.dim, justify="left"))
-        else:
-            _line("No cards yet.", theme.muted)
 
     # ── Layout using shared components ────────────────────────────
     viewport_h = calc_viewport(height, header_h=6, action_h=4)
