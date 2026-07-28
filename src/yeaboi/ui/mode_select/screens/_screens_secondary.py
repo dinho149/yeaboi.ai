@@ -3974,7 +3974,12 @@ def _build_retro_screen(
     body_lines: list = []
 
     def _heading(text: str) -> None:
-        body_lines.append(Text(""))
+        # The first heading needs no leading blank: the subtitle's trailing blank
+        # already spaces it. Emitting one here on top of that gave a doubled blank
+        # under the subtitle. A message (when present) is the first body line, so
+        # this still separates the message from the section that follows it.
+        if body_lines:
+            body_lines.append(Text(""))
         h = Text(_PAD + "  ", justify="left")
         h.append(text, style=f"bold {theme.accent}")
         body_lines.append(h)
@@ -4172,7 +4177,12 @@ def _build_poker_screen(
     body_lines: list = []
 
     def _heading(text: str) -> None:
-        body_lines.append(Text(""))
+        # The first heading needs no leading blank: the subtitle's trailing blank
+        # already spaces it. Emitting one here on top of that gave a doubled blank
+        # under the subtitle. A message (when present) is the first body line, so
+        # this still separates the message from the section that follows it.
+        if body_lines:
+            body_lines.append(Text(""))
         h = Text(_PAD + "  ", justify="left")
         h.append(text, style=f"bold {theme.accent}")
         body_lines.append(h)
