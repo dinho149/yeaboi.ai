@@ -40,6 +40,7 @@ from yeaboi.ui.session.phases._phases_review import (  # noqa: F401
 )
 from yeaboi.ui.session.screens._screens_pipeline import _build_chat_screen, _build_pipeline_screen
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
+from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
@@ -259,11 +260,18 @@ def _pipeline_choice_screen(
             shimmer_tick=time.monotonic() - _ch_anim0,
         )
 
-    live.update(_render_choices())
+    _last_panel = _render_choices()
+    live.update(_last_panel)
     logger.info("Choice screen shown: title=%s, options=%s", title, options)
 
     while True:
         key = _key()
+        _clicked = parse_click(key)
+        if _clicked is not None:
+            # The only button is "Select" — a hit confirms the highlighted option.
+            if _last_panel is None or button_click(console, _last_panel, *_clicked, ["Select"]) is None:
+                continue  # click missed the button — ignore it
+            key = "enter"  # fall through to the existing Enter handling
         if key == "esc":
             logger.info("Choice screen: Esc pressed — cancelling")
             return None
@@ -278,7 +286,8 @@ def _pipeline_choice_screen(
             pass
         else:
             continue
-        live.update(_render_choices())
+        _last_panel = _render_choices()
+        live.update(_last_panel)
 
 
 # ---------------------------------------------------------------------------
@@ -530,27 +539,32 @@ def _handle_tracker_sync(
 
         # Show result with status message — wait for user to dismiss
         w, h = console.size
-        live.update(
-            _build_pipeline_screen(
-                stage_label,
-                progress,
-                [f"  {_ep_status}"],
-                0,
-                0,
-                status="complete",
-                width=w,
-                height=h,
-                step=step,
-                total=total,
-                actions=["OK"],
-                status_msg=_ep_status,
-            )
+        _ok_panel = _build_pipeline_screen(
+            stage_label,
+            progress,
+            [f"  {_ep_status}"],
+            0,
+            0,
+            status="complete",
+            width=w,
+            height=h,
+            step=step,
+            total=total,
+            actions=["OK"],
+            status_msg=_ep_status,
         )
+        live.update(_ok_panel)
         while True:
             try:
                 _ek = _key(timeout=0.05)
             except TypeError:
                 _ek = _key()
+            _clicked = parse_click(_ek)
+            if _clicked is not None:
+                # The only button is "OK" — a hit dismisses the screen.
+                if button_click(console, _ok_panel, *_clicked, ["OK"]) is not None:
+                    break
+                continue
             if _ek in ("enter", " ", "esc"):
                 break
 
@@ -937,24 +951,30 @@ def _phase_pipeline(
                 _epv_anim0 = time.monotonic()  # shimmer title clock
                 while True:
                     w, h = console.size
-                    live.update(
-                        _build_pipeline_screen(
-                            "Reviewing epic",
-                            "[2/6]",
-                            _ep_lines,
-                            _ep_scroll,
-                            _ep_sel,
-                            status="complete",
-                            width=w,
-                            height=h,
-                            actions=_ep_actions,
-                            step=1,
-                            total=6,
-                            shimmer_tick=time.monotonic() - _epv_anim0,
-                            scroll_meta=_ep_scroll_meta,
-                        )
+                    _ep_panel = _build_pipeline_screen(
+                        "Reviewing epic",
+                        "[2/6]",
+                        _ep_lines,
+                        _ep_scroll,
+                        _ep_sel,
+                        status="complete",
+                        width=w,
+                        height=h,
+                        actions=_ep_actions,
+                        step=1,
+                        total=6,
+                        shimmer_tick=time.monotonic() - _epv_anim0,
+                        scroll_meta=_ep_scroll_meta,
                     )
+                    live.update(_ep_panel)
                     key = _key()
+                    _clicked = parse_click(key)
+                    if _clicked is not None:
+                        _idx = button_click(console, _ep_panel, *_clicked, _ep_actions)
+                        if _idx is None:
+                            continue  # click missed the buttons — ignore it
+                        _ep_sel = _idx
+                        key = "enter"  # fall through to the existing Enter handling
                     if key in ("esc", "q"):
                         logger.info("Epic review: user pressed Esc — exiting planning")
                         return graph_state
@@ -1296,29 +1316,39 @@ def _phase_pipeline(
 
         w, h = console.size
         _ml, _sh = _rl()
-        live.update(
-            _build_pipeline_screen(
-                stage_label,
-                progress,
-                _ml,
-                scroll_offset,
-                menu_selected,
-                status="complete",
-                width=w,
-                height=h,
-                btn_fades=btn_fades,
-                step=step,
-                total=total,
-                sticky_headers=_sh,
-                actions=actions,
-                warning_text=_anon_banner(),
-                scroll_meta=_scroll_meta,
-            )
+        _last_panel = _build_pipeline_screen(
+            stage_label,
+            progress,
+            _ml,
+            scroll_offset,
+            menu_selected,
+            status="complete",
+            width=w,
+            height=h,
+            btn_fades=btn_fades,
+            step=step,
+            total=total,
+            sticky_headers=_sh,
+            actions=actions,
+            warning_text=_anon_banner(),
+            scroll_meta=_scroll_meta,
         )
+        live.update(_last_panel)
 
         _pl_anim0 = time.monotonic()  # shimmer title clock
         while True:
             key = _key()
+
+            _clicked = parse_click(key)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, actions)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                menu_selected = _idx
+                btn_targets = [1.0 if i == menu_selected else 0.0 for i in range(num_actions)]
+                key = "enter"  # fall through to the existing Enter handling
 
             if key == "esc":
                 return None
@@ -1692,27 +1722,26 @@ def _phase_pipeline(
 
             w, h = console.size
             _ml, _sh = _rl()
-            live.update(
-                _build_pipeline_screen(
-                    stage_label,
-                    progress,
-                    _ml,
-                    scroll_offset,
-                    menu_selected,
-                    status="complete",
-                    width=w,
-                    height=h,
-                    status_msg=status_msg,
-                    btn_fades=btn_fades,
-                    step=step,
-                    total=total,
-                    sticky_headers=_sh,
-                    actions=actions,
-                    warning_text=_anon_banner(),
-                    shimmer_tick=time.monotonic() - _pl_anim0,
-                    scroll_meta=_scroll_meta,
-                )
+            _last_panel = _build_pipeline_screen(
+                stage_label,
+                progress,
+                _ml,
+                scroll_offset,
+                menu_selected,
+                status="complete",
+                width=w,
+                height=h,
+                status_msg=status_msg,
+                btn_fades=btn_fades,
+                step=step,
+                total=total,
+                sticky_headers=_sh,
+                actions=actions,
+                warning_text=_anon_banner(),
+                shimmer_tick=time.monotonic() - _pl_anim0,
+                scroll_meta=_scroll_meta,
             )
+            live.update(_last_panel)
 
 
 # ---------------------------------------------------------------------------

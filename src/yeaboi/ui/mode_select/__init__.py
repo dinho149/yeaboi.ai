@@ -72,6 +72,7 @@ from yeaboi.ui.shared._animations import (
     FRAME_TIME_60FPS,
     ease_out_cubic,
 )
+from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
@@ -207,17 +208,25 @@ def _confirm_ticket_generation(
 
     logger.info("Analysis: showing ticket-generation confirmation")
     sel = 0  # 0 = Generate tickets, 1 = Not now
+    _labels = ["Generate tickets", "Not now"]
     while True:
         w, h = console.size
-        live.update(
-            _build_generate_confirm_screen(
-                width=w,
-                height=h,
-                action_sel=sel,
-                subtitle=subtitle,
-            )
+        _panel = _build_generate_confirm_screen(
+            width=w,
+            height=h,
+            action_sel=sel,
+            subtitle=subtitle,
         )
+        live.update(_panel)
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
+            else:
+                continue  # click missed the buttons — ignore it
         if k == "left":
             sel = max(0, sel - 1)
         elif k == "right":
@@ -623,8 +632,19 @@ def _run_preview_flow(
     logger.info("Preview: entering Instructions page")
     if last_page not in ("epic", "stories", "tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -678,16 +698,15 @@ def _run_preview_flow(
                 _save_ana({"instructions": _instr, "last_page": "instructions"}, "instructions")
                 return
             w, h = console.size
-            live.update(
-                _build_instructions_review_screen(
-                    _instr,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                )
+            _panel = _build_instructions_review_screen(
+                _instr,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
             )
+            live.update(_panel)
 
     # ── Page 2: Epic ──────────────────────────────────────────────
     logger.info("Preview: entering Epic page")
@@ -716,8 +735,19 @@ def _run_preview_flow(
 
     if last_page not in ("stories", "tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -752,17 +782,16 @@ def _run_preview_flow(
                 _save_ana({"instructions": _instr, "sample_epic": _epic, "last_page": "epic"}, "epic")
                 return
             w, h = console.size
-            live.update(
-                _build_sample_epic_screen(
-                    _epic,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    examples=ta_examples,
-                )
+            _panel = _build_sample_epic_screen(
+                _epic,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                examples=ta_examples,
             )
+            live.update(_panel)
 
     # ── Page 3: Stories ───────────────────────────────────────────
     logger.info("Preview: entering Stories page")
@@ -797,8 +826,19 @@ def _run_preview_flow(
 
     if last_page not in ("tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -846,18 +886,17 @@ def _run_preview_flow(
                 )
                 return
             w, h = console.size
-            live.update(
-                _build_sample_stories_screen(
-                    _stories,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    epic_title=_epic.get("title", ""),
-                    examples=ta_examples,
-                )
+            _panel = _build_sample_stories_screen(
+                _stories,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                epic_title=_epic.get("title", ""),
+                examples=ta_examples,
             )
+            live.update(_panel)
 
     # ── Page 4: Tasks ─────────────────────────────────────────────
     logger.info("Preview: entering Tasks page")
@@ -893,8 +932,19 @@ def _run_preview_flow(
 
     if last_page != "sprint":
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -957,17 +1007,16 @@ def _run_preview_flow(
                 )
                 return
             w, h = console.size
-            live.update(
-                _build_sample_tasks_screen(
-                    _tasks,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    stories=_stories,
-                )
+            _panel = _build_sample_tasks_screen(
+                _tasks,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                stories=_stories,
             )
+            live.update(_panel)
 
     # ── Page 5: Sprint ────────────────────────────────────────────
     logger.info(
@@ -1092,8 +1141,19 @@ def _run_sprint_review(
     scroll = 0
     sel = 0
     _scroll_meta: dict = {}
+    _panel = None  # most recently rendered sprint panel, for click hit-testing
+    _labels = ["Done", "Regenerate", "Export"]
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _panel is None:
+                continue
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
@@ -1119,17 +1179,16 @@ def _run_sprint_review(
         elif k in ("esc", "q"):
             return False  # Quit — keep last_page="sprint" so it stays resumable
         w, h = console.size
-        live.update(
-            _build_sample_sprint_screen(
-                sprint,
-                sample_stories,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-            )
+        _panel = _build_sample_sprint_screen(
+            sprint,
+            sample_stories,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=h,
+            action_sel=sel,
         )
+        live.update(_panel)
 
 
 def _collect_usage_data() -> dict:
@@ -1447,14 +1506,22 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
             )
         )
         lines.append(Text(""))
-        btn_top, btn_mid, btn_bot = build_action_buttons(["Move", "Leave"], sel)
+        _labels = ["Move", "Leave"]
+        btn_top, btn_mid, btn_bot = build_action_buttons(_labels, sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
+        _panel = build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h)
+        live.update(_panel)
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
             k = read_key()
         if not k:  # idle tick / consumed mouse event
+            continue
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                return _idx == 0
             continue
         if k == "left":
             sel = 0
@@ -1492,14 +1559,22 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
             )
         )
         lines.append(Text(""))
-        btn_top, btn_mid, btn_bot = build_action_buttons(["Stop", "Leave"], sel)
+        _labels = ["Stop", "Leave"]
+        btn_top, btn_mid, btn_bot = build_action_buttons(_labels, sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
+        _panel = build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h)
+        live.update(_panel)
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
             k = read_key()
         if not k:  # idle tick / consumed mouse event
+            continue
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                return _idx == 0
             continue
         if k == "left":
             sel = 0
@@ -2982,29 +3057,40 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     message = ""
     anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
 
+    _last_panel = None  # most recently rendered panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # One-row safety margin — same as the other pages (see _run_standup_page).
-        live.update(
-            _build_changelog_screen(
-                entries,
-                update_status=update_status,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                actions=actions,
-                message=message,
-            )
+        _last_panel = _build_changelog_screen(
+            entries,
+            update_status=update_status,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            actions=actions,
+            message=message,
         )
+        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            # actions = ["Copy", "Back"]; map the clicked button to its shortcut key.
+            _idx = button_click(console, _last_panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            k = "c" if _idx == 0 else "esc"
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
@@ -3039,26 +3125,37 @@ def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supp
     message = ""
     anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
 
+    _last_panel = None  # most recently rendered panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
-        live.update(
-            _build_all_tips_screen(
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                actions=actions,
-                message=message,
-            )
+        _last_panel = _build_all_tips_screen(
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            actions=actions,
+            message=message,
         )
+        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            # actions = ["Copy all", "Back"]; map the clicked button to its shortcut key.
+            _idx = button_click(console, _last_panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            k = "c" if _idx == 0 else "esc"
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
@@ -3107,34 +3204,35 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
         scroll = 0
         _scroll_meta: dict = {}
         anim_start = time.monotonic()
+        _last_panel = None  # most recently rendered feedback panel, for click hit-testing
 
         def _render(*, border_style: str = "") -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
-            live.update(
-                _build_feedback_screen(
-                    view,
-                    kind_idx=kind_idx,
-                    area_idx=area_idx,
-                    title_text=title_text,
-                    description=description,
-                    attachments_count=len(referenced_images(description, attachments)),
-                    field_sel=field_sel,
-                    focus=focus,
-                    action_sel=action_sel,
-                    polished=polished,
-                    result_url=result.url if result else "",
-                    show_open_browser=bool(result and not result.ok and result.url),
-                    status=status,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=max(10, h - 1),
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                    border_style=border_style,
-                )
+            _last_panel = _build_feedback_screen(
+                view,
+                kind_idx=kind_idx,
+                area_idx=area_idx,
+                title_text=title_text,
+                description=description,
+                attachments_count=len(referenced_images(description, attachments)),
+                field_sel=field_sel,
+                focus=focus,
+                action_sel=action_sel,
+                polished=polished,
+                result_url=result.url if result else "",
+                show_open_browser=bool(result and not result.ok and result.url),
+                status=status,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                border_style=border_style,
             )
+            live.update(_last_panel)
 
         def _run_busy(target, busy_label: str) -> list:
             """Run ``target`` on a daemon thread with a pulsing border; keys are swallowed."""
@@ -3255,6 +3353,25 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             if not k:
                 _render()
                 continue
+
+            # ── Mouse: click an action button (works across every view) ──
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if view == "form":
+                    _labels = ["Submit", "AI Polish", "Back"]
+                elif view == "polish_preview":
+                    _labels = ["Accept", "Keep Original"]
+                elif view == "result":
+                    _labels = ["Done", "Open Browser"] if bool(result and not result.ok and result.url) else ["Done"]
+                else:
+                    _labels = []
+                _idx = button_click(console, _last_panel, *_clicked, _labels) if (_labels and _last_panel) else None
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                if view == "form":
+                    focus = "buttons"  # route the synthesized Enter to the button action
+                k = "enter"  # fall through to the existing Enter handling
 
             if view == "form":
                 status = "" if k in ("enter", " ") else status
@@ -3523,8 +3640,10 @@ def _run_mode_hub(
         s_anim = time.monotonic()
         logger.info("%s hub: opened run id=%s", mode, run.run_id)
 
+        _snap_panel = None  # most recently rendered snapshot panel, for click hit-testing
+
         def _render_snap() -> None:
-            nonlocal scroll
+            nonlocal scroll, _snap_panel
             w, h = console.size
             scroll_meta: dict = {}
             panel = render(
@@ -3540,11 +3659,23 @@ def _run_mode_hub(
             # The builder reports its max scroll only after laying the body out — clamp
             # here so held Down keys don't run the offset past the end.
             scroll = max(0, min(scroll, scroll_meta.get("max_scroll", scroll)))
-            live.update(panel)
+            _snap_panel = panel
+            live.update(_snap_panel)
 
         _render_snap()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _snap_panel is not None:
+                    _idx = button_click(console, _snap_panel, *_clicked, actions)
+                    if _idx is not None:
+                        sel = _idx
+                        k = "enter"  # fall through to the existing Enter handling
+                    else:
+                        continue  # click missed the buttons — ignore it
+                else:
+                    continue
             if k in SCROLL_KEYS:
                 step = 1 if k in ("down", "scroll_down", "pagedown") else -1
                 scroll = max(0, scroll + step)
@@ -3695,10 +3826,11 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         focus = "sections"  # overview focus zone: "sections" | "buttons"
         card_idx, scroll, sel = 0, 0, 0
         s_anim = time.monotonic()
+        _last_panel = None  # most recently rendered snapshot panel, for click hit-testing
         logger.info("standup hub: opened run id=%s", run.run_id)
 
         def _render() -> None:
-            nonlocal scroll
+            nonlocal scroll, _last_panel
             w, h = console.size
             scroll_meta: dict = {}
             panel = _build_standup_screen(
@@ -3714,11 +3846,24 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
                 actions=(actions if view == "overview" else ["← Overview"]),
             )
             scroll = max(0, min(scroll, scroll_meta.get("max_scroll", scroll)))
-            live.update(panel)
+            _last_panel = panel
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                # Hit-test against whichever button row is actually on screen this frame.
+                _labels = actions if view == "overview" else ["← Overview"]
+                _idx = button_click(console, _last_panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                if view == "overview":
+                    focus, sel = "buttons", _idx
+                k = "enter"  # fall through to the existing Enter handling
             if view != "overview":
                 # Drilled into a section: Up/Down scroll it; any exit key returns to overview.
                 if k in SCROLL_KEYS:
@@ -4249,7 +4394,10 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
         data["team_expanded"] = team_expanded
         card_idx = min(card_idx, max(0, len(standup_card_order(data)) - 1))
 
+    _last_panel = None  # most recently rendered standup panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # When anonymized, mask the report in place so the SAME cards re-render with
@@ -4261,27 +4409,36 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
             render_data = {**data, "report": mask_artifact(data["report"], anon.replacements)}
         # Leave a one-row safety margin: a Live renderable exactly equal to the
         # terminal height loses its last row (the action buttons) to the cursor.
-        live.update(
-            _build_standup_screen(
-                render_data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                # No button is highlighted while the section list has focus.
-                action_sel=-1 if (view == "overview" and focus == "sections") else sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                view=view,
-                selected_card=card_idx,
-                actions=_actions(),
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_standup_screen(
+            render_data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            # No button is highlighted while the section list has focus.
+            action_sel=-1 if (view == "overview" and focus == "sections") else sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            view=view,
+            selected_card=card_idx,
+            actions=_actions(),
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            focus = "buttons"  # route the synthesized Enter to the button action
+            k = "enter"  # fall through to the existing Enter handling
         if view == "overview" and k in SCROLL_KEYS:
             # On the overview, Up/Down focuses the section list and moves the
             # selection (the screen auto-scrolls the selected row into view).
@@ -5051,23 +5208,30 @@ def _run_analysis_setup_review(
     )
 
     selected = 0
+    _labels = ["Run Analysis", "Back"]
     while True:
         w, h = console.size
-        live.update(
-            _build_analysis_setup_review_screen(
-                features=features,
-                components=components,
-                members=members,
-                analysis_scope=analysis_scope,
-                depth=depth,
-                window_days=window_days,
-                model=model,
-                action_sel=selected,
-                width=w,
-                height=h,
-            )
+        _panel = _build_analysis_setup_review_screen(
+            features=features,
+            components=components,
+            members=members,
+            analysis_scope=analysis_scope,
+            depth=depth,
+            window_days=window_days,
+            model=model,
+            action_sel=selected,
+            width=w,
+            height=h,
         )
+        live.update(_panel)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(key)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            selected = _idx
+            key = "enter"  # fall through to the existing Enter handling
         if key in ("left", "up", "scroll_up"):
             selected = 0
         elif key in ("right", "down", "scroll_down"):
@@ -5671,36 +5835,42 @@ def _run_team_analysis_results(
             render_examples = mask_obj(examples, anon.replacements)
 
         w, h = console.size
-        live.update(
-            _build_team_analysis_screen(
-                render_profile,
-                scroll_offset=scroll,
-                scroll_meta=scroll_meta,
-                width=w,
-                height=h,
-                export_sel=sel,
-                examples=render_examples,
-                sprint_names=sprint_names,
-                team_name=team_name,
-                view=view,
-                selected_card=card_idx,
-                actions=actions,
-                shimmer_tick=time.monotonic() - anim0,
-                anon_note=_anon_note(anon),
-                source_toggle=delivery_order or None,
-                active_source=(delivery_order[src_idx] if delivery_order else ""),
-                comparison=comparison if view == "overview" else None,
-                source=cur_source,
-                project_key=cur_project,
-                code_signal=code_signal,
-                code_examples=code_examples,
-                doc_signal=doc_signal,
-                doc_examples=doc_examples,
-                analysis_features=analysis_features,
-            )
+        _panel = _build_team_analysis_screen(
+            render_profile,
+            scroll_offset=scroll,
+            scroll_meta=scroll_meta,
+            width=w,
+            height=h,
+            export_sel=sel,
+            examples=render_examples,
+            sprint_names=sprint_names,
+            team_name=team_name,
+            view=view,
+            selected_card=card_idx,
+            actions=actions,
+            shimmer_tick=time.monotonic() - anim0,
+            anon_note=_anon_note(anon),
+            source_toggle=delivery_order or None,
+            active_source=(delivery_order[src_idx] if delivery_order else ""),
+            comparison=comparison if view == "overview" else None,
+            source=cur_source,
+            project_key=cur_project,
+            code_signal=code_signal,
+            code_examples=code_examples,
+            doc_signal=doc_signal,
+            doc_examples=doc_examples,
+            analysis_features=analysis_features,
         )
+        live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(kk)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            kk = "enter"  # fall through to the existing Enter handling
         if delivery_order and len(delivery_order) > 1 and kk == "tab":
             # Switch delivery tracker: reset the view/scroll and drop any mask (the
             # replacements were computed for the other profile).
@@ -5972,20 +6142,26 @@ def _run_team_insights(
 
     while True:
         w, h = console.size
-        live.update(
-            _build_team_insights_screen(
-                profile,
-                examples=examples,
-                scroll_offset=scroll,
-                scroll_meta=scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-                subtitle=subtitle,
-            )
+        _panel = _build_team_insights_screen(
+            profile,
+            examples=examples,
+            scroll_offset=scroll,
+            scroll_meta=scroll_meta,
+            width=w,
+            height=h,
+            action_sel=sel,
+            subtitle=subtitle,
         )
+        live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(kk)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            kk = "enter"  # fall through to the existing Enter handling
         if kk in SCROLL_KEYS:
             scroll = coalesce_scroll(scroll, kk, scroll_meta, read_key)
         elif kk == "left":
@@ -6158,7 +6334,10 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     anim_start = time.monotonic()
     state["select_time"] = anim_start
 
+    _last_panel = None  # most recently rendered performance panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         now = time.monotonic()
         tick = now - anim_start  # title shimmer (+ roster-word shimmer) — runs in both views
@@ -6166,20 +6345,19 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         # The per-engineer description only reveals in the roster view, and restarts
         # whenever the selection changes (select_time), like the intake picker.
         reveal = (now - state["select_time"]) * _DESC_SCROLL_SPEED if state["view"] == "roster" else 0.0
-        live.update(
-            _build_performance_screen(
-                _data(),
-                scroll_offset=state["scroll"],
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                desc_reveal=reveal,
-                sub_reveal=sub_reveal,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_performance_screen(
+            _data(),
+            scroll_offset=state["scroll"],
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            desc_reveal=reveal,
+            sub_reveal=sub_reveal,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _show_detail(lines: list[str], title: str, message: str) -> None:
         state["view"] = "detail"
@@ -6247,6 +6425,16 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _labels = roster_actions if state["view"] == "roster" else _detail_actions()
+            _idx = button_click(console, _last_panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "roster":
             if k in ("up", "scroll_up"):
                 if roster:
@@ -6559,22 +6747,24 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     anim_start = time.monotonic()
 
+    _last_panel = None  # most recently rendered reporting panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
-        live.update(
-            _build_reporting_screen(
-                _data(),
-                scroll_offset=state["scroll"],
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                sub_reveal=tick * _HEADER_SUB_SPEED,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_reporting_screen(
+            _data(),
+            scroll_offset=state["scroll"],
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            sub_reveal=tick * _HEADER_SUB_SPEED,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _show_report(report, msg: str) -> None:
         state["report"] = report
@@ -6747,6 +6937,15 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "picker":
             if k in ("up", "scroll_up"):
                 state["selected"] = (state["selected"] - 1) % len(periods)
@@ -6933,9 +7132,16 @@ def _pick_analysis_profile(
         _pp_sel = 0
         _pp_n = len(_pp_profiles) + 1  # profiles + Skip
         w, h = console.size
-        live.update(_build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h))
+        _pp_panel = _build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h)
+        live.update(_pp_panel)
         while True:
             pk = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(pk)
+            if _clicked is not None:
+                # The only button is "Select" — a hit confirms the highlighted list row.
+                if button_click(console, _pp_panel, *_clicked, ["Select"]) is None:
+                    continue  # click missed the button — ignore it
+                pk = "enter"  # fall through to the existing Enter handling
             if pk in ("up", "scroll_up"):
                 _pp_sel = (_pp_sel - 1) % _pp_n
             elif pk in ("down", "scroll_down"):
@@ -6950,7 +7156,8 @@ def _pick_analysis_profile(
             elif pk in ("esc", "q"):
                 break
             w, h = console.size
-            live.update(_build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h))
+            _pp_panel = _build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h)
+            live.update(_pp_panel)
     except Exception:
         logger.debug("Profile picker failed", exc_info=True)
     return selected_profile_id
@@ -7103,22 +7310,23 @@ def _run_roadmap_page(
         }
 
     anim_start = time.monotonic()
+    _last_panel = None  # most recently rendered roadmap panel, for click hit-testing
 
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
-        live.update(
-            _build_roadmap_screen(
-                _data(),
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                sub_reveal=tick * _HEADER_SUB_SPEED,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_roadmap_screen(
+            _data(),
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            sub_reveal=tick * _HEADER_SUB_SPEED,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _roadmap_document() -> tuple[str, str] | str:
         analysis = state["analysis"]
@@ -7281,6 +7489,15 @@ def _run_roadmap_page(
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "source":
             n_sources = len(_sources())
             if k in ("up", "scroll_up"):
@@ -7483,24 +7700,25 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
     _scroll_meta: dict = {}  # scroll geometry published by _build_retro_screen
+    _last_panel = None  # most recently rendered retro panel, for click hit-testing
 
     def _render(data: dict, scroll: int, sel: int) -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # Leave a one-row safety margin (same reason as the standup page).
-        live.update(
-            _build_retro_screen(
-                data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                anon_note=data.get("anon_note", ""),
-            )
+        _last_panel = _build_retro_screen(
+            data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            anon_note=data.get("anon_note", ""),
         )
+        live.update(_last_panel)
 
     session_id, session_name, project_name, sprint_name = _resolve_retro_session()
     if not session_id:
@@ -7515,6 +7733,16 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 2)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the default button row is the only action — any hit exits.
+                if (
+                    _last_panel is not None
+                    and button_click(console, _last_panel, *_clicked, ["Generate Action Items", "Export", "Close"])
+                    is not None
+                ):
+                    break
+                continue
             if k in ("enter", " ", "esc", "q"):
                 break
             _render(data, 0, 2)
@@ -7550,6 +7778,16 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 2)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the default button row is the only action — any hit exits.
+                if (
+                    _last_panel is not None
+                    and button_click(console, _last_panel, *_clicked, ["Generate Action Items", "Export", "Close"])
+                    is not None
+                ):
+                    break
+                continue
             if k in ("enter", " ", "esc", "q"):
                 break
             _render(data, 0, 2)
@@ -7682,6 +7920,15 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(_data(), scroll, sel)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, _actions())
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
                 if _ns == scroll:
@@ -7924,28 +8171,38 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         sel = max(0, min(preselect, len(options) - 1))
         action_sel = 0
         actions = ["Select", "Back"]
+        _last_panel = None  # most recently rendered picker panel, for click hit-testing
 
         def _render() -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
-            live.update(
-                _build_poker_screen(
-                    {
-                        "subtitle": "Set up a poker session",
-                        "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
-                        "actions": actions,
-                    },
-                    width=w,
-                    height=max(10, h - 1),
-                    action_sel=action_sel,
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                )
+            _last_panel = _build_poker_screen(
+                {
+                    "subtitle": "Set up a poker session",
+                    "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
+                    "actions": actions,
+                },
+                width=w,
+                height=max(10, h - 1),
+                action_sel=action_sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
             )
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, actions)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k == "up":
                 sel = max(0, sel - 1)
             elif k == "down":
@@ -7973,29 +8230,39 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         action_sel = 0
         actions = ["Continue", "Back"]
         warn = ""
+        _last_panel = None  # most recently rendered toggle panel, for click hit-testing
 
         def _render() -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
             opts = [(("[✓] " if i in checked else "[ ] ") + label, sub) for i, (label, sub) in enumerate(options)]
-            live.update(
-                _build_poker_screen(
-                    {
-                        "subtitle": "Set up a poker session",
-                        "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
-                        "actions": actions,
-                    },
-                    width=w,
-                    height=max(10, h - 1),
-                    action_sel=action_sel,
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                )
+            _last_panel = _build_poker_screen(
+                {
+                    "subtitle": "Set up a poker session",
+                    "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
+                    "actions": actions,
+                },
+                width=w,
+                height=max(10, h - 1),
+                action_sel=action_sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
             )
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, actions)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k == "up":
                 sel = max(0, sel - 1)
             elif k == "down":
@@ -8163,22 +8430,23 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
 
     anim_start = time.monotonic()
     _scroll_meta: dict = {}
+    _last_panel = None  # most recently rendered poker panel, for click hit-testing
 
     def _render(data: dict, scroll: int, sel: int) -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
-        live.update(
-            _build_poker_screen(
-                data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-            )
+        _last_panel = _build_poker_screen(
+            data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
         )
+        live.update(_last_panel)
 
     # A poker session doesn't need a planning session to exist — fall back to a
     # stable quick-session id so history still records and groups sensibly.
@@ -8213,6 +8481,12 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 0)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the only button is "Close" — any hit exits.
+                if _last_panel is not None and button_click(console, _last_panel, *_clicked, ["Close"]) is not None:
+                    return
+                continue
             if k in ("enter", " ", "esc", "q"):
                 return
             _render(data, 0, 0)
@@ -8301,6 +8575,15 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         _render(_data(), scroll, sel)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, _actions())
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
                 if _ns == scroll:
