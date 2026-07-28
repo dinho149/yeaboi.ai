@@ -1344,63 +1344,30 @@ def _launch_setup_wizard(console: Console, live) -> None:
         live.start()
 
 
-def _settings_edit_field(
-    console: Console,
-    live,
-    read_key,
-    frame_time,
-    supports_timeout,
-    *,
-    env: str,
-    label: str,
-    current: str,
-    masked: bool,
-) -> str:
-    """Inline editor for a single settings field: prompt, persist to .env, apply.
+def _settings_edit_keypress(sk: str, edit: dict) -> None:
+    """Apply one keystroke to an in-place settings edit buffer (mutates ``edit``).
 
-    Reached by clicking a config row. ``env`` is the variable name, ``label`` the
-    row's display name, ``current`` its present value. On a hidden (masked) field
-    an empty entry keeps the existing value (so an accidental Enter never wipes a
-    secret); ``-`` clears any field. Returns a status message ('' on cancel / no
-    change) for the settings page.
+    ``edit`` carries ``buf`` (the text) and ``cur`` (cursor index). Handles
+    printable insert, backspace, cursor movement (left/right/home/end) and paste;
+    Enter/Esc are handled by the caller. Unknown keys are ignored.
     """
-    from yeaboi.config import set_config_value
-    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
-
-    logger.info("Settings: editing %s", env)
-    default = "" if masked else (current or "")
-    tip = "'-' clears" + ("  ·  value hidden, blank keeps it" if masked else "")
-    value = _standup_read_line(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        prompt=f"{label}",
-        step=f"Edit {label}  ·  {tip}",
-        default=default,
-        theme=SETTINGS_THEME,
-        title=settings_title(),
-    )
-    if value is None:
-        return ""  # Esc — cancelled
-    value = value.strip()
-    if value == "-":
-        value = ""  # explicit clear
-    elif masked and value == "":
-        return ""  # keep the hidden value; use '-' to clear it
-    if not masked and value == (current or ""):
-        return ""  # unchanged
-    set_config_value(env, value)
-    if env == "LOG_LEVEL" and value:
-        from yeaboi.logging_setup import apply_level
-
-        try:
-            apply_level(value)
-        except Exception:  # noqa: BLE001 - an invalid level shouldn't crash the settings page
-            logger.debug("apply_level failed for %r", value, exc_info=True)
-    logger.info("Settings: %s %s", env, "cleared" if not value else "updated")
-    return f"{label} {'cleared' if not value else 'updated'}"
+    buf, cur = edit["buf"], edit["cur"]
+    if sk == "backspace":
+        if cur > 0:
+            edit["buf"], edit["cur"] = buf[: cur - 1] + buf[cur:], cur - 1
+    elif sk == "left":
+        edit["cur"] = max(0, cur - 1)
+    elif sk == "right":
+        edit["cur"] = min(len(buf), cur + 1)
+    elif sk == "home":
+        edit["cur"] = 0
+    elif sk == "end":
+        edit["cur"] = len(buf)
+    elif isinstance(sk, str) and sk.startswith("paste:"):
+        txt = sk[len("paste:") :]
+        edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
+    elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
+        edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
 
 
 def _settings_data_dir_flow(console: Console, live, read_key, frame_time, supports_timeout) -> str:
@@ -9831,10 +9798,12 @@ def select_mode(
                 _s_scroll, _s_tab = 0, 0
                 _n_tabs = len(_SETTINGS_TABS)
                 _s_scroll_meta: dict = {}
+                _s_edit: dict | None = None  # in-place row editor: {env, label, masked, buf, cur}
                 _s_anim_start = time.monotonic()  # shimmer title + typewriter subtitle
 
                 def _render_settings(tick: float) -> object:
                     w, h = console.size
+                    _editing = (_s_edit["env"], _s_edit["buf"], _s_edit["cur"]) if _s_edit else None
                     panel = _build_settings_screen(
                         _settings_data,
                         scroll_offset=_s_scroll,
@@ -9844,6 +9813,7 @@ def select_mode(
                         active_tab=_s_tab,
                         shimmer_tick=tick,
                         sub_reveal=tick * _HEADER_SUB_SPEED,
+                        editing=_editing,
                     )
                     live.update(panel)
                     return panel
@@ -9851,6 +9821,42 @@ def select_mode(
                 _s_panel = _render_settings(0.0)
                 while True:
                     sk = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+
+                    # ── In-place edit mode: keystrokes go to the field being edited ──
+                    if _s_edit is not None:
+                        if sk == "enter":
+                            _env, _label, _masked = _s_edit["env"], _s_edit["label"], _s_edit["masked"]
+                            _val = _s_edit["buf"].strip()
+                            _cur_val = _settings_data.get(_env, "")
+                            _s_edit = None
+                            _save = True
+                            if _val == "-":
+                                _val = ""  # explicit clear
+                            elif _masked and _val == "":
+                                _save = False  # empty on a hidden field = keep the value
+                            if _save and not _masked and _val == (_cur_val or ""):
+                                _save = False  # unchanged
+                            if _save:
+                                from yeaboi.config import set_config_value
+
+                                set_config_value(_env, _val)
+                                if _env == "LOG_LEVEL" and _val:
+                                    from yeaboi.logging_setup import apply_level
+
+                                    try:
+                                        apply_level(_val)
+                                    except Exception:  # noqa: BLE001 - a bad level shouldn't crash settings
+                                        logger.debug("apply_level failed for %r", _val, exc_info=True)
+                                _settings_data = _collect_settings_data()
+                                _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                                logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
+                        elif sk in ("esc", "q"):
+                            _s_edit = None  # cancel — discard the buffer
+                        else:
+                            _settings_edit_keypress(sk, _s_edit)  # mutate buffer/cursor
+                        _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                        continue
+
                     _s_click = parse_click(sk)
                     if _s_click is not None:
                         _cx, _cy = _s_click
@@ -9862,30 +9868,29 @@ def select_mode(
                                     _s_tab, _s_scroll = _i, 0
                                 _hit_tab = True
                                 break
-                        # Otherwise, click an editable config row → open its editor.
+                        # Otherwise, click an editable config row → edit it in place.
                         if not _hit_tab:
                             for _rr, _env, _label, _masked in getattr(_s_panel, "_row_regions", []):
                                 if _cy != _rr:
                                     continue
-                                if _env == "YEABOI_HOME":  # special: data-dir editor (+ move offer)
+                                if _env == "YEABOI_HOME":  # special: move-aware data-dir flow
                                     _msg = _settings_data_dir_flow(
                                         console, live, read_key, _FRAME_TIME, _supports_timeout
                                     )
+                                    _settings_data = _collect_settings_data()
+                                    if _msg:
+                                        _settings_data["_message"] = _msg
                                 else:
-                                    _msg = _settings_edit_field(
-                                        console,
-                                        live,
-                                        read_key,
-                                        _FRAME_TIME,
-                                        _supports_timeout,
-                                        env=_env,
-                                        label=_label,
-                                        current=_settings_data.get(_env, ""),
-                                        masked=_masked,
-                                    )
-                                _settings_data = _collect_settings_data()
-                                if _msg:
-                                    _settings_data["_message"] = _msg
+                                    # Hidden fields start blank (type a new value); others
+                                    # start at the current value so you edit in place.
+                                    _start = "" if _masked else (_settings_data.get(_env, "") or "")
+                                    _s_edit = {
+                                        "env": _env,
+                                        "label": _label,
+                                        "masked": _masked,
+                                        "buf": _start,
+                                        "cur": len(_start),
+                                    }
                                 break
                     elif sk in SCROLL_KEYS:
                         _ns = coalesce_scroll(_s_scroll, sk, _s_scroll_meta, read_key)

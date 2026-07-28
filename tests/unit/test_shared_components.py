@@ -491,6 +491,14 @@ class TestSettingsScreen:
             row_text = "".join(s.text for s in lines[abs_row - 1])
             assert label in row_text
 
+    def test_editing_renders_buffer_in_row(self):
+        # When a row is being edited in place, its value is replaced by the live
+        # buffer (not the stored value or "not set").
+        out = self._render(
+            {"ANTHROPIC_API_KEY": ""}, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", "sk-typed", 8)
+        )
+        assert "Anthropic Key: sk-typed" in " ".join(out.split())
+
     def test_readonly_rows_have_no_region(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
@@ -522,14 +530,14 @@ class TestSettingsScreen:
             assert lr != ur
 
     @staticmethod
-    def _render(data: dict, *, height: int = 60, active_tab: int = 0) -> str:
+    def _render(data: dict, *, height: int = 60, active_tab: int = 0, editing=None) -> str:
         from io import StringIO
 
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen(data, width=100, height=height, active_tab=active_tab)
+        result = _build_settings_screen(data, width=100, height=height, active_tab=active_tab, editing=editing)
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
         return buf.getvalue()
@@ -670,6 +678,50 @@ class TestLogLevelButton:
             console.print(panel)
         out = cap.get()
         assert "Credentials" in out and "System" in out
+
+
+class TestSettingsEditKeypress:
+    def _edit(self, buf="", cur=0):
+        return {"env": "X", "label": "X", "masked": False, "buf": buf, "cur": cur}
+
+    def test_insert_printable_at_cursor(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("ac", 1)
+        _settings_edit_keypress("b", e)
+        assert e["buf"] == "abc" and e["cur"] == 2
+
+    def test_backspace_deletes_before_cursor(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("abc", 2)
+        _settings_edit_keypress("backspace", e)
+        assert e["buf"] == "ac" and e["cur"] == 1
+
+    def test_cursor_movement_clamps(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("abc", 0)
+        _settings_edit_keypress("left", e)
+        assert e["cur"] == 0  # clamped at 0
+        _settings_edit_keypress("end", e)
+        assert e["cur"] == 3
+        _settings_edit_keypress("right", e)
+        assert e["cur"] == 3  # clamped at len
+
+    def test_paste_inserts_text(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("", 0)
+        _settings_edit_keypress("paste:hello", e)
+        assert e["buf"] == "hello" and e["cur"] == 5
+
+    def test_unknown_key_ignored(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("ab", 1)
+        _settings_edit_keypress("tab", e)  # multi-char special key → ignored
+        assert e["buf"] == "ab" and e["cur"] == 1
 
 
 class TestNextLogLevel:

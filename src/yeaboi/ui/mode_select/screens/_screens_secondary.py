@@ -4788,6 +4788,7 @@ def _build_settings_screen(
     active_tab: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
+    editing: tuple | None = None,
 ) -> Panel:
     """Build the settings dashboard showing current configuration.
 
@@ -4818,7 +4819,14 @@ def _build_settings_screen(
         # click can recover the env var; plain rows stay Text.
         r = _EditableRow("      ", justify="left") if env else Text("      ", justify="left")
         r.append(f"{label}:  ", style=theme.muted)
-        if masked and value:
+        if editing is not None and env and editing[0] == env:
+            # This row is being edited in place: show the buffer with a block cursor.
+            _buf, _cur = editing[1], editing[2]
+            _cur = max(0, min(_cur, len(_buf)))
+            r.append(_buf[:_cur], style=theme.value)
+            r.append(_buf[_cur : _cur + 1] or " ", style="reverse bold")  # cursor cell
+            r.append(_buf[_cur + 1 :], style=theme.value)
+        elif masked and value:
             display = value[:4] + "\u2022" * min(12, len(value) - 4) if len(value) > 4 else "\u2022" * len(value)
             r.append(display, style=value_style or theme.dim)
         elif value:
@@ -5015,14 +5023,23 @@ def _build_settings_screen(
         settings_tab_action(active_tab), "configure"
     )
     hint = Text("    ", justify="left")
-    hint.append("←/→", style=theme.accent)
-    hint.append("  switch tab  ·  ", style=theme.muted)
-    hint.append("click a row", style=theme.accent)
-    hint.append("  edit  ·  ", style=theme.muted)
-    hint.append("Enter", style=theme.accent)
-    hint.append(f"  {_enter_label}  ·  ", style=theme.muted)
-    hint.append("Esc", style=theme.accent)
-    hint.append("  back", style=theme.muted)
+    if editing is not None:
+        # In-place edit mode: keys go to the field being edited.
+        hint.append("type to edit", style=theme.accent)
+        hint.append("  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  save  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  cancel  ·  '-' clears", style=theme.muted)
+    else:
+        hint.append("←/→", style=theme.accent)
+        hint.append("  switch tab  ·  ", style=theme.muted)
+        hint.append("click a row", style=theme.accent)
+        hint.append("  edit  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append(f"  {_enter_label}  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  back", style=theme.muted)
 
     content = Group(
         Text(""),
