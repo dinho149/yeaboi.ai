@@ -254,17 +254,19 @@ class TestUsageScreen:
         assert isinstance(r1, Panel)
         assert isinstance(r2, Panel)
 
-    def test_back_button(self):
+    def test_back_hint(self):
+        """The Copy/Back button row was replaced by a keyboard hint (c copy · Esc back)."""
         from io import StringIO
 
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
 
-        result = _build_usage_screen({}, width=100, height=40)
+        result = _build_usage_screen({}, width=100, height=40, actions=["Copy", "Back"])
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
-        assert "Back" in buf.getvalue()
+        out = buf.getvalue()
+        assert "back" in out and "copy" in out
 
     def test_uses_amber_theme(self):
         """Usage screen should use the amber USAGE_THEME, not green or blue."""

@@ -107,12 +107,11 @@ def _build_run_hub_screen(
     body_h = 0
     _card_pad = (0, 0, 0, len(_PAD))
 
-    # Sit the title level with the topmost menu item (Analysis) on the welcome
-    # screen, so the select→page transition lands the title exactly where the menu
-    # row was — same vertical offset, not jammed at the top border.
-    from yeaboi.ui.mode_select.screens._screens import selected_title_offset
-
-    title_offset = selected_title_offset(0, width=width, height=height)
+    # One blank line above the title — the exact offset the select→page slide
+    # eases to (its ``end_offset = 1``) and the same layout the planning/analysis
+    # project list uses. Anything larger (e.g. the menu's own top-row offset) makes
+    # the title drop a couple of rows the instant the slide hands off to the hub.
+    title_offset = 1
     inner_h = height - 4
     header_h = title_offset + 5  # title_offset blanks + title(2) + blank + subtitle + blank
 
