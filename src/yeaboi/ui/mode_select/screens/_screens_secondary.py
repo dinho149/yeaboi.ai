@@ -4697,6 +4697,60 @@ def _build_profile_picker_screen(
 # ---------------------------------------------------------------------------
 
 
+# Settings is a tabbed view: one config section per tab. This order drives both
+# the tab bar and the loop's Enter action (see settings_tab_action).
+_SETTINGS_TABS: list[str] = [
+    "Provider",
+    "Jira",
+    "Azure",
+    "GitHub",
+    "Notion",
+    "Storage",
+    "Standup",
+    "Voice",
+    "Bedrock",
+    "Advanced",
+]
+
+
+def settings_tab_action(active_tab: int) -> str:
+    """Return what Enter does on a settings tab: 'datadir' (Storage),
+    'loglevel' (Advanced), or 'setup' (every other section → setup wizard)."""
+    label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
+    if label == "Storage":
+        return "datadir"
+    if label == "Advanced":
+        return "loglevel"
+    return "setup"
+
+
+def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> list:
+    """Render the top tab bar as ``▏ label ▕`` cells, wrapping to fit the width.
+
+    The ``▏``/``▕`` delimiters let :func:`tab_click` find each tab's span in the
+    rendered frame regardless of wrapping. The active tab is accent-bright."""
+    from yeaboi.ui.shared._click import TAB_CLOSE, TAB_OPEN
+
+    avail = max(20, width - 6)  # inside borders + padding, with a small margin
+    lines: list = []
+    cur = Text(_PAD, justify="left")
+    cur_w = len(_PAD)
+    for i, label in enumerate(labels):
+        cell = f"{TAB_OPEN} {label} {TAB_CLOSE}"
+        need = len(cell) + (1 if cur_w > len(_PAD) else 0)
+        if cur_w + need > avail and cur_w > len(_PAD):
+            lines.append(cur)
+            cur = Text(_PAD, justify="left")
+            cur_w = len(_PAD)
+        if cur_w > len(_PAD):
+            cur.append(" ")
+            cur_w += 1
+        cur.append(cell, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
+        cur_w += len(cell)
+    lines.append(cur)
+    return lines
+
+
 def _build_settings_screen(
     config_data: dict,
     *,
@@ -4704,7 +4758,7 @@ def _build_settings_screen(
     scroll_meta: dict | None = None,
     width: int = 80,
     height: int = 24,
-    action_sel: int = 0,
+    active_tab: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
 ) -> Panel:
@@ -4770,98 +4824,114 @@ def _build_settings_screen(
         scope.append(entry["scope"], style=theme.dim)
         body_lines.append(scope)
 
-    # ── LLM Provider ──────────────────────────────────────────────
-    _heading("LLM Provider")
-    _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"))
-    _row("Model", config_data.get("LLM_MODEL", "(default)"))
-    _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True)
-    _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True)
-    _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True)
-    # Ollama is keyless — its server URL/context rows only appear when the user
-    # runs local mode (or has customised the vars), keeping the page uncluttered.
-    if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
-        _row("Ollama URL", config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)")
-        _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)")
+    # ── Section builders (one per tab) — only the active one is rendered ──
+    def _sec_provider() -> None:
+        _heading("LLM Provider")
+        _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"))
+        _row("Model", config_data.get("LLM_MODEL", "(default)"))
+        _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True)
+        _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True)
+        _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True)
+        # Ollama is keyless — its server URL/context rows only appear when the user
+        # runs local mode (or has customised the vars), keeping the page uncluttered.
+        if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
+            _row("Ollama URL", config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)")
+            _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)")
 
-    # ── Jira ──────────────────────────────────────────────────────
-    _heading("Jira")
-    _row("Base URL", config_data.get("JIRA_BASE_URL", ""))
-    _row("Email", config_data.get("JIRA_EMAIL", ""))
-    _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True)
-    _token_help("JIRA_API_TOKEN")
-    _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""))
-    _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""))
+    def _sec_jira() -> None:
+        _heading("Jira")
+        _row("Base URL", config_data.get("JIRA_BASE_URL", ""))
+        _row("Email", config_data.get("JIRA_EMAIL", ""))
+        _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True)
+        _token_help("JIRA_API_TOKEN")
+        _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""))
+        _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""))
 
-    # ── Azure DevOps ──────────────────────────────────────────────
-    _heading("Azure DevOps")
-    _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""))
-    _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""))
-    _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True)
-    _token_help("AZURE_DEVOPS_TOKEN")
-    _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""))
+    def _sec_azure() -> None:
+        _heading("Azure DevOps")
+        _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""))
+        _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""))
+        _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True)
+        _token_help("AZURE_DEVOPS_TOKEN")
+        _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""))
 
-    # ── GitHub ────────────────────────────────────────────────────
-    _heading("GitHub")
-    _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True)
-    _token_help("GITHUB_TOKEN")
+    def _sec_github() -> None:
+        _heading("GitHub")
+        _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True)
+        _token_help("GITHUB_TOKEN")
 
-    # ── Notion ────────────────────────────────────────────────────
-    # Independent doc tool (its own integration token, unlike Confluence).
-    _heading("Notion")
-    _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True)
-    _token_help("NOTION_TOKEN")
-    _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""))
+    def _sec_notion() -> None:
+        # Independent doc tool (its own integration token, unlike Confluence).
+        _heading("Notion")
+        _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True)
+        _token_help("NOTION_TOKEN")
+        _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""))
 
-    # ── Storage ───────────────────────────────────────────────────
-    # One YEABOI_HOME override relocates the whole data tree (exports, logs,
-    # sessions DB…). Edited via the Data Dir action button.
-    _heading("Storage")
-    _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)")
+    def _sec_storage() -> None:
+        # One YEABOI_HOME override relocates the whole data tree (exports, logs,
+        # sessions DB…). Edited via the Data Dir Enter action on this tab.
+        _heading("Storage")
+        _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)")
 
-    # ── Daily Standup delivery ────────────────────────────────────
-    # Secrets (Slack webhook, SMTP password) are masked like every other credential.
-    _heading("Daily Standup")
-    _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""))
-    _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True)
-    _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""))
-    _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""))
-    _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True)
-    _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""))
+    def _sec_standup() -> None:
+        # Secrets (Slack webhook, SMTP password) are masked like every other credential.
+        _heading("Daily Standup")
+        _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""))
+        _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True)
+        _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""))
+        _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""))
+        _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True)
+        _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""))
 
-    # ── Voice Input ───────────────────────────────────────────────
-    # Local, offline dictation (double-tap Space in any text field) — works with every
-    # LLM provider, no API key. See docs: "Voice Input".
-    _heading("Voice Input")
-    from yeaboi.voice import backend_label, is_voice_available
+    def _sec_voice() -> None:
+        # Local, offline dictation (double-tap Space in any text field) — works with every
+        # LLM provider, no API key. See docs: "Voice Input".
+        _heading("Voice Input")
+        from yeaboi.voice import backend_label, is_voice_available
 
-    _voice_ok, _voice_reason = is_voice_available()
-    if _voice_ok:
-        _row("Dictation", f"available — {backend_label()}", value_style=theme.good)
-    else:
-        _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)
-    _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)")
+        _voice_ok, _voice_reason = is_voice_available()
+        if _voice_ok:
+            _row("Dictation", f"available — {backend_label()}", value_style=theme.good)
+        else:
+            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)
+        _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)")
 
-    # ── AWS Bedrock ───────────────────────────────────────────────
-    aws_region = config_data.get("AWS_REGION", "")
-    aws_profile = config_data.get("AWS_PROFILE", "")
-    if aws_region or aws_profile:
+    def _sec_bedrock() -> None:
         _heading("AWS Bedrock")
-        _row("Region", aws_region)
-        _row("Profile", aws_profile)
+        _row("Region", config_data.get("AWS_REGION", ""))
+        _row("Profile", config_data.get("AWS_PROFILE", ""))
 
-    # ── Advanced ──────────────────────────────────────────────────
-    _heading("Advanced")
-    _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"))
-    _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"))
-    # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
-    _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
-    _row("Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted)
-    langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
-    _row("LangSmith", langsmith)
-    _row("Config File", config_data.get("_config_path", ""))
+    def _sec_advanced() -> None:
+        _heading("Advanced")
+        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"))
+        _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"))
+        # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
+        _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
+        _row("Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted)
+        langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
+        _row("LangSmith", langsmith)
+        _row("Config File", config_data.get("_config_path", ""))
 
-    # ── Layout ────────────────────────────────────────────────────
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    _builders = {
+        "Provider": _sec_provider,
+        "Jira": _sec_jira,
+        "Azure": _sec_azure,
+        "GitHub": _sec_github,
+        "Notion": _sec_notion,
+        "Storage": _sec_storage,
+        "Standup": _sec_standup,
+        "Voice": _sec_voice,
+        "Bedrock": _sec_bedrock,
+        "Advanced": _sec_advanced,
+    }
+    active_tab = max(0, min(active_tab, len(_SETTINGS_TABS) - 1))
+    _builders[_SETTINGS_TABS[active_tab]]()
+
+    # ── Layout: tab bar → active section (scrollable) → context hint ──────
+    tab_lines = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width)
+    # action_h reserves: blank + hint + a trailing blank so the hint sits ABOVE
+    # the app-wide music pocket, which overwrites the bottom-most content row.
+    viewport_h = calc_viewport(height, header_h=7 + len(tab_lines), action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4872,8 +4942,6 @@ def _build_settings_screen(
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    btn_top, btn_mid, btn_bot = build_action_buttons(["Configure", "Log Level", "Data Dir", "Back"], action_sel)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -4893,17 +4961,30 @@ def _build_settings_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    # Context hint replaces the old button row: the tab bar is the navigation now.
+    _enter_label = {"datadir": "change data dir", "loglevel": "cycle log level"}.get(
+        settings_tab_action(active_tab), "configure"
+    )
+    hint = Text(_PAD, justify="left")
+    hint.append("←/→ or click", style=theme.accent)
+    hint.append("  switch  ·  ", style=theme.muted)
+    hint.append("Enter", style=theme.accent)
+    hint.append(f"  {_enter_label}  ·  ", style=theme.muted)
+    hint.append("Esc", style=theme.accent)
+    hint.append("  back", style=theme.muted)
+
     content = Group(
         Text(""),
         title,
         Text(""),
         sub,
         Text(""),
+        *tab_lines,
+        Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        hint,
+        Text(""),  # keeps the hint above the music pocket band
     )
 
     return build_page_panel(content, theme=SETTINGS_THEME, height=height)

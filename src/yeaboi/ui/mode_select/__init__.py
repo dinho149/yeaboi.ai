@@ -9761,44 +9761,63 @@ def select_mode(
             # ── Route: Settings mode → config viewer + setup wizard ────────
             if chosen["key"] == "settings":
                 logger.info("Settings mode selected")
-                from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+                from yeaboi.ui.mode_select.screens._screens_secondary import (
+                    _SETTINGS_TABS,
+                    _build_settings_screen,
+                    settings_tab_action,
+                )
+                from yeaboi.ui.shared._click import parse_click, tab_click
 
                 _settings_data = _collect_settings_data()
-                _s_scroll, _s_sel = 0, 0
+                _s_scroll, _s_tab = 0, 0
+                _n_tabs = len(_SETTINGS_TABS)
                 _s_scroll_meta: dict = {}
                 _s_anim_start = time.monotonic()  # shimmer title + typewriter subtitle
-                w, h = console.size
-                live.update(
-                    _build_settings_screen(
+
+                def _render_settings(tick: float) -> object:
+                    w, h = console.size
+                    panel = _build_settings_screen(
                         _settings_data,
                         scroll_offset=_s_scroll,
                         scroll_meta=_s_scroll_meta,
                         width=w,
                         height=h,
-                        action_sel=_s_sel,
-                        shimmer_tick=0.0,
-                        sub_reveal=0.0,
+                        active_tab=_s_tab,
+                        shimmer_tick=tick,
+                        sub_reveal=tick * _HEADER_SUB_SPEED,
                     )
-                )
+                    live.update(panel)
+                    return panel
+
+                _s_panel = _render_settings(0.0)
                 while True:
                     sk = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
-                    if sk in SCROLL_KEYS:
+                    _s_click = parse_click(sk)
+                    if _s_click is not None:
+                        # Click a tab → switch to it (the tab bar is the navigation).
+                        _ti = tab_click(console, _s_panel, _s_click[0], _s_click[1])
+                        if _ti is not None and _ti != _s_tab:
+                            _s_tab, _s_scroll = _ti, 0
+                    elif sk in SCROLL_KEYS:
                         _ns = coalesce_scroll(_s_scroll, sk, _s_scroll_meta, read_key)
                         if _ns == _s_scroll:
                             continue
                         _s_scroll = _ns
                     elif sk == "left":
-                        _s_sel = max(0, _s_sel - 1)
-                    elif sk == "right":
-                        _s_sel = min(3, _s_sel + 1)
+                        _s_tab, _s_scroll = (_s_tab - 1) % _n_tabs, 0
+                    elif sk in ("right", "tab"):
+                        _s_tab, _s_scroll = (_s_tab + 1) % _n_tabs, 0
                     elif sk in ("enter", " "):
-                        if _s_sel == 0:
-                            # Configure — launch setup wizard
-                            logger.info("Settings: launching setup wizard")
-                            _launch_setup_wizard(console, live)
+                        _act = settings_tab_action(_s_tab)
+                        if _act == "datadir":
+                            # Storage tab → edit YEABOI_HOME (+ optional move).
+                            logger.info("Settings: Data Dir editor opened")
+                            _dd_msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
                             _settings_data = _collect_settings_data()
-                        elif _s_sel == 1:
-                            # Log Level — cycle, persist to .env, apply live
+                            if _dd_msg:
+                                _settings_data["_message"] = _dd_msg
+                        elif _act == "loglevel":
+                            # Advanced tab → cycle log level, persist to .env, apply live.
                             from yeaboi.config import get_log_level, set_log_level
                             from yeaboi.logging_setup import apply_level
 
@@ -9807,33 +9826,15 @@ def select_mode(
                             apply_level(_new_level)
                             _settings_data = _collect_settings_data()
                             logger.info("Settings: log level cycled to %s", _new_level)
-                        elif _s_sel == 2:
-                            # Data Dir — one prompt for YEABOI_HOME (+ optional move)
-                            logger.info("Settings: Data Dir editor opened")
-                            _dd_msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                            _settings_data = _collect_settings_data()
-                            if _dd_msg:
-                                _settings_data["_message"] = _dd_msg
                         else:
-                            logger.info("Settings: user pressed Back")
-                            break
+                            # Every other tab → the setup wizard configures it.
+                            logger.info("Settings: launching setup wizard (%s)", _SETTINGS_TABS[_s_tab])
+                            _launch_setup_wizard(console, live)
+                            _settings_data = _collect_settings_data()
                     elif sk in ("esc", "q"):
                         logger.info("Settings: user pressed Esc")
                         break
-                    w, h = console.size
-                    _s_elapsed = time.monotonic() - _s_anim_start
-                    live.update(
-                        _build_settings_screen(
-                            _settings_data,
-                            scroll_offset=_s_scroll,
-                            scroll_meta=_s_scroll_meta,
-                            width=w,
-                            height=h,
-                            action_sel=_s_sel,
-                            shimmer_tick=_s_elapsed,
-                            sub_reveal=_s_elapsed * _HEADER_SUB_SPEED,
-                        )
-                    )
+                    _s_panel = _render_settings(time.monotonic() - _s_anim_start)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
