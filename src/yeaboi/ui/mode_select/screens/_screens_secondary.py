@@ -4697,6 +4697,15 @@ def _build_profile_picker_screen(
 # ---------------------------------------------------------------------------
 
 
+class _EditableRow(Text):
+    """A settings config row that remembers the env var it edits.
+
+    Rich's :class:`Text` defines ``__slots__``; subclassing without slots gives
+    instances a ``__dict__`` so the builder can tag the row with ``env``/``label``/
+    ``masked`` for click-to-edit (see the settings loop's ``_row_regions``).
+    """
+
+
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
 _SETTINGS_TABS: list[str] = ["Credentials", "Storage", "System"]
@@ -4804,8 +4813,10 @@ def _build_settings_screen(
         body_lines.append(h)
         body_lines.append(Text("    " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
 
-    def _row(label: str, value: str, value_style: str = "", masked: bool = False) -> None:
-        r = Text("      ", justify="left")
+    def _row(label: str, value: str, value_style: str = "", masked: bool = False, env: str = "") -> None:
+        # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
+        # click can recover the env var; plain rows stay Text.
+        r = _EditableRow("      ", justify="left") if env else Text("      ", justify="left")
         r.append(f"{label}:  ", style=theme.muted)
         if masked and value:
             display = value[:4] + "\u2022" * min(12, len(value) - 4) if len(value) > 4 else "\u2022" * len(value)
@@ -4814,6 +4825,8 @@ def _build_settings_screen(
             r.append(str(value), style=value_style or theme.value)
         else:
             r.append("not set", style=theme.dim)
+        if env:
+            r.env, r.label, r.masked = env, label, masked
         body_lines.append(r)
 
     # Token help sub-lines: where to create the token + the minimum scope it needs.
@@ -4844,61 +4857,65 @@ def _build_settings_screen(
     # ── Section builders (one per tab) — only the active one is rendered ──
     def _sec_provider() -> None:
         _heading("LLM Provider")
-        _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"))
-        _row("Model", config_data.get("LLM_MODEL", "(default)"))
-        _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True)
-        _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True)
-        _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True)
+        _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"), env="LLM_PROVIDER")
+        _row("Model", config_data.get("LLM_MODEL", "(default)"), env="LLM_MODEL")
+        _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True, env="ANTHROPIC_API_KEY")
+        _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True, env="OPENAI_API_KEY")
+        _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True, env="GOOGLE_API_KEY")
         # Ollama is keyless — its server URL/context rows only appear when the user
         # runs local mode (or has customised the vars), keeping the page uncluttered.
         if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
-            _row("Ollama URL", config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)")
-            _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)")
+            _row(
+                "Ollama URL",
+                config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)",
+                env="OLLAMA_BASE_URL",
+            )
+            _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)", env="OLLAMA_NUM_CTX")
 
     def _sec_jira() -> None:
         _heading("Jira")
-        _row("Base URL", config_data.get("JIRA_BASE_URL", ""))
-        _row("Email", config_data.get("JIRA_EMAIL", ""))
-        _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True)
+        _row("Base URL", config_data.get("JIRA_BASE_URL", ""), env="JIRA_BASE_URL")
+        _row("Email", config_data.get("JIRA_EMAIL", ""), env="JIRA_EMAIL")
+        _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True, env="JIRA_API_TOKEN")
         _token_help("JIRA_API_TOKEN")
-        _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""))
-        _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""))
+        _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""), env="JIRA_PROJECT_KEY")
+        _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""), env="CONFLUENCE_SPACE_KEY")
 
     def _sec_azure() -> None:
         _heading("Azure DevOps")
-        _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""))
-        _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""))
-        _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True)
+        _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""), env="AZURE_DEVOPS_ORG_URL")
+        _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""), env="AZURE_DEVOPS_PROJECT")
+        _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True, env="AZURE_DEVOPS_TOKEN")
         _token_help("AZURE_DEVOPS_TOKEN")
-        _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""))
+        _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""), env="AZURE_DEVOPS_TEAM")
 
     def _sec_github() -> None:
         _heading("GitHub")
-        _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True)
+        _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
         _token_help("GITHUB_TOKEN")
 
     def _sec_notion() -> None:
         # Independent doc tool (its own integration token, unlike Confluence).
         _heading("Notion")
-        _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True)
+        _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True, env="NOTION_TOKEN")
         _token_help("NOTION_TOKEN")
-        _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""))
+        _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""), env="NOTION_ROOT_PAGE_ID")
 
     def _sec_storage() -> None:
         # One YEABOI_HOME override relocates the whole data tree (exports, logs,
-        # sessions DB…). Edited via the Data Dir Enter action on this tab.
+        # sessions DB…). Clicking it opens the data-dir editor (with the move offer).
         _heading("Storage")
-        _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)")
+        _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)", env="YEABOI_HOME")
 
     def _sec_standup() -> None:
         # Secrets (Slack webhook, SMTP password) are masked like every other credential.
         _heading("Daily Standup")
-        _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""))
-        _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True)
-        _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""))
-        _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""))
-        _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True)
-        _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""))
+        _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""), env="STANDUP_GITHUB_REPO")
+        _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True, env="SLACK_WEBHOOK_URL")
+        _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""), env="STANDUP_SMTP_HOST")
+        _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""), env="STANDUP_SMTP_USER")
+        _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True, env="STANDUP_SMTP_PASSWORD")
+        _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""), env="STANDUP_EMAIL_RECIPIENTS")
 
     def _sec_voice() -> None:
         # Local, offline dictation (double-tap Space in any text field) — works with every
@@ -4908,26 +4925,28 @@ def _build_settings_screen(
 
         _voice_ok, _voice_reason = is_voice_available()
         if _voice_ok:
-            _row("Dictation", f"available — {backend_label()}", value_style=theme.good)
+            _row("Dictation", f"available — {backend_label()}", value_style=theme.good)  # read-only status
         else:
-            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)
-        _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)")
+            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)  # read-only status
+        _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
     def _sec_bedrock() -> None:
         _heading("AWS Bedrock")
-        _row("Region", config_data.get("AWS_REGION", ""))
-        _row("Profile", config_data.get("AWS_PROFILE", ""))
+        _row("Region", config_data.get("AWS_REGION", ""), env="AWS_REGION")
+        _row("Profile", config_data.get("AWS_PROFILE", ""), env="AWS_PROFILE")
 
     def _sec_advanced() -> None:
         _heading("Advanced")
-        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"))
-        _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"))
+        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"), env="LOG_LEVEL")
+        _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
         # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
         _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
-        _row("Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted)
+        _row(
+            "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
+        )
         langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
-        _row("LangSmith", langsmith)
-        _row("Config File", config_data.get("_config_path", ""))
+        _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
+        _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
     _builders = {
         "provider": _sec_provider,
@@ -4958,6 +4977,16 @@ def _build_settings_screen(
     publish_geometry(scroll_meta, max_scroll, viewport_h)
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
+    # Editable-row click regions: each visible env-backed row maps to its absolute
+    # terminal row. The viewport starts just below the tab bar (labels + underline)
+    # and the blank line beneath it.
+    _viewport_top = _TAB_LABELS_ROW + len(tab_lines) + 1
+    row_regions = [
+        (_viewport_top + _j, _line.env, _line.label, bool(_line.masked))
+        for _j, _line in enumerate(visible)
+        if isinstance(_line, _EditableRow)
+    ]
+
     _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
@@ -4986,8 +5015,10 @@ def _build_settings_screen(
         settings_tab_action(active_tab), "configure"
     )
     hint = Text("    ", justify="left")
-    hint.append("←/→ or click", style=theme.accent)
-    hint.append("  switch  ·  ", style=theme.muted)
+    hint.append("←/→", style=theme.accent)
+    hint.append("  switch tab  ·  ", style=theme.muted)
+    hint.append("click a row", style=theme.accent)
+    hint.append("  edit  ·  ", style=theme.muted)
     hint.append("Enter", style=theme.accent)
     hint.append(f"  {_enter_label}  ·  ", style=theme.muted)
     hint.append("Esc", style=theme.accent)
@@ -5011,4 +5042,5 @@ def _build_settings_screen(
     panel._tab_regions = [
         (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
     ]
+    panel._row_regions = row_regions  # (abs_row, env, label, masked) per visible editable row
     return panel

@@ -473,6 +473,33 @@ class TestSettingsScreen:
         assert settings_tab_action(_SETTINGS_TABS.index("System")) == "loglevel"
         assert settings_tab_action(_SETTINGS_TABS.index("Credentials")) == "setup"
 
+    def test_editable_row_regions_map_to_their_env_rows(self):
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        con = Console(width=120, height=44, file=StringIO())
+        panel = _build_settings_screen({}, width=120, height=44, active_tab=0)  # Credentials
+        assert panel._row_regions  # editable rows attached
+        lines = con.render_lines(panel, con.options, pad=True)
+        envs = {env for _, env, _, _ in panel._row_regions}
+        assert "LLM_PROVIDER" in envs and "ANTHROPIC_API_KEY" in envs
+        # Each region's absolute row actually contains that row's label.
+        for abs_row, _env, label, _masked in panel._row_regions:
+            row_text = "".join(s.text for s in lines[abs_row - 1])
+            assert label in row_text
+
+    def test_readonly_rows_have_no_region(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        # The System tab's "Config File" and "Dictation" rows are read-only.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=2)
+        labels = {label for _, _, label, _ in panel._row_regions}
+        assert "Config File" not in labels
+        assert "Log Level" in labels  # but editable rows on the same tab do have regions
+
     def test_tab_click_regions_map_to_each_tab(self):
         from io import StringIO
 
