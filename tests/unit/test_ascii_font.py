@@ -13,7 +13,7 @@ from yeaboi.ui.shared._ascii_font import (
     scale_halfblock_lines,
 )
 
-_HALFBLOCK = set(" █▀▄")
+_FONT_GLYPHS = set(" █▀▄░")
 
 
 class TestRenderAsciiText:
@@ -46,10 +46,16 @@ class TestScaleHalfblock:
         big = scale_halfblock_lines(src, 2)
         assert max(len(line) for line in big) == base_w * 2
 
-    def test_only_halfblock_glyphs(self):
+    def test_only_font_glyphs(self):
         big = scale_halfblock_lines(render_ascii_text("YEABOI"), 3)
         used = set("".join(big))
-        assert used <= _HALFBLOCK
+        assert used <= _FONT_GLYPHS
+
+    def test_preserves_light_shade(self):
+        # The ░ light shade must survive scaling — it's the menu font's texture in
+        # counters/gaps (e.g. the Y in YEABOI). Dropping it flattens the look.
+        assert "░" in "".join(render_ascii_text("YEABOI"))  # native has it
+        assert "░" in "".join(scale_halfblock_lines(render_ascii_text("YEABOI"), 3))
 
     def test_blank_input_is_safe(self):
         assert scale_halfblock_lines([], 2) == []
@@ -70,24 +76,3 @@ class TestRenderAsciiTextLarge:
         # The enlarged block must actually contain glyphs, not just spaces.
         big = render_ascii_text_large("YEABOI", 2)
         assert any(ch in "█▀▄" for line in big for ch in line)
-
-    def test_texture_dithers_the_fill(self):
-        # texture=True scatters half-blocks through the solid fill, so the enlarged
-        # font keeps the menu titles' pixel texture instead of flat blocks.
-        solid = render_ascii_text_large("YEABOI", 3)
-        textured = render_ascii_text_large("YEABOI", 3, texture=True)
-        assert textured != solid  # the fill was dithered
-        # The dither replaces some solid █ with half-blocks → fewer full blocks.
-        assert "".join(textured).count("█") < "".join(solid).count("█")
-
-    def test_texture_uses_a_halfblock_not_a_dark_shade(self):
-        # The shade must be a half-block (same colour) — a darker ▓/▒ reads as lego.
-        textured = "".join(render_ascii_text_large("YEABOI", 3, texture=True))
-        assert "▓" not in textured and "▒" not in textured
-
-    def test_texture_preserves_dimensions(self):
-        # Dithering must not change the block's size — same rows and width.
-        solid = render_ascii_text_large("YEABOI", 3)
-        textured = render_ascii_text_large("YEABOI", 3, texture=True)
-        assert len(textured) == len(solid)
-        assert [len(t) for t in textured] == [len(s) for s in solid]

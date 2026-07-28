@@ -476,12 +476,10 @@ def _compose_splash_frame(
     block_h = duck_h + _SPLASH_JUMP + 1
     baseline = block_h - 1
     canvas: list[list[tuple[str, str | None]]] = [[(" ", None)] * inner_w for _ in range(block_h)]
-    # Subtle two-tone fill: most cells the brand blue, a checker subset a slightly
-    # darker blue. Same as the menu titles' look — solid letters with a faint
-    # texture — rather than punching half-block holes (cheese) or a hard dark
-    # shade (lego). The cells stay full ``█``, only the tint alternates.
+    # One brand colour for every wordmark cell — the ░▀▄ glyphs carry the texture
+    # themselves (the scaled menu font keeps its light-shade dots and half-block
+    # edges), exactly like a menu title, so no extra dither is needed.
     brand = f"bold rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-    dim = f"bold rgb({int(rgb[0] * 0.72)},{int(rgb[1] * 0.72)},{int(rgb[2] * 0.72)})"
 
     wm_w = max((len(line) for line in wordmark), default=0)
     wm_left = max(0, (inner_w - wm_w) // 2)
@@ -497,8 +495,7 @@ def _compose_splash_frame(
                 continue  # not yet revealed
             if clear_line is not None and x < clear_line:
                 continue  # already wiped behind the duck
-            y = wm_top + r
-            canvas[y][x] = (ch, dim if (y + x) % 2 else brand)
+            canvas[wm_top + r][x] = (ch, brand)
 
     duck_top = baseline - duck_h + 1 - duck_lift
     for r, row in enumerate(duck_cells):

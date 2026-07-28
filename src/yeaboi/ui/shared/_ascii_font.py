@@ -67,77 +67,72 @@ def render_ascii_text(text: str) -> list[str]:
     return [line.rstrip() for line in lines]
 
 
-# Half-block glyphs pack two vertical pixels into one character cell (▀ = top,
-# ▄ = bottom, █ = both, blank/░ = none). Decoding to a 1-bit grid lets us scale
-# the compact menu font up cleanly instead of shipping a second, larger font.
-_HALF_TOP = {"█": True, "▀": True, "▄": False, "░": False, " ": False}
-_HALF_BOT = {"█": True, "▀": False, "▄": True, "░": False, " ": False}
+# Each half-block cell packs two vertical pixels, each at one of three levels:
+# FULL (solid), LIGHT (the ░ shade) or EMPTY. Decoding to this 3-level grid — not
+# 1-bit — lets the upscaler carry the ░ light-shade through, so the enlarged font
+# keeps the menu titles' pixel texture (the ░ dots in counters/gaps) rather than
+# flattening it away.
+_FULL, _LIGHT, _EMPTY = 2, 1, 0
+_HALF_PIXELS = {
+    "█": (_FULL, _FULL),
+    "▀": (_FULL, _EMPTY),
+    "▄": (_EMPTY, _FULL),
+    "░": (_LIGHT, _LIGHT),
+    " ": (_EMPTY, _EMPTY),
+}
+
+
+def _pack_pixels(top: int, bot: int) -> str:
+    """Re-encode a vertical pixel pair (each FULL/LIGHT/EMPTY) to one glyph."""
+    if top == _FULL and bot == _FULL:
+        return "█"
+    if top == _FULL:
+        return "▀"
+    if bot == _FULL:
+        return "▄"
+    if _LIGHT in (top, bot):
+        return "░"
+    return " "
 
 
 def scale_halfblock_lines(lines: list[str], scale: int = 2) -> list[str]:
     """Scale a half-block ASCII-art block (e.g. :func:`render_ascii_text` output)
-    up by an integer ``scale`` in both axes, staying in the same ▀▄█ alphabet.
+    up by an integer ``scale`` in both axes, staying in the same ░▀▄█ alphabet.
 
-    Each source text line encodes two pixel rows; we decode to a 1-bit grid,
-    nearest-neighbour upscale it, then re-pack pixel-row pairs back into
-    half-block glyphs. ``scale=2`` doubles the menu font (2 rows → 4). Every
-    output line is padded to one width so the block centres cleanly.
+    Each source text line encodes two pixel rows; we decode to the 3-level grid
+    (so the ``░`` light shade survives), nearest-neighbour upscale it, then re-pack
+    pixel-row pairs back into glyphs. ``scale=2`` doubles the menu font (2 rows →
+    4). Every output line is padded to one width so the block centres cleanly.
     """
     if scale < 1:
         scale = 1
     width = max((len(line) for line in lines), default=0)
 
-    # Decode: two pixel rows per source text line.
-    pixels: list[list[bool]] = []
+    # Decode: two pixel rows per source text line, each pixel FULL/LIGHT/EMPTY.
+    pixels: list[list[int]] = []
     for line in lines:
         padded = line.ljust(width)
-        pixels.append([_HALF_TOP.get(ch, False) for ch in padded])
-        pixels.append([_HALF_BOT.get(ch, False) for ch in padded])
+        pixels.append([_HALF_PIXELS.get(ch, (_EMPTY, _EMPTY))[0] for ch in padded])
+        pixels.append([_HALF_PIXELS.get(ch, (_EMPTY, _EMPTY))[1] for ch in padded])
 
     # Nearest-neighbour upscale in both axes.
-    big: list[list[bool]] = []
+    big: list[list[int]] = []
     for row in pixels:
-        scaled_row = [on for on in row for _ in range(scale)]
+        scaled_row = [v for v in row for _ in range(scale)]
         big.extend([scaled_row] * scale)
 
-    # Re-pack pixel-row pairs into half-block glyphs.
+    # Re-pack pixel-row pairs into glyphs.
     out_w = width * scale
     out: list[str] = []
     for j in range(0, len(big), 2):
         top = big[j]
-        bot = big[j + 1] if j + 1 < len(big) else [False] * out_w
-        row_chars = []
-        for t, b in zip(top, bot):
-            row_chars.append("█" if t and b else "▀" if t else "▄" if b else " ")
-        out.append("".join(row_chars))
+        bot = big[j + 1] if j + 1 < len(big) else [_EMPTY] * out_w
+        out.append("".join(_pack_pixels(t, b) for t, b in zip(top, bot)))
     return out
 
 
-# The dither shade: a *half-block* (same colour, half-height cell) — NOT a darker
-# shade like ▓ — so the texture reads like the menu titles' own ▀▄ half-blocks
-# rather than high-contrast lego studs.
-_TEXTURE_SHADE = "▄"
-
-
-def _checker_texture(lines: list[str], shade: str = _TEXTURE_SHADE) -> list[str]:
-    """Dither every solid ``█`` cell on a checkerboard to ``shade``.
-
-    Scaling the menu font up fills the stroke interiors with flat ``█`` blocks,
-    which reads as heavy/blocky. Alternating ``█`` with a half-block scatters
-    half-height cells through the fill — the same subtle pixel texture the small
-    menu titles get from their own ▀▄ glyphs — without the lego-stud contrast a
-    darker shade (▓) gives. Only ``█`` is dithered, so the letterforms are intact.
-    """
-    return [
-        "".join(shade if (ch == "█" and (r + c) % 2) else ch for c, ch in enumerate(line))
-        for r, line in enumerate(lines)
-    ]
-
-
-def render_ascii_text_large(text: str, scale: int = 2, *, texture: bool = False) -> list[str]:
+def render_ascii_text_large(text: str, scale: int = 2) -> list[str]:
     """Render *text* in the compact menu font, then scale it up (see
-    :func:`scale_halfblock_lines`). ``scale=2`` → a 4-row wordmark. ``texture=True``
-    dithers the solid fill so the enlarged font keeps the menu titles' pixel
-    texture instead of reading as flat blocks."""
-    big = scale_halfblock_lines(render_ascii_text(text), scale)
-    return _checker_texture(big) if texture else big
+    :func:`scale_halfblock_lines`) — same ░▀▄█ letters, bigger. ``scale=2`` → a
+    4-row wordmark; ``scale=3`` → 6 rows, keeping the ▀▄ edges and ░ texture."""
+    return scale_halfblock_lines(render_ascii_text(text), scale)
