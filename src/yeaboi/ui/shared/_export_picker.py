@@ -39,7 +39,7 @@ from yeaboi.config import (
     get_notion_token,
 )
 from yeaboi.export_targets import CONFLUENCE_PATH_HINT, NOTION_PATH_HINT
-from yeaboi.ui.shared._click import parse_click
+from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
