@@ -2811,7 +2811,11 @@ def _build_changelog_screen(
                     body_lines.append(line)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    # No button row — a keyboard hint replaces it (aligned with the headings),
+    # matching the Usage page. action_h = blank + hint + pocket blank. The no_wrap
+    # pinning below keeps the viewport at exactly viewport_h rows so the hint can't
+    # be shoved off the bottom.
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2823,7 +2827,13 @@ def _build_changelog_screen(
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
+    # header_h/viewport_h count every body line as ONE row. A long entry (its
+    # inline area tags in particular) can otherwise wrap inside the scrollbar cell,
+    # render two rows, and shove the keyboard hint off the bottom where the crop and
+    # the music pocket swallow it. Pin each line to a single row (crop the overflow).
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2843,6 +2853,13 @@ def _build_changelog_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    hint = Text(_PAD + "  ", justify="left")
+    if actions and "Copy" in actions:
+        hint.append("c", style=theme.accent)
+        hint.append("  copy  ·  ", style=theme.muted)
+    hint.append("Esc", style=theme.accent)
+    hint.append("  back", style=theme.muted)
+
     content = Group(
         Text(""),
         title,
@@ -2851,9 +2868,8 @@ def _build_changelog_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        hint,
+        Text(""),  # keeps the hint above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
@@ -2967,7 +2983,8 @@ def _build_all_tips_screen(
             body_lines.append(Text(""))
 
     # ── Layout using shared components (identical to the changelog page) ──
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    # No button row — a keyboard hint replaces it. action_h = blank + hint + blank.
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2979,7 +2996,11 @@ def _build_all_tips_screen(
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
+    # Pin each line to one row (see the changelog page) so a wrapped tip can't grow
+    # the viewport and push the keyboard hint off the bottom.
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -3001,6 +3022,13 @@ def _build_all_tips_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    hint = Text(_PAD + "  ", justify="left")
+    if actions and any("Copy" in a for a in actions):
+        hint.append("c", style=theme.accent)
+        hint.append("  copy all  ·  ", style=theme.muted)
+    hint.append("Esc", style=theme.accent)
+    hint.append("  back", style=theme.muted)
+
     content = Group(
         Text(""),
         title,
@@ -3009,9 +3037,9 @@ def _build_all_tips_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        hint,  # where the old top button sat — crop-safe against viewport overflow
+        Text(""),
+        Text(""),  # keeps the hint above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)

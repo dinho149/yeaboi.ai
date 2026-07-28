@@ -67,13 +67,14 @@ class TestBuildChangelogScreen:
         out = _render(_build_changelog_screen(_entries(), width=100, height=40))
         assert "analysis" in out
 
-    def test_copy_button_and_message(self):
+    def test_copy_hint_and_message(self):
+        # The Copy/Back button row was replaced by a keyboard hint (c copy · Esc back).
         out = _render(
             _build_changelog_screen(
                 _entries(), width=100, height=40, actions=["Copy", "Back"], message="Copied to clipboard"
             )
         )
-        assert "Copy" in out
+        assert "copy" in out
         assert "Copied to clipboard" in out
         assert "settings" in out
 
@@ -95,9 +96,10 @@ class TestBuildChangelogScreen:
         assert isinstance(panel, Panel)
         assert len(_render(panel, width=80, height=24).splitlines()) == 24
 
-    def test_back_button_present(self):
+    def test_back_hint_present(self):
+        # Back button became a keyboard hint (Esc back).
         out = _render(_build_changelog_screen(_entries(), width=100, height=40))
-        assert "Back" in out
+        assert "back" in out
 
     def test_scroll_meta_published(self):
         meta: dict = {}

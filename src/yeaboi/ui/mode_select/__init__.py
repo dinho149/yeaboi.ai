@@ -3010,19 +3010,12 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k == "left":
-            sel = max(0, sel - 1)
-        elif k == "right":
-            sel = min(len(actions) - 1, sel + 1)
-        elif k in ("enter", " "):
-            if actions[sel] == "Copy":
-                from yeaboi.changelog import build_changelog_text
-                from yeaboi.clipboard import copy_markdown_status
+        elif k in ("c", "C"):
+            from yeaboi.changelog import build_changelog_text
+            from yeaboi.clipboard import copy_markdown_status
 
-                logger.info("changelog: Copy pressed")
-                message = copy_markdown_status(build_changelog_text(entries))
-            else:  # Back
-                break
+            logger.info("changelog: Copy pressed")
+            message = copy_markdown_status(build_changelog_text(entries))
         elif k in ("esc", "q"):
             break
         _render()
@@ -3071,19 +3064,12 @@ def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supp
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k == "left":
-            sel = max(0, sel - 1)
-        elif k == "right":
-            sel = min(len(actions) - 1, sel + 1)
-        elif k in ("enter", " "):
-            if actions[sel] == "Copy all":
-                from yeaboi.clipboard import copy_markdown_status
-                from yeaboi.ui.shared._tips import build_tips_text
+        elif k in ("c", "C"):
+            from yeaboi.clipboard import copy_markdown_status
+            from yeaboi.ui.shared._tips import build_tips_text
 
-                logger.info("all tips: Copy all pressed")
-                message = copy_markdown_status(build_tips_text())
-            else:  # Back
-                break
+            logger.info("all tips: Copy all pressed")
+            message = copy_markdown_status(build_tips_text())
         elif k in ("esc", "q"):
             break
         _render()
