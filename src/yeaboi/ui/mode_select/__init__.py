@@ -3405,6 +3405,7 @@ def _run_mode_hub(
     an ``open_snapshot`` override instead; the other three use the shared scroll loop.
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
+    from yeaboi.ui.shared._click import parse_click
 
     runs = load_runs()
     selected = 0
@@ -3412,6 +3413,7 @@ def _run_mode_hub(
     message = ""
     confirm = False  # delete-confirmation popup showing
     anim_start = time.monotonic()
+    _last_panel = None  # most recently rendered hub panel, for click hit-testing
     logger.info("%s hub: opened (%d saved run(s))", mode, len(runs))
 
     def _reload(msg: str = "") -> None:
@@ -3423,32 +3425,32 @@ def _run_mode_hub(
         message = msg
 
     def _render_list() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
         on_run = selected < len(runs)
-        live.update(
-            _build_run_hub_screen(
-                runs,
-                selected,
-                title_fn=title_fn,
-                theme=share_theme,
-                subtitle=subtitle,
-                message=message,
-                width=w,
-                height=max(10, h - 1),
-                focus=focus if on_run else 0,
-                del_fade=1.0 if (on_run and focus == 1) else 0.0,
-                exp_fade=1.0 if (on_run and focus == 2) else 0.0,
-                card_fade=1.0,
-                action_btns_visible=2.0 if on_run else 0.0,
-                delete_popup_name=(runs[selected].title if (confirm and on_run) else ""),
-                delete_popup_t=1.0 if confirm else 0.0,
-                new_label=new_label,
-                empty_title=empty_title,
-                empty_subtitle=empty_subtitle,
-                shimmer_tick=tick,
-            )
+        _last_panel = _build_run_hub_screen(
+            runs,
+            selected,
+            title_fn=title_fn,
+            theme=share_theme,
+            subtitle=subtitle,
+            message=message,
+            width=w,
+            height=max(10, h - 1),
+            focus=focus if on_run else 0,
+            del_fade=1.0 if (on_run and focus == 1) else 0.0,
+            exp_fade=1.0 if (on_run and focus == 2) else 0.0,
+            card_fade=1.0,
+            action_btns_visible=2.0 if on_run else 0.0,
+            delete_popup_name=(runs[selected].title if (confirm and on_run) else ""),
+            delete_popup_t=1.0 if confirm else 0.0,
+            new_label=new_label,
+            empty_title=empty_title,
+            empty_subtitle=empty_subtitle,
+            shimmer_tick=tick,
         )
+        live.update(_last_panel)
 
     def _run_action(run, act: str) -> tuple[bool, str | None]:
         """Perform a snapshot action button. Returns (leave_snapshot, message).
@@ -3565,6 +3567,25 @@ def _run_mode_hub(
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
         n_items = len(runs) + 1
         on_run = selected < len(runs)
+        # ── Mouse: click a card to open it, or the "+ New" card to start a run ──
+        _pos = parse_click(k)
+        if _pos is not None and not confirm:
+            _cy = _pos[1]
+            _hit = next(
+                (idx for y0, y1, idx in getattr(_last_panel, "_card_regions", []) or [] if y0 <= _cy <= y1),
+                None,
+            )
+            if _hit is not None:
+                selected, focus = _hit, 0
+                if _hit >= len(runs):  # the "+ New" card
+                    if new_breaks_out:
+                        break  # Performance: hand control back to the roster
+                    run_new()
+                    _reload("New run recorded.")
+                else:
+                    _open_snapshot(runs[_hit])
+            _render_list()
+            continue
         if confirm:
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):

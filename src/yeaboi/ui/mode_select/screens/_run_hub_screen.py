@@ -121,6 +121,13 @@ def _build_run_hub_screen(
     available_h = inner_h - header_h
     start, end, show_above, show_below = _compute_viewport(n_items, selected, available_h)
 
+    # Click hit-testing: record each visible card's 1-based row span so the hub loop
+    # can map a mouse click onto an item. Rows are absolute (panel border + top pad
+    # + header, then the body). The "+ New" card renders 3 rows tall; run cards 5.
+    card_regions: list[tuple[int, int, int]] = []  # (y_top, y_bot, item_index)
+    _new_card_h = 3
+    _row_cursor = title_offset + 8
+
     def _item_title(idx: int) -> str:
         if idx < len(runs):
             return runs[idx].title
@@ -131,10 +138,14 @@ def _build_run_hub_screen(
             Padding(_build_peek_above(box_w=box_w, opacity=card_opacity, title=_item_title(start - 1)), _card_pad)
         )
         body_h += _PEEK_H
+        _row_cursor += _PEEK_H
 
     for vi, i in enumerate(range(start, end)):
         if vi >= cards_visible:
             break
+        _card_h = _CARD_H if i < len(runs) else _new_card_h
+        card_regions.append((_row_cursor, _row_cursor + _card_h - 1, i))
+        _row_cursor += _card_h + (_CARD_SPACING if i < end - 1 else 0)
         if i < len(runs):
             is_sel = i == selected
             row = _build_project_row(
@@ -202,6 +213,9 @@ def _build_run_hub_screen(
                 _card_pad,
             )
         )
+        # The empty-state hint card (6 rows) + spacer (1) sit above the clickable
+        # "+ New" card (the only item here, index 0).
+        card_regions = [(title_offset + 8 + 7, title_offset + 8 + 7 + _new_card_h - 1, 0)]
         body_h += 3
 
     remaining = max(0, inner_h - header_h - body_h)
@@ -293,4 +307,6 @@ def _build_run_hub_screen(
     # `inner_h = height - 4`) so the title lands one line below the top border —
     # level with where the menu's select→page slide leaves it, not a row higher.
     # Routed through build_page_panel (main #104) so the mode's bg tint applies.
-    return build_page_panel(content, theme=theme, height=height, padding=(1, 2))
+    panel = build_page_panel(content, theme=theme, height=height, padding=(1, 2))
+    panel._card_regions = card_regions  # (y_top, y_bot, item_index) per clickable card
+    return panel
