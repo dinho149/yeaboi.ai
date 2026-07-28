@@ -4970,7 +4970,7 @@ def _build_settings_screen(
     # header = blank + title(2) + blank + tab bar; action_h reserves blank + hint +
     # a trailing blank so the hint sits ABOVE the app-wide music pocket, which
     # overwrites the bottom-most content row.
-    viewport_h = calc_viewport(height, header_h=5 + len(tab_lines), action_h=3)
+    viewport_h = calc_viewport(height, header_h=4 + len(tab_lines), action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4980,7 +4980,7 @@ def _build_settings_screen(
     # Editable-row click regions: each visible env-backed row maps to its absolute
     # terminal row. The viewport starts just below the tab bar (labels + underline)
     # and the blank line beneath it.
-    _viewport_top = _TAB_LABELS_ROW + len(tab_lines) + 1
+    _viewport_top = _TAB_LABELS_ROW + len(tab_lines)
     row_regions = [
         (_viewport_top + _j, _line.env, _line.label, bool(_line.masked))
         for _j, _line in enumerate(visible)
@@ -5029,7 +5029,8 @@ def _build_settings_screen(
         title,
         Text(""),
         *tab_lines,
-        Text(""),
+        # No blank here: each section's heading already leads with one blank, so a
+        # blank after the tab bar would double up before the first heading.
         viewport_renderable,
         Text(""),
         hint,
