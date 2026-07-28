@@ -564,15 +564,9 @@ def _run_splash_intro(
         )
         time.sleep(frame_time)
 
-    # ── Phase 2: EXCLAIM — after he lands he rears back with a "!", then YEABOI
-    #    bursts out to his right as he snaps forward (his recoil is the exclaim). ──
-    exclaim = "bold rgb(255,240,150)"
-    head_x = rest_x + duck_w // 2
-
-    def _bang(lift: int) -> list[tuple[int, int, str, str]]:
-        return [(head_x, max(0, _SPLASH_JUMP - lift - 1), "!", exclaim)]
-
-    # Wind-up: rear back over a few frames, a "!" popping above his head.
+    # ── Phase 2: EXCLAIM — after he lands he rears back, then YEABOI bursts out to
+    #    his right as he snaps forward (his recoil alone is the exclamation). ──
+    # Wind-up: rear back over a few frames.
     for lift in (1, 2, 3, 3):
         w, h = console.size
         live.update(
@@ -584,7 +578,6 @@ def _run_splash_intro(
                 duck_x=rest_x,
                 duck_lift=lift,
                 reveal_front=0.0,
-                marks=_bang(lift),
                 rgb=rgb,
             ),
             refresh=True,
@@ -606,7 +599,6 @@ def _run_splash_intro(
                 duck_x=rest_x,
                 duck_lift=lift,
                 reveal_front=front,
-                marks=_bang(lift) if step_i < 4 else None,
                 rgb=rgb,
             ),
             refresh=True,
