@@ -4751,12 +4751,13 @@ def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tupl
         col += len(label)
         spans.append((start, col))  # [start, end)
 
-    # The rule runs just past the last tab (not the full width) — a compact
-    # underline for the tab strip rather than an edge-to-edge line.
-    content_w = col + 2
+    # The rule spans exactly the tab strip — from the first tab's left edge to the
+    # last tab's right edge — not the full width, and not sticking out to the left.
+    rule_start = spans[0][0] if spans else _TAB_INDENT
+    rule_end = spans[-1][1] if spans else _TAB_INDENT
     a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
-    underline = Text(justify="left")
-    for c in range(content_w):
+    underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
+    for c in range(rule_start, rule_end):
         if a_start <= c < a_end:
             style = f"bold {theme.accent_bright}"  # highlighted under the active tab
         elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
