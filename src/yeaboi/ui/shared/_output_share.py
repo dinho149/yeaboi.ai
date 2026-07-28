@@ -13,6 +13,7 @@ from rich.text import Text
 
 from yeaboi.sharing.server import OutputShareServer, ShareDocument
 from yeaboi.ui.shared._animations import loading_border_color
+from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import PAD, Theme, build_action_buttons, build_page_panel
 
 logger = logging.getLogger(__name__)
@@ -206,29 +207,36 @@ def run_output_share(
                 status = "Cancelling setup and cleaning up…"
 
             w, h = console.size
-            live.update(
-                _build_output_share_screen(
-                    title_fn=title_fn,
-                    theme=theme,
-                    document_title=document.title,
-                    status=status,
-                    public_url=str(snapshot["public_url"]),
-                    join_code=(
-                        snapshot["server"].display_code if snapshot.get("server") is not None and active else ""  # type: ignore[union-attr]
-                    ),
-                    message=message,
-                    actions=actions,
-                    action_sel=sel,
-                    width=w,
-                    height=max(16, h - 1),
-                    shimmer_tick=time.monotonic() - started,
-                    loading=not done,
-                )
+            panel = _build_output_share_screen(
+                title_fn=title_fn,
+                theme=theme,
+                document_title=document.title,
+                status=status,
+                public_url=str(snapshot["public_url"]),
+                join_code=(
+                    snapshot["server"].display_code if snapshot.get("server") is not None and active else ""  # type: ignore[union-attr]
+                ),
+                message=message,
+                actions=actions,
+                action_sel=sel,
+                width=w,
+                height=max(16, h - 1),
+                shimmer_tick=time.monotonic() - started,
+                loading=not done,
             )
+            live.update(panel)
             if leaving and done:
                 break
 
             key = read_key(timeout=frame_time) if supports_timeout else read_key()
+            # Click a button → select it and act, exactly like arrow-to + Enter.
+            clicked = parse_click(key)
+            if clicked is not None:
+                idx = button_click(console, panel, clicked[0], clicked[1], actions)
+                if idx is None:
+                    continue  # clicked off the button row — ignore
+                sel = idx
+                key = "enter"
             if key == "left":
                 sel = max(0, sel - 1)
             elif key == "right":
