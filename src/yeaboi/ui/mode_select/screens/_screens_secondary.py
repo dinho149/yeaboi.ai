@@ -4751,7 +4751,9 @@ def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tupl
         col += len(label)
         spans.append((start, col))  # [start, end)
 
-    content_w = max(col, width - 6)  # span the full content width for a long rule
+    # The rule runs just past the last tab (not the full width) — a compact
+    # underline for the tab strip rather than an edge-to-edge line.
+    content_w = col + 2
     a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
     underline = Text(justify="left")
     for c in range(content_w):
