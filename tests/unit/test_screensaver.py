@@ -122,7 +122,8 @@ def test_live_swaps_saver_without_losing_underlying_renderable(monkeypatch):
     controller, clock = _controller(seconds=1)
     monkeypatch.setattr(_screensaver, "idle_controller", controller)
     underlying = Text("underlying")
-    live = make_live(underlying, console=Console(width=80, height=24))
+    # Above the min-size floor so the app-wide too-small guard doesn't intercept.
+    live = make_live(underlying, console=Console(width=100, height=45))
 
     controller.begin_input_wait()
     clock.advance(1)

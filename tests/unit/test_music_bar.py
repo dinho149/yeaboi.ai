@@ -110,7 +110,8 @@ def test_make_live_returns_music_live():
 def _wide_ml(renderable):
     from rich.console import Console
 
-    return make_live(renderable, console=Console(width=120, file=StringIO()))
+    # Height ≥ the min-size floor so the app-wide too-small guard doesn't fire.
+    return make_live(renderable, console=Console(width=120, height=45, file=StringIO()))
 
 
 def test_pocket_frame_boxes_the_music():
@@ -186,6 +187,22 @@ def test_get_renderable_pockets_a_bare_panel():
     from yeaboi.ui.shared._music_bar import _MusicPocketFrame
 
     assert isinstance(ml.get_renderable(), _MusicPocketFrame)
+
+
+def test_min_size_guard_replaces_small_screens():
+    # Below the welcome floor, EVERY screen (not just the menu) shows the
+    # too-small guard via the shared MusicLive chokepoint.
+    from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT, _MIN_WIDTH
+
+    def _out(w, h):
+        con = Console(width=w, height=h, file=StringIO())
+        ml = make_live(Panel(Text("body"), height=h), console=con)
+        con.print(ml.get_renderable())
+        return con.file.getvalue()
+
+    assert "a bit cramped" not in _out(_MIN_WIDTH, _MIN_HEIGHT)  # exactly at the floor → fine
+    assert "a bit cramped" in _out(_MIN_WIDTH, _MIN_HEIGHT - 1)  # one row short → guard
+    assert "a bit cramped" in _out(_MIN_WIDTH - 1, _MIN_HEIGHT)  # one col short → guard
 
 
 def test_no_companion_duck_panel_pockets_without_duck():

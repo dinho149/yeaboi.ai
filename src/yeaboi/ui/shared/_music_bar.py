@@ -346,6 +346,16 @@ class MusicLive(Live):
                 return _MusicPocketFrame(saver, with_duck=False, preserve_content=True)
             return saver
 
+        # App-wide minimum-size guard: below the welcome screen's floor, EVERY
+        # screen (settings, hubs, wizards…) shows the "resize me" duck instead of a
+        # cramped/clipped layout — not just the main menu. Lazy import: these live
+        # in mode_select, which imports this module (avoid an import-time cycle).
+        width, height = self.console.size
+        from yeaboi.ui.mode_select.screens._screens import _MIN_HEIGHT, _MIN_WIDTH, _build_too_small_screen
+
+        if width < _MIN_WIDTH or height < _MIN_HEIGHT:
+            return _build_too_small_screen(width, height)
+
         renderable = super().get_renderable()
         if not isinstance(renderable, Panel):
             return renderable
