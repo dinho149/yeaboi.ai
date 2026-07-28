@@ -648,10 +648,11 @@ def show_splash(console: Console) -> None:
     # glint sweeps across it, then it fades back out to nothing.
 
     Alt-screen management: the animation runs on Live(screen=True) so Rich
-    double-buffers each frame — the fade/shine never flickers. Live restores
-    the normal screen on exit; the next fullscreen UI (setup wizard or
-    mode-select) re-enters alt-screen with its own screen=True. The cost is a
-    single brief flash at the boundary, far preferable to a flickering intro.
+    double-buffers each frame — the motion never flickers. Rich's Live.stop()
+    would restore the normal screen on exit (flashing the user's terminal), so we
+    suppress that one call and keep the alt-screen active straight through to the
+    next fullscreen UI (setup wizard or mode-select) — one continuous alt-screen,
+    no flicker during the intro AND no flash at the handoff.
     """
     w, h = console.size
     # "YEABOI" in the main-menu block font, scaled up (see render_ascii_text_large)
@@ -673,30 +674,34 @@ def show_splash(console: Console) -> None:
     # The duck now traverses the whole screen (jump in → waddle across), so a
     # non-buffered inline Live diff-redraws a dozen scattered rows every frame and
     # tears badly. Run on screen=True: Rich double-buffers the alternate screen and
-    # writes one atomic full-frame each refresh, so the motion is flicker-free. Its
-    # __exit__ restores the normal screen, so we re-enter the alt-screen right after
-    # to keep the seamless splash → wizard/menu handoff (one continuous alt-screen).
+    # writes one atomic full-frame each refresh, so the motion is flicker-free.
     console.set_alt_screen(True)
     console.clear()
 
-    # Use a plain Live (not make_live/MusicLive): the splash is a non-interactive
-    # intro with no music key controls, so the persistent music bar must NOT be
-    # stamped onto its border — it first appears on the next fullscreen screen.
-    with Live(
-        _build_splash_frame(text_lines, width=w, height=h, opacity=0.0),
-        console=console,
-        # auto_refresh off: the animation loop drives one deterministic render per
-        # frame (via update(refresh=True)). Otherwise Rich's background thread
-        # re-renders on its own cadence too, and the two interleave into flicker.
-        auto_refresh=False,
-        screen=True,
-        vertical_overflow="crop",
-    ) as live:
-        _run_splash_intro(console, live, text_lines, _BRAND_RGB, frame_time=_FRAME_TIME)
-
-    # Re-enter the alt-screen (screen=True Live left it on exit) so the wizard /
-    # mode-select draws straight over the splash with no clear-to-shell gap.
-    console.set_alt_screen(True)
+    # But Live.stop() (on the `with` exit) unconditionally restores the normal
+    # screen — a visible flash of the user's real terminal before the wizard/menu
+    # re-enters alt. We own the alt-screen and hand it straight on, so neuter
+    # set_alt_screen for the duration of stop() (Rich only calls it there to leave
+    # alt), then restore the real method. No flash, no clear-to-shell gap.
+    saved_set_alt_screen = console.set_alt_screen
+    try:
+        # A plain Live (not make_live/MusicLive): the splash is a non-interactive
+        # intro with no music key controls, so the persistent music bar must NOT be
+        # stamped onto its border — it first appears on the next fullscreen screen.
+        with Live(
+            _build_splash_frame(text_lines, width=w, height=h, opacity=0.0),
+            console=console,
+            # auto_refresh off: the animation loop drives one deterministic render
+            # per frame (via update(refresh=True)). Otherwise Rich's background
+            # thread re-renders on its own cadence too, interleaving into flicker.
+            auto_refresh=False,
+            screen=True,
+            vertical_overflow="crop",
+        ) as live:
+            _run_splash_intro(console, live, text_lines, _BRAND_RGB, frame_time=_FRAME_TIME)
+            console.set_alt_screen = lambda enable=True: True  # keep alt across stop()
+    finally:
+        console.set_alt_screen = saved_set_alt_screen
     logger.debug("splash: completed in %.2fs", time.monotonic() - _splash_start)
 
 
