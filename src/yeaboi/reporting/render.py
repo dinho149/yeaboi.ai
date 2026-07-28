@@ -99,6 +99,13 @@ def format_report_rich(report: DeliveryReport, *, accent: str = _ACCENT) -> Grou
         body.append(Text(f"{_emoji(report, 'metrics')}By the numbers", style=f"bold {accent}"))
         body.append(Text(f"  {_metrics_line(report)}"))
         body.append(Text(""))
+    if report.supporting_signals:
+        from yeaboi.reporting.context import signals_sentence
+
+        sentence = signals_sentence(report.supporting_signals)
+        if sentence:
+            body.append(Text(f"🧾 {sentence} (reference only)", style="dim"))
+            body.append(Text(""))
     if report.executive_summary:
         body.append(Text(f"{_emoji(report, 'summary')}Executive summary", style=f"bold {accent}"))
         body.append(Text(f"  {report.executive_summary}"))

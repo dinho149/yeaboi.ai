@@ -37,6 +37,7 @@ from yeaboi.agent.state import (
     ScrumState,
     SixMonthReview,
     StandupReport,
+    SupportingSignal,
 )
 from yeaboi.prompts.intake import AnswerSource
 
@@ -61,6 +62,7 @@ __all__ = [
     "ScrumState",
     "SixMonthReview",
     "StandupReport",
+    "SupportingSignal",
     "call_model",
     "create_graph",
     "feature_generator",

@@ -256,6 +256,9 @@ HIDDEN_PARAMS: dict[str, dict[str, str]] = {
         "team_name": "AzDO team label; MCP auto-resolves it from the configured AZURE_DEVOPS_TEAM",
         "cancel_event": "in-process threading.Event cancel seam for the TUI worker; meaningless over the MCP wire",
     },
+    "report_delivery": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; meaningless over the MCP wire",
+    },
 }
 
 # Tool params with no engine counterpart — adapter inputs the tool assembles
@@ -302,7 +305,9 @@ CLI_RENAMES: dict[str, dict[str, str]] = {
 
 # CLI dests with no engine counterpart — output/dispatch concerns.
 CLI_ONLY_DESTS: dict[str, set[str]] = {
-    "report": {"format", "strict"},
+    # source/code_sources/documentation_sources are assembled into the engine's
+    # `sources` dict (component → source list), mirroring analyze's components flags.
+    "report": {"format", "strict", "source", "code_sources", "documentation_sources"},
     "standup": {
         "format",
         "strict",
@@ -329,6 +334,10 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
 
 # Engine params deliberately without a CLI flag. Reasoned; staleness-checked.
 CLI_HIDDEN: dict[str, dict[str, str]] = {
+    "report": {
+        "cancel_event": "in-process threading.Event cancel seam for the TUI worker; the CLI cancels via Ctrl-C",
+        "sources": "assembled from the --source/--code-sources/--documentation-sources flags",
+    },
     "analyze": {
         "progress": "live shared-list progress feed for the TUI frame loop — the CLI prints a banner instead",
         "team_name": "AzDO team label; auto-resolved from the configured AZURE_DEVOPS_TEAM",

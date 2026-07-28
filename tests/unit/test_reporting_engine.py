@@ -163,6 +163,105 @@ class TestQuarterReport:
         assert any("truncated" in w.lower() for w in report.warnings)
 
 
+class TestWindowPeriod:
+    def test_window_period_derives_label_and_days(self, monkeypatch, db_path):
+        captured = {}
+
+        def _fake_gather(period, **kw):
+            captured["days_override"] = kw.get("days_override")
+            return list(_items(1)), [], []
+
+        monkeypatch.setattr(activity_mod, "gather_delivered_work", _fake_gather)
+        _patch_llm(monkeypatch, "{}")
+
+        from datetime import date
+
+        report = engine.run_delivery_report(
+            activity_mod.PERIOD_WINDOW,
+            db_path=db_path,
+            today=date(2026, 7, 28),
+            window_start="2026-07-01",
+            window_end="2026-07-15",
+        )
+        assert report.period_label == "2026-07-01 → 2026-07-15"
+        assert report.period_start == "2026-07-01"
+        assert report.period_end == "2026-07-15"
+        assert captured["days_override"] == 27  # derived from window_start to today
+        assert any("truncated" in w.lower() for w in report.warnings)
+
+    def test_non_quarter_period_with_window_start_uses_window(self, monkeypatch, db_path):
+        """The window gate generalised from quarter-only to any explicit start date."""
+        captured = {}
+
+        def _fake_gather(period, **kw):
+            captured["days_override"] = kw.get("days_override")
+            return [], [], []
+
+        monkeypatch.setattr(activity_mod, "gather_delivered_work", _fake_gather)
+        from datetime import date
+
+        report = engine.run_delivery_report(
+            "last_sprint", db_path=db_path, today=date(2026, 7, 28), window_start="2026-07-21"
+        )
+        assert captured["days_override"] == 7
+        assert report.period_start == "2026-07-21"
+
+
+class TestProgressAndCancel:
+    def test_on_progress_emits_stage_messages(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=_items(1))
+        _patch_llm(monkeypatch, "{}")
+        seen: list[str] = []
+        engine.run_delivery_report("last_sprint", db_path=db_path, on_progress=seen.append)
+        assert "Loading session state" in seen
+        assert any("narrative" in m for m in seen)
+        assert any("exporting" in m.lower() for m in seen)
+
+    def test_broken_on_progress_is_swallowed(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=[])
+
+        def _boom(msg):
+            raise RuntimeError("bad callback")
+
+        report = engine.run_delivery_report("last_sprint", db_path=db_path, on_progress=_boom)
+        assert report is not None
+
+    def test_cancel_before_llm_raises_and_persists_nothing(self, monkeypatch, db_path):
+        import threading
+
+        cancel = threading.Event()
+
+        def _gather_then_cancel(period, **kw):
+            cancel.set()  # cancelled while gathering — next stage boundary must stop
+            return list(_items(2)), [], []
+
+        monkeypatch.setattr(activity_mod, "gather_delivered_work", _gather_then_cancel)
+
+        def _fail(**k):
+            raise AssertionError("LLM must not be called after cancellation")
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", _fail)
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (True, ""))
+
+        with pytest.raises(engine.ReportCancelledError):
+            engine.run_delivery_report("last_sprint", db_path=db_path, cancel_event=cancel)
+
+        from yeaboi.reporting.store import ReportingStore
+
+        with ReportingStore(db_path) as store:
+            assert store.get_latest_report() is None  # nothing persisted
+
+    def test_theme_forwarded_to_export(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=[])
+        captured = {}
+        monkeypatch.setattr(
+            "yeaboi.reporting.export.export_report",
+            lambda report, **kw: captured.update(kw) or {},
+        )
+        engine.run_delivery_report("last_sprint", db_path=db_path, theme="sunset")
+        assert captured["theme"] == "sunset"
+
+
 class TestMetrics:
     def test_counts_sources_and_contributors(self):
         items = [
@@ -178,6 +277,10 @@ class TestMetrics:
 
 
 class TestPeriodDays:
+    def test_last_week_is_always_seven_days(self):
+        assert activity_mod.period_days("last_week", sprint_length_weeks=2) == 7
+        assert activity_mod.period_days("last_week", sprint_length_weeks=3) == 7
+
     def test_last_sprint_is_one_sprint(self):
         assert activity_mod.period_days("last_sprint", sprint_length_weeks=2) == 14
         assert activity_mod.period_days("last_sprint", sprint_length_weeks=1) == 7
@@ -204,3 +307,153 @@ class TestWindowValidation:
     def test_inverted_window_raises(self):
         with pytest.raises(ValueError, match="before window_start"):
             engine.run_delivery_report("quarter", window_start="2026-06-30", window_end="2026-04-01")
+
+
+@pytest.fixture(autouse=True)
+def _no_configured_sources(monkeypatch):
+    """Keep the signals stage hermetic: tests opt into code/docs sources explicitly."""
+    monkeypatch.setattr(activity_mod, "available_report_sources", lambda: {"delivery": [], "code": [], "docs": []})
+
+
+class TestSources:
+    def test_delivery_selection_reaches_gather(self, monkeypatch, db_path):
+        captured = {}
+
+        def _gather(period, **kw):
+            captured.update(kw)
+            return [], [], []
+
+        monkeypatch.setattr(activity_mod, "gather_delivered_work", _gather)
+        engine.run_delivery_report("last_sprint", db_path=db_path, sources={"delivery": ["azdevops"]})
+        assert captured["delivery_sources"] == {"azuredevops"}  # alias canonicalized
+
+    def test_none_sources_is_auto(self, monkeypatch, db_path):
+        captured = {}
+
+        def _gather(period, **kw):
+            captured.update(kw)
+            return [], [], []
+
+        monkeypatch.setattr(activity_mod, "gather_delivered_work", _gather)
+        engine.run_delivery_report("last_sprint", db_path=db_path)
+        assert captured["delivery_sources"] is None
+
+    def test_signals_gathered_and_attached_with_llm(self, monkeypatch, db_path):
+        from yeaboi.agent.state import SupportingSignal
+
+        _patch_activity(monkeypatch, items=_items(2))
+        _patch_llm(monkeypatch, json.dumps({"headline": "H", "executive_summary": "S"}))
+        monkeypatch.setattr(
+            activity_mod,
+            "available_report_sources",
+            lambda: {"delivery": ["jira"], "code": ["github"], "docs": []},
+        )
+        sig = SupportingSignal(kind="pull_requests", source="github", count=7, samples=("Fix (#1)",))
+        sig_kwargs = {}
+
+        def _signals(**kw):
+            sig_kwargs.update(kw)
+            return (sig,), ["github partially unavailable"]
+
+        monkeypatch.setattr("yeaboi.reporting.context.gather_supporting_signals", _signals)
+        prompt_kwargs = {}
+        import yeaboi.prompts.reporting as prompts_mod
+
+        real_prompt = prompts_mod.get_delivery_report_prompt
+
+        def _prompt(**kw):
+            prompt_kwargs.update(kw)
+            return real_prompt(**kw)
+
+        monkeypatch.setattr(prompts_mod, "get_delivery_report_prompt", _prompt)
+        report = engine.run_delivery_report("last_sprint", db_path=db_path)
+        assert report.supporting_signals == (sig,)
+        assert "github partially unavailable" in report.warnings
+        assert sig_kwargs["code_sources"] == ["github"]
+        assert prompt_kwargs["supporting_signals"] == [
+            {"kind": "pull_requests", "source": "github", "count": 7, "samples": ("Fix (#1)",)}
+        ]
+
+    def test_signals_attached_to_zero_item_fallback(self, monkeypatch, db_path):
+        from yeaboi.agent.state import SupportingSignal
+
+        _patch_activity(monkeypatch, items=[])
+        monkeypatch.setattr(
+            activity_mod,
+            "available_report_sources",
+            lambda: {"delivery": [], "code": ["github"], "docs": []},
+        )
+        sig = SupportingSignal(kind="commits", source="github", count=3)
+        monkeypatch.setattr("yeaboi.reporting.context.gather_supporting_signals", lambda **kw: ((sig,), []))
+        # No LLM patched: zero items must skip the LLM entirely and still carry signals.
+        report = engine.run_delivery_report("last_sprint", db_path=db_path)
+        assert report.supporting_signals == (sig,)
+        assert report.delivered_items == ()
+
+    def test_unconfigured_sources_skip_signal_gather(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=[])
+
+        def _boom(**kw):
+            raise AssertionError("signal gather must be skipped when nothing is configured")
+
+        monkeypatch.setattr("yeaboi.reporting.context.gather_supporting_signals", _boom)
+        report = engine.run_delivery_report("last_sprint", db_path=db_path)  # autouse: nothing configured
+        assert report.supporting_signals == ()
+
+    def test_explicitly_deselected_code_docs_skip_gather(self, monkeypatch, db_path):
+        _patch_activity(monkeypatch, items=[])
+        monkeypatch.setattr(
+            activity_mod,
+            "available_report_sources",
+            lambda: {"delivery": ["jira"], "code": ["github"], "docs": ["notion"]},
+        )
+
+        def _boom(**kw):
+            raise AssertionError("explicit empty code/docs selection must skip the gather")
+
+        monkeypatch.setattr("yeaboi.reporting.context.gather_supporting_signals", _boom)
+        report = engine.run_delivery_report("last_sprint", db_path=db_path, sources={"code": [], "docs": []})
+        assert report.supporting_signals == ()
+
+    def test_cancel_during_signals_stage_persists_nothing(self, monkeypatch, db_path):
+        import threading
+
+        _patch_activity(monkeypatch, items=_items(1))
+        monkeypatch.setattr(
+            activity_mod,
+            "available_report_sources",
+            lambda: {"delivery": [], "code": ["github"], "docs": []},
+        )
+        cancel = threading.Event()
+
+        def _signals(**kw):
+            cancel.set()  # cancel lands while the signal fetch is in flight
+            return ((), [])
+
+        monkeypatch.setattr("yeaboi.reporting.context.gather_supporting_signals", _signals)
+        with pytest.raises(engine.ReportCancelledError):
+            engine.run_delivery_report("last_sprint", db_path=db_path, cancel_event=cancel)
+        from yeaboi.reporting.store import ReportingStore
+
+        with ReportingStore(db_path) as store:
+            assert store.get_latest_report("") is None
+
+
+class TestDeckStylePlumbing:
+    def test_auto_export_passes_the_saved_deck_style(self, monkeypatch, db_path):
+        """engine._export is the one seam every auto-export flows through — it must
+        resolve the persisted prefs so CLI/MCP report_delivery honor them."""
+        from yeaboi.reporting.style import DeckStyle
+
+        _patch_activity(monkeypatch, items=_items(1))
+        sentinel = DeckStyle(layout="compact", footer_text="saved prefs")
+        monkeypatch.setattr("yeaboi.reporting.style.load_deck_style", lambda: sentinel)
+        seen = {}
+
+        def _capture(report, **kw):
+            seen.update(kw)
+            return {}
+
+        monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
+        engine.run_delivery_report("last_sprint", db_path=db_path)
+        assert seen["style"] == sentinel

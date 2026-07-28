@@ -589,6 +589,23 @@ class DeliveredItem:
 
 
 @dataclass(frozen=True)
+class SupportingSignal:
+    """One corroborating activity stream from the same reporting period.
+
+    Deterministic reference context (no LLM) — assembled by reporting/context.py
+    from the standup code collector and the analysis doc reader. These signals
+    corroborate the delivered-ticket story ("backed by 24 merged PRs and 5 doc
+    updates"); they are never the report's subject, so only bounded counts and
+    sample titles are kept — never bodies.
+    """
+
+    kind: str = ""  # "pull_requests" | "commits" | "doc_updates"
+    source: str = ""  # "github" | "azuredevops" | "confluence" | "notion"
+    count: int = 0
+    samples: tuple[str, ...] = ()  # bounded "Title (ref)" strings
+
+
+@dataclass(frozen=True)
 class DeliveryReport:
     """A business-friendly summary of delivered work over a reporting period.
 
@@ -615,6 +632,7 @@ class DeliveryReport:
     metrics: tuple[tuple[str, str], ...] = ()  # (label, value), e.g. ("Items delivered", "23")
     delivered_items: tuple[DeliveredItem, ...] = ()  # raw completed-ticket evidence (deterministic)
     emoji_theme: tuple[tuple[str, str], ...] = ()  # (slot, emoji) chosen by the LLM, e.g. ("highlights", "🚀")
+    supporting_signals: tuple[SupportingSignal, ...] = ()  # code/docs corroboration (deterministic)
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
 

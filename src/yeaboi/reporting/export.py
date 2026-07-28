@@ -24,6 +24,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import DeliveryReport
 from yeaboi.html_theme import escape as _e
+from yeaboi.reporting.style import DeckStyle
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,19 @@ def build_report_markdown(report: DeliveryReport, *, charts_dir: Path | None = N
         lines += [f"## {_emoji(report, 'metrics')}By the numbers", ""]
         lines += ["| Metric | Value |", "|--------|-------|"]
         lines += [f"| {_cell(label)} | **{_cell(value)}** |" for label, value in report.metrics]
+        lines += [""]
+    if report.supporting_signals:
+        from yeaboi.reporting.context import SIGNAL_KIND_LABELS, SIGNAL_SOURCE_LABELS, signals_sentence
+
+        lines += ["### Supporting signals", ""]
+        sentence = signals_sentence(report.supporting_signals)
+        if sentence:
+            lines += [f"_{sentence} from the same period (reference only)._", ""]
+        for sig in report.supporting_signals:
+            kind = SIGNAL_KIND_LABELS.get(sig.kind, sig.kind)
+            source = SIGNAL_SOURCE_LABELS.get(sig.source, sig.source)
+            lines.append(f"- **{kind} · {source}:** {sig.count}")
+            lines += [f"  - {s}" for s in sig.samples[:3]]
         lines += [""]
     if report.executive_summary:
         lines += [f"## {_emoji(report, 'summary')}Executive summary", "", report.executive_summary, ""]
@@ -225,21 +239,48 @@ def build_report_html(report: DeliveryReport, *, history: Sequence[dict] = ()) -
 # ---------------------------------------------------------------------------
 
 
-def export_report(
-    report: DeliveryReport, *, project_name: str = "", theme: str = "midnight", history: Sequence[dict] = ()
-) -> dict[str, Path]:
-    """Write the report as Markdown + HTML + a slide deck under the reporting export dir.
-
-    Returns ``{"markdown": Path, "html": Path, "slides": Path}``. Filenames carry the
-    period + end date — a re-run for the same period/day overwrites so the latest wins.
-    """
+def _export_stem(report: DeliveryReport, project_name: str) -> tuple[Path, str]:
+    """The export directory + filename stem shared by every reporting format."""
     from yeaboi.paths import get_reporting_export_dir
-    from yeaboi.reporting.presentation import build_presentation_html
 
     key = _slug(project_name or report.project_name or "report")
     out_dir = get_reporting_export_dir(key)
     period_slug = _slug(report.period_label) or "period"
-    stem = f"report-{period_slug}-{report.period_end or 'latest'}"
+    return out_dir, f"report-{period_slug}-{report.period_end or 'latest'}"
+
+
+def export_pptx_only(
+    report: DeliveryReport, *, project_name: str = "", theme: str = "midnight", style: DeckStyle | None = None
+) -> Path | None:
+    """Write just the .pptx deck (the export picker's PowerPoint option).
+
+    Returns the written path, or None when python-pptx isn't installed.
+    """
+    from yeaboi.reporting.pptx_export import build_report_pptx
+
+    out_dir, stem = _export_stem(report, project_name)
+    return build_report_pptx(report, out_dir / f"{stem}.pptx", theme=theme, style=style)
+
+
+def export_report(
+    report: DeliveryReport,
+    *,
+    project_name: str = "",
+    theme: str = "midnight",
+    history: Sequence[dict] = (),
+    style: DeckStyle | None = None,
+) -> dict[str, Path]:
+    """Write the report as Markdown + HTML + a slide deck under the reporting export dir.
+
+    Returns ``{"markdown": Path, "html": Path, "slides": Path}`` plus a ``"pptx"`` entry
+    when python-pptx is installed (the optional ``docs`` extra). Filenames carry the
+    period + end date — a re-run for the same period/day overwrites so the latest wins.
+    ``style`` customizes only the presentation outputs (slide deck + .pptx); the
+    Markdown/HTML report is a document, not a presentation, and stays unstyled.
+    """
+    from yeaboi.reporting.presentation import build_presentation_html
+
+    out_dir, stem = _export_stem(report, project_name)
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     slides_path = out_dir / f"{stem}-slides.html"
@@ -250,6 +291,15 @@ def export_report(
     # The HTML path draws its breakdown as an inline theme-aware segment bar;
     # only the Markdown/Notion/Confluence path embeds the matplotlib PNG.
     html_path.write_text(build_report_html(report, history=history), encoding="utf-8")
-    slides_path.write_text(build_presentation_html(report, theme=theme), encoding="utf-8")
-    logger.info("Reporting exported: %s , %s , %s", md_path, html_path, slides_path)
-    return {"markdown": md_path, "html": html_path, "slides": slides_path}
+    slides_path.write_text(build_presentation_html(report, theme=theme, style=style), encoding="utf-8")
+    paths = {"markdown": md_path, "html": html_path, "slides": slides_path}
+    try:
+        from yeaboi.reporting.pptx_export import build_report_pptx
+
+        pptx_path = build_report_pptx(report, out_dir / f"{stem}.pptx", theme=theme, style=style)
+        if pptx_path is not None:
+            paths["pptx"] = pptx_path
+    except Exception as e:  # noqa: BLE001 — the .pptx is a best-effort extra format
+        logger.warning("reporting pptx export failed: %s", e)
+    logger.info("Reporting exported: %s", " , ".join(str(p) for p in paths.values()))
+    return paths

@@ -14,7 +14,9 @@ Directory structure:
     ├── data/
     │   ├── sessions.db           # SQLite: sessions, team profiles, token usage
     │   ├── states/               # Legacy checkpoint JSON files
-    │   └── projects.json         # Project metadata
+    │   ├── projects.json         # Project metadata
+    │   ├── reporting_themes.json # User-defined Reporting palette definitions
+    │   └── reporting_prefs.json  # Persisted Reporting deck-style preferences
     ├── exports/
     │   ├── analysis/             # Team analysis exports (HTML + MD)
     │   │   └── {project_key}/
@@ -83,6 +85,8 @@ DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "sessions.db"
 STATES_DIR = DATA_DIR / "states"
 PROJECTS_FILE = DATA_DIR / "projects.json"
+REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Reporting palettes
+REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -200,6 +204,18 @@ def get_db_path() -> Path:
         return DB_PATH
 
     return DB_PATH
+
+
+def get_reporting_themes_path() -> Path:
+    """Return the path of the user's Reporting palette definitions (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTING_THEMES_FILE
+
+
+def get_reporting_prefs_path() -> Path:
+    """Return the path of the persisted Reporting deck-style preferences (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTING_PREFS_FILE
 
 
 def _safe_key(key: str, fallback: str) -> str:

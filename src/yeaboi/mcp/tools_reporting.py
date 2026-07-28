@@ -12,7 +12,7 @@ from yeaboi.mcp.runtime import run_engine, run_readonly, to_jsonable
 
 logger = logging.getLogger(__name__)
 
-_PERIODS = ("last_sprint", "last_month", "quarter")
+_PERIODS = ("last_sprint", "last_week", "last_month", "quarter", "window")
 
 
 def _reporting_history(session_id: str, limit: int) -> dict:
@@ -33,11 +33,12 @@ def _reporting_history(session_id: str, limit: int) -> dict:
     }
 
 
-def _reporting_export(session_id: str) -> dict:
+def _reporting_export(session_id: str, theme: str, style: dict | None = None) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
     from yeaboi.reporting.export import export_report
     from yeaboi.reporting.store import ReportingStore
+    from yeaboi.reporting.style import load_deck_style, style_from_dict, style_to_dict
 
     resolved = resolve_session_id(session_id)
     with ReportingStore(get_db_path()) as store:
@@ -47,14 +48,23 @@ def _reporting_export(session_id: str) -> dict:
         raise ValueError(
             f"No delivery report recorded for session {resolved!r} — generate one from the yeaboi TUI first."
         )
-    paths = export_report(report, history=run_history)
+    # Per-call style keys override the saved prefs; omitted keys keep them.
+    # style_from_dict tolerates any malformed value, so an untrusted dict is safe.
+    deck_style = load_deck_style()
+    if style:
+        deck_style = style_from_dict({**style_to_dict(deck_style), **style})
+    paths = export_report(report, history=run_history, theme=theme or "midnight", style=deck_style)
     logger.info("Delivery report exported via MCP: session=%s period=%s", resolved, report.period_label)
-    return {
+    result = {
         "session_id": resolved,
         "period": report.period_label,
         "markdown": str(paths["markdown"]),
         "html": str(paths["html"]),
+        "slides": str(paths["slides"]),
     }
+    if "pptx" in paths:
+        result["pptx"] = str(paths["pptx"])
+    return result
 
 
 def _report_delivery(
@@ -66,6 +76,8 @@ def _report_delivery(
     window_end: str,
     sprint_names: list | None,
     period_label_override: str,
+    theme: str,
+    sources: dict | None,
 ):
     if period not in _PERIODS:
         raise ValueError(f"period must be one of {', '.join(_PERIODS)} — got {period!r}")
@@ -80,6 +92,8 @@ def _report_delivery(
         window_end=window_end,
         sprint_names=tuple(sprint_names or ()),
         period_label_override=period_label_override,
+        theme=theme or "midnight",
+        sources=sources,
     )
 
 
@@ -97,13 +111,21 @@ def register(app) -> None:
         window_end: str = "",
         sprint_names: list[str] | None = None,
         period_label_override: str = "",
+        theme: str = "midnight",
+        sources: dict[str, list[str]] | None = None,
     ) -> dict:
         """Generate a stakeholder-friendly delivery report of completed work from the team's
         tracker (Jira/Azure DevOps): executive summary, outcome themes, metrics, highlights.
-        period: 'last_sprint', 'last_month', or 'quarter'. For 'quarter', optionally frame the
-        window explicitly: window_start/window_end (YYYY-MM-DD) bound the reporting span,
-        sprint_names lists the sprints it covers, and period_label_override renames the period
-        (e.g. 'Q3 2026'). Blank session_id = most recent session (sprint length/project name)."""
+        period: 'last_week', 'last_sprint', 'last_month', 'quarter', or 'window'. For 'quarter'
+        or 'window', frame the span explicitly: window_start/window_end (YYYY-MM-DD) bound the
+        reporting span, sprint_names lists the sprints it covers, and period_label_override
+        renames the period (e.g. 'Q3 2026'). theme names the export palette — built-ins
+        midnight/aurora/sunset/mono or a custom palette from reporting_themes.json. sources
+        restricts inputs, e.g. {'delivery': ['jira','azuredevops'], 'code': ['github',
+        'azuredevops'], 'docs': ['confluence','notion']} — delivery picks the tracker(s)
+        tickets come from, code/docs add supporting PR/commit and doc-update context
+        (azdevops/azure_devops accepted as aliases); omit for all configured. Blank
+        session_id = most recent session (sprint length/project name)."""
         return await run_engine(
             ctx,
             _report_delivery,
@@ -115,6 +137,8 @@ def register(app) -> None:
             window_end,
             sprint_names,
             period_label_override,
+            theme,
+            sources,
         )
 
     @app.tool()
@@ -124,7 +148,14 @@ def register(app) -> None:
         return await run_readonly(_reporting_history, session_id, limit)
 
     @app.tool()
-    async def reporting_export(session_id: str = "") -> dict:
-        """Export the most recent delivery report as Markdown + HTML files (under
-        ~/.yeaboi/exports/reporting/) and return their paths. Blank session_id = most recent session."""
-        return await run_readonly(_reporting_export, session_id)
+    async def reporting_export(session_id: str = "", theme: str = "midnight", style: dict | None = None) -> dict:
+        """Export the most recent delivery report as Markdown + HTML + slide deck (and .pptx when
+        python-pptx is installed) under ~/.yeaboi/exports/reporting/ and return their paths.
+        theme picks the deck palette (built-in or custom). style customizes the deck/.pptx —
+        keys: title_color/heading_color (palette role or #RRGGBB), font_family (modern|classic|
+        mono|rounded), font_scale (compact|normal|large), layout (detailed|compact), content_fit
+        (ask|expand = add slides so nothing is trimmed; tight = fixed grid, may trim), max_bullets,
+        include_items_table/include_signals/include_highlights/include_thanks, slide_numbers,
+        footer_text; omitted keys keep the saved preferences (reporting_prefs.json). Blank
+        session_id = most recent session."""
+        return await run_readonly(_reporting_export, session_id, theme, style)

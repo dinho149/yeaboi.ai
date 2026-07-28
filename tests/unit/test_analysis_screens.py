@@ -1663,6 +1663,40 @@ class TestComponentSelectScreen:
             Panel,
         )
 
+    def test_default_branding_stays_analysis(self):
+        """Regression: generalizing the screen for Reporting must not restyle analysis."""
+        checked = {"delivery": {0}}
+        out = _render(
+            _build_component_select_screen(self._GRID, ["delivery"], checked, 0, 0, width=110, height=30),
+            width=110,
+        )
+        assert "ANALYSIS SETUP" in out
+        assert "REPORTING" not in out
+
+    def test_reporting_branding_and_footer_verb(self):
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        grid = {"delivery": ["jira", "azuredevops"], "code": ["github"]}
+        out = _render(
+            _build_component_select_screen(
+                grid,
+                ["delivery", "code"],
+                {"delivery": set(), "code": set()},
+                0,
+                0,
+                width=110,
+                height=32,
+                theme=REPORTING_THEME,
+                brand="REPORTING SETUP",
+                title_builder=lambda w, h: reporting_title(width=w),
+                footer_verb="report on",
+            ),
+            width=110,
+        )
+        assert "REPORTING SETUP" in out
+        assert "Azure DevOps" in out  # reporting's canonical token maps to a display name
+        assert "at least one source to report on" in out
+
 
 class TestAnalysisDepthScreen:
     def test_deep_is_rendered_as_recommended(self):
@@ -1922,6 +1956,37 @@ class TestComponentAndMemberLoops:
 
     def test_cancel(self):
         assert self._components(["esc"]) == "cancel"
+
+    def test_required_component_blocks_enter(self):
+        from yeaboi.ui.mode_select import _run_component_select
+
+        # Uncheck both delivery boxes; Enter must be rejected (delivery required),
+        # re-checking one then lets Enter through.
+        keys = [" ", "right", " ", "enter", " ", "enter"]
+        result = _run_component_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(keys),
+            0.01,
+            True,
+            self._GRID,
+            required={"delivery": "Select at least one ticketing source."},
+        )
+        assert result["delivery"] == ["azdevops"]
+
+    def test_required_ignored_when_component_not_in_grid(self):
+        from yeaboi.ui.mode_select import _run_component_select
+
+        result = _run_component_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            {"code": ["github"]},
+            required={"delivery": "Select at least one ticketing source."},
+        )
+        assert result == {"code": ["github"]}
 
     def test_member_select_starts_with_everyone_selected(self):
         assert self._members(["enter"], ["Alice", "Bob"]) == ["Alice", "Bob"]

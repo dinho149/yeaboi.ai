@@ -129,12 +129,19 @@ class TestSnapshotRendering:
     """
 
     def test_reporting_detail_renders_rich(self):
+        from yeaboi.agent.state import DeliveryReport
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
 
+        report = DeliveryReport(
+            period_label="Last month",
+            headline="A good month.",
+            executive_summary="shipped auth",
+            metrics=(("Items delivered", "5"),),
+        )
         panel = _build_reporting_screen(
             {
                 "view": "detail",
-                "detail_lines": ["Executive summary:", "• shipped auth"],
+                "report": report,
                 "detail_title": "Delivery Report — Last month",
                 "actions": _SNAP_ACTIONS,
             },
@@ -145,6 +152,7 @@ class TestSnapshotRendering:
         out = _text(panel)
         assert "Delivery Report — Last month" in out
         assert "shipped auth" in out and "Run again" in out
+        assert "By the numbers" in out  # rich metrics section, not flat lines
 
     def test_performance_detail_renders_rich(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen

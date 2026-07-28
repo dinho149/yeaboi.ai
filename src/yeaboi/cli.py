@@ -497,10 +497,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,poker,analyze}")
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
-    report_p.add_argument("--period", choices=["last_sprint", "last_month", "quarter"], default="last_sprint")
+    report_p.add_argument(
+        "--period", choices=["last_week", "last_sprint", "last_month", "quarter", "window"], default="last_sprint"
+    )
     report_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
     report_p.add_argument(
-        "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter sprint windowing)"
+        "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter/window periods)"
     )
     report_p.add_argument("--window-end", default="", metavar="YYYY-MM-DD", help="Explicit window end")
     report_p.add_argument(
@@ -509,8 +511,36 @@ def build_parser() -> argparse.ArgumentParser:
     report_p.add_argument("--label", default="", metavar="TEXT", help='Period label override (e.g. "Q3 2026")')
     report_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     report_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
+    report_p.add_argument(
+        "--source",
+        choices=["jira", "azdevops", "both"],
+        default="",
+        help="Ticketing source(s) for delivered work (default: every configured tracker)",
+    )
+    report_p.add_argument(
+        "--code-sources",
+        nargs="+",
+        choices=["github", "azdevops"],
+        default=None,
+        metavar="SOURCE",
+        help="Code hosts to pull supporting PR/commit context from (default: all configured)",
+    )
+    report_p.add_argument(
+        "--documentation-sources",
+        nargs="+",
+        choices=["confluence", "notion"],
+        default=None,
+        metavar="SOURCE",
+        help="Doc platforms to pull supporting doc-update context from (default: all configured)",
+    )
     report_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings/empty report)")
     report_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    report_p.add_argument(
+        "--theme",
+        default="midnight",
+        metavar="NAME",
+        help="Export palette: midnight/aurora/sunset/mono or a custom name from reporting_themes.json",
+    )
 
     standup_p = subparsers.add_parser("standup", help="Run a Daily Standup (alias of --standup-run, more knobs)")
     standup_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
@@ -1201,6 +1231,17 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
 
     console.print(f"[bold cyan]Generating {args.period.replace('_', ' ')} delivery report...[/bold cyan]")
     sprint_names = tuple(s.strip() for s in args.sprint_names.split(",") if s.strip())
+    # Assemble the engine's sources dict only when a source flag was given —
+    # None means "every configured source" (the engine's auto default).
+    sources: dict | None = None
+    if args.source or args.code_sources is not None or args.documentation_sources is not None:
+        sources = {}
+        if args.source:
+            sources["delivery"] = ["jira", "azdevops"] if args.source == "both" else [args.source]
+        if args.code_sources is not None:
+            sources["code"] = list(args.code_sources)
+        if args.documentation_sources is not None:
+            sources["docs"] = list(args.documentation_sources)
     report = run_delivery_report(
         args.period,
         session_id=_resolve_cli_session(args.session) or "",
@@ -1210,13 +1251,21 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
         window_end=args.window_end,
         sprint_names=sprint_names,
         period_label_override=args.label,
+        theme=args.theme,
+        sources=sources,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
     if args.format == "json":
         print(_json_dump(report))
     else:
+        from yeaboi.paths import REPORTING_EXPORTS_DIR
+
         console.print(format_report_rich(report))
+        console.print(
+            f"[dim]Exports (Markdown + HTML + slides, and .pptx when python-pptx is installed): "
+            f"{REPORTING_EXPORTS_DIR}[/dim]"
+        )
     return _strict_exit(args.strict, report.warnings, empty=not report.delivered_items)
 
 

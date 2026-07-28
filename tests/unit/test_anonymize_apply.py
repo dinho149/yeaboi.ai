@@ -110,6 +110,26 @@ class TestMaskArtifact:
         assert masked.project_key == "[COMPANY]"
         assert masked.velocity_avg == 15.9
 
+    def test_delivery_report_masks_nested_items(self):
+        from yeaboi.agent.state import DeliveredItem, DeliveryReport
+
+        report = DeliveryReport(
+            period_label="Last sprint",
+            project_name="Acme",
+            headline="Omar shipped the portal",
+            themes=(("Acme wins", ("Omar fixed auth",)),),
+            metrics=(("Items delivered", "1"),),
+            delivered_items=(DeliveredItem(key="A-1", title="Omar's auth fix", status="Done", assignee="Omar"),),
+        )
+        masked = mask_artifact(report, REPS)
+        assert isinstance(masked, DeliveryReport)
+        assert masked.headline == "[PERSON_1] shipped the portal"
+        assert masked.project_name == "[COMPANY]"
+        assert masked.themes[0][0] == "[COMPANY] wins"
+        assert masked.delivered_items[0].title == "[PERSON_1]'s auth fix"
+        assert masked.delivered_items[0].assignee == "[PERSON_1]"
+        assert masked.metrics == (("Items delivered", "1"),)  # numbers-as-strings untouched
+
     def test_empty_replacements_returns_same_object(self):
         report = StandupReport(team_summary="Omar")
         assert mask_artifact(report, ()) is report
@@ -121,3 +141,19 @@ class TestMaskArtifact:
 
         foo = Foo()
         assert mask_artifact(foo, REPS) is foo
+
+
+class TestSupportingSignalMasking:
+    def test_signal_samples_are_masked(self):
+        from yeaboi.agent.state import DeliveryReport, SupportingSignal
+        from yeaboi.anonymize.apply import mask_artifact
+
+        report = DeliveryReport(
+            period_label="Last sprint",
+            supporting_signals=(
+                SupportingSignal(kind="pull_requests", source="github", count=2, samples=("Omar fixed auth (#41)",)),
+            ),
+        )
+        masked = mask_artifact(report, REPS)
+        assert masked.supporting_signals[0].samples == ("[PERSON_1] fixed auth (#41)",)
+        assert masked.supporting_signals[0].count == 2  # numbers untouched
