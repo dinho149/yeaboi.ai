@@ -2187,17 +2187,19 @@ def _build_project_export_success_screen(
     else:
         title = planning_title(shimmer_tick)
 
+    # Subtitle + hint align with the title column (_PAD + 2); the message body
+    # sits one level in (_PAD + 4), matching every other secondary screen.
     body: list = [
-        Text(_PAD + subtitle, style="bold bright_green", justify="left"),
+        Text(_PAD + "  " + subtitle, style="bold bright_green", justify="left"),
         Text(""),
     ]
     for line in file_path.splitlines():
-        body.append(Text(_PAD + f"  {line}", style="white", justify="left"))
+        body.append(Text(_PAD + f"    {line}", style="white", justify="left"))
     if hint:
         body.extend(
             [
                 Text(""),
-                Text(_PAD + hint, style="dim", justify="left"),
+                Text(_PAD + "  " + hint, style="dim", justify="left"),
             ]
         )
     body_h = 3 + len(file_path.splitlines()) + 2
