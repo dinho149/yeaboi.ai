@@ -27,7 +27,6 @@ from yeaboi.ui.mode_select.screens._analysis_sections import (
 from yeaboi.ui.mode_select.screens._screens import _INTAKE_CARDS, _OFFLINE_CARDS, _build_mode_row
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
-    PAD,
     PLANNING_THEME,
     build_action_buttons,
     build_page_panel,
@@ -150,7 +149,10 @@ def _build_analysis_review_screen(
     return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
-_PAD = PAD  # alias for backward compatibility within this module
+# 2-space content indent for every secondary screen: headings then land at the
+# title's column and value rows one level in, matching the Settings screen. This
+# is the single knob — all these screens indent via _PAD (and size via len(_PAD)).
+_PAD = "  "
 
 
 def _build_generate_confirm_screen(
@@ -240,9 +242,9 @@ def _build_team_insights_screen(
     """
     body_lines: list = [
         Text(""),
-        Text(PAD + "How to improve this team", style="bold white", justify="left"),
+        Text(_PAD + "How to improve this team", style="bold white", justify="left"),
         Text(
-            PAD + "Coaching insights grounded in the analysed sprints.",
+            _PAD + "Coaching insights grounded in the analysed sprints.",
             style="rgb(120,120,140)",
             justify="left",
         ),
@@ -2740,42 +2742,42 @@ def _build_changelog_screen(
 
     theme = CHANGELOG_THEME
     title = changelog_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=_PAD)
 
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
-    wrap_w = max(24, width - len(PAD) - 12)
+    wrap_w = max(24, width - len(_PAD) - 12)
 
     def _wrapped(text: str, style: str, *, indent: str = "    ") -> None:
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
-            body_lines.append(Text(PAD + indent + chunk, style=style, justify="left"))
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
     # ── Upgrade banner — newer release known from the background PyPI check ──
     status = update_status or {}
     if status.get("update_available"):
-        banner = Text(PAD + "  ", justify="left")
+        banner = Text(_PAD + "  ", justify="left")
         banner.append("⬆ ", style=theme.warn)
         banner.append(f"v{status.get('latest', '')} is available", style=f"bold {theme.warn}")
         banner.append("  —  run: ", style=theme.muted)
         banner.append(status.get("upgrade_command", ""), style=theme.warn)
         body_lines.append(banner)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
 
     if not entries:
         body_lines.append(Text(""))
-        body_lines.append(Text(PAD + "    No changelog data available.", style=theme.muted, justify="left"))
+        body_lines.append(Text(_PAD + "    No changelog data available.", style=theme.muted, justify="left"))
 
     for entry in entries:
         body_lines.append(Text(""))
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(f"v{entry.version}", style=f"bold {theme.accent_bright}")
         if entry.date:
             heading.append("  ·  ", style=theme.sep)
             heading.append(entry.date, style=theme.muted)
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
         if entry.summary:
             _wrapped(entry.summary, theme.desc)
         for hl in entry.highlights:
@@ -2784,7 +2786,7 @@ def _build_changelog_screen(
             chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 3)) or [""]
             for i, chunk in enumerate(chunks):
                 prefix = "    •  " if i == 0 else "       "
-                line = Text(PAD + prefix + chunk, style=theme.value, justify="left")
+                line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
                 if i == len(chunks) - 1 and len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
                     for area in hl.areas:
                         line.append("  ")
@@ -2792,7 +2794,7 @@ def _build_changelog_screen(
                     body_lines.append(line)
                 elif i == len(chunks) - 1:
                     body_lines.append(line)
-                    tag_line = Text(PAD + "       ", justify="left")
+                    tag_line = Text(_PAD + "       ", justify="left")
                     for area in hl.areas:
                         tag_line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
                         tag_line.append("  ")
@@ -2878,13 +2880,13 @@ def _build_all_tips_screen(
 
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD)
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
 
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
 
     # Account explicitly for the frame, horizontal panel padding, scrollbar,
@@ -2892,10 +2894,10 @@ def _build_all_tips_screen(
     # wide glyphs or metadata from visually colliding with the right frame.
     panel_inner_w = max(20, width - 2 - 4)
     viewport_body_w = max(18, panel_inner_w - 3)
-    bullet_prefix = PAD + "    •  "
-    continuation_prefix = PAD + "       "
+    bullet_prefix = _PAD + "    •  "
+    continuation_prefix = _PAD + "       "
     tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
-    separator_w = max(8, min(viewport_body_w - len(PAD) - 2, 40))
+    separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 
     tips = get_tips()
     grouped_tips = (
@@ -2921,10 +2923,10 @@ def _build_all_tips_screen(
         if rendered_section:
             body_lines.append(Text(""))
         rendered_section = True
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(section, style=f"bold {theme.accent_bright}")
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * separator_w, style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * separator_w, style=theme.sep, justify="left"))
 
         for tip in section_tips:
             # Emoji variation selectors are not measured consistently across
@@ -3054,15 +3056,15 @@ def _build_feedback_screen(
         "polish_preview": "AI-polished draft — accept it or keep your original",
         "result": "Submission result",
     }
-    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=_PAD)
 
     body_lines: list = []
-    wrap_w = max(24, width - len(PAD) - 12)
+    wrap_w = max(24, width - len(_PAD) - 12)
 
     def _wrapped(text: str, style: str, *, indent: str = "    ") -> None:
         for seg in text.split("\n"):
             for chunk in textwrap.wrap(seg, width=wrap_w) or [""]:
-                body_lines.append(Text(PAD + indent + chunk, style=style, justify="left"))
+                body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
     kind = FEEDBACK_TYPES[kind_idx % len(FEEDBACK_TYPES)]
     area = FEEDBACK_AREAS[area_idx % len(FEEDBACK_AREAS)]
@@ -3073,7 +3075,7 @@ def _build_feedback_screen(
 
         def _row(idx: int, label: str, render_value) -> None:
             is_sel = fields_focused and field_sel == idx
-            line = Text(PAD + ("  ❯ " if is_sel else "    "), justify="left")
+            line = Text(_PAD + ("  ❯ " if is_sel else "    "), justify="left")
             line.stylize(f"bold {theme.accent_bright}" if is_sel else theme.dim)
             line.append(f"{label:<13}", style=f"bold {theme.accent_bright}" if is_sel else theme.muted)
             render_value(line, is_sel)
@@ -3130,12 +3132,12 @@ def _build_feedback_screen(
             # rows + 3 blanks between them, plus one trailing status/spacer row.
             desc_budget = max(1, calc_viewport(height, header_h=6, action_h=4) - 10)
             for cont in continuations[:desc_budget]:
-                body_lines.append(Text(PAD + _val_indent + cont, style=theme.value, justify="left"))
+                body_lines.append(Text(_PAD + _val_indent + cont, style=theme.value, justify="left"))
             hidden = len(continuations) - desc_budget
             if hidden > 0:
                 body_lines.append(
                     Text(
-                        PAD + _val_indent + f"(+{hidden} more line{'s' if hidden > 1 else ''})",
+                        _PAD + _val_indent + f"(+{hidden} more line{'s' if hidden > 1 else ''})",
                         style=theme.dim,
                         justify="left",
                     )
@@ -3145,10 +3147,10 @@ def _build_feedback_screen(
     elif view == "polish_preview" and polished is not None:
         p_title, p_desc = polished
         body_lines.append(Text(""))
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(f"[{kind}] {p_title}", style=f"bold {theme.accent_bright}")
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
         _wrapped(p_desc, theme.value)
 
     elif view == "result":
@@ -3291,7 +3293,7 @@ def _build_performance_screen(
         sub_text = f"Team performance — {session_name}" if session_name else "Team performance"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
 
     message = performance_data.get("message", "")
 
@@ -3307,7 +3309,7 @@ def _build_performance_screen(
             style = theme.desc
         elif stripped.endswith(":") or line == line.lstrip():
             style = f"bold {theme.accent}"
-        return Text(PAD + "  " + line, style=style, justify="left")
+        return Text(_PAD + "  " + line, style=style, justify="left")
 
     actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "Export", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
@@ -3320,21 +3322,21 @@ def _build_performance_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
 
         if not roster:
-            body.append(Text(PAD + "No engineers found.", style=theme.muted, justify="left"))
+            body.append(Text(_PAD + "No engineers found.", style=theme.muted, justify="left"))
             body.append(Text(""))
-            body.append(Text(PAD + "Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
-            body.append(Text(PAD + "built from the people assigned work on your board.", style=theme.muted))
+            body.append(Text(_PAD + "Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
+            body.append(Text(_PAD + "built from the people assigned work on your board.", style=theme.muted))
         else:
             # Window the engineers that fit vertically, centred on the selection —
             # big ASCII rows are tall, so only a few show at once (▲/▼ mark the rest).
             budget = max(6, height - 16 - (2 if message else 0))
             start, end = _performance_roster_window(selected_idx, len(roster), budget)
             if start > 0:
-                body.append(Text(PAD + f"▲ {start} more", style=theme.dim, justify="left"))
+                body.append(Text(_PAD + f"▲ {start} more", style=theme.dim, justify="left"))
                 body.append(Text(""))
             for idx in range(start, end):
                 name = roster[idx]
@@ -3353,7 +3355,7 @@ def _build_performance_screen(
                     body.append(Text(""))
             if end < len(roster):
                 body.append(Text(""))
-                body.append(Text(PAD + f"▼ {len(roster) - end} more", style=theme.dim, justify="left"))
+                body.append(Text(_PAD + f"▼ {len(roster) - end} more", style=theme.dim, justify="left"))
 
         content = Group(
             Text(""),
@@ -3372,7 +3374,7 @@ def _build_performance_screen(
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
     for line in performance_data.get("detail_lines", []) or ["(nothing to show)"]:
         body_lines.append(_styled(line))
@@ -3465,7 +3467,7 @@ def _build_reporting_screen(
         sub_text = f"Report delivered work — {session_name}" if session_name else "Report delivered work"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
 
     actions = reporting_data.get("actions") or ["Generate Report", "Theme", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
@@ -3478,10 +3480,10 @@ def _build_reporting_screen(
 
         rows: list = []
         if message:
-            rows.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+            rows.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
             rows.append(Text(""))
         n_checked = len(checked)
-        rows.append(Text(PAD + f"  Space to toggle · {n_checked} selected · Enter to generate", style=theme.muted))
+        rows.append(Text(_PAD + f"  Space to toggle · {n_checked} selected · Enter to generate", style=theme.muted))
         rows.append(Text(""))
         for idx, sp in enumerate(sprints):
             is_cursor = idx == cursor
@@ -3490,7 +3492,7 @@ def _build_reporting_screen(
             cur_mark = "▸ " if is_cursor else "  "
             rng = f"({sp.start_date} → {sp.end_date})" if sp.start_date else "(no dates)"
             row = Text(justify="left")
-            row.append(PAD + "  " + cur_mark, style=theme.accent_bright if is_cursor else theme.dim)
+            row.append(_PAD + "  " + cur_mark, style=theme.accent_bright if is_cursor else theme.dim)
             row.append(box + " ", style=theme.accent if is_checked else theme.dim)
             name_style = "bold white" if is_cursor else (theme.value if is_checked else theme.desc)
             row.append(f"{sp.name}  ", style=name_style)
@@ -3499,7 +3501,7 @@ def _build_reporting_screen(
                 row.append("  · in quarter", style=theme.dim)
             rows.append(row)
         if not sprints:
-            rows.append(Text(PAD + "  No sprints found.", style=theme.muted, justify="left"))
+            rows.append(Text(_PAD + "  No sprints found.", style=theme.muted, justify="left"))
 
         viewport_h = calc_viewport(height, header_h=6, action_h=4)
         total_lines = len(rows)
@@ -3545,21 +3547,21 @@ def _build_reporting_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
-        body.append(Text(PAD + "Choose a reporting period:", style=f"bold {theme.accent}", justify="left"))
+        body.append(Text(_PAD + "Choose a reporting period:", style=f"bold {theme.accent}", justify="left"))
         body.append(Text(""))
         for idx, (_key, label, hint) in enumerate(periods):
             is_sel = idx == selected_idx
             marker = "▸ " if is_sel else "  "
             row = Text(justify="left")
-            row.append(PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
+            row.append(_PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
             row.append(label, style=theme.value if is_sel else theme.desc)
             body.append(row)
             if hint:
-                body.append(Text(PAD + "    " + hint, style=theme.muted, justify="left"))
+                body.append(Text(_PAD + "    " + hint, style=theme.muted, justify="left"))
             body.append(Text(""))
-        body.append(Text(PAD + f"Presentation theme: {deck_theme}", style=theme.muted, justify="left"))
+        body.append(Text(_PAD + f"Presentation theme: {deck_theme}", style=theme.muted, justify="left"))
 
         content = Group(
             Text(""),
@@ -3587,11 +3589,11 @@ def _build_reporting_screen(
             style = theme.desc
         elif stripped.endswith(":") or line == line.lstrip():
             style = f"bold {theme.accent}"
-        return Text(PAD + "  " + line, style=style, justify="left")
+        return Text(_PAD + "  " + line, style=style, justify="left")
 
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
     for line in reporting_data.get("detail_lines", []) or ["(nothing to show)"]:
         body_lines.append(_styled(line))
@@ -3689,12 +3691,12 @@ def _build_roadmap_screen(
         sub_text = "Where does your quarterly roadmap live?"
     if anon_note and not busy:  # anonymized results: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
 
     # ── Busy overlay — while the analysis worker runs, show only the spinner so
     # the source options / buttons underneath don't confuse the user. ─────────────
     if busy:
-        spinner = Text(PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
+        spinner = Text(_PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
         return build_page_panel(
             Group(Text(""), title, Text(""), sub, Text(""), Text(""), spinner),
             theme=PLANNING_THEME,
@@ -3708,19 +3710,19 @@ def _build_roadmap_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
-        body.append(Text(PAD + "Choose a roadmap source:", style=f"bold {theme.accent}", justify="left"))
+        body.append(Text(_PAD + "Choose a roadmap source:", style=f"bold {theme.accent}", justify="left"))
         body.append(Text(""))
         for idx, (_key, label, hint) in enumerate(sources):
             is_sel = idx == selected_idx
             marker = "▸ " if is_sel else "  "
             row = Text(justify="left")
-            row.append(PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
+            row.append(_PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
             row.append(label, style=theme.value if is_sel else theme.desc)
             body.append(row)
             if hint:
-                body.append(Text(PAD + "    " + hint, style=theme.muted, justify="left"))
+                body.append(Text(_PAD + "    " + hint, style=theme.muted, justify="left"))
             body.append(Text(""))
 
         content = Group(
@@ -3764,16 +3766,16 @@ def _build_roadmap_screen(
     summary = getattr(analysis, "summary", "") if analysis is not None else ""
     warnings = tuple(getattr(analysis, "warnings", ()) or ()) if analysis is not None else ()
 
-    box_w = min(72, max(32, width - len(PAD) - 4))
+    box_w = min(72, max(32, width - len(_PAD) - 4))
     inner_w = max(16, box_w - 6)  # border(2) + padding(4)
-    card_pad = (0, 0, 0, len(PAD))
+    card_pad = (0, 0, 0, len(_PAD))
 
     body: list = []
     if message:
-        body.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body.append(Text(""))
     if summary:
-        body.append(Text(PAD + "  " + summary, style=theme.desc, justify="left"))
+        body.append(Text(_PAD + "  " + summary, style=theme.desc, justify="left"))
         body.append(Text(""))
 
     if not projects:
@@ -3799,14 +3801,14 @@ def _build_roadmap_screen(
                 plural = "s" if len(warnings) != 1 else ""
                 body.append(
                     Text(
-                        PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view",
+                        _PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view",
                         style=theme.muted,
                         justify="left",
                     )
                 )
     else:
         # Key hint (like the list view's) then the card viewport.
-        body.append(Text(PAD + "↑/↓ choose a project · Plan This to plan it", style=theme.muted, justify="left"))
+        body.append(Text(_PAD + "↑/↓ choose a project · Plan This to plan it", style=theme.muted, justify="left"))
         body.append(Text(""))
 
         # Budget: the shared viewport line count, minus the fixed lines already
@@ -3873,7 +3875,7 @@ def _build_roadmap_screen(
             body.append(_Padding(_build_roadmap_notices_card(warnings, box_w=box_w), card_pad))
         elif notices_mode == "hint":
             plural = "s" if len(warnings) != 1 else ""
-            body.append(Text(PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view", style=theme.warn))
+            body.append(Text(_PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view", style=theme.warn))
 
     # No scrollbar geometry to publish — the card viewport uses peek stubs, like
     # the list view (publish an empty geometry so stale scroll state clears).
