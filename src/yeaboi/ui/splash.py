@@ -677,11 +677,12 @@ def show_splash(console: Console) -> None:
     logger.info("splash: shown")
     _splash_start = time.monotonic()
 
-    # Enter alt-screen once and keep it active through to the next fullscreen UI,
-    # so the menu draws straight over the splash with no clear-to-shell gap. Live
-    # uses screen=False (it does NOT own the alt-screen) precisely so exiting it
-    # doesn't restore the normal screen mid-handoff. The next UI's Live(screen=True)
-    # re-enters the already-active alt-screen seamlessly.
+    # The duck now traverses the whole screen (jump in → waddle across), so a
+    # non-buffered inline Live diff-redraws a dozen scattered rows every frame and
+    # tears badly. Run on screen=True: Rich double-buffers the alternate screen and
+    # writes one atomic full-frame each refresh, so the motion is flicker-free. Its
+    # __exit__ restores the normal screen, so we re-enter the alt-screen right after
+    # to keep the seamless splash → wizard/menu handoff (one continuous alt-screen).
     console.set_alt_screen(True)
     console.clear()
 
@@ -693,17 +694,16 @@ def show_splash(console: Console) -> None:
         console=console,
         # auto_refresh off: the animation loop drives one deterministic render per
         # frame (via update(refresh=True)). Otherwise Rich's background thread
-        # re-renders on its own cadence too, and the two interleave into the
-        # inline-mode flicker the duck run was showing.
+        # re-renders on its own cadence too, and the two interleave into flicker.
         auto_refresh=False,
-        screen=False,
+        screen=True,
         vertical_overflow="crop",
     ) as live:
         _run_splash_intro(console, live, text_lines, _BRAND_RGB, frame_time=_FRAME_TIME)
 
-    # Alt-screen is intentionally left active — the next Live(screen=True) in the
-    # wizard or mode-select re-enters it seamlessly, so the menu draws straight
-    # over the splash with no clear-to-shell gap.
+    # Re-enter the alt-screen (screen=True Live left it on exit) so the wizard /
+    # mode-select draws straight over the splash with no clear-to-shell gap.
+    console.set_alt_screen(True)
     logger.debug("splash: completed in %.2fs", time.monotonic() - _splash_start)
 
 
