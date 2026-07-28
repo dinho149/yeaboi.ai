@@ -10,12 +10,14 @@ from unittest.mock import MagicMock, patch
 
 from rich.panel import Panel
 
-from yeaboi.ui.shared._ascii_font import render_ascii_text
+from yeaboi.ui.shared._ascii_font import render_ascii_text, render_ascii_text_large
 from yeaboi.ui.splash import (
     _WORDMARK,
     _build_run_frame,
     _build_shine_frame,
     _build_splash_frame,
+    _compose_splash_frame,
+    _run_splash_intro,
     show_splash,
 )
 
@@ -171,9 +173,7 @@ class TestPaintInReveal:
     """The duck 'paints in' the wordmark: letters appear in his wake (behind him)."""
 
     def _ink_cols(self, duck_col, *, width=80):
-        frame = _build_run_frame(
-            _WORDMARK, width=width, height=16, duck_col=duck_col, reveal_front=duck_col + 5
-        )
+        frame = _build_run_frame(_WORDMARK, width=width, height=16, duck_col=duck_col, reveal_front=duck_col + 5)
         rows = _rendered_art_rows(frame, width=width)
         # Columns that carry wordmark ink (the block-shadow glyphs), excluding the
         # duck: the duck's half-block glyphs (▀▄█) overlap the set, so we key on
@@ -217,3 +217,57 @@ class TestPaintInReveal:
         show_splash(console)
 
         assert mock_live.update.call_count > 20  # a real per-frame paint, not a jump
+
+
+class TestComposeSplashFrame:
+    """The new brand-splash compositor: wordmark + duck, with reveal/clear fronts."""
+
+    def _duck(self):
+        from yeaboi.ui.shared._mascot import mini_cells
+
+        return mini_cells(0)
+
+    def test_returns_panel(self):
+        wm = render_ascii_text("YEABOI")
+        frame = _compose_splash_frame(wm, width=100, height=30, duck_cells=self._duck(), duck_x=10)
+        assert isinstance(frame, Panel)
+
+    def test_reveal_front_hides_columns_to_the_right(self):
+        wm = render_ascii_text("YEABOI")
+        # Nothing revealed → no wordmark ink at all (duck cells are ▀▄█ too, so key
+        # on the wordmark being absent when the front is hard left).
+        none = _compose_splash_frame(wm, width=100, height=30, duck_cells=self._duck(), duck_x=-40, reveal_front=0.0)
+        all_ = _compose_splash_frame(wm, width=100, height=30, duck_cells=self._duck(), duck_x=-40, reveal_front=999)
+        none_rows = _rendered_art_rows(none, width=100)
+        all_rows = _rendered_art_rows(all_, width=100)
+        # Duck is off-screen left, so any ink present comes from the wordmark.
+        assert sum(len(r) for r in all_rows) > sum(len(r) for r in none_rows)
+
+    def test_clear_line_wipes_columns_to_the_left(self):
+        wm = render_ascii_text("YEABOI")
+        early = _compose_splash_frame(wm, width=100, height=30, duck_cells=self._duck(), duck_x=-40, clear_line=0)
+        late = _compose_splash_frame(wm, width=100, height=30, duck_cells=self._duck(), duck_x=-40, clear_line=999)
+        early_ink = sum(len(r) for r in _rendered_art_rows(early, width=100))
+        late_ink = sum(len(r) for r in _rendered_art_rows(late, width=100))
+        assert late_ink < early_ink  # more cleared → less wordmark ink remains
+
+
+class TestRunSplashIntro:
+    """The four-phase intro driver (jump → quack → appear → waddle-clear)."""
+
+    @patch("yeaboi.ui.splash.time.sleep")
+    def test_runs_all_phases(self, _mock_sleep):
+        live = MagicMock()
+        console = MagicMock()
+        console.size = (120, 40)
+        _run_splash_intro(console, live, render_ascii_text_large("YEABOI", 2), (70, 100, 180), frame_time=0.0)
+        # Jump + quack + appear + hold + waddle is comfortably many frames.
+        assert live.update.call_count > 40
+
+    @patch("yeaboi.ui.splash.time.sleep")
+    def test_survives_a_narrow_terminal(self, _mock_sleep):
+        live = MagicMock()
+        console = MagicMock()
+        console.size = (60, 20)
+        _run_splash_intro(console, live, render_ascii_text("YEABOI"), (70, 100, 180), frame_time=0.0)
+        assert live.update.call_count > 0

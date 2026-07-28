@@ -65,3 +65,55 @@ def render_ascii_text(text: str) -> list[str]:
             lines[0] += "   "
             lines[1] += "   "
     return [line.rstrip() for line in lines]
+
+
+# Half-block glyphs pack two vertical pixels into one character cell (▀ = top,
+# ▄ = bottom, █ = both, blank/░ = none). Decoding to a 1-bit grid lets us scale
+# the compact menu font up cleanly instead of shipping a second, larger font.
+_HALF_TOP = {"█": True, "▀": True, "▄": False, "░": False, " ": False}
+_HALF_BOT = {"█": True, "▀": False, "▄": True, "░": False, " ": False}
+
+
+def scale_halfblock_lines(lines: list[str], scale: int = 2) -> list[str]:
+    """Scale a half-block ASCII-art block (e.g. :func:`render_ascii_text` output)
+    up by an integer ``scale`` in both axes, staying in the same ▀▄█ alphabet.
+
+    Each source text line encodes two pixel rows; we decode to a 1-bit grid,
+    nearest-neighbour upscale it, then re-pack pixel-row pairs back into
+    half-block glyphs. ``scale=2`` doubles the menu font (2 rows → 4). Every
+    output line is padded to one width so the block centres cleanly.
+    """
+    if scale < 1:
+        scale = 1
+    width = max((len(line) for line in lines), default=0)
+
+    # Decode: two pixel rows per source text line.
+    pixels: list[list[bool]] = []
+    for line in lines:
+        padded = line.ljust(width)
+        pixels.append([_HALF_TOP.get(ch, False) for ch in padded])
+        pixels.append([_HALF_BOT.get(ch, False) for ch in padded])
+
+    # Nearest-neighbour upscale in both axes.
+    big: list[list[bool]] = []
+    for row in pixels:
+        scaled_row = [on for on in row for _ in range(scale)]
+        big.extend([scaled_row] * scale)
+
+    # Re-pack pixel-row pairs into half-block glyphs.
+    out_w = width * scale
+    out: list[str] = []
+    for j in range(0, len(big), 2):
+        top = big[j]
+        bot = big[j + 1] if j + 1 < len(big) else [False] * out_w
+        row_chars = []
+        for t, b in zip(top, bot):
+            row_chars.append("█" if t and b else "▀" if t else "▄" if b else " ")
+        out.append("".join(row_chars))
+    return out
+
+
+def render_ascii_text_large(text: str, scale: int = 2) -> list[str]:
+    """Render *text* in the compact menu font, then scale it up (see
+    :func:`scale_halfblock_lines`). ``scale=2`` → a 4-row wordmark."""
+    return scale_halfblock_lines(render_ascii_text(text), scale)

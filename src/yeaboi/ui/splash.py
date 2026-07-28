@@ -24,7 +24,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.ui.shared._ascii_font import render_ascii_text
+from yeaboi.ui.shared._ascii_font import render_ascii_text, render_ascii_text_large
 from yeaboi.ui.shared._components import NEUTRAL_BG
 from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
@@ -69,6 +69,14 @@ _WALK_BOB = (0, 0, 1, 1, 0, 0, 1, 1)
 # exclamation), while he recoils with _EXCLAIM_RECOIL (a lean-back bob per frame).
 _EXCLAIM_STEP = 5.0
 _EXCLAIM_RECOIL = (3, 3, 2, 2, 1, 1, 0)
+
+# ── New brand splash choreography (jump in → quack → wordmark → waddle-clear) ──
+_SPLASH_JUMP = 6  # pixel rows of headroom above the baseline for the jump arc
+_SPLASH_WALK_STEP = 2.6  # cols/frame the duck strides while clearing the wordmark
+_SPLASH_CLEAR_LAG = 11  # cols behind the duck's left edge where the wordmark wipes
+# Quack sound-wave arcs: (dcol, drow) offsets from the duck's bill, drawn as a
+# widening ripple so he reads as quacking without needing an open-beak body sprite.
+_QUACK_ARCS = ((2, -1), (4, -2), (6, -3))
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +451,202 @@ def _run_wordmark_animation(
 # ---------------------------------------------------------------------------
 
 
+def _compose_splash_frame(
+    wordmark: list[str],
+    *,
+    width: int,
+    height: int,
+    duck_cells: list,
+    duck_x: int,
+    duck_lift: int = 0,
+    reveal_front: float | None = None,
+    clear_line: float | None = None,
+    rgb: tuple[int, int, int] = _BRAND_RGB,
+    marks: list[tuple[int, int, str, str]] | None = None,
+) -> Panel:
+    """Composite one brand-splash frame: the wordmark plus the duck on top of it.
+
+    The duck's feet sit on the baseline; ``duck_lift`` raises him (the jump arc /
+    walk bob). ``reveal_front`` reveals the wordmark left→right (columns left of the
+    front are shown) as it appears; ``clear_line`` wipes it left→right (columns left
+    of the line are hidden) as the duck walks over it. ``marks`` are extra glyphs in
+    canvas space (the quack ripple). His transparent cells let the wordmark show
+    through underneath.
+    """
+    inner_w = max(1, width - 6)
+    duck_h = len(duck_cells)
+    wm_h = len(wordmark)
+    block_h = duck_h + _SPLASH_JUMP + 1
+    baseline = block_h - 1
+    canvas: list[list[tuple[str, str | None]]] = [[(" ", None)] * inner_w for _ in range(block_h)]
+    brand = f"bold rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+    wm_w = max((len(line) for line in wordmark), default=0)
+    wm_left = max(0, (inner_w - wm_w) // 2)
+    wm_top = baseline - wm_h + 1
+    for r, line in enumerate(wordmark):
+        for c, ch in enumerate(line):
+            if ch == " ":
+                continue
+            x = wm_left + c
+            if not (0 <= x < inner_w):
+                continue
+            if reveal_front is not None and x >= reveal_front:
+                continue  # not yet revealed
+            if clear_line is not None and x < clear_line:
+                continue  # already wiped behind the duck
+            canvas[wm_top + r][x] = (ch, brand)
+
+    duck_top = baseline - duck_h + 1 - duck_lift
+    for r, row in enumerate(duck_cells):
+        for c, (glyph, style) in enumerate(row):
+            if glyph == " " and style is None:
+                continue  # transparent duck cell — let the wordmark show through
+            x = duck_x + c
+            y = duck_top + r
+            if 0 <= x < inner_w and 0 <= y < block_h:
+                canvas[y][x] = (glyph, style)
+
+    for mx, my, mg, ms in marks or []:
+        if 0 <= mx < inner_w and 0 <= my < block_h:
+            canvas[my][mx] = (mg, ms)
+
+    rows: list[Text] = []
+    for row in canvas:
+        line = Text()
+        for glyph, style in row:
+            line.append(glyph, style=style)
+        rows.append(line)
+    return _center_in_panel(Group(*rows), width=width, height=height, block_h=block_h)
+
+
+def _run_splash_intro(
+    console: Console, live: object, wordmark: list[str], rgb: tuple[int, int, int], *, frame_time: float
+) -> None:
+    """Drive the brand splash: the duck jumps in, quacks, YEABOI bursts out in his
+    voice, then he waddles across it and wipes it clean into the menu.
+
+    Sprites come from the shared mascot (the mini full-body duck, facing right —
+    his travel direction). Layout is recomputed from ``console.size`` each frame so
+    a resize mid-intro never tears the frame.
+    """
+    from yeaboi.ui.shared._mascot import mini_cells
+
+    w, h = console.size
+    inner_w = max(1, w - 6)
+    duck_w = max((len(r) for r in mini_cells(0)), default=0)
+    wm_w = max((len(line) for line in wordmark), default=0)
+    wm_left = max(0, (inner_w - wm_w) // 2)
+    wm_right = wm_left + wm_w
+    # Rest just left of the wordmark so YEABOI appears to his right; never off-screen.
+    rest_x = max(1, min(wm_left - duck_w - 1, inner_w - duck_w - 1))
+
+    # ── Phase 1: JUMP IN — arc from off the left edge onto the rest spot. ──
+    start_x = -duck_w - 2
+    jump_frames = 24
+    for f in range(jump_frames + 1):
+        p = f / jump_frames
+        dx = int(start_x + (rest_x - start_x) * _ease_out_cubic(p))
+        lift = int(round(_SPLASH_JUMP * 4 * p * (1 - p)))  # parabola: rise then land
+        w, h = console.size
+        live.update(
+            _compose_splash_frame(
+                wordmark,
+                width=w,
+                height=h,
+                duck_cells=mini_cells(f),
+                duck_x=dx,
+                duck_lift=lift,
+                reveal_front=0.0,
+                rgb=rgb,
+            ),
+            refresh=True,
+        )
+        time.sleep(frame_time)
+
+    # ── Phase 2: QUACK — a couple of head-bobs, each spitting a widening ripple. ──
+    bill_dx, bill_dy = duck_w - 3, 2  # roughly where his bill sits in the sprite
+    quack = "rgb(240,230,120)"
+    for _cycle in range(2):
+        for step in range(len(_QUACK_ARCS) + 2):
+            bob = 1 if step in (1, 2) else 0  # a quick nod on the quack
+            marks = [
+                (rest_x + bill_dx + adx, bill_dy - bob + ady, ")", quack)
+                for i, (adx, ady) in enumerate(_QUACK_ARCS)
+                if i < step
+            ]
+            w, h = console.size
+            live.update(
+                _compose_splash_frame(
+                    wordmark,
+                    width=w,
+                    height=h,
+                    duck_cells=mini_cells(step),
+                    duck_x=rest_x,
+                    duck_lift=bob,
+                    reveal_front=0.0,
+                    marks=marks,
+                    rgb=rgb,
+                ),
+                refresh=True,
+            )
+            time.sleep(frame_time)
+
+    # ── Phase 3: YEABOI bursts out to his right, left→right. ──
+    front = float(wm_left)
+    step_i = 0
+    while front < wm_right + 1:
+        w, h = console.size
+        live.update(
+            _compose_splash_frame(
+                wordmark,
+                width=w,
+                height=h,
+                duck_cells=mini_cells(0),
+                duck_x=rest_x,
+                duck_lift=_EXCLAIM_RECOIL[step_i] if step_i < len(_EXCLAIM_RECOIL) else 0,
+                reveal_front=front,
+                rgb=rgb,
+            ),
+            refresh=True,
+        )
+        time.sleep(frame_time)
+        front += _EXCLAIM_STEP
+        step_i += 1
+
+    # Hold the finished wordmark for a beat.
+    for _ in range(8):
+        w, h = console.size
+        live.update(
+            _compose_splash_frame(wordmark, width=w, height=h, duck_cells=mini_cells(0), duck_x=rest_x, rgb=rgb),
+            refresh=True,
+        )
+        time.sleep(frame_time)
+
+    # ── Phase 4: waddle across, wiping the wordmark clean behind him, then off. ──
+    col = float(rest_x)
+    step_i = 0
+    while col < inner_w:
+        clear_line = col + _SPLASH_CLEAR_LAG
+        w, h = console.size
+        live.update(
+            _compose_splash_frame(
+                wordmark,
+                width=w,
+                height=h,
+                duck_cells=mini_cells(step_i // 3),
+                duck_x=int(col),
+                duck_lift=_WALK_BOB[step_i % len(_WALK_BOB)],
+                clear_line=clear_line,
+                rgb=rgb,
+            ),
+            refresh=True,
+        )
+        time.sleep(frame_time)
+        col += _SPLASH_WALK_STEP
+        step_i += 1
+
+
 def show_splash(console: Console) -> None:
     """Show the startup splash animation (~2s). Non-interactive, timed.
 
@@ -457,13 +661,18 @@ def show_splash(console: Console) -> None:
     single brief flash at the boundary, far preferable to a flickering intro.
     """
     w, h = console.size
-    # Use the tall ANSI-Shadow wordmark when the terminal is wide enough;
-    # fall back to the compact two-line font on narrow terminals so it never
-    # wraps into an unreadable mess.
-    if w >= _WORDMARK_WIDTH + 6:  # +6 for panel border + padding
-        text_lines = _WORDMARK
-    else:
-        text_lines = render_ascii_text("YEABOI")
+    # "YEABOI" in the main-menu block font, scaled up (see render_ascii_text_large)
+    # — the same alphabet the mode titles use, just bigger. Pick the largest scale
+    # that leaves room for the duck beside it; fall back to the compact font when
+    # the terminal is too narrow for even the 2× render.
+    inner_w = max(1, w - 6)
+    duck_w = 22  # mini duck sprite width
+    text_lines = render_ascii_text("YEABOI")
+    for _scale in (3, 2):
+        _candidate = render_ascii_text_large("YEABOI", _scale)
+        if max(len(line) for line in _candidate) + duck_w + 4 <= inner_w:
+            text_lines = _candidate
+            break
 
     logger.info("splash: shown")
     _splash_start = time.monotonic()
@@ -490,18 +699,7 @@ def show_splash(console: Console) -> None:
         screen=False,
         vertical_overflow="crop",
     ) as live:
-        _run_wordmark_animation(
-            console,
-            live,
-            text_lines,
-            _BRAND_RGB,
-            fade_in_frames=48,  # (unused on the duck path — paint replaces the fade-in)
-            shine_frames=66,  # (unused on the duck path — it skips the shine)
-            fade_out_frames=42,  # ~0.7s — the wordmark crumbles away top-left → bottom-right
-            frame_time=_FRAME_TIME,
-            crumble=True,
-            run_duck=True,  # the duck waddles across the wordmark before it crumbles
-        )
+        _run_splash_intro(console, live, text_lines, _BRAND_RGB, frame_time=_FRAME_TIME)
 
     # Alt-screen is intentionally left active — the next Live(screen=True) in the
     # wizard or mode-select re-enters it seamlessly, so the menu draws straight
