@@ -4751,10 +4751,11 @@ def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tupl
         col += len(label)
         spans.append((start, col))  # [start, end)
 
-    # The rule spans exactly the tab strip — from the first tab's left edge to the
-    # last tab's right edge — not the full width, and not sticking out to the left.
-    rule_start = spans[0][0] if spans else _TAB_INDENT
-    rule_end = spans[-1][1] if spans else _TAB_INDENT
+    # The rule spans the tab strip plus a 2-char margin each side, so the dimmer
+    # "shoulder" chars beside the active tab stay visible even when the first or
+    # last tab is selected — but it still stops well short of the full width.
+    rule_start = max(0, (spans[0][0] if spans else _TAB_INDENT) - 2)
+    rule_end = (spans[-1][1] if spans else _TAB_INDENT) + 2
     a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
     underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
     for c in range(rule_start, rule_end):
