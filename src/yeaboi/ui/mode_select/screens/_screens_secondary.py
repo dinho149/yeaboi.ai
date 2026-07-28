@@ -4016,20 +4016,52 @@ def _build_retro_screen(
             out.append(t)
         return out
 
-    # ── Transient status message (e.g. after Generate / Export) ───
+    # ── Join info, at the top ─────────────────────────────────────
+    # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
+    # hub passes snapshot=True to suppress this whole block (the report replays the
+    # grids + carried actions, not a resumable board). Content is unindented —
+    # aligned with the heading — and the server-ready/status note sits right under
+    # the "Join this retro" heading.
     message = retro_data.get("message", "")
-    if message:
+
+    def _jrow(label: str, value: str, value_style: str = "") -> None:
+        r = Text(_PAD + "  ", justify="left")
+        r.append(f"{label}:  ", style=theme.muted)
+        r.append(str(value), style=value_style or theme.value)
+        body_lines.append(r)
+
+    def _jline(text: str, style: str = "") -> None:
+        body_lines.append(Text(_PAD + "  " + text, style=style or theme.value, justify="left"))
+
+    if not retro_data.get("snapshot"):
+        _heading("Join this retro")
+        if message:
+            body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        _jrow("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
+        _jrow("LAN URL", retro_data.get("url", "—"), theme.value)
+        _jline("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
+        public_url = retro_data.get("public_url", "")
+        if public_url:
+            _jrow("Remote URL", public_url, f"bold {theme.accent_bright}")
+            _jline("Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted)
+        host_url = retro_data.get("host_url", "")
+        if host_url:
+            _jrow("Host link (private)", host_url, theme.muted)
+            _jline("For you only — this link skips the code. Don't share it.", theme.muted)
+        body_lines.append(Text(""))
+    elif message:
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
 
-    # ── The four grids, as a four-column table across the top ─────
+    # ── The four grids, as a four-column table ────────────────────
     from rich.table import Table as _GridTable
 
     grids = retro_data.get("grids") or {}
     _grid_indent = _PAD + "  "
     grid_w = max(40, width - 4 - len(_grid_indent) - 2)  # panel/pad + left indent + scrollbar gutter
     # Four columns with a 2-space gap between each (padding (0,1), no edge pad):
-    # total = 4·col_w + 3·2, so the table always fits grid_w and never wraps.
-    col_w = max(12, (grid_w - 6) // 4)
+    # total ≈ 4·col_w + 3·2. Leave a couple columns of slack so the table never sits
+    # exactly at the render width (which wraps the last column) and never overflows.
+    col_w = max(12, (grid_w - 8) // 4)
 
     def _grid_column(key: str):
         import textwrap
@@ -4078,24 +4110,6 @@ def _build_retro_screen(
             badge = CARRIED_STATUS_LABELS.get(status, status)
             _wrapped(c.text, theme.value, indent="    • ")
             body_lines.append(Text(_PAD + "        " + f"[{badge}]", style=theme.dim, justify="left"))
-
-    # ── Join info, at the bottom ──────────────────────────────────
-    # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
-    # hub passes snapshot=True to suppress this whole block (the report replays
-    # the grids + carried actions, not a resumable board).
-    if not retro_data.get("snapshot"):
-        _heading("Join this retro")
-        _row("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
-        _row("LAN URL", retro_data.get("url", "—"), theme.value)
-        _line("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
-        public_url = retro_data.get("public_url", "")
-        if public_url:
-            _row("Remote URL", public_url, f"bold {theme.accent_bright}")
-            _line("Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted)
-        host_url = retro_data.get("host_url", "")
-        if host_url:
-            _row("Host link (private)", host_url, theme.muted)
-            _line("For you only — this link skips the code. Don't share it.", theme.muted)
 
     # ── Layout using shared components ────────────────────────────
     viewport_h = calc_viewport(height, header_h=6, action_h=4)
