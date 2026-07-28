@@ -319,6 +319,26 @@ class MusicLive(Live):
         super().__init__(*args, **kwargs)
         self._last_renderable = None
 
+    def start(self, refresh: bool = False) -> None:
+        """Enter the alt-screen only if we're not already in it.
+
+        Rich's ``Live.start`` unconditionally re-emits the enter-alt escape, which
+        clears the alternate buffer — a blank flash. When a screen takes over from
+        one already in the alt-screen (e.g. the splash handing off to the menu, or
+        one full-screen page to the next), that re-clear is a visible flicker. Skip
+        the enter here when already in alt, but still mark ``_alt_screen`` so the
+        final ``stop()`` restores the normal screen on app exit.
+        """
+        if self._screen and self.console.is_terminal and self.console.is_alt_screen:
+            self._screen = False  # don't let Live re-enter (and clear) the alt-screen
+            try:
+                super().start(refresh)
+            finally:
+                self._screen = True
+            self._alt_screen = True  # keep the exit-alt on the eventual stop()
+        else:
+            super().start(refresh)
+
     def update(self, renderable, *, refresh: bool = False) -> None:
         global _active
         _active = self
