@@ -8445,6 +8445,99 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
     )
 
 
+def _sweep_menu_in(console: Console, live, selected: int, n: int) -> None:
+    """Play the diagonal intro wipe that reveals every mode title top-left →
+    bottom-right, then land on the fully-revealed frame.
+
+    Shared by the fresh-load intro, every cold return to the menu, and the
+    changelog/feedback/all-tips overlay returns — so the menu items always
+    animate back in rather than snapping. A no-op wipe (straight to the final
+    frame) when the terminal is too small to show the full menu.
+    """
+    _iw, _ih = console.size
+    if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
+        _widths = mode_title_widths()
+        # Front value at which the last-revealed cell of each title is covered;
+        # the sweep runs until the largest of these.
+        _front_max = 0.0
+        _rb = 0
+        for _i in range(n):
+            _front_max = max(_front_max, (_rb + 1) * _SWEEP_ROW_WEIGHT + _widths[_i])
+            _rb += (2 + (3 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
+        _front_max += 2
+        _intro_start = time.monotonic()
+        while True:
+            _front = (time.monotonic() - _intro_start) * _MENU_SWEEP_SPEED
+            w, h = console.size
+            live.update(
+                _build_mode_screen(
+                    selected,
+                    width=w,
+                    height=h,
+                    shimmer_tick=0.0,
+                    desc_reveal=0,
+                    sweep_front=_front,
+                    companion_intro=0.0,  # duck waits off-screen until the wipe ends
+                )
+            )
+            if _front >= _front_max:
+                break
+            time.sleep(_FRAME_TIME)
+    # Final frame with normal styling (fully revealed).
+    w, h = console.size
+    live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0))
+
+
+def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
+    """Return-to-menu transition: the mode you came from slides back FIRST, then the
+    rest load in around it.
+
+    The exact inverse of the select→page lift — the selected title drops from the
+    top row (where that lift left it) down to its resting position, and only in the
+    last stretch of the drop do the other titles fade up from black. So returning
+    reads as "the one you picked comes home, then the menu rebuilds itself" rather
+    than everything flashing in at once. A no-op (straight to the final frame) when
+    the terminal is too small to show the full menu.
+    """
+    from yeaboi.ui.shared._animations import BLACK_RGB, lerp_color
+
+    w, h = console.size
+    if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
+        chosen = _MODE_CARDS[selected]
+        base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
+        base_style = f"bold rgb({base_r},{base_g},{base_b})"
+        others = [i for i in range(n) if i != selected]
+        start_offset = 1  # the top row the select→page lift left the title on
+        target_offset = selected_title_offset(selected, width=w, height=h)
+        slide_frames = 18
+        for frame in range(slide_frames + 1):
+            t = frame / slide_frames
+            eased = ease_out_cubic(t)
+            current_offset = int(start_offset + (target_offset - start_offset) * eased)
+            # Others stay hidden until the selected title is ~most of the way home,
+            # then fade from black to their resting dim over the last 40%.
+            fade_t = max(0.0, (t - 0.6) / 0.4)
+            w, h = console.size
+            if fade_t <= 0:
+                live.update(_build_slide_frame(chosen, top_offset=current_offset, width=w, height=h, style=base_style))
+            else:
+                fade_rgb = lerp_color(fade_t, BLACK_RGB, (100, 100, 100))
+                live.update(
+                    _build_mode_screen(
+                        selected,
+                        width=w,
+                        height=h,
+                        shimmer_tick=0.0,
+                        desc_reveal=0,
+                        fade_style=fade_rgb,
+                        fade_indices=others,
+                    )
+                )
+            time.sleep(_FRAME_TIME)
+    w, h = console.size
+    live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0))
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -8512,55 +8605,29 @@ def select_mode(
         # to go back to mode selection (instead of recursive select_mode call).
         _restart_mode_select = True
         _skip_fade_in = False
+        # A reverse transition (the project-list Esc) already slides the menu back
+        # in on its own; every other return snaps in cold. This flag marks the
+        # former so the sweep below runs on a fresh load AND on a cold return —
+        # animating the menu items back in — but doesn't double up on the slide.
+        _reverse_animated = False
         while _restart_mode_select:
             _restart_mode_select = False
 
+            # _skip_fade_in signals a return from a sub-page (drives the companion's
+            # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
             _returning = _skip_fade_in
-            if _skip_fade_in:
-                # Esc transition already rendered all items — no reveal needed.
-                # Description typewriter starts fresh from now.
-                _skip_fade_in = False
+            _skip_fade_in = False
+            if _reverse_animated:
+                # The reverse transition already revealed every item — don't re-run.
+                _reverse_animated = False
+            elif _returning:
+                # Cold return from a sub-page: the mode you came from slides home,
+                # then the rest load in around it (the inverse of the select lift).
+                _slide_menu_in(console, live, selected, n)
             else:
-                # Intro: one coherent diagonal sweep wipes every title in at once,
-                # top-left → bottom-right (the inverse of the splash crumble).
-                # Skipped when the terminal is too small (Phase 1 shows the resize
-                # duck instead).
-                _iw, _ih = console.size
-                if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
-                    _widths = mode_title_widths()
-                    # Front value at which the last-revealed cell of each title is
-                    # covered; the sweep runs until the largest of these.
-                    _front_max = 0.0
-                    _rb = 0
-                    for _i in range(n):
-                        _front_max = max(_front_max, (_rb + 1) * _SWEEP_ROW_WEIGHT + _widths[_i])
-                        _rb += (2 + (3 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
-                    _front_max += 2
-                    _intro_start = time.monotonic()
-                    while True:
-                        _front = (time.monotonic() - _intro_start) * _MENU_SWEEP_SPEED
-                        w, h = console.size
-                        live.update(
-                            _build_mode_screen(
-                                selected,
-                                width=w,
-                                height=h,
-                                shimmer_tick=0.0,
-                                desc_reveal=0,
-                                sweep_front=_front,
-                                companion_intro=0.0,  # duck waits off-screen until the wipe ends
-                            )
-                        )
-                        if _front >= _front_max:
-                            break
-                        time.sleep(_FRAME_TIME)
-                # Final frame with normal styling (fully revealed)
-                w, h = console.size
-                live.update(
-                    _build_mode_screen(
-                        selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0
-                    )
-                )
+                # Fresh load: one diagonal wipe reveals every title top-left →
+                # bottom-right (the inverse of the splash crumble).
+                _sweep_menu_in(console, live, selected, n)
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right.
             # Returning from a sub-page: start the entrance at the point where the
@@ -8650,6 +8717,7 @@ def select_mode(
                     logger.info("changelog opened from mode select")
                     play_wordmark_intro(console, live, "Changelog", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
                     # Open the Feedback form (bottom-left hint) — same inline
@@ -8657,6 +8725,7 @@ def select_mode(
                     logger.info("feedback opened from mode select")
                     play_wordmark_intro(console, live, "Feedback", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
@@ -8664,6 +8733,7 @@ def select_mode(
                     logger.info("all tips opened from mode select")
                     play_wordmark_intro(console, live, "All Tips", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -10445,10 +10515,12 @@ def select_mode(
                                 )
                             time.sleep(_FRAME_TIME)
 
-                        # Step 3: Restart mode selection, skip the fade-in.
-                        # Description typewriter starts fresh from select_time.
+                        # Step 3: Restart mode selection. This branch already slid the
+                        # menu back in, so mark it so the outer loop doesn't re-sweep;
+                        # _skip_fade_in still gives the companion its return entrance.
                         _restart_mode_select = True
                         _skip_fade_in = True
+                        _reverse_animated = True
                         break  # break Phase 3 loop → restart Phase 1
 
                     # Animate button fade — smoothly move current values toward targets
