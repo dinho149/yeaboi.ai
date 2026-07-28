@@ -113,7 +113,24 @@ def scale_halfblock_lines(lines: list[str], scale: int = 2) -> list[str]:
     return out
 
 
-def render_ascii_text_large(text: str, scale: int = 2) -> list[str]:
+def _checker_texture(lines: list[str], shade: str = "▓") -> list[str]:
+    """Dither every solid ``█`` cell on a checkerboard to ``shade``.
+
+    Scaling the menu font up fills the stroke interiors with flat ``█`` blocks,
+    which reads as heavy/blocky. Alternating ``█``/``▓`` on a fine checker restores
+    the pixel texture the small menu titles have — the ▀▄ edges stay crisp (only
+    ``█`` is dithered), so the letterforms are unchanged, just textured.
+    """
+    return [
+        "".join(shade if (ch == "█" and (r + c) % 2) else ch for c, ch in enumerate(line))
+        for r, line in enumerate(lines)
+    ]
+
+
+def render_ascii_text_large(text: str, scale: int = 2, *, texture: bool = False) -> list[str]:
     """Render *text* in the compact menu font, then scale it up (see
-    :func:`scale_halfblock_lines`). ``scale=2`` → a 4-row wordmark."""
-    return scale_halfblock_lines(render_ascii_text(text), scale)
+    :func:`scale_halfblock_lines`). ``scale=2`` → a 4-row wordmark. ``texture=True``
+    dithers the solid fill so the enlarged font keeps the menu titles' pixel
+    texture instead of reading as flat blocks."""
+    big = scale_halfblock_lines(render_ascii_text(text), scale)
+    return _checker_texture(big) if texture else big

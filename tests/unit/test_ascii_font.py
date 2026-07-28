@@ -70,3 +70,18 @@ class TestRenderAsciiTextLarge:
         # The enlarged block must actually contain glyphs, not just spaces.
         big = render_ascii_text_large("YEABOI", 2)
         assert any(ch in "█▀▄" for line in big for ch in line)
+
+    def test_texture_dithers_the_fill(self):
+        # texture=True introduces the ▓ shade the solid version doesn't have, so the
+        # enlarged font keeps the menu titles' pixel texture instead of flat blocks.
+        solid = render_ascii_text_large("YEABOI", 3)
+        textured = render_ascii_text_large("YEABOI", 3, texture=True)
+        assert "▓" not in "".join(solid)
+        assert "▓" in "".join(textured)
+
+    def test_texture_preserves_dimensions(self):
+        # Dithering must not change the block's size — same rows and width.
+        solid = render_ascii_text_large("YEABOI", 3)
+        textured = render_ascii_text_large("YEABOI", 3, texture=True)
+        assert len(textured) == len(solid)
+        assert [len(t) for t in textured] == [len(s) for s in solid]

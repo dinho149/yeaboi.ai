@@ -74,9 +74,6 @@ _EXCLAIM_RECOIL = (3, 3, 2, 2, 1, 1, 0)
 _SPLASH_JUMP = 6  # pixel rows of headroom above the baseline for the jump arc
 _SPLASH_WALK_STEP = 2.6  # cols/frame the duck strides while clearing the wordmark
 _SPLASH_CLEAR_LAG = 11  # cols behind the duck's left edge where the wordmark wipes
-# Quack sound-wave arcs: (dcol, drow) offsets from the duck's bill, drawn as a
-# widening ripple so he reads as quacking without needing an open-beak body sprite.
-_QUACK_ARCS = ((2, -1), (4, -2), (6, -3))
 
 
 # ---------------------------------------------------------------------------
@@ -564,38 +561,16 @@ def _run_splash_intro(
         )
         time.sleep(frame_time)
 
-    # ── Phase 2: QUACK — a couple of head-bobs, each spitting a widening ripple. ──
-    bill_dx, bill_dy = duck_w - 3, 2  # roughly where his bill sits in the sprite
-    quack = "rgb(240,230,120)"
-    for _cycle in range(2):
-        for step in range(len(_QUACK_ARCS) + 2):
-            bob = 1 if step in (1, 2) else 0  # a quick nod on the quack
-            marks = [
-                (rest_x + bill_dx + adx, bill_dy - bob + ady, ")", quack)
-                for i, (adx, ady) in enumerate(_QUACK_ARCS)
-                if i < step
-            ]
-            w, h = console.size
-            live.update(
-                _compose_splash_frame(
-                    wordmark,
-                    width=w,
-                    height=h,
-                    duck_cells=mini_cells(step),
-                    duck_x=rest_x,
-                    duck_lift=bob,
-                    reveal_front=0.0,
-                    marks=marks,
-                    rgb=rgb,
-                ),
-                refresh=True,
-            )
-            time.sleep(frame_time)
+    # ── Phase 2: EXCLAIM — after he lands he rears back with a "!", then YEABOI
+    #    bursts out to his right as he snaps forward (his recoil is the exclaim). ──
+    exclaim = "bold rgb(255,240,150)"
+    head_x = rest_x + duck_w // 2
 
-    # ── Phase 3: YEABOI bursts out to his right, left→right. ──
-    front = float(wm_left)
-    step_i = 0
-    while front < wm_right + 1:
+    def _bang(lift: int) -> list[tuple[int, int, str, str]]:
+        return [(head_x, max(0, _SPLASH_JUMP - lift - 1), "!", exclaim)]
+
+    # Wind-up: rear back over a few frames, a "!" popping above his head.
+    for lift in (1, 2, 3, 3):
         w, h = console.size
         live.update(
             _compose_splash_frame(
@@ -604,8 +579,31 @@ def _run_splash_intro(
                 height=h,
                 duck_cells=mini_cells(0),
                 duck_x=rest_x,
-                duck_lift=_EXCLAIM_RECOIL[step_i] if step_i < len(_EXCLAIM_RECOIL) else 0,
+                duck_lift=lift,
+                reveal_front=0.0,
+                marks=_bang(lift),
+                rgb=rgb,
+            ),
+            refresh=True,
+        )
+        time.sleep(frame_time)
+
+    # Burst: YEABOI sweeps out left→right while he snaps back down (recoil).
+    front = float(wm_left)
+    step_i = 0
+    while front < wm_right + 1:
+        lift = _EXCLAIM_RECOIL[step_i] if step_i < len(_EXCLAIM_RECOIL) else 0
+        w, h = console.size
+        live.update(
+            _compose_splash_frame(
+                wordmark,
+                width=w,
+                height=h,
+                duck_cells=mini_cells(0),
+                duck_x=rest_x,
+                duck_lift=lift,
                 reveal_front=front,
+                marks=_bang(lift) if step_i < 4 else None,
                 rgb=rgb,
             ),
             refresh=True,
@@ -669,7 +667,7 @@ def show_splash(console: Console) -> None:
     duck_w = 22  # mini duck sprite width
     text_lines = render_ascii_text("YEABOI")
     for _scale in (3, 2):
-        _candidate = render_ascii_text_large("YEABOI", _scale)
+        _candidate = render_ascii_text_large("YEABOI", _scale, texture=True)
         if max(len(line) for line in _candidate) + duck_w + 4 <= inner_w:
             text_lines = _candidate
             break
