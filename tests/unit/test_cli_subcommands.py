@@ -210,6 +210,50 @@ class TestReportCommand:
         assert captured["sprint_names"] == ("Sprint 7", "Sprint 8")
         assert captured["period_label_override"] == "Q2 2026"
 
+    def _captured_sources(self, monkeypatch, argv):
+        captured: dict = {}
+
+        def fake_report(period, **kw):
+            captured.update(kw)
+            return DeliveryReport()
+
+        monkeypatch.setattr("yeaboi.reporting.engine.run_delivery_report", fake_report)
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        args = build_parser().parse_args(argv)
+        assert _cmd_report(args, _console()) == 0
+        return captured["sources"]
+
+    def test_no_source_flags_means_auto(self, monkeypatch):
+        assert self._captured_sources(monkeypatch, ["report"]) is None
+
+    def test_source_both_expands_to_both_trackers(self, monkeypatch):
+        sources = self._captured_sources(monkeypatch, ["report", "--source", "both"])
+        assert sources == {"delivery": ["jira", "azdevops"]}
+
+    def test_all_source_flags_assemble_dict(self, monkeypatch):
+        sources = self._captured_sources(
+            monkeypatch,
+            [
+                "report",
+                "--source",
+                "jira",
+                "--code-sources",
+                "github",
+                "--documentation-sources",
+                "confluence",
+                "notion",
+            ],
+        )
+        assert sources == {"delivery": ["jira"], "code": ["github"], "docs": ["confluence", "notion"]}
+
+    def test_source_flags_parse_choices(self):
+        import pytest as _pytest
+
+        with _pytest.raises(SystemExit):
+            build_parser().parse_args(["report", "--source", "gitlab"])
+        with _pytest.raises(SystemExit):
+            build_parser().parse_args(["report", "--code-sources", "svn"])
+
 
 class TestStandupCommand:
     def test_no_session_exits_2(self, monkeypatch):

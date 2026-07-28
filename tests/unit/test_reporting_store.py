@@ -116,3 +116,33 @@ class TestSchemaMigration:
         names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         conn.close()
         assert "reporting_history" in names
+
+
+class TestSupportingSignalsRoundTrip:
+    def test_round_trip_preserves_signals(self):
+        import json
+        from dataclasses import replace
+
+        from yeaboi.agent.state import SupportingSignal
+
+        original = replace(
+            _report(),
+            supporting_signals=(
+                SupportingSignal(kind="pull_requests", source="github", count=12, samples=("Fix auth (#41)",)),
+                SupportingSignal(kind="doc_updates", source="notion", count=2, samples=()),
+            ),
+        )
+        restored = _dict_to_report(json.loads(_report_to_json(original)))
+        assert restored == original
+        assert restored.supporting_signals[0].samples == ("Fix auth (#41)",)
+
+    def test_legacy_json_without_signals_defaults_empty(self):
+        restored = _dict_to_report({"period_label": "Last sprint"})
+        assert restored.supporting_signals == ()
+
+    def test_malformed_count_coerced(self):
+        restored = _dict_to_report(
+            {"supporting_signals": [{"kind": "commits", "source": "github", "count": None, "samples": ["a"]}]}
+        )
+        assert restored.supporting_signals[0].count == 0
+        assert restored.supporting_signals[0].samples == ("a",)

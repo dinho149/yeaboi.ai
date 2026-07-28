@@ -29,6 +29,28 @@ from yeaboi.reporting import activity as activity_mod
 
 logger = logging.getLogger(__name__)
 
+
+class ReportCancelledError(RuntimeError):
+    """Raised when the caller's ``cancel_event`` is set mid-pipeline (cooperative cancel)."""
+
+
+def _emit(on_progress, message: str) -> None:
+    """Best-effort progress callback — a broken callback must never kill the pipeline."""
+    if on_progress is None:
+        return
+    try:
+        on_progress(message)
+    except Exception:  # noqa: BLE001 — progress is cosmetic
+        logger.debug("reporting: on_progress callback failed", exc_info=True)
+
+
+def _check_cancel(cancel_event) -> None:
+    """Raise ReportCancelledError when the caller has asked us to stop (between stages)."""
+    if cancel_event is not None and cancel_event.is_set():
+        logger.info("run_delivery_report: cancelled by caller")
+        raise ReportCancelledError("report generation cancelled")
+
+
 # Deterministic emoji fallback — used when the LLM is unavailable or omits a slot.
 _DEFAULT_EMOJI = {
     "headline": "🚀",
@@ -186,6 +208,7 @@ def _fallback_report(
     metrics: tuple[tuple[str, str], ...],
     warnings: list[str],
     generated_at: str,
+    supporting_signals: tuple = (),
 ) -> DeliveryReport:
     """Deterministic delivery report when the LLM is unavailable — counts + evidence."""
     n = len(items)
@@ -216,6 +239,7 @@ def _fallback_report(
         metrics=metrics,
         delivered_items=tuple(items),
         emoji_theme=tuple(_DEFAULT_EMOJI.items()),
+        supporting_signals=tuple(supporting_signals),
         warnings=tuple(warnings),
         generated_at=generated_at,
     )
@@ -252,6 +276,10 @@ def run_delivery_report(
     window_end: str = "",
     sprint_names: tuple[str, ...] = (),
     period_label_override: str = "",
+    theme: str = "midnight",
+    sources: dict | None = None,
+    on_progress=None,
+    cancel_event=None,
 ) -> DeliveryReport:
     """Generate a business-friendly delivery report for ``period``.
 
@@ -260,29 +288,47 @@ def run_delivery_report(
     into outcome themes, and pick section emojis. Persists + auto-exports the report.
 
     Args:
-        period: PERIOD_LAST_SPRINT / PERIOD_LAST_MONTH / PERIOD_QUARTER.
+        period: one of activity's PERIOD_* constants (last_week / last_sprint /
+            last_month / quarter / window).
         session_id: session to pull sprint length / project name from (best-effort).
-        window_start / window_end: explicit ISO date range (quarter report) — the
-            date span of the sprints the user selected. When ``window_start`` is set
-            the look-back window is derived from it instead of ``period``.
+        window_start / window_end: explicit ISO date range (quarter or custom-window
+            report). When ``window_start`` is set the look-back window is derived
+            from it instead of ``period``.
         sprint_names: the sprint names that make up a quarter report (for framing).
         period_label_override: label to show for a quarter report (e.g. "Q3 2026").
+        theme: presentation palette name for the auto-export (built-in or a custom
+            name from reporting_themes.json; unknown names fall back to midnight).
+        sources: optional ``{"delivery": [...], "code": [...], "docs": [...]}``
+            selection. Delivery restricts which tracker(s) completed tickets come
+            from ("jira" / "azuredevops"; azdevops / azure_devops accepted as
+            aliases); code/docs pick the supporting-context sources. ``None``
+            means every configured source.
+        on_progress: optional callable(str) receiving live status lines.
+        cancel_event: optional ``threading.Event``; when set between stages the
+            pipeline raises ``ReportCancelledError`` without persisting anything.
     """
     _validate_window_dates(window_start, window_end)
+    delivery_sel, code_sel, docs_sel = activity_mod.normalize_sources(sources)
     today = today or date.today()
     period_end = today.isoformat()
     db_path = _resolve_db_path(db_path)
-    is_quarter = period == activity_mod.PERIOD_QUARTER and bool(window_start)
+    # Any explicit start date defines the window — quarter sprint spans and the
+    # TUI/CLI custom date range both flow through the same path.
+    use_window = bool(window_start)
+    if not period_label_override and period == activity_mod.PERIOD_WINDOW and window_start:
+        period_label_override = f"{window_start} → {window_end or period_end}"
     period_label = period_label_override or activity_mod.PERIOD_LABELS.get(period, "Last month (~2 sprints)")
-    logger.info("run_delivery_report: period=%s session=%s quarter=%s", period, session_id, is_quarter)
+    logger.info("run_delivery_report: period=%s session=%s window=%s", period, session_id, use_window)
 
+    _emit(on_progress, "Loading session state")
     state = _load_state(session_id, db_path)
     project_name = str(state.get("project_name", "") or "")
+    _check_cancel(cancel_event)
 
     passed_sprint_names = tuple(sprint_names)
     warnings: list[str] = []
-    if is_quarter:
-        # Quarter: the selected sprints define the date window; report over that span.
+    if use_window:
+        # Explicit window: the selected sprints / custom dates define the date span.
         try:
             days = max(1, (today - date.fromisoformat(window_start)).days)
         except (TypeError, ValueError):
@@ -290,7 +336,15 @@ def run_delivery_report(
         period_start = window_start
         period_end = window_end or period_end
         items, _sprint_list, warnings = activity_mod.gather_delivered_work(
-            period, state=state, jira_project=jira_project, azdo_project=azdo_project, days_override=days
+            period,
+            state=state,
+            jira_project=jira_project,
+            azdo_project=azdo_project,
+            days_override=days,
+            delivery_sources=delivery_sel,
+            window_start=window_start,
+            window_end=window_end,
+            on_progress=on_progress,
         )
         sprint_names = passed_sprint_names
         # The recent-activity helpers cap at ~100 rows per source — be honest about it.
@@ -303,9 +357,37 @@ def run_delivery_report(
         days = activity_mod.period_days(period, sprint_length_weeks=length_weeks)
         period_start = (today - timedelta(days=days)).isoformat()
         items, sprint_list, warnings = activity_mod.gather_delivered_work(
-            period, state=state, jira_project=jira_project, azdo_project=azdo_project
+            period,
+            state=state,
+            jira_project=jira_project,
+            azdo_project=azdo_project,
+            delivery_sources=delivery_sel,
+            on_progress=on_progress,
         )
         sprint_names = tuple(sprint_list)
+    _check_cancel(cancel_event)
+
+    # Supporting code/docs signals — reference context gathered even when zero
+    # tickets closed ("activity happened but nothing shipped" is useful framing).
+    # Auto selections only reach for what is actually configured.
+    avail = activity_mod.available_report_sources()
+    code_sel = [s for s in code_sel if s in avail["code"]]
+    docs_sel = [s for s in docs_sel if s in avail["docs"]]
+    supporting_signals: tuple = ()
+    if code_sel or docs_sel:
+        from yeaboi.reporting.context import gather_supporting_signals
+
+        supporting_signals, signal_warnings = gather_supporting_signals(
+            period_start=period_start,
+            period_end=period_end,
+            code_sources=code_sel,
+            doc_sources=docs_sel,
+            azdo_project=azdo_project,
+            db_path=db_path,
+            on_progress=on_progress,
+        )
+        warnings = warnings + signal_warnings
+        _check_cancel(cancel_event)
 
     metrics = _compute_metrics(items)
 
@@ -321,15 +403,19 @@ def run_delivery_report(
             metrics=metrics,
             warnings=warnings,
             generated_at=period_end,
+            supporting_signals=supporting_signals,
         )
     else:
         from yeaboi.prompts.reporting import get_delivery_report_prompt
 
+        _check_cancel(cancel_event)
+        _emit(on_progress, "Designing the report narrative (AI)…")
         prompt = get_delivery_report_prompt(
             delivered_items=[asdict(i) for i in items],
             project_name=project_name,
             period_label=period_label,
             sprint_names=list(sprint_names),
+            supporting_signals=[asdict(s) for s in supporting_signals],
         )
         parsed, llm_warnings = _invoke_llm(prompt)
         warnings = warnings + llm_warnings
@@ -345,6 +431,7 @@ def run_delivery_report(
                 metrics=metrics,
                 warnings=warnings,
                 generated_at=period_end,
+                supporting_signals=supporting_signals,
             )
         else:
             report = DeliveryReport(
@@ -360,16 +447,19 @@ def run_delivery_report(
                 metrics=metrics,
                 delivered_items=tuple(items),
                 emoji_theme=_parse_emoji(parsed.get("emoji_theme")),
+                supporting_signals=supporting_signals,
                 warnings=tuple(warnings),
                 generated_at=period_end,
             )
 
+    _check_cancel(cancel_event)
+    _emit(on_progress, "Saving & exporting…")
     with _store(db_path) as store:
         store.record_run(report, session_id=session_id)
         # Fetched AFTER record_run so this report is part of the volume trend.
         run_history = store.get_history(session_id, limit=30)
 
-    _export(report, history=run_history)
+    _export(report, history=run_history, theme=theme)
     logger.info(
         "run_delivery_report complete: items=%d themes=%d warnings=%d",
         len(report.delivered_items),
@@ -385,11 +475,15 @@ def _store(db_path):
     return ReportingStore(db_path)
 
 
-def _export(report: DeliveryReport, *, history=()) -> None:
-    """Auto-export the report to Markdown + HTML + slide deck; swallow any I/O error."""
+def _export(report: DeliveryReport, *, history=(), theme: str = "midnight") -> None:
+    """Auto-export the report to Markdown + HTML + slide deck (+ .pptx); swallow any I/O error."""
     try:
         from yeaboi.reporting import export
+        from yeaboi.reporting.style import load_deck_style
 
-        export.export_report(report, history=history)
+        # The saved deck-style preferences (~/.yeaboi/data/reporting_prefs.json) are
+        # resolved here — the one seam every auto-export (TUI generate, CLI, MCP
+        # report_delivery) flows through — so builders stay disk-free and hermetic.
+        export.export_report(report, history=history, theme=theme, style=load_deck_style())
     except Exception as e:  # noqa: BLE001 — export is best-effort
         logger.warning("reporting export failed: %s", e)

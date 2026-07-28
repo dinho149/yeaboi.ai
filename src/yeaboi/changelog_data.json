@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.41.0",
+      "date": "2026-07-28",
+      "summary": "Reporting mode reaches feature and UX parity with Analysis and Standup with six major capability launches. Threaded generation runs the engine on a background worker behind a shared progress screen with full cancellation support, and adds Last Week and custom date range periods with automatic window clamping for delivered items. The new theme registry (4 built-in themes plus custom palettes from ~/.yeaboi/data/reporting_themes.json) flows into HTML deck CSS, .pptx slides, CLI --theme flag, and MCP tools. Native .pptx export now available as an optional docs extra with graceful degradation if python-pptx is missing. Per-component source selection (delivery/code/docs) lets you pick what gets included, and deterministic supporting signals (merged PRs, commits, doc updates) appear as bounded reference-only rows with corroboration footnotes. Persisted DeckStyle preferences control title/heading colors, font presets, layout density, bullets, section toggles, and slide numbers with neutral defaults. New layout.py planner delivers content-aware slide packing shared by both renderers: full-width lone cards, greedy 2-column layouts, pagination with (cont.) markers, and a content_fit mode (ask/expand/tight) that lets users decide whether to add slides when content exceeds bounds. Visual quality improvements include top-anchored outcome cards, height-fitted delivered-items table with explicit column widths, deduplicated items (collapsed ticket + changelog rows), executive summary as sentence bullets, and flattened doc-collector progress. Packaged pixel-duck mark appears on both surfaces (inline data URI, offline-safe).",
+      "highlights": [
+        {"text": "Threaded generation with background worker, live progress screen, and Esc cancellation; Last Week and custom date range periods added", "areas": ["reporting"]},
+        {"text": "Theme registry: 4 built-in themes + custom palettes from ~/.yeaboi/data/reporting_themes.json flowing into HTML, .pptx, CLI, and MCP", "areas": ["reporting"]},
+        {"text": "Native .pptx export via python-pptx (optional docs extra); gracefully degrades to HTML if missing", "areas": ["reporting"]},
+        {"text": "Per-component source selection (delivery/code/docs); deterministic supporting signals as bounded reference rows with corroboration footnotes", "areas": ["reporting"]},
+        {"text": "Persisted DeckStyle preferences: colors, fonts, layout density, section toggles, slide numbers; content-aware slide packing with ask/expand/tight fit modes", "areas": ["reporting"]}
+      ]
+    },
+    {
       "version": "2.40.0",
       "date": "2026-07-27",
       "summary": "Daily Standup unlocked six major capabilities that transform how standups work: automated scheduling (set it and run headless), intelligent day-over-day insights (blockers, progress signals, outlook), humanized export cards with ticket links and activity bars, automation detection (bots and scanners excluded from credit), and theme-aware visualizations across all eight modes. The export redesign landed per-member cards instead of tables, readable bullets with hanging indent, theme-aware sparklines and progress bars, and avatar chips. Then the visual system rolled out to Retro, Poker, Performance, Reporting, and Roadmap exports with the same polish.",

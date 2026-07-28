@@ -129,6 +129,8 @@ def _dest_description(key: str, label: str, mode: str) -> str:
         return "Return without exporting"
     if key == "shareonline":
         return "Publish this saved HTML temporarily behind an access code"
+    if key == "powerpoint":
+        return "A .pptx deck styled by the selected palette (needs the docs extra)"
     return f"Send to {label}"
 
 

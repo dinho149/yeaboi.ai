@@ -133,10 +133,16 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "1:1 Complete": ("rgb(200,90,70)", "rgb(240,130,110)", "rgb(52,42,40)", "rgb(62,52,50)"),
     "6mo Review": ("rgb(200,90,70)", "rgb(240,130,110)", "rgb(52,42,40)", "rgb(62,52,50)"),
     "Notes": ("rgb(160,160,180)", "rgb(200,200,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
-    # Reporting mode actions (indigo accent).
+    # Reporting mode actions (indigo accent). PowerPoint sits in the Export blue family.
     "Generate Report": ("rgb(120,100,220)", "rgb(170,150,255)", "rgb(44,40,58)", "rgb(54,50,68)"),
     "Period": ("rgb(120,100,220)", "rgb(170,150,255)", "rgb(44,40,58)", "rgb(54,50,68)"),
     "Theme": ("rgb(120,100,220)", "rgb(170,150,255)", "rgb(44,40,58)", "rgb(54,50,68)"),
+    "Style": ("rgb(120,100,220)", "rgb(170,150,255)", "rgb(44,40,58)", "rgb(54,50,68)"),
+    # Style screen: Save persists (green, like Done), Reset restores the deck-style
+    # defaults (amber signals "destructive-ish").
+    "Save": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Reset": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),
+    "PowerPoint": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Back": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Advisory action on the analysis review when a Small project looks bigger.
     "Switch to Large": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),

@@ -47,7 +47,10 @@ class TestAnonNoteRendersPerBuilder:
         assert "shipped it" in out  # native content still renders
 
     def test_reporting_detail(self):
-        data = {"view": "detail", "detail_lines": ["delivered 5 items"], "detail_title": "Report"}
+        from yeaboi.agent.state import DeliveryReport
+
+        report = DeliveryReport(period_label="Last month", headline="delivered 5 items")
+        data = {"view": "detail", "report": report, "detail_title": "Report"}
         out = _render(_build_reporting_screen(data, anon_note=NOTE, sub_reveal=999.0))
         assert "3 masked" in out
         assert "delivered 5 items" in out

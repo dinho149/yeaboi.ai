@@ -13,6 +13,7 @@ not selectable.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import time
@@ -4307,7 +4308,6 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
     """Reporting saved-runs hub → landing for the Reporting card."""
     from yeaboi.persistence import _relative_time
     from yeaboi.reporting.export import _title, build_report_markdown, export_report
-    from yeaboi.reporting.render import format_report_lines
     from yeaboi.reporting.store import ReportingStore
     from yeaboi.ui.mode_select.screens._project_cards import RunSummary
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
@@ -4340,18 +4340,17 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
     def make_detail(run):
         # Render the saved report through the live Reporting detail screen (indigo
-        # theme + semantic _styled colouring) instead of flat grey lines.
+        # theme + the rich artifact renderer) instead of flat grey lines.
         report = _report(run.run_id)
         if report is None:
             return None
-        detail_lines = format_report_lines(report)
         detail_title = f"Delivery Report — {report.period_label}"
 
         def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
             return _build_reporting_screen(
                 {
                     "view": "detail",
-                    "detail_lines": detail_lines,
+                    "report": report,
                     "detail_title": detail_title,
                     "actions": actions,
                     "message": message,
@@ -4372,11 +4371,15 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
             return store.get_history(run.session_id, limit=30)
 
     def files_export(run):
+        from yeaboi.reporting.style import load_deck_style
+
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_report(report, history=_history_for(run))
-        return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
+        # Saved deck-style prefs apply to every export, including hub re-exports.
+        paths = export_report(report, history=_history_for(run), style=load_deck_style())
+        kinds = "Markdown + HTML + slides" + (" + PowerPoint" if "pptx" in paths else "")
+        return f"Exported to {paths['markdown'].parent}  ({kinds})"
 
     def get_document(run):
         report = _report(run.run_id)
@@ -5148,6 +5151,12 @@ def _run_component_select(
     grid: dict,
     descriptions: dict[str, str] | None = None,
     initial: dict[str, list[str]] | None = None,
+    *,
+    theme=None,
+    brand: str = "ANALYSIS SETUP",
+    title_builder=None,
+    footer_verb: str = "analyse",
+    required: dict[str, str] | None = None,
 ):
     """Blocking ragged component × sub-source picker.
 
@@ -5157,7 +5166,12 @@ def _run_component_select(
     ``components=``) or the string ``"cancel"`` on Esc. Everything is checked by
     default; at least one source overall must stay selected. ``initial`` restores a
     previous selection on wizard re-entry; a component absent from it (newly enabled
-    by a feature change) defaults to all-checked, matching the first visit."""
+    by a feature change) defaults to all-checked, matching the first visit.
+
+    ``theme``/``brand``/``title_builder``/``footer_verb`` re-brand the screen for
+    other modes (Reporting). ``required`` maps a component to the message shown
+    when Enter is pressed with that component empty (only enforced when the grid
+    actually offers the component)."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _COMPONENT_KEYS,
         _build_component_select_screen,
@@ -5191,6 +5205,10 @@ def _run_component_select(
                 height=h,
                 message=message,
                 descriptions=descriptions,
+                theme=theme,
+                brand=brand,
+                title_builder=title_builder,
+                footer_verb=footer_verb,
             )
         )
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -5208,7 +5226,11 @@ def _run_component_select(
         elif kk == "enter":
             result = {c: [grid[c][i] for i in sorted(checked[c])] for c in rows if checked[c]}
             if not result:
-                message = "Select at least one source to analyse."
+                message = f"Select at least one source to {footer_verb}."
+                continue
+            missing = next((m for c, m in (required or {}).items() if c in rows and c not in result), None)
+            if missing:
+                message = missing
                 continue
             return result
         elif kk in ("esc", "q"):
@@ -6875,26 +6897,51 @@ def _collect_reporting_data(message: str = "") -> dict:
 def _run_reporting_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the Reporting page.
 
-    Three views. In "picker": Up/Down choose a period (Last sprint / Last month /
-    Whole quarter), Left/Right pick an action (Generate Report / Theme / Back). For a
-    quarter, Generate opens "sprint_select": Up/Down move, Space toggles which sprints
-    make up the quarter (the current quarter's sprints pre-checked), Enter generates.
-    "detail" shows the report: Up/Down scroll, Export re-writes files, Theme cycles the
-    slide-deck palette, Back returns to the picker.
+    Four views. In "picker": Up/Down choose a period (Last week / Last sprint / Last
+    month / Whole quarter / Custom date range), Left/Right pick an action (Generate
+    Report / Sources / Theme / Back). The first Generate confirms the data sources
+    (ticketing / code / docs — analysis-style grid, skipped when only one source is
+    configured); the choice is sticky for the page and reopenable via Sources.
+    For a quarter, Generate opens "sprint_select": Up/Down
+    move, Space toggles which sprints make up the quarter (the current quarter's
+    sprints pre-checked), Enter generates. A custom range prompts for start/end dates
+    first. "theme_select" previews every palette (built-ins + custom) as color
+    swatches. "style_select" edits the persisted deck style (colors, font, layout,
+    section toggles — Space changes the focused option; Save persists to
+    reporting_prefs.json, Reset restores defaults, Back/Esc discards unsaved
+    edits). "detail" shows the report: Up/Down scroll, Export
+    re-writes files, Back returns to the picker. Generation runs on a worker thread
+    behind the shared progress screen — Esc cancels cooperatively.
 
     # See docs: "Reporting Mode" — TUI page
     """
     from datetime import date as _date
+    from datetime import timedelta as _timedelta
 
     from yeaboi.reporting.activity import (
         PERIOD_LABELS,
         PERIOD_LAST_MONTH,
         PERIOD_LAST_SPRINT,
+        PERIOD_LAST_WEEK,
         PERIOD_QUARTER,
+        PERIOD_WINDOW,
+        available_report_sources,
     )
-    from yeaboi.reporting.presentation import THEMES
-    from yeaboi.reporting.render import format_report_lines
     from yeaboi.reporting.sprints import list_sprints, mark_in_quarter, quarter_bounds
+    from yeaboi.reporting.style import (
+        COLOR_ROLES,
+        CONTENT_FITS,
+        DEFAULT_STYLE,
+        FONT_PRESETS,
+        FONT_SCALES,
+        LAYOUTS,
+        MAX_BULLET_CHOICES,
+        STYLE_FIELDS,
+        load_deck_style,
+        save_deck_style,
+        style_summary,
+    )
+    from yeaboi.reporting.themes import all_palettes
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
 
     base = _collect_reporting_data()
@@ -6903,10 +6950,17 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     q_label, q_start, q_end = quarter_bounds()
     periods = [
+        (PERIOD_LAST_WEEK, PERIOD_LABELS[PERIOD_LAST_WEEK], "The last 7 days of completed work"),
         (PERIOD_LAST_SPRINT, PERIOD_LABELS[PERIOD_LAST_SPRINT], "The most recent sprint's completed work"),
         (PERIOD_LAST_MONTH, PERIOD_LABELS[PERIOD_LAST_MONTH], "The last ~4 weeks across ~2 sprints"),
         (PERIOD_QUARTER, f"Whole quarter ({q_label})", "Pick the sprints that make up the quarter"),
+        (PERIOD_WINDOW, PERIOD_LABELS[PERIOD_WINDOW], "Pick explicit start and end dates"),
     ]
+    # Loaded once per page entry — custom palettes come from reporting_themes.json;
+    # the source grid probes which trackers / code hosts / doc platforms have creds.
+    palettes = all_palettes()
+    theme_names = list(palettes)
+    source_grid = available_report_sources()
 
     state = {
         "view": "picker",
@@ -6916,18 +6970,28 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         "sel": 0,  # action button index
         "message": "",
         "theme": "midnight",
-        "detail_lines": [],
         "detail_title": "",
         "report": None,
+        # sources selection — None until confirmed; sticky for the page session
+        "sources": None,
         # sprint_select view state
         "sprints": [],  # list[SprintRef]
         "sprint_cursor": 0,
         "sprint_checked": set(),
+        # theme_select view state
+        "theme_cursor": 0,
+        "theme_return_view": "picker",
+        # style_select view state — the persisted deck style, edited in place
+        "style": load_deck_style(),
+        "style_cursor": 0,
+        "style_return_view": "picker",
     }
-    picker_actions = ["Generate Report", "Theme", "Back"]
-    detail_actions = ["Export", "Share Online", "Anonymize", "Theme", "Back"]
+    picker_actions = ["Generate Report", "Sources", "Theme", "Style", "Back"]
+    detail_actions = ["Export", "Share Online", "Anonymize", "Theme", "Style", "Back"]
     sprint_actions = ["Generate Report", "Back"]
-    # Anonymize state: None = real report; an AnonymizedOutput = mask the detail lines.
+    theme_actions = ["Select", "Back"]
+    style_actions = ["Save", "Reset", "Back"]
+    # Anonymize state: None = real report; an AnonymizedOutput = mask the shown report.
     anon = None
     anon_instruction = ""
 
@@ -6940,16 +7004,20 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return acts
         if state["view"] == "sprint_select":
             return sprint_actions
+        if state["view"] == "theme_select":
+            return theme_actions
+        if state["view"] == "style_select":
+            return style_actions
         return picker_actions
 
     def _data() -> dict:
-        lines = state["detail_lines"]
+        report = state["report"]
         title = state["detail_title"]
-        # In-place mask: the detail view re-renders the SAME lines with words swapped.
-        if anon is not None and state["view"] == "detail":
-            from yeaboi.anonymize.apply import apply_replacements, mask_lines
+        # In-place mask: the detail view re-renders the SAME report with words swapped.
+        if anon is not None and state["view"] == "detail" and report is not None:
+            from yeaboi.anonymize.apply import apply_replacements, mask_artifact
 
-            lines = mask_lines(lines, anon.replacements)
+            report = mask_artifact(report, anon.replacements)
             title = apply_replacements(title, anon.replacements)
         return {
             "session_name": session_name,
@@ -6957,15 +7025,24 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             "periods": periods,
             "selected_idx": state["selected"],
             "theme": state["theme"],
-            "detail_lines": lines,
+            "report": report,
             "detail_title": title,
             "actions": _actions(),
             "message": state["message"],
+            "sources_summary": _sources_summary(),
             # sprint_select rendering
             "quarter_label": q_label,
             "sprints": state["sprints"],
             "sprint_cursor": state["sprint_cursor"],
             "sprint_checked": state["sprint_checked"],
+            # theme_select rendering
+            "theme_names": theme_names,
+            "palettes": palettes,
+            "theme_cursor": state["theme_cursor"],
+            # style_select rendering
+            "style": state["style"],
+            "style_cursor": state["style_cursor"],
+            "style_summary": style_summary(state["style"]),
         }
 
     anim_start = time.monotonic()
@@ -6989,7 +7066,6 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     def _show_report(report, msg: str) -> None:
         state["report"] = report
-        state["detail_lines"] = format_report_lines(report)
         state["detail_title"] = f"Delivery Report — {report.period_label}"
         state["view"] = "detail"
         state["sel"], state["scroll"] = 0, 0
@@ -7000,22 +7076,175 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         plural = "s" if n != 1 else ""
         return f"Report generated — {n} item{plural} delivered. Auto-saved (md/html/slides)."
 
+    source_titles = {
+        "jira": "Jira",
+        "azuredevops": "Azure DevOps",
+        "github": "GitHub",
+        "confluence": "Confluence",
+        "notion": "Notion",
+    }
+
+    def _sources_summary() -> str:
+        """One status line for the picker: what the next Generate will consult."""
+        sel = state["sources"] if state["sources"] is not None else source_grid
+
+        def _fmt(component: str) -> str:
+            chosen = [source_titles.get(s, s) for s in sel.get(component, [])]
+            return " + ".join(chosen) if chosen else "—"
+
+        return f"Sources: {_fmt('delivery')}  ·  Code: {_fmt('code')}  ·  Docs: {_fmt('docs')}"
+
+    def _confirm_sources(*, force: bool = False) -> dict | None:
+        """Confirm which data sources feed the report (analysis-style grid).
+
+        Returns the ``{component: [sources]}`` selection (sticky in
+        ``state["sources"]`` for the page session), or None when the user Esc-backs
+        out. Shown only when a real choice exists (≥2 configured sources overall);
+        otherwise the single/empty configuration is confirmed silently. The Sources
+        button passes ``force=True`` to open it regardless.
+        """
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        grid = {c: list(v) for c, v in source_grid.items() if v}
+        total = sum(len(v) for v in grid.values())
+        if not grid:
+            # Nothing configured — the engine surfaces the "no board" warning.
+            if force:
+                state["message"] = "No data sources configured — connect a tracker in Settings."
+            state["sources"] = {}
+            return {}
+        if not force and total <= 1:
+            logger.info("reporting: single configured source — skipping sources step")
+            state["sources"] = grid
+            return grid
+        logger.info("reporting: sources select opened (%d source(s))", total)
+        result = _run_component_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            grid,
+            descriptions={
+                "delivery": "where completed tickets come from",
+                "code": "merged PRs/commits as supporting context",
+                "docs": "doc updates as supporting context",
+            },
+            initial=state["sources"],
+            theme=REPORTING_THEME,
+            brand="REPORTING SETUP",
+            title_builder=lambda w, h: reporting_title(width=w),
+            footer_verb="report on",
+            required={"delivery": "Select at least one ticketing source."} if grid.get("delivery") else None,
+        )
+        if result == "cancel":
+            logger.info("reporting: sources selection cancelled")
+            return None
+        # A fully-unchecked component comes back absent from the picker result;
+        # store it as an explicit empty list — a missing key means "auto" to
+        # normalize_sources, which would silently re-enable what the user just
+        # deselected.
+        result = {c: result.get(c, []) for c in grid}
+        state["sources"] = result
+        logger.info("reporting: sources confirmed — %s", result)
+        return result
+
+    def _ensure_sources() -> bool:
+        """Generate-path gate: confirm sources once, then stay sticky."""
+        if state["sources"] is not None:
+            return True
+        return _confirm_sources() is not None
+
+    def _run_report_generate(make_report) -> None:
+        """Run ``make_report`` on a worker thread behind the shared progress screen.
+
+        ``make_report(on_progress=..., cancel_event=...)`` runs the engine; the frame
+        loop repaints live progress at ~30fps (the same worker-thread pattern the
+        standup generate uses — without it the whole TUI froze for the tracker fetch
+        + LLM call). Esc/q sets the cancel event; the engine raises ReportCancelledError
+        at the next stage boundary. Success lands on the detail view.
+        """
+        import threading
+
+        from yeaboi.reporting.engine import ReportCancelledError
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        progress: list[str] = ["Starting"]
+        result_box: list = [None, None]  # [report, exception]
+        cancel_event = threading.Event()
+
+        def _worker() -> None:
+            try:
+                result_box[0] = make_report(on_progress=progress.append, cancel_event=cancel_event)
+            except BaseException as e:  # noqa: BLE001 — re-surfaced on the UI thread below
+                result_box[1] = e
+
+        thread = threading.Thread(target=_worker, name="reporting-generate", daemon=True)
+        thread.start()
+        start = time.monotonic()
+        cancelling = False
+        while thread.is_alive():
+            elapsed = time.monotonic() - start
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=REPORTING_THEME,
+                    # width picks the tall ANSI wordmark (the pixel-block art is the
+                    # narrow-terminal fallback); shimmer animates like the page header.
+                    title=reporting_title(elapsed, width=w),
+                    label="Cancelling…" if cancelling else "Generating delivery report",
+                )
+            )
+            # With timeout support the key read doubles as the frame pacer; without
+            # it a blocking read would stall the spinner, so just sleep (no cancel).
+            if supports_timeout:
+                k = read_key(timeout=frame_time)
+                if k in ("esc", "q") and not cancelling:
+                    cancelling = True
+                    cancel_event.set()
+                    logger.info("reporting: generate cancel requested")
+            else:
+                time.sleep(1 / 30)
+        thread.join()
+        err = result_box[1]
+        if err is None and result_box[0] is not None:
+            report = result_box[0]
+            logger.info("reporting: report generated — %d item(s)", len(report.delivered_items))
+            _show_report(report, _delivered_msg(report))
+        elif isinstance(err, ReportCancelledError):
+            logger.info("reporting: generate cancelled")
+            state["message"] = "Generation cancelled."
+        else:
+            logger.error("reporting generate failed: %s", err, exc_info=err)
+            state["message"] = f"Generate failed: {err}"
+
     def _generate() -> None:
-        """Generate the delivery report for the selected non-quarter period."""
+        """Generate the delivery report for the selected simple period (threaded)."""
         period_key = periods[state["selected"]][0]
         logger.info("reporting: generating report (period=%s, session=%s)", period_key, session_id)
-        try:
-            from yeaboi.reporting.engine import run_delivery_report
+        from yeaboi.reporting.engine import run_delivery_report
 
-            report = run_delivery_report(period_key, session_id=session_id, db_path=_ana_dbp)
-            logger.info("reporting: report generated — %d item(s) (period=%s)", len(report.delivered_items), period_key)
-            _show_report(report, _delivered_msg(report))
-        except Exception as e:  # never let an action crash the TUI
-            logger.error("reporting generate failed: %s", e, exc_info=True)
-            state["message"] = f"Generate failed: {e}"
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
+                period_key,
+                session_id=session_id,
+                db_path=_ana_dbp,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+
+        _run_report_generate(_make)
 
     def _run_quarter(window_start: str, window_end: str, names: tuple, label: str) -> None:
-        """Generate a quarter report over an explicit sprint-derived window."""
+        """Generate a quarter report over an explicit sprint-derived window (threaded)."""
         logger.info(
             "reporting: generating quarter report %s → %s over %d sprint(s) (session=%s)",
             window_start,
@@ -7023,10 +7252,10 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             len(names),
             session_id,
         )
-        try:
-            from yeaboi.reporting.engine import run_delivery_report
+        from yeaboi.reporting.engine import run_delivery_report
 
-            report = run_delivery_report(
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
                 PERIOD_QUARTER,
                 session_id=session_id,
                 db_path=_ana_dbp,
@@ -7034,12 +7263,73 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 window_end=window_end,
                 sprint_names=names,
                 period_label_override=label,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
             )
-            logger.info("reporting: quarter report generated — %d item(s)", len(report.delivered_items))
-            _show_report(report, _delivered_msg(report))
-        except Exception as e:  # never let an action crash the TUI
-            logger.error("reporting quarter generate failed: %s", e, exc_info=True)
-            state["message"] = f"Generate failed: {e}"
+
+        _run_report_generate(_make)
+
+    def _ask_date(step: str, default: str, *, not_before: str = "") -> str | None:
+        """Prompt for one ISO date with a retry loop; None when the user Esc-cancels."""
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        prompt = "YYYY-MM-DD"
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=prompt,
+                step=step,
+                default=default,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is None:
+                return None
+            raw = (raw or "").strip() or default
+            try:
+                value = _date.fromisoformat(raw).isoformat()
+            except ValueError:
+                prompt = f"{raw!r} isn't a date — enter YYYY-MM-DD"
+                continue
+            if not_before and value < not_before:
+                prompt = f"End date must not be before {not_before} — enter YYYY-MM-DD"
+                continue
+            return value
+
+    def _generate_window() -> None:
+        """Prompt for explicit start/end dates, then generate over that window (threaded)."""
+        today = _date.today()
+        start_iso = _ask_date("Custom range — start date", (today - _timedelta(days=28)).isoformat())
+        if start_iso is None:
+            state["message"] = ""
+            return
+        end_iso = _ask_date("Custom range — end date", today.isoformat(), not_before=start_iso)
+        if end_iso is None:
+            state["message"] = ""
+            return
+        logger.info("reporting: generating custom-range report %s → %s (session=%s)", start_iso, end_iso, session_id)
+        from yeaboi.reporting.engine import run_delivery_report
+
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
+                PERIOD_WINDOW,
+                session_id=session_id,
+                db_path=_ana_dbp,
+                window_start=start_iso,
+                window_end=end_iso,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+
+        _run_report_generate(_make)
 
     def _open_sprint_select() -> None:
         """Load the sprint list for the quarter and switch to the multi-select view.
@@ -7090,19 +7380,82 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         label = q_label if set(checked) == detected else f"{q_label} (custom)"
         _run_quarter(window_start, window_end, names, label)
 
+    def _tilde(p) -> str:
+        """Abbreviate $HOME to ~ so export paths survive the banner's ellipsis."""
+        home = str(Path.home())
+        s = str(p)
+        return "~" + s[len(home) :] if s.startswith(home) else s
+
+    def _resolve_fit_for_export():
+        """Resolve content_fit="ask" by offering the extra slides ("expand") or the
+        fixed grid ("tight") — the deck builders themselves can never prompt.
+
+        Returns the DeckStyle to export with, or None when the user Esc-cancels.
+        Only asks when expanding actually costs slides; the answer applies to this
+        export only (the saved preference stays "ask").
+        """
+        style = state["style"]
+        report = state.get("report")
+        if style.content_fit != "ask" or report is None:
+            return style
+        from yeaboi.reporting.layout import count_fit_slides
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        tight_n, expand_n = count_fit_slides(report, style)
+        if expand_n <= tight_n:  # everything fits without extra slides — nothing to ask
+            return dataclasses.replace(style, content_fit="expand")
+        extra = expand_n - tight_n
+        raw = _standup_read_line(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            prompt="y = add them, everything fits · n = keep it tight (may trim with '… and N more')",
+            step=f"Fit all content with {extra} extra slide{'s' if extra != 1 else ''}?",
+            default="y",
+            theme=REPORTING_THEME,
+            title=reporting_title(width=console.size[0]),
+        )
+        if raw is None:
+            return None
+        chosen = "tight" if raw.strip().lower().startswith("n") else "expand"
+        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, chosen)
+        return dataclasses.replace(state["style"], content_fit=chosen)
+
     def _export_files() -> str:
         report = state.get("report")
+        style = _resolve_fit_for_export()
+        if style is None:
+            return "Export cancelled."
         try:
             from yeaboi.reporting.export import export_report
             from yeaboi.reporting.store import ReportingStore
 
             with ReportingStore(_ana_dbp) as _store:
                 run_history = _store.get_history(session_id, limit=30)
-            paths = export_report(report, theme=state["theme"], history=run_history)
-            return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
+            paths = export_report(report, theme=state["theme"], history=run_history, style=style)
+            kinds = "Markdown + HTML + slides" + (" + PowerPoint" if "pptx" in paths else "")
+            return f"Exported to {_tilde(paths['markdown'].parent)}  ({kinds})"
         except Exception as e:  # noqa: BLE001
             logger.error("reporting export failed: %s", e, exc_info=True)
             return f"Export failed: {e}"
+
+    def _export_pptx() -> str:
+        report = state.get("report")
+        style = _resolve_fit_for_export()
+        if style is None:
+            return "Export cancelled."
+        try:
+            from yeaboi.reporting.export import export_pptx_only
+
+            path = export_pptx_only(report, theme=state["theme"], style=style)
+            if path is None:
+                return "PowerPoint export needs python-pptx — install with: uv sync --extra docs"
+            return f"Exported PowerPoint to {_tilde(path)}"
+        except Exception as e:  # noqa: BLE001
+            logger.error("reporting pptx export failed: %s", e, exc_info=True)
+            return f"PowerPoint export failed: {e}"
 
     def _export_document() -> tuple[str, str] | str:
         from yeaboi.paths import get_reporting_export_dir
@@ -7148,15 +7501,135 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 mode="reporting",
                 files_export=_export_files,
                 get_document=_export_document,
+                extra_options=["PowerPoint"],
+                extra_handlers={"powerpoint": _export_pptx},
             )
         if msg is not None:
             state["message"] = msg
 
-    def _cycle_theme() -> None:
-        idx = (list(THEMES).index(state["theme"]) + 1) % len(THEMES) if state["theme"] in THEMES else 0
-        state["theme"] = THEMES[idx]
-        logger.info("reporting: presentation theme cycled to %s", state["theme"])
-        state["message"] = f"Presentation theme: {state['theme']}"
+    def _open_theme_select() -> None:
+        """Switch to the palette preview list, remembering where to return."""
+        state["theme_return_view"] = state["view"]
+        state["theme_cursor"] = theme_names.index(state["theme"]) if state["theme"] in theme_names else 0
+        state["view"] = "theme_select"
+        state["sel"], state["message"] = 0, ""
+        logger.info("reporting: theme select opened (%d palette(s))", len(theme_names))
+
+    def _close_theme_select(*, chosen: bool) -> None:
+        if chosen:
+            state["theme"] = theme_names[state["theme_cursor"]]
+            state["message"] = f"Presentation theme: {state['theme']}"
+            logger.info("reporting: presentation theme set to %s", state["theme"])
+        state["view"] = state["theme_return_view"]
+        state["sel"] = 0
+
+    # Baseline for the style editor: what's on disk. Space edits a working copy
+    # (live previews + this session's exports); Save persists, Back/Esc discards.
+    style_saved = state["style"]
+
+    def _open_style_select() -> None:
+        """Switch to the deck-style options list, remembering where to return."""
+        nonlocal style_saved
+        style_saved = state["style"]
+        state["style_return_view"] = state["view"]
+        state["view"] = "style_select"
+        state["sel"], state["message"] = 0, ""
+        logger.info("reporting: style select opened (%s)", style_summary(state["style"]))
+
+    def _save_style_select() -> None:
+        nonlocal style_saved
+        save_deck_style(state["style"])
+        style_saved = state["style"]
+        state["view"] = state["style_return_view"]
+        state["sel"] = 0
+        state["message"] = "Style saved — applies to every future export."
+        logger.info("reporting: style saved (%s)", style_summary(state["style"]))
+
+    def _close_style_select() -> None:
+        discarded = state["style"] != style_saved
+        state["style"] = style_saved  # Back/Esc drops unsaved edits
+        state["view"] = state["style_return_view"]
+        state["sel"] = 0
+        if discarded:
+            state["message"] = "Style changes discarded."
+            logger.info("reporting: style changes discarded")
+
+    def _set_style(field: str, value) -> None:
+        """Apply one style change to the working copy (persisted on Save)."""
+        state["style"] = dataclasses.replace(state["style"], **{field: value})
+        logger.info("reporting: style %s → %r", field, value)
+
+    def _read_custom_hex(label: str, current: str) -> str | None:
+        """Prompt for a #RRGGBB color; retries on bad input, Esc keeps the old value."""
+        import re as _re
+
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        prompt = "#RRGGBB, a palette role (accent/accent2/fg/muted), or blank for theme default"
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=prompt,
+                step=f"{label} — custom color",
+                default=current,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is None:
+                return None
+            raw = raw.strip().lower()
+            if raw == "" or raw in COLOR_ROLES or _re.match(r"^#[0-9a-f]{6}$", raw):
+                return raw
+            prompt = f"{raw!r} isn't valid — use #RRGGBB, accent/accent2/fg/muted, or blank"
+
+    def _cycle_style() -> None:
+        """Space on a style row: flip/cycle the focused option (colors end in a custom prompt)."""
+        field, label, kind = STYLE_FIELDS[state["style_cursor"]]
+        current = getattr(state["style"], field)
+        if kind == "bool":
+            _set_style(field, not current)
+        elif kind == "choice":
+            values = {
+                "font_family": tuple(FONT_PRESETS),
+                "font_scale": tuple(FONT_SCALES),
+                "layout": LAYOUTS,
+                "content_fit": CONTENT_FITS,
+            }[field]
+            _set_style(field, values[(values.index(current) + 1) % len(values)] if current in values else values[0])
+        elif kind == "int":
+            nxt = next((v for v in MAX_BULLET_CHOICES if v > current), MAX_BULLET_CHOICES[0])
+            _set_style(field, nxt)
+        elif kind == "color":
+            # "" → roles in order → custom hex prompt → back to "".
+            cycle = ("", *COLOR_ROLES)
+            if current in cycle and current != cycle[-1]:
+                _set_style(field, cycle[cycle.index(current) + 1])
+            elif current == cycle[-1]:
+                chosen = _read_custom_hex(label, "")
+                _set_style(field, chosen if chosen is not None else "")
+            else:  # currently a custom hex — wrap to theme default
+                _set_style(field, "")
+        else:  # text (footer)
+            from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt="Shown on every slide — blank clears it",
+                step="Footer text",
+                default=current,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is not None:
+                _set_style(field, raw.strip()[:120])
 
     _render()
     while True:
@@ -7175,14 +7648,62 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 if label == "Back":
                     break
                 elif label == "Generate Report":
-                    if periods[state["selected"]][0] == PERIOD_QUARTER:
+                    if not _ensure_sources():
+                        state["message"] = ""
+                        _render()
+                        continue
+                    period_key = periods[state["selected"]][0]
+                    if period_key == PERIOD_QUARTER:
                         _open_sprint_select()
+                    elif period_key == PERIOD_WINDOW:
+                        _generate_window()
                     else:
                         _generate()
+                elif label == "Sources":
+                    _confirm_sources(force=True)
                 elif label == "Theme":
-                    _cycle_theme()
+                    _open_theme_select()
+                elif label == "Style":
+                    _open_style_select()
             elif k in ("esc", "q"):
                 break
+        elif state["view"] == "theme_select":
+            n_themes = len(theme_names)
+            if k in ("up", "scroll_up"):
+                state["theme_cursor"] = (state["theme_cursor"] - 1) % n_themes
+            elif k in ("down", "scroll_down"):
+                state["theme_cursor"] = (state["theme_cursor"] + 1) % n_themes
+            elif k == "left":
+                state["sel"] = max(0, state["sel"] - 1)
+            elif k == "right":
+                state["sel"] = min(len(theme_actions) - 1, state["sel"] + 1)
+            elif k in ("enter", " "):
+                _close_theme_select(chosen=theme_actions[state["sel"]] == "Select")
+            elif k in ("esc", "q"):
+                _close_theme_select(chosen=False)
+        elif state["view"] == "style_select":
+            n_fields = len(STYLE_FIELDS)
+            if k in ("up", "scroll_up"):
+                state["style_cursor"] = (state["style_cursor"] - 1) % n_fields
+            elif k in ("down", "scroll_down"):
+                state["style_cursor"] = (state["style_cursor"] + 1) % n_fields
+            elif k == " ":  # change the option under the cursor
+                _cycle_style()
+            elif k == "left":
+                state["sel"] = max(0, state["sel"] - 1)
+            elif k == "right":
+                state["sel"] = min(len(style_actions) - 1, state["sel"] + 1)
+            elif k == "enter":
+                label = style_actions[state["sel"]]
+                if label == "Save":
+                    _save_style_select()
+                elif label == "Reset":
+                    state["style"] = DEFAULT_STYLE  # working copy only — Save commits
+                    logger.info("reporting: style reset to defaults (unsaved)")
+                else:  # Back
+                    _close_style_select()
+            elif k in ("esc", "q"):
+                _close_style_select()
         elif state["view"] == "sprint_select":
             n_sprints = len(state["sprints"])
             if k in ("up", "scroll_up"):
@@ -7267,7 +7788,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                                 project_name=report.project_name or "",
                                 source_mode="reporting",
                                 theme=REPORTING_THEME,
-                                title=reporting_title(),
+                                title=reporting_title(width=console.size[0]),
                             )
                             if res is not None:
                                 anon, anon_instruction = res, ""
@@ -7286,7 +7807,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                         step="Anonymize — adjust what's masked",
                         default="",
                         theme=REPORTING_THEME,
-                        title=reporting_title(),
+                        title=reporting_title(width=console.size[0]),
                         box_rows=6,
                     )
                     if adj is not None and adj.strip():
@@ -7304,14 +7825,16 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                                 project_name=(state.get("report").project_name if state.get("report") else "") or "",
                                 source_mode="reporting",
                                 theme=REPORTING_THEME,
-                                title=reporting_title(),
+                                title=reporting_title(width=console.size[0]),
                             )
                             if res is not None:
                                 anon = res
                 elif label == "Revert":  # restore the real names (no LLM call)
                     anon, anon_instruction = None, ""
                 elif label == "Theme":
-                    _cycle_theme()
+                    _open_theme_select()
+                elif label == "Style":
+                    _open_style_select()
             elif k in ("esc", "q"):
                 state["view"] = "picker"
                 state["sel"], state["scroll"], state["message"] = 0, 0, ""

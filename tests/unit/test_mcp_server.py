@@ -258,6 +258,49 @@ class TestHistoryTools:
         # No report recorded → the tool raises, surfaced as ok=False in the envelope.
         assert payload["ok"] is False
 
+    def test_reporting_export_style_merges_over_saved_prefs(self, seeded_session, tmp_db, monkeypatch, tmp_path):
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.reporting.store import ReportingStore
+        from yeaboi.reporting.style import DeckStyle
+
+        with ReportingStore(tmp_db) as store:
+            store.record_run(DeliveryReport(period_label="Last month"), session_id=seeded_session)
+        # Saved prefs say classic font; the per-call dict overrides only the layout.
+        monkeypatch.setattr("yeaboi.reporting.style.load_deck_style", lambda: DeckStyle(font_family="classic"))
+        seen = {}
+
+        def _capture(report, **kw):
+            seen.update(kw)
+            p = tmp_path / "out.md"
+            p.write_text("x")
+            return {"markdown": p, "html": p, "slides": p}
+
+        monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
+        payload = call_tool("reporting_export", {"style": {"layout": "compact", "footer_text": "ACME"}})
+        assert payload["ok"] is True
+        assert seen["style"] == DeckStyle(font_family="classic", layout="compact", footer_text="ACME")
+
+    def test_reporting_export_tolerates_garbage_style(self, seeded_session, tmp_db, monkeypatch, tmp_path):
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.reporting.store import ReportingStore
+        from yeaboi.reporting.style import DEFAULT_STYLE, DeckStyle
+
+        with ReportingStore(tmp_db) as store:
+            store.record_run(DeliveryReport(period_label="Last month"), session_id=seeded_session)
+        monkeypatch.setattr("yeaboi.reporting.style.load_deck_style", lambda: DeckStyle())
+        seen = {}
+
+        def _capture(report, **kw):
+            seen.update(kw)
+            p = tmp_path / "out.md"
+            p.write_text("x")
+            return {"markdown": p, "html": p, "slides": p}
+
+        monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
+        payload = call_tool("reporting_export", {"style": {"layout": "diagonal", "max_bullets": "lots"}})
+        assert payload["ok"] is True  # tolerant validation, never a crash
+        assert seen["style"] == DEFAULT_STYLE
+
     def test_team_profile_get_no_db(self, tmp_db):
         payload = call_tool("team_profile_get")
         assert payload["ok"] is True

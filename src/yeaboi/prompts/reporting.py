@@ -30,12 +30,40 @@ def _items_block(delivered_items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+_SIGNAL_KIND_LABELS = {
+    "pull_requests": "pull requests merged",
+    "commits": "commits",
+    "doc_updates": "doc pages updated",
+}
+_SIGNAL_SOURCE_LABELS = {
+    "github": "GitHub",
+    "azuredevops": "Azure DevOps",
+    "confluence": "Confluence",
+    "notion": "Notion",
+}
+
+
+def _signals_block(supporting_signals: list[dict]) -> str:
+    """Render the SupportingSignal dicts into compact reference bullets."""
+    lines: list[str] = []
+    for sig in supporting_signals:
+        kind = _SIGNAL_KIND_LABELS.get(sig.get("kind", ""), sig.get("kind", "activity"))
+        source = _SIGNAL_SOURCE_LABELS.get(sig.get("source", ""), sig.get("source", ""))
+        samples = "; ".join(f'"{s}"' for s in (sig.get("samples") or ())[:4])
+        line = f"- {sig.get('count', 0)} {kind} ({source})"
+        if samples:
+            line += f": {samples}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def get_delivery_report_prompt(
     *,
     delivered_items: list[dict],
     project_name: str,
     period_label: str,
     sprint_names: list[str],
+    supporting_signals: list[dict] | None = None,
 ) -> str:
     """Build the delivery-report prompt: completed tickets → business narrative.
 
@@ -44,6 +72,8 @@ def get_delivery_report_prompt(
         project_name: the project/product name for framing the narrative.
         period_label: human label for the window ("Last sprint" / "Last month ...").
         sprint_names: the sprint name(s) that fell in the window (best-effort).
+        supporting_signals: optional SupportingSignal dicts (code/docs activity from
+            the same period) — corroborating reference only, never report subject.
     """
     evidence = _items_block(delivered_items)
     sprints = ", ".join(s for s in sprint_names if s) or "(sprint names unavailable)"
@@ -71,6 +101,9 @@ def get_delivery_report_prompt(
         '"headline", "summary", "metrics", "themes", "highlights", "thanks". '
         "Choose emojis that fit the actual work (e.g. 🔐 for security, ⚡ for performance).\n"
         "- Keep it concise and skimmable. No markdown fences.\n"
+        "- Supporting signals (if present) are context, NOT deliverables: never create a theme, "
+        "highlight, or claim from them. You may add at most one corroborating clause to the "
+        "executive summary (e.g. 'backed by 24 merged pull requests and 5 documentation updates').\n"
         "- Return ONLY a JSON object of the exact shape:\n"
         '  {"headline": "...", "executive_summary": "...", '
         '"themes": [{"title": "...", "outcomes": ["..."]}], '
@@ -85,4 +118,9 @@ def get_delivery_report_prompt(
         f"- Sprint(s): {sprints}\n"
         f"- Completed tickets ({count}):\n{evidence}"
     )
+    if supporting_signals:
+        context += (
+            "\n- Supporting signals — REFERENCE ONLY (code/docs activity from the same period, "
+            f"for corroboration):\n{_signals_block(supporting_signals)}"
+        )
     return f"{ask}\n\n{requirements}\n\n{context}"

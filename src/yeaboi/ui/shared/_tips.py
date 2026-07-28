@@ -91,8 +91,9 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "reporting",
-        "\U0001f4ca Tip: Reporting summarises delivered work for the business as slides, HTML or MD",
+        "\U0001f4ca Tip: Reporting turns delivered work into stakeholder slides, PowerPoint and HTML",
         mode_key="reporting",
+        is_new=True,
     ),
     FeatureTip(
         "usage",
