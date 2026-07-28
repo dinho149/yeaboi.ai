@@ -149,7 +149,7 @@ class TestLocalPerformanceSection:
         console.print(panel)
         assert "Local Model Performance" not in console.file.getvalue()
 
-    def test_screen_renders_copy_button_and_message(self):
+    def test_screen_renders_copy_hint_and_message(self):
         from io import StringIO
 
         from rich.console import Console
@@ -166,7 +166,8 @@ class TestLocalPerformanceSection:
         console = Console(file=StringIO(), width=100, height=40)
         console.print(panel)
         out = console.file.getvalue()
-        assert "Copy" in out
+        # The Copy/Back buttons were replaced by a keyboard hint.
+        assert "copy" in out and "back" in out
         assert "Copied to clipboard" in out
 
 

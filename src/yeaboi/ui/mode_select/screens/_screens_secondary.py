@@ -2245,7 +2245,7 @@ def _build_usage_screen(
 
     theme = USAGE_THEME
     title = usage_title(shimmer_tick)
-    sub = build_reveal_subtitle("API usage and session history", sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle("API usage and session history", sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
     if message:
@@ -2360,7 +2360,9 @@ def _build_usage_screen(
             body_lines.append(r)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    # header = blank + title(2) + blank + sub (the first heading leads with its own
+    # blank, so no extra blank after sub); action_h = blank + hint + pocket blank.
+    viewport_h = calc_viewport(height, header_h=5, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2371,8 +2373,6 @@ def _build_usage_screen(
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2392,17 +2392,23 @@ def _build_usage_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    # No button row — a keyboard hint replaces it (aligned with the headings).
+    hint = Text(_PAD + "  ", justify="left")
+    if actions and "Copy" in actions:
+        hint.append("c", style=theme.accent)
+        hint.append("  copy  ·  ", style=theme.muted)
+    hint.append("Esc", style=theme.accent)
+    hint.append("  back", style=theme.muted)
+
     content = Group(
         Text(""),
         title,
         Text(""),
         sub,
-        Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        hint,
+        Text(""),  # keeps the hint above the music pocket band
     )
 
     return build_page_panel(content, theme=USAGE_THEME, height=height)
@@ -2461,7 +2467,7 @@ def _build_standup_screen(
         sub_text = f"Overview › {standup_card_title(view, standup_data)}"
     if anon_note:  # anonymized: the subtitle becomes the "N masked — review" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
     sub.no_wrap = True  # the header row budget counts the subtitle as one row
     sub.overflow = "ellipsis"
 
@@ -2742,7 +2748,7 @@ def _build_changelog_screen(
 
     theme = CHANGELOG_THEME
     title = changelog_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
     if message:
@@ -2880,7 +2886,7 @@ def _build_all_tips_screen(
 
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD + "  ")
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
 
@@ -3056,7 +3062,7 @@ def _build_feedback_screen(
         "polish_preview": "AI-polished draft — accept it or keep your original",
         "result": "Submission result",
     }
-    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
     wrap_w = max(24, width - len(_PAD) - 12)
@@ -3293,7 +3299,7 @@ def _build_performance_screen(
         sub_text = f"Team performance — {session_name}" if session_name else "Team performance"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     message = performance_data.get("message", "")
 
@@ -3467,7 +3473,7 @@ def _build_reporting_screen(
         sub_text = f"Report delivered work — {session_name}" if session_name else "Report delivered work"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     actions = reporting_data.get("actions") or ["Generate Report", "Theme", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
@@ -3691,7 +3697,7 @@ def _build_roadmap_screen(
         sub_text = "Where does your quarterly roadmap live?"
     if anon_note and not busy:  # anonymized results: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     # ── Busy overlay — while the analysis worker runs, show only the spinner so
     # the source options / buttons underneath don't confuse the user. ─────────────
@@ -3933,7 +3939,7 @@ def _build_retro_screen(
     sub_text = f"Sprint retro for {session_name}" if session_name else "Sprint retro"
     if anon_note:  # anonymized: the subtitle carries the "N masked — review" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
 
@@ -4131,7 +4137,7 @@ def _build_poker_screen(
     sub_text = poker_data.get("subtitle") or (
         f"Planning poker for {session_name}" if session_name else "Planning poker"
     )
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
 

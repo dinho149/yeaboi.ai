@@ -9748,19 +9748,12 @@ def select_mode(
                         if _ns == _u_scroll:
                             continue
                         _u_scroll = _ns
-                    elif k == "left":
-                        _u_sel = max(0, _u_sel - 1)
-                    elif k == "right":
-                        _u_sel = min(len(_u_actions) - 1, _u_sel + 1)
-                    elif k in ("enter", " "):
-                        if _u_actions[_u_sel] == "Copy":
-                            from yeaboi.clipboard import copy_markdown_status
-                            from yeaboi.usage_export import build_usage_text
+                    elif k in ("c", "C"):  # copy the usage report to the clipboard
+                        from yeaboi.clipboard import copy_markdown_status
+                        from yeaboi.usage_export import build_usage_text
 
-                            logger.info("Usage: Copy pressed")
-                            _u_message = copy_markdown_status(build_usage_text(_usage_data))
-                        else:  # Back
-                            break
+                        logger.info("Usage: Copy pressed")
+                        _u_message = copy_markdown_status(build_usage_text(_usage_data))
                     elif k in ("esc", "q"):
                         break
                     w, h = console.size
