@@ -9766,7 +9766,7 @@ def select_mode(
                     _build_settings_screen,
                     settings_tab_action,
                 )
-                from yeaboi.ui.shared._click import parse_click, tab_click
+                from yeaboi.ui.shared._click import parse_click
 
                 _settings_data = _collect_settings_data()
                 _s_scroll, _s_tab = 0, 0
@@ -9794,10 +9794,12 @@ def select_mode(
                     sk = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
                     _s_click = parse_click(sk)
                     if _s_click is not None:
-                        # Click a tab → switch to it (the tab bar is the navigation).
-                        _ti = tab_click(console, _s_panel, _s_click[0], _s_click[1])
-                        if _ti is not None and _ti != _s_tab:
-                            _s_tab, _s_scroll = _ti, 0
+                        # Click a tab (its label or the underline) → switch to it.
+                        _cx, _cy = _s_click
+                        for _i, (_lr, _ur, _sc, _ec) in enumerate(getattr(_s_panel, "_tab_regions", [])):
+                            if _cy in (_lr, _ur) and _sc <= _cx <= _ec and _i != _s_tab:
+                                _s_tab, _s_scroll = _i, 0
+                                break
                     elif sk in SCROLL_KEYS:
                         _ns = coalesce_scroll(_s_scroll, sk, _s_scroll_meta, read_key)
                         if _ns == _s_scroll:

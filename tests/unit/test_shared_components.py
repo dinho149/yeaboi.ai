@@ -437,10 +437,10 @@ class TestSettingsScreen:
         assert "\u2022" in output  # bullet mask chars
 
     def test_tab_bar_and_hint_rendered(self):
-        # The old action-button row was replaced by a tab bar (all section labels)
+        # The old action-button row was replaced by a tab bar (grouped sections)
         # plus a context hint (switch / Enter / Esc back).
         output = self._render({}, height=40)
-        for tab in ("Provider", "Jira", "Azure", "Storage", "Advanced"):
+        for tab in ("Credentials", "Storage", "System"):
             assert tab in output
         assert "switch" in output and "back" in output
 
@@ -453,46 +453,46 @@ class TestSettingsScreen:
         assert isinstance(r2, Panel)
 
     def test_only_active_tab_section_renders(self):
-        # Default tab (Provider) shows provider rows, not Jira's; switching to the
-        # Jira tab shows Jira rows, not the provider key rows.
-        provider = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=40, active_tab=0)
-        assert "Anthropic Key" in provider
-        assert "org.atlassian.net" not in provider  # Jira section is on another tab
-        jira = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=40, active_tab=1)
-        assert "org.atlassian.net" in jira
-        assert "Anthropic Key" not in jira
+        # Credentials groups LLM + integrations (Anthropic key AND Jira); the System
+        # tab shows Advanced (Log Level) and none of the credential rows.
+        creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=0)
+        assert "Anthropic Key" in creds
+        assert "org.atlassian.net" in creds  # Jira grouped under Credentials
+        system = self._render({}, height=40, active_tab=2)
+        assert "Log Level" in system  # Advanced section
+        assert "Anthropic Key" not in system  # credentials are on another tab
 
-    def test_advanced_tab_hint_mentions_log_level(self):
-        output = self._render({}, height=40, active_tab=9)  # Advanced tab
+    def test_system_tab_hint_mentions_log_level(self):
+        output = self._render({}, height=40, active_tab=2)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
 
     def test_settings_tab_action_mapping(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, settings_tab_action
 
         assert settings_tab_action(_SETTINGS_TABS.index("Storage")) == "datadir"
-        assert settings_tab_action(_SETTINGS_TABS.index("Advanced")) == "loglevel"
-        assert settings_tab_action(_SETTINGS_TABS.index("Provider")) == "setup"
-        assert settings_tab_action(_SETTINGS_TABS.index("Jira")) == "setup"
+        assert settings_tab_action(_SETTINGS_TABS.index("System")) == "loglevel"
+        assert settings_tab_action(_SETTINGS_TABS.index("Credentials")) == "setup"
 
-    def test_tab_click_maps_to_tab_index(self):
+    def test_tab_click_regions_map_to_each_tab(self):
         from io import StringIO
 
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, _build_settings_screen
-        from yeaboi.ui.shared._click import _delim_runs, tab_click
 
         con = Console(width=120, height=40, file=StringIO())
         panel = _build_settings_screen({}, width=120, height=40, active_tab=0)
+        # The builder attaches one region per tab: (labels_row, underline_row, sc, ec).
+        assert len(panel._tab_regions) == len(_SETTINGS_TABS)
         lines = con.render_lines(panel, con.options, pad=True)
-        # collect tab runs in reading order and click the centre of each
-        idx = 0
-        for r, line in enumerate(lines):
-            text = "".join(s.text for s in line)
-            for start, end in _delim_runs(text, "▏", "▕"):
-                assert tab_click(con, panel, (start + end) // 2, r + 1) == idx
-                idx += 1
-        assert idx == len(_SETTINGS_TABS)  # every tab is clickable
+        for i, (lr, ur, sc, ec) in enumerate(panel._tab_regions):
+            # The label's centre column on the labels row falls inside the region.
+            row_text = "".join(s.text for s in lines[lr - 1])
+            cx = (sc + ec) // 2
+            assert row_text[cx - 1] != " "  # a non-blank label cell
+            assert sc <= cx <= ec
+            # Clicks on both the labels row and the underline row belong to the tab.
+            assert lr != ur
 
     @staticmethod
     def _render(data: dict, *, height: int = 60, active_tab: int = 0) -> str:
@@ -508,18 +508,18 @@ class TestSettingsScreen:
         return buf.getvalue()
 
     def test_storage_section_rendered(self):
-        # Storage is tab index 5 — render that tab to see its rows.
-        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=5)
+        # Storage is tab index 1 — render that tab to see its rows.
+        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=1)
         assert "Data Directory" in output
         assert "/data/yeaboi" in output
 
     def test_data_dir_default_label_when_unset(self):
-        output = self._render({}, height=40, active_tab=5)  # Storage tab
+        output = self._render({}, height=40, active_tab=1)  # Storage tab
         assert "~/.yeaboi (default)" in output
 
     def test_storage_tab_hint_mentions_data_dir(self):
         # Storage tab's Enter action edits the data directory — the hint says so.
-        output = self._render({}, height=40, active_tab=5)  # Storage tab
+        output = self._render({}, height=40, active_tab=1)  # Storage tab
         assert "data dir" in output.lower()
 
     def test_status_message_rendered(self):
@@ -527,19 +527,20 @@ class TestSettingsScreen:
         assert "restart yeaboi" in output
 
     def test_notion_token_masked(self):
-        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"}, active_tab=4)  # Notion tab
+        # Notion lives under the Credentials tab (index 0) now.
+        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"}, height=80, active_tab=0)
         assert "verysecretvalue12345" not in output
 
     def test_token_help_link_and_scope_rendered(self):
         # Each token row carries a "create: <url> · scope: <...>" sub-line so a
-        # user knows where to make the token and what access to grant it. These
-        # live in different tabs now, so check each on its own tab.
-        github = self._render({"GITHUB_TOKEN": "ghp_x"}, height=40, active_tab=3)  # GitHub tab
-        assert "create:" in github
-        assert "scope:" in github
-        assert "github.com/settings/tokens" in github  # creation link
-        azure = self._render({"AZURE_DEVOPS_TOKEN": "az"}, height=40, active_tab=2)  # Azure tab
-        assert "Work Items" in azure  # Azure scope text
+        # user knows where to make the token and what access to grant it. GitHub +
+        # Azure both live under the Credentials tab; render it tall enough to reach
+        # them, then confirm both help lines appear.
+        out = self._render({"GITHUB_TOKEN": "ghp_x", "AZURE_DEVOPS_TOKEN": "az"}, height=80, active_tab=0)
+        assert "create:" in out
+        assert "scope:" in out
+        assert "github.com/settings/tokens" in out  # GitHub creation link
+        assert "Work Items" in out  # Azure scope text
 
     def test_token_help_url_is_clickable(self):
         # The creation URL is an OSC-8 hyperlink in the read-only dashboard too.
@@ -549,7 +550,7 @@ class TestSettingsScreen:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=40, active_tab=3)
+        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80, active_tab=0)
         buf = StringIO()
         Console(file=buf, width=120, force_terminal=True).print(result)
         assert "https://github.com/settings/tokens" in buf.getvalue()
@@ -619,8 +620,8 @@ class TestLogLevelButton:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        # Log Level lives on the Advanced tab now (row + Enter action), not a button.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=40, active_tab=9)
+        # Log Level lives on the System tab now (Advanced row + Enter action), not a button.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=40, active_tab=2)
         assert isinstance(panel, Panel)
         console = Console(width=120)
         with console.capture() as cap:
@@ -635,13 +636,13 @@ class TestLogLevelButton:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        # The tab bar wraps to fit a narrow terminal; all tabs still appear.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, active_tab=9)
+        # The tab bar fits a narrow terminal; all tabs still appear.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, active_tab=2)
         console = Console(width=80)
         with console.capture() as cap:
             console.print(panel)
         out = cap.get()
-        assert "Provider" in out and "Advanced" in out
+        assert "Credentials" in out and "System" in out
 
 
 class TestNextLogLevel:

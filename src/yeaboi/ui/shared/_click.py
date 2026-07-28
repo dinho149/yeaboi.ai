@@ -88,47 +88,6 @@ def _button_runs(text: str) -> list[tuple[int, int]]:
     return runs
 
 
-TAB_OPEN = "▏"  # left one-eighth block — marks a tab's left edge
-TAB_CLOSE = "▕"  # right one-eighth block — marks a tab's right edge
-
-
-def _delim_runs(text: str, open_ch: str, close_ch: str) -> list[tuple[int, int]]:
-    """Return 1-based inclusive ``(start, end)`` spans of each ``open_ch…close_ch`` run."""
-    runs: list[tuple[int, int]] = []
-    i = 0
-    while i < len(text):
-        if text[i] == open_ch:
-            j = text.find(close_ch, i + 1)
-            if j != -1:
-                runs.append((i + 1, j + 1))  # 1-based inclusive
-                i = j + 1
-                continue
-        i += 1
-    return runs
-
-
-def tab_click(
-    console: Console, panel, x: int, y: int, *, open_ch: str = TAB_OPEN, close_ch: str = TAB_CLOSE
-) -> int | None:
-    """Map a click to a tab index in a ``open_ch…close_ch`` tab bar, or None.
-
-    Renders ``panel`` and scans every row for tab runs, numbering them in reading
-    order (row by row, left to right) so the index matches the tab order. Robust
-    to the tab bar wrapping across multiple rows. Returns None if the click missed.
-    """
-    try:
-        lines = console.render_lines(panel, console.options, pad=True)
-    except Exception:  # noqa: BLE001 - a render hiccup should never break input handling
-        return None
-    idx = 0
-    for r, line in enumerate(lines):
-        for start, end in _delim_runs(_row_text(line), open_ch, close_ch):
-            if r + 1 == y and start <= x <= end:
-                return idx
-            idx += 1
-    return None
-
-
 def button_click(
     console: Console,
     panel,

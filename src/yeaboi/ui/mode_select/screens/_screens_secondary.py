@@ -4697,58 +4697,72 @@ def _build_profile_picker_screen(
 # ---------------------------------------------------------------------------
 
 
-# Settings is a tabbed view: one config section per tab. This order drives both
-# the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = [
-    "Provider",
-    "Jira",
-    "Azure",
-    "GitHub",
-    "Notion",
-    "Storage",
-    "Standup",
-    "Voice",
-    "Bedrock",
-    "Advanced",
-]
+# Settings is a tabbed view. A few broad tabs group the config; this order drives
+# both the tab bar and the loop's Enter action (see settings_tab_action).
+_SETTINGS_TABS: list[str] = ["Credentials", "Storage", "System"]
+
+# The heading sections each tab renders, in order.
+_SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
+    "Credentials": ["provider", "jira", "azure", "github", "notion"],
+    "Storage": ["storage"],
+    "System": ["standup", "voice", "bedrock", "advanced"],
+}
+
+# Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
+# The header above it is fixed height: top border + top pad + blank + title (2
+# rows) + blank → the labels row is the 7th terminal row.
+_TAB_LABELS_ROW = 7
+_TAB_UNDERLINE_ROW = 8
+_TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content column is 4
+
+_TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
+_TAB_GAP = 3  # spaces between tab labels
 
 
 def settings_tab_action(active_tab: int) -> str:
     """Return what Enter does on a settings tab: 'datadir' (Storage),
-    'loglevel' (Advanced), or 'setup' (every other section → setup wizard)."""
+    'loglevel' (System → cycles the log level), or 'setup' (Credentials → wizard)."""
     label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
     if label == "Storage":
         return "datadir"
-    if label == "Advanced":
+    if label == "System":
         return "loglevel"
     return "setup"
 
 
-def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> list:
-    """Render the top tab bar as ``▏ label ▕`` cells, wrapping to fit the width.
+def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tuple[list, list]:
+    """Render the underline-style tab bar: a row of labels over one continuous
+    horizontal rule. The rule under the active tab is accent-bright; the two
+    chars flanking it are dimmer; the rest is the neutral separator colour. No
+    vertical dividers.
 
-    The ``▏``/``▕`` delimiters let :func:`tab_click` find each tab's span in the
-    rendered frame regardless of wrapping. The active tab is accent-bright."""
-    from yeaboi.ui.shared._click import TAB_CLOSE, TAB_OPEN
-
-    avail = max(20, width - 6)  # inside borders + padding, with a small margin
-    lines: list = []
-    cur = Text(_PAD, justify="left")
-    cur_w = len(_PAD)
+    Returns ``(lines, spans)`` where ``spans[i]`` is the 0-based ``(start, end)``
+    column range (within the content) of label *i* — used to hit-test tab clicks.
+    """
+    labels_line = Text(" " * _TAB_INDENT, justify="left")
+    spans: list = []
+    col = _TAB_INDENT
     for i, label in enumerate(labels):
-        cell = f"{TAB_OPEN} {label} {TAB_CLOSE}"
-        need = len(cell) + (1 if cur_w > len(_PAD) else 0)
-        if cur_w + need > avail and cur_w > len(_PAD):
-            lines.append(cur)
-            cur = Text(_PAD, justify="left")
-            cur_w = len(_PAD)
-        if cur_w > len(_PAD):
-            cur.append(" ")
-            cur_w += 1
-        cur.append(cell, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
-        cur_w += len(cell)
-    lines.append(cur)
-    return lines
+        if i > 0:
+            labels_line.append(" " * _TAB_GAP)
+            col += _TAB_GAP
+        start = col
+        labels_line.append(label, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
+        col += len(label)
+        spans.append((start, col))  # [start, end)
+
+    content_w = max(col, width - 6)  # span the full content width for a long rule
+    a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
+    underline = Text(justify="left")
+    for c in range(content_w):
+        if a_start <= c < a_end:
+            style = f"bold {theme.accent_bright}"  # highlighted under the active tab
+        elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
+            style = theme.dim  # slightly dimmer just to either side
+        else:
+            style = theme.sep  # the neutral continuous rule
+        underline.append("─", style=style)
+    return [labels_line, underline], spans
 
 
 def _build_settings_screen(
@@ -4767,28 +4781,27 @@ def _build_settings_screen(
     Displays all config values grouped by category with secrets masked.
     Uses SETTINGS_THEME (silver) with shared components.
     """
-    from yeaboi.ui.shared._components import SETTINGS_THEME, build_reveal_subtitle, settings_title
+    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
 
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
-    sub = build_reveal_subtitle("Current configuration", sub_reveal, pad=_PAD)
 
     body_lines: list = []
 
     # ── Transient status message (e.g. after a Data Dir change) ───
     message = config_data.get("_message", "")
     if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text("    " + message, style=theme.accent_bright, justify="left"))
 
     def _heading(text: str) -> None:
         body_lines.append(Text(""))
-        h = Text(_PAD + "  ", justify="left")
+        h = Text("    ", justify="left")
         h.append(text, style=f"bold {theme.accent}")
         body_lines.append(h)
-        body_lines.append(Text(_PAD + "  " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
+        body_lines.append(Text("    " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
 
     def _row(label: str, value: str, value_style: str = "", masked: bool = False) -> None:
-        r = Text(_PAD + "    ", justify="left")
+        r = Text("      ", justify="left")
         r.append(f"{label}:  ", style=theme.muted)
         if masked and value:
             display = value[:4] + "\u2022" * min(12, len(value) - 4) if len(value) > 4 else "\u2022" * len(value)
@@ -4815,11 +4828,11 @@ def _build_settings_screen(
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text(_PAD + "      ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("        ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         body_lines.append(link)
-        scope = Text(_PAD + "        ", justify="left", no_wrap=True, overflow="ellipsis")
+        scope = Text("          ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
         body_lines.append(scope)
@@ -4913,25 +4926,28 @@ def _build_settings_screen(
         _row("Config File", config_data.get("_config_path", ""))
 
     _builders = {
-        "Provider": _sec_provider,
-        "Jira": _sec_jira,
-        "Azure": _sec_azure,
-        "GitHub": _sec_github,
-        "Notion": _sec_notion,
-        "Storage": _sec_storage,
-        "Standup": _sec_standup,
-        "Voice": _sec_voice,
-        "Bedrock": _sec_bedrock,
-        "Advanced": _sec_advanced,
+        "provider": _sec_provider,
+        "jira": _sec_jira,
+        "azure": _sec_azure,
+        "github": _sec_github,
+        "notion": _sec_notion,
+        "storage": _sec_storage,
+        "standup": _sec_standup,
+        "voice": _sec_voice,
+        "bedrock": _sec_bedrock,
+        "advanced": _sec_advanced,
     }
     active_tab = max(0, min(active_tab, len(_SETTINGS_TABS) - 1))
-    _builders[_SETTINGS_TABS[active_tab]]()
+    # Render every heading section grouped under the active tab.
+    for _section in _SETTINGS_TAB_SECTIONS[_SETTINGS_TABS[active_tab]]:
+        _builders[_section]()
 
     # ── Layout: tab bar → active section (scrollable) → context hint ──────
-    tab_lines = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width)
-    # action_h reserves: blank + hint + a trailing blank so the hint sits ABOVE
-    # the app-wide music pocket, which overwrites the bottom-most content row.
-    viewport_h = calc_viewport(height, header_h=7 + len(tab_lines), action_h=3)
+    tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width)
+    # header = blank + title(2) + blank + tab bar; action_h reserves blank + hint +
+    # a trailing blank so the hint sits ABOVE the app-wide music pocket, which
+    # overwrites the bottom-most content row.
+    viewport_h = calc_viewport(height, header_h=5 + len(tab_lines), action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4965,7 +4981,7 @@ def _build_settings_screen(
     _enter_label = {"datadir": "change data dir", "loglevel": "cycle log level"}.get(
         settings_tab_action(active_tab), "configure"
     )
-    hint = Text(_PAD, justify="left")
+    hint = Text("    ", justify="left")
     hint.append("←/→ or click", style=theme.accent)
     hint.append("  switch  ·  ", style=theme.muted)
     hint.append("Enter", style=theme.accent)
@@ -4977,8 +4993,6 @@ def _build_settings_screen(
         Text(""),
         title,
         Text(""),
-        sub,
-        Text(""),
         *tab_lines,
         Text(""),
         viewport_renderable,
@@ -4987,4 +5001,10 @@ def _build_settings_screen(
         Text(""),  # keeps the hint above the music pocket band
     )
 
-    return build_page_panel(content, theme=SETTINGS_THEME, height=height)
+    panel = build_page_panel(content, theme=SETTINGS_THEME, height=height)
+    # Attach the tab click regions (labels + underline rows, absolute cols) so the
+    # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
+    panel._tab_regions = [
+        (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
+    ]
+    return panel

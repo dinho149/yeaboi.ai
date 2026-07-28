@@ -628,7 +628,7 @@ class TestSettingsMasksStandupSecrets:
             "STANDUP_SMTP_HOST": "smtp.example.com",
             "_config_path": "/tmp/.env",
         }
-        panel = _build_settings_screen(data, width=100, height=40, active_tab=6)  # Daily Standup tab
+        panel = _build_settings_screen(data, width=100, height=40, active_tab=2)  # System tab (Standup)
         # Render to text and confirm the raw secret does not appear.
         from rich.console import Console
 
