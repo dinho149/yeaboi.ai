@@ -25,6 +25,8 @@ def _reset(monkeypatch):
     music._state = music._State()
     music._state._initialised = True
     _music_bar._active = None
+    _music_bar._back_presence = 0.0  # back-tab animation state is module-global
+    _music_bar._back_region = None
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None
@@ -113,14 +115,10 @@ def test_make_live_returns_music_live():
 def test_back_tab_renders_and_publishes_region():
     # with_back=True draws the left pocket ("‹ back  esc") and publishes a
     # clickable rect so read_key can map a click there onto Esc.
-    import time
-
     from yeaboi.ui.shared._music_bar import _MusicPocketFrame, back_region
 
-    # Pin the slide to its resting frame: start well in the past (progress≈1) with
-    # a recent last-draw so the entry-gap check doesn't replay the slide.
-    _music_bar._back_slide_start = time.monotonic() - 10
-    _music_bar._back_last_draw = time.monotonic()
+    # Pin the tab fully in (presence 1) so it renders at rest.
+    _music_bar._back_presence = 1.0
     panel = Panel(Text("body"), height=12, padding=(1, 2))
     console = Console(width=90, height=12, file=StringIO())
     frame = _MusicPocketFrame(panel, with_back=True)

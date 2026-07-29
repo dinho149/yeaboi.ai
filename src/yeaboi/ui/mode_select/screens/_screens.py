@@ -405,10 +405,13 @@ class _WelcomeFrame:
     def __rich_console__(self, console, options):
         from rich.segment import Segment
 
-        from yeaboi.ui.shared._music_bar import draw_music_pocket
+        from yeaboi.ui.shared._music_bar import draw_back_pocket, draw_music_pocket
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines)
+        # Retract the back tab if it's still on screen (e.g. Esc'd back here from a
+        # sub-page) — the welcome is never back-capable, so it only animates out.
+        draw_back_pocket(console, options, lines, target=0.0)
         # Newlines BETWEEN rows only — a trailing one scrolls a full-height frame
         # up by a row (the "bottom border creeps up on entry" glitch).
         for i, line in enumerate(lines):

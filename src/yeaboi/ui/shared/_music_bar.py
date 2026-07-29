@@ -209,10 +209,10 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
 # on-screen rect is published in ``_back_region`` and ``read_key`` turns a click
 # there into an Esc, so it works app-wide without touching per-screen loops.
 _back_region: tuple[int, int, int, int] | None = None  # (x0, y0, x1, y1), 1-based inclusive
-_BACK_SLIDE_SECONDS = 0.4  # duration of the slide-in from the left edge
-_BACK_SLIDE_GAP = 0.25  # a render gap longer than this = a fresh entry → replay the slide
-_back_slide_start = 0.0
-_back_last_draw = 0.0
+# Eased presence 0→1: the tab glides IN when a back-capable screen shows it
+# (target 1) and glides back OUT when you leave for a screen that doesn't
+# (target 0). Its slide position and click-gate both derive from this.
+_back_presence = 0.0
 
 
 def back_region() -> tuple[int, int, int, int] | None:
@@ -237,22 +237,28 @@ def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
-def draw_back_pocket(console, options, lines: list) -> None:
+def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None:
     """Draw a rounded 'go back' tab in the bottom-LEFT, mirroring the music pocket.
 
-    Runs AFTER :func:`draw_music_pocket` and splices a left alcove into the bottom
-    three rows (roof, text, up-and-under border), matching the pocket look on the
-    right. Publishes its clickable rect in ``_back_region``. A no-op on panels too
-    narrow/short to host it.
+    ``target`` is 1.0 on back-capable screens (glide in) and 0.0 on screens that
+    aren't (glide out). An eased ``_back_presence`` drives the slide position both
+    ways, so the tab animates AWAY when you leave, not just in when you arrive.
+    Runs AFTER :func:`draw_music_pocket`, splicing a left alcove into the bottom
+    three rows. Publishes its clickable rect in ``_back_region`` once mostly in.
     """
     from rich.segment import Segment
 
-    from yeaboi.ui.shared._animations import ease_out_cubic
-
-    global _back_region, _back_slide_start, _back_last_draw
+    global _back_region, _back_presence
     _back_region = None
     if not lines or len(lines) < 3 or not lines[-1]:
         return
+
+    # Ease toward the target every frame — glides in (→1) and out (→0).
+    _back_presence += (target - _back_presence) * 0.22
+    if target <= 0.0 and _back_presence < 0.02:
+        _back_presence = 0.0
+        return  # fully retracted — nothing to draw
+
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
     bstyle = lines[-1][0].style
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
@@ -261,17 +267,9 @@ def draw_back_pocket(console, options, lines: list) -> None:
     if bw + 8 > width:  # leave room so it never collides with the music pocket
         return
 
-    # Slide in from the left edge on entry (a render gap = we just arrived on a
-    # back-capable screen — the menu doesn't draw the tab, so leaving it replays
-    # the slide). Continuous sub-page re-renders keep the gap tiny, so it settles.
-    now = time.monotonic()
-    if now - _back_last_draw > _BACK_SLIDE_GAP:
-        _back_slide_start = now
-    _back_last_draw = now
-    progress = min(1.0, (now - _back_slide_start) / _BACK_SLIDE_SECONDS)
     rest_left = 2  # resting ╭ column (mirrors the music pocket's inset)
     start_left = -(bw + 1)  # fully off the left edge
-    bleft = int(start_left + (rest_left - start_left) * ease_out_cubic(progress))
+    bleft = int(start_left + (rest_left - start_left) * _back_presence)
     bright = bleft + bw - 1
 
     roof_alcove = Text()
@@ -300,8 +298,10 @@ def draw_back_pocket(console, options, lines: list) -> None:
         lft, _mid, rgt = Segment.divide(lines[idx], [vl, vr + 1, width])
         lines[idx] = list(lft) + list(seg) + list(rgt)
     term_h = len(lines)
-    # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; visible cols vl+1..vr+1.
-    _back_region = (vl + 1, term_h - 2, vr + 1, term_h)
+    # Only clickable once it's mostly settled in — not while gliding in/out.
+    if _back_presence > 0.6:
+        # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; visible cols vl+1..vr+1.
+        _back_region = (vl + 1, term_h - 2, vr + 1, term_h)
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
@@ -395,8 +395,9 @@ class _MusicPocketFrame:
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
-        if self.with_back:
-            draw_back_pocket(console, options, lines)
+        # Always drive the back tab so it can glide OUT (target 0) when leaving a
+        # back-capable screen, not only glide in (target 1) when arriving.
+        draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0)
         if self.with_duck:
             draw_companion_duck(console, options, lines)
         # Newlines go BETWEEN rows, never after the last one. A trailing
