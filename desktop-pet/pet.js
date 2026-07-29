@@ -196,6 +196,9 @@ function setInteractive(on) {
   if (on === interactive) return;
   interactive = on;
   window.pet.setInteractive(on);
+  // show the grab hand whenever the duck is hover-grabbable (the window is only
+  // solid over the duck, so this cursor only ever appears on it)
+  if (!dragging) document.body.style.cursor = on ? "grab" : "default";
 }
 window.pet.onCursor((p) => {
   mx = p.x;
@@ -215,12 +218,14 @@ rig.addEventListener("mousedown", (e) => {
   dragDX = mx - x;
   dragDY = my - baseY;
   rig.classList.add("grabbing");
+  document.body.style.cursor = "grabbing";
   walker.classList.remove("walking");
 });
 window.addEventListener("mouseup", () => {
   if (!dragging) return;
   dragging = false;
   rig.classList.remove("grabbing");
+  document.body.style.cursor = interactive ? "grab" : "default";
   const speed = Math.hypot(tvx, tvy);
   if (speed > THROW_MIN) {
     // Throw: launch with the release velocity and let physics tumble it to a
@@ -240,7 +245,6 @@ window.addEventListener("mouseup", () => {
     const cx = x + DUCK_W / 2;
     const feetY = baseY + RIGH * FEET_FRAC;
     SURFACE_RAISE = Math.max(-12, Math.min(160, surfaceAt(cx) - feetY));
-    console.error(`DBG SURFACE_RAISE=${SURFACE_RAISE.toFixed(1)} (drag-set)`);
     vy = 0;
     idleUntil = now() + rand(150, 500);
     pickTarget();
@@ -409,13 +413,6 @@ function boot() {
   walker.classList.remove("unloaded");
   walker.classList.add("hatch");
   say("yeaboi! 🦆");
-  const dbg = () =>
-    console.error(
-      `DBG inner=${window.innerWidth}x${window.innerHeight} RIGH=${RIGH} baseImgH=${baseImg.offsetHeight} ` +
-        `floor=${floorSurfaceY()} dock=${JSON.stringify(dock)} baseY=${baseY.toFixed(1)} feetY=${(baseY + RIGH * FEET_FRAC).toFixed(1)}`
-    );
-  dbg();
-  setTimeout(dbg, 2600); // again once the dock config has arrived
   requestAnimationFrame(step);
 }
 
@@ -430,7 +427,6 @@ window.addEventListener("resize", () => {
 window.pet.onNudge((d) => {
   SURFACE_RAISE += d;
   if (grounded) baseY = groundBaseY(x + DUCK_W / 2); // re-snap to the new height
-  console.error(`DBG SURFACE_RAISE=${SURFACE_RAISE}`);
 });
 
 window.pet.onRecenter(() => {
