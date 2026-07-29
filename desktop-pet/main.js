@@ -134,8 +134,8 @@ function createTray() {
   // A menubar duck is the only chrome this app has — the window is frameless
   // and click-through, so quitting has to live here.
   const img = nativeImage
-    .createFromPath(path.join(__dirname, "assets", "duck-glasses.png"))
-    .resize({ width: 18, height: 18 });
+    .createFromPath(path.join(__dirname, "assets", "duck-favicon.png"))
+    .resize({ width: 20, height: 20 });
   img.setTemplateImage(false);
   tray = new Tray(img);
   tray.setToolTip("yeaboi duck");
