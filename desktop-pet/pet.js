@@ -24,7 +24,7 @@ const footBack = rig.querySelector(".d-foot-back");
 const DUCK_W = rig.offsetWidth || 72;
 let RIGH = 72; // rig height, refined once the base sprite loads
 const FEET_FRAC = 0.975; // sprite's feet-bottom as a fraction of rig height (measured: 496/509)
-let SURFACE_RAISE = 8; // extra lift so it stands ON the surface, not sunk into it (tray-tunable)
+let SURFACE_RAISE = 20; // extra lift so it stands ON the surface, not sunk into it (tray-tunable)
 const FLOOR_MARGIN = 2; // desktop floor: feet this far above the screen's bottom
 const HIT_PAD = 8;
 
@@ -71,7 +71,7 @@ let tvy = 0;
 let tumbling = false; // mid-throw: physics-only until it settles
 let gait = 0; // gait phase accumulator, advances with distance travelled
 
-const STRIDE = 13; // px travelled per full step cycle
+const STRIDE = 24; // px travelled per full step cycle (bigger = slower cadence)
 const FOOT_LIFT = 5; // how high a foot lifts during its swing (px)
 const THROW_MIN = 6; // release speed above which a drop becomes a throw
 
@@ -96,7 +96,7 @@ function springTo(s, target, k, d) {
   s.p += s.v;
 }
 
-const WALK_SPEED = 1.2;
+const WALK_SPEED = 0.9;
 const FLEE_SPEED = 4.4;
 const FLEE_RADIUS = 165;
 const TOUCH_RADIUS = 62;
