@@ -40,11 +40,16 @@ html, body {
 /* the sprite itself is grab-able — click to hop, drag to carry it around */
 .duck-rig {
   pointer-events: auto;
+  cursor: -webkit-grab;
   cursor: grab;
   position: relative;
   width: 72px;
 }
-.duck-rig.grabbing { cursor: grabbing; }
+.duck-rig.grabbing,
+.duck-rig.grabbing * {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
 
 .duck-walker.unloaded { opacity: 0; }
 .duck-walker.hatch { animation: duck-hatch 0.9s ease backwards; }

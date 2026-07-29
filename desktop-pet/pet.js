@@ -239,12 +239,9 @@ window.addEventListener("mouseup", () => {
     walker.classList.add("airborne");
     if (Math.random() < 0.85) say(["wheee!", "yeaboi!", "wooo 🦆", "aaah!", "again!"][Math.floor(Math.random() * 5)]);
   } else {
-    // Gentle drop → place: the release height becomes the resting height above
-    // the surface underneath, applied everywhere (dock + desktop floor).
+    // Gentle drop → fall back to the fixed resting height. Dragging just moves
+    // the duck around; it doesn't redefine where it stands.
     mode = "wander";
-    const cx = x + DUCK_W / 2;
-    const feetY = baseY + RIGH * FEET_FRAC;
-    SURFACE_RAISE = Math.max(-12, Math.min(160, surfaceAt(cx) - feetY));
     vy = 0;
     idleUntil = now() + rand(150, 500);
     pickTarget();
@@ -310,7 +307,9 @@ function step() {
       vx *= grounded ? 0.84 : 0.995; // air keeps momentum; ground drags it down
     } else {
       let desired = 0;
-      if (near) {
+      if (near && !interactive) {
+        // flee when the cursor closes in — but NOT once it's actually over the
+        // duck (interactive), so it holds still there and you can grab it
         mode = "flee";
         const closeness = 1 - Math.abs(gap) / FLEE_RADIUS;
         const away = gap >= 0 ? -1 : 1;
