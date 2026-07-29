@@ -4830,7 +4830,9 @@ def settings_tab_action(active_tab: int) -> str:
     return "setup"
 
 
-def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tuple[list, list]:
+def _settings_tab_bar(
+    labels: list[str], active: int, theme, width: int, *, pos: float | None = None
+) -> tuple[list, list]:
     """Render the underline-style tab bar: a row of labels over one continuous
     horizontal rule. Under the active tab the rule is accent-bright, tapering in
     three steps: the last char on either end steps down to the mid accent, the two
@@ -4858,7 +4860,21 @@ def _settings_tab_bar(labels: list[str], active: int, theme, width: int) -> tupl
     # last tab is selected — but it still stops well short of the full width.
     rule_start = max(0, (spans[0][0] if spans else _TAB_INDENT) - 2)
     rule_end = (spans[-1][1] if spans else _TAB_INDENT) + 2
-    a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
+    if pos is not None and spans:
+        # Animated: slide the bright underline between adjacent tab spans by the
+        # fractional position (the loop eases `pos` toward the active tab index).
+        import math as _m
+
+        _p = max(0.0, min(len(spans) - 1, pos))
+        _lo = int(_m.floor(_p))
+        _hi = min(len(spans) - 1, _lo + 1)
+        _f = _p - _lo
+        _s0, _e0 = spans[_lo]
+        _s1, _e1 = spans[_hi]
+        a_start = int(round(_s0 + (_s1 - _s0) * _f))
+        a_end = int(round(_e0 + (_e1 - _e0) * _f))
+    else:
+        a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
     underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
     for c in range(rule_start, rule_end):
         if a_start <= c < a_end:
@@ -4882,6 +4898,7 @@ def _build_settings_screen(
     width: int = 80,
     height: int = 24,
     active_tab: int = 0,
+    tab_pos: float | None = None,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
     editing: tuple | None = None,
@@ -5070,7 +5087,7 @@ def _build_settings_screen(
         _builders[_section]()
 
     # ── Layout: tab bar → active section (scrollable) → context hint ──────
-    tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width)
+    tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width, pos=tab_pos)
     # header = blank + title(2) + blank + tab bar; action_h reserves blank + hint +
     # a trailing blank so the hint sits ABOVE the app-wide music pocket, which
     # overwrites the bottom-most content row.

@@ -10175,9 +10175,12 @@ def select_mode(
                 _s_scroll_meta: dict = {}
                 _s_edit: dict | None = None  # in-place row editor: {env, label, masked, buf, cur}
                 _s_anim_start = time.monotonic()  # shimmer title + typewriter subtitle
+                _tab_pos = float(_s_tab)  # eased fractional tab index → the sliding underline
 
                 def _render_settings(tick: float) -> object:
+                    nonlocal _tab_pos
                     w, h = console.size
+                    _tab_pos += (_s_tab - _tab_pos) * 0.28  # ease the underline toward the active tab
                     _editing = (_s_edit["env"], _s_edit["buf"], _s_edit["cur"]) if _s_edit else None
                     panel = _build_settings_screen(
                         _settings_data,
@@ -10186,6 +10189,7 @@ def select_mode(
                         width=w,
                         height=h,
                         active_tab=_s_tab,
+                        tab_pos=_tab_pos,
                         shimmer_tick=tick,
                         sub_reveal=tick * _HEADER_SUB_SPEED,
                         editing=_editing,
