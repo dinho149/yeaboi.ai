@@ -9199,7 +9199,7 @@ def select_mode(
                                 width=w,
                                 height=h,
                                 subtitle="Board required",
-                                hint="Press any key to go back.",
+                                hint="",  # the back tab now shows the go-back affordance
                                 mode="analysis",
                                 shimmer_tick=time.monotonic() - _br_anim0,
                             )
