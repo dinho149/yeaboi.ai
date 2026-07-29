@@ -62,6 +62,23 @@ def set_config_value(key: str, value: str) -> Path:
     return config_file
 
 
+def apply_config_value(key: str, value: str) -> Path:
+    """Persist ``key=value`` AND mirror it into ``os.environ`` for this process.
+
+    :func:`set_config_value` only writes the .env file, so a running session keeps
+    its old ``os.environ`` — anything reading config (including the Settings page,
+    which re-reads the environment) would show the previous value until a restart.
+    Every other setter in this module pairs the write with an ``os.environ`` update;
+    this is that pair as one reusable call. An empty ``value`` clears the variable.
+    """
+    config_file = set_config_value(key, value)
+    if value:
+        os.environ[key] = value
+    else:
+        os.environ.pop(key, None)
+    return config_file
+
+
 def get_config_file() -> Path:
     """Return path to ~/.yeaboi/.env."""
     return get_config_dir() / ".env"

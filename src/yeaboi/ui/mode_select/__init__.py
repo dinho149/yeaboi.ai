@@ -10229,9 +10229,12 @@ def select_mode(
                             if _save and not _masked and _val == (_cur_val or ""):
                                 _save = False  # unchanged
                             if _save:
-                                from yeaboi.config import set_config_value
+                                from yeaboi.config import apply_config_value
 
-                                set_config_value(_env, _val)
+                                # apply_ (not set_) so the edit lands in os.environ
+                                # too — the page re-reads the environment, so a
+                                # file-only write wouldn't show until a restart.
+                                apply_config_value(_env, _val)
                                 if _env == "LOG_LEVEL" and _val:
                                     from yeaboi.logging_setup import apply_level
 

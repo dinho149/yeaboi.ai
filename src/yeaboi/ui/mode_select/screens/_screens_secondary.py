@@ -2278,10 +2278,9 @@ def _build_usage_screen(
     title = usage_title(shimmer_tick)
     sub = build_reveal_subtitle("API usage and session history", sub_reveal, pad=_PAD + "  ")
 
+    # The transient status ("Copied to clipboard") is spoken by the companion duck
+    # (see _duck_say on the returned panel) rather than taking a body row.
     body_lines: list = []
-    if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        body_lines.append(Text(""))
 
     # Rows are collected per section rather than into one flat list: each section
     # becomes its own bordered box below, and the boxes are laid out in a grid
@@ -2466,7 +2465,9 @@ def _build_usage_screen(
     publish_geometry(scroll_meta, max_scroll, viewport_h)
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    # Only show the scrollbar when the boxes actually overflow — the grid usually
+    # fits, and an always-on track just leaves a stray rail down the right edge.
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
@@ -2504,6 +2505,7 @@ def _build_usage_screen(
 
     panel = build_page_panel(content, theme=USAGE_THEME, height=height)
     panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
+    panel._duck_say = message  # the companion speaks the transient status
     return panel
 
 

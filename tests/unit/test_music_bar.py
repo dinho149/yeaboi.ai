@@ -28,6 +28,8 @@ def _reset(monkeypatch):
     _music_bar._back_presence = 0.0  # back-tab animation state is module-global
     _music_bar._back_region = None
     _music_bar._back_retracting = False
+    _music_bar._say_text = ""  # duck-bubble state is module-global too
+    _music_bar._say_start = 0.0
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None
@@ -130,6 +132,37 @@ def test_back_tab_renders_and_publishes_region():
     assert r is not None and len(r) == 4
     x0, y0, x1, y1 = r
     assert 1 <= x0 < x1 and y1 == len(lines)  # spans the bottom rows, left side
+
+
+def test_duck_say_fades_in_holds_then_clears():
+    # The duck's status bubble dissolves in, holds, then dissolves out and stops
+    # drawing entirely — the same fade shape the rotating menu tips use, so a
+    # message clears itself after a couple of seconds.
+    from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_FADE_OUT, _SAY_HOLD, _say_brightness
+
+    _music_bar._say_start = 0.0
+    assert _say_brightness(0.0) == 0.0
+    assert _say_brightness(_SAY_FADE_IN / 2) == pytest.approx(0.5)
+    assert _say_brightness(_SAY_FADE_IN) == 1.0
+    assert _say_brightness(_SAY_FADE_IN + _SAY_HOLD / 2) == 1.0  # holds at full
+    mid_out = _SAY_FADE_IN + _SAY_HOLD + _SAY_FADE_OUT / 2
+    assert 0.0 < _say_brightness(mid_out) < 1.0  # fading back out
+    assert _say_brightness(_SAY_FADE_IN + _SAY_HOLD + _SAY_FADE_OUT) == 0.0  # cleared
+    assert _say_brightness(99.0) == 0.0
+
+
+def test_duck_say_bubble_drawn_beside_the_duck():
+    # A fresh message renders a bubble next to the corner duck (and restarts the
+    # fade), rather than the page spending a body row on the status.
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    _music_bar._say_text = ""  # force a fresh message → fade restarts at full-in
+    panel = Panel(Text("body"), height=20, padding=(1, 2))
+    console = Console(width=120, height=20, file=StringIO())
+    frame = _MusicPocketFrame(panel, duck_say="Anthropic Key updated")
+    lines = console.render_lines(frame, console.options, pad=True)
+    text = "\n".join("".join(seg.text for seg in row) for row in lines)
+    assert "Anthropic Key updated" in text
 
 
 def test_back_tab_absent_without_flag():

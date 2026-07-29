@@ -379,6 +379,34 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
         nxt = right + 2  # 1-col gap before the next tab
 
 
+# The duck's status bubble ("Anthropic Key updated", "Copied to clipboard"):
+# it dissolves in, holds, then dissolves out and clears itself — the same
+# fade-in/hold/fade-out shape the rotating menu tips use (see tip_brightness),
+# lerping its colours up from the page background instead of snapping on.
+_SAY_FADE_IN = 0.22
+_SAY_HOLD = 2.0
+_SAY_FADE_OUT = 0.55
+_SAY_BG = (28, 28, 34)  # matches the tips' background anchor
+_SAY_TEXT = (198, 198, 208)  # soft grey-white, as the tip body
+_SAY_BORDER = (110, 110, 124)
+_say_text = ""  # the message currently being shown
+_say_start = 0.0  # when it appeared (monotonic)
+
+
+def _say_brightness(now_t: float) -> float:
+    """0..1 brightness for the duck's bubble: fade in, hold, fade out, then 0
+    (which stops it being drawn at all, so the message clears itself)."""
+    e = now_t - _say_start
+    if e < 0:
+        return 0.0
+    if e < _SAY_FADE_IN:
+        return e / _SAY_FADE_IN
+    if e < _SAY_FADE_IN + _SAY_HOLD:
+        return 1.0
+    out = e - _SAY_FADE_IN - _SAY_HOLD
+    return max(0.0, 1.0 - out / _SAY_FADE_OUT)
+
+
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
 _DUCK_RIGHT_MARGIN = 3  # cols kept clear on the right (border + breathing room)
 _DUCK_SLIDE_SECONDS = 0.45  # duration of the slide-into-corner on screen entry
@@ -453,10 +481,21 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
         lines[r] = list(left) + list(visible) + list(right)
 
     # ── Speech bubble, to the left of his head ────────────────────────────────
-    if not say:
+    # A fresh message restarts the fade; once it has faded back out the bubble
+    # stops drawing, so the status clears itself after a couple of seconds.
+    global _say_text, _say_start
+    if say and say != _say_text:
+        _say_text, _say_start = say, time.monotonic()
+    if not say or say != _say_text:
         return
-    theme = PLANNING_THEME
-    label = Text(say, style=theme.value, no_wrap=True, overflow="ellipsis")
+    bright = _say_brightness(time.monotonic())
+    if bright <= 0.0:
+        return
+    from yeaboi.ui.shared._animations import lerp_color
+
+    text_style = lerp_color(bright, _SAY_BG, _SAY_TEXT)
+    border_style = lerp_color(bright, _SAY_BG, _SAY_BORDER)
+    label = Text(say, style=text_style, no_wrap=True, overflow="ellipsis")
     bw = label.cell_len + 4  # │ + space + text + space + │
     bx1 = dl - 2  # a 1-col gap before his head (the tail column sits at dl-1)
     bx0 = bx1 - bw + 1
@@ -465,7 +504,7 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
     mid_r = top + dh // 2  # level with the middle of his head
     if mid_r - 1 < 0 or mid_r + 1 >= len(lines):
         return
-    bstyle = theme.sep
+    bstyle = border_style
     roof = Text()
     roof.append("╭" + "─" * (bw - 2) + "╮", style=bstyle)
     body = Text()

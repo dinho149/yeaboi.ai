@@ -336,6 +336,31 @@ class TestSetConfigValue:
         assert "SLACK_WEBHOOK_URL='https://hooks.example/secret'" in config_file.read_text()
 
 
+class TestApplyConfigValue:
+    """Tests for apply_config_value() — writes the .env AND updates os.environ so a
+    running session (e.g. the Settings page, which re-reads the environment) shows
+    the new value immediately instead of only after a restart."""
+
+    def test_persists_and_exports(self, monkeypatch, tmp_path):
+        from yeaboi.config import apply_config_value
+
+        config_file = tmp_path / ".env"
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: config_file)
+        monkeypatch.delenv("JIRA_EMAIL", raising=False)
+        apply_config_value("JIRA_EMAIL", "dev@example.com")
+        assert "JIRA_EMAIL='dev@example.com'" in config_file.read_text()
+        assert os.environ["JIRA_EMAIL"] == "dev@example.com"
+
+    def test_empty_value_clears_the_variable(self, monkeypatch, tmp_path):
+        from yeaboi.config import apply_config_value
+
+        config_file = tmp_path / ".env"
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: config_file)
+        monkeypatch.setenv("JIRA_EMAIL", "old@example.com")
+        apply_config_value("JIRA_EMAIL", "")
+        assert "JIRA_EMAIL" not in os.environ  # cleared, not left stale
+
+
 class TestGetConfigFile:
     """Tests for get_config_file() — returns ~/.yeaboi/.env path."""
 
