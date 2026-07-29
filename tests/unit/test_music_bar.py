@@ -27,6 +27,7 @@ def _reset(monkeypatch):
     _music_bar._active = None
     _music_bar._back_presence = 0.0  # back-tab animation state is module-global
     _music_bar._back_region = None
+    _music_bar._back_retracting = False
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None

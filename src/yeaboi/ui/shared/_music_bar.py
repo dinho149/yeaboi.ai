@@ -228,6 +228,19 @@ def _clear_back_region() -> None:
     _back_region = None
 
 
+# Force-retract latch: set the instant a back-tab click fires so the tab starts
+# folding away immediately (even while the still-back-capable screen keeps asking
+# to show it), instead of waiting for the destination screen to render.
+_back_retracting = False
+
+
+def retract_back_tab() -> None:
+    """Begin retracting the back tab right now, regardless of the current screen's
+    target — called when the back button is pressed so the fold triggers on press."""
+    global _back_retracting
+    _back_retracting = True
+
+
 def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
     """The compact 'go back' line for the left pocket, styled like the music bar."""
     line = Text(justify="left")
@@ -248,15 +261,20 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     """
     from rich.segment import Segment
 
-    global _back_region, _back_presence
+    global _back_region, _back_presence, _back_retracting
     _back_region = None
     if not lines or len(lines) < 3 or not lines[-1]:
         return
 
+    # A pressed back button folds the tab away immediately, overriding the
+    # screen's own target until it's gone (then the latch releases).
+    if _back_retracting:
+        target = 0.0
     # Ease toward the target every frame — glides in (→1) and out (→0).
     _back_presence += (target - _back_presence) * 0.22
     if target <= 0.0 and _back_presence < 0.02:
         _back_presence = 0.0
+        _back_retracting = False
         return  # fully retracted — nothing to draw
 
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width

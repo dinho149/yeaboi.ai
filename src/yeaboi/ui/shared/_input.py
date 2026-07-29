@@ -233,10 +233,11 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             # A click on the app-wide "go back" tab (bottom-left)
                             # is Esc, so the tab works on every screen without
                             # per-loop wiring. Lazy import avoids an import cycle.
-                            from yeaboi.ui.shared._music_bar import back_region
+                            from yeaboi.ui.shared._music_bar import back_region, retract_back_tab
 
                             _br = back_region()
                             if _br is not None and _br[0] <= cx <= _br[2] and _br[1] <= cy <= _br[3]:
+                                retract_back_tab()  # fold the tab away immediately on press
                                 return "esc"
                             return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently

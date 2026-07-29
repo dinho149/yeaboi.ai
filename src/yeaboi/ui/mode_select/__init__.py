@@ -8766,7 +8766,9 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
     )
 
 
-def _sweep_menu_in(console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None) -> None:
+def _sweep_menu_in(
+    console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None, companion_from: float | None = None
+) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
 
@@ -8790,6 +8792,13 @@ def _sweep_menu_in(console: Console, live, selected: int, n: int, *, sweep_skip:
         while True:
             _front = (time.monotonic() - _intro_start) * _MENU_SWEEP_SPEED
             w, h = console.size
+            # On a return (companion_from set) the duck slides back IN as the wipe
+            # runs — from where it sat in the sub-page corner to its menu spot — so
+            # it never clears; on a fresh load it waits off-screen until the wipe ends.
+            if companion_from is not None:
+                _ci = companion_from + (1.0 - companion_from) * min(1.0, _front / _front_max)
+            else:
+                _ci = 0.0
             live.update(
                 _build_mode_screen(
                     selected,
@@ -8799,15 +8808,19 @@ def _sweep_menu_in(console: Console, live, selected: int, n: int, *, sweep_skip:
                     desc_reveal=0,
                     sweep_front=_front,
                     sweep_skip=sweep_skip,
-                    companion_intro=0.0,  # duck waits off-screen until the wipe ends
+                    companion_intro=_ci,
                 )
             )
             if _front >= _front_max:
                 break
             time.sleep(_FRAME_TIME)
-    # Final frame with normal styling (fully revealed).
+    # Final frame with normal styling (fully revealed). The duck is home on a
+    # return (companion slid in during the wipe), still off-screen on a fresh load.
     w, h = console.size
-    live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=0.0))
+    _ci_final = 1.0 if companion_from is not None else 0.0
+    live.update(
+        _build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=_ci_final)
+    )
 
 
 def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
@@ -8837,8 +8850,9 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
             live.update(_build_slide_frame(chosen, top_offset=current_offset, width=w, height=h, style=base_style))
             time.sleep(_FRAME_TIME)
     # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
-    # the selected title (already home) is held fully shown.
-    _sweep_menu_in(console, live, selected, n, sweep_skip=selected)
+    # the selected title (already home) is held fully shown. The companion slides
+    # back in during the wipe (from its sub-page corner) so it never clears.
+    _sweep_menu_in(console, live, selected, n, sweep_skip=selected, companion_from=_COMPANION_RETURN_START)
 
 
 def select_mode(
@@ -8932,13 +8946,12 @@ def select_mode(
                 # bottom-right (the inverse of the splash crumble).
                 _sweep_menu_in(console, live, selected, n)
             select_time = time.monotonic()
-            # Companion entrance. Fresh load: full slide-in from off-screen right.
-            # Returning from a sub-page: start the entrance at the point where the
-            # duck sits in his sub-page corner, so he slides back from where he came
-            # into his menu spot rather than from off-screen.
-            _companion_intro_start = time.monotonic() - (
-                _COMPANION_RETURN_START * _COMPANION_INTRO_SECONDS if _returning else 0.0
-            )
+            # Companion entrance. Fresh load: full slide-in from off-screen right,
+            # starting once the wipe has landed. On a RETURN the duck already slid
+            # back from its sub-page corner during the wipe (see _sweep_menu_in's
+            # companion_from), so start the entrance already finished — otherwise it
+            # would clear and re-slide, the "duck disappears then comes back" glitch.
+            _companion_intro_start = time.monotonic() - (_COMPANION_INTRO_SECONDS if _returning else 0.0)
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
             while True:
