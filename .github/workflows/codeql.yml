@@ -15,7 +15,9 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 7 * * 2" # Tuesdays 07:00 UTC — offset from security-scan.yml's Monday sweep
+    # Tuesdays, offset from security-scan.yml's Monday sweep and off the hour
+    # (":00" is the most contended slot and queues these ~3h late).
+    - cron: "29 7 * * 2" # Tuesdays 07:29 UTC
 
 concurrency:
   group: codeql-${{ github.ref }}

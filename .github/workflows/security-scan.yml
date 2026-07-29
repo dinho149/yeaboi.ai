@@ -10,7 +10,7 @@ name: Scheduled Security Scan
 # (anthropics/claude-code-action@v1 authenticated with CLAUDE_CODE_OAUTH_TOKEN).
 on:
   schedule:
-    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+    - cron: "37 7 * * 1" # Mondays 07:37 UTC (off the hour — ":00" queues ~3h late)
   workflow_dispatch: {}
 
 concurrency:

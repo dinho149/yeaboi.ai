@@ -20,7 +20,7 @@ name: Flaky Test Hunter
 
 on:
   schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+    - cron: "23 6 * * 1" # Mondays 06:23 UTC (off the hour — ":00" queues ~3h late)
   workflow_dispatch:
     inputs:
       reruns:

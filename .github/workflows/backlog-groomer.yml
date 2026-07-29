@@ -18,7 +18,7 @@ name: Backlog Groomer
 
 on:
   schedule:
-    - cron: "0 8 * * 1" # Mondays 08:00 UTC
+    - cron: "43 8 * * 1" # Mondays 08:43 UTC (off the hour — ":00" queues ~3h late)
   workflow_dispatch: {}
 
 concurrency:
@@ -34,7 +34,23 @@ jobs:
   groom:
     name: Groom the open backlog
     runs-on: ubuntu-latest
+    env:
+      # `gh` infers the repo from a git remote; make it explicit so this job never
+      # depends on checkout ordering. Job-level so it reaches both the collect step
+      # and the shells claude-code-action spawns for its own `gh` calls. (Safe
+      # here — this job only ever runs `gh issue`, never `gh pr create`, which is
+      # the one command GH_REPO interferes with.)
+      GH_REPO: ${{ github.repository }}
     steps:
+      # Shallow checkout purely so claude-code-action runs in a real repo, as it
+      # does in every other Claude job here. This job reads no source files, but
+      # it had never once got past the step below, so its Claude step is entirely
+      # unexercised — don't also make it the only one running in a bare workspace.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
       - name: Collect open issues (exclude bots + own report)
         id: collect
         env:
