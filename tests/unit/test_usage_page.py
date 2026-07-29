@@ -166,8 +166,9 @@ class TestLocalPerformanceSection:
         console = Console(file=StringIO(), width=100, height=40)
         console.print(panel)
         out = console.file.getvalue()
-        # The Copy/Back buttons were replaced by a keyboard hint.
-        assert "copy" in out and "back" in out
+        # The Copy/Back buttons were replaced by a keyboard hint ('Esc back' dropped
+        # once the app-wide back tab covered going back).
+        assert "copy" in out
         assert "Copied to clipboard" in out
 
 

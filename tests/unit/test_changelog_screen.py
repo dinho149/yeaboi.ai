@@ -96,10 +96,12 @@ class TestBuildChangelogScreen:
         assert isinstance(panel, Panel)
         assert len(_render(panel, width=80, height=24).splitlines()) == 24
 
-    def test_back_hint_present(self):
-        # Back button became a keyboard hint (Esc back).
-        out = _render(_build_changelog_screen(_entries(), width=100, height=40))
-        assert "back" in out
+    def test_copy_hint_present(self):
+        # The action row is a keyboard hint; 'Esc back' was dropped once the
+        # app-wide back tab covered going back, leaving the copy hint. (Entry
+        # text can contain "back", so only the copy hint is asserted here.)
+        out = _render(_build_changelog_screen(_entries(), width=100, height=40, actions=["Copy", "Back"]))
+        assert "copy" in out
 
     def test_scroll_meta_published(self):
         meta: dict = {}

@@ -255,7 +255,8 @@ class TestUsageScreen:
         assert isinstance(r2, Panel)
 
     def test_back_hint(self):
-        """The Copy/Back button row was replaced by a keyboard hint (c copy · Esc back)."""
+        """The Copy/Back button row is a keyboard hint; 'Esc back' was dropped once
+        the app-wide back tab covered going back, leaving just the copy hint."""
         from io import StringIO
 
         from rich.console import Console
@@ -266,7 +267,8 @@ class TestUsageScreen:
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
         out = buf.getvalue()
-        assert "back" in out and "copy" in out
+        assert "copy" in out
+        assert "back" not in out.lower()  # back tab covers it now
 
     def test_uses_amber_theme(self):
         """Usage screen should use the amber USAGE_THEME, not green or blue."""
@@ -440,11 +442,12 @@ class TestSettingsScreen:
 
     def test_tab_bar_and_hint_rendered(self):
         # The old action-button row was replaced by a tab bar (grouped sections)
-        # plus a context hint (switch / Enter / Esc back).
+        # plus a context hint (switch / Enter …). 'Esc back' was dropped once the
+        # app-wide back tab covered going back.
         output = self._render({}, height=40)
         for tab in ("Credentials", "Storage", "System"):
             assert tab in output
-        assert "switch" in output and "back" in output
+        assert "switch" in output
 
     def test_scrollable(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -666,7 +669,6 @@ class TestLogLevelButton:
         out = cap.get()
         assert "Log Level" in out  # the Advanced section's row
         assert "log level" in out.lower()  # the Enter-action hint
-        assert "back" in out  # Esc-back hint
 
     def test_tab_bar_fits_at_width_80(self):
         from rich.console import Console

@@ -2398,9 +2398,7 @@ def _build_usage_screen(
     hint = Text(_PAD + "  ", justify="left")
     if actions and "Copy" in actions:
         hint.append("c", style=theme.accent)
-        hint.append("  copy  ·  ", style=theme.muted)
-    hint.append("Esc", style=theme.accent)
-    hint.append("  back", style=theme.muted)
+        hint.append("  copy", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
     content = Group(
         Text(""),
@@ -2856,9 +2854,7 @@ def _build_changelog_screen(
     hint = Text(_PAD + "  ", justify="left")
     if actions and "Copy" in actions:
         hint.append("c", style=theme.accent)
-        hint.append("  copy  ·  ", style=theme.muted)
-    hint.append("Esc", style=theme.accent)
-    hint.append("  back", style=theme.muted)
+        hint.append("  copy", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
     content = Group(
         Text(""),
@@ -3025,9 +3021,7 @@ def _build_all_tips_screen(
     hint = Text(_PAD + "  ", justify="left")
     if actions and any("Copy" in a for a in actions):
         hint.append("c", style=theme.accent)
-        hint.append("  copy all  ·  ", style=theme.muted)
-    hint.append("Esc", style=theme.accent)
-    hint.append("  back", style=theme.muted)
+        hint.append("  copy all", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
     content = Group(
         Text(""),
@@ -5139,9 +5133,7 @@ def _build_settings_screen(
         hint.append("click a row", style=theme.accent)
         hint.append("  edit  ·  ", style=theme.muted)
         hint.append("Enter", style=theme.accent)
-        hint.append(f"  {_enter_label}  ·  ", style=theme.muted)
-        hint.append("Esc", style=theme.accent)
-        hint.append("  back", style=theme.muted)
+        hint.append(f"  {_enter_label}", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
     content = Group(
         Text(""),

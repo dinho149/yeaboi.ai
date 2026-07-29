@@ -6311,8 +6311,8 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         "detail_lines": [],
         "detail_title": "",
     }
-    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export", "Back"]
-    detail_actions = ["Export", "Share Online", "Anonymize", "Back"]
+    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"]  # back tab covers Back
+    detail_actions = ["Export", "Share Online", "Anonymize"]  # back tab covers Back
     # Anonymize state: None = real artifact; an AnonymizedOutput = mask the detail lines.
     anon = None
     anon_instruction = ""
