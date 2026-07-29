@@ -1,0 +1,110 @@
+// yeaboi duck desktop pet — Electron main process.
+//
+// The whole trick that makes a "desktop pet" work: one transparent, frameless,
+// always-on-top window stretched across the entire display (bounds, NOT
+// workArea, so it also covers the dock). It stays CLICK-THROUGH by default
+// (`setIgnoreMouseEvents(true, {forward:true})`) so every app underneath keeps
+// working normally — but with `forward:true` the renderer still receives
+// mousemove events, which is how the duck knows where your cursor is.
+//
+// When the cursor is actually over the duck's little hitbox, the renderer tells
+// us (IPC `pet:interactive`) and we flip the window solid for that instant so
+// the click/drag lands on the duck; when the cursor leaves, we go click-through
+// again. That toggle is the only reason the duck is grab-able at all.
+
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage } = require("electron");
+const path = require("path");
+
+let win = null;
+let tray = null;
+
+function createWindow() {
+  const display = screen.getPrimaryDisplay();
+  const { x, y, width, height } = display.bounds; // full bounds → covers the dock
+
+  win = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false, // never steal focus from the app you're working in
+    // `screen-saver` is the highest normal level — floats the duck above the
+    // dock and other always-on-top windows.
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.setAlwaysOnTop(true, "screen-saver");
+  // Follow you across every Space / desktop, and stay visible even over a
+  // full-screen app.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  // Start fully click-through, but forward move events so the duck can track
+  // the cursor across the whole screen.
+  win.setIgnoreMouseEvents(true, { forward: true });
+
+  win.loadFile(path.join(__dirname, "index.html"));
+
+  // The renderer decides, frame by frame, whether the pointer is over the duck.
+  // `over === true` → make the window solid so the click/drag hits the duck.
+  ipcMain.on("pet:interactive", (_evt, over) => {
+    if (!win || win.isDestroyed()) return;
+    win.setIgnoreMouseEvents(!over, { forward: true });
+  });
+
+  // Robust cursor feed: rather than rely on forwarded DOM mousemove events
+  // (which only fire while the pointer is over the window and can be flaky when
+  // click-through), we poll the OS cursor position and hand the renderer
+  // window-local coords. This is what the duck uses to flee and to decide when
+  // the pointer is over its hitbox.
+  const bounds = display.bounds;
+  const feed = setInterval(() => {
+    if (!win || win.isDestroyed()) return;
+    const p = screen.getCursorScreenPoint();
+    win.webContents.send("pet:cursor", { x: p.x - bounds.x, y: p.y - bounds.y });
+  }, 30);
+  win.on("closed", () => clearInterval(feed));
+}
+
+function createTray() {
+  // A menubar duck is the only chrome this app has — the window is frameless
+  // and click-through, so quitting has to live here.
+  const img = nativeImage
+    .createFromPath(path.join(__dirname, "assets", "duck-glasses.png"))
+    .resize({ width: 18, height: 18 });
+  img.setTemplateImage(false);
+  tray = new Tray(img);
+  tray.setToolTip("yeaboi duck");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "yeaboi duck 🦆", enabled: false },
+      { type: "separator" },
+      { label: "Come here (recenter)", click: () => win && win.webContents.send("pet:recenter") },
+      { label: "Quit", role: "quit" },
+    ])
+  );
+}
+
+app.whenReady().then(() => {
+  // The pet is an overlay, not a real app — keep it out of the dock/app-switcher.
+  if (app.dock) app.dock.hide();
+  createWindow();
+  createTray();
+});
+
+// A pet has no windows to "reopen"; keep it alive with no windows and quit only
+// from the tray.
+app.on("window-all-closed", (e) => e.preventDefault());

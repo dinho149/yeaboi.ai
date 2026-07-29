@@ -1,0 +1,13 @@
+{
+  "name": "yeaboi-duck-pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A little yeaboi duck that waddles along your macOS dock, chases your cursor, and hops when poked.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
