@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("pet", {
   onCursor: (fn) => ipcRenderer.on("pet:cursor", (_e, p) => fn(p)),
   // One-shot layout config (dock height, etc.) sent once the renderer loads.
   onConfig: (fn) => ipcRenderer.on("pet:config", (_e, c) => fn(c)),
+  // Tray → Sit Higher/Lower: nudge the resting height by a few px.
+  onNudge: (fn) => ipcRenderer.on("pet:nudge", (_e, d) => fn(d)),
   // Tray → "Come here": recenter the duck on screen.
   onRecenter: (fn) => ipcRenderer.on("pet:recenter", () => fn()),
 });

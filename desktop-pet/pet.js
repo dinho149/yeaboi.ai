@@ -22,7 +22,7 @@ const bubble = document.getElementById("duck-bubble");
 const DUCK_W = rig.offsetWidth || 72;
 let RIGH = 72; // rig height, refined once the base sprite loads
 const FEET_FRAC = 0.975; // sprite's feet-bottom as a fraction of rig height (measured: 496/509)
-const SURFACE_RAISE = 8; // extra lift so it stands ON the surface, not sunk into it
+let SURFACE_RAISE = 8; // extra lift so it stands ON the surface, not sunk into it (tray-tunable)
 const FLOOR_MARGIN = 2; // desktop floor: feet this far above the screen's bottom
 const HIT_PAD = 8;
 
@@ -329,6 +329,13 @@ function boot() {
   walker.classList.remove("unloaded");
   walker.classList.add("hatch");
   say("yeaboi! 🦆");
+  const dbg = () =>
+    console.error(
+      `DBG inner=${window.innerWidth}x${window.innerHeight} RIGH=${RIGH} baseImgH=${baseImg.offsetHeight} ` +
+        `floor=${floorSurfaceY()} dock=${JSON.stringify(dock)} baseY=${baseY.toFixed(1)} feetY=${(baseY + RIGH * FEET_FRAC).toFixed(1)}`
+    );
+  dbg();
+  setTimeout(dbg, 2600); // again once the dock config has arrived
   requestAnimationFrame(step);
 }
 
@@ -338,6 +345,12 @@ else baseImg.addEventListener("load", boot);
 
 window.addEventListener("resize", () => {
   x = Math.min(x, window.innerWidth - DUCK_W);
+});
+
+window.pet.onNudge((d) => {
+  SURFACE_RAISE += d;
+  if (grounded) baseY = groundBaseY(x + DUCK_W / 2); // re-snap to the new height
+  console.error(`DBG SURFACE_RAISE=${SURFACE_RAISE}`);
 });
 
 window.pet.onRecenter(() => {

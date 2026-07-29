@@ -143,7 +143,10 @@ function createTray() {
     Menu.buildFromTemplate([
       { label: "yeaboi duck 🦆", enabled: false },
       { type: "separator" },
+      { label: "Sit Higher ⬆", click: () => win && win.webContents.send("pet:nudge", 6) },
+      { label: "Sit Lower ⬇", click: () => win && win.webContents.send("pet:nudge", -6) },
       { label: "Come here (recenter)", click: () => win && win.webContents.send("pet:recenter") },
+      { type: "separator" },
       { label: "Quit", role: "quit" },
     ])
   );
