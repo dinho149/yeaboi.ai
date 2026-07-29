@@ -267,6 +267,9 @@ def build_copy_text(theme: Theme = PLANNING_THEME) -> Text:
 # Clickable rects of the sibling tabs drawn beside the back tab this frame:
 # (x0, y0, x1, y1, key) — a click inside one is reported as that key press.
 _tab_regions: list[tuple[int, int, int, int, str]] = []
+# Column where the left tab strip (back + siblings) ends, so the controls tab can
+# line up beside them instead of over by the music pocket.
+_left_tabs_end = 2
 
 
 def chrome_tab_regions() -> list[tuple[int, int, int, int, str]]:
@@ -377,6 +380,8 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
         if key and _back_presence > 0.6:
             _tab_regions.append((nxt + 1, term_h - 2, right + 1, term_h, key))
         nxt = right + 2  # 1-col gap before the next tab
+    global _left_tabs_end
+    _left_tabs_end = nxt  # where the next tab in the left strip may start
 
 
 # The duck's status bubble ("Anthropic Key updated", "Copied to clipboard"):
@@ -465,17 +470,17 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
     theme = PLANNING_THEME
 
-    # Sit immediately left of the music alcove (same geometry it uses).
+    # Sit in the LEFT tab strip, immediately after the back (and copy) tabs.
     mw = build_music_subtitle().cell_len + 4
     music_left = (width - 3) - mw + 1
     label = Text()
     label.append("⌃C", style=theme.accent)
     label.append(" controls", style=theme.muted)
     aw = label.cell_len + 4
-    t_right = music_left - 2
-    t_left = t_right - aw + 1
-    if t_left < 4:
-        return  # not enough room between the back tab and the music bar
+    t_left = _left_tabs_end
+    t_right = t_left + aw - 1
+    if t_right >= music_left - 2:
+        return  # would collide with the music pocket
 
     term_h = len(lines)
     _controls_presence += ((1.0 if _controls_open else 0.0) - _controls_presence) * 0.3
@@ -513,10 +518,10 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     # Anchored bottom-right at the tab's corner, the box's roof rises as it opens
     # and the control rows fill in beneath it, revealed bottom-up. Width eases at
     # the same time so it unfolds rather than snapping to its open size.
-    open_w = min(max((r.cell_len for r in rows), default=10) + 4, width - 8)
+    open_w = min(max((r.cell_len for r in rows), default=10) + 4, width - t_left - 6)
     cur_w = max(aw, int(round(aw + (open_w - aw) * _controls_presence)))
-    c_right = t_right
-    c_left = max(2, c_right - cur_w + 1)
+    c_left = t_left  # anchored on the left now, so it grows rightward as it opens
+    c_right = min(width - 3, c_left + cur_w - 1)
     cur_w = c_right - c_left + 1
     inner = cur_w - 4  # text width between "│ " and " │"
     extra = int(round(len(rows) * _controls_presence))  # content rows revealed
@@ -559,17 +564,16 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     # tab, which unrolls rightward out of the bottom-left corner). Only the
     # rightmost `vis` columns are spliced while it eases in or out.
     vis = max(1, int(round(cur_w * _controls_tab_presence)))
-    v_left = c_right - vis + 1
     sized = options.update_width(cur_w)
     for r, piece in plan:
         if r < 0 or r >= term_h:
             continue
         full = console.render_lines(piece, sized, pad=True, style=bg_style)[0]
-        _al, seg, _ar = Segment.divide(full, [cur_w - vis, cur_w, cur_w])
-        lft, _m, rgt = Segment.divide(lines[r], [v_left, v_left + vis, width])
+        _al, seg, _ar = Segment.divide(full, [0, vis, cur_w])
+        lft, _m, rgt = Segment.divide(lines[r], [c_left, c_left + vis, width])
         lines[r] = list(lft) + list(seg) + list(rgt)
     if _controls_tab_presence > 0.6:  # only clickable once it has settled in
-        _controls_region = (v_left + 1, term_h - 2, c_right + 1, term_h)
+        _controls_region = (c_left + 1, term_h - 2, c_left + vis, term_h)
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
