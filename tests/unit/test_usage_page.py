@@ -166,9 +166,9 @@ class TestLocalPerformanceSection:
         console = Console(file=StringIO(), width=100, height=40)
         console.print(panel)
         out = console.file.getvalue()
-        # The Copy/Back buttons were replaced by a keyboard hint ('Esc back' dropped
-        # once the app-wide back tab covered going back).
-        assert "copy" in out
+        # Copy/Back moved out of the body into the bottom-left chrome tabs; the page
+        # only flags _copy_tab. The toast still renders in the body.
+        assert panel._copy_tab is True
         assert "Copied to clipboard" in out
 
 

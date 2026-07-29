@@ -255,7 +255,24 @@ def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
-def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None:
+def build_copy_text(theme: Theme = PLANNING_THEME) -> Text:
+    """The 'copy' line for the tab that sits beside the back tab on pages that
+    support copy-to-clipboard (Usage, Changelog, …)."""
+    line = Text(justify="left")
+    line.append("c ", style=theme.accent)
+    line.append("copy", style=theme.value)
+    return line
+
+
+_copy_region: tuple[int, int, int, int] | None = None
+
+
+def copy_region() -> tuple[int, int, int, int] | None:
+    """Clickable rect of the copy tab this frame (1-based inclusive), or None."""
+    return _copy_region
+
+
+def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, with_copy: bool = False) -> None:
     """Draw a rounded 'go back' tab in the bottom-LEFT, mirroring the music pocket.
 
     ``target`` is 1.0 on back-capable screens (glide in) and 0.0 on screens that
@@ -266,8 +283,9 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     """
     from rich.segment import Segment
 
-    global _back_region, _back_presence, _back_retracting
+    global _back_region, _back_presence, _back_retracting, _copy_region
     _back_region = None
+    _copy_region = None
     if not lines or len(lines) < 3 or not lines[-1]:
         return
 
@@ -297,47 +315,62 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     if bw + 8 > width:  # leave room so it never collides with the music pocket
         return
 
-    bleft = 2  # ╭ column, anchored at the bottom-left corner (music-pocket inset)
-
-    roof_alcove = Text()
-    roof_alcove.append("╭" + "─" * (bw - 2) + "╮", style=bstyle)
-    text_alcove = Text()
-    text_alcove.append("│ ", style=bstyle)
-    text_alcove.append_text(back)
-    text_alcove.append(" │", style=bstyle)
-    # Open bottom (no floor) — corners rise at each wall (╯ … ╰) with an open gap,
-    # exactly like the music pocket, so the page shows through beneath the text.
-    border_alcove = Text()
-    border_alcove.append("╯" + " " * (bw - 2) + "╰", style=bstyle)
-    asized = options.update_width(bw)
-
-    # Corner peel: anchored at the corner, the tab unfolds diagonally OUT of it —
-    # the bottom border row opens first, then the text, then the roof — so it reads
-    # as the bottom-left corner peeling up. Each row reveals its leftmost `rw`
-    # columns; the staggered lead makes the peel front a diagonal. Retract
-    # (presence→0) reverses it, folding the tab back down into the corner.
+    # Corner peel: anchored at the corner, a tab unfolds diagonally OUT of it — the
+    # bottom border row opens first, then the text, then the roof — so it reads as
+    # the bottom-left corner peeling up. Each row reveals its leftmost `rw` columns;
+    # the staggered lead makes the peel front a diagonal. Retract (presence→0)
+    # reverses it, folding the tab back down into the corner.
     lead = {-1: 0.0, -2: 0.22, -3: 0.44}  # bottom row peels first, roof last
     span = 1.0 - 0.44  # so the last (roof) row still completes at presence 1
-    last_vr = bleft - 1
-    for idx, alcove in ((-1, border_alcove), (-2, text_alcove), (-3, roof_alcove)):
-        lp = max(0.0, min(1.0, (_back_presence - lead[idx]) / span))
-        rw = int(round(bw * lp))  # revealed width of this row
-        if rw <= 0:
-            continue
-        vl = bleft
-        vr = min(width - 2, bleft + rw - 1)
-        if vr < vl:
-            continue
-        full = console.render_lines(alcove, asized, pad=True, style=bg_style)[0]
-        _al, seg, _ar = Segment.divide(full, [0, vr - bleft + 1, bw])
-        lft, _mid, rgt = Segment.divide(lines[idx], [vl, vr + 1, width])
-        lines[idx] = list(lft) + list(seg) + list(rgt)
-        last_vr = max(last_vr, vr)
+
+    def _peel(x0: int, label: Text) -> int | None:
+        """Splice one peeling alcove starting at column ``x0``; return its right
+        edge once mostly peeled in (for the click rect), else None."""
+        aw = label.cell_len + 4  # ╭ + space + text + space + ╮
+        if x0 + aw > width - 2:
+            return None
+        roof = Text()
+        roof.append("╭" + "─" * (aw - 2) + "╮", style=bstyle)
+        mid = Text()
+        mid.append("│ ", style=bstyle)
+        mid.append_text(label)
+        mid.append(" │", style=bstyle)
+        # Open bottom (no floor) — corners rise at each wall (╯ … ╰) with an open
+        # gap, like the music pocket, so the page shows through beneath the text.
+        bot = Text()
+        bot.append("╯" + " " * (aw - 2) + "╰", style=bstyle)
+        sized = options.update_width(aw)
+        right = x0 - 1
+        for idx, alcove in ((-1, bot), (-2, mid), (-3, roof)):
+            lp = max(0.0, min(1.0, (_back_presence - lead[idx]) / span))
+            rw = int(round(aw * lp))  # revealed width of this row
+            if rw <= 0:
+                continue
+            vr = min(width - 2, x0 + rw - 1)
+            if vr < x0:
+                continue
+            full = console.render_lines(alcove, sized, pad=True, style=bg_style)[0]
+            _al, seg, _ar = Segment.divide(full, [0, vr - x0 + 1, aw])
+            lft, _mid, rgt = Segment.divide(lines[idx], [x0, vr + 1, width])
+            lines[idx] = list(lft) + list(seg) + list(rgt)
+            right = max(right, vr)
+        return right if right >= x0 else None
+
+    bleft = 2  # ╭ column, anchored at the bottom-left corner (music-pocket inset)
     term_h = len(lines)
+    back_right = _peel(bleft, back)
     # Only clickable once it's mostly peeled in — not mid-animation.
-    if _back_presence > 0.6 and last_vr >= bleft:
-        # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; cols bleft+1..last_vr+1.
-        _back_region = (bleft + 1, term_h - 2, last_vr + 1, term_h)
+    if _back_presence > 0.6 and back_right is not None:
+        # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; cols x0+1..right+1.
+        _back_region = (bleft + 1, term_h - 2, back_right + 1, term_h)
+
+    # A sibling 'c copy' tab sits immediately right of the back tab on pages that
+    # support copy-to-clipboard, peeling out of the same corner with it.
+    if with_copy:
+        cleft = bleft + (build_back_text().cell_len + 4) + 1  # 1-col gap after back
+        copy_right = _peel(cleft, build_copy_text())
+        if _back_presence > 0.6 and copy_right is not None:
+            _copy_region = (cleft + 1, term_h - 2, copy_right + 1, term_h)
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
@@ -419,12 +452,19 @@ class _MusicPocketFrame:
     """
 
     def __init__(
-        self, panel: Panel, *, with_duck: bool = True, preserve_content: bool = False, with_back: bool = False
+        self,
+        panel: Panel,
+        *,
+        with_duck: bool = True,
+        preserve_content: bool = False,
+        with_back: bool = False,
+        with_copy: bool = False,
     ) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
+        self.with_copy = with_copy  # also draw a 'c copy' tab beside it
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -433,7 +473,9 @@ class _MusicPocketFrame:
         draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
         # Always drive the back tab so it can glide OUT (target 0) when leaving a
         # back-capable screen, not only glide in (target 1) when arriving.
-        draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0)
+        draw_back_pocket(
+            console, options, lines, target=1.0 if self.with_back else 0.0, with_copy=self.with_copy and self.with_back
+        )
         if self.with_duck:
             draw_companion_duck(console, options, lines)
         # Newlines go BETWEEN rows, never after the last one. A trailing
@@ -546,7 +588,10 @@ class MusicLive(Live):
             # The "go back" tab shows on every screen except those that opt out
             # (the main menu marks itself with _no_back_hint — its Esc isn't "back").
             with_back = not getattr(renderable, "_no_back_hint", False)
-            return _MusicPocketFrame(renderable, with_duck=with_duck, with_back=with_back)
+            # Pages that support copy-to-clipboard flag themselves so a 'c copy'
+            # tab appears beside the back tab (Usage, Changelog, …).
+            with_copy = bool(getattr(renderable, "_copy_tab", False))
+            return _MusicPocketFrame(renderable, with_duck=with_duck, with_back=with_back, with_copy=with_copy)
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
         renderable.subtitle_align = "right"

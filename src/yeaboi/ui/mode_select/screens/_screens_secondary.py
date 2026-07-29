@@ -2394,12 +2394,8 @@ def _build_usage_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
-    # No button row — a keyboard hint replaces it (aligned with the headings).
-    hint = Text(_PAD + "  ", justify="left")
-    if actions and "Copy" in actions:
-        hint.append("c", style=theme.accent)
-        hint.append("  copy", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
-
+    # No button row and no inline hint — the bottom-left chrome carries both
+    # affordances now: the back tab, plus a 'c copy' tab beside it (see _copy_tab).
     content = Group(
         Text(""),
         title,
@@ -2407,11 +2403,13 @@ def _build_usage_screen(
         sub,
         viewport_renderable,
         Text(""),
-        hint,
-        Text(""),  # keeps the hint above the music pocket band
+        Text(""),  # keeps the content above the music pocket band
+        Text(""),
     )
 
-    return build_page_panel(content, theme=USAGE_THEME, height=height)
+    panel = build_page_panel(content, theme=USAGE_THEME, height=height)
+    panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
+    return panel
 
 
 def _build_standup_screen(

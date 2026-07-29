@@ -254,9 +254,10 @@ class TestUsageScreen:
         assert isinstance(r1, Panel)
         assert isinstance(r2, Panel)
 
-    def test_back_hint(self):
-        """The Copy/Back button row is a keyboard hint; 'Esc back' was dropped once
-        the app-wide back tab covered going back, leaving just the copy hint."""
+    def test_back_and_copy_moved_to_chrome_tabs(self):
+        """Both affordances now live in the bottom-left chrome (the back tab plus a
+        sibling 'c copy' tab), so the page body carries no inline hint — it only
+        flags _copy_tab for the chrome to pick up."""
         from io import StringIO
 
         from rich.console import Console
@@ -264,11 +265,15 @@ class TestUsageScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
 
         result = _build_usage_screen({}, width=100, height=40, actions=["Copy", "Back"])
+        assert result._copy_tab is True  # chrome draws the copy tab
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
         out = buf.getvalue()
-        assert "copy" in out
-        assert "back" not in out.lower()  # back tab covers it now
+        assert "back" not in out.lower()  # back tab covers it
+        assert "copy" not in out.lower()  # copy tab covers it
+
+        # Without a Copy action there's no copy tab.
+        assert _build_usage_screen({}, width=100, height=40, actions=["Back"])._copy_tab is False
 
     def test_uses_amber_theme(self):
         """Usage screen should use the amber USAGE_THEME, not green or blue."""
