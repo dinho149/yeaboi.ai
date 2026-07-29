@@ -540,12 +540,20 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     bot.append("╯" + " " * (cur_w - 2) + "╰", style=bstyle)  # open bottom, like the pocket
     label_row = _bordered(label)
 
-    # Row plan, bottom-up: open border, label, revealed content (last `extra`), roof.
-    plan: list[tuple[int, Text]] = [(term_h - 1, bot), (term_h - 2, label_row)]
-    shown_rows = rows[len(rows) - extra :] if extra else []
-    for i, body in enumerate(reversed(shown_rows)):
-        plan.append((term_h - 3 - i, _bordered(body)))
-    plan.append((term_h - 3 - extra, roof))
+    # Row plan, bottom-up: open border, then either the "⌃C controls" label (while
+    # collapsed) or — once expanded — the controls themselves, since the label is
+    # redundant when the list it describes is on screen. Roof last.
+    plan: list[tuple[int, Text]] = [(term_h - 1, bot)]
+    if _controls_presence > 0.5:
+        n_show = max(1, min(len(rows), extra + 1))  # the label's row becomes content
+        for i, body in enumerate(reversed(rows[len(rows) - n_show :])):
+            plan.append((term_h - 2 - i, _bordered(body)))
+        plan.append((term_h - 2 - n_show, roof))
+    else:
+        plan.append((term_h - 2, label_row))
+        for i, body in enumerate(reversed(rows[len(rows) - extra :] if extra else [])):
+            plan.append((term_h - 3 - i, _bordered(body)))
+        plan.append((term_h - 3 - extra, roof))
 
     # Entrance: the tab unrolls leftward out of its right edge (mirroring the back
     # tab, which unrolls rightward out of the bottom-left corner). Only the
