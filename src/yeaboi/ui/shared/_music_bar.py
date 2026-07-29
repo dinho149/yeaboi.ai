@@ -582,6 +582,37 @@ _DUCK_SLIDE_DISTANCE = 16  # how far he nudges right into the corner (a little b
 _duck_slide_start = 0.0
 _duck_last_draw = 0.0
 
+# Click-the-duck gag: his shades lift to reveal a second pair underneath. The
+# welcome screen has had this since the mascot landed (_play_duck_shades); these
+# let the CHROME duck — the one riding along on every sub-page — do it too, so
+# poking him works wherever he appears.
+_DUCK_SHADES_STAGE = 0.05  # seconds per lift stage (~0.5s for the full sequence)
+_duck_region: tuple[int, int, int, int] | None = None
+_duck_shades_start = 0.0
+
+
+def duck_region() -> tuple[int, int, int, int] | None:
+    """Clickable rect of the chrome companion duck this frame (1-based inclusive)."""
+    return _duck_region
+
+
+def poke_duck() -> None:
+    """Start the shades-lift gag on the chrome duck (called when he's clicked)."""
+    global _duck_shades_start
+    _duck_shades_start = time.monotonic()
+
+
+def _duck_shades_lift() -> int | None:
+    """Current lift for the gag, or None when it isn't playing."""
+    from yeaboi.ui.shared._mascot import SHADES_LIFT_SEQUENCE
+
+    if not _duck_shades_start:
+        return None
+    i = int((time.monotonic() - _duck_shades_start) / _DUCK_SHADES_STAGE)
+    if i < 0 or i >= len(SHADES_LIFT_SEQUENCE):
+        return None
+    return SHADES_LIFT_SEQUENCE[i]
+
 
 def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
@@ -598,8 +629,10 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
     from rich.segment import Segment
 
     from yeaboi.ui.shared._animations import ease_out_cubic
-    from yeaboi.ui.shared._mascot import render_head
+    from yeaboi.ui.shared._mascot import render_head, render_head_shades
 
+    global _duck_region
+    _duck_region = None
     if not lines or not lines[-1]:
         return
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
@@ -608,7 +641,10 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
     # through the tinted page around the duck.
     bstyle = lines[-1][0].style
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
-    duck_rows = console.render_lines(render_head(0, flip=True), options.update_width(_DUCK_W), pad=True, style=bg_style)
+    # Mid-gag he wears the lifted shades (revealing the pair underneath).
+    _lift = _duck_shades_lift()
+    _head = render_head(0, flip=True) if _lift is None else render_head_shades(_lift, flip=True)
+    duck_rows = console.render_lines(_head, options.update_width(_DUCK_W), pad=True, style=bg_style)
     dh = len(duck_rows)
     # Need room for the duck + a gap + the 3-row pocket; skip on tiny panels.
     if len(lines) < dh + 5 or width < _DUCK_W + _DUCK_RIGHT_MARGIN + 4:
@@ -644,6 +680,8 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
         visible = drow if (dr - dl) >= _DUCK_W else list(Segment.divide(drow, [dr - dl]))[0]
         left, _mid, right = Segment.divide(lines[r], [dl, dr, width])
         lines[r] = list(left) + list(visible) + list(right)
+    # Publish his rect (1-based) so a click on him can trigger the shades gag.
+    _duck_region = (dl + 1, max(1, top + 1), dr, bottom + 1)
 
     # ── Speech bubble, to the left of his head ────────────────────────────────
     # A fresh message restarts the fade; once it has faded back out the bubble

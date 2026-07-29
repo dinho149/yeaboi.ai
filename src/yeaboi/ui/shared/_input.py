@@ -279,6 +279,16 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             if _cr is not None and _cr[0] <= cx <= _cr[2] and _cr[1] <= cy <= _cr[3]:
                                 toggle_controls()
                                 return ""
+                            # Poke the companion duck → the double-shades gag, the
+                            # same reward the welcome screen gives, on every page
+                            # he rides along on.
+                            from yeaboi.ui.shared._music_bar import duck_region, nudge_music_bar, poke_duck
+
+                            _dr = duck_region()
+                            if _dr is not None and _dr[0] <= cx <= _dr[2] and _dr[1] <= cy <= _dr[3]:
+                                poke_duck()
+                                nudge_music_bar()
+                                return ""
                             return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).
