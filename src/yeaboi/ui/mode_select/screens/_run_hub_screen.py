@@ -91,11 +91,9 @@ def _build_run_hub_screen(
     title = title_fn(shimmer_tick)
 
     sub_color = lerp_color(card_opacity, BLACK_RGB, (100, 100, 100))
-    if message:
-        # A transient toast (export/delete/run-again result) takes the subtitle row so
-        # list-level actions give feedback without disturbing the fixed header height.
-        sub = Text(_PAD + message, style="rgb(120,200,140)", justify="left")
-    elif show_subtitle:
+    # Transient toasts (export/delete/run-again results) are spoken by the duck now
+    # (see _duck_say below), so the subtitle row keeps its own label.
+    if show_subtitle:
         sub = Text(_PAD + subtitle, style=sub_color, justify="left")
     else:
         sub = Text("")
@@ -241,76 +239,9 @@ def _build_run_hub_screen(
 
     remaining = max(0, inner_h - header_h - body_h)
 
-    # Delete confirmation popup — red-bordered overlay sliding up from the bottom.
-    # Ported from _build_project_list_screen so the confirm UX matches exactly.
-    popup_before: list = []
-    popup_mid: list = []
-    popup_after: list = []
-    if delete_popup_name and delete_popup_t > 0:
-        import math as _math
-
-        popup_msg = f'Delete "{delete_popup_name}"?  Enter to confirm'
-        panel_inner_w = width - 6
-        popup_w = min(panel_inner_w, max(40, len(popup_msg) + 8))
-
-        dark_red = (140, 30, 30)
-        bright_red = (255, 90, 90)
-        t = (_math.cos(delete_popup_pulse * 3) + 1) / 2
-        br = int(dark_red[0] + (bright_red[0] - dark_red[0]) * t)
-        bg = int(dark_red[1] + (bright_red[1] - dark_red[1]) * t)
-        bb = int(dark_red[2] + (bright_red[2] - dark_red[2]) * t)
-        if delete_popup_flash > 0:
-            br = int(br + (255 - br) * delete_popup_flash)
-            bg = int(bg + (255 - bg) * delete_popup_flash)
-            bb = int(bb + (255 - bb) * delete_popup_flash)
-        border_style = f"rgb({br},{bg},{bb})"
-        inner_w = popup_w - 2
-
-        msg_pad_l = max(0, (inner_w - len(popup_msg)) // 2)
-        msg_pad_r = max(0, inner_w - len(popup_msg) - msg_pad_l)
-        centered_msg = " " * msg_pad_l + popup_msg + " " * msg_pad_r
-        h_pad = " " * max(0, (panel_inner_w - popup_w) // 2)
-
-        line_top = Text(h_pad, justify="left")
-        line_top.append("╭" + "─" * inner_w + "╮", style=border_style)
-        line_blank1 = Text(h_pad, justify="left")
-        line_blank1.append("│" + " " * inner_w + "│", style=border_style)
-        line_msg = Text(h_pad, justify="left")
-        line_msg.append("│", style=border_style)
-        line_msg.append(centered_msg, style="bold white")
-        line_msg.append("│", style=border_style)
-        line_blank2 = Text(h_pad, justify="left")
-        line_blank2.append("│" + " " * inner_w + "│", style=border_style)
-        line_bot = Text(h_pad, justify="left")
-        line_bot.append("╰" + "─" * inner_w + "╯", style=border_style)
-
-        popup_lines = [line_top, line_blank1, line_msg, line_blank2, line_bot]
-        popup_h = len(popup_lines)
-
-        overflow = popup_h - remaining
-        while overflow > 0 and body and body_h > 0:
-            last = body[-1]
-            if isinstance(last, Text) and not last.plain.strip():
-                item_h = _CARD_SPACING
-            elif isinstance(last, Padding) and isinstance(last.renderable, Group):
-                item_h = _PEEK_H
-            else:
-                item_h = _CARD_H
-            body.pop()
-            body_h -= item_h
-            overflow -= item_h
-        remaining = max(0, inner_h - header_h - body_h)
-
-        resting_above = max(0, remaining - popup_h)
-        start_above = remaining
-        current_above = int(start_above + (resting_above - start_above) * delete_popup_t)
-        current_below = max(0, remaining - current_above - popup_h)
-
-        popup_before = [Text("") for _ in range(current_above)]
-        popup_mid = popup_lines
-        popup_after = [Text("") for _ in range(current_below)]
-    else:
-        popup_before = [Text("") for _ in range(remaining)]
+    # The delete confirmation comes from the DUCK now (see _duck_say below) rather
+    # than a red overlay in the middle of the page, so it reads as him asking.
+    popup_before = [Text("") for _ in range(remaining)]
 
     content = Group(
         *[Text("") for _ in range(title_offset)],
@@ -320,8 +251,6 @@ def _build_run_hub_screen(
         Text(""),
         *body,
         *popup_before,
-        *popup_mid,
-        *popup_after,
     )
 
     # Top padding of 1 (matching every other page and this builder's own
@@ -331,4 +260,11 @@ def _build_run_hub_screen(
     panel = build_page_panel(content, theme=theme, height=height, padding=(1, 2))
     panel._card_regions = card_regions  # (y_top, y_bot, item_index) per clickable card
     panel._btn_regions = btn_regions  # (x0, y0, x1, y1, label) for the selected card's buttons
+    # The duck carries both delete messages: the confirmation (sticky — it must wait
+    # for an answer rather than fading) and the "deleted" toast that follows.
+    if delete_popup_name and delete_popup_t > 0:
+        panel._duck_say = f'Delete "{delete_popup_name}"?  Enter to confirm'
+        panel._duck_say_sticky = True
+    elif message:
+        panel._duck_say = message
     return panel

@@ -51,12 +51,23 @@ class TestHubList:
         out = _text(panel)
         assert "Delete" in out and "Export" in out
 
-    def test_delete_popup_renders(self):
+    def test_delete_confirmation_comes_from_the_duck(self):
+        # The red centred overlay was replaced by the companion duck asking: the
+        # panel hands the line to the chrome via _duck_say, sticky so it waits for
+        # an answer instead of fading out like a transient toast.
         panel = _build_run_hub_screen(
             _runs(), 2, title_fn=standup_title, delete_popup_name="Standup — 2026-07-03", delete_popup_t=1.0
         )
-        out = _text(panel)
-        assert "Delete" in out and "Enter to confirm" in out
+        assert panel._duck_say == 'Delete "Standup — 2026-07-03"?  Enter to confirm'
+        assert panel._duck_say_sticky is True
+        assert "Enter to confirm" not in _text(panel)  # no longer in the page body
+
+    def test_delete_result_message_comes_from_the_duck(self):
+        # The follow-up toast ("Deleted.") rides the same channel, non-sticky so it
+        # fades itself out.
+        panel = _build_run_hub_screen(_runs(), 0, title_fn=standup_title, message="Deleted.")
+        assert panel._duck_say == "Deleted."
+        assert getattr(panel, "_duck_say_sticky", False) is False
 
     def test_small_terminal_does_not_crash(self):
         # Just needs to render without raising at a cramped size.

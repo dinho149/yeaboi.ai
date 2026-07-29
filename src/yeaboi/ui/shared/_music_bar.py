@@ -614,7 +614,7 @@ def _duck_shades_lift() -> int | None:
     return SHADES_LIFT_SEQUENCE[i]
 
 
-def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
+def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky: bool = False) -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
 
     The duck sits just above the music pocket (which owns the bottom three rows),
@@ -691,7 +691,11 @@ def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
         _say_text, _say_start = say, time.monotonic()
     if not say or say != _say_text:
         return
-    bright = _say_brightness(time.monotonic())
+    # Sticky lines (a confirmation awaiting an answer) fade IN but never out — they
+    # stay until the page stops asking.
+    bright = 1.0 if say_sticky else _say_brightness(time.monotonic())
+    if say_sticky:
+        bright = min(1.0, max(0.25, (time.monotonic() - _say_start) / _SAY_FADE_IN))
     if bright <= 0.0:
         return
     from yeaboi.ui.shared._animations import lerp_color
@@ -754,6 +758,7 @@ class _MusicPocketFrame:
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
         self.hint_tab = hint_tab  # a page's control hints, as one more tab
         self.duck_say = duck_say  # transient status the companion speaks
+        self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -774,7 +779,7 @@ class _MusicPocketFrame:
         _qualifies = self.hint_tab is not None and bool(self.hint_tab.plain.strip())
         draw_controls_pocket(console, options, lines, page_hint=self.hint_tab, target=1.0 if _qualifies else 0.0)
         if self.with_duck:
-            draw_companion_duck(console, options, lines, say=self.duck_say)
+            draw_companion_duck(console, options, lines, say=self.duck_say, say_sticky=self.duck_say_sticky)
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -893,7 +898,8 @@ class MusicLive(Live):
             hint_tab = getattr(renderable, "_hint_tab", None)
             # A page can also hand the duck a line to speak (transient status).
             duck_say = str(getattr(renderable, "_duck_say", "") or "")
-            return _MusicPocketFrame(
+            _sticky = bool(getattr(renderable, "_duck_say_sticky", False))
+            _frame = _MusicPocketFrame(
                 renderable,
                 with_duck=with_duck,
                 with_back=with_back,
@@ -901,6 +907,8 @@ class MusicLive(Live):
                 hint_tab=hint_tab,
                 duck_say=duck_say,
             )
+            _frame.duck_say_sticky = _sticky
+            return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
         renderable.subtitle_align = "right"
