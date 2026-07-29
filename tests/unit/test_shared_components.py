@@ -445,14 +445,21 @@ class TestSettingsScreen:
         # Should show partial mask
         assert "\u2022" in output  # bullet mask chars
 
-    def test_tab_bar_and_hint_rendered(self):
-        # The old action-button row was replaced by a tab bar (grouped sections)
-        # plus a context hint (switch / Enter …). 'Esc back' was dropped once the
-        # app-wide back tab covered going back.
+    def test_tab_bar_rendered_and_hint_moved_to_chrome(self):
+        # The old action-button row was replaced by a tab bar (grouped sections).
+        # The context hint no longer takes a body row — it's handed to the bottom
+        # pocket as a chrome tab via _hint_tab ('Esc back' dropped earlier, since
+        # the app-wide back tab covers going back).
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
         output = self._render({}, height=40)
         for tab in ("Credentials", "Storage", "System"):
             assert tab in output
-        assert "switch" in output
+        assert "switch" not in output  # not in the body any more
+
+        panel = _build_settings_screen({}, width=100, height=40)
+        assert "switch tab" in panel._hint_tab.plain
+        assert "configure" in panel._hint_tab.plain
 
     def test_scrollable(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -567,9 +574,15 @@ class TestSettingsScreen:
         output = self._render({}, height=40, active_tab=1)  # Storage tab
         assert "data dir" in output.lower()
 
-    def test_status_message_rendered(self):
-        output = self._render({"_message": "Data directory saved — restart yeaboi to fully apply"})
-        assert "restart yeaboi" in output
+    def test_status_message_spoken_by_the_duck(self):
+        # The transient status no longer takes a body row: it's handed to the
+        # companion duck, who says it in a speech bubble (see _duck_say).
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        msg = "Data directory saved — restart yeaboi to fully apply"
+        panel = _build_settings_screen({"_message": msg}, width=100, height=60)
+        assert panel._duck_say == msg
+        assert "restart yeaboi" not in self._render({"_message": msg})  # not in the body
 
     def test_notion_token_masked(self):
         # Notion lives under the Credentials tab (index 0) now.

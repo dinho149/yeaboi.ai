@@ -264,15 +264,17 @@ def build_copy_text(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
-_copy_region: tuple[int, int, int, int] | None = None
+# Clickable rects of the sibling tabs drawn beside the back tab this frame:
+# (x0, y0, x1, y1, key) — a click inside one is reported as that key press.
+_tab_regions: list[tuple[int, int, int, int, str]] = []
 
 
-def copy_region() -> tuple[int, int, int, int] | None:
-    """Clickable rect of the copy tab this frame (1-based inclusive), or None."""
-    return _copy_region
+def chrome_tab_regions() -> list[tuple[int, int, int, int, str]]:
+    """Clickable (x0, y0, x1, y1, key) rects of the chrome's sibling tabs."""
+    return _tab_regions
 
 
-def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, with_copy: bool = False) -> None:
+def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extra_tabs: list | None = None) -> None:
     """Draw a rounded 'go back' tab in the bottom-LEFT, mirroring the music pocket.
 
     ``target`` is 1.0 on back-capable screens (glide in) and 0.0 on screens that
@@ -283,9 +285,9 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, with
     """
     from rich.segment import Segment
 
-    global _back_region, _back_presence, _back_retracting, _copy_region
+    global _back_region, _back_presence, _back_retracting, _tab_regions
     _back_region = None
-    _copy_region = None
+    _tab_regions = []
     if not lines or len(lines) < 3 or not lines[-1]:
         return
 
@@ -364,13 +366,17 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, with
         # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; cols x0+1..right+1.
         _back_region = (bleft + 1, term_h - 2, back_right + 1, term_h)
 
-    # A sibling 'c copy' tab sits immediately right of the back tab on pages that
-    # support copy-to-clipboard, peeling out of the same corner with it.
-    if with_copy:
-        cleft = bleft + (build_back_text().cell_len + 4) + 1  # 1-col gap after back
-        copy_right = _peel(cleft, build_copy_text())
-        if _back_presence > 0.6 and copy_right is not None:
-            _copy_region = (cleft + 1, term_h - 2, copy_right + 1, term_h)
+    # Sibling tabs sit to the right of the back tab, peeling out of the same
+    # corner with it — e.g. a 'c copy' tab, or a page's control hints. Each may
+    # carry a key that a click on it reports (None = informational only).
+    nxt = bleft + (back.cell_len + 4) + 1  # 1-col gap after the back tab
+    for label, key in extra_tabs or []:
+        right = _peel(nxt, label)
+        if right is None:
+            break  # ran out of width — drop this tab and any after it
+        if key and _back_presence > 0.6:
+            _tab_regions.append((nxt + 1, term_h - 2, right + 1, term_h, key))
+        nxt = right + 2  # 1-col gap before the next tab
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
@@ -384,13 +390,17 @@ _duck_slide_start = 0.0
 _duck_last_draw = 0.0
 
 
-def draw_companion_duck(console, options, lines: list) -> None:
+def draw_companion_duck(console, options, lines: list, say: str = "") -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
 
     The duck sits just above the music pocket (which owns the bottom three rows),
     right-aligned inside the border. Composited over whatever is there — on the
     sub-pages that region is empty — so the mascot rides along on every screen the
     way the music bar does. A no-op when the panel is too short or too narrow.
+
+    ``say`` gives him a speech bubble to the LEFT of his head (he's at the right
+    edge, so the tail points right, back at him) — used for transient page status
+    like "Anthropic Key updated" instead of spending a body row on it.
     """
     from rich.segment import Segment
 
@@ -442,6 +452,39 @@ def draw_companion_duck(console, options, lines: list) -> None:
         left, _mid, right = Segment.divide(lines[r], [dl, dr, width])
         lines[r] = list(left) + list(visible) + list(right)
 
+    # ── Speech bubble, to the left of his head ────────────────────────────────
+    if not say:
+        return
+    theme = PLANNING_THEME
+    label = Text(say, style=theme.value, no_wrap=True, overflow="ellipsis")
+    bw = label.cell_len + 4  # │ + space + text + space + │
+    bx1 = dl - 2  # a 1-col gap before his head (the tail column sits at dl-1)
+    bx0 = bx1 - bw + 1
+    if bx0 < 2 or dh < 3:
+        return  # not enough room to the left — skip rather than clip the page
+    mid_r = top + dh // 2  # level with the middle of his head
+    if mid_r - 1 < 0 or mid_r + 1 >= len(lines):
+        return
+    bstyle = theme.sep
+    roof = Text()
+    roof.append("╭" + "─" * (bw - 2) + "╮", style=bstyle)
+    body = Text()
+    body.append("│ ", style=bstyle)
+    body.append_text(label)
+    body.append(" │", style=bstyle)
+    floor = Text()
+    floor.append("╰" + "─" * (bw - 2) + "╯", style=bstyle)
+    sized = options.update_width(bw)
+    for r, piece in ((mid_r - 1, roof), (mid_r, body), (mid_r + 1, floor)):
+        seg = console.render_lines(piece, sized, pad=True, style=bg_style)[0]
+        lft, _m, rgt = Segment.divide(lines[r], [bx0, bx1 + 1, width])
+        lines[r] = list(lft) + list(seg) + list(rgt)
+    # Tail: a small pointer on the bubble's right edge, aimed at his head.
+    tail = Text("›", style=bstyle)
+    tseg = console.render_lines(tail, options.update_width(1), pad=True, style=bg_style)[0]
+    lft, _m, rgt = Segment.divide(lines[mid_r], [bx1 + 1, bx1 + 2, width])
+    lines[mid_r] = list(lft) + list(tseg) + list(rgt)
+
 
 class _MusicPocketFrame:
     """Wraps a bare screen Panel and draws the app-wide chrome over its bottom rows:
@@ -459,12 +502,16 @@ class _MusicPocketFrame:
         preserve_content: bool = False,
         with_back: bool = False,
         with_copy: bool = False,
+        hint_tab: Text | None = None,
+        duck_say: str = "",
     ) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
+        self.hint_tab = hint_tab  # a page's control hints, as one more tab
+        self.duck_say = duck_say  # transient status the companion speaks
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -473,11 +520,15 @@ class _MusicPocketFrame:
         draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
         # Always drive the back tab so it can glide OUT (target 0) when leaving a
         # back-capable screen, not only glide in (target 1) when arriving.
-        draw_back_pocket(
-            console, options, lines, target=1.0 if self.with_back else 0.0, with_copy=self.with_copy and self.with_back
-        )
+        _extra: list = []
+        if self.with_back:
+            if self.with_copy:
+                _extra.append((build_copy_text(), "c"))
+            if self.hint_tab is not None:
+                _extra.append((self.hint_tab, None))  # informational, not clickable
+        draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
         if self.with_duck:
-            draw_companion_duck(console, options, lines)
+            draw_companion_duck(console, options, lines, say=self.duck_say)
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -591,7 +642,19 @@ class MusicLive(Live):
             # Pages that support copy-to-clipboard flag themselves so a 'c copy'
             # tab appears beside the back tab (Usage, Changelog, …).
             with_copy = bool(getattr(renderable, "_copy_tab", False))
-            return _MusicPocketFrame(renderable, with_duck=with_duck, with_back=with_back, with_copy=with_copy)
+            # A page can hand its control hints to the chrome (_hint_tab) so they
+            # ride in the bottom pocket instead of taking a body row.
+            hint_tab = getattr(renderable, "_hint_tab", None)
+            # A page can also hand the duck a line to speak (transient status).
+            duck_say = str(getattr(renderable, "_duck_say", "") or "")
+            return _MusicPocketFrame(
+                renderable,
+                with_duck=with_duck,
+                with_back=with_back,
+                with_copy=with_copy,
+                hint_tab=hint_tab,
+                duck_say=duck_say,
+            )
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
         renderable.subtitle_align = "right"

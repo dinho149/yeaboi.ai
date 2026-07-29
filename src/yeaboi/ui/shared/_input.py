@@ -250,14 +250,14 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             # A click on the app-wide "go back" tab (bottom-left)
                             # is Esc, so the tab works on every screen without
                             # per-loop wiring. Lazy import avoids an import cycle.
-                            from yeaboi.ui.shared._music_bar import back_region, copy_region
+                            from yeaboi.ui.shared._music_bar import back_region, chrome_tab_regions
 
                             _br = back_region()
                             if _br is not None and _br[0] <= cx <= _br[2] and _br[1] <= cy <= _br[3]:
                                 return _esc()  # clicking the tab IS Esc (and folds it away)
-                            _cr = copy_region()
-                            if _cr is not None and _cr[0] <= cx <= _cr[2] and _cr[1] <= cy <= _cr[3]:
-                                return "c"  # the sibling copy tab presses 'c'
+                            for _x0, _y0, _x1, _y1, _key in chrome_tab_regions():
+                                if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
+                                    return _key  # e.g. the 'c copy' tab presses 'c'
                             return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).

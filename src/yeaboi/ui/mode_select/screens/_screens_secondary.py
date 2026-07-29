@@ -2412,7 +2412,10 @@ def _build_usage_screen(
     # Two columns of slack keep the table clear of the render width (sitting
     # exactly on it wraps the last column).
     col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
-    full_w = grid_w - 2  # a wide box spans the whole grid (same slack as above)
+    # A wide box spans TWO columns (plus the gutter between them) rather than the
+    # whole grid — enough for timestamps and DB paths without dwarfing the row of
+    # narrow boxes above it. Capped so it still fits when there are fewer columns.
+    full_w = min(grid_w - 2, col_w * 2 + 2)
 
     def _section_box(sec_title: str, rows: list, box_h: int, box_w: int) -> Panel:
         head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
@@ -4993,10 +4996,10 @@ def _build_settings_screen(
 
     body_lines: list = []
 
-    # ── Transient status message (e.g. after a Data Dir change) ───
+    # ── Transient status message (e.g. "Anthropic Key updated") ───
+    # The companion duck speaks it (see _duck_say on the returned panel) rather
+    # than it taking a body row.
     message = config_data.get("_message", "")
-    if message:
-        body_lines.append(Text("    " + message, style=theme.accent_bright, justify="left"))
 
     def _heading(text: str) -> None:
         body_lines.append(Text(""))
@@ -5213,7 +5216,7 @@ def _build_settings_screen(
     _enter_label = {"datadir": "change data dir", "loglevel": "cycle log level"}.get(
         settings_tab_action(active_tab), "configure"
     )
-    hint = Text("    ", justify="left")
+    hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
     if editing is not None:
         # In-place edit mode: keys go to the field being edited.
         hint.append("type to edit", style=theme.accent)
@@ -5239,11 +5242,15 @@ def _build_settings_screen(
         # blank after the tab bar would double up before the first heading.
         viewport_renderable,
         Text(""),
-        hint,
-        Text(""),  # keeps the hint above the music pocket band
+        Text(""),  # the hint moved into the bottom pocket (see _hint_tab)
+        Text(""),  # keeps the content above the music pocket band
     )
 
     panel = build_page_panel(content, theme=SETTINGS_THEME, height=height)
+    # The controls ride in the bottom-left pocket as one more tab beside "back",
+    # instead of taking a body row of their own.
+    panel._hint_tab = hint
+    panel._duck_say = message  # the companion speaks the transient status
     # Attach the tab click regions (labels + underline rows, absolute cols) so the
     # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
     panel._tab_regions = [
