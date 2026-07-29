@@ -21,6 +21,11 @@ let tray = null;
 function createWindow() {
   const display = screen.getPrimaryDisplay();
   const { x, y, width, height } = display.bounds; // full bounds → covers the dock
+  // The dock's height is the gap between the full display bottom and the
+  // usable workArea bottom. The duck stands ON TOP of the dock, so the renderer
+  // needs this inset to place the ground line there instead of the screen edge.
+  const wa = display.workArea;
+  const bottomInset = Math.max(0, y + height - (wa.y + wa.height));
 
   win = new BrowserWindow({
     x,
@@ -57,6 +62,18 @@ function createWindow() {
   win.setIgnoreMouseEvents(true, { forward: true });
 
   win.loadFile(path.join(__dirname, "index.html"));
+
+  // Surface renderer problems in the terminal (the window has no chrome/devtools
+  // by default, so without this a script error would be invisible).
+  win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    if (level >= 2) console.error(`[renderer] ${message} (${sourceId}:${line})`);
+  });
+  win.webContents.on("did-fail-load", (_e, code, desc) => console.error(`[load-fail] ${code} ${desc}`));
+  win.webContents.on("render-process-gone", (_e, d) => console.error(`[render-gone] ${d.reason}`));
+  win.webContents.once("did-finish-load", () => {
+    console.log(`[pet] renderer loaded ok (dock inset ${bottomInset}px)`);
+    win.webContents.send("pet:config", { bottomInset });
+  });
 
   // The renderer decides, frame by frame, whether the pointer is over the duck.
   // `over === true` → make the window solid so the click/drag hits the duck.

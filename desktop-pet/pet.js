@@ -16,12 +16,17 @@ const bubble = document.getElementById("duck-bubble");
 // --- geometry -------------------------------------------------------------
 const DUCK_W = rig.offsetWidth || 72;
 let DUCK_H = 72; // refined once the base sprite reports its height
-const GROUND_MARGIN = 8; // how far the feet sit above the very bottom edge
+let dockInset = 74; // dock height; the feet rest on TOP of the dock (main overrides via config)
+const GROUND_MARGIN = 2; // tiny lift so the feet sit just on the dock's top edge
 const HIT_PAD = 10; // shrink the grab hitbox slightly vs the sprite bounds
 
 function groundTop() {
-  return window.innerHeight - DUCK_H - GROUND_MARGIN;
+  return window.innerHeight - DUCK_H - dockInset - GROUND_MARGIN;
 }
+
+window.pet.onConfig((c) => {
+  if (c && typeof c.bottomInset === "number") dockInset = c.bottomInset;
+});
 
 // --- state ----------------------------------------------------------------
 let x = window.innerWidth * 0.5 - DUCK_W / 2; // left edge of the rig
