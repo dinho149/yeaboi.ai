@@ -407,6 +407,142 @@ def _say_brightness(now_t: float) -> float:
     return max(0.0, 1.0 - out / _SAY_FADE_OUT)
 
 
+# ── Controls drawer (persistent tab beside the music pocket) ───────────────
+# A always-present "⌃C controls" tab sits just left of the music alcove; Ctrl+C
+# expands it UPWARD into a panel listing every control available on the current
+# screen (the global chords plus whatever the page handed over as _hint_tab).
+_CONTROLS_LABEL = "⌃C controls"
+_controls_open = False
+_controls_presence = 0.0  # eased 0→1 expansion, so it grows/collapses smoothly
+_controls_region: tuple[int, int, int, int] | None = None
+
+
+def toggle_controls() -> None:
+    """Open/close the controls drawer (bound to Ctrl+C app-wide)."""
+    global _controls_open
+    _controls_open = not _controls_open
+
+
+def controls_open() -> bool:
+    return _controls_open
+
+
+def close_controls() -> None:
+    """Close the controls drawer (Esc dismisses it instead of navigating back)."""
+    global _controls_open
+    _controls_open = False
+
+
+def controls_region() -> tuple[int, int, int, int] | None:
+    """Clickable rect of the controls tab this frame (1-based inclusive)."""
+    return _controls_region
+
+
+def draw_controls_pocket(console, options, lines: list, page_hint: Text | None = None) -> None:
+    """Draw the persistent controls tab left of the music pocket, expanding upward
+    when open. In place, like the other chrome routines; a no-op when too narrow.
+    """
+    from rich.segment import Segment
+
+    global _controls_presence, _controls_region
+    _controls_region = None
+    if not lines or len(lines) < 4 or not lines[-1]:
+        return
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    bstyle = lines[-1][0].style
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+    theme = PLANNING_THEME
+
+    # Sit immediately left of the music alcove (same geometry it uses).
+    mw = build_music_subtitle().cell_len + 4
+    music_left = (width - 3) - mw + 1
+    label = Text()
+    label.append("⌃C", style=theme.accent)
+    label.append(" controls", style=theme.muted)
+    aw = label.cell_len + 4
+    t_right = music_left - 2
+    t_left = t_right - aw + 1
+    if t_left < 4:
+        return  # not enough room between the back tab and the music bar
+
+    term_h = len(lines)
+    _controls_presence += ((1.0 if _controls_open else 0.0) - _controls_presence) * 0.3
+    if _controls_presence < 0.02:
+        _controls_presence = 0.0
+
+    rows: list[Text] = []
+
+    def _ctl(keys: str, what: str) -> None:
+        t = Text(no_wrap=True, overflow="ellipsis")
+        t.append(keys.rjust(8), style=theme.accent)
+        t.append("  " + what, style=theme.muted)
+        rows.append(t)
+
+    # Page-specific controls first (what's actionable here), then the globals.
+    # A page hint reads like "←/→  switch tab  ·  click a row  edit"; only split a
+    # part into key/description when it actually starts with a key token, so
+    # phrases like "click a row edit" aren't mangled into the key column.
+    _keyish = {"←/→", "↑/↓", "Enter", "enter", "esc", "Esc", "Tab", "Space", "[", "]", "q", "c", "g", "t", "a", "f"}
+    if page_hint is not None and page_hint.plain.strip():
+        for part in [p.strip() for p in page_hint.plain.split("·") if p.strip()]:
+            bits = part.split(None, 1)
+            if len(bits) > 1 and (bits[0] in _keyish or bits[0].lower().startswith("ctrl+")):
+                _ctl(bits[0], bits[1])
+            else:
+                _ctl("", part)  # a phrase, not a keypress — leave the key column empty
+    _ctl("esc", "go back")
+    _ctl("ctrl+P", "play / pause music")
+    _ctl("ctrl+O", "next music channel")
+    _ctl("ctrl+C", "close this  ·  twice to quit")
+
+    # ── The tab IS the panel: it grows upward out of the bottom border ────────
+    # Anchored bottom-right at the tab's corner, the box's roof rises as it opens
+    # and the control rows fill in beneath it, revealed bottom-up. Width eases at
+    # the same time so it unfolds rather than snapping to its open size.
+    open_w = min(max((r.cell_len for r in rows), default=10) + 4, width - 8)
+    cur_w = max(aw, int(round(aw + (open_w - aw) * _controls_presence)))
+    c_right = t_right
+    c_left = max(2, c_right - cur_w + 1)
+    cur_w = c_right - c_left + 1
+    inner = cur_w - 4  # text width between "│ " and " │"
+    extra = int(round(len(rows) * _controls_presence))  # content rows revealed
+    extra = max(0, min(extra, term_h - 5))  # never push the roof off the top
+
+    def _bordered(body: Text | None) -> Text:
+        t = Text()
+        t.append("│ ", style=bstyle)
+        if body is None:
+            t.append(" " * inner)
+        else:
+            b = body.copy()
+            b.truncate(inner, overflow="ellipsis", pad=True)
+            t.append_text(b)
+        t.append(" │", style=bstyle)
+        return t
+
+    roof = Text()
+    roof.append("╭" + "─" * (cur_w - 2) + "╮", style=bstyle)
+    bot = Text()
+    bot.append("╯" + " " * (cur_w - 2) + "╰", style=bstyle)  # open bottom, like the pocket
+    label_row = _bordered(label)
+
+    # Row plan, bottom-up: open border, label, revealed content (last `extra`), roof.
+    plan: list[tuple[int, Text]] = [(term_h - 1, bot), (term_h - 2, label_row)]
+    shown_rows = rows[len(rows) - extra :] if extra else []
+    for i, body in enumerate(reversed(shown_rows)):
+        plan.append((term_h - 3 - i, _bordered(body)))
+    plan.append((term_h - 3 - extra, roof))
+
+    sized = options.update_width(cur_w)
+    for r, piece in plan:
+        if r < 0 or r >= term_h:
+            continue
+        seg = console.render_lines(piece, sized, pad=True, style=bg_style)[0]
+        lft, _m, rgt = Segment.divide(lines[r], [c_left, c_left + cur_w, width])
+        lines[r] = list(lft) + list(seg) + list(rgt)
+    _controls_region = (c_left + 1, term_h - 2, c_right + 1, term_h)
+
+
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
 _DUCK_RIGHT_MARGIN = 3  # cols kept clear on the right (border + breathing room)
 _DUCK_SLIDE_SECONDS = 0.45  # duration of the slide-into-corner on screen entry
@@ -566,6 +702,9 @@ class _MusicPocketFrame:
             if self.hint_tab is not None:
                 _extra.append((self.hint_tab, None))  # informational, not clickable
         draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
+        # The controls tab is persistent on every screen, and its drawer expands
+        # upward over the page when opened with Ctrl+C.
+        draw_controls_pocket(console, options, lines, page_hint=self.hint_tab)
         if self.with_duck:
             draw_companion_duck(console, options, lines, say=self.duck_say)
         # Newlines go BETWEEN rows, never after the last one. A trailing

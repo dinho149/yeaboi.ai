@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import sys
 import termios
+import time as _time
 import tty
 
 # Keys read ahead while coalescing a fast scroll burst but not consumed (a
@@ -21,6 +22,10 @@ _pushback: list[str] = []
 # Set by _read_key_impl so the public wrapper can distinguish a real terminal
 # event that decoded to "" (for example a consumed mouse click) from a timeout.
 _last_read_had_input = False
+# Ctrl+C opens the controls drawer; a second press within this window quits, so
+# the conventional interrupt survives as an escape hatch.
+_CTRL_C_QUIT_WINDOW = 1.5
+_last_ctrl_c = 0.0
 
 
 def push_back_key(key: str) -> None:
@@ -37,8 +42,14 @@ def _esc() -> str:
     Latching here covers every screen at once, since all input flows through here.
     """
     try:
-        from yeaboi.ui.shared._music_bar import retract_back_tab
+        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar, retract_back_tab
 
+        # An open controls drawer swallows the Esc: it closes the drawer instead of
+        # navigating back, so Esc always means "dismiss what's on top".
+        if controls_open():
+            close_controls()
+            nudge_music_bar()
+            return ""
         retract_back_tab()
     except Exception:  # noqa: BLE001 - never let chrome bookkeeping break input
         pass
@@ -91,9 +102,12 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         #   - IEXTEN — extended input, so Ctrl+O (\x0f, VDISCARD on macOS/BSD)
         #     is delivered as a keypress (used for the music channel-switch chord)
         #     rather than swallowed as "discard output".
+        #   - ISIG — signal generation, so Ctrl+C (\x03) arrives as a keypress for
+        #     the controls drawer instead of raising SIGINT. read_key still quits on
+        #     a second Ctrl+C within _CTRL_C_QUIT_WINDOW, so the habit still works.
         new_settings = termios.tcgetattr(fd)
         new_settings[0] &= ~termios.IXON  # input flags (c_iflag)
-        new_settings[3] &= ~termios.IEXTEN  # local flags (c_lflag)
+        new_settings[3] &= ~(termios.IEXTEN | termios.ISIG)  # local flags (c_lflag)
         termios.tcsetattr(fd, termios.TCSANOW, new_settings)
         if timeout is not None:
             try:
@@ -258,6 +272,13 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             for _x0, _y0, _x1, _y1, _key in chrome_tab_regions():
                                 if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
                                     return _key  # e.g. the 'c copy' tab presses 'c'
+                            # The persistent controls tab toggles its drawer.
+                            from yeaboi.ui.shared._music_bar import controls_region, toggle_controls
+
+                            _cr = controls_region()
+                            if _cr is not None and _cr[0] <= cx <= _cr[2] and _cr[1] <= cy <= _cr[3]:
+                                toggle_controls()
+                                return ""
                             return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).
@@ -359,8 +380,20 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     if _last_read_had_input and handle_input_event():
         return ""
 
+    # Ctrl+C toggles the app-wide controls drawer (see _music_bar). It used to quit
+    # outright; pressing it TWICE in quick succession still does, so the habitual
+    # escape hatch survives — the drawer itself spells that out.
     if key == "ctrl+c":
-        raise KeyboardInterrupt
+        global _last_ctrl_c
+        now = _time.monotonic()
+        if now - _last_ctrl_c < _CTRL_C_QUIT_WINDOW:
+            raise KeyboardInterrupt
+        _last_ctrl_c = now
+        from yeaboi.ui.shared._music_bar import nudge_music_bar, toggle_controls
+
+        toggle_controls()
+        nudge_music_bar()  # redraw immediately so it opens on the keypress
+        return ""
 
     # Hidden app-wide preview shortcut: Y for Yeaboi. It deliberately has no
     # on-screen hint, but uses the same rendering/wake path as genuine idleness.
@@ -403,10 +436,11 @@ def enter_raw_mode(stdin=None) -> None:
         fd = (stdin or sys.stdin).fileno()
         _saved_term_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # disables ICANON + ECHO
-        # Mirror read_key: drop IXON/IEXTEN so Ctrl+S / Ctrl+O reach the app.
+        # Mirror read_key: drop IXON/IEXTEN/ISIG so Ctrl+S / Ctrl+O / Ctrl+C reach
+        # the app (Ctrl+C drives the controls drawer; double-tap still quits).
         m = termios.tcgetattr(fd)
         m[0] &= ~termios.IXON
-        m[3] &= ~termios.IEXTEN
+        m[3] &= ~(termios.IEXTEN | termios.ISIG)
         termios.tcsetattr(fd, termios.TCSANOW, m)
     except Exception:  # noqa: BLE001 - not a tty (pipe, redirect, CI); leave as-is
         _saved_term_settings = None

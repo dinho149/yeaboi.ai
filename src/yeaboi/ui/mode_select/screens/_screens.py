@@ -409,6 +409,7 @@ class _WelcomeFrame:
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines)
+        # No controls tab here: the welcome screen already lists its own controls.
         # Retract the back tab if it's still on screen (e.g. Esc'd back here from a
         # sub-page) — the welcome is never back-capable, so it only animates out.
         draw_back_pocket(console, options, lines, target=0.0)
