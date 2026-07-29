@@ -74,18 +74,10 @@ html, body {
 .duck-rig .d-foot { position: absolute; top: 0; left: 0; }
 
 /* ---- feet (real sprite pixels) ----
-   Each foot swings from its hip (transform-origin) with a small lift, the two
-   offset half a cycle so it reads as an alternating step. Static when idle. */
-.duck-rig .d-foot-front { transform-origin: 38% 88%; }
-.duck-rig .d-foot-back { transform-origin: 58% 88%; }
-.duck-walker.walking .d-foot-front { animation: foot-step 0.38s ease-in-out infinite; }
-.duck-walker.walking .d-foot-back { animation: foot-step 0.38s ease-in-out infinite; animation-delay: -0.19s; }
-@keyframes foot-step {
-  0% { transform: translate(2px, 0) rotate(4deg); } /* planted, forward */
-  50% { transform: translate(-2px, 0) rotate(-4deg); } /* planted, back */
-  72% { transform: translate(1px, -3px) rotate(0deg); } /* lift, passing */
-  100% { transform: translate(2px, 0) rotate(4deg); }
-}
+   Driven procedurally in pet.js, synced to distance travelled so the planted
+   foot stays on the ground while the other swings forward (a real gait, not a
+   time-based bob). transform-origin is the hip for the small rotation. */
+.duck-rig .d-foot { transform-origin: 50% 90%; will-change: transform; }
 
 /* the second pair of shades — hidden until a startle jump reveals it at eye
    level while the first pair is up the forehead */

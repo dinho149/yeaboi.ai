@@ -17,6 +17,8 @@ const walker = document.getElementById("duck-walker");
 const rig = document.getElementById("duck-rig");
 const body = document.getElementById("duck-body");
 const bubble = document.getElementById("duck-bubble");
+const footFront = rig.querySelector(".d-foot-front");
+const footBack = rig.querySelector(".d-foot-back");
 
 // --- geometry -------------------------------------------------------------
 const DUCK_W = rig.offsetWidth || 72;
@@ -64,6 +66,14 @@ let jumpCd = 0;
 let dragDX = 0;
 let dragDY = 0;
 let dragging = false;
+let tvx = 0; // smoothed drag velocity (for throwing)
+let tvy = 0;
+let tumbling = false; // mid-throw: physics-only until it settles
+let gait = 0; // gait phase accumulator, advances with distance travelled
+
+const STRIDE = 13; // px travelled per full step cycle
+const FOOT_LIFT = 5; // how high a foot lifts during its swing (px)
+const THROW_MIN = 6; // release speed above which a drop becomes a throw
 
 let mx = -9999;
 let my = -9999;
@@ -150,6 +160,32 @@ function applyFacing() {
   else if (vx < -0.2) dir = 1;
 }
 
+// --- feet (procedural gait) -----------------------------------------------
+// Phase advances with DISTANCE travelled, not time, so the planted foot moves
+// backward at exactly the body's forward speed → it looks planted on the
+// ground while the other foot swings forward in an arc. The two feet are half a
+// cycle apart. `front` is the direction of travel; multiplying the screen-x by
+// `dir` cancels the walker's scaleX(dir) flip.
+function footOffset(p, front) {
+  if (p < 0.5) {
+    const s = p / 0.5; // stance: planted, slides front → back
+    return { x: front * (STRIDE / 2 - s * STRIDE), y: 0 };
+  }
+  const s = (p - 0.5) / 0.5; // swing: back → front, lifted in an arc
+  return { x: front * (-STRIDE / 2 + s * STRIDE), y: -FOOT_LIFT * Math.sin(s * Math.PI) };
+}
+function driveFeet() {
+  const spd = Math.abs(vx);
+  const walkGait = grounded && !tumbling;
+  const amt = walkGait ? Math.min(1, spd / 0.8) : 0; // neutral feet when stopped / airborne
+  if (walkGait && spd > 0.15) gait += spd / STRIDE;
+  const front = vx >= 0 ? 1 : -1;
+  const fF = footOffset(gait % 1, front);
+  const fB = footOffset((gait + 0.5) % 1, front);
+  footFront.style.transform = `translate(${(fF.x * dir * amt).toFixed(2)}px, ${(fF.y * amt).toFixed(2)}px)`;
+  footBack.style.transform = `translate(${(fB.x * dir * amt).toFixed(2)}px, ${(fB.y * amt).toFixed(2)}px)`;
+}
+
 // --- interaction ----------------------------------------------------------
 function overDuck() {
   const cx = x + DUCK_W / 2;
@@ -170,9 +206,12 @@ window.pet.onCursor((p) => {
 rig.addEventListener("mousedown", (e) => {
   e.preventDefault();
   dragging = true;
+  tumbling = false;
   mode = "drag";
   vx = 0;
   vy = 0;
+  tvx = 0;
+  tvy = 0;
   dragDX = mx - x;
   dragDY = my - baseY;
   rig.classList.add("grabbing");
@@ -182,10 +221,30 @@ window.addEventListener("mouseup", () => {
   if (!dragging) return;
   dragging = false;
   rig.classList.remove("grabbing");
-  mode = "wander";
-  vy = 0; // let gravity take it back to the ground
-  idleUntil = now() + rand(150, 500);
-  pickTarget();
+  const speed = Math.hypot(tvx, tvy);
+  if (speed > THROW_MIN) {
+    // Throw: launch with the release velocity and let physics tumble it to a
+    // stop (it arcs, hits the ground, bounces, bounces off the side walls).
+    tumbling = true;
+    mode = "throw";
+    vx = Math.max(-42, Math.min(42, tvx));
+    vy = Math.max(-42, Math.min(42, tvy));
+    grounded = false;
+    sway.v += Math.max(-16, Math.min(16, tvx)); // spin flair in the throw direction
+    walker.classList.add("airborne");
+    if (Math.random() < 0.85) say(["wheee!", "yeaboi!", "wooo 🦆", "aaah!", "again!"][Math.floor(Math.random() * 5)]);
+  } else {
+    // Gentle drop → place: the release height becomes the resting height above
+    // the surface underneath, applied everywhere (dock + desktop floor).
+    mode = "wander";
+    const cx = x + DUCK_W / 2;
+    const feetY = baseY + RIGH * FEET_FRAC;
+    SURFACE_RAISE = Math.max(-12, Math.min(160, surfaceAt(cx) - feetY));
+    console.error(`DBG SURFACE_RAISE=${SURFACE_RAISE.toFixed(1)} (drag-set)`);
+    vy = 0;
+    idleUntil = now() + rand(150, 500);
+    pickTarget();
+  }
 });
 rig.addEventListener("click", () => {
   if (dragging) return;
@@ -235,52 +294,60 @@ function step() {
   const near = Math.abs(gap) < FLEE_RADIUS && my > baseY - 120;
 
   if (dragging) {
-    x = Math.max(0, Math.min(window.innerWidth - DUCK_W, mx - dragDX));
-    baseY = my - dragDY;
+    const nx = Math.max(0, Math.min(window.innerWidth - DUCK_W, mx - dragDX));
+    const ny = my - dragDY;
+    tvx = 0.5 * tvx + 0.5 * (nx - x); // smoothed pointer velocity → throw impulse
+    tvy = 0.5 * tvy + 0.5 * (ny - baseY);
+    x = nx;
+    baseY = ny;
   } else {
     // ---- horizontal intent ----
-    let desired = 0;
-    if (near) {
-      mode = "flee";
-      const closeness = 1 - Math.abs(gap) / FLEE_RADIUS;
-      const away = gap >= 0 ? -1 : 1;
-      desired = away * FLEE_SPEED * (0.45 + 0.55 * closeness);
-      const atWall = (away < 0 && x < 8) || (away > 0 && x > window.innerWidth - DUCK_W - 8);
-      if (Math.abs(gap) < TOUCH_RADIUS || atWall) startle(away);
-    } else if (t < idleUntil) {
-      mode = "wander";
-      desired = 0;
+    if (tumbling) {
+      vx *= grounded ? 0.84 : 0.995; // air keeps momentum; ground drags it down
     } else {
-      mode = "wander";
-      const d = targetX - x;
-      if (Math.abs(d) < 3) {
-        pickTarget();
+      let desired = 0;
+      if (near) {
+        mode = "flee";
+        const closeness = 1 - Math.abs(gap) / FLEE_RADIUS;
+        const away = gap >= 0 ? -1 : 1;
+        desired = away * FLEE_SPEED * (0.45 + 0.55 * closeness);
+        const atWall = (away < 0 && x < 8) || (away > 0 && x > window.innerWidth - DUCK_W - 8);
+        if (Math.abs(gap) < TOUCH_RADIUS || atWall) startle(away);
+      } else if (t < idleUntil) {
+        mode = "wander";
         desired = 0;
       } else {
-        desired = Math.sign(d) * WALK_SPEED;
+        mode = "wander";
+        const d = targetX - x;
+        if (Math.abs(d) < 3) {
+          pickTarget();
+          desired = 0;
+        } else {
+          desired = Math.sign(d) * WALK_SPEED;
+        }
       }
-    }
-    vx += (desired - vx) * 0.15;
+      vx += (desired - vx) * 0.15;
 
-    // ---- step-up: climb onto the dock when there's a higher surface ahead ----
-    if (grounded && Math.abs(vx) > 0.2 && t > jumpCd) {
-      const mvDir = vx >= 0 ? 1 : -1;
-      const curSurf = surfaceAt(center);
-      const aheadSurf = surfaceAt(center + mvDir * LOOK);
-      if (aheadSurf < curSurf - 6) hopTo(curSurf - aheadSurf, mvDir);
+      // ---- step-up: climb onto the dock when there's a higher surface ahead ----
+      if (grounded && Math.abs(vx) > 0.2 && t > jumpCd) {
+        const mvDir = vx >= 0 ? 1 : -1;
+        const curSurf = surfaceAt(center);
+        const aheadSurf = surfaceAt(center + mvDir * LOOK);
+        if (aheadSurf < curSurf - 6) hopTo(curSurf - aheadSurf, mvDir);
+      }
     }
 
     x += vx;
 
-    // ---- soft walls ----
+    // ---- soft walls (bouncier while tumbling) ----
     if (x < 0) {
       x = 0;
-      vx *= -0.5;
-      if (mode === "wander") pickTarget();
+      vx *= tumbling ? -0.62 : -0.5;
+      if (!tumbling && mode === "wander") pickTarget();
     } else if (x > window.innerWidth - DUCK_W) {
       x = window.innerWidth - DUCK_W;
-      vx *= -0.5;
-      if (mode === "wander") pickTarget();
+      vx *= tumbling ? -0.62 : -0.5;
+      if (!tumbling && mode === "wander") pickTarget();
     }
 
     // ---- vertical physics (gravity + landing on the surface under us) ----
@@ -294,8 +361,20 @@ function step() {
       vy = 0;
       if (!grounded) {
         grounded = true;
-        walker.classList.remove("airborne");
         bnc.v += Math.min(9, 1.5 + impact * 0.5); // small downward bounce, scaled by impact
+        if (tumbling && impact > 6) {
+          vy = -impact * 0.42; // bounce back up
+          grounded = false;
+          sway.v += (vx >= 0 ? 1 : -1) * 6;
+        } else {
+          walker.classList.remove("airborne");
+          if (tumbling) {
+            tumbling = false; // settled
+            mode = "wander";
+            idleUntil = now() + rand(200, 700);
+            pickTarget();
+          }
+        }
       }
     } else {
       grounded = false;
@@ -303,8 +382,9 @@ function step() {
   }
 
   applyFacing();
-  const moving = !dragging && grounded && Math.abs(vx) > 0.18;
+  const moving = !dragging && !tumbling && grounded && Math.abs(vx) > 0.18;
   walker.classList.toggle("walking", moving);
+  driveFeet();
 
   // ---- secondary motion (no squash — bounce + lean + jelly sway) ----
   // turn/accel wobble: an impulse opposite the change in horizontal velocity
