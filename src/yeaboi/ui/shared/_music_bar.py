@@ -730,9 +730,11 @@ class _MusicPocketFrame:
         # The page's hints are NOT drawn as their own tab any more — they'd be
         # redundant with (and cut off behind) the controls drawer, which lists them.
         draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
-        # The controls tab is persistent on every screen, and its drawer expands
-        # upward over the page when opened with Ctrl+C.
-        draw_controls_pocket(console, options, lines, page_hint=self.hint_tab)
+        # A page only qualifies for the controls tab when it HAS page-specific
+        # controls to list: with nothing but the globals the drawer would just
+        # repeat the back/copy tabs sitting beside it.
+        _qualifies = self.hint_tab is not None and bool(self.hint_tab.plain.strip())
+        draw_controls_pocket(console, options, lines, page_hint=self.hint_tab, target=1.0 if _qualifies else 0.0)
         if self.with_duck:
             draw_companion_duck(console, options, lines, say=self.duck_say)
         # Newlines go BETWEEN rows, never after the last one. A trailing
