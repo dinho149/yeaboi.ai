@@ -172,6 +172,143 @@ class TestLocalPerformanceSection:
         assert "Copied to clipboard" in out
 
 
+class TestUsageBoxedLayout:
+    """The Usage page renders each section as its own bordered box, laid out in a
+    grid whose column count follows the terminal width."""
+
+    DATA = {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6-20260101-a-very-long-model-identifier",
+        "api_key_status": "configured",
+        "lifetime_tokens": {
+            "calls": 412,
+            "input": 12_500_000,
+            "output": 3_400_000,
+            "total": 15_900_000,
+            "estimated_cost": 42.1234,
+        },
+        "tokens": {"calls": 7, "input": 15000, "output": 3000, "total": 18000, "estimated_cost": 0.054},
+        "local_performance": {
+            "calls": 3,
+            "avg_tps": 42.0,
+            "max_tps": 55.0,
+            "avg_duration_ms": 1800.0,
+            "avg_load_ms": 200.0,
+            "last": {"model": "qwen3:8b", "tps": 55.0},
+        },
+        "sessions": {"total": 12, "planning": 8, "analysis": 4, "last_used": "2026-07-28 10:30"},
+        "version": "1.2.0",
+        "python_version": "3.14.3",
+        "langsmith": "enabled",
+        "db_path": "~/.yeaboi/some/deeply/nested/directory/tree/sessions.db",
+        "profiles": [{"name": "azdevops-PROJ", "source": "azdevops", "sprints": 8, "age": "3d ago"}],
+    }
+
+    @staticmethod
+    def _render(width: int, height: int, *, data: dict | None = None, scroll: int = 0, **kw):
+        """Render the page and return (plain rows, scroll_meta)."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
+
+        meta: dict = {}
+        panel = _build_usage_screen(
+            TestUsageBoxedLayout.DATA if data is None else data,
+            width=width,
+            height=height,
+            scroll_offset=scroll,
+            scroll_meta=meta,
+            **kw,
+        )
+        buf = StringIO()
+        Console(file=buf, width=width, height=height, force_terminal=False, legacy_windows=False).print(panel)
+        rows = buf.getvalue().split("\n")
+        if rows and rows[-1] == "":
+            rows = rows[:-1]
+        return rows, meta
+
+    def test_fits_height_and_width_exactly(self):
+        for width, height in ((200, 50), (120, 40), (90, 30), (84, 40), (80, 24)):
+            rows, _ = self._render(width, height)
+            assert len(rows) == height, f"{width}x{height} rendered {len(rows)} rows"
+            assert max(len(r) for r in rows) <= width, f"{width}x{height} overflowed"
+
+    def test_every_section_gets_its_own_box(self):
+        rows, _ = self._render(200, 60)
+        out = "\n".join(rows)
+        for section in (
+            "LLM Provider",
+            "Lifetime Token Usage",
+            "Current Session",
+            "Local Model Performance",
+            "Session History",
+            "Environment",
+            "Team Profiles",
+        ):
+            # Each title is drawn as a rounded box title: "╭─ Title ─…".
+            assert f"─ {section} ─" in out, section
+        assert "╭" in out and "╰" in out
+
+    def test_column_count_adapts_to_width(self):
+        def columns(width: int, height: int) -> int:
+            rows, _ = self._render(width, height)
+            # Count box top-left corners on the widest grid row.
+            return max(r.count("╭") for r in rows)
+
+        assert columns(200, 60) == 3
+        assert columns(120, 60) == 3
+        assert columns(90, 60) == 2
+        assert columns(60, 40) == 1
+
+    def test_long_values_crop_instead_of_wrapping(self):
+        """A long model name / DB path must ellipsize — wrapping would give the box
+        an unpredictable height and corrupt the grid."""
+        rows, _ = self._render(120, 40)
+        out = "\n".join(rows)
+        assert "…" in out
+        assert "claude-sonnet-4-6-20260101-a-very-long-model-identifier" not in out
+
+    def test_scroll_offset_moves_the_rendered_lines(self):
+        top, meta = self._render(90, 30)
+        assert meta["max_offset"] > 0
+        mid, _ = self._render(90, 30, scroll=3)
+        assert mid != top
+        bottom, _ = self._render(90, 30, scroll=meta["max_offset"])
+        assert bottom != top
+        # Past the end clamps to max_offset — no blank page, no crash.
+        clamped, _ = self._render(90, 30, scroll=meta["max_offset"] + 50)
+        assert clamped == bottom
+
+    def test_scroll_meta_reports_flattened_line_geometry(self):
+        """max_offset counts *rendered* lines of the boxed grid, not section rows."""
+        _, meta = self._render(90, 30)
+        tall, tall_meta = self._render(90, 60)
+        assert meta["viewport_h"] < tall_meta["viewport_h"]
+        assert tall_meta["max_offset"] == 0  # everything fits at 60 rows
+        assert len(tall) == 60
+
+    def test_sparse_data_still_renders(self):
+        for data in ({}, {"provider": "ollama", "local_performance": {}}, {"provider": "ollama", "tokens": {}}):
+            rows, _ = self._render(120, 40, data=data)
+            assert len(rows) == 40
+            assert "─ LLM Provider ─" in "\n".join(rows)
+
+
+class TestRenderToLines:
+    def test_flattens_a_multi_row_renderable(self):
+        from rich.panel import Panel
+        from rich.text import Text
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _render_to_lines
+
+        lines = _render_to_lines(Panel(Text("hi"), width=10, height=3), 20, ">>")
+        assert len(lines) == 3
+        assert all(line.plain.startswith(">>") for line in lines)
+        assert "hi" in lines[1].plain
+
+
 class TestUsageDataCloud:
     def test_anthropic_without_key_not_configured(self, monkeypatch, tmp_path):
         data = _collect(monkeypatch, tmp_path, "anthropic")

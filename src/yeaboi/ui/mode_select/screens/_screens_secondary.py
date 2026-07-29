@@ -2224,6 +2224,35 @@ def _build_project_export_success_screen(
 # ---------------------------------------------------------------------------
 
 
+# Usage section boxes: the narrowest a box may get before the grid drops a column,
+# and the most columns it will ever use (three reads well at 200 columns; four
+# leaves the label/value rows too cramped).
+_USAGE_MIN_BOX_W = 34
+_USAGE_MAX_COLS = 3
+
+
+def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
+    """Flatten any renderable to a list of ``Text`` lines.
+
+    Multi-row renderables (a grid of boxed panels, a four-column table) break the
+    "one body line == one rendered row" assumption that the flat-list viewport
+    math relies on. Rendering them off-screen at a known width and re-emitting the
+    result as one ``Text`` per rendered row restores it, so the block scrolls
+    line-by-line with everything else. Each line is prefixed with ``left_pad`` so
+    the block lines up with the rest of the page content.
+    """
+    from rich.console import Console as _Console
+
+    _c = _Console(width=render_w, height=400)
+    out: list = []
+    for seg_line in _c.render_lines(renderable, _c.options.update_width(render_w), pad=True):
+        t = Text(left_pad, justify="left")
+        for seg in seg_line:
+            t.append(seg.text, style=seg.style)
+        out.append(t)
+    return out
+
+
 def _build_usage_screen(
     usage_data: dict,
     *,
@@ -2254,18 +2283,28 @@ def _build_usage_screen(
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
 
+    # Rows are collected per section rather than into one flat list: each section
+    # becomes its own bordered box below, and the boxes are laid out in a grid
+    # whose column count follows the terminal width.
+    sections: list[tuple[str, list]] = []
+    _cur: list = []
+
     def _heading(text: str) -> None:
-        body_lines.append(Text(""))
-        h = Text(_PAD + "  ", justify="left")
-        h.append(text, style=f"bold {theme.accent}")
-        body_lines.append(h)
-        body_lines.append(Text(_PAD + "  " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
+        """Open a new section box. Its title is drawn as the box title."""
+        nonlocal _cur
+        _cur = []
+        sections.append((text, _cur))
 
     def _row(label: str, value: str, value_style: str = "") -> None:
-        r = Text(_PAD + "    ", justify="left")
+        # no_wrap + ellipsis: long model names / DB paths crop instead of wrapping,
+        # which would give the box an unpredictable height and break the grid.
+        r = Text(justify="left", no_wrap=True, overflow="ellipsis")
         r.append(f"{label}:  ", style=theme.muted)
         r.append(str(value), style=value_style or theme.value)
-        body_lines.append(r)
+        _cur.append(r)
+
+    def _note(text: str, style: str) -> None:
+        _cur.append(Text(text, style=style, justify="left", no_wrap=True, overflow="ellipsis"))
 
     # ── Provider Info ──────────────────────────────────────────────
     _heading("LLM Provider")
@@ -2303,16 +2342,10 @@ def _build_usage_screen(
         elif usage_data.get("provider") == "ollama":
             _row("Session cost", "$0.00 — local model", theme.good)
     else:
-        body_lines.append(Text(_PAD + "    No calls in this session yet.", style=theme.muted, justify="left"))
+        _note("No calls in this session yet.", theme.muted)
 
     if not lifetime and not tokens:
-        body_lines.append(
-            Text(
-                _PAD + "    Token tracking starts when you run analysis or planning.",
-                style=theme.dim,
-                justify="left",
-            )
-        )
+        _note("Token tracking starts when you run analysis or planning.", theme.dim)
 
     # ── Local Model Performance ───────────────────────────────────
     # Only present once a local (Ollama) call has recorded timing — hidden
@@ -2353,17 +2386,62 @@ def _build_usage_screen(
     if profiles:
         _heading("Team Profiles")
         for p in profiles:
-            r = Text(_PAD + "    ", justify="left")
+            r = Text(justify="left", no_wrap=True, overflow="ellipsis")
             r.append(p.get("name", "?"), style=theme.value)
             r.append(f"  {p.get('source', '')} \u00b7 {p.get('sprints', 0)} sprints", style=theme.muted)
             age = p.get("age", "")
             if age:
                 r.append(f"  \u00b7 {age}", style=theme.dim)
-            body_lines.append(r)
+            _cur.append(r)
+
+    # ── Section boxes, laid out in an adaptive-width grid ─────────
+    # Each section gets its own rounded box, and the boxes sit side by side in a
+    # table whose column count comes from the available width (1 when narrow, up
+    # to _USAGE_MAX_COLS when wide). Fewer columns beats squashed boxes, so the
+    # count drops as soon as a column would fall below _USAGE_MIN_BOX_W.
+    _grid_indent = _PAD + "  "
+    grid_w = max(24, width - 4 - len(_grid_indent) - 2)  # panel border/pad + indent + scrollbar gutter
+    n_cols = max(1, min(_USAGE_MAX_COLS, grid_w // _USAGE_MIN_BOX_W, len(sections) or 1))
+    # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only.
+    # Two columns of slack keep the table clear of the render width (sitting
+    # exactly on it wraps the last column).
+    col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
+
+    def _section_box(sec_title: str, rows: list, box_h: int) -> Panel:
+        head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
+        return Panel(
+            Group(*(rows or [Text("")])),
+            title=head,
+            title_align="left",
+            box=rich.box.ROUNDED,
+            border_style=theme.sep,
+            padding=(0, 1),
+            width=col_w,
+            height=box_h,
+        )
+
+    _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+    for _ in range(n_cols):
+        _grid.add_column(width=col_w, overflow="crop")
+    for _i in range(0, len(sections), n_cols):
+        _chunk = sections[_i : _i + n_cols]
+        if _i:
+            _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
+        # Boxes in the same row share a height so their bottom borders line up.
+        _box_h = max(len(_rows) for _, _rows in _chunk) + 2
+        _cells: list = [_section_box(_t, _rows, _box_h) for _t, _rows in _chunk]
+        _cells += [Text("")] * (n_cols - len(_chunk))
+        _grid.add_row(*_cells)
+
+    body_lines.append(Text(""))  # the blank the old first heading used to supply
+    body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
 
     # ── Layout using shared components ────────────────────────────
-    # header = blank + title(2) + blank + sub (the first heading leads with its own
+    # header = blank + title(2) + blank + sub (the grid block leads with its own
     # blank, so no extra blank after sub); action_h = blank + hint + pocket blank.
+    # body_lines now holds *rendered* lines (the boxed grid flattened by
+    # _render_to_lines), so the one-line-per-entry viewport math below still holds
+    # and build_scrollbar gets an accurate total / max_scroll.
     viewport_h = calc_viewport(height, header_h=5, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
@@ -3993,20 +4071,8 @@ def _build_retro_screen(
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
             body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
-    def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
-        """Flatten a renderable to a list of Text lines (so the four-column grid
-        table still scrolls line-by-line with everything else), each prefixed with
-        ``left_pad`` so the block lines up with the rest of the content."""
-        from rich.console import Console as _Console
-
-        _c = _Console(width=render_w, height=400)
-        out: list = []
-        for seg_line in _c.render_lines(renderable, _c.options.update_width(render_w), pad=True):
-            t = Text(left_pad, justify="left")
-            for seg in seg_line:
-                t.append(seg.text, style=seg.style)
-            out.append(t)
-        return out
+    # The four-column grid below is flattened with the module-level
+    # _render_to_lines helper so it scrolls line-by-line with everything else.
 
     # ── Join info, at the top ─────────────────────────────────────
     # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
