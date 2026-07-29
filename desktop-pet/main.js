@@ -126,7 +126,7 @@ function createWindow() {
     if (!win || win.isDestroyed()) return;
     const p = screen.getCursorScreenPoint();
     win.webContents.send("pet:cursor", { x: p.x - bounds.x, y: p.y - bounds.y });
-  }, 30);
+  }, 16);
   win.on("closed", () => clearInterval(feed));
 }
 

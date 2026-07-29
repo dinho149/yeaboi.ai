@@ -26,7 +26,7 @@ let RIGH = 72; // rig height, refined once the base sprite loads
 const FEET_FRAC = 0.975; // sprite's feet-bottom as a fraction of rig height (measured: 496/509)
 let SURFACE_RAISE = 20; // extra lift so it stands ON the surface, not sunk into it (tray-tunable)
 const FLOOR_MARGIN = 10; // desktop floor: feet this far above the screen's bottom (raises the side-floor)
-const HIT_PAD = 8;
+const HIT_PAD = 3; // grab hitbox padding — small, so nearly the whole sprite is grabbable
 
 // dock geometry (window-local), from main; floor-only until it arrives
 let dock = { present: false, x: 0, top: 0, w: 0, h: 0 };
@@ -97,9 +97,8 @@ function springTo(s, target, k, d) {
 }
 
 const WALK_SPEED = 0.9;
-const FLEE_SPEED = 4.4;
-const FLEE_RADIUS = 165;
-const TOUCH_RADIUS = 62;
+const FLEE_SPEED = 3.4; // scurry speed — slow enough that a quick cursor can overtake and grab it
+const FLEE_RADIUS = 150;
 const G = 1.1; // gravity (px/frame^2)
 const VMAX = 18; // terminal fall speed
 const LOOK = 26; // how far ahead the duck looks for a step-up
@@ -307,15 +306,16 @@ function step() {
       vx *= grounded ? 0.84 : 0.995; // air keeps momentum; ground drags it down
     } else {
       let desired = 0;
-      if (near && !interactive) {
-        // flee when the cursor closes in — but NOT once it's actually over the
-        // duck (interactive), so it holds still there and you can grab it
+      if (near) {
+        // scurry away as the cursor closes in (the "catch me" game) — but no
+        // teleport-hop on proximity: that launched it out of reach every time.
+        // You can grab it mid-scurry; clicking it still makes it hop.
         mode = "flee";
         const closeness = 1 - Math.abs(gap) / FLEE_RADIUS;
         const away = gap >= 0 ? -1 : 1;
         desired = away * FLEE_SPEED * (0.45 + 0.55 * closeness);
         const atWall = (away < 0 && x < 8) || (away > 0 && x > window.innerWidth - DUCK_W - 8);
-        if (Math.abs(gap) < TOUCH_RADIUS || atWall) startle(away);
+        if (atWall) startle(away); // only hop when cornered against a wall
       } else if (t < idleUntil) {
         mode = "wander";
         desired = 0;
