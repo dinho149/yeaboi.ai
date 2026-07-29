@@ -3701,22 +3701,39 @@ def _run_mode_hub(
         # ── Mouse: click a card to open it, or the "+ New" card to start a run ──
         _pos = parse_click(k)
         if _pos is not None and not confirm:
-            _cy = _pos[1]
-            _hit = next(
-                (idx for y0, y1, idx in getattr(_last_panel, "_card_regions", []) or [] if y0 <= _cy <= y1),
+            _cx, _cy = _pos
+            # Delete/Export buttons sit to the RIGHT of the selected run card and
+            # share its rows, so they must be tested (with x) BEFORE the y-only card
+            # regions — otherwise a button click would land on the card. The buttons
+            # belong to the currently-selected card, so a hit acts on ``selected``:
+            # set the matching focus and reuse the existing Enter code paths below.
+            _btn = next(
+                (
+                    label
+                    for x0, y0, x1, y1, label in getattr(_last_panel, "_btn_regions", []) or []
+                    if x0 <= _cx <= x1 and y0 <= _cy <= y1
+                ),
                 None,
             )
-            if _hit is not None:
-                selected, focus = _hit, 0
-                if _hit >= len(runs):  # the "+ New" card
-                    if new_breaks_out:
-                        break  # Performance: hand control back to the roster
-                    run_new()
-                    _reload("New run recorded.")
-                else:
-                    _open_snapshot(runs[_hit])
-            _render_list()
-            continue
+            if _btn is not None:
+                focus = 1 if _btn == "delete" else 2
+                k = "enter"  # fall through to the existing focus==1/2 Enter handling
+            else:
+                _hit = next(
+                    (idx for y0, y1, idx in getattr(_last_panel, "_card_regions", []) or [] if y0 <= _cy <= y1),
+                    None,
+                )
+                if _hit is not None:
+                    selected, focus = _hit, 0
+                    if _hit >= len(runs):  # the "+ New" card
+                        if new_breaks_out:
+                            break  # Performance: hand control back to the roster
+                        run_new()
+                        _reload("New run recorded.")
+                    else:
+                        _open_snapshot(runs[_hit])
+                _render_list()
+                continue
         if confirm:
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):

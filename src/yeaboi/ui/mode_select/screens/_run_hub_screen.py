@@ -125,6 +125,13 @@ def _build_run_hub_screen(
     # can map a mouse click onto an item. Rows are absolute (panel border + top pad
     # + header, then the body). The "+ New" card renders 3 rows tall; run cards 5.
     card_regions: list[tuple[int, int, int]] = []  # (y_top, y_bot, item_index)
+    # Delete/Export button rects for the selected run card (empty when the "+ New"
+    # card is focused or the buttons are hidden). Column geometry mirrors
+    # _build_project_row's Table.grid: panel border(1) + panel L-pad(2) + card
+    # L-pad(len PAD) precede the card; then a 1-col grid gap, Delete (_BTN_W wide),
+    # a 1-col gap, and Export (_BTN_W wide). Verified against a real render.
+    btn_regions: list[tuple[int, int, int, int, str]] = []  # (x0, y0, x1, y1, label)
+    _card_x0 = 3 + len(_PAD) + 1  # 1-based first column of the card box
     _new_card_h = 3
     _row_cursor = title_offset + 8
 
@@ -145,6 +152,20 @@ def _build_run_hub_screen(
             break
         _card_h = _CARD_H if i < len(runs) else _new_card_h
         card_regions.append((_row_cursor, _row_cursor + _card_h - 1, i))
+        # Record the Delete/Export button rects when this run card is the selected
+        # one and its action buttons are revealed. The buttons occupy the same rows
+        # as the card. Delete shows once action_btns_visible > 0, Export once > 1.0
+        # (mirrors _build_project_row's del_opacity / exp_opacity gating).
+        if i == selected and i < len(runs):
+            _y0, _y1 = _row_cursor, _row_cursor + _card_h - 1
+            _del_op = min(1.0, max(0.0, action_btns_visible))
+            _exp_op = min(1.0, max(0.0, action_btns_visible - 1.0))
+            _del_x0 = _card_x0 + box_w + 1  # 1-col grid gap after the card
+            if _del_op > 0:
+                btn_regions.append((_del_x0, _y0, _del_x0 + _BTN_W - 1, _y1, "delete"))
+            if _exp_op > 0:
+                _exp_x0 = _del_x0 + _BTN_W + 1  # 1-col gap after Delete
+                btn_regions.append((_exp_x0, _y0, _exp_x0 + _BTN_W - 1, _y1, "export"))
         _row_cursor += _card_h + (_CARD_SPACING if i < end - 1 else 0)
         if i < len(runs):
             is_sel = i == selected
@@ -309,4 +330,5 @@ def _build_run_hub_screen(
     # Routed through build_page_panel (main #104) so the mode's bg tint applies.
     panel = build_page_panel(content, theme=theme, height=height, padding=(1, 2))
     panel._card_regions = card_regions  # (y_top, y_bot, item_index) per clickable card
+    panel._btn_regions = btn_regions  # (x0, y0, x1, y1, label) for the selected card's buttons
     return panel
