@@ -228,17 +228,22 @@ def _clear_back_region() -> None:
     _back_region = None
 
 
-# Force-retract latch: set the instant a back-tab click fires so the tab starts
-# folding away immediately (even while the still-back-capable screen keeps asking
-# to show it), instead of waiting for the destination screen to render.
+# Force-retract latch: set when a back press fires so the tab folds away on the
+# press (even while the still-back-capable screen keeps asking to show it), rather
+# than waiting for the destination screen to render. The fold holds for a short
+# beat first so it doesn't snap away the instant the key lands.
+_BACK_RETRACT_DELAY = 0.1  # seconds to hold the tab before the fold starts
 _back_retracting = False
+_back_retract_at = 0.0  # monotonic time the fold may begin
 
 
 def retract_back_tab() -> None:
-    """Begin retracting the back tab right now, regardless of the current screen's
-    target — called when the back button is pressed so the fold triggers on press."""
-    global _back_retracting
+    """Arm the back tab's fold-away — called when the back button (or Esc) is
+    pressed, so the retract belongs to the press rather than the next screen's
+    entrance. The fold itself starts after ``_BACK_RETRACT_DELAY``."""
+    global _back_retracting, _back_retract_at
     _back_retracting = True
+    _back_retract_at = time.monotonic() + _BACK_RETRACT_DELAY
 
 
 def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
@@ -272,8 +277,11 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     # not trailing into the next screen's entrance animation.
     ease = 0.22
     if _back_retracting:
-        target = 0.0
-        ease = 0.55
+        if time.monotonic() < _back_retract_at:
+            target = 1.0  # hold it up for a beat so the fold doesn't snap on keydown
+        else:
+            target = 0.0
+            ease = 0.55
     # Ease toward the target every frame — glides in (→1) and out (→0).
     _back_presence += (target - _back_presence) * ease
     if target <= 0.0 and _back_presence < 0.02:
