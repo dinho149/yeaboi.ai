@@ -107,6 +107,43 @@ def test_make_live_returns_music_live():
     assert isinstance(make_live(Text("")), MusicLive)
 
 
+# ── Back tab (bottom-left "go back" pocket) ────────────────────────────────
+
+
+def test_back_tab_renders_and_publishes_region():
+    # with_back=True draws the left pocket ("‹ back  esc") and publishes a
+    # clickable rect so read_key can map a click there onto Esc.
+    import time
+
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame, back_region
+
+    # Pin the slide to its resting frame: start well in the past (progress≈1) with
+    # a recent last-draw so the entry-gap check doesn't replay the slide.
+    _music_bar._back_slide_start = time.monotonic() - 10
+    _music_bar._back_last_draw = time.monotonic()
+    panel = Panel(Text("body"), height=12, padding=(1, 2))
+    console = Console(width=90, height=12, file=StringIO())
+    frame = _MusicPocketFrame(panel, with_back=True)
+    lines = console.render_lines(frame, console.options, pad=True)
+    text = "\n".join("".join(seg.text for seg in row) for row in lines)
+    assert "back" in text and "esc" in text
+    r = back_region()
+    assert r is not None and len(r) == 4
+    x0, y0, x1, y1 = r
+    assert 1 <= x0 < x1 and y1 == len(lines)  # spans the bottom rows, left side
+
+
+def test_back_tab_absent_without_flag():
+    # Default frame (with_back=False) draws no back tab.
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=12, padding=(1, 2))
+    console = Console(width=90, height=12, file=StringIO())
+    lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
+    text = "\n".join("".join(seg.text for seg in row) for row in lines)
+    assert "‹ back" not in text
+
+
 def _wide_ml(renderable):
     from rich.console import Console
 

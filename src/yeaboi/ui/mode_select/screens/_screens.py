@@ -652,6 +652,7 @@ def _build_mode_screen(
     # menu never shows the terminal's own background.
     panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2))
     if not is_welcome:
+        panel._no_back_hint = True  # the main menu's Esc isn't "go back" → no back tab
         return panel
     # Draw the music pocket over the reserved bottom rows. Returning a frame (not a
     # bare Panel) also means MusicLive won't stamp the flat music subtitle.

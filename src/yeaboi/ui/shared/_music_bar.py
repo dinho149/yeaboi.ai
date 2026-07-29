@@ -203,6 +203,104 @@ def draw_music_pocket(console, options, lines: list, *, preserve_content: bool =
         lines[-2] = console.render_lines(textrow, sized, pad=True, style=bg_style)[0]
 
 
+# ── Back tab (bottom-left "go back" pocket) ────────────────────────────────
+# Mirrors the music pocket on the LEFT, shown on every back-capable screen (all
+# but the main menu, which marks itself with ``_no_back_hint``). Clickable: its
+# on-screen rect is published in ``_back_region`` and ``read_key`` turns a click
+# there into an Esc, so it works app-wide without touching per-screen loops.
+_back_region: tuple[int, int, int, int] | None = None  # (x0, y0, x1, y1), 1-based inclusive
+_BACK_SLIDE_SECONDS = 0.4  # duration of the slide-in from the left edge
+_BACK_SLIDE_GAP = 0.25  # a render gap longer than this = a fresh entry → replay the slide
+_back_slide_start = 0.0
+_back_last_draw = 0.0
+
+
+def back_region() -> tuple[int, int, int, int] | None:
+    """The clickable rect of the back tab this frame (1-based inclusive), or None
+    when it isn't shown. Read by ``read_key`` to map a click there onto Esc."""
+    return _back_region
+
+
+def _clear_back_region() -> None:
+    """Forget last frame's back-tab rect so a click only maps to Esc on a frame
+    that actually drew the tab (reset at the top of every render)."""
+    global _back_region
+    _back_region = None
+
+
+def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
+    """The compact 'go back' line for the left pocket, styled like the music bar."""
+    line = Text(justify="left")
+    line.append("‹ ", style=theme.accent)
+    line.append("back", style=theme.value)
+    line.append("  esc ", style=theme.dim)
+    return line
+
+
+def draw_back_pocket(console, options, lines: list) -> None:
+    """Draw a rounded 'go back' tab in the bottom-LEFT, mirroring the music pocket.
+
+    Runs AFTER :func:`draw_music_pocket` and splices a left alcove into the bottom
+    three rows (roof, text, up-and-under border), matching the pocket look on the
+    right. Publishes its clickable rect in ``_back_region``. A no-op on panels too
+    narrow/short to host it.
+    """
+    from rich.segment import Segment
+
+    from yeaboi.ui.shared._animations import ease_out_cubic
+
+    global _back_region, _back_slide_start, _back_last_draw
+    _back_region = None
+    if not lines or len(lines) < 3 or not lines[-1]:
+        return
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    bstyle = lines[-1][0].style
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+    back = build_back_text()
+    bw = back.cell_len + 4  # ╭ + space + text + space + ╮
+    if bw + 8 > width:  # leave room so it never collides with the music pocket
+        return
+
+    # Slide in from the left edge on entry (a render gap = we just arrived on a
+    # back-capable screen — the menu doesn't draw the tab, so leaving it replays
+    # the slide). Continuous sub-page re-renders keep the gap tiny, so it settles.
+    now = time.monotonic()
+    if now - _back_last_draw > _BACK_SLIDE_GAP:
+        _back_slide_start = now
+    _back_last_draw = now
+    progress = min(1.0, (now - _back_slide_start) / _BACK_SLIDE_SECONDS)
+    rest_left = 2  # resting ╭ column (mirrors the music pocket's inset)
+    start_left = -(bw + 1)  # fully off the left edge
+    bleft = int(start_left + (rest_left - start_left) * ease_out_cubic(progress))
+    bright = bleft + bw - 1
+
+    roof_alcove = Text()
+    roof_alcove.append("╭" + "─" * (bw - 2) + "╮", style=bstyle)
+    text_alcove = Text()
+    text_alcove.append("│ ", style=bstyle)
+    text_alcove.append_text(back)
+    text_alcove.append(" │", style=bstyle)
+    border_alcove = Text()
+    border_alcove.append("╰" + "─" * (bw - 2) + "╯", style=bstyle)
+    asized = options.update_width(bw)
+
+    # Only the on-screen slice is spliced, so it can ride in from off the left edge
+    # without ever overwriting the panel's own left/right border columns.
+    vl = max(1, bleft)
+    vr = min(width - 2, bright)
+    if vr < vl:
+        return
+    a, b = vl - bleft, vr - bleft + 1  # visible span in alcove-local columns
+    for idx, alcove in ((-3, roof_alcove), (-2, text_alcove), (-1, border_alcove)):
+        full = console.render_lines(alcove, asized, pad=True, style=bg_style)[0]
+        _al, seg, _ar = Segment.divide(full, [a, b, bw])
+        lft, _mid, rgt = Segment.divide(lines[idx], [vl, vr + 1, width])
+        lines[idx] = list(lft) + list(seg) + list(rgt)
+    term_h = len(lines)
+    # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; visible cols vl+1..vr+1.
+    _back_region = (vl + 1, term_h - 2, vr + 1, term_h)
+
+
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
 _DUCK_RIGHT_MARGIN = 3  # cols kept clear on the right (border + breathing room)
 _DUCK_SLIDE_SECONDS = 0.45  # duration of the slide-into-corner on screen entry
@@ -281,16 +379,21 @@ class _MusicPocketFrame:
     ``_WelcomeFrame``. Falls back to a flat subtitle when too narrow.
     """
 
-    def __init__(self, panel: Panel, *, with_duck: bool = True, preserve_content: bool = False) -> None:
+    def __init__(
+        self, panel: Panel, *, with_duck: bool = True, preserve_content: bool = False, with_back: bool = False
+    ) -> None:
         self.panel = panel
         self.with_duck = with_duck  # screensaver already has the big duck → pocket only
         self.preserve_content = preserve_content  # keep row content behind the pocket band
+        self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
+        if self.with_back:
+            draw_back_pocket(console, options, lines)
         if self.with_duck:
             draw_companion_duck(console, options, lines)
         # Newlines go BETWEEN rows, never after the last one. A trailing
@@ -356,6 +459,10 @@ class MusicLive(Live):
         """
         from yeaboi.ui.shared._screensaver import build_screensaver, idle_controller
 
+        # Reset the back-tab rect every frame; only a frame that actually draws the
+        # tab republishes it, so a click maps to Esc solely where the tab is shown.
+        _clear_back_region()
+
         if idle_controller.should_show():
             width, height = self.console.size
             saver = build_screensaver(width=width, height=height)
@@ -396,7 +503,10 @@ class MusicLive(Live):
             # with its own centred duck) marks itself so we don't stamp a second,
             # redundant duck in the corner — it still gets the music pocket.
             with_duck = not getattr(renderable, "_no_companion_duck", False)
-            return _MusicPocketFrame(renderable, with_duck=with_duck)
+            # The "go back" tab shows on every screen except those that opt out
+            # (the main menu marks itself with _no_back_hint — its Esc isn't "back").
+            with_back = not getattr(renderable, "_no_back_hint", False)
+            return _MusicPocketFrame(renderable, with_duck=with_duck, with_back=with_back)
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
         renderable.subtitle_align = "right"
