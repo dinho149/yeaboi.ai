@@ -280,8 +280,11 @@ def draw_back_pocket(console, options, lines: list) -> None:
     text_alcove.append("│ ", style=bstyle)
     text_alcove.append_text(back)
     text_alcove.append(" │", style=bstyle)
+    # Open bottom (no floor) — the alcove hangs from the roof exactly like the
+    # music pocket: the panel border rises to a corner at each wall (╯ … ╰) with
+    # an open gap between, so the page shows through beneath the text.
     border_alcove = Text()
-    border_alcove.append("╰" + "─" * (bw - 2) + "╯", style=bstyle)
+    border_alcove.append("╯" + " " * (bw - 2) + "╰", style=bstyle)
     asized = options.update_width(bw)
 
     # Only the on-screen slice is spliced, so it can ride in from off the left edge
