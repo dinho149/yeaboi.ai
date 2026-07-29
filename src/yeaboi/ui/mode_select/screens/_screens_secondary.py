@@ -2286,14 +2286,18 @@ def _build_usage_screen(
     # Rows are collected per section rather than into one flat list: each section
     # becomes its own bordered box below, and the boxes are laid out in a grid
     # whose column count follows the terminal width.
-    sections: list[tuple[str, list]] = []
+    # ``wide`` sections get a full-width box of their own below the grid — their
+    # values (timestamps, DB paths) don't fit a third-width column without
+    # ellipsizing, which is what made them read as cut off.
+    sections: list[tuple[str, list, bool]] = []
     _cur: list = []
 
-    def _heading(text: str) -> None:
-        """Open a new section box. Its title is drawn as the box title."""
+    def _heading(text: str, *, wide: bool = False) -> None:
+        """Open a new section box. Its title is drawn as the box title; ``wide``
+        gives it a full-width row instead of a slot in the column grid."""
         nonlocal _cur
         _cur = []
-        sections.append((text, _cur))
+        sections.append((text, _cur, wide))
 
     def _row(label: str, value: str, value_style: str = "") -> None:
         # no_wrap + ellipsis: long model names / DB paths crop instead of wrapping,
@@ -2363,7 +2367,7 @@ def _build_usage_screen(
             _row("Last call", f"{last_call.get('model', '?')} · {last_call.get('tps', 0):.1f} tok/s")
 
     # ── Session History ───────────────────────────────────────────
-    _heading("Session History")
+    _heading("Session History", wide=True)  # timestamps need the full width
     sessions = usage_data.get("sessions", {})
     _row("Total sessions", str(sessions.get("total", 0)))
     _row("Planning sessions", str(sessions.get("planning", 0)))
@@ -2373,7 +2377,7 @@ def _build_usage_screen(
         _row("Last session", last)
 
     # ── Environment ───────────────────────────────────────────────
-    _heading("Environment")
+    _heading("Environment", wide=True)  # the session DB path needs the full width
     _row("Version", usage_data.get("version", "?"))
     _row("Python", usage_data.get("python_version", "?"))
     langsmith = usage_data.get("langsmith", "disabled")
@@ -2401,13 +2405,16 @@ def _build_usage_screen(
     # count drops as soon as a column would fall below _USAGE_MIN_BOX_W.
     _grid_indent = _PAD + "  "
     grid_w = max(24, width - 4 - len(_grid_indent) - 2)  # panel border/pad + indent + scrollbar gutter
-    n_cols = max(1, min(_USAGE_MAX_COLS, grid_w // _USAGE_MIN_BOX_W, len(sections) or 1))
+    _narrow = [s for s in sections if not s[2]]
+    _wide = [s for s in sections if s[2]]
+    n_cols = max(1, min(_USAGE_MAX_COLS, grid_w // _USAGE_MIN_BOX_W, len(_narrow) or 1))
     # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only.
     # Two columns of slack keep the table clear of the render width (sitting
     # exactly on it wraps the last column).
     col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
+    full_w = grid_w - 2  # a wide box spans the whole grid (same slack as above)
 
-    def _section_box(sec_title: str, rows: list, box_h: int) -> Panel:
+    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int) -> Panel:
         head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
         return Panel(
             Group(*(rows or [Text("")])),
@@ -2416,25 +2423,32 @@ def _build_usage_screen(
             box=rich.box.ROUNDED,
             border_style=theme.sep,
             padding=(0, 1),
-            width=col_w,
+            width=box_w,
             height=box_h,
         )
 
     _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
     for _ in range(n_cols):
         _grid.add_column(width=col_w, overflow="crop")
-    for _i in range(0, len(sections), n_cols):
-        _chunk = sections[_i : _i + n_cols]
-        if _i:
+    _rows_added = 0
+    for _i in range(0, len(_narrow), n_cols):
+        _chunk = _narrow[_i : _i + n_cols]
+        if _rows_added:
             _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
         # Boxes in the same row share a height so their bottom borders line up.
-        _box_h = max(len(_rows) for _, _rows in _chunk) + 2
-        _cells: list = [_section_box(_t, _rows, _box_h) for _t, _rows in _chunk]
+        _box_h = max(len(_r) for _, _r, _ in _chunk) + 2
+        _cells: list = [_section_box(_t, _r, _box_h, col_w) for _t, _r, _ in _chunk]
         _cells += [Text("")] * (n_cols - len(_chunk))
         _grid.add_row(*_cells)
+        _rows_added += 1
 
     body_lines.append(Text(""))  # the blank the old first heading used to supply
     body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
+    # Wide sections stack below the grid, each spanning the full width so long
+    # values (timestamps, DB paths) show in full instead of ellipsizing.
+    for _t, _r, _ in _wide:
+        body_lines.append(Text(""))
+        body_lines.extend(_render_to_lines(_section_box(_t, _r, len(_r) + 2, full_w), grid_w, _grid_indent))
 
     # ── Layout using shared components ────────────────────────────
     # header = blank + title(2) + blank + sub (the grid block leads with its own
