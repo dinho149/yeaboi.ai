@@ -14,6 +14,27 @@
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage } = require("electron");
 const path = require("path");
+const { execFile } = require("child_process");
+
+// Ask macOS where the Dock actually is on screen (its list of tiles), so the
+// duck can stand ON it and walk off its edges onto the desktop floor. This uses
+// the Accessibility API via System Events — the first call prompts for the
+// Accessibility permission; if it's denied we simply fall back to floor-only.
+function queryDockRect(cb) {
+  const script = [
+    'tell application "System Events" to tell process "Dock"',
+    "set p to position of list 1",
+    "set s to size of list 1",
+    'return ((item 1 of p) as text) & "," & ((item 2 of p) as text) & "," & ((item 1 of s) as text) & "," & ((item 2 of s) as text)',
+    "end tell",
+  ].flatMap((l) => ["-e", l]);
+  execFile("osascript", script, { timeout: 1500 }, (err, stdout) => {
+    if (err) return cb(null);
+    const nums = String(stdout).trim().split(",").map(Number);
+    if (nums.length !== 4 || nums.some((n) => Number.isNaN(n))) return cb(null);
+    cb({ x: nums[0], y: nums[1], w: nums[2], h: nums[3] }); // global screen coords (points)
+  });
+}
 
 let win = null;
 let tray = null;
@@ -70,10 +91,23 @@ function createWindow() {
   });
   win.webContents.on("did-fail-load", (_e, code, desc) => console.error(`[load-fail] ${code} ${desc}`));
   win.webContents.on("render-process-gone", (_e, d) => console.error(`[render-gone] ${d.reason}`));
+  // Push layout config (screen + dock geometry, in window-local coords) to the
+  // renderer. Re-polled on a timer because the dock can move/resize/hide.
+  const sendConfig = () => {
+    if (!win || win.isDestroyed()) return;
+    queryDockRect((rect) => {
+      const dock = rect
+        ? { x: rect.x - bounds.x, top: rect.y - bounds.y, w: rect.w, h: rect.h, present: true }
+        : { present: false };
+      win.webContents.send("pet:config", { bottomInset, dock });
+    });
+  };
   win.webContents.once("did-finish-load", () => {
     console.log(`[pet] renderer loaded ok (dock inset ${bottomInset}px)`);
-    win.webContents.send("pet:config", { bottomInset });
+    sendConfig();
   });
+  const cfgTimer = setInterval(sendConfig, 2000);
+  win.on("closed", () => clearInterval(cfgTimer));
 
   // The renderer decides, frame by frame, whether the pointer is over the duck.
   // `over === true` → make the window solid so the click/drag hits the duck.

@@ -50,15 +50,24 @@ html, body {
 .duck-walker.hatch { animation: duck-hatch 0.9s ease backwards; }
 @keyframes duck-hatch { from { opacity: 0; } to { opacity: 1; } }
 
+/* the body transform layer — squash/stretch pivots on the feet (bottom center)
+   so the duck compresses onto the ground and stretches upward on a hop */
+.duck-body {
+  position: relative;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
 .duck-rig img {
   display: block;
   width: 100%;
   height: auto;
-  image-rendering: pixelated;
+  /* smooth resampling — the source PNGs are high-res, so downscaling with
+     high-quality interpolation kills the jagged/aliased edges */
+  image-rendering: auto;
   user-select: none;
   -webkit-user-drag: none;
 }
-.duck-rig .d-base { filter: drop-shadow(0 5px 4px rgba(0, 0, 0, 0.45)); }
+.duck-rig .d-base { filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.4)); }
 .duck-rig .d-wing,
 .duck-rig .d-glasses,
 .duck-rig .d-glasses2 { position: absolute; top: 0; left: 0; }
@@ -104,11 +113,12 @@ html, body {
   50% { transform: translateY(-4.5%) rotate(-6deg); }
 }
 
-.duck-walker.walking .duck-rig { animation: duck-waddle 0.38s ease-in-out infinite; }
-@keyframes duck-waddle {
-  0%, 100% { transform: rotate(0deg) translateY(0); }
-  25% { transform: rotate(-4deg) translateY(-2px); }
-  75% { transform: rotate(4deg) translateY(-2px); }
+/* the body just bobs gently in time with the steps — the feet do the walking */
+.duck-walker.walking .duck-rig { animation: body-bob 0.36s ease-in-out infinite; }
+@keyframes body-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-1.5px) rotate(-1.2deg); }
+  75% { transform: translateY(-1.5px) rotate(1.2deg); }
 }
 
 /* tap-jump: a self-contained hop played when the duck is clicked. `.hop` is

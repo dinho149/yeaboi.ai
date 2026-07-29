@@ -13,10 +13,15 @@
          JS-driven translate + scaleX facing flip. -->
     <div class="duck-walker unloaded" id="duck-walker" aria-hidden="true">
       <div class="duck-rig" id="duck-rig">
-        <img class="d-base" src="assets/duck-base.png" alt="" />
-        <img class="d-wing" src="assets/duck-wing.png" alt="" />
-        <img class="d-glasses2" src="assets/duck-glasses.png" alt="" />
-        <img class="d-glasses" src="assets/duck-glasses.png" alt="" />
+        <!-- the body is its own transform layer so procedural squash/stretch,
+             lean and jiggle (pet.js springs) never fight the wrapper's walk
+             bob, the wing flap, or the glasses bob. -->
+        <div class="duck-body" id="duck-body">
+          <img class="d-base" src="assets/duck-base.png" alt="" />
+          <img class="d-wing" src="assets/duck-wing.png" alt="" />
+          <img class="d-glasses2" src="assets/duck-glasses.png" alt="" />
+          <img class="d-glasses" src="assets/duck-glasses.png" alt="" />
+        </div>
       </div>
     </div>
     <div class="duck-bubble" id="duck-bubble"></div>
