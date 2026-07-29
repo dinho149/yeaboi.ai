@@ -3362,10 +3362,10 @@ def _build_performance_screen(
             body.append(Text(""))
 
         if not roster:
-            body.append(Text(_PAD + "No engineers found.", style=theme.muted, justify="left"))
+            body.append(Text(_PAD + "  No engineers found.", style=theme.muted, justify="left"))
             body.append(Text(""))
-            body.append(Text(_PAD + "Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
-            body.append(Text(_PAD + "built from the people assigned work on your board.", style=theme.muted))
+            body.append(Text(_PAD + "  Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
+            body.append(Text(_PAD + "  built from the people assigned work on your board.", style=theme.muted))
         else:
             # Window the engineers that fit vertically, centred on the selection —
             # big ASCII rows are tall, so only a few show at once (▲/▼ mark the rest).
