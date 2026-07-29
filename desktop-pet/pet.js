@@ -25,7 +25,7 @@ const DUCK_W = rig.offsetWidth || 72;
 let RIGH = 72; // rig height, refined once the base sprite loads
 const FEET_FRAC = 0.975; // sprite's feet-bottom as a fraction of rig height (measured: 496/509)
 let SURFACE_RAISE = 20; // extra lift so it stands ON the surface, not sunk into it (tray-tunable)
-const FLOOR_MARGIN = 2; // desktop floor: feet this far above the screen's bottom
+const FLOOR_MARGIN = 10; // desktop floor: feet this far above the screen's bottom (raises the side-floor)
 const HIT_PAD = 8;
 
 // dock geometry (window-local), from main; floor-only until it arrives
