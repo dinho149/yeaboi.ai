@@ -414,6 +414,7 @@ def _say_brightness(now_t: float) -> float:
 _CONTROLS_LABEL = "⌃C controls"
 _controls_open = False
 _controls_presence = 0.0  # eased 0→1 expansion, so it grows/collapses smoothly
+_controls_tab_presence = 0.0  # eased 0→1 entrance of the collapsed tab itself
 _controls_region: tuple[int, int, int, int] | None = None
 
 
@@ -438,15 +439,26 @@ def controls_region() -> tuple[int, int, int, int] | None:
     return _controls_region
 
 
-def draw_controls_pocket(console, options, lines: list, page_hint: Text | None = None) -> None:
+def draw_controls_pocket(console, options, lines: list, page_hint: Text | None = None, target: float = 1.0) -> None:
     """Draw the persistent controls tab left of the music pocket, expanding upward
     when open. In place, like the other chrome routines; a no-op when too narrow.
+
+    ``target`` is 1.0 on pages that qualify for the tab (it eases in) and 0.0 on
+    those that don't (it eases back out), so the tab arrives and leaves rather than
+    popping. Its own entrance is separate from the drawer's expansion.
     """
     from rich.segment import Segment
 
-    global _controls_presence, _controls_region
+    global _controls_presence, _controls_tab_presence, _controls_region
     _controls_region = None
     if not lines or len(lines) < 4 or not lines[-1]:
+        return
+    # Ease the tab's own arrival/departure.
+    _controls_tab_presence += (target - _controls_tab_presence) * 0.25
+    if target <= 0.0 and _controls_tab_presence < 0.02:
+        _controls_tab_presence = 0.0
+        return  # fully gone — nothing to draw
+    if _controls_tab_presence < 0.02:
         return
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
     bstyle = lines[-1][0].style
@@ -473,8 +485,10 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     rows: list[Text] = []
 
     def _ctl(keys: str, what: str) -> None:
+        # Left-aligned: the key starts flush at the left edge, descriptions share a
+        # column so they still line up.
         t = Text(no_wrap=True, overflow="ellipsis")
-        t.append(keys.rjust(8), style=theme.accent)
+        t.append(keys.ljust(8), style=theme.accent)
         t.append("  " + what, style=theme.muted)
         rows.append(t)
 
@@ -533,14 +547,21 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
         plan.append((term_h - 3 - i, _bordered(body)))
     plan.append((term_h - 3 - extra, roof))
 
+    # Entrance: the tab unrolls leftward out of its right edge (mirroring the back
+    # tab, which unrolls rightward out of the bottom-left corner). Only the
+    # rightmost `vis` columns are spliced while it eases in or out.
+    vis = max(1, int(round(cur_w * _controls_tab_presence)))
+    v_left = c_right - vis + 1
     sized = options.update_width(cur_w)
     for r, piece in plan:
         if r < 0 or r >= term_h:
             continue
-        seg = console.render_lines(piece, sized, pad=True, style=bg_style)[0]
-        lft, _m, rgt = Segment.divide(lines[r], [c_left, c_left + cur_w, width])
+        full = console.render_lines(piece, sized, pad=True, style=bg_style)[0]
+        _al, seg, _ar = Segment.divide(full, [cur_w - vis, cur_w, cur_w])
+        lft, _m, rgt = Segment.divide(lines[r], [v_left, v_left + vis, width])
         lines[r] = list(lft) + list(seg) + list(rgt)
-    _controls_region = (c_left + 1, term_h - 2, c_right + 1, term_h)
+    if _controls_tab_presence > 0.6:  # only clickable once it has settled in
+        _controls_region = (v_left + 1, term_h - 2, c_right + 1, term_h)
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
