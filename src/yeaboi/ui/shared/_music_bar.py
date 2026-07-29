@@ -490,9 +490,9 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
                 _ctl(bits[0], bits[1])
             else:
                 _ctl("", part)  # a phrase, not a keypress — leave the key column empty
+    # The music chords are already spelled out in the music pocket next door, so
+    # they'd only be duplicated here.
     _ctl("esc", "go back")
-    _ctl("ctrl+P", "play / pause music")
-    _ctl("ctrl+O", "next music channel")
     _ctl("ctrl+C", "close this  ·  twice to quit")
 
     # ── The tab IS the panel: it grows upward out of the bottom border ────────
@@ -696,11 +696,10 @@ class _MusicPocketFrame:
         # Always drive the back tab so it can glide OUT (target 0) when leaving a
         # back-capable screen, not only glide in (target 1) when arriving.
         _extra: list = []
-        if self.with_back:
-            if self.with_copy:
-                _extra.append((build_copy_text(), "c"))
-            if self.hint_tab is not None:
-                _extra.append((self.hint_tab, None))  # informational, not clickable
+        if self.with_back and self.with_copy:
+            _extra.append((build_copy_text(), "c"))
+        # The page's hints are NOT drawn as their own tab any more — they'd be
+        # redundant with (and cut off behind) the controls drawer, which lists them.
         draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
         # The controls tab is persistent on every screen, and its drawer expands
         # upward over the page when opened with Ctrl+C.
