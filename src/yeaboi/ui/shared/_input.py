@@ -28,6 +28,23 @@ def push_back_key(key: str) -> None:
     _pushback.append(key)
 
 
+def _esc() -> str:
+    """Return the ``"esc"`` key event, starting the back tab's fold-away first.
+
+    Esc (and a click on the tab itself) is the app-wide go-back gesture, so the
+    tab must begin retracting on the PRESS rather than when the destination screen
+    finally renders — otherwise the fold trails into the next screen's entrance.
+    Latching here covers every screen at once, since all input flows through here.
+    """
+    try:
+        from yeaboi.ui.shared._music_bar import retract_back_tab
+
+        retract_back_tab()
+    except Exception:  # noqa: BLE001 - never let chrome bookkeeping break input
+        pass
+    return "esc"
+
+
 def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
     """Read a single keypress from the terminal in raw mode.
 
@@ -107,7 +124,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             # within microseconds). 100ms is imperceptible to a human
             # but safe for slow terminals / SSH connections.
             if not _select.select([fd], [], [], 0.1)[0]:
-                return "esc"
+                return _esc()
             ch2 = _read1()
             if ch2 == "\x7f":
                 # Alt+Backspace → delete word backward
@@ -233,12 +250,11 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             # A click on the app-wide "go back" tab (bottom-left)
                             # is Esc, so the tab works on every screen without
                             # per-loop wiring. Lazy import avoids an import cycle.
-                            from yeaboi.ui.shared._music_bar import back_region, retract_back_tab
+                            from yeaboi.ui.shared._music_bar import back_region
 
                             _br = back_region()
                             if _br is not None and _br[0] <= cx <= _br[2] and _br[1] <= cy <= _br[3]:
-                                retract_back_tab()  # fold the tab away immediately on press
-                                return "esc"
+                                return _esc()  # clicking the tab IS Esc (and folds it away)
                             return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).
@@ -285,7 +301,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                 # Unknown CSI sequence — drain and ignore
                 _read_available()
                 return ""
-            return "esc"
+            return _esc()
         if ch in ("\r", "\n"):
             return "enter"
         if ch == "\t":

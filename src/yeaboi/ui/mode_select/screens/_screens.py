@@ -976,4 +976,9 @@ def _build_slide_frame(
         *[Text("") for _ in range(below)],
     )
 
-    return build_page_panel(content, height=height)
+    panel = build_page_panel(content, height=height)
+    # These are menu<->page transition frames: we're on our way to/from the menu,
+    # so the back tab must already be folding away rather than waiting for the
+    # final menu frame (which is what made the retract look late).
+    panel._no_back_hint = True
+    return panel

@@ -267,11 +267,15 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
         return
 
     # A pressed back button folds the tab away immediately, overriding the
-    # screen's own target until it's gone (then the latch releases).
+    # screen's own target until it's gone (then the latch releases). The latched
+    # fold is much faster than the glide-in so it reads as happening ON the press,
+    # not trailing into the next screen's entrance animation.
+    ease = 0.22
     if _back_retracting:
         target = 0.0
+        ease = 0.55
     # Ease toward the target every frame — glides in (→1) and out (→0).
-    _back_presence += (target - _back_presence) * 0.22
+    _back_presence += (target - _back_presence) * ease
     if target <= 0.0 and _back_presence < 0.02:
         _back_presence = 0.0
         _back_retracting = False
