@@ -267,10 +267,7 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     if bw + 8 > width:  # leave room so it never collides with the music pocket
         return
 
-    rest_left = 2  # resting ╭ column (mirrors the music pocket's inset)
-    start_left = -(bw + 1)  # fully off the left edge
-    bleft = int(start_left + (rest_left - start_left) * _back_presence)
-    bright = bleft + bw - 1
+    bleft = 2  # ╭ column, anchored at the bottom-left corner (music-pocket inset)
 
     roof_alcove = Text()
     roof_alcove.append("╭" + "─" * (bw - 2) + "╮", style=bstyle)
@@ -278,30 +275,39 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0) -> None
     text_alcove.append("│ ", style=bstyle)
     text_alcove.append_text(back)
     text_alcove.append(" │", style=bstyle)
-    # Open bottom (no floor) — the alcove hangs from the roof exactly like the
-    # music pocket: the panel border rises to a corner at each wall (╯ … ╰) with
-    # an open gap between, so the page shows through beneath the text.
+    # Open bottom (no floor) — corners rise at each wall (╯ … ╰) with an open gap,
+    # exactly like the music pocket, so the page shows through beneath the text.
     border_alcove = Text()
     border_alcove.append("╯" + " " * (bw - 2) + "╰", style=bstyle)
     asized = options.update_width(bw)
 
-    # Only the on-screen slice is spliced, so it can ride in from off the left edge
-    # without ever overwriting the panel's own left/right border columns.
-    vl = max(1, bleft)
-    vr = min(width - 2, bright)
-    if vr < vl:
-        return
-    a, b = vl - bleft, vr - bleft + 1  # visible span in alcove-local columns
-    for idx, alcove in ((-3, roof_alcove), (-2, text_alcove), (-1, border_alcove)):
+    # Corner peel: anchored at the corner, the tab unfolds diagonally OUT of it —
+    # the bottom border row opens first, then the text, then the roof — so it reads
+    # as the bottom-left corner peeling up. Each row reveals its leftmost `rw`
+    # columns; the staggered lead makes the peel front a diagonal. Retract
+    # (presence→0) reverses it, folding the tab back down into the corner.
+    lead = {-1: 0.0, -2: 0.22, -3: 0.44}  # bottom row peels first, roof last
+    span = 1.0 - 0.44  # so the last (roof) row still completes at presence 1
+    last_vr = bleft - 1
+    for idx, alcove in ((-1, border_alcove), (-2, text_alcove), (-3, roof_alcove)):
+        lp = max(0.0, min(1.0, (_back_presence - lead[idx]) / span))
+        rw = int(round(bw * lp))  # revealed width of this row
+        if rw <= 0:
+            continue
+        vl = bleft
+        vr = min(width - 2, bleft + rw - 1)
+        if vr < vl:
+            continue
         full = console.render_lines(alcove, asized, pad=True, style=bg_style)[0]
-        _al, seg, _ar = Segment.divide(full, [a, b, bw])
+        _al, seg, _ar = Segment.divide(full, [0, vr - bleft + 1, bw])
         lft, _mid, rgt = Segment.divide(lines[idx], [vl, vr + 1, width])
         lines[idx] = list(lft) + list(seg) + list(rgt)
+        last_vr = max(last_vr, vr)
     term_h = len(lines)
-    # Only clickable once it's mostly settled in — not while gliding in/out.
-    if _back_presence > 0.6:
-        # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; visible cols vl+1..vr+1.
-        _back_region = (vl + 1, term_h - 2, vr + 1, term_h)
+    # Only clickable once it's mostly peeled in — not mid-animation.
+    if _back_presence > 0.6 and last_vr >= bleft:
+        # Rows -3,-2,-1 are 1-based rows term_h-2 .. term_h; cols bleft+1..last_vr+1.
+        _back_region = (bleft + 1, term_h - 2, last_vr + 1, term_h)
 
 
 _DUCK_W = 13  # tight render width of the companion head (7 rows at this width)
