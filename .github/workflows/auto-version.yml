@@ -7,8 +7,12 @@ name: Auto Version Bump
 # to choose the semver level when the change actually ships code.
 #
 # The bump lands on the PR *branch* (not main) on purpose: the human merge is what
-# pushes to main and triggers publish.yml. A workflow pushing to main with the
-# default GITHUB_TOKEN would NOT re-trigger publish.yml, so this avoids needing a PAT.
+# pushes to main and triggers publish.yml — so nothing here has to push to main.
+#
+# The bump push DOES need a real identity, though (see the checkout step): pushing
+# it as the default GITHUB_TOKEN makes the resulting CI run bot-actored, and GitHub
+# then suppresses that run's `workflow_run` event — which silently killed
+# claude-review.yml and dependabot-auto.yml on every bumped PR.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
@@ -31,11 +35,52 @@ jobs:
       pull-requests: write # post the explanation comment
       id-token: write # claude-code-action OIDC
     steps:
+      # The `|| github.token` fallback below keeps the bump working when the
+      # secret is absent, but that silently restores the review-dropping
+      # behaviour this workflow exists to prevent. Make the degraded mode
+      # visible instead of invisible. (`secrets` is not available in a step
+      # `if:`, so this tests a materialized env var rather than branching.)
+      - name: Warn if the review-restoring PAT is missing
+        env:
+          HAS_PAT: ${{ secrets.AUTO_VERSION_PAT != '' }}
+        run: |
+          if [ "$HAS_PAT" != "true" ]; then
+            echo "::warning::AUTO_VERSION_PAT is not set — the bump will be pushed as GITHUB_TOKEN, so the bump commit's CI run will emit no workflow_run and Claude Review will NOT run on this PR."
+          fi
+
       - name: Checkout PR branch
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          # These persisted credentials are what Claude's `git push` of the
+          # `chore: bump version` commit uses. With the default GITHUB_TOKEN that
+          # push produces a bot-actored CI run, and GitHub's recursive-run guard
+          # then emits NO `workflow_run` event when it completes — so Claude
+          # Review and Dependabot verify never fired on a bumped PR (and never
+          # showed up as skipped either: there was simply no run). A PAT makes the
+          # push a real identity, so the event fires normally.
+          #
+          # AUTO_VERSION_PAT MUST be a *fine-grained* PAT scoped to this single
+          # repository with `Contents: read and write` and nothing else. Do not
+          # substitute a classic `repo`-scoped token on rotation: the steps below
+          # run `claude-code-action` with unrestricted `Bash` against code checked
+          # out FROM THE PR BRANCH (including `scripts/bump_version.py`), and
+          # checkout persists this credential into `.git/config`. A fine-grained
+          # token bounds a leak to this repo's contents; a classic one would
+          # expose the whole account, and the job's `permissions:` block does not
+          # constrain a PAT the way it constrains github.token.
+          #
+          # Falls back to github.token so the workflow still works before the
+          # secret exists — that just restores the old (review-dropping) behaviour
+          # rather than failing the bump outright. The step above warns when that
+          # fallback is in effect.
+          #
+          # This re-triggers auto-version itself, exactly as the GITHUB_TOKEN push
+          # already did; the "already bumped in this PR" branch of the guards step
+          # below short-circuits the second run (that guard is pure git/grep over
+          # pyproject.toml + changelog_data.json, so it is token-independent).
+          token: ${{ secrets.AUTO_VERSION_PAT || github.token }}
 
       - name: Deterministic guards
         id: guard

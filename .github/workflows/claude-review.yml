@@ -20,6 +20,15 @@
 # entirely. Reviewing it is correct anyway: `gh pr diff` shows the whole PR
 # (feature changes + the one version line), and the per-branch
 # `cancel-in-progress` below guarantees exactly one review, on the final head.
+#
+# The above is necessary but was NOT sufficient. Because auto-version originally
+# pushed the bump with the default GITHUB_TOKEN, the bump commit's CI run was
+# bot-actored, and GitHub's recursive-run guard emitted no `workflow_run` event
+# for it at all. So the one CI run that reaches `success` on a bumped PR was
+# precisely the one this workflow could never see — no run, no skip, no signal,
+# and 7 of 12 merged PRs went unreviewed. auto-version.yml now pushes with
+# `secrets.AUTO_VERSION_PAT` so the event fires; if that secret is ever removed,
+# reviews silently stop again.
 
 name: Claude Review
 

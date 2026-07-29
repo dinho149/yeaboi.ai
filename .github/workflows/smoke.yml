@@ -1,9 +1,10 @@
 name: Smoke Tests
 
 on:
-  schedule:
-    # Every Monday at 06:00 UTC
-    - cron: "0 6 * * 1"
+  # No `schedule:` while the job below is disabled — a weekly cron on an
+  # `if: false` job just logs a skipped run every Monday forever, which buries
+  # real signal in the Actions list. Restore the cron at the same time as
+  # re-enabling the job, off the hour like the others: "23 6 * * 1".
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
 # Least-privilege token — this job only checks out code and runs tests.
