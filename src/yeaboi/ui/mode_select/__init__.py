@@ -9326,11 +9326,36 @@ def select_mode(
                     _ana_del_pending = False
                     _ana_prev = time.monotonic()
                     _ana_anim0 = _ana_prev  # shimmer title clock
+                    _ana_last_panel = None  # most recent list panel, for click hit-testing
 
                     while True:
                         key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
                         _is_profile = _ana_selected < len(_profiles_for_analysis)
                         _is_analysis_btn = _ana_selected >= len(_profiles_for_analysis)
+
+                        # ── Mouse: click a card to select + activate it ──
+                        # Mirrors _build_run_hub_screen's _card_regions hit-test: map the
+                        # click-y onto a card's flat index, then synthesise the same Enter
+                        # activation. Ignored while the delete popup is modal.
+                        _ana_click = parse_click(key)
+                        if _ana_click is not None:
+                            if _ana_del_popup_open:
+                                continue
+                            _ana_hit = next(
+                                (
+                                    idx
+                                    for y0, y1, idx in getattr(_ana_last_panel, "_card_regions", []) or []
+                                    if y0 <= _ana_click[1] <= y1
+                                ),
+                                None,
+                            )
+                            if _ana_hit is None:
+                                continue
+                            _ana_selected = _ana_hit
+                            _ana_focus = 0
+                            _is_profile = _ana_selected < len(_profiles_for_analysis)
+                            _is_analysis_btn = _ana_selected >= len(_profiles_for_analysis)
+                            key = "enter"  # fall through to Enter-on-card handling
 
                         # ── Delete confirmation popup ─────────────────
                         if _ana_del_popup_open and key:
@@ -9557,34 +9582,33 @@ def select_mode(
                                 _ana_del_popup_target = 0.0
 
                         w, h = console.size
-                        live.update(
-                            _build_project_list_screen(
-                                [],
-                                _ana_selected,
-                                width=w,
-                                height=h,
-                                jira_enabled=_jira_ok,
-                                azdevops_enabled=_azdevops_ok,
-                                profiles=_profiles_for_analysis,
-                                new_analysis_labels=_ana_labels,
-                                profile_focus=_ana_focus,
-                                profile_del_fade=_ana_del_fade,
-                                profile_card_fade=1.0,
-                                profile_action_btns_visible=_ana_action_btns,
-                                profile_exp_fade=_ana_exp_fade,
-                                profile_export_submenu=_ana_export_submenu,
-                                profile_submenu_sel=_ana_sub_sel,
-                                profile_submenu_html_fade=_ana_sub_html_fade,
-                                profile_submenu_md_fade=_ana_sub_md_fade,
-                                profile_submenu_visible=_ana_sub_visible,
-                                delete_popup_name=_ana_del_popup_name,
-                                delete_popup_t=_ana_del_popup_t,
-                                delete_popup_pulse=_ana_del_popup_pulse,
-                                delete_popup_flash=_ana_del_popup_flash,
-                                mode="analysis",
-                                shimmer_tick=_now - _ana_anim0,
-                            )
+                        _ana_last_panel = _build_project_list_screen(
+                            [],
+                            _ana_selected,
+                            width=w,
+                            height=h,
+                            jira_enabled=_jira_ok,
+                            azdevops_enabled=_azdevops_ok,
+                            profiles=_profiles_for_analysis,
+                            new_analysis_labels=_ana_labels,
+                            profile_focus=_ana_focus,
+                            profile_del_fade=_ana_del_fade,
+                            profile_card_fade=1.0,
+                            profile_action_btns_visible=_ana_action_btns,
+                            profile_exp_fade=_ana_exp_fade,
+                            profile_export_submenu=_ana_export_submenu,
+                            profile_submenu_sel=_ana_sub_sel,
+                            profile_submenu_html_fade=_ana_sub_html_fade,
+                            profile_submenu_md_fade=_ana_sub_md_fade,
+                            profile_submenu_visible=_ana_sub_visible,
+                            delete_popup_name=_ana_del_popup_name,
+                            delete_popup_t=_ana_del_popup_t,
+                            delete_popup_pulse=_ana_del_popup_pulse,
+                            delete_popup_flash=_ana_del_popup_flash,
+                            mode="analysis",
+                            shimmer_tick=_now - _ana_anim0,
                         )
+                        live.update(_ana_last_panel)
 
                     if _restart_mode_select:
                         break  # break out of _ana_restart loop → back to mode select
@@ -10127,7 +10151,6 @@ def select_mode(
                     _build_settings_screen,
                     settings_tab_action,
                 )
-                from yeaboi.ui.shared._click import parse_click
 
                 _settings_data = _collect_settings_data()
                 _s_scroll, _s_tab = 0, 0
@@ -10368,9 +10391,37 @@ def select_mode(
 
                 prev_tick = time.monotonic()
                 _list_anim0 = prev_tick  # shimmer title clock
+                _list_last_panel = None  # most recent list panel, for click hit-testing
 
                 while True:
                     key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+
+                    # ── Mouse: click a card to select + open it ──────────────
+                    # Mirrors _build_run_hub_screen's _card_regions hit-test: map the
+                    # click-y onto a card's flat index, then synthesise Enter-on-card.
+                    # Only the card body activates (focus 0); edge Delete/Export buttons
+                    # are not click-targets here. Ignored while a popup is modal.
+                    _list_click = parse_click(key)
+                    if _list_click is not None:
+                        if team_popup_open or delete_popup_open:
+                            continue
+                        _list_hit = next(
+                            (
+                                idx
+                                for y0, y1, idx in getattr(_list_last_panel, "_card_regions", []) or []
+                                if y0 <= _list_click[1] <= y1
+                            ),
+                            None,
+                        )
+                        if _list_hit is None:
+                            continue
+                        proj_selected = _list_hit
+                        focus = 0
+                        del_fade_target = 0.0
+                        exp_fade_target = 0.0
+                        action_btns_visible = 0.0
+                        action_btns_visible_target = 2.0 if _is_project_row() else 0.0
+                        key = "enter"  # fall through to Enter-on-card handling
 
                     # ── Team analysis popup mode ──────────────────────────────
                     # Button selector: Left/Right navigates, Enter confirms.
@@ -10950,38 +11001,37 @@ def select_mode(
                         card_fade_target = 1.0
 
                     w, h = console.size
-                    live.update(
-                        _build_project_list_screen(
-                            projects,
-                            proj_selected,
-                            width=w,
-                            height=h,
-                            focus=focus,
-                            del_fade=del_fade,
-                            exp_fade=exp_fade,
-                            card_fade=card_fade,
-                            pulse=pulse,
-                            action_btns_visible=action_btns_visible,
-                            show_export_submenu=export_submenu_open or submenu_visible > 0,
-                            submenu_sel=submenu_sel,
-                            submenu_html_fade=submenu_html_fade,
-                            submenu_md_fade=submenu_md_fade,
-                            submenu_jira_fade=submenu_jira_fade,
-                            submenu_azdevops_fade=submenu_azdevops_fade,
-                            submenu_visible=submenu_visible,
-                            delete_popup_name=delete_popup_name,
-                            delete_popup_t=delete_popup_t,
-                            delete_popup_pulse=delete_popup_pulse,
-                            delete_popup_flash=delete_popup_flash,
-                            team_popup_t=team_popup_t,
-                            team_popup_sel=team_popup_sel,
-                            team_popup_pulse=team_popup_pulse,
-                            team_popup_message=_team_popup_msg,
-                            jira_enabled=_jira_ok,
-                            azdevops_enabled=_azdevops_ok,
-                            shimmer_tick=now - _list_anim0,
-                        )
+                    _list_last_panel = _build_project_list_screen(
+                        projects,
+                        proj_selected,
+                        width=w,
+                        height=h,
+                        focus=focus,
+                        del_fade=del_fade,
+                        exp_fade=exp_fade,
+                        card_fade=card_fade,
+                        pulse=pulse,
+                        action_btns_visible=action_btns_visible,
+                        show_export_submenu=export_submenu_open or submenu_visible > 0,
+                        submenu_sel=submenu_sel,
+                        submenu_html_fade=submenu_html_fade,
+                        submenu_md_fade=submenu_md_fade,
+                        submenu_jira_fade=submenu_jira_fade,
+                        submenu_azdevops_fade=submenu_azdevops_fade,
+                        submenu_visible=submenu_visible,
+                        delete_popup_name=delete_popup_name,
+                        delete_popup_t=delete_popup_t,
+                        delete_popup_pulse=delete_popup_pulse,
+                        delete_popup_flash=delete_popup_flash,
+                        team_popup_t=team_popup_t,
+                        team_popup_sel=team_popup_sel,
+                        team_popup_pulse=team_popup_pulse,
+                        team_popup_message=_team_popup_msg,
+                        jira_enabled=_jira_ok,
+                        azdevops_enabled=_azdevops_ok,
+                        shimmer_tick=now - _list_anim0,
                     )
+                    live.update(_list_last_panel)
 
                 # Guard: Esc from project list sets _restart_mode_select → skip to outer loop
                 if _restart_mode_select:
