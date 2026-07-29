@@ -4913,7 +4913,7 @@ def _build_settings_screen(
     def _row(label: str, value: str, value_style: str = "", masked: bool = False, env: str = "") -> None:
         # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
         # click can recover the env var; plain rows stay Text.
-        r = _EditableRow("      ", justify="left") if env else Text("      ", justify="left")
+        r = _EditableRow("    ", justify="left") if env else Text("    ", justify="left")
         r.append(f"{label}:  ", style=theme.muted)
         if editing is not None and env and editing[0] == env:
             # This row is being edited in place: show the buffer with a block cursor.
@@ -4949,11 +4949,11 @@ def _build_settings_screen(
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text("        ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         body_lines.append(link)
-        scope = Text("          ", justify="left", no_wrap=True, overflow="ellipsis")
+        scope = Text("        ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
         body_lines.append(scope)
