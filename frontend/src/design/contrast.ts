@@ -44,6 +44,27 @@ export function luminance(hex: string): number {
   return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
 }
 
+/**
+ * `color-mix(in srgb, a <weight>%, b)`, as a hex string.
+ *
+ * The `srgb` colour space interpolates the gamma-encoded channels directly, so
+ * this is a plain linear blend of what `parseHex` returns — not the linearised
+ * values `luminance` works in. Getting that backwards produces a colour that is
+ * visibly right and measurably wrong, which is the worst kind of wrong for an
+ * audit. Exists so a token *derived* in CSS can still be measured here: the
+ * slide deck computes its panel and dim tiers from a six-colour palette, and
+ * "the stylesheet does the mixing" is not a reason to stop checking contrast.
+ */
+export function mixSrgb(a: string, b: string, weightA: number): string {
+  const ca = parseHex(a);
+  const cb = parseHex(b);
+  const channel = (i: number) => {
+    const value = Math.round((ca[i]! * weightA + cb[i]! * (1 - weightA)) * 255);
+    return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+}
+
 /** Contrast ratio between two hex colours, 1–21. Order does not matter. */
 export function contrast(a: string, b: string): number {
   const la = luminance(a);

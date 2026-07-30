@@ -33,7 +33,10 @@ from pathlib import Path
 
 import pytest
 
+from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal
 from yeaboi.poker.board import PokerBoard
+from yeaboi.reporting.presentation import deck_payload
+from yeaboi.reporting.style import DeckStyle
 from yeaboi.retro.board import RetroBoard
 
 FIXTURES = Path(__file__).resolve().parents[2] / "frontend" / "src" / "test" / "fixtures"
@@ -111,8 +114,37 @@ def _poker_snapshots() -> dict[str, dict]:
     return {"poker.voting": voting, "poker.revealed": revealed, "poker.duel": duel, "ticket.peek": peek}
 
 
+def _deck_snapshot() -> dict:
+    """A slide deck payload with one slide of every kind.
+
+    Not a live board, but the same contract and the same failure mode: an
+    exported deck is a file, so a field the renderer reads and the exporter
+    stopped sending shows up as a blank slide on someone's projector months
+    later, with nothing in any log. The style is deliberately non-default —
+    every knob at its default resolves to a value the deck would have anyway,
+    which pins nothing.
+    """
+    report = DeliveryReport(
+        period_label="Last month (~2 sprints)",
+        period_start="2026-06-15",
+        period_end="2026-07-13",
+        project_name="Acme Portal",
+        sprint_names=("Sprint 11", "Sprint 12"),
+        headline="Two sprints of strong delivery.",
+        executive_summary="We shipped SSO. Checkout got materially faster for everyone.",
+        themes=(("Security", ("SSO", "MFA")), ("Performance", ("Faster checkout",))),
+        highlights=("SSO live", "2x faster checkout"),
+        metrics=(("Items delivered", "12"), ("Story points", "48")),
+        delivered_items=(DeliveredItem(key="A-1", title="x", status="Done"),),
+        supporting_signals=(SupportingSignal(kind="pull_requests", source="github", count=24),),
+        emoji_theme=(("headline", "🚀"), ("summary", "📋"), ("metrics", "📊"), ("themes", "🧩")),
+    )
+    style = DeckStyle(heading_color="accent2", font_scale="large", slide_numbers=True, footer_text="ACME Corp")
+    return deck_payload(report, theme="aurora", style=style)
+
+
 def _fixtures() -> dict[str, dict]:
-    return {"retro": _retro_snapshot(), **_poker_snapshots()}
+    return {"deck": _deck_snapshot(), "retro": _retro_snapshot(), **_poker_snapshots()}
 
 
 def _normalise(payload: dict) -> dict:
@@ -139,6 +171,11 @@ def _normalise(payload: dict) -> dict:
                     out[key] = 0
                 elif key == "created_at" and isinstance(value, str):
                     out[key] = "2026-01-01T00:00:00+00:00"
+                elif key == "generated" and isinstance(value, str):
+                    # The deck's export date. Unpinned it would rewrite this
+                    # fixture at midnight, which is the one way to teach
+                    # everyone to ignore the diff.
+                    out[key] = "2026-01-01"
                 elif key == "id" and isinstance(value, str):
                     # Card ids only — `reaction_events[].id` is an int and is a
                     # monotonic counter, so it is already stable.

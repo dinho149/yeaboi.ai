@@ -1,0 +1,130 @@
+{
+  "generated": "2026-01-01",
+  "palettes": {
+    "aurora": {
+      "accent": "#28c2a0",
+      "accent2": "#6ff0d0",
+      "bg1": "#04121a",
+      "bg2": "#0a2a2a",
+      "fg": "#e8fff6",
+      "muted": "#8fc9be"
+    },
+    "midnight": {
+      "accent": "#8c78e6",
+      "accent2": "#b8a6ff",
+      "bg1": "#0d1117",
+      "bg2": "#161b2e",
+      "fg": "#e6edf3",
+      "muted": "#9aa4b2"
+    },
+    "mono": {
+      "accent": "#d4d4d8",
+      "accent2": "#ffffff",
+      "bg1": "#0b0b0c",
+      "bg2": "#1c1c1f",
+      "fg": "#f4f4f5",
+      "muted": "#a1a1aa"
+    },
+    "sunset": {
+      "accent": "#f0784e",
+      "accent2": "#ffb27a",
+      "bg1": "#1a0d16",
+      "bg2": "#3a1424",
+      "fg": "#fff1e8",
+      "muted": "#d9a08f"
+    }
+  },
+  "period": "Last month (~2 sprints)  ·  2026-06-15 to 2026-07-13  ·  Sprint 11, Sprint 12",
+  "project": "Acme Portal",
+  "slides": [
+    {
+      "emoji": "🚀",
+      "headline": "Two sprints of strong delivery.",
+      "title": "Acme Portal",
+      "type": "title"
+    },
+    {
+      "emoji": "📋",
+      "points": [
+        "We shipped SSO.",
+        "Checkout got materially faster for everyone."
+      ],
+      "section": "Overview",
+      "title": "Executive summary",
+      "type": "summary"
+    },
+    {
+      "emoji": "📊",
+      "footnote": "Corroborated by 24 merged PRs",
+      "metrics": [
+        [
+          "Items delivered",
+          "12"
+        ],
+        [
+          "Story points",
+          "48"
+        ]
+      ],
+      "section": "Overview",
+      "title": "By the numbers",
+      "type": "metrics"
+    },
+    {
+      "emoji": "🧩",
+      "items": [
+        "SSO",
+        "MFA"
+      ],
+      "page": [
+        1,
+        1
+      ],
+      "section": "Delivery",
+      "title": "Security",
+      "type": "list"
+    },
+    {
+      "emoji": "🧩",
+      "items": [
+        "Faster checkout"
+      ],
+      "page": [
+        1,
+        1
+      ],
+      "section": "Delivery",
+      "title": "Performance",
+      "type": "list"
+    },
+    {
+      "emoji": "⭐",
+      "items": [
+        "SSO live",
+        "2x faster checkout"
+      ],
+      "page": [
+        1,
+        1
+      ],
+      "section": "Delivery",
+      "title": "Highlights",
+      "type": "list"
+    },
+    {
+      "emoji": "🙌",
+      "subtitle": "Acme Portal",
+      "title": "Thank you",
+      "type": "thanks"
+    }
+  ],
+  "style": {
+    "fontFamily": "var(--font-sans)",
+    "fontScale": 1.15,
+    "footer": "ACME Corp",
+    "headingColor": "accent2",
+    "slideNumbers": true,
+    "titleColor": ""
+  },
+  "theme": "aurora"
+}

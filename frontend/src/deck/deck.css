@@ -1,0 +1,61 @@
+/*
+ * Deck globals: the palette derivations, and a page that does not scroll.
+ *
+ * A reporting palette (`themes.py`) defines six roles. The design tokens want
+ * rather more than six, so the rest are derived here from `--text` and `--bg`
+ * — which means a user who drops four hexes into `reporting_themes.json` gets a
+ * coherent set of surfaces without having to specify a panel colour, a hairline
+ * and a dim tier they have no way to reason about.
+ *
+ * This file must be imported *after* tokens.css. The rules below have the same
+ * specificity as the ones they override (`:root` against `:root`), so order is
+ * the whole mechanism.
+ */
+
+:root {
+  /* The second stop of the background wash — what makes aurora feel different
+     from sunset. Defaults to the panel so this stylesheet stands alone before
+     palette.ts has run, or in a test that never mounts the app. */
+  --deck-glow: var(--panel);
+
+  --panel: color-mix(in srgb, var(--text) 4%, var(--bg));
+  --line: color-mix(in srgb, var(--text) 12%, transparent);
+  /*
+   * The third text tier, for furniture that must recede: the rail, the keyboard
+   * hint, the corner slide number. The site palettes hold `--dim` between 3:1
+   * and 4.5:1 on purpose — above the non-text floor, deliberately below body
+   * text, so nobody quietly sets a sentence in it.
+   *
+   * 60% is solved, not chosen: the four palettes disagree about how bright
+   * `--muted` is — aurora's is a pale mint, midnight's a slate — so at the 70%
+   * this started on, midnight landed at 4.24:1 and aurora at 5.47:1, i.e. one
+   * of them was body text. 60% is the highest setting that holds all four
+   * inside the band (3.40–4.32:1). `deck.contrast.test.ts` re-derives the mix
+   * from this line and re-measures, so changing the number moves the audit
+   * rather than invalidating it.
+   */
+  --dim: color-mix(in srgb, var(--muted) 60%, var(--bg));
+
+  /* Style overrides. Left *undefined* on purpose: each use site supplies its
+     own fallback, because "no heading colour chosen" means the accent on a
+     bullet and the plain text colour on an <h2>. One shared default could not
+     express that, and inventing one would silently change the unstyled deck. */
+  --deck-scale: 1;
+  --deck-font: var(--font-sans);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* A deck is exactly one screen. Scrolling it is always a mistake — content
+     that overflows is a slide that should have been split, which is what the
+     planners in reporting/layout.py exist to do. */
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+}

@@ -151,11 +151,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Both board pages used to be listed here as embedded front-end assets. They are
-# React shells now, and holding them to the normal rules is what stops a
-# hand-written page growing back.
-# presentation.py is an embedded slide-deck asset (inline HTML/CSS/JS string constants).
-"src/yeaboi/reporting/presentation.py" = ["E501"]
+# Both board pages and the reporting slide deck used to be listed here as
+# embedded front-end assets — files exempt from the line-length rule because
+# they carried multi-KB CSS and JS strings. All three are React shells now, and
+# holding them to the normal rules is what stops a hand-written page growing
+# back. (html_theme.py and the ten exporters still build markup in Python, but
+# they were never exempt: that code wraps.)
 # Tests deliberately use asserts, toy secrets, temp paths, and localhost URLs —
 # they are never shipped, so the bandit (S) category is not meaningful here.
 "tests/**" = ["S"]

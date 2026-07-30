@@ -2,11 +2,17 @@
  * The drift guard between `types/board.ts` and what the server actually sends.
  *
  * The JSON beside this file is not hand-written. `tests/unit/test_web_wire_shapes.py`
- * drives a real `RetroBoard` and a real `PokerBoard` through a real round and
- * writes their snapshots here, failing if what it wrote differs from what is
- * committed. This file is the other half: each fixture `satisfies` the interface
- * the boards are coded against, so `npm run typecheck` fails when the server
- * stops sending a field the TypeScript promises.
+ * drives a real `RetroBoard` and a real `PokerBoard` through a real round, and
+ * builds a real slide deck from a real `DeliveryReport`, then writes the results
+ * here and fails if what it wrote differs from what is committed. This file is
+ * the other half: each fixture `satisfies` the interface the bundle is coded
+ * against, so `npm run typecheck` fails when Python stops sending a field the
+ * TypeScript promises.
+ *
+ * The deck is here for the same reason the boards are, with the failure delayed
+ * rather than softened: an exported deck is a *file*. A field that quietly stops
+ * being written renders as a blank slide on someone's projector months later,
+ * with no server, no log and no way to tell it apart from an empty report.
  *
  * ## What it catches
  *
@@ -40,13 +46,18 @@
  * nothing else.
  */
 
+import type { DeckBoot } from '../../deck/boot';
 import type { PokerState, RetroState, TicketView } from '../../types/board';
 
+import deckJson from './deck.json';
 import pokerDuelJson from './poker.duel.json';
 import pokerRevealedJson from './poker.revealed.json';
 import pokerVotingJson from './poker.voting.json';
 import retroJson from './retro.json';
 import ticketPeekJson from './ticket.peek.json';
+
+/** A full deck: every slide kind, a custom style, and all four palettes. */
+export const DECK_WIRE = deckJson as DeckBoot;
 
 /** A retro mid-ceremony: two people, a reaction, a carried item, a running timer. */
 export const RETRO_WIRE = retroJson as RetroState;
@@ -85,3 +96,4 @@ void (pokerVotingJson satisfies Widened<PokerState>);
 void (pokerRevealedJson satisfies Widened<PokerState>);
 void (pokerDuelJson satisfies Widened<PokerState>);
 void (ticketPeekJson satisfies Widened<TicketView>);
+void (deckJson satisfies Widened<DeckBoot>);

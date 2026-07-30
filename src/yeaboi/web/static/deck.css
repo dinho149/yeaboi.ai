@@ -1,0 +1,1310 @@
+/*
+ * The shared design foundation: palettes, then everything derived from them.
+ *
+ * Every yeaboi surface imports this one file — the live boards, the join gate,
+ * the slide deck, and the static exports. It is the replacement for the three
+ * hand-copied palette blocks that used to live in html_theme.py, retro/page.py
+ * and poker/page.py, which could and did drift apart.
+ *
+ * Two rules keep it honest:
+ *
+ * 1. **Nothing here is a raw colour.** Anything colour-shaped is either one of
+ *    the five palette blocks in palette.css or a `color-mix` / alias of one, so
+ *    a new theme needs no changes outside that file. The literals that used to
+ *    be scattered through the boards (`#f85149` appeared in six places across
+ *    two files, the confetti palette was a hardcoded JS array in both) are gone.
+ * 2. **Nothing here depends on JS having run.** `:root` doubles as the default
+ *    theme, so a page renders correctly before — or without — the bundle.
+ *
+ * Vite inlines the palette below at build time, so the shipped stylesheet is a
+ * single flat file with no external reference at all. `test_web_assets` asserts
+ * that — including that this comment does not name the at-rule literally, since
+ * the guard is a blunt substring search on purpose.
+ */
+/*
+ * The five palettes and the base element reset — the foundation every yeaboi
+ * page shares, whether it is an exported report opened over file:// or a live
+ * board served through a tunnel.
+ *
+ * Split out of tokens.css so that a small page (the join gate) can take the
+ * palettes without also inheriting the export report's table/header/badge
+ * styling. tokens.css pulls this in first, so the export bundle is unchanged.
+ *
+ * Palette switching is pure custom-property swaps on [data-theme] — see
+ * runtime/theme.ts. Nothing here may depend on JS having run: the :root block
+ * doubles as the default, so a page with no data-theme attribute still renders.
+ *
+ * `midnight` is the default and it is **yeaboi.ai's palette**, value for value
+ * (docs/assets/site.css `--bg`/`--bg-raised`/`--text`/`--text-muted`/`--text-dim`
+ * /`--success`/`--warn`). Before this it was GitHub-dark, so a teammate opening a
+ * tunnel link saw a page with no visible relationship to the product it came
+ * from. The other four are skins and keep their own character.
+ *
+ * The theme *keys* are a compatibility contract — they are server-validated
+ * (`RETRO_THEMES`), asserted by Python tests, and already persisted in people's
+ * localStorage. So `midnight` was re-cut in place rather than renamed.
+ */
+
+:root, [data-theme="midnight"] {
+  --bg:#0b0c0e; --panel:#111317; --line:#1e2023; --text:#e4e6e8;
+  --muted:#9aa0a8; --dim:#62676f; --accent:#6e8cdc; --accent2:#8c78e6; --card:#0b0c0e; --ink:#0b0c0e;
+  --ok:#59c07e; --warn:#dcab4a; --danger:#e5645a; --info:#6e8cdc;
+  --critical:#e5645a; --high:#dc8a4a; --medium:#6e8cdc; --low:#9aa0a8;
+}
+[data-theme="light"] {
+  --bg:#f6f8fa; --panel:#ffffff; --line:#d0d7de; --text:#1f2328;
+  --muted:#656d76; --dim:#7d8690; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
+  --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; --info:#0969da;
+  --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
+}
+/*
+ * Solarized, lifted to WCAG AA.
+ *
+ * The canonical Solarized accents are tuned against base03 (#002b36) and only
+ * just clear 4.5:1 there. Against base02 (#073642) — this theme's `--panel`,
+ * which is what every chip, badge and status label actually sits on — several
+ * of them do not: `--danger` measured 2.81:1 and `--accent2` 2.86:1, i.e. below
+ * even the 3:1 floor for non-text UI. The hues are unchanged; each colour is
+ * lifted in HSL lightness by the smallest amount that clears 4.5:1 against BOTH
+ * `--panel` and `--bg`. `theme.test.ts` re-measures this on every run.
+ */
+[data-theme="solarized"] {
+  --bg:#002b36; --panel:#073642; --line:#0a4b59; --text:#eee8d5;
+  --muted:#93a1a1; --dim:#6b8288; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
+  --ok:#8ea300; --warn:#c29300; --danger:#e87775; --info:#48a0de;
+  --critical:#e87775; --high:#eb794a; --medium:#48a0de; --low:#93a1a1;
+}
+[data-theme="synthwave"] {
+  --bg:#1a1033; --panel:#241847; --line:#3d2a6b; --text:#f5e6ff;
+  --muted:#a48fd0; --dim:#7e6aa8; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
+  --ok:#3ddc97; --warn:#ffd166; --danger:#ff6b81; --info:#36e0ff;
+  --critical:#ff6b81; --high:#ff9e64; --medium:#36e0ff; --low:#a48fd0;
+}
+[data-theme="forest"] {
+  --bg:#0c1a12; --panel:#12261b; --line:#1f3a2a; --text:#d7e8dc;
+  --muted:#89a894; --dim:#5f7a69; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
+  /* danger/critical lifted from #e5534b, which measured 4.30:1 on --panel. */
+  --ok:#4cc38a; --warn:#d9c26a; --danger:#e65b53; --info:#6cb6ff;
+  --critical:#e65b53; --high:#db9b4a; --medium:#6cb6ff; --low:#89a894;
+}
+
+/*
+ * The duck.
+ *
+ * Deliberately outside the theme blocks: the mascot is one fixed illustration,
+ * so its colours must not shift with the palette. Values are lifted from the
+ * TUI's own sprite (`ui/shared/_screensaver.py:_PALETTE`, keys "G" and "O"), so
+ * the terminal duck, the docs duck and the tunnel duck are literally the same
+ * bird. Before this the mascot's green appeared in no palette at all, which is
+ * why it never looked like it belonged to the page it sat on.
+ *
+ * Not used to paint the sprite itself — that is a PNG. These tint the things
+ * that belong to it: the perch, the speech bubble edge, the offline "asleep"
+ * marker.
+ */
+:root { --duck:#2aaa69; --bill:#ffa50f; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 15px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { color: var(--text); font-weight: 700; line-height: 1.25; }
+h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.9rem; }
+h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+p { margin: 0 0 0.75rem; }
+ul, ol { margin: 0 0 0.75rem; padding-left: 1.25rem; }
+code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.85em; }
+
+:root {
+  /* ── Space ────────────────────────────────────────────────────────
+     A 4px scale. Promoted from poker/page.py, which already had it. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* ── Radius ─────────────────────────────────────────────────────── */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 16px;
+  --r-pill: 999px;
+
+  /* ── Type ───────────────────────────────────────────────────────── */
+  --fs-2xs: 11px;
+  --fs-xs: 12.5px;
+  --fs-s: 13.5px;
+  --fs-m: 15px;
+  --fs-l: 17px;
+  --fs-xl: 21px;
+
+  /*
+   * Mono is the structure; sans is only what a human typed.
+   *
+   * The usual hierarchy, inverted. Column heads, counts, timestamps, names,
+   * buttons, labels and the join code are all mono — the proportional face is
+   * reserved for prose someone actually wrote (a card, a ticket description, a
+   * report body). This is true to a terminal product and it costs nothing.
+   *
+   * Geist and JetBrains Mono are named first because they are yeaboi.ai's
+   * faces, so anyone who has them installed gets an exact match with the site.
+   * They are NOT downloaded: the site pulls them from Google Fonts, which these
+   * bundles cannot do — the tunnel CSP forbids it and exports open over
+   * file://. Everyone else falls through to the system stack, which is what the
+   * scale below is measured against. Inlining a woff2 subset later is a change
+   * to these two lines and nothing else (~40-60 KB per page, on all ten exports
+   * too, which is why it was not done by default).
+   */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* Tracking for the two mono registers. Labels are set uppercase and wide so
+     they read as furniture rather than content; the eyebrow is wider still.
+     Both are lifted from yeaboi.ai (site.css `.eyebrow`, `.brand`). */
+  --track-label: 0.14em;
+  --track-eyebrow: 0.16em;
+
+  /* ── Elevation ──────────────────────────────────────────────────── */
+  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
+  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+
+  /* ── Derived surfaces ───────────────────────────────────────────────
+     color-mix keeps the five theme blocks to the handful of decisions a
+     theme actually is; everything shaded off them is computed here once. */
+  --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  /* The hairline one step up, for a divider that has to survive on --panel.
+     Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
+  --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
+  --focus: var(--accent2);
+
+  /* Themed confetti. This was a hardcoded array of six hex literals in *both*
+     board files; expressing it as tokens means the celebration matches the
+     palette the room is actually looking at, and costs nothing to maintain. */
+  --confetti-1: var(--accent);
+  --confetti-2: var(--accent2);
+  --confetti-3: var(--ok);
+  --confetti-4: var(--warn);
+  --confetti-5: var(--info);
+  --confetti-6: var(--high);
+
+  /* ── Stacking ───────────────────────────────────────────────────────
+     The boards used bare 24/26/28/29/30/31 scattered across two files, so
+     "is this above the deck?" could only be answered by grepping. Named,
+     ordered, and spaced by 10 so anything can be slotted between later. */
+  --z-rail: 20;
+  --z-deck: 30;
+  --z-console: 40;
+  --z-popover: 50;
+  --z-banner: 60;
+  --z-modal: 70;
+  --z-confetti: 80;
+
+  /* ── Breakpoints ────────────────────────────────────────────────────
+     Documented as tokens even though @media cannot read a custom property —
+     retro and poker picked different breakpoints, which is why the two
+     boards behaved differently on the same phone. These are the numbers to
+     write literally into every @media query. */
+  --bp-s: 700px;
+  --bp-m: 1100px;
+  --bp-l: 1440px;
+
+  /* ── Motion ─────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ── Touch targets ──────────────────────────────────────────────────
+     WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
+     retro board are ~13x20 today, which is why moving a card on a phone is a
+     lottery. --tap is the comfortable size, --tap-min the absolute floor. */
+  --tap: 32px;
+  --tap-min: 24px;
+}
+
+/*
+ * Per-mode accent — the only hue that varies.
+ *
+ * Layered *after* the theme blocks as an override rather than forked into a
+ * second set of five palettes, so each mode keeps its identity while sharing
+ * one set of themes.
+ *
+ * Every value is the TUI's own theme accent, verbatim from
+ * `ui/shared/_components.py` (`RETRO_THEME`, `POKER_THEME`, …), which
+ * `docs/assets/site.css` already mirrors as `--m-*`. That makes the terminal,
+ * the marketing site and the tunnel page agree for the first time. Poker was
+ * `#5ac88a` here, a green that matched neither its TUI theme (gold) nor
+ * anything else in the product; it is the TUI's `rgb(230,200,70)` now.
+ *
+ * Four of the eight are the TUI hex verbatim. The other four are lifted by the
+ * smallest amount that clears 4.5:1, hue and saturation untouched — Solarized's
+ * `--panel` (#073642) is much lighter than its `--bg`, and a mid-tone accent
+ * that reads fine on the background disappears on a chip. Same treatment, and
+ * the same reason, as the Solarized/Forest lifts in palette.css.
+ *
+ * `theme.test.ts` measures all eight against all five themes on all three
+ * surfaces, plus `--ink` on each. Do not hand-edit a value here without
+ * re-running it.
+ */
+[data-mode="retro"]       { --accent: #50bebe; }  /* TUI RETRO_THEME, unchanged */
+[data-mode="poker"]       { --accent: #e6c846; }  /* TUI POKER_THEME, unchanged */
+[data-mode="analysis"]    { --accent: #64b464; }  /* TUI default accent, unchanged */
+[data-mode="usage"]       { --accent: #dcab4a; }  /* TUI USAGE_THEME, unchanged */
+[data-mode="reporting"]   { --accent: #9d8cea; }  /* lifted from #8c78e6 */
+[data-mode="standup"]     { --accent: #d17cc0; }  /* lifted from #c864b4 */
+[data-mode="planning"]    { --accent: #7d98e0; }  /* lifted from #6e8cdc */
+[data-mode="performance"] { --accent: #e07e6c; }  /* lifted from #dc6e5a */
+
+/*
+ * The same eight hues, rendered for a light surface.
+ *
+ * This fixes a live accessibility bug rather than preventing a future one: the
+ * mode accents are terminal colours, chosen to glow on near-black, and on the
+ * light theme they were being painted as text on white. Retro measured
+ * **2.09:1** — well under half the required ratio — on a board that is already
+ * shipping. Nothing surfaced it because the palette audit only ever measured a
+ * theme against its own accent, and a mode replaces that accent afterwards.
+ *
+ * Hue and saturation are identical to the dark rendition; only lightness moves,
+ * so the mode still reads as "the teal one" / "the gold one". Both attributes
+ * live on <html>, so this compound selector (0,2,0) wins over the block above.
+ */
+[data-theme="light"][data-mode="retro"]       { --accent: #2e7c7c; }
+[data-theme="light"][data-mode="poker"]       { --accent: #857012; }
+[data-theme="light"][data-mode="analysis"]    { --accent: #3d7f3d; }
+[data-theme="light"][data-mode="usage"]       { --accent: #926a1c; }
+[data-theme="light"][data-mode="reporting"]   { --accent: #735be1; }
+[data-theme="light"][data-mode="standup"]     { --accent: #b941a1; }
+[data-theme="light"][data-mode="planning"]    { --accent: #456bd2; }
+[data-theme="light"][data-mode="performance"] { --accent: #c9432b; }
+
+/* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
+   never appears on a mouse click — the reason the boards had no focus styling
+   at all was that plain :focus looked broken on click. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--r-s);
+}
+
+/*
+ * Reduced motion, applied globally.
+ *
+ * Retro had no such block at all, and its finished-timer readout runs
+ * `animation: blink 1s steps(2) infinite` — a literal flashing element. That is
+ * a photosensitivity hazard, not a stylistic preference, so this belongs in the
+ * foundation where no surface can forget it. Animations are neutralised rather
+ * than removed so anything whose *end state* matters still reaches it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Print: force the light palette and drop interactive chrome.
+ *
+ * Cmd-P on a dark-themed page otherwise floods the page with ink. Shared here
+ * because the boards are printed too (people print a finished retro), and the
+ * palette override has to come after palette.css to win the cascade — equal
+ * specificity, later wins.
+ */
+@media print {
+  :root, [data-theme] {
+    --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --dim: #8c959f; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
+    --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
+  }
+  [data-print-hide] { display: none !important; }
+}
+/*
+ * Deck globals: the palette derivations, and a page that does not scroll.
+ *
+ * A reporting palette (`themes.py`) defines six roles. The design tokens want
+ * rather more than six, so the rest are derived here from `--text` and `--bg`
+ * — which means a user who drops four hexes into `reporting_themes.json` gets a
+ * coherent set of surfaces without having to specify a panel colour, a hairline
+ * and a dim tier they have no way to reason about.
+ *
+ * This file must be imported *after* tokens.css. The rules below have the same
+ * specificity as the ones they override (`:root` against `:root`), so order is
+ * the whole mechanism.
+ */
+
+:root {
+  /* The second stop of the background wash — what makes aurora feel different
+     from sunset. Defaults to the panel so this stylesheet stands alone before
+     palette.ts has run, or in a test that never mounts the app. */
+  --deck-glow: var(--panel);
+
+  --panel: color-mix(in srgb, var(--text) 4%, var(--bg));
+  --line: color-mix(in srgb, var(--text) 12%, transparent);
+  /*
+   * The third text tier, for furniture that must recede: the rail, the keyboard
+   * hint, the corner slide number. The site palettes hold `--dim` between 3:1
+   * and 4.5:1 on purpose — above the non-text floor, deliberately below body
+   * text, so nobody quietly sets a sentence in it.
+   *
+   * 60% is solved, not chosen: the four palettes disagree about how bright
+   * `--muted` is — aurora's is a pale mint, midnight's a slate — so at the 70%
+   * this started on, midnight landed at 4.24:1 and aurora at 5.47:1, i.e. one
+   * of them was body text. 60% is the highest setting that holds all four
+   * inside the band (3.40–4.32:1). `deck.contrast.test.ts` re-derives the mix
+   * from this line and re-measures, so changing the number moves the audit
+   * rather than invalidating it.
+   */
+  --dim: color-mix(in srgb, var(--muted) 60%, var(--bg));
+
+  /* Style overrides. Left *undefined* on purpose: each use site supplies its
+     own fallback, because "no heading colour chosen" means the accent on a
+     bullet and the plain text colour on an <h2>. One shared default could not
+     express that, and inventing one would silently change the unstyled deck. */
+  --deck-scale: 1;
+  --deck-font: var(--font-sans);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* A deck is exactly one screen. Scrolling it is always a mistake — content
+     that overflows is a slide that should have been split, which is what the
+     planners in reporting/layout.py exist to do. */
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+}
+/*
+ * Styling for the shared primitives.
+ *
+ * One module for the whole set rather than twelve files: they are a single
+ * cohesive vocabulary, they are all small, and keeping them together makes the
+ * spacing and radius choices comparable at a glance instead of scattered.
+ *
+ * Every value here is a token. If you find yourself typing a hex colour or a
+ * pixel gap, it belongs in tokens.css first.
+ */
+
+/* ── Chip ─────────────────────────────────────────────────────── */
+._chip_12fw4_13 {
+  display: inline-block;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+/* Tone-specific colours come from an inline style built by toneMix(), because
+   the set of tones is a TypeScript union rather than a set of class names —
+   one source of truth, and adding a tone needs no CSS change. */
+._chipLink_12fw4_29 { text-decoration: none; }
+._chipLink_12fw4_29:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Stat tile ────────────────────────────────────────────────── */
+._statGrid_12fw4_33 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+._stat_12fw4_33 {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+._statValue_12fw4_44 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent);
+  /* Tabular figures: a value that ticks (a count, a countdown) must not make
+     the tile jitter as digit widths change. */
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+._statLabel_12fw4_54 {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+._statHint_12fw4_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+
+/* ── Bars ─────────────────────────────────────────────────────── */
+._bar_12fw4_64 {
+  height: 6px;
+  background: var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+._barFill_12fw4_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+
+._segTrack_12fw4_72 {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  min-width: 2px;
+}
+._segTrack_12fw4_72 > i { display: block; height: 100%; }
+
+/* ── Legend ───────────────────────────────────────────────────── */
+._legend_12fw4_83 {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+._legend_12fw4_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_12fw4_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_12fw4_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+._sparkWrap_12fw4_96 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_12fw4_96 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_12fw4_98 {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Avatar ───────────────────────────────────────────────────── */
+._avatar_12fw4_108 {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  flex: none;
+  user-select: none;
+}
+
+/* ── Notice ───────────────────────────────────────────────────── */
+._notice_12fw4_122 {
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+._noticeTitle_12fw4_128 {
+  font-weight: 600;
+  font-size: var(--fs-s);
+  color: var(--warn);
+  margin-bottom: var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+._notice_12fw4_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+
+/* ── Card / Section ───────────────────────────────────────────── */
+._card_12fw4_140 {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+._cardHover_12fw4_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_12fw4_148 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+._cardTitle_12fw4_155 { font-weight: 600; font-size: var(--fs-s); }
+
+._section_12fw4_157 { margin-bottom: var(--s6); }
+._sectionTitle_12fw4_158 {
+  font-size: var(--fs-l);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--s1);
+  margin-bottom: var(--s4);
+}
+
+/* ── Data table ───────────────────────────────────────────────── */
+/* The wrapper, not the table, scrolls. A table wide enough to overflow must
+   never make the *page* scroll sideways — on a phone that breaks every
+   vertical swipe on the board behind it. */
+._tableWrap_12fw4_171 { overflow-x: auto; }
+._table_12fw4_171 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_12fw4_171 th {
+  background: var(--card);
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  font-weight: 600;
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+._table_12fw4_171 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_12fw4_171 tr:last-child td { border-bottom: none; }
+._numeric_12fw4_186 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Prose ────────────────────────────────────────────────────── */
+._prose_12fw4_189 { font-size: var(--fs-s); line-height: 1.6; }
+/* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
+   (tickets.py already strips their HTML) and must never be re-parsed as
+   markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
+._proseText_12fw4_193 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_12fw4_194 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_12fw4_194 > li {
+  position: relative;
+  padding: var(--s1) 0 var(--s1) var(--s4);
+  line-height: 1.55;
+}
+._proseList_12fw4_194 > li::before {
+  content: "•";
+  color: var(--accent);
+  position: absolute;
+  left: var(--s1);
+}
+
+/* ── Wordmark ─────────────────────────────────────────────────────
+   The block-glyph display face. Two rules are load-bearing:
+
+   1. `letter-spacing: 0` — the glyphs are a grid of cells, so any tracking
+      opens hairline gaps straight through the middle of a letter.
+   2. `line-height: 1` — the two rows have to touch. At the default 1.5 the
+      word reads as two unrelated bands of noise.
+
+   `font-family` must resolve to a monospace with full block-drawing coverage
+   (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
+   rather than a face keeps that true if the stack changes. */
+._wordmark_12fw4_218 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  line-height: 1;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--accent);
+  margin: 0;
+  /* Cells are solid ink; on a dark surface the browser's default subpixel
+     smoothing makes the verticals look uneven. */
+  -webkit-font-smoothing: antialiased;
+  white-space: pre;
+  /* A long mode name at a large size will overflow a narrow phone before it
+     will wrap — it cannot wrap, the rows would desync. Let it shrink instead. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+._wordmark_12fw4_218::-webkit-scrollbar { display: none; }
+
+/* ── Eyebrow ──────────────────────────────────────────────────────
+   Mono, uppercase, widely tracked — the "this is furniture" signal in the
+   mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
+._eyebrow_12fw4_240 {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+  /* Tracking adds space *after* the last glyph too, which visually shifts the
+     whole label left of anything stacked under it. */
+  margin-right: calc(var(--track-eyebrow) * -1);
+}
+._eyebrowAccent_12fw4_255 { color: var(--accent); }
+._eyebrowDot_12fw4_256 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_12fw4_257 {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+/* ── TerminalFrame ────────────────────────────────────────────────
+   The window chrome from yeaboi.ai's hero. Gate and export headers only —
+   never a live board, where it would be a costume. */
+._frame_12fw4_266 {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, var(--shadow-2);
+  overflow: hidden;
+}
+._frameBar_12fw4_273 {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+._frameLights_12fw4_281 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_12fw4_281 i {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+}
+/* Tinted from the palette rather than the usual literal red/amber/green, so
+   the chrome belongs to whatever theme the visitor picked. */
+._frameLights_12fw4_281 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_12fw4_281 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_12fw4_281 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_12fw4_293 {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+  /* Offset the lights so the title is centred on the frame, not on the space
+     left over beside them. */
+  margin-right: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+._frameBody_12fw4_306 { padding: var(--s5); }
+/*
+ * The duck rig.
+ *
+ * Ported from docs/assets/landing.css:425-532, where the timings were already
+ * tuned against the real sprite. Kept in its own module rather than folded into
+ * primitives.module.css because it is the one component here with a state
+ * machine, and reading it next to the keyframes is the point.
+ *
+ * The layer split is load-bearing: `.duck` owns the body-level transforms
+ * (waddle, facing, sleep tilt), `.wing` and `.glasses` own their own, so no two
+ * animations ever contend for `transform` on the same node. Merging them —
+ * which looks like a tidy-up — makes the sunglasses jump whenever the body
+ * moves.
+ */
+
+._duck_5ybop_9 {
+  position: relative;
+  display: block;
+  flex: none;
+  line-height: 0;
+  /* Everything below animates transform/opacity only, so the duck never
+     triggers layout on a board that is already re-rendering on every poll. */
+  will-change: transform;
+}
+
+._duck_5ybop_9 img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The art is pixel art; let it stay blocky when it scales up rather than
+     going soft. The sprite is 2x the drawn size, so this is only reached on a
+     board that has been zoomed. */
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+._base_5ybop_38 {
+  filter: drop-shadow(0 5px 4px rgb(0 0 0 / 45%));
+}
+
+._wing_5ybop_10,
+._glasses_5ybop_10 {
+  position: absolute;
+  inset: 0;
+}
+
+/* Rotating about the shoulder rather than the sprite's centre is what makes
+   the flap read as a wing instead of a wobble. */
+._wing_5ybop_10 {
+  transform-origin: 42% 55%;
+  animation: _wing-flap_5ybop_1 1.4s ease-in-out infinite;
+}
+._glasses_5ybop_10 {
+  animation: _glasses-bob_5ybop_1 2.6s ease-in-out infinite;
+}
+
+@keyframes _wing-flap_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2.2%) rotate(-2.5deg); }
+}
+@keyframes _glasses-bob_5ybop_1 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1.5%); }
+}
+
+/* ── urgent: the last ten seconds on the clock ───────────────────────
+   Motion-only, and that is acceptable here where it is not for the states
+   below: the timer readout is aria-live and announces the same ten seconds. */
+._duck_5ybop_9[data-state="urgent"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out infinite;
+}
+._duck_5ybop_9[data-state="urgent"] ._glasses_5ybop_10 {
+  animation: _glasses-jitter_5ybop_1 0.18s steps(2) infinite;
+}
+@keyframes _wing-flap-hard_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4.5%) rotate(-6deg); }
+}
+@keyframes _glasses-jitter_5ybop_1 {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-0.6%, 0.8%); }
+}
+
+/* ── card: a peer's card just landed ─────────────────────────────────
+   One hard flap, then back. Deliberately small — this fires on every card and
+   anything bigger becomes noise in the second half of a retro. */
+._duck_5ybop_9[data-state="card"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out 3;
+}
+
+/* ── joined: someone arrived ─────────────────────────────────────── */
+._duck_5ybop_9[data-state="joined"] {
+  animation: _duck-waddle-in_5ybop_1 1.4s var(--ease) 1;
+}
+@keyframes _duck-waddle-in_5ybop_1 {
+  0% { transform: translateX(-140%) rotate(0deg); }
+  15% { transform: translateX(-100%) rotate(-4deg); }
+  30% { transform: translateX(-65%) rotate(4deg); }
+  45% { transform: translateX(-35%) rotate(-4deg); }
+  60% { transform: translateX(-12%) rotate(4deg); }
+  75% { transform: translateX(0) rotate(-2deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+
+/* ── startled: the join code was wrong ───────────────────────────────
+   The shades fly up the forehead, hang there through the hop, and drop back
+   with an overshoot. This is the docs site's cursor-dodge reaction, reused on
+   the one screen where something has actually gone wrong — it turns the join
+   gate's failure state into the most memorable thing on the page. */
+._duck_5ybop_9[data-state="startled"] {
+  animation: _duck-hop_5ybop_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
+}
+._duck_5ybop_9[data-state="startled"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out infinite;
+}
+._duck_5ybop_9[data-state="startled"] ._glasses_5ybop_10 {
+  animation: _glasses-pop_5ybop_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
+}
+@keyframes _duck-hop_5ybop_1 {
+  0% { transform: translateY(0) rotate(0deg); }
+  28% { transform: translateY(-34%) rotate(-4deg); }
+  46% { transform: translateY(-38%) rotate(0deg); }
+  70% { transform: translateY(0) rotate(0deg); }
+  82% { transform: translateY(-6%) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+@keyframes _glasses-pop_5ybop_1 {
+  0% { transform: translateY(0) rotate(0deg); }
+  10% { transform: translateY(-10%) rotate(-7deg); }
+  52% { transform: translateY(-8.5%) rotate(-5deg); }
+  64% { transform: translateY(1.2%) rotate(0deg); }
+  72% { transform: translateY(-1%) rotate(0deg); }
+  80%, 100% { transform: translateY(0) rotate(0deg); }
+}
+
+/* ── locked: the host closed the board ───────────────────────────────
+   The duck turns its back. A plain transform, NOT a keyframe: the global
+   reduced-motion guard flattens every animation to 0.01ms, so a state encoded
+   as one would simply not exist for those visitors. Same for `offline` below.
+   This is the rule for any duck state that carries meaning. */
+._duck_5ybop_9[data-state="locked"] {
+  transform: scaleX(-1);
+}
+._duck_5ybop_9[data-state="locked"] ._glasses_5ybop_10 {
+  opacity: 0;
+  animation: none;
+}
+
+/* ── offline: the long-poll is failing ───────────────────────────────
+   The one state that is genuinely load-bearing. Before the duck there was no
+   indication at all that a board had stopped updating — a dead tunnel and a
+   quiet room looked identical. */
+._duck_5ybop_9[data-state="offline"] {
+  transform: rotate(7deg) translateY(6%);
+  filter: saturate(0.35) brightness(0.85);
+}
+._duck_5ybop_9[data-state="offline"] ._wing_5ybop_10,
+._duck_5ybop_9[data-state="offline"] ._glasses_5ybop_10 {
+  animation: none;
+}
+._duck_5ybop_9[data-state="offline"] ._glasses_5ybop_10 {
+  /* Shades slid down over closed eyes. */
+  transform: translateY(9%) rotate(-3deg);
+}
+
+/* A literal letter, so the state survives reduced motion, a screenshot, and a
+   printout — none of which a keyframe does. */
+._zzz_5ybop_169 {
+  position: absolute;
+  top: -14%;
+  right: -8%;
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  animation: _zzz-drift_5ybop_1 2.4s ease-in-out infinite;
+}
+@keyframes _zzz-drift_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.55; }
+  50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
+}
+/*
+ * The slide deck.
+ *
+ * Every size is `calc(<clamp> * var(--deck-scale))`. Multiplying a clamp by a
+ * positive constant is the same as scaling all three of its bounds, so the one
+ * expression replaces the table of hand-scaled `clamp()` re-declarations the
+ * Python renderer used to emit per font-scale setting.
+ */
+
+._app_bk0j4_10 {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* dvh, not vh: on iOS the URL bar is inside 100vh, so the chrome row sat
+     below the fold on exactly the device someone opens an emailed deck on. */
+  height: 100dvh;
+  font-family: var(--deck-font);
+  background: radial-gradient(115% 85% at 22% 0%, var(--deck-glow) 0%, var(--bg) 62%);
+  padding:
+    calc(var(--s5) + env(safe-area-inset-top)) calc(var(--s5) + env(safe-area-inset-right))
+    calc(var(--s4) + env(safe-area-inset-bottom)) calc(var(--s5) + env(safe-area-inset-left));
+}
+
+/* ── Edge furniture ─────────────────────────────────────────────────────── */
+
+/*
+ * Top-left: whose report this is.
+ *
+ * The project name appeared only on the title slide before, so anyone who
+ * joined the call at slide six had no way to tell. Set as a terminal-style
+ * label rather than a logo, because that is what it is — the deck came out of
+ * someone's terminal.
+ */
+._rail_bk0j4_34,
+._brand_bk0j4_35,
+._corner_bk0j4_36 {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  color: var(--dim);
+  margin: 0;
+}
+
+._rail_bk0j4_34 {
+  top: calc(var(--s4) + env(safe-area-inset-top));
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+._brand_bk0j4_35 {
+  top: calc(var(--s3) + env(safe-area-inset-top));
+  right: calc(var(--s5) + env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+._brandMark_bk0j4_63 {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5ch;
+}
+
+/*
+ * `--dim`, not `--muted`, and the reason is not taste.
+ *
+ * The block glyphs are solid fills where the mono text beside them is strokes,
+ * so at the same colour the mark reads a weight heavier than the words it sits
+ * in and the credit line turns into a logo. One tier down puts them level.
+ */
+._brandWordmark_bk0j4_76 {
+  color: var(--dim);
+  /* The glyph rows are their own baseline; nudge them onto the text's. */
+  align-self: center;
+}
+
+._brandDate_bk0j4_82 {
+  font-variant-numeric: tabular-nums;
+}
+
+._corner_bk0j4_36 {
+  bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+}
+
+._cornerLeft_bk0j4_90 {
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+._cornerRight_bk0j4_98 {
+  right: calc(var(--s5) + env(safe-area-inset-right));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Stage ──────────────────────────────────────────────────────────────── */
+
+._stage_bk0j4_105 {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  /* Clears the rail and the brand badge above. */
+  padding: var(--s6) 0 var(--s5);
+}
+
+._slide_bk0j4_114 {
+  width: 100%;
+  max-width: 1040px;
+  /*
+   * Animate *from* the entrance, never *to* it. The global reduced-motion guard
+   * in tokens.css flattens every animation to 0.01ms, so a `to`-animation would
+   * freeze on its first frame — here, an invisible slide.
+   */
+  animation: _enter_bk0j4_1 320ms var(--ease) both;
+}
+
+@keyframes _enter_bk0j4_1 {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+._centered_bk0j4_132 {
+  text-align: center;
+}
+
+/* ── Slide head ─────────────────────────────────────────────────────────── */
+
+/*
+ * The section mark and the eyebrow share one row.
+ *
+ * The emoji used to be a 6rem block of its own above the heading, which on a
+ * content slide meant a quarter of the screen was a decorative pictogram. At
+ * this size it works as what it actually is: a marker beside the section label.
+ */
+._head_bk0j4_145 {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  min-height: calc(1.6rem * var(--deck-scale));
+}
+
+._emoji_bk0j4_153 {
+  font-size: calc(clamp(1.4rem, 2.6vw, 2rem) * var(--deck-scale));
+  line-height: 1;
+}
+
+/* The bookend slides keep the large mark — there, it is the whole composition. */
+._markLarge_bk0j4_159 {
+  font-size: calc(clamp(2.6rem, 7vw, 4.5rem) * var(--deck-scale));
+  line-height: 1;
+  margin-bottom: var(--s5);
+}
+
+/* ── Headings ───────────────────────────────────────────────────────────── */
+
+._h1_bk0j4_167 {
+  font-size: calc(clamp(2rem, 6vw, 4rem) * var(--deck-scale));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--deck-title, var(--text));
+  margin: 0;
+}
+
+/*
+ * Plain text, not a gradient text-clip.
+ *
+ * The clip was the deck's most dated flourish and it actively cost legibility:
+ * a heading fading toward `--accent` mid-word is lower contrast than either
+ * endpoint, on the one element that has to read from the back of a room. The
+ * accent moved to the eyebrow above it, where it marks the section instead.
+ */
+._h2_bk0j4_184 {
+  font-size: calc(clamp(1.6rem, 4.2vw, 2.8rem) * var(--deck-scale));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--deck-heading, var(--text));
+  margin: 0 0 calc(var(--s5) * var(--deck-scale));
+}
+
+._headline_bk0j4_193 {
+  font-size: calc(clamp(1.1rem, 2.6vw, 1.7rem) * var(--deck-scale));
+  font-weight: 600;
+  color: var(--accent2);
+  margin: var(--s5) 0 0;
+}
+
+._sub_bk0j4_200 {
+  font-size: calc(clamp(1rem, 2.2vw, 1.3rem) * var(--deck-scale));
+  color: var(--muted);
+  margin: var(--s4) 0 0;
+}
+
+._thanksMark_bk0j4_206 {
+  color: var(--accent);
+  /* The glyphs are a grid of cells; any tracking at all opens hairline gaps
+     straight through the middle of a letter. Restated from the primitive
+     because a size override is the tempting thing to add here. */
+  font-size: calc(clamp(8px, 1.9vw, 17px) * var(--deck-scale));
+  display: inline-block;
+}
+
+/* ── Bodies ─────────────────────────────────────────────────────────────── */
+
+._body_bk0j4_217 {
+  font-size: calc(clamp(1.05rem, 2.3vw, 1.5rem) * var(--deck-scale));
+  line-height: 1.6;
+}
+
+._body_bk0j4_217 p {
+  margin: 0 0 0.9em;
+}
+
+._body_bk0j4_217 p:last-child {
+  margin-bottom: 0;
+}
+
+._items_bk0j4_230 {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s3) * var(--deck-scale));
+  margin: 0;
+  padding: 0;
+}
+
+._items_bk0j4_230 li {
+  font-size: calc(clamp(1rem, 2.2vw, 1.4rem) * var(--deck-scale));
+  line-height: 1.4;
+  padding-left: 1.9em;
+  position: relative;
+}
+
+._items_bk0j4_230 li::before {
+  content: "▸";
+  color: var(--deck-heading, var(--accent));
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+._footnote_bk0j4_254 {
+  color: var(--muted);
+  font-size: calc(clamp(0.8rem, 1.6vw, 1rem) * var(--deck-scale));
+  margin: var(--s5) 0 0;
+  font-style: italic;
+}
+
+/* ── Metrics ────────────────────────────────────────────────────────────── */
+
+._metrics_bk0j4_263 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+/*
+ * Tiles are a hairline and a left accent rule, not a translucent white fill.
+ *
+ * `rgba(255,255,255,.05)` is invisible on the light-ish palettes and muddy on
+ * the dark ones — it was a single value doing duty across four backgrounds. A
+ * border derived from `--text` tracks whatever palette is showing.
+ */
+._metric_bk0j4_263,
+._card_bk0j4_277 {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-m);
+}
+
+._metric_bk0j4_263 {
+  padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s5) * var(--deck-scale));
+  min-width: 10ch;
+}
+
+._metricValue_bk0j4_289 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: calc(clamp(2.2rem, 5.4vw, 3.6rem) * var(--deck-scale));
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--accent2);
+}
+
+._metricLabel_bk0j4_298 {
+  font-family: var(--font-mono);
+  font-size: calc(clamp(0.7rem, 1.3vw, 0.85rem) * var(--deck-scale));
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+
+/* ── Outcome cards ──────────────────────────────────────────────────────── */
+
+._cards_bk0j4_309 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s4);
+  /* Cards size to their content — without this a short card stretches to match
+     the tall one beside it and the slide reads as two half-empty boxes. */
+  align-items: start;
+}
+
+._cardsWide_bk0j4_318 {
+  grid-template-columns: 1fr;
+}
+
+._card_bk0j4_277 {
+  padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s4) * var(--deck-scale));
+}
+
+._cardTitle_bk0j4_326 {
+  font-size: calc(clamp(0.95rem, 2vw, 1.2rem) * var(--deck-scale));
+  font-weight: 700;
+  color: var(--deck-heading, var(--accent2));
+  margin: 0 0 calc(var(--s3) * var(--deck-scale));
+}
+
+._card_bk0j4_277 ._items_bk0j4_230 {
+  gap: calc(var(--s2) * var(--deck-scale));
+}
+
+._card_bk0j4_277 ._items_bk0j4_230 li {
+  font-size: calc(clamp(0.82rem, 1.6vw, 1rem) * var(--deck-scale));
+  padding-left: 1.5em;
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+
+._chrome_bk0j4_344 {
+  flex: none;
+}
+
+._progress_bk0j4_348 {
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+._bar_bk0j4_354 {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease);
+}
+
+._controls_bk0j4_360 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s4);
+  margin-top: var(--s3);
+}
+
+._controls_bk0j4_360 button {
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-l);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+._controls_bk0j4_360 button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+._controls_bk0j4_360 button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+._counter_bk0j4_393 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+  min-width: 8ch;
+  text-align: center;
+}
+
+._hint_bk0j4_403 {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  color: var(--dim);
+  margin: var(--s2) 0 0;
+}
+
+/* ── Narrow ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  ._hint_bk0j4_403,
+  ._rail_bk0j4_34 {
+    display: none;
+  }
+
+  ._cards_bk0j4_309 {
+    grid-template-columns: 1fr;
+  }
+
+  ._metrics_bk0j4_263 {
+    gap: var(--s3);
+  }
+}

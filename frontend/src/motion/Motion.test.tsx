@@ -55,6 +55,44 @@ describe('motion.module.css', () => {
   });
 });
 
+/**
+ * The same trap, checked across every stylesheet rather than this one.
+ *
+ * The block above is strict, and it can afford to be because this module owns
+ * nothing but entrances. Elsewhere the keyframes are a mix — ambient loops that
+ * return to their own start, a confetti float that ends invisible on purpose, a
+ * recording pulse — and holding all of them to "never write a `to` block" would
+ * need an exemption list longer than the rule, which is how a guard stops
+ * meaning anything.
+ *
+ * So this checks the narrow thing that is always a bug: **an element must not
+ * depend on reaching the end of an animation to become visible.** Flattening to
+ * 0.01ms is exactly what makes that fail, and it fails only for the people who
+ * asked for less motion, on whose machines nobody is looking.
+ */
+describe('every animated stylesheet', () => {
+  const sheets = import.meta.glob<string>('../**/*.module.css', { query: '?raw', import: 'default', eager: true });
+  const animated = Object.entries(sheets).filter(([, css]) => css.includes('@keyframes'));
+
+  it('found the stylesheets to check', () => {
+    // A glob that silently matches nothing would let every case below pass.
+    expect(animated.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it.each(animated)('%s never restores visibility in a "to" block', (_path, css) => {
+    for (const [name, body] of Object.entries(keyframes(css))) {
+      const tail = /(?:^|\})\s*(?:to|100%)\s*\{([^}]*)\}/.exec(body);
+      if (!tail) continue;
+      expect(
+        tail[1],
+        `@keyframes ${name} reaches full opacity only at its end — under prefers-reduced-motion ` +
+          'that frame never arrives and the element stays invisible. Put the visible state in the ' +
+          'plain CSS and animate *from* the hidden one.'
+      ).not.toMatch(/opacity\s*:\s*1\b|visibility\s*:\s*visible/);
+    }
+  });
+});
+
 describe('useArrivals', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

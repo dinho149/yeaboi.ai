@@ -120,6 +120,9 @@ dev-board: ## Seeded retro board on :5173 for front-end development (prints the 
 dev-poker: ## Seeded planning-poker board on :5273 for front-end development
 	$(UV) run python scripts/dev_poker.py
 
+dev-deck: ## Seeded reporting slide deck on :5373 for front-end development
+	$(UV) run python scripts/dev_deck.py
+
 build: ## Build sdist + wheel into dist/
 	$(UV) build
 
