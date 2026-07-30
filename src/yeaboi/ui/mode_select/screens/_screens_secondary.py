@@ -4904,6 +4904,15 @@ _TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content col
 # pairs whose values (URLs, model names) are longer than Usage's counters.
 _SETTINGS_MIN_BOX_W = 38
 _SETTINGS_MAX_COLS = 2
+# The focused value is marked by a full-width bar behind the row rather than a
+# leading glyph: a marker needs a gutter on EVERY row to avoid text jumping when
+# focus lands, and that gutter reads as a stray indent inside an already-indented
+# box. A background stripe costs no columns.
+_SETTINGS_FOCUS_BG = "rgb(44,52,68)"
+# Rows a short column may gain so its bottom border lines up with the tall one.
+# Beyond this the stretch reads as padding rather than alignment, so the leftover
+# is simply left as space below the column.
+_SETTINGS_MAX_STRETCH = 2
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -5106,14 +5115,13 @@ def _build_settings_screen(
     box_fields: list[list[tuple[str, str, bool]]] = []
     _cur: list = []
     _cur_fields: list[tuple[str, str, bool]] = []
-    _cur_w = col_w - 6  # inner text width available to the open section
+    _cur_w = col_w - 4  # inner text width available to the open section
 
     def _heading(text: str, *, wide: bool = False) -> None:
         """Open a new section box — its heading is drawn as the box title."""
         nonlocal _cur, _cur_fields, _cur_w
         _cur, _cur_fields = [], []
-        # borders (2) + padding (2) + the 2-col selection gutter every row carries.
-        _cur_w = (full_w if wide else col_w) - 6
+        _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
         sections.append((text, _cur, wide))
         box_fields.append(_cur_fields)
 
@@ -5124,10 +5132,7 @@ def _build_settings_screen(
         # give the box an unpredictable height and break the grid.
         _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
         r = _EditableRow("", **_kw) if env else Text("", **_kw)
-        # Every row carries a 2-column marker gutter — always present, so focusing a
-        # box doesn't shift its text sideways. Read-only rows keep it blank.
         _focused = bool(env) and len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
-        r.append("\u25b8 " if _focused else "  ", style=theme.accent_bright if _focused else theme.dim)
         r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
         if editing is not None and env and editing[0] == env:
             # This row is being edited in place: show the buffer with a block cursor.
@@ -5148,6 +5153,11 @@ def _build_settings_screen(
             r.append(str(value), style=value_style or theme.value)
         else:
             r.append("not set", style=theme.dim)
+        if _focused:
+            # Pad out to the box's inner width so the stripe runs the full row —
+            # the span styles only set colours, so this base style shows through.
+            r.append(" " * max(0, _cur_w - r.cell_len))
+            r.style = f"on {_SETTINGS_FOCUS_BG}"
         if env:
             r.env, r.label, r.masked = env, label, masked
             _cur_fields.append((env, label, masked))
@@ -5169,11 +5179,11 @@ def _build_settings_screen(
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         _cur.append(link)
-        scope = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
+        scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
         _cur.append(scope)
@@ -5354,6 +5364,24 @@ def _build_settings_screen(
             _cols[_j].append(_sec)
         _cols = [c for c in _cols if c]  # a column can stay empty when sections < n_cols
 
+        # Even the columns out: a short column shares the shortfall between its
+        # boxes (up to _SETTINGS_MAX_STRETCH rows each) so the block reads as one
+        # tidy rectangle instead of ragged stacks ending at different depths.
+        _natural = [sum(len(_r) + 2 for _, _, _r, _ in c) + len(c) - 1 for c in _cols]
+        _target = max(_natural)
+        _stretch: list[dict[int, int]] = []
+        for _c, _nat in zip(_cols, _natural, strict=True):
+            _gain: dict[int, int] = {}
+            _left = min(_target - _nat, _SETTINGS_MAX_STRETCH * len(_c))
+            _i = 0
+            while _left > 0:  # round-robin, so no single box absorbs the whole gap
+                _bi = _c[_i % len(_c)][0]
+                if _gain.get(_bi, 0) < _SETTINGS_MAX_STRETCH:
+                    _gain[_bi] = _gain.get(_bi, 0) + 1
+                    _left -= 1
+                _i += 1
+            _stretch.append(_gain)
+
         _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
         for _ in _cols:
             _grid.add_column(width=col_w, overflow="crop")
@@ -5367,7 +5395,7 @@ def _build_settings_screen(
                 if _stack:
                     _stack.append(Text(""))  # one blank line between stacked boxes
                     _off += 1
-                _h = len(_r) + 2
+                _h = len(_r) + 2 + _stretch[_j].get(_bi, 0)
                 _stack.append(_section_box(_t, _r, _h, col_w, focused=(_bi == sel_box)))
                 _mark(_base + _off, _cs + 1, _cs + col_w - 2, _bi, _r, _h)
                 _off += _h

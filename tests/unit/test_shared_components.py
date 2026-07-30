@@ -546,14 +546,31 @@ class TestSettingsScreen:
         assert len(panel._box_cols) == 1
         assert not any("Storage" in ln and "Daily Standup" in ln for ln in out.splitlines())
 
-    def test_focused_section_and_value_are_marked(self):
-        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+    def test_focused_value_gets_a_full_width_bar(self):
+        # Focus is a background stripe, not a leading glyph — a marker would need a
+        # gutter on every row, which reads as a stray indent inside the box.
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _SETTINGS_FOCUS_BG,
+            _build_settings_screen,
+        )
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=4, sel_field=1)
-        out = self._text(panel, width=130, height=44)
-        marked = [ln for ln in out.splitlines() if "▸" in ln]
-        assert len(marked) == 1  # exactly one value carries the marker
-        assert "Session Prune Days" in marked[0]
+        rows = self._segments(panel, width=130, height=44)
+        barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
+        assert len(barred) == 1  # exactly one value is highlighted
+        line = "".join(s.text for s in barred[0])
+        assert "Session Prune Days" in line
+        # The stripe runs the whole inner width, so it reads as a bar not a smear.
+        lit = sum(s.cell_length for s in barred[0] if _SETTINGS_FOCUS_BG in str(s.style))
+        assert lit > 30
+
+    def test_rows_sit_flush_against_the_box_padding(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        line = next(ln for ln in self._text(panel, width=130, height=44).splitlines() if "Data Directory" in ln)
+        # One space between the box border and the label — no marker gutter.
+        assert "│ Data Directory" in line
 
     def test_navigation_map_is_published(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -566,18 +583,31 @@ class TestSettingsScreen:
         assert "LOG_LEVEL" in envs and "AWS_REGION" in envs
         assert "_config_path" not in envs  # read-only rows aren't navigable
 
-    def test_boxes_are_not_padded_to_a_shared_height(self):
-        # The columns stack naturally-sized boxes rather than padding every box in a
-        # row up to the tallest: a one-row section closes on the very next line.
-        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+    def test_boxes_keep_their_own_height_and_the_columns_end_level(self):
+        # Boxes are sized to their content (a one-row section is not padded up to
+        # its six-row neighbour), but a short column shares the shortfall between
+        # its boxes so both columns finish on the same line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _SETTINGS_MAX_STRETCH,
+            _build_settings_screen,
+        )
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
         lines = self._text(panel, width=130, height=44).splitlines()
         i = next(n for n, ln in enumerate(lines) if "Data Directory" in ln)
-        # Storage holds exactly one row, so its bottom border is the next line —
-        # even though Daily Standup, beside it, runs six rows deep.
-        assert "╰" in lines[i + 1][:60]
-        assert "Daily Standup" in lines[i - 1]  # they really are side by side
+        assert "Daily Standup" in lines[i - 1]  # side by side
+        # Storage holds one row, so it closes within the stretch allowance of it.
+        closes = next(n for n, ln in enumerate(lines[i:], i) if "╰" in ln[:60])
+        assert closes - i <= 1 + _SETTINGS_MAX_STRETCH
+
+        # Both columns' last bottom border lands on the same rendered row. Column 0
+        # is the page frame's own border, so box borders start past it.
+        def _closes(ln, lo, hi):
+            return any(ch == "╰" and lo <= i < hi for i, ch in enumerate(ln))
+
+        last_left = max(n for n, ln in enumerate(lines) if _closes(ln, 3, 60))
+        last_right = max(n for n, ln in enumerate(lines) if _closes(ln, 60, len(ln)))
+        assert last_left == last_right
 
     def test_wide_sections_stack_below_the_columns(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -596,10 +626,14 @@ class TestSettingsScreen:
             {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=4, sel_field=0
         )
         assert meta["scroll"] > 0
-        # Notion is the last section; its focused row (marker and all) is on screen.
-        out = self._text(panel, width=130, height=22)
-        assert "╭─ Notion" in out
-        assert any("▸" in ln and "Token" in ln for ln in out.splitlines())
+        # Notion is the last section; its focused row (highlight and all) is on screen.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_FOCUS_BG
+
+        assert "╭─ Notion" in self._text(panel, width=130, height=22)
+        barred = [
+            r for r in self._segments(panel, width=130, height=22) if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)
+        ]
+        assert barred and "Token" in "".join(s.text for s in barred[0])
 
     def test_editing_a_long_value_keeps_the_cursor_visible(self):
         # The buffer is windowed to the box width, so typing past the right edge
@@ -646,6 +680,17 @@ class TestSettingsScreen:
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
         return buf.getvalue()
+
+    @staticmethod
+    def _segments(panel, *, width: int, height: int) -> list:
+        """Render to styled segment rows — the focus bar is a background colour,
+        so it can only be asserted on styles, never on the plain text."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        con = Console(file=StringIO(), width=width, height=height, force_terminal=True, color_system="truecolor")
+        return con.render_lines(panel, con.options, pad=True)
 
     @staticmethod
     def _text(panel, *, width: int, height: int) -> str:
