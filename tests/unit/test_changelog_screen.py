@@ -67,16 +67,12 @@ class TestBuildChangelogScreen:
         out = _render(_build_changelog_screen(_entries(), width=100, height=40))
         assert "analysis" in out
 
-    def test_copy_hint_and_message(self):
-        # The Copy/Back button row was replaced by a keyboard hint (c copy · Esc back).
-        out = _render(
-            _build_changelog_screen(
-                _entries(), width=100, height=40, actions=["Copy", "Back"], message="Copied to clipboard"
-            )
-        )
-        assert "copy" in out
-        assert "Copied to clipboard" in out
-        assert "settings" in out
+    def test_status_message_rendered(self):
+        # The Copy/Back button row became a keyboard hint and then went entirely;
+        # the message channel above the entries stays (used by other callers).
+        out = _render(_build_changelog_screen(_entries(), width=100, height=40, message="Nothing to see here"))
+        assert "Nothing to see here" in out
+        assert "settings" in out  # the area tags still render below it
 
     def test_empty_entries_placeholder(self):
         out = _render(_build_changelog_screen([], width=80, height=24))
@@ -96,12 +92,11 @@ class TestBuildChangelogScreen:
         assert isinstance(panel, Panel)
         assert len(_render(panel, width=80, height=24).splitlines()) == 24
 
-    def test_copy_hint_present(self):
-        # The action row is a keyboard hint; 'Esc back' was dropped once the
-        # app-wide back tab covered going back, leaving the copy hint. (Entry
-        # text can contain "back", so only the copy hint is asserted here.)
-        out = _render(_build_changelog_screen(_entries(), width=100, height=40, actions=["Copy", "Back"]))
-        assert "copy" in out
+    def test_no_action_row(self):
+        # Nothing to act on: 'Esc back' went when the app-wide back tab covered
+        # going back, and Copy followed it. Read-only page, no hints of its own.
+        out = _render(_build_changelog_screen(_entries(), width=100, height=40))
+        assert "copy" not in out.lower()
 
     def test_scroll_meta_published(self):
         meta: dict = {}

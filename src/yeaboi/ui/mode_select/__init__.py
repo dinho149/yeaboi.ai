@@ -3035,56 +3035,41 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     )
     scroll = 0
     _scroll_meta: dict = {}
-    actions = ["Copy", "Back"]
-    sel = 0
     message = ""
-    anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
-
-    _last_panel = None  # most recently rendered panel, for click hit-testing
+    anim_start = time.monotonic()  # typewriter subtitle clock
 
     def _render() -> None:
-        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # One-row safety margin — same as the other pages (see _run_standup_page).
-        _last_panel = _build_changelog_screen(
-            entries,
-            update_status=update_status,
-            scroll_offset=scroll,
-            scroll_meta=_scroll_meta,
-            width=w,
-            height=max(10, h - 1),
-            action_sel=sel,
-            shimmer_tick=elapsed,
-            sub_reveal=elapsed * _HEADER_SUB_SPEED,
-            actions=actions,
-            message=message,
+        live.update(
+            _build_changelog_screen(
+                entries,
+                update_status=update_status,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                # No shimmer clock: the title's travelling highlight reads as a
+                # loader on a page that has nothing to load, so it stays solid.
+                shimmer_tick=None,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                message=message,
+            )
         )
-        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        _clicked = parse_click(k)
-        if _clicked is not None:
-            if _last_panel is None:
-                continue
-            # actions = ["Copy", "Back"]; map the clicked button to its shortcut key.
-            _idx = button_click(console, _last_panel, *_clicked, actions)
-            if _idx is None:
-                continue  # click missed the buttons — ignore it
-            k = "c" if _idx == 0 else "esc"
+        # Read-only page with no buttons of its own — a click has nothing to hit
+        # here (the app-wide chrome tabs are handled by the shared input layer).
+        if parse_click(k) is not None:
+            continue
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k in ("c", "C"):
-            from yeaboi.changelog import build_changelog_text
-            from yeaboi.clipboard import copy_markdown_status
-
-            logger.info("changelog: Copy pressed")
-            message = copy_markdown_status(build_changelog_text(entries))
         elif k in ("esc", "q"):
             break
         _render()
@@ -3211,7 +3196,9 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
                 scroll_meta=_scroll_meta,
                 width=w,
                 height=max(10, h - 1),
-                shimmer_tick=elapsed,
+                # No shimmer clock — the travelling title highlight reads as a
+                # loader, and this page is a form, not a wait (see the changelog).
+                shimmer_tick=None,
                 sub_reveal=elapsed * _HEADER_SUB_SPEED,
                 border_style=border_style,
             )

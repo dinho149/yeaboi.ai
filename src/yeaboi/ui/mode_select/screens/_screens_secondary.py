@@ -2825,7 +2825,6 @@ def _build_changelog_screen(
     action_sel: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
-    actions: list[str] | None = None,
     message: str = "",
 ) -> Panel:
     """Build the Changelog page: per-version AI-written notes with area tags.
@@ -2946,11 +2945,6 @@ def _build_changelog_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
-    hint = Text(_PAD + "  ", justify="left")
-    if actions and "Copy" in actions:
-        hint.append("c", style=theme.accent)
-        hint.append("  copy", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
-
     content = Group(
         Text(""),
         title,
@@ -2959,8 +2953,8 @@ def _build_changelog_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        hint,
-        Text(""),  # keeps the hint above the music pocket band
+        Text(""),  # the copy hint used to sit here; kept blank to hold the layout
+        Text(""),  # keeps the content above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
