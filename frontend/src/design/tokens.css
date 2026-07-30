@@ -46,11 +46,32 @@
   --fs-m: 15px;
   --fs-l: 17px;
   --fs-xl: 21px;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  /* The "numbers voice": every value, count, key and readout is mono, prose is
-     sans. Poker already declared this for its deck; it is universal now, and
-     it is the one genuinely distinctive thing about how these pages read. */
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /*
+   * Mono is the structure; sans is only what a human typed.
+   *
+   * The usual hierarchy, inverted. Column heads, counts, timestamps, names,
+   * buttons, labels and the join code are all mono — the proportional face is
+   * reserved for prose someone actually wrote (a card, a ticket description, a
+   * report body). This is true to a terminal product and it costs nothing.
+   *
+   * Geist and JetBrains Mono are named first because they are yeaboi.ai's
+   * faces, so anyone who has them installed gets an exact match with the site.
+   * They are NOT downloaded: the site pulls them from Google Fonts, which these
+   * bundles cannot do — the tunnel CSP forbids it and exports open over
+   * file://. Everyone else falls through to the system stack, which is what the
+   * scale below is measured against. Inlining a woff2 subset later is a change
+   * to these two lines and nothing else (~40-60 KB per page, on all ten exports
+   * too, which is why it was not done by default).
+   */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* Tracking for the two mono registers. Labels are set uppercase and wide so
+     they read as furniture rather than content; the eyebrow is wider still.
+     Both are lifted from yeaboi.ai (site.css `.eyebrow`, `.brand`). */
+  --track-label: 0.14em;
+  --track-eyebrow: 0.16em;
 
   /* ── Elevation ──────────────────────────────────────────────────── */
   --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
@@ -62,6 +83,9 @@
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
   --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  /* The hairline one step up, for a divider that has to survive on --panel.
+     Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
+  --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
   --focus: var(--accent2);
 
   /* Themed confetti. This was a hardcoded array of six hex literals in *both*
@@ -108,11 +132,61 @@
   --tap-min: 24px;
 }
 
-/* Per-mode accent, layered *after* the theme blocks as an override rather than
-   forked into a second set of five palettes. Retro and poker each keep their
-   identity while sharing one set of themes. */
-[data-mode="retro"] { --accent: #50bebe; }
-[data-mode="poker"] { --accent: #5ac88a; }
+/*
+ * Per-mode accent — the only hue that varies.
+ *
+ * Layered *after* the theme blocks as an override rather than forked into a
+ * second set of five palettes, so each mode keeps its identity while sharing
+ * one set of themes.
+ *
+ * Every value is the TUI's own theme accent, verbatim from
+ * `ui/shared/_components.py` (`RETRO_THEME`, `POKER_THEME`, …), which
+ * `docs/assets/site.css` already mirrors as `--m-*`. That makes the terminal,
+ * the marketing site and the tunnel page agree for the first time. Poker was
+ * `#5ac88a` here, a green that matched neither its TUI theme (gold) nor
+ * anything else in the product; it is the TUI's `rgb(230,200,70)` now.
+ *
+ * Four of the eight are the TUI hex verbatim. The other four are lifted by the
+ * smallest amount that clears 4.5:1, hue and saturation untouched — Solarized's
+ * `--panel` (#073642) is much lighter than its `--bg`, and a mid-tone accent
+ * that reads fine on the background disappears on a chip. Same treatment, and
+ * the same reason, as the Solarized/Forest lifts in palette.css.
+ *
+ * `theme.test.ts` measures all eight against all five themes on all three
+ * surfaces, plus `--ink` on each. Do not hand-edit a value here without
+ * re-running it.
+ */
+[data-mode="retro"]       { --accent: #50bebe; }  /* TUI RETRO_THEME, unchanged */
+[data-mode="poker"]       { --accent: #e6c846; }  /* TUI POKER_THEME, unchanged */
+[data-mode="analysis"]    { --accent: #64b464; }  /* TUI default accent, unchanged */
+[data-mode="usage"]       { --accent: #dcab4a; }  /* TUI USAGE_THEME, unchanged */
+[data-mode="reporting"]   { --accent: #9d8cea; }  /* lifted from #8c78e6 */
+[data-mode="standup"]     { --accent: #d17cc0; }  /* lifted from #c864b4 */
+[data-mode="planning"]    { --accent: #7d98e0; }  /* lifted from #6e8cdc */
+[data-mode="performance"] { --accent: #e07e6c; }  /* lifted from #dc6e5a */
+
+/*
+ * The same eight hues, rendered for a light surface.
+ *
+ * This fixes a live accessibility bug rather than preventing a future one: the
+ * mode accents are terminal colours, chosen to glow on near-black, and on the
+ * light theme they were being painted as text on white. Retro measured
+ * **2.09:1** — well under half the required ratio — on a board that is already
+ * shipping. Nothing surfaced it because the palette audit only ever measured a
+ * theme against its own accent, and a mode replaces that accent afterwards.
+ *
+ * Hue and saturation are identical to the dark rendition; only lightness moves,
+ * so the mode still reads as "the teal one" / "the gold one". Both attributes
+ * live on <html>, so this compound selector (0,2,0) wins over the block above.
+ */
+[data-theme="light"][data-mode="retro"]       { --accent: #2e7c7c; }
+[data-theme="light"][data-mode="poker"]       { --accent: #857012; }
+[data-theme="light"][data-mode="analysis"]    { --accent: #3d7f3d; }
+[data-theme="light"][data-mode="usage"]       { --accent: #926a1c; }
+[data-theme="light"][data-mode="reporting"]   { --accent: #735be1; }
+[data-theme="light"][data-mode="standup"]     { --accent: #b941a1; }
+[data-theme="light"][data-mode="planning"]    { --accent: #456bd2; }
+[data-theme="light"][data-mode="performance"] { --accent: #c9432b; }
 
 /* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
    never appears on a mouse click — the reason the boards had no focus styling
@@ -152,7 +226,7 @@
 @media print {
   :root, [data-theme] {
     --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
-    --muted: #656d76; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --muted: #656d76; --dim: #8c959f; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
     --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
     --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
   }

@@ -15,10 +15,19 @@ import { describe, expect, it } from 'vitest';
 // (that is what makes the preact aliases match the shipped bundle), and that
 // config targets a browser, where node builtins are externalized to a stub.
 import paletteCss from '../design/palette.css?raw';
-import { AA_TEXT, contrast, parsePalettes } from '../design/contrast';
+import tokensCss from '../design/tokens.css?raw';
+import {
+  AA_NON_TEXT,
+  AA_TEXT,
+  contrast,
+  effectiveAccent,
+  parseModeAccents,
+  parsePalettes,
+} from '../design/contrast';
 import { isTheme, nextTheme, THEME_PREVIEW, THEMES, type Theme } from './theme';
 
 const PALETTES = parsePalettes(paletteCss);
+const MODE_ACCENTS = parseModeAccents(tokensCss);
 
 /** Every token used as text or as a meaningful graphic on a surface. */
 const FOREGROUNDS = [
@@ -48,7 +57,7 @@ describe('palette.css', () => {
 
   it.each(THEMES)('%s defines every token the components reference', (theme) => {
     const tokens = PALETTES[theme] ?? {};
-    for (const token of [...FOREGROUNDS, ...SURFACES, 'ink', 'line']) {
+    for (const token of [...FOREGROUNDS, ...SURFACES, 'ink', 'line', 'dim']) {
       expect(tokens[token], `${theme} is missing --${token}`).toBeTruthy();
     }
   });
@@ -67,6 +76,21 @@ describe('WCAG contrast', () => {
     expect(ratio, `${theme}: --${fg} on --${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
+  it.each(THEMES)('%s: --dim clears the non-text floor but is never body text', (theme) => {
+    // --dim is the third text tier (yeaboi.ai's `--text-dim`), for furniture
+    // that must recede: a disabled hint, an inactive eyebrow, the dot pager.
+    // It is deliberately BELOW the 4.5:1 body-text floor, so auditing it with
+    // FOREGROUNDS would either fail or force it up until it stopped receding.
+    // 3:1 is the right bar, and pinning it here stops anyone quietly using it
+    // for a sentence.
+    const tokens = PALETTES[theme] as Record<string, string>;
+    const ratio = contrast(tokens['dim'] as string, tokens['bg'] as string);
+    expect(ratio, `${theme}: --dim on --bg is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    expect(ratio, `${theme}: --dim on --bg is ${ratio.toFixed(2)}:1 — that is body text, not dim`).toBeLessThan(
+      AA_TEXT
+    );
+  });
+
   it.each(THEMES)('%s: --ink is readable on a filled accent button', (theme) => {
     // The primary button is `background: var(--accent); color: var(--ink)`.
     // Nothing else in the palette pairs those two, so it needs its own case.
@@ -74,6 +98,55 @@ describe('WCAG contrast', () => {
     const ratio = contrast(tokens['ink'] as string, tokens['accent'] as string);
     expect(ratio, `${theme}: --ink on --accent is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_TEXT);
   });
+});
+
+describe('mode accents', () => {
+  // Every mode the TUI defines has to work on every theme, because the visitor
+  // picks the theme and the host picks the mode. This is the cross-product the
+  // palette audit above structurally cannot reach — and when it was first run
+  // it found retro's teal at 2.09:1 on the light theme, on a shipping board.
+  const modes = Object.keys(MODE_ACCENTS.base);
+
+  it('covers every mode the TUI themes', () => {
+    // Two-way against ui/shared/_components.py. A mode added there with no
+    // accent here silently inherits the theme's, which is how poker ended up
+    // green while its TUI theme was gold.
+    expect(modes.slice().sort()).toEqual(
+      ['analysis', 'performance', 'planning', 'poker', 'reporting', 'retro', 'standup', 'usage'].sort()
+    );
+  });
+
+  it('gives every mode a light-surface rendition', () => {
+    // Not optional: a mode with no light override falls back to its terminal
+    // hue and gets painted on white.
+    expect(Object.keys(MODE_ACCENTS.light).slice().sort()).toEqual(modes.slice().sort());
+  });
+
+  const cases = modes.flatMap((mode) =>
+    THEMES.flatMap((theme) => (['bg', 'panel', 'card'] as const).map((bg) => [mode, theme, bg] as const))
+  );
+
+  it.each(cases)('%s accent on %s --%s clears AA', (mode, theme, bg) => {
+    const tokens = PALETTES[theme] as Record<string, string>;
+    const accent = effectiveAccent(MODE_ACCENTS, mode, theme);
+    const ratio = contrast(accent, tokens[bg] as string);
+    expect(ratio, `${mode} on ${theme} --${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it.each(modes.flatMap((mode) => THEMES.map((theme) => [mode, theme] as const)))(
+    '%s accent on %s takes --ink legibly',
+    (mode, theme) => {
+      // The primary button is `background: var(--accent); color: var(--ink)`,
+      // and --ink comes from the theme while --accent comes from the mode, so
+      // neither block on its own can be checked for this.
+      const tokens = PALETTES[theme] as Record<string, string>;
+      const accent = effectiveAccent(MODE_ACCENTS, mode, theme);
+      const ratio = contrast(tokens['ink'] as string, accent);
+      expect(ratio, `${mode}/${theme}: --ink on the accent is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+        AA_TEXT
+      );
+    }
+  );
 });
 
 describe('THEME_PREVIEW', () => {

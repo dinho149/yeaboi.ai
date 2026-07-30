@@ -1,0 +1,118 @@
+/*
+ * The liveness layer.
+ *
+ * The boards had no motion at all. That reads as a stylistic gap and is
+ * actually a functional one: the single thing a live board has to communicate
+ * is that it is live, and a peer's card blinking into existence is
+ * indistinguishable from a page that re-rendered for some other reason. These
+ * four moments — arrive, leave, someone-is-typing, count-changed — are the
+ * whole vocabulary, and the restraint is deliberate. Scatter more and it stops
+ * meaning anything.
+ *
+ * ═══ THE RULE FOR EVERY ENTER ANIMATION IN THIS CODEBASE ═══
+ *
+ * Animate **from** a start state. The end state must be the plain CSS default,
+ * with no keyframe needed to reach it.
+ *
+ * tokens.css sets `animation-duration: 0.01ms !important` globally under
+ * `prefers-reduced-motion: reduce`. That is the behaviour we want — it
+ * neutralises motion without deleting the outcome — but it only works if the
+ * resting appearance is what the element has *without* the animation. Write it
+ * the other way round (`to { opacity: 1 }` on an element that is `opacity: 0`
+ * at rest) and reduced-motion visitors get a card that flashes and vanishes.
+ *
+ * So: `from { opacity: 0; transform: … }` and no `to` block. `Motion.test.ts`
+ * checks every keyframe here for it.
+ */
+
+/* ── 1. A peer's card arrived ─────────────────────────────────────────
+   Two parts: the card takes its place, then an accent edge decays over ~700ms
+   so a facilitator who was looking elsewhere can still find it. Applied ONLY to
+   cards that arrived over the wire — your own card must feel instant, and
+   animating it makes your own typing feel laggy. */
+.enter {
+  animation: enter var(--dur-base) var(--ease) both;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+.arrived {
+  animation: arrived 700ms var(--ease) both;
+}
+@keyframes arrived {
+  from {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 18px -4px var(--accent);
+  }
+}
+
+/* ── 2. A card left ───────────────────────────────────────────────────
+   The one place a `to` block is correct: there is no resting state to preserve
+   because the element is being removed. Callers must keep the node mounted for
+   the duration — see `useDeparture`. */
+.leave {
+  animation: leave 140ms var(--ease) both;
+  pointer-events: none;
+  overflow: hidden;
+}
+@keyframes leave {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+    max-height: 0;
+    margin-block: 0;
+    padding-block: 0;
+  }
+}
+
+/* ── 3. Someone is typing ─────────────────────────────────────────────
+   The server has always tracked this; it was rendered as a line of text in the
+   toolbar, nowhere near where the card was about to appear. A placeholder in
+   the destination column says the same thing in the place it matters. */
+.ghost {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--dim);
+  animation: ghost-breathe 1.8s ease-in-out infinite;
+}
+@keyframes ghost-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ── 4. A count changed ───────────────────────────────────────────────
+   The smallest of the four, and the one that carries a number rather than an
+   event: a column head whose figure ticks tells you *which* column moved
+   without you having to have been watching it. */
+.tick {
+  animation: tick var(--dur-base) var(--ease) both;
+}
+@keyframes tick {
+  from {
+    transform: translateY(-0.45em);
+    opacity: 0;
+    color: var(--accent);
+  }
+}
+
+/* The counter itself. Tabular so digits do not shift sideways as they change —
+   that jitter is what makes an unstyled live counter look cheap. */
+.ticker {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

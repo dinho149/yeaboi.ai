@@ -102,16 +102,48 @@ class TestNoEval:
 class TestOnePaletteSource:
     """The five themes were hand-copied into three files and drifted. Never again."""
 
+    # A `[data-theme="x"][data-mode="y"]` rule that sets nothing but `--accent`.
+    #
+    # This is the one legitimate reason to name a theme outside palette.css, and
+    # it exists because the mode accents are the TUI's terminal colours: tuned to
+    # glow on near-black, and unreadable painted as text on the light theme
+    # (retro's teal measured 2.09:1 there). The fix is a darker rendition of the
+    # *same hue* per mode — which is a one-token override, not a sixth palette.
+    #
+    # Kept this tight on purpose. Allowing the compound selector alone would let
+    # a whole palette in through the side door; requiring the body to be exactly
+    # one `--accent` declaration means the only thing that fits is the thing this
+    # was opened for.
+    _MODE_ACCENT_RULE = re.compile(
+        r'\[data-theme="\w+"\]\[data-mode="\w+"\]\s*\{\s*--accent\s*:\s*[^;{}]+;?\s*\}',
+    )
+
     def test_theme_blocks_exist_only_in_palette_css(self):
-        stylesheets = _sources(".css")
-        offenders = [
-            _rel(p)
-            for p in stylesheets
-            if p.name != "palette.css" and re.search(r'\[data-theme="\w+"\]', p.read_text())
-        ]
-        # tokens.css may reference bare `[data-theme]` for the print override —
-        # that is a selector over *any* theme, not a redefinition of one.
+        offenders = []
+        for path in _sources(".css"):
+            if path.name == "palette.css":
+                continue
+            # tokens.css may reference bare `[data-theme]` for the print override
+            # — that is a selector over *any* theme, not a redefinition of one —
+            # and may carry theme-scoped mode accents, which are stripped first.
+            remaining = self._MODE_ACCENT_RULE.sub("", path.read_text())
+            if re.search(r'\[data-theme="\w+"\]', remaining):
+                offenders.append(_rel(path))
         assert offenders == [], f"palettes must live only in design/palette.css: {offenders}"
+
+    def test_every_mode_accent_has_a_light_rendition(self):
+        """A mode with no light override gets its terminal hue painted on white.
+
+        The dark-surface accents are `[data-mode="x"]`; the light ones are the
+        compound rule above. Mirrors the same assertion in `theme.test.ts`,
+        which additionally measures them — this half exists so the Python lane
+        catches a missing pair without needing Node.
+        """
+        css = (FRONTEND / "design" / "tokens.css").read_text()
+        dark = set(re.findall(r'(?<!\])\[data-mode="(\w+)"\]\s*\{[^}]*--accent', css))
+        light = set(re.findall(r'\[data-theme="light"\]\[data-mode="(\w+)"\]', css))
+        assert dark, "no [data-mode] accents found — the regex has rotted"
+        assert dark == light, f"modes missing a light-surface accent: {sorted(dark - light)}"
 
     def test_component_styles_use_tokens_not_literal_colours(self):
         """Component CSS may not hardcode a colour: it would not follow the theme.

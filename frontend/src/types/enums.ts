@@ -54,3 +54,64 @@ export type Avatars = (typeof AVATARS)[number];
 /** Planning-poker card values, in deck order. */
 export const POKER_DECK = ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"] as const;
 export type PokerDeck = (typeof POKER_DECK)[number];
+
+/**
+ * The two-line block font, one entry per character: `[top, bottom]`.
+ *
+ * Mirrors `ui/shared/_ascii_font.py`, which is what the TUI sets every mode
+ * title in. Rendered by `<Wordmark>`; characters absent here become gaps,
+ * exactly as `render_ascii_text()` does.
+ */
+export const BLOCK_GLYPHS: Record<string, readonly [string, string]> = {
+  "A": ["▄▀█", "█▀█"],
+  "B": ["█▀▄", "█▄█"],
+  "C": ["█▀▀", "█▄▄"],
+  "D": ["█▀▄", "█▄▀"],
+  "E": ["█▀▀", "██▄"],
+  "F": ["█▀▀", "█▀░"],
+  "G": ["█▀▀", "█▄█"],
+  "H": ["█░█", "█▀█"],
+  "I": ["█", "█"],
+  "J": ["░░█", "█▄█"],
+  "K": ["█▄▀", "█░█"],
+  "L": ["█░░", "█▄▄"],
+  "M": ["█▀▄▀█", "█░▀░█"],
+  "N": ["█▄░█", "█░▀█"],
+  "O": ["█▀█", "█▄█"],
+  "P": ["█▀█", "█▀▀"],
+  "Q": ["█▀█", "█▄▀"],
+  "R": ["█▀█", "█▀▄"],
+  "S": ["█▀", "▄█"],
+  "T": ["▀█▀", "░█░"],
+  "U": ["█░█", "█▄█"],
+  "V": ["█░█", "▀▄▀"],
+  "W": ["█░█░█", "▀▄▀▄▀"],
+  "X": ["▀▄▀", "█░█"],
+  "Y": ["█▄█", "░█░"],
+  "Z": ["▀█", "█▄"],
+  " ": ["░", "░"],
+  "0": ["█▀█", "█▄█"],
+  "1": ["▄█", "░█"],
+  "2": ["▀▀█", "█▄▄"],
+  "3": ["▀▀█", "▄▄█"],
+  "4": ["█░█", "░▀█"],
+  "5": ["█▀▀", "▄▄█"],
+  "6": ["█▀▀", "█▄█"],
+  "7": ["▀▀█", "░░█"],
+  "8": ["█▀█", "█▄█"],
+  "9": ["█▀█", "▀▀█"],
+};
+
+/**
+ * `render_ascii_text()` output, straight from Python.
+ *
+ * Asserted by `Wordmark.test.tsx` so the TS renderer cannot drift from the
+ * terminal's. Not for runtime use.
+ */
+export const WORDMARK_SAMPLES: Record<string, readonly [string, string]> = {
+  "retro": ["█▀█ █▀▀ ▀█▀ █▀█ █▀█", "█▀▄ ██▄ ░█░ █▀▄ █▄█"],
+  "poker": ["█▀█ █▀█ █▄▀ █▀▀ █▀█", "█▀▀ █▄█ █░█ ██▄ █▀▄"],
+  "yeaboi": ["█▄█ █▀▀ ▄▀█ █▀▄ █▀█ █", "░█░ ██▄ █▀█ █▄█ █▄█ █"],
+  "sprint 42": ["█▀ █▀█ █▀█ █ █▄░█ ▀█▀ ░ █░█ ▀▀█", "▄█ █▀▀ █▀▄ █ █░▀█ ░█░ ░ ░▀█ █▄▄"],
+  "n/a": ["█▄░█    ▄▀█", "█░▀█    █▀█"],
+};

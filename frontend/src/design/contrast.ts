@@ -76,3 +76,43 @@ export function parsePalettes(css: string): Record<string, Record<string, string
   }
   return out;
 }
+
+/**
+ * Extract the `[data-mode="…"] { --accent: … }` overrides from tokens.css.
+ *
+ * The palette audit cannot see these: a mode replaces `--accent` *after* the
+ * theme block, so what a retro board actually paints is midnight's surfaces
+ * with retro's teal — a pairing that appears in no single palette block. Eight
+ * modes times five themes is where an unreadable button hides, and did.
+ *
+ * Returns the two rungs separately. `base` applies to every theme; `light` is
+ * the `[data-theme="light"][data-mode="…"]` compound, which is a darker
+ * rendition of the same hue and wins on specificity. Parsing them into one map
+ * would silently let the light value stand in for the dark one, since it comes
+ * later in the file — exactly the kind of quiet overwrite this audit exists to
+ * catch.
+ */
+export interface ModeAccents {
+  base: Record<string, string>;
+  light: Record<string, string>;
+}
+
+export function parseModeAccents(css: string): ModeAccents {
+  const base: Record<string, string> = {};
+  const light: Record<string, string> = {};
+  const re = /(\[data-theme="(\w+)"\])?\[data-mode="(\w+)"\][^{]*\{[^}]*?--accent\s*:\s*(#[0-9a-fA-F]{3,8})/g;
+  for (let m = re.exec(css); m !== null; m = re.exec(css)) {
+    const theme = m[2];
+    const mode = m[3] as string;
+    const hex = m[4] as string;
+    if (theme === undefined) base[mode] = hex;
+    else if (theme === 'light') light[mode] = hex;
+  }
+  return { base, light };
+}
+
+/** The `--accent` a given (mode, theme) pair actually resolves to. */
+export function effectiveAccent(accents: ModeAccents, mode: string, theme: string): string {
+  const override = theme === 'light' ? accents.light[mode] : undefined;
+  return override ?? (accents.base[mode] as string);
+}

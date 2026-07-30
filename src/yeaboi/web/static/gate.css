@@ -33,17 +33,27 @@
  * Palette switching is pure custom-property swaps on [data-theme] — see
  * runtime/theme.ts. Nothing here may depend on JS having run: the :root block
  * doubles as the default, so a page with no data-theme attribute still renders.
+ *
+ * `midnight` is the default and it is **yeaboi.ai's palette**, value for value
+ * (docs/assets/site.css `--bg`/`--bg-raised`/`--text`/`--text-muted`/`--text-dim`
+ * /`--success`/`--warn`). Before this it was GitHub-dark, so a teammate opening a
+ * tunnel link saw a page with no visible relationship to the product it came
+ * from. The other four are skins and keep their own character.
+ *
+ * The theme *keys* are a compatibility contract — they are server-validated
+ * (`RETRO_THEMES`), asserted by Python tests, and already persisted in people's
+ * localStorage. So `midnight` was re-cut in place rather than renamed.
  */
 
 :root, [data-theme="midnight"] {
-  --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#c9d1d9;
-  --muted:#8b949e; --accent:#50bebe; --accent2:#a371f7; --card:#0d1117; --ink:#04211f;
-  --ok:#3fb950; --warn:#d29922; --danger:#f85149; --info:#58a6ff;
-  --critical:#f85149; --high:#f0883e; --medium:#58a6ff; --low:#8b949e;
+  --bg:#0b0c0e; --panel:#111317; --line:#1e2023; --text:#e4e6e8;
+  --muted:#9aa0a8; --dim:#62676f; --accent:#6e8cdc; --accent2:#8c78e6; --card:#0b0c0e; --ink:#0b0c0e;
+  --ok:#59c07e; --warn:#dcab4a; --danger:#e5645a; --info:#6e8cdc;
+  --critical:#e5645a; --high:#dc8a4a; --medium:#6e8cdc; --low:#9aa0a8;
 }
 [data-theme="light"] {
   --bg:#f6f8fa; --panel:#ffffff; --line:#d0d7de; --text:#1f2328;
-  --muted:#656d76; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
+  --muted:#656d76; --dim:#7d8690; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
   --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; --info:#0969da;
   --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
 }
@@ -60,27 +70,43 @@
  */
 [data-theme="solarized"] {
   --bg:#002b36; --panel:#073642; --line:#0a4b59; --text:#eee8d5;
-  --muted:#93a1a1; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
+  --muted:#93a1a1; --dim:#6b8288; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
   --ok:#8ea300; --warn:#c29300; --danger:#e87775; --info:#48a0de;
   --critical:#e87775; --high:#eb794a; --medium:#48a0de; --low:#93a1a1;
 }
 [data-theme="synthwave"] {
   --bg:#1a1033; --panel:#241847; --line:#3d2a6b; --text:#f5e6ff;
-  --muted:#a48fd0; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
+  --muted:#a48fd0; --dim:#7e6aa8; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
   --ok:#3ddc97; --warn:#ffd166; --danger:#ff6b81; --info:#36e0ff;
   --critical:#ff6b81; --high:#ff9e64; --medium:#36e0ff; --low:#a48fd0;
 }
 [data-theme="forest"] {
   --bg:#0c1a12; --panel:#12261b; --line:#1f3a2a; --text:#d7e8dc;
-  --muted:#89a894; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
+  --muted:#89a894; --dim:#5f7a69; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
   /* danger/critical lifted from #e5534b, which measured 4.30:1 on --panel. */
   --ok:#4cc38a; --warn:#d9c26a; --danger:#e65b53; --info:#6cb6ff;
   --critical:#e65b53; --high:#db9b4a; --medium:#6cb6ff; --low:#89a894;
 }
 
+/*
+ * The duck.
+ *
+ * Deliberately outside the theme blocks: the mascot is one fixed illustration,
+ * so its colours must not shift with the palette. Values are lifted from the
+ * TUI's own sprite (`ui/shared/_screensaver.py:_PALETTE`, keys "G" and "O"), so
+ * the terminal duck, the docs duck and the tunnel duck are literally the same
+ * bird. Before this the mascot's green appeared in no palette at all, which is
+ * why it never looked like it belonged to the page it sat on.
+ *
+ * Not used to paint the sprite itself — that is a PNG. These tint the things
+ * that belong to it: the perch, the speech bubble edge, the offline "asleep"
+ * marker.
+ */
+:root { --duck:#2aaa69; --bill:#ffa50f; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -94,7 +120,7 @@ h2 { font-size: 1.15rem; margin: 0 0 0.9rem; }
 h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 p { margin: 0 0 0.75rem; }
 ul, ol { margin: 0 0 0.75rem; padding-left: 1.25rem; }
-code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.85em; }
 
 :root {
   /* ── Space ────────────────────────────────────────────────────────
@@ -119,11 +145,32 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   --fs-m: 15px;
   --fs-l: 17px;
   --fs-xl: 21px;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  /* The "numbers voice": every value, count, key and readout is mono, prose is
-     sans. Poker already declared this for its deck; it is universal now, and
-     it is the one genuinely distinctive thing about how these pages read. */
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /*
+   * Mono is the structure; sans is only what a human typed.
+   *
+   * The usual hierarchy, inverted. Column heads, counts, timestamps, names,
+   * buttons, labels and the join code are all mono — the proportional face is
+   * reserved for prose someone actually wrote (a card, a ticket description, a
+   * report body). This is true to a terminal product and it costs nothing.
+   *
+   * Geist and JetBrains Mono are named first because they are yeaboi.ai's
+   * faces, so anyone who has them installed gets an exact match with the site.
+   * They are NOT downloaded: the site pulls them from Google Fonts, which these
+   * bundles cannot do — the tunnel CSP forbids it and exports open over
+   * file://. Everyone else falls through to the system stack, which is what the
+   * scale below is measured against. Inlining a woff2 subset later is a change
+   * to these two lines and nothing else (~40-60 KB per page, on all ten exports
+   * too, which is why it was not done by default).
+   */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* Tracking for the two mono registers. Labels are set uppercase and wide so
+     they read as furniture rather than content; the eyebrow is wider still.
+     Both are lifted from yeaboi.ai (site.css `.eyebrow`, `.brand`). */
+  --track-label: 0.14em;
+  --track-eyebrow: 0.16em;
 
   /* ── Elevation ──────────────────────────────────────────────────── */
   --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
@@ -135,6 +182,9 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
   --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
   --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  /* The hairline one step up, for a divider that has to survive on --panel.
+     Same 14%-of-text formula yeaboi.ai uses for `--border-strong`. */
+  --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
   --focus: var(--accent2);
 
   /* Themed confetti. This was a hardcoded array of six hex literals in *both*
@@ -181,11 +231,61 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
   --tap-min: 24px;
 }
 
-/* Per-mode accent, layered *after* the theme blocks as an override rather than
-   forked into a second set of five palettes. Retro and poker each keep their
-   identity while sharing one set of themes. */
-[data-mode="retro"] { --accent: #50bebe; }
-[data-mode="poker"] { --accent: #5ac88a; }
+/*
+ * Per-mode accent — the only hue that varies.
+ *
+ * Layered *after* the theme blocks as an override rather than forked into a
+ * second set of five palettes, so each mode keeps its identity while sharing
+ * one set of themes.
+ *
+ * Every value is the TUI's own theme accent, verbatim from
+ * `ui/shared/_components.py` (`RETRO_THEME`, `POKER_THEME`, …), which
+ * `docs/assets/site.css` already mirrors as `--m-*`. That makes the terminal,
+ * the marketing site and the tunnel page agree for the first time. Poker was
+ * `#5ac88a` here, a green that matched neither its TUI theme (gold) nor
+ * anything else in the product; it is the TUI's `rgb(230,200,70)` now.
+ *
+ * Four of the eight are the TUI hex verbatim. The other four are lifted by the
+ * smallest amount that clears 4.5:1, hue and saturation untouched — Solarized's
+ * `--panel` (#073642) is much lighter than its `--bg`, and a mid-tone accent
+ * that reads fine on the background disappears on a chip. Same treatment, and
+ * the same reason, as the Solarized/Forest lifts in palette.css.
+ *
+ * `theme.test.ts` measures all eight against all five themes on all three
+ * surfaces, plus `--ink` on each. Do not hand-edit a value here without
+ * re-running it.
+ */
+[data-mode="retro"]       { --accent: #50bebe; }  /* TUI RETRO_THEME, unchanged */
+[data-mode="poker"]       { --accent: #e6c846; }  /* TUI POKER_THEME, unchanged */
+[data-mode="analysis"]    { --accent: #64b464; }  /* TUI default accent, unchanged */
+[data-mode="usage"]       { --accent: #dcab4a; }  /* TUI USAGE_THEME, unchanged */
+[data-mode="reporting"]   { --accent: #9d8cea; }  /* lifted from #8c78e6 */
+[data-mode="standup"]     { --accent: #d17cc0; }  /* lifted from #c864b4 */
+[data-mode="planning"]    { --accent: #7d98e0; }  /* lifted from #6e8cdc */
+[data-mode="performance"] { --accent: #e07e6c; }  /* lifted from #dc6e5a */
+
+/*
+ * The same eight hues, rendered for a light surface.
+ *
+ * This fixes a live accessibility bug rather than preventing a future one: the
+ * mode accents are terminal colours, chosen to glow on near-black, and on the
+ * light theme they were being painted as text on white. Retro measured
+ * **2.09:1** — well under half the required ratio — on a board that is already
+ * shipping. Nothing surfaced it because the palette audit only ever measured a
+ * theme against its own accent, and a mode replaces that accent afterwards.
+ *
+ * Hue and saturation are identical to the dark rendition; only lightness moves,
+ * so the mode still reads as "the teal one" / "the gold one". Both attributes
+ * live on <html>, so this compound selector (0,2,0) wins over the block above.
+ */
+[data-theme="light"][data-mode="retro"]       { --accent: #2e7c7c; }
+[data-theme="light"][data-mode="poker"]       { --accent: #857012; }
+[data-theme="light"][data-mode="analysis"]    { --accent: #3d7f3d; }
+[data-theme="light"][data-mode="usage"]       { --accent: #926a1c; }
+[data-theme="light"][data-mode="reporting"]   { --accent: #735be1; }
+[data-theme="light"][data-mode="standup"]     { --accent: #b941a1; }
+[data-theme="light"][data-mode="planning"]    { --accent: #456bd2; }
+[data-theme="light"][data-mode="performance"] { --accent: #c9432b; }
 
 /* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
    never appears on a mouse click — the reason the boards had no focus styling
@@ -225,7 +325,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 @media print {
   :root, [data-theme] {
     --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
-    --muted: #656d76; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --muted: #656d76; --dim: #8c959f; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
     --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
     --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
   }

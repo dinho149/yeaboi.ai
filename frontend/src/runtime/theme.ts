@@ -41,7 +41,7 @@ export const THEME_KEYS = {
  * every entry here matches, which fails the build if a palette changes.
  */
 export const THEME_PREVIEW: Record<Theme, { bg: string; accent: string }> = {
-  midnight: { bg: '#0d1117', accent: '#50bebe' },
+  midnight: { bg: '#0b0c0e', accent: '#6e8cdc' },
   light: { bg: '#f6f8fa', accent: '#0969da' },
   solarized: { bg: '#002b36', accent: '#2ca9a0' },
   synthwave: { bg: '#1a1033', accent: '#ff5edb' },

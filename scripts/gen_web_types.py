@@ -41,6 +41,7 @@ from yeaboi.retro.board import (
     RETRO_GRIDS,
     RETRO_THEMES,
 )
+from yeaboi.ui.shared._ascii_font import BLOCK_GLYPHS, render_ascii_text
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,61 @@ def _label_map(name: str, key_type: str, labels: Mapping[str, str], doc: str) ->
     return f"/** {doc} */\nexport const {name}: Record<{key_type}, string> = {{\n{body}}};\n"
 
 
+def _block_glyphs() -> str:
+    """Emit the two-line block font as a TS lookup table.
+
+    Generated rather than hand-copied for the same reason as the enums: this is
+    the product's display typeface, it is drawn character-by-character on both
+    sides, and a hand-maintained copy would let a letter the terminal renders
+    quietly render as a blank gap on the web.
+    """
+    rows = "".join(
+        f"  {json.dumps(ch)}: {json.dumps(lines, ensure_ascii=False)},\n" for ch, lines in BLOCK_GLYPHS.items()
+    )
+    return (
+        "/**\n"
+        " * The two-line block font, one entry per character: `[top, bottom]`.\n"
+        " *\n"
+        " * Mirrors `ui/shared/_ascii_font.py`, which is what the TUI sets every mode\n"
+        " * title in. Rendered by `<Wordmark>`; characters absent here become gaps,\n"
+        " * exactly as `render_ascii_text()` does.\n"
+        " */\n"
+        f"export const BLOCK_GLYPHS: Record<string, readonly [string, string]> = {{\n{rows}}};\n"
+    )
+
+
+# Words chosen to exercise every branch of the renderer, not to look nice:
+# two real mode names, the brand, digits, an inter-word space (which has its own
+# glyph), and a character with no glyph at all (the three-space gap fallback).
+_WORDMARK_SAMPLES = ("retro", "poker", "yeaboi", "sprint 42", "n/a")
+
+
+def _wordmark_samples() -> str:
+    """Emit Python's own `render_ascii_text` output for a few words.
+
+    The glyph table above is generated, so it cannot drift — but the *renderer*
+    is a dozen lines duplicated in `render_ascii_text()` and `renderWordmark()`,
+    and two implementations that each look correct in isolation is precisely how
+    the join-code wire format ended up broken with both sides' tests green.
+
+    So the expected values are produced by Python and asserted by TypeScript.
+    There is one artifact, it is generated, and `--check` keeps it fresh; a
+    renderer that diverges fails `Wordmark.test.tsx`, not a code review.
+    """
+    rows = "".join(
+        f"  {json.dumps(w)}: {json.dumps(render_ascii_text(w), ensure_ascii=False)},\n" for w in _WORDMARK_SAMPLES
+    )
+    return (
+        "/**\n"
+        " * `render_ascii_text()` output, straight from Python.\n"
+        " *\n"
+        " * Asserted by `Wordmark.test.tsx` so the TS renderer cannot drift from the\n"
+        " * terminal's. Not for runtime use.\n"
+        " */\n"
+        f"export const WORDMARK_SAMPLES: Record<string, readonly [string, string]> = {{\n{rows}}};\n"
+    )
+
+
 def render() -> str:
     """Build the full contents of enums.ts."""
     blocks = [
@@ -91,6 +147,8 @@ def render() -> str:
         _tuple_const("REACTION_EMOJIS", REACTION_EMOJIS, "The only emoji a card reaction may use."),
         _tuple_const("AVATARS", AVATARS, "Avatars a participant may choose."),
         _tuple_const("POKER_DECK", POKER_DECK, "Planning-poker card values, in deck order."),
+        _block_glyphs(),
+        _wordmark_samples(),
     ]
     return "\n".join(blocks)
 

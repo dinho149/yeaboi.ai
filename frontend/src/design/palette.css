@@ -10,17 +10,27 @@
  * Palette switching is pure custom-property swaps on [data-theme] — see
  * runtime/theme.ts. Nothing here may depend on JS having run: the :root block
  * doubles as the default, so a page with no data-theme attribute still renders.
+ *
+ * `midnight` is the default and it is **yeaboi.ai's palette**, value for value
+ * (docs/assets/site.css `--bg`/`--bg-raised`/`--text`/`--text-muted`/`--text-dim`
+ * /`--success`/`--warn`). Before this it was GitHub-dark, so a teammate opening a
+ * tunnel link saw a page with no visible relationship to the product it came
+ * from. The other four are skins and keep their own character.
+ *
+ * The theme *keys* are a compatibility contract — they are server-validated
+ * (`RETRO_THEMES`), asserted by Python tests, and already persisted in people's
+ * localStorage. So `midnight` was re-cut in place rather than renamed.
  */
 
 :root, [data-theme="midnight"] {
-  --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#c9d1d9;
-  --muted:#8b949e; --accent:#50bebe; --accent2:#a371f7; --card:#0d1117; --ink:#04211f;
-  --ok:#3fb950; --warn:#d29922; --danger:#f85149; --info:#58a6ff;
-  --critical:#f85149; --high:#f0883e; --medium:#58a6ff; --low:#8b949e;
+  --bg:#0b0c0e; --panel:#111317; --line:#1e2023; --text:#e4e6e8;
+  --muted:#9aa0a8; --dim:#62676f; --accent:#6e8cdc; --accent2:#8c78e6; --card:#0b0c0e; --ink:#0b0c0e;
+  --ok:#59c07e; --warn:#dcab4a; --danger:#e5645a; --info:#6e8cdc;
+  --critical:#e5645a; --high:#dc8a4a; --medium:#6e8cdc; --low:#9aa0a8;
 }
 [data-theme="light"] {
   --bg:#f6f8fa; --panel:#ffffff; --line:#d0d7de; --text:#1f2328;
-  --muted:#656d76; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
+  --muted:#656d76; --dim:#7d8690; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
   --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; --info:#0969da;
   --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
 }
@@ -37,27 +47,43 @@
  */
 [data-theme="solarized"] {
   --bg:#002b36; --panel:#073642; --line:#0a4b59; --text:#eee8d5;
-  --muted:#93a1a1; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
+  --muted:#93a1a1; --dim:#6b8288; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
   --ok:#8ea300; --warn:#c29300; --danger:#e87775; --info:#48a0de;
   --critical:#e87775; --high:#eb794a; --medium:#48a0de; --low:#93a1a1;
 }
 [data-theme="synthwave"] {
   --bg:#1a1033; --panel:#241847; --line:#3d2a6b; --text:#f5e6ff;
-  --muted:#a48fd0; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
+  --muted:#a48fd0; --dim:#7e6aa8; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
   --ok:#3ddc97; --warn:#ffd166; --danger:#ff6b81; --info:#36e0ff;
   --critical:#ff6b81; --high:#ff9e64; --medium:#36e0ff; --low:#a48fd0;
 }
 [data-theme="forest"] {
   --bg:#0c1a12; --panel:#12261b; --line:#1f3a2a; --text:#d7e8dc;
-  --muted:#89a894; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
+  --muted:#89a894; --dim:#5f7a69; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
   /* danger/critical lifted from #e5534b, which measured 4.30:1 on --panel. */
   --ok:#4cc38a; --warn:#d9c26a; --danger:#e65b53; --info:#6cb6ff;
   --critical:#e65b53; --high:#db9b4a; --medium:#6cb6ff; --low:#89a894;
 }
 
+/*
+ * The duck.
+ *
+ * Deliberately outside the theme blocks: the mascot is one fixed illustration,
+ * so its colours must not shift with the palette. Values are lifted from the
+ * TUI's own sprite (`ui/shared/_screensaver.py:_PALETTE`, keys "G" and "O"), so
+ * the terminal duck, the docs duck and the tunnel duck are literally the same
+ * bird. Before this the mascot's green appeared in no palette at all, which is
+ * why it never looked like it belonged to the page it sat on.
+ *
+ * Not used to paint the sprite itself — that is a PNG. These tint the things
+ * that belong to it: the perch, the speech bubble edge, the offline "asleep"
+ * marker.
+ */
+:root { --duck:#2aaa69; --bill:#ffa50f; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -71,4 +97,4 @@ h2 { font-size: 1.15rem; margin: 0 0 0.9rem; }
 h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
 p { margin: 0 0 0.75rem; }
 ul, ol { margin: 0 0 0.75rem; padding-left: 1.25rem; }
-code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.85em; }
