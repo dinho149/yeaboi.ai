@@ -19,52 +19,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from yeaboi.sharing.access import JoinLimiter, make_join_code, make_token
+from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
 
 logger = logging.getLogger(__name__)
 
 _MAX_BODY = 1024
-
-_GATE_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shared with yeaboi</title>
-  <style>
-    /* Midnight palette from the shared design system (html_theme) — kept inline
-       so the gate stays a single dependency-free string. */
-    :root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;
-    --muted:#8b949e;--accent:#50bebe;--ink:#04211f;--danger:#f85149}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;
-    display:grid;place-items:center;background:var(--bg);color:var(--text);
-    font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-    main{width:min(92vw,430px);padding:2rem;border:1px solid var(--line);border-radius:14px;
-    background:var(--panel);box-shadow:0 20px 70px #0008}h1{margin:.2rem 0 .5rem;font-size:1.45rem}
-    .brand{color:var(--accent);font-weight:700}
-    p{color:var(--muted);line-height:1.5}label{display:block;margin:1.4rem 0 .45rem;font-weight:650}
-    input{width:100%;padding:.85rem 1rem;border:1px solid var(--line);border-radius:9px;background:var(--bg);
-    color:var(--text);font:700 1.15rem ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em}
-    input:focus{outline:none;border-color:var(--accent)}
-    button{width:100%;margin-top:.8rem;padding:.8rem;border:0;border-radius:9px;background:var(--accent);
-    color:var(--ink);font-weight:750;cursor:pointer}button:hover{filter:brightness(1.08)}
-    #status{min-height:1.4rem;color:var(--danger);font-size:.9rem}
-  </style>
-</head>
-<body><main><div class="brand">🤙 yeaboi.ai</div><h1>Someone shared an output with you</h1>
-<p>Enter the access code shown by the host. This temporary page disappears when they stop sharing.</p>
-<form id="join"><label for="code">Access code</label><input id="code" maxlength="9"
-placeholder="XXXX-XXXX" autocomplete="one-time-code" autofocus><button>View output</button>
-<p id="status" role="alert"></p></form></main>
-<script>
-const form=document.getElementById('join'),status=document.getElementById('status');
-form.addEventListener('submit',async e=>{e.preventDefault();status.textContent='Checking…';
-try{const r=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({code:document.getElementById('code').value})});
-const d=await r.json();
-if(!r.ok)throw new Error(r.status===429?'Too many attempts — try again later.':'That code did not match.');
-location.replace('/?token='+encodeURIComponent(d.token));}
-catch(err){status.textContent=err.message||'Could not join.';}});
-</script></body></html>"""
 
 
 @dataclass(frozen=True)
@@ -94,7 +53,7 @@ class _OutputHandler(BaseHTTPRequestHandler):
         token = self.server.token  # type: ignore[attr-defined]
         return bool(supplied) and secrets.compare_digest(supplied, token)
 
-    def _send(self, code: int, body: bytes, content_type: str, *, artifact: bool = False) -> None:
+    def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -103,12 +62,8 @@ class _OutputHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        if artifact:
-            self.send_header(
-                "Content-Security-Policy",
-                "default-src 'none'; img-src data:; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; font-src data:; connect-src 'none'",
-            )
+        if csp is not None:
+            self.send_header("Content-Security-Policy", csp)
         self.end_headers()
         self.wfile.write(body)
 
@@ -121,9 +76,12 @@ class _OutputHandler(BaseHTTPRequestHandler):
             return
         if self._authed():
             document = self.server.document  # type: ignore[attr-defined]
-            self._send(200, document.html.encode(), "text/html; charset=utf-8", artifact=True)
+            self._send(200, document.html.encode(), "text/html; charset=utf-8", csp=ARTIFACT_CSP)
             return
-        self._send(200, _GATE_HTML.encode(), "text/html; charset=utf-8")
+        # The gate ran without a CSP until now — an omission, not a decision.
+        # It is the one page here that executes a bundle *and* talks back to the
+        # server, so it is the one that most wanted a policy.
+        self._send(200, render_gate_page().encode(), "text/html; charset=utf-8", csp=GATE_CSP)
 
     def do_POST(self) -> None:  # noqa: N802
         if urlparse(self.path).path != "/api/join":

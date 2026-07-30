@@ -1,0 +1,23 @@
+/*
+ * Page shell for the join gate — one centred card and nothing else.
+ *
+ * Global (not a CSS Module) because it styles `body` and the mount point, which
+ * `render_page` in Python owns. The card's own styling lives with the component
+ * in shared/JoinGate.module.css so the boards can reuse it in any layout.
+ */
+
+body {
+  /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
+     the visible viewport, which pushes a centred card off-screen. Most people
+     open a tunnel link on a phone, so this is the common case, not the edge. */
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  /* Landscape on a notched phone otherwise clips the card against the sensor
+     housing. Padding, not margin, so the grid centring still applies. */
+  padding: 1rem max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left));
+}
+
+#root {
+  display: contents;
+}

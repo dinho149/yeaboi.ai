@@ -1,0 +1,129 @@
+/*
+ * Join gate. Everything colour-bearing comes from design/palette.css, so the
+ * gate follows whichever theme the visitor last chose rather than being
+ * hardcoded to midnight the way the old inline string was.
+ */
+
+.card {
+  width: min(92vw, 430px);
+  /* Centred by the page shell (see gate/main.tsx's own rules) — this element
+     only owns the panel itself, so the boards can drop it into any layout. */
+  padding: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 50%);
+}
+
+.brand {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.heading {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 1.45rem;
+}
+
+.blurb {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.label {
+  display: block;
+  margin: 1.4rem 0 0.45rem;
+  font-weight: 650;
+}
+
+.code {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  /* Monospace + wide tracking so an O/0 or 5/S mix-up is visible while typing.
+     The alphabet in access.py already excludes I, O, 0 and 1 for the same
+     reason — this is the client half of that decision. */
+  font: 700 1.15rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.code::placeholder {
+  color: var(--muted);
+  opacity: 0.55;
+  font-weight: 500;
+}
+
+.code:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.wrong {
+  border-color: var(--danger);
+  animation: shake 220ms ease-in-out;
+}
+
+.go {
+  width: 100%;
+  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
+     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+  min-height: 44px;
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 750;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: filter 120ms ease, opacity 120ms ease;
+}
+
+.go:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.go:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.go:disabled {
+  /* Visibly inert rather than hidden: the button is disabled until eight
+     characters are in, which doubles as progress feedback. */
+  opacity: 0.45;
+  cursor: default;
+}
+
+.status {
+  /* Reserved height — the card must not resize when a message appears. */
+  min-height: 1.4rem;
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.bad {
+  color: var(--danger);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* A wrong code already announces itself through the alert region and the
+   colour change; the motion is decoration and must be droppable. */
+@media (prefers-reduced-motion: reduce) {
+  .wrong { animation: none; }
+  .go { transition: none; }
+}

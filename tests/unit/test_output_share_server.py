@@ -36,8 +36,13 @@ def _post(server, code: str):
 def test_gate_hides_artifact_until_code_is_exchanged(share_server):
     with urllib.request.urlopen(share_server.local_url, timeout=2) as response:  # noqa: S310
         gate = response.read().decode()
+        gate_csp = response.headers["Content-Security-Policy"]
     assert "Enter the access code" in gate
     assert "SECRET OUTPUT" not in gate
+    # The gate is served over a public tunnel URL and runs a script bundle, so
+    # it needs a policy of its own — 'self' only, for the join POST.
+    assert "default-src 'none'" in gate_csp
+    assert "connect-src 'self'" in gate_csp
 
     with _post(share_server, share_server.display_code) as response:
         token = json.loads(response.read())["token"]
