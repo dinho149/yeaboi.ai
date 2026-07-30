@@ -1461,6 +1461,10 @@ def _settings_save_data_dir(console: Console, live, read_key, frame_time, suppor
 
 # How long the duck holds the result in his bubble before it closes itself.
 _COMPOSE_RESULT_SECONDS = 2.6
+# Eased presence (0→1) for the bubble's entrance and exit. Out is faster than in,
+# so dismissing feels immediate while arriving still reads as the duck speaking up.
+_COMPOSE_EASE_IN = 0.30
+_COMPOSE_EASE_OUT = 0.42
 
 
 _COMPOSE_FIELDS = 3  # 0 type, 1 area, 2 message
@@ -1487,6 +1491,8 @@ def _feedback_compose_key(
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, submit_feedback
     from yeaboi.ui.shared._attachments import referenced_images
 
+    if compose.get("closing"):
+        return compose  # already on its way out
     if compose.get("thread") is not None or compose.get("done_at"):
         return compose  # in flight or showing its result — keys do nothing
     compose["notice"] = ""  # a one-off notice lasts until the next keypress
@@ -1498,11 +1504,13 @@ def _feedback_compose_key(
         cancel_back_retract()
         set_text_entry(False)
         logger.info("feedback bubble: cancelled (%d chars)", len(compose["buf"]))
-        return None
+        compose["closing"] = True
+        return compose
     if key == "enter":
         text = compose["buf"].strip()
         if not text:
-            return None  # nothing typed — Enter just closes it
+            compose["closing"] = True  # nothing typed — Enter just closes it
+            return compose
         kind = FEEDBACK_TYPES[compose["kind"] % len(FEEDBACK_TYPES)]
         area = FEEDBACK_AREAS[compose["area"] % len(FEEDBACK_AREAS)]
         title = text.splitlines()[0][:80]  # opening line, so the issue is scannable
@@ -1580,7 +1588,18 @@ def _compose_voice_frame(compose: dict, status: str, tick: float, render):
 
 
 def _feedback_compose_tick(compose: dict) -> dict | None:
-    """Advance a composer that is sending or showing its result; None to close."""
+    """Advance the bubble one frame: its entrance/exit, and any send in flight.
+
+    Returns None once it has finished fading out. Closing is a two-step — the key
+    handler asks for it, the animation finishes it — so Esc doesn't make the
+    bubble vanish between frames.
+    """
+    closing = compose.get("closing", False)
+    target = 0.0 if closing else 1.0
+    ease = _COMPOSE_EASE_OUT if closing else _COMPOSE_EASE_IN
+    compose["presence"] += (target - compose["presence"]) * ease
+    if closing and compose["presence"] < 0.03:
+        return None  # faded out — drop it
     thread = compose.get("thread")
     if thread is not None and not thread.is_alive():
         result = (compose.get("out") or [None])[0]
@@ -1596,7 +1615,7 @@ def _feedback_compose_tick(compose: dict) -> dict | None:
         logger.info("feedback bubble: %s", compose["status"])
     done_at = compose.get("done_at")
     if done_at and time.monotonic() - done_at > _COMPOSE_RESULT_SECONDS:
-        return None
+        compose["closing"] = True  # start the fade; the next tick finishes it
     return compose
 
 
@@ -10073,7 +10092,7 @@ def select_mode(
                 if _compose is not None:
                     # The duck's feedback bubble owns every key while it's open —
                     # including 'q', which is a character you may want to type.
-                    if key:
+                    if key and not _compose.get("closing"):
 
                         def _compose_render(update: bool = True):
                             _w, _h = console.size
@@ -10186,6 +10205,8 @@ def select_mode(
                         "cur": 0,
                         "status": "",
                         "notice": "",
+                        "presence": 0.0,  # eased in on the first frames
+                        "closing": False,
                         "attachments": [],  # Ctrl+V screenshots, as [image #N] chips
                         "dts": DoubleTapSpace(),  # double-tap Space → dictation
                         "thread": None,

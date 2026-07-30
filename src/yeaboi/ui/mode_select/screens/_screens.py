@@ -636,6 +636,7 @@ def _build_mode_screen(
                 extras_reveal=extras_reveal,
                 compose=compose,
                 lane_cols=lane_cols,
+                lane_h=grid_h,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -776,6 +777,13 @@ def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
 _COMPOSE_COLS = 62
 _COMPOSE_MIN_LEFT = 46  # columns the mode list still needs beside a wide composer
 _COMPOSE_MAX_ROWS = 10  # typing rows before the box scrolls with the cursor
+_COMPOSE_MIN_ROWS = 2
+# Rows the bubble costs besides its message: two borders, the Type and Area rows
+# and the blank under them. Plus the tail below it and the duck's own height —
+# the lane is bottom-anchored, so anything over budget crops the duck, not the box.
+_COMPOSE_CHROME_ROWS = 5
+_COMPOSE_TAIL_ROWS = 1
+_COMPANION_HEAD_H = 7  # rows the head renders at _COMPANION_HEAD_W
 
 
 def _compose_lane_cols(inner_w: int) -> int:
@@ -855,26 +863,37 @@ def _compose_window(values: tuple[str, ...], idx: int, width: int) -> tuple[int,
     return best_start, best_end
 
 
-def _compose_chips(values: tuple[str, ...], idx: int, focused: bool, width: int) -> Text:
-    """One selector row: every option in its fixed order, the chosen one bracketed."""
+def _compose_chips(
+    values: tuple[str, ...], idx: int, focused: bool, width: int, *, dim: str, text: str, accent: str
+) -> Text:
+    """One selector row: every option in its fixed order, the chosen one bracketed.
+
+    The styles are passed in because the whole bubble fades on its entrance/exit.
+    """
     row = Text(justify="left", no_wrap=True, overflow="ellipsis")
     start, end = _compose_window(values, idx, width)
     if start:
-        row.append("… ", style=_COMPOSE_DIM)  # more options off to the left (… not ‹,
-        #                                       which would read as a selection bracket)
+        row.append("… ", style=dim)  # more options off to the left (… not ‹, which
+        #                              would read as a selection bracket)
     for i in range(start, end):
         if i > start:
-            row.append("  ", style=_COMPOSE_DIM)
+            row.append("  ", style=dim)
         if i == idx:
-            row.append(f"‹ {values[i]} ›", style=f"bold {_COMPOSE_ACCENT}" if focused else _COMPOSE_TEXT)
+            row.append(f"‹ {values[i]} ›", style=f"bold {accent}" if focused else text)
         else:
-            row.append(values[i], style=_COMPOSE_DIM)
+            row.append(values[i], style=dim)
     if end < len(values):
-        row.append(" …", style=_COMPOSE_DIM)
+        row.append(" …", style=dim)
     return row
 
 
-def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
+def _compose_message_rows(lane_h: int) -> int:
+    """How many message rows fit above the duck without clipping him."""
+    spare = lane_h - _COMPANION_HEAD_H - _COMPOSE_TAIL_ROWS - _COMPOSE_CHROME_ROWS
+    return max(_COMPOSE_MIN_ROWS, min(_COMPOSE_MAX_ROWS, spare))
+
+
+def _build_compose_bubble(compose: dict, *, cols: int, max_rows: int = _COMPOSE_MAX_ROWS) -> RenderableType:
     """The duck's feedback composer: a speech bubble you actually write in.
 
     ``compose`` is the loop's state — ``kind``/``area`` (indices into
@@ -889,53 +908,73 @@ def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
     buf, cur = compose.get("buf", ""), compose.get("cur", 0)
     status, field = compose.get("status", ""), compose.get("field", 2)
     live = not status  # nothing is focused once it is sending
+    # Presence (0→1) drives the entrance/exit: the colours come up out of the
+    # background and the message area unfolds a row at a time, so the bubble grows
+    # from the duck rather than snapping into place.
+    presence = min(1.0, max(0.0, compose.get("presence", 1.0)))
+    text_style = lerp_color(presence, BLACK_RGB, (198, 198, 208))
+    dim_style = lerp_color(presence, BLACK_RGB, (110, 110, 125))
+    accent_style = lerp_color(presence, BLACK_RGB, (150, 170, 200))
+    border_style = lerp_color(presence, BLACK_RGB, (120, 135, 150))
+    gutter_style = lerp_color(presence, BLACK_RGB, (96, 112, 128))
+    max_rows = max(1, int(round(max_rows * presence))) if presence < 1.0 else max_rows
 
     rows: list = []
     label_w = 6
     for i, (label, values, key) in enumerate((("Type", FEEDBACK_TYPES, "kind"), ("Area", FEEDBACK_AREAS, "area"))):
         line = Text(justify="left", no_wrap=True, overflow="ellipsis")
         focused = live and field == i
-        line.append(label.ljust(label_w), style=_COMPOSE_ACCENT if focused else _COMPOSE_DIM)
-        line.append_text(_compose_chips(values, compose.get(key, 0), focused, inner - label_w))
+        line.append(label.ljust(label_w), style=accent_style if focused else dim_style)
+        line.append_text(
+            _compose_chips(
+                values,
+                compose.get(key, 0),
+                focused,
+                inner - label_w,
+                dim=dim_style,
+                text=text_style,
+                accent=accent_style,
+            )
+        )
         rows.append(line)
     rows.append(Text(""))
 
     msg_w = max(8, inner - len(_COMPOSE_GUTTER))  # the gutter eats into the wrap width
     if not buf and live:
         placeholder = Text(justify="left")
-        placeholder.append(_COMPOSE_GUTTER, style=_COMPOSE_GUTTER_STYLE)
+        placeholder.append(_COMPOSE_GUTTER, style=gutter_style)
         if field == 2:
             placeholder.append(" ", style="reverse")  # the cursor waiting in an empty box
-        placeholder.append("What's on your mind?", style=_COMPOSE_DIM)
+        placeholder.append("What's on your mind?", style=dim_style)
         rows.append(placeholder)
-        rows.extend(Text("") for _ in range(2))
+        rows.extend(Text("") for _ in range(min(2, max_rows - 1)))
     else:
         wrapped = _wrap_with_offsets(buf, msg_w)
         # Follow the cursor once the message outgrows the box.
         cur_row = max(i for i, (_ln, off) in enumerate(wrapped) if off <= cur)
-        first = max(0, min(cur_row - _COMPOSE_MAX_ROWS + 1, len(wrapped) - _COMPOSE_MAX_ROWS))
-        window = wrapped[first : first + _COMPOSE_MAX_ROWS]
+        first = max(0, min(cur_row - max_rows + 1, len(wrapped) - max_rows))
+        window = wrapped[first : first + max_rows]
         for line, off in window:
             t = Text(justify="left")
-            t.append(_COMPOSE_GUTTER, style=_COMPOSE_GUTTER_STYLE)
+            t.append(_COMPOSE_GUTTER, style=gutter_style)
             col = cur - off
             if live and field == 2 and 0 <= col <= len(line):
-                t.append(line[:col], style=_COMPOSE_TEXT)
+                t.append(line[:col], style=text_style)
                 t.append(line[col : col + 1] or " ", style="reverse")  # block cursor
-                t.append(line[col + 1 :], style=_COMPOSE_TEXT)
+                t.append(line[col + 1 :], style=text_style)
             else:
-                t.append(line, style=_COMPOSE_TEXT)
+                t.append(line, style=text_style)
             rows.append(t)
-        rows.extend(Text("") for _ in range(max(0, 3 - len(window))))
+        rows.extend(Text("") for _ in range(max(0, min(3, max_rows) - len(window))))
 
     hint = Text(justify="center")
     notice = compose.get("notice", "")
     if status:
-        hint.append(f" {status} ", style=_COMPOSE_ACCENT)
+        hint.append(f" {status} ", style=accent_style)
     elif notice:
         # A one-off result (a pasted screenshot, a clipboard miss) takes the hint
         # row until the next keypress clears it.
-        hint.append(f" {notice} ", style=_COMPOSE_ACCENT)
+        hint.append(f" {notice} ", style=accent_style)
     else:
         for i, (key, what) in enumerate((("\u2191/\u2193", "field"), ("Enter", "send"), ("Esc", "cancel"))):
             hint.append("  \u00b7  " if i else " ", style=_COMPOSE_DIM)
@@ -944,10 +983,10 @@ def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
         hint.append(" ", style=_COMPOSE_DIM)
     bubble = Panel(
         Group(*rows),
-        title=Text(" Tell the duck ", style=_COMPOSE_TEXT),
+        title=Text(" Tell the duck ", style=text_style),
         title_align="left",
         box=rich.box.ROUNDED,
-        border_style="rgb(120,135,150)",
+        border_style=border_style,
         padding=(0, 1),
         width=cols - 2,
     )
@@ -967,6 +1006,7 @@ def _build_companion(
     extras_reveal: float | None = None,
     compose: dict | None = None,
     lane_cols: int = _COMPANION_COLS,
+    lane_h: int = 40,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -1028,8 +1068,10 @@ def _build_companion(
     parts: list[RenderableType] = []
     if compose is not None:
         # Composing takes the lane: no tip, no update box competing for height.
-        tail = Align.center(Text("▾", style="rgb(120,135,150)"))
-        return Align.center(Group(_build_compose_bubble(compose, cols=lane_cols), tail, duck), vertical="bottom")
+        presence = min(1.0, max(0.0, compose.get("presence", 1.0)))
+        tail = Align.center(Text("▾", style=lerp_color(presence, BLACK_RGB, (120, 135, 150))))
+        bubble = _build_compose_bubble(compose, cols=lane_cols, max_rows=_compose_message_rows(lane_h))
+        return Align.center(Group(bubble, tail, duck), vertical="bottom")
     if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the
         # bubble, with a blank line separating the two boxes.

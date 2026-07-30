@@ -408,11 +408,12 @@ class TestFeedbackComposeKeys:
 
         cancelled: list = []
         monkeypatch.setattr(_music_bar, "cancel_back_retract", lambda: cancelled.append(True))
-        assert self._press("esc", self._state(buf="half a thought", cur=5)) is None
+        st = self._press("esc", self._state(buf="half a thought", cur=5))
+        assert st["closing"] is True  # animates out rather than vanishing
         assert cancelled
 
     def test_enter_on_an_empty_message_just_closes(self):
-        assert self._press("enter", self._state()) is None
+        assert self._press("enter", self._state())["closing"] is True
 
     def test_enter_sends_the_chosen_type_and_area(self, monkeypatch):
         from yeaboi import feedback
@@ -446,7 +447,10 @@ class TestComposeSelectorWindow:
     def _render(self, idx, width=48):
         from yeaboi.ui.mode_select.screens._screens import _compose_chips
 
-        return _compose_chips(self.AREAS, idx, True, width).plain
+        # The styles are passed in because the whole bubble fades on entry/exit.
+        return _compose_chips(
+            self.AREAS, idx, True, width, dim="dim", text="white", accent="cyan"
+        ).plain
 
     def test_everything_fits_when_there_is_room(self):
         from yeaboi.ui.mode_select.screens._screens import _compose_window
@@ -549,3 +553,117 @@ class TestComposeRichAffordances:
         st = self._state(buf="see [image #1]", cur=0, attachments=["/tmp/a.png"])
         mode_select._feedback_compose_key("enter", st)["thread"].join(timeout=5)
         assert sent[0][4] == ["/tmp/a.png"]
+
+
+class TestComposeFitsAboveTheDuck:
+    """The lane is bottom-anchored, so an over-tall bubble crops the DUCK, not itself."""
+
+    def _duck_rows(self, height, compose):
+        import io
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+
+        buf = io.StringIO()
+        Console(file=buf, width=140, height=height, legacy_windows=False).print(
+            _build_mode_screen(0, width=140, height=height, shimmer_tick=1.0, desc_reveal=999, compose=compose)
+        )
+        # Sprite rows live in the right-hand lane; count them past the mode list.
+        return sum(1 for line in buf.getvalue().splitlines() if any(ch in line[100:] for ch in "▄█▀"))
+
+    def _state(self, buf):
+        return {
+            "field": 2,
+            "kind": 0,
+            "area": 0,
+            "buf": buf,
+            "cur": 0,
+            "status": "",
+            "notice": "",
+            "presence": 1.0,
+        }
+
+    def test_a_long_message_does_not_eat_into_the_duck(self):
+        for height in (40, 44, 50):
+            plain = self._duck_rows(height, None)
+            assert self._duck_rows(height, self._state("word " * 400)) == plain
+
+    def test_the_message_area_shrinks_on_a_short_lane(self):
+        from yeaboi.ui.mode_select.screens._screens import _COMPOSE_MAX_ROWS, _compose_message_rows
+
+        assert _compose_message_rows(40) == _COMPOSE_MAX_ROWS  # room to spare
+        assert _compose_message_rows(16) < _COMPOSE_MAX_ROWS  # squeezed above the duck
+        assert _compose_message_rows(8) >= 2  # never collapses to nothing
+
+
+class TestComposePresence:
+    """The bubble eases in and out rather than snapping."""
+
+    def _state(self, **over):
+        base = {
+            "field": 2,
+            "kind": 0,
+            "area": 0,
+            # A token that can't collide with the mode list behind the bubble
+            # (a description mentioning "retro" would match first).
+            "buf": "zzmarkerzz",
+            "cur": 10,
+            "status": "",
+            "notice": "",
+            "presence": 1.0,
+            "closing": False,
+            "thread": None,
+            "done_at": 0.0,
+        }
+        return {**base, **over}
+
+    def _text_rgb(self, presence):
+        import io
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+
+        con = Console(file=io.StringIO(), width=140, height=44, force_terminal=True, color_system="truecolor")
+        rows = con.render_lines(
+            _build_mode_screen(
+                0, width=140, height=44, shimmer_tick=1.0, desc_reveal=999, compose=self._state(presence=presence)
+            ),
+            con.options,
+            pad=True,
+        )
+        for row in rows:
+            hit = [s for s in row if "zzmarkerzz" in s.text]
+            if hit:
+                return str(hit[0].style).split(" on ")[0]
+        raise AssertionError("message row not rendered")
+
+    def test_the_bubble_fades_up_out_of_the_background(self):
+        faint, half, full = (self._text_rgb(p) for p in (0.05, 0.5, 1.0))
+        assert faint != half != full
+        assert full == "rgb(198,198,208)"  # its resting colour
+
+    def test_esc_starts_the_exit_instead_of_vanishing(self):
+        from yeaboi.ui import mode_select
+
+        st = mode_select._feedback_compose_key("esc", self._state())
+        assert st is not None and st["closing"] is True  # still on screen, on its way out
+
+    def test_the_tick_finishes_the_exit(self):
+        from yeaboi.ui import mode_select
+
+        st = self._state(closing=True, presence=1.0)
+        for _ in range(40):
+            st = mode_select._feedback_compose_tick(st)
+            if st is None:
+                return
+        raise AssertionError("the bubble never finished fading out")
+
+    def test_a_sent_result_closes_itself_after_its_moment(self, monkeypatch):
+        import time as _t
+
+        from yeaboi.ui import mode_select
+
+        st = self._state(done_at=_t.monotonic() - mode_select._COMPOSE_RESULT_SECONDS - 1, status="sent")
+        assert mode_select._feedback_compose_tick(st)["closing"] is True
