@@ -13,6 +13,7 @@
  */
 import { useCallback, useId, useRef, useState } from 'react';
 
+import { Duck, Eyebrow, TerminalFrame, useDuckPulse, Wordmark } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import styles from './JoinGate.module.css';
 
@@ -22,10 +23,25 @@ const CODE_LENGTH = 8;
 export interface JoinGateProps {
   /** Endpoint that exchanges a code for a token. */
   endpoint?: string;
-  brand?: string;
+  /**
+   * Word set in the block-glyph display face.
+   *
+   * Defaults to the brand, **not** the mode, and that default is load-bearing
+   * on the static-share gate: `sharing/gate.py` deliberately serves a document
+   * carrying no per-share information at all, so an unauthenticated visitor
+   * learns nothing about what is behind it. A mode name here would undo that.
+   * The boards pass their own, because their page title already names the mode.
+   */
+  wordmark?: string;
+  /** Small mono label above the heading. Same rule as `wordmark`. */
+  eyebrow?: string;
+  /** Title-bar text for the terminal frame. Same rule again. */
+  frameTitle?: string;
   heading?: string;
   /** One line under the heading explaining what the visitor is joining. */
   blurb?: string;
+  /** Submit-button label. Keeps its name through the whole flow. */
+  cta?: string;
   /**
    * Called with the token once the server accepts the code. Defaults to
    * reloading at ``/?token=…`` — a full navigation, so the browser drops the
@@ -74,14 +90,18 @@ function messageFor(status: number): string {
 
 export function JoinGate({
   endpoint = '/api/join',
-  brand = '🤙 yeaboi.ai',
-  heading = 'Someone shared an output with you',
-  blurb = 'Enter the access code shown by the host. This page disappears when they stop sharing.',
+  wordmark = 'yeaboi',
+  eyebrow = 'Shared from a terminal',
+  frameTitle = 'yeaboi',
+  heading = 'Someone shared this with you',
+  blurb = 'Enter the access code they gave you. The link stops working when they close the share.',
+  cta = 'Open',
   onJoined,
 }: JoinGateProps) {
   const [code, setCode] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [message, setMessage] = useState('');
+  const [duck, startle] = useDuckPulse('idle');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // useId, not a hardcoded string: the boards will mount this alongside their
@@ -110,6 +130,11 @@ export function JoinGate({
         if (!response.ok) {
           setPhase('error');
           setMessage(messageFor(response.status));
+          // The duck loses its sunglasses. This is the docs site's cursor-dodge
+          // reaction reused on the one screen where something has actually gone
+          // wrong — a rejected code is the most likely moment a visitor has with
+          // this product, so it may as well be the one they remember.
+          startle('startled');
           // Select rather than clear: a mistyped character is far more likely
           // than a wholly wrong code, and retyping all eight is a tax.
           inputRef.current?.select();
@@ -124,60 +149,69 @@ export function JoinGate({
         // the host closing the share while someone is typing.
         setPhase('error');
         setMessage('Could not reach the host. They may have stopped sharing.');
+        startle('startled');
         inputRef.current?.select();
       }
     },
-    [busy, code, complete, endpoint, onJoined],
+    [busy, code, complete, endpoint, onJoined, startle],
   );
 
   return (
-    <main className={styles.card}>
-      <div className={styles.brand}>{brand}</div>
-      <h1 className={styles.heading}>{heading}</h1>
-      <p className={styles.blurb}>{blurb}</p>
+    <TerminalFrame title={frameTitle} className={styles.card}>
+      <main>
+        <Wordmark text={wordmark} className={styles.wordmark} />
+        <Eyebrow className={styles.eyebrow}>{eyebrow}</Eyebrow>
+        <h1 className={styles.heading}>{heading}</h1>
+        <p className={styles.blurb}>{blurb}</p>
 
-      <form onSubmit={submit} noValidate>
-        <label className={styles.label} htmlFor={inputId}>
-          Access code
-        </label>
-        <input
-          ref={inputRef}
-          id={inputId}
-          className={cx(styles.code, phase === 'error' && styles.wrong)}
-          value={code}
-          onInput={(event) => {
-            setCode(normalizeCode((event.target as HTMLInputElement).value));
-            if (phase === 'error') {
-              setPhase('idle');
-              setMessage('');
-            }
-          }}
-          // maxLength counts the dash. inputMode/autocapitalize matter on
-          // phones, which is where most people open a tunnel link.
-          maxLength={CODE_LENGTH + 1}
-          placeholder="XXXX-XXXX"
-          autoComplete="one-time-code"
-          autoCapitalize="characters"
-          autoCorrect="off"
-          // Lowercase `spellcheck`: preact's JSX types accept React's camelCase
-          // for every other attribute here, but not this one. Both work at
-          // runtime — it is a typing gap, not a behaviour difference.
-          spellcheck={false}
-          aria-describedby={statusId}
-          aria-invalid={phase === 'error'}
-          // readOnly rather than disabled: disabling blurs the field, so the
-          // caret would be gone by the time an error comes back.
-          readOnly={busy}
-          autoFocus
-        />
-        <button className={styles.go} type="submit" disabled={!complete || busy}>
-          {busy ? 'Checking…' : 'View output'}
-        </button>
-        {/* Reserved height so the card does not jump when a message appears. */}
-        <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
-          {message}
-        </p>
-      </form>
-    </main>
+        <form onSubmit={submit} noValidate>
+          <div className={styles.labelRow}>
+            <label className={styles.label} htmlFor={inputId}>
+              Access code
+            </label>
+            {/* Perched on the field, watching you type. Purely decorative until
+                the code is refused, which is the moment it earns its place. */}
+            <Duck state={duck} size={44} className={styles.duck} />
+          </div>
+          <input
+            ref={inputRef}
+            id={inputId}
+            className={cx(styles.code, phase === 'error' && styles.wrong)}
+            value={code}
+            onInput={(event) => {
+              setCode(normalizeCode((event.target as HTMLInputElement).value));
+              if (phase === 'error') {
+                setPhase('idle');
+                setMessage('');
+              }
+            }}
+            // maxLength counts the dash. inputMode/autocapitalize matter on
+            // phones, which is where most people open a tunnel link.
+            maxLength={CODE_LENGTH + 1}
+            placeholder="XXXX-XXXX"
+            autoComplete="one-time-code"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            // Lowercase `spellcheck`: preact's JSX types accept React's camelCase
+            // for every other attribute here, but not this one. Both work at
+            // runtime — it is a typing gap, not a behaviour difference.
+            spellcheck={false}
+            aria-describedby={statusId}
+            aria-invalid={phase === 'error'}
+            // readOnly rather than disabled: disabling blurs the field, so the
+            // caret would be gone by the time an error comes back.
+            readOnly={busy}
+            autoFocus
+          />
+          <button className={styles.go} type="submit" disabled={!complete || busy}>
+            {busy ? 'Checking…' : cta}
+          </button>
+          {/* Reserved height so the card does not jump when a message appears. */}
+          <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
+            {message}
+          </p>
+        </form>
+      </main>
+    </TerminalFrame>
   );
 }

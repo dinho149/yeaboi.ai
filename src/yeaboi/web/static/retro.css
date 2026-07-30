@@ -622,135 +622,6 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 0;
 }
 /*
- * Join gate. Everything colour-bearing comes from design/palette.css, so the
- * gate follows whichever theme the visitor last chose rather than being
- * hardcoded to midnight the way the old inline string was.
- */
-
-._card_r9ler_7 {
-  width: min(92vw, 430px);
-  /* Centred by the page shell (see gate/main.tsx's own rules) — this element
-     only owns the panel itself, so the boards can drop it into any layout. */
-  padding: 2rem;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: 0 20px 70px rgb(0 0 0 / 50%);
-}
-
-._brand_r9ler_18 {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-._heading_r9ler_23 {
-  margin: 0.2rem 0 0.5rem;
-  font-size: 1.45rem;
-}
-
-._blurb_r9ler_28 {
-  color: var(--muted);
-  line-height: 1.5;
-  margin: 0;
-}
-
-._label_r9ler_34 {
-  display: block;
-  margin: 1.4rem 0 0.45rem;
-  font-weight: 650;
-}
-
-._code_r9ler_40 {
-  width: 100%;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg);
-  color: var(--text);
-  /* Monospace + wide tracking so an O/0 or 5/S mix-up is visible while typing.
-     The alphabet in access.py already excludes I, O, 0 and 1 for the same
-     reason — this is the client half of that decision. */
-  font: 700 1.15rem ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 0.12em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-._code_r9ler_40::placeholder {
-  color: var(--muted);
-  opacity: 0.55;
-  font-weight: 500;
-}
-
-._code_r9ler_40:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-._wrong_r9ler_68 {
-  border-color: var(--danger);
-  animation: _shake_r9ler_1 220ms ease-in-out;
-}
-
-._go_r9ler_73 {
-  width: 100%;
-  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
-     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
-  min-height: 44px;
-  margin-top: 0.8rem;
-  padding: 0.8rem;
-  border: 0;
-  border-radius: 9px;
-  background: var(--accent);
-  color: var(--ink);
-  font-weight: 750;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: filter 120ms ease, opacity 120ms ease;
-}
-
-._go_r9ler_73:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-._go_r9ler_73:focus-visible {
-  outline: 2px solid var(--text);
-  outline-offset: 2px;
-}
-
-._go_r9ler_73:disabled {
-  /* Visibly inert rather than hidden: the button is disabled until eight
-     characters are in, which doubles as progress feedback. */
-  opacity: 0.45;
-  cursor: default;
-}
-
-._status_r9ler_106 {
-  /* Reserved height — the card must not resize when a message appears. */
-  min-height: 1.4rem;
-  margin: 0.55rem 0 0;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
-._bad_r9ler_114 {
-  color: var(--danger);
-}
-
-@keyframes _shake_r9ler_1 {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
-}
-
-/* A wrong code already announces itself through the alert region and the
-   colour change; the motion is decoration and must be droppable. */
-@media (prefers-reduced-motion: reduce) {
-  ._wrong_r9ler_68 { animation: none; }
-  ._go_r9ler_73 { transition: none; }
-}
-/*
  * Styling for the shared primitives.
  *
  * One module for the whole set rather than twelve files: they are a single
@@ -1056,6 +927,378 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   white-space: nowrap;
 }
 ._frameBody_12fw4_306 { padding: var(--s5); }
+/*
+ * The duck rig.
+ *
+ * Ported from docs/assets/landing.css:425-532, where the timings were already
+ * tuned against the real sprite. Kept in its own module rather than folded into
+ * primitives.module.css because it is the one component here with a state
+ * machine, and reading it next to the keyframes is the point.
+ *
+ * The layer split is load-bearing: `.duck` owns the body-level transforms
+ * (waddle, facing, sleep tilt), `.wing` and `.glasses` own their own, so no two
+ * animations ever contend for `transform` on the same node. Merging them —
+ * which looks like a tidy-up — makes the sunglasses jump whenever the body
+ * moves.
+ */
+
+._duck_5ybop_9 {
+  position: relative;
+  display: block;
+  flex: none;
+  line-height: 0;
+  /* Everything below animates transform/opacity only, so the duck never
+     triggers layout on a board that is already re-rendering on every poll. */
+  will-change: transform;
+}
+
+._duck_5ybop_9 img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The art is pixel art; let it stay blocky when it scales up rather than
+     going soft. The sprite is 2x the drawn size, so this is only reached on a
+     board that has been zoomed. */
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+._base_5ybop_38 {
+  filter: drop-shadow(0 5px 4px rgb(0 0 0 / 45%));
+}
+
+._wing_5ybop_10,
+._glasses_5ybop_10 {
+  position: absolute;
+  inset: 0;
+}
+
+/* Rotating about the shoulder rather than the sprite's centre is what makes
+   the flap read as a wing instead of a wobble. */
+._wing_5ybop_10 {
+  transform-origin: 42% 55%;
+  animation: _wing-flap_5ybop_1 1.4s ease-in-out infinite;
+}
+._glasses_5ybop_10 {
+  animation: _glasses-bob_5ybop_1 2.6s ease-in-out infinite;
+}
+
+@keyframes _wing-flap_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-2.2%) rotate(-2.5deg); }
+}
+@keyframes _glasses-bob_5ybop_1 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1.5%); }
+}
+
+/* ── urgent: the last ten seconds on the clock ───────────────────────
+   Motion-only, and that is acceptable here where it is not for the states
+   below: the timer readout is aria-live and announces the same ten seconds. */
+._duck_5ybop_9[data-state="urgent"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out infinite;
+}
+._duck_5ybop_9[data-state="urgent"] ._glasses_5ybop_10 {
+  animation: _glasses-jitter_5ybop_1 0.18s steps(2) infinite;
+}
+@keyframes _wing-flap-hard_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4.5%) rotate(-6deg); }
+}
+@keyframes _glasses-jitter_5ybop_1 {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-0.6%, 0.8%); }
+}
+
+/* ── card: a peer's card just landed ─────────────────────────────────
+   One hard flap, then back. Deliberately small — this fires on every card and
+   anything bigger becomes noise in the second half of a retro. */
+._duck_5ybop_9[data-state="card"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out 3;
+}
+
+/* ── joined: someone arrived ─────────────────────────────────────── */
+._duck_5ybop_9[data-state="joined"] {
+  animation: _duck-waddle-in_5ybop_1 1.4s var(--ease) 1;
+}
+@keyframes _duck-waddle-in_5ybop_1 {
+  0% { transform: translateX(-140%) rotate(0deg); }
+  15% { transform: translateX(-100%) rotate(-4deg); }
+  30% { transform: translateX(-65%) rotate(4deg); }
+  45% { transform: translateX(-35%) rotate(-4deg); }
+  60% { transform: translateX(-12%) rotate(4deg); }
+  75% { transform: translateX(0) rotate(-2deg); }
+  100% { transform: translateX(0) rotate(0deg); }
+}
+
+/* ── startled: the join code was wrong ───────────────────────────────
+   The shades fly up the forehead, hang there through the hop, and drop back
+   with an overshoot. This is the docs site's cursor-dodge reaction, reused on
+   the one screen where something has actually gone wrong — it turns the join
+   gate's failure state into the most memorable thing on the page. */
+._duck_5ybop_9[data-state="startled"] {
+  animation: _duck-hop_5ybop_1 0.62s cubic-bezier(0.3, 1.1, 0.4, 1) 1;
+}
+._duck_5ybop_9[data-state="startled"] ._wing_5ybop_10 {
+  animation: _wing-flap-hard_5ybop_1 0.3s ease-in-out infinite;
+}
+._duck_5ybop_9[data-state="startled"] ._glasses_5ybop_10 {
+  animation: _glasses-pop_5ybop_1 1.35s cubic-bezier(0.3, 1.3, 0.4, 1) both;
+}
+@keyframes _duck-hop_5ybop_1 {
+  0% { transform: translateY(0) rotate(0deg); }
+  28% { transform: translateY(-34%) rotate(-4deg); }
+  46% { transform: translateY(-38%) rotate(0deg); }
+  70% { transform: translateY(0) rotate(0deg); }
+  82% { transform: translateY(-6%) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+@keyframes _glasses-pop_5ybop_1 {
+  0% { transform: translateY(0) rotate(0deg); }
+  10% { transform: translateY(-10%) rotate(-7deg); }
+  52% { transform: translateY(-8.5%) rotate(-5deg); }
+  64% { transform: translateY(1.2%) rotate(0deg); }
+  72% { transform: translateY(-1%) rotate(0deg); }
+  80%, 100% { transform: translateY(0) rotate(0deg); }
+}
+
+/* ── locked: the host closed the board ───────────────────────────────
+   The duck turns its back. A plain transform, NOT a keyframe: the global
+   reduced-motion guard flattens every animation to 0.01ms, so a state encoded
+   as one would simply not exist for those visitors. Same for `offline` below.
+   This is the rule for any duck state that carries meaning. */
+._duck_5ybop_9[data-state="locked"] {
+  transform: scaleX(-1);
+}
+._duck_5ybop_9[data-state="locked"] ._glasses_5ybop_10 {
+  opacity: 0;
+  animation: none;
+}
+
+/* ── offline: the long-poll is failing ───────────────────────────────
+   The one state that is genuinely load-bearing. Before the duck there was no
+   indication at all that a board had stopped updating — a dead tunnel and a
+   quiet room looked identical. */
+._duck_5ybop_9[data-state="offline"] {
+  transform: rotate(7deg) translateY(6%);
+  filter: saturate(0.35) brightness(0.85);
+}
+._duck_5ybop_9[data-state="offline"] ._wing_5ybop_10,
+._duck_5ybop_9[data-state="offline"] ._glasses_5ybop_10 {
+  animation: none;
+}
+._duck_5ybop_9[data-state="offline"] ._glasses_5ybop_10 {
+  /* Shades slid down over closed eyes. */
+  transform: translateY(9%) rotate(-3deg);
+}
+
+/* A literal letter, so the state survives reduced motion, a screenshot, and a
+   printout — none of which a keyframe does. */
+._zzz_5ybop_169 {
+  position: absolute;
+  top: -14%;
+  right: -8%;
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  animation: _zzz-drift_5ybop_1 2.4s ease-in-out infinite;
+}
+@keyframes _zzz-drift_5ybop_1 {
+  0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.55; }
+  50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
+}
+/*
+ * Join gate.
+ *
+ * The most important page in the product and, until this pass, the most
+ * generic: a plain panel with an emoji. It is the only thing a teammate sees
+ * before they are inside, so for a lot of people it is the *whole* impression
+ * yeaboi makes.
+ *
+ * What it may say is tightly limited. `sharing/gate.py` serves a document with
+ * no per-share information in it at all — no title, no mode, no host name —
+ * because an unauthenticated visitor must learn nothing about what is behind
+ * the gate. So the identity here is carried entirely by constants: the
+ * block-glyph brand, the terminal frame, the duck. Nothing on this page varies
+ * with the share, and nothing may be added that does.
+ *
+ * Everything colour-bearing comes from design/palette.css, so the gate follows
+ * whichever theme the visitor last chose.
+ */
+
+._card_10s6b_20 {
+  width: min(92vw, 430px);
+  /* Centred by the page shell (see gate/page.css) — this element owns only the
+     panel, so the boards can drop it into any layout. */
+}
+
+._wordmark_10s6b_26 {
+  /* Large enough to be the first thing seen, and the reason there is no logo
+     image on this page: it is text, so it costs nothing and scales cleanly. */
+  font-size: 17px;
+  margin-bottom: var(--s4);
+}
+
+._eyebrow_10s6b_33 {
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+._heading_10s6b_38 {
+  margin: 0 0 var(--s2);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+._blurb_10s6b_44 {
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* The label and the duck share a baseline row, so the bird sits on the field
+   rather than floating beside it. */
+._labelRow_10s6b_53 {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin: var(--s5) 0 var(--s2);
+  /* The duck overhangs the field by design; without this its feet are clipped
+     by the row box on Safari. */
+  overflow: visible;
+}
+
+._label_10s6b_53 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+._duck_10s6b_73 {
+  /* Sits down onto the input's top edge. Negative margin rather than absolute
+     positioning so it still participates in the flex row and cannot end up
+     overlapping the label on a narrow phone. */
+  margin-bottom: -10px;
+}
+
+._code_10s6b_80 {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--bg);
+  color: var(--text);
+  /* Monospace + wide tracking so an O/0 or 5/S mix-up is visible while typing.
+     The alphabet in access.py already excludes I, O, 0 and 1 for the same
+     reason — this is the client half of that decision. */
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+._code_10s6b_80::placeholder {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+._code_10s6b_80:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+._wrong_10s6b_109 {
+  border-color: var(--danger);
+  animation: _shake_10s6b_1 220ms ease-in-out;
+}
+
+/*
+ * A refused code always keeps the field focused — the handler calls select() so
+ * the visitor can retype straight over it. That means `.code:focus-visible`
+ * above was repainting the border accent-blue the instant the error appeared,
+ * and the red never showed: the one state the border exists to signal was the
+ * one state it could not reach.
+ */
+._wrong_10s6b_109:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+._go_10s6b_126 {
+  width: 100%;
+  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
+     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+  min-height: 44px;
+  margin-top: var(--s3);
+  padding: 0.75rem;
+  border: 0;
+  border-radius: var(--r-m);
+  background: var(--accent);
+  color: var(--ink);
+  /* Mono, like every other control: in this type system the proportional face
+     is reserved for prose a person wrote. */
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-s);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+._go_10s6b_126:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+._go_10s6b_126:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+._go_10s6b_126:disabled {
+  /* Visibly inert rather than hidden: the button is disabled until eight
+     characters are in, which doubles as progress feedback. */
+  opacity: 0.45;
+  cursor: default;
+}
+
+._status_10s6b_164 {
+  /* Reserved height — the card must not resize when a message appears. */
+  min-height: 1.4rem;
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  text-align: center;
+}
+
+._bad_10s6b_173 {
+  color: var(--danger);
+}
+
+@keyframes _shake_10s6b_1 {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* A wrong code already announces itself through the alert region and the
+   colour change; the motion is decoration and must be droppable. The duck's
+   own startle is neutralised by the global guard in tokens.css. */
+@media (prefers-reduced-motion: reduce) {
+  ._wrong_10s6b_109 { animation: none; }
+  ._go_10s6b_126 { transition: none; }
+}
 /*
  * Retro board styles.
  *

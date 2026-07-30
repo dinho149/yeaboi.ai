@@ -276,10 +276,16 @@ export function App({ boot }: { boot: RetroBoot }) {
     // takes, rather than a second one that only code-gate visitors exercise —
     // and the accepted code leaves the JS heap with the document.
     return (
+      // Unlike the static-share gate, this one may name the mode: the board's
+      // own page title already says "Sprint Retro", so there is nothing left to
+      // withhold. `sharing/gate.py` is the surface with the secrecy rule.
       <JoinGate
-        brand="🤙 Sprint Retro"
+        wordmark="retro"
+        eyebrow="Sprint retrospective"
+        frameTitle="yeaboi — retro"
         heading="Join the retro"
         blurb="Enter the share code from the host's screen."
+        cta="Join"
       />
     );
   }

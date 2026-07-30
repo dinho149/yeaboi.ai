@@ -16,7 +16,7 @@ import { JoinGate, normalizeCode } from './JoinGate';
 afterEach(() => vi.restoreAllMocks());
 
 const field = (): HTMLInputElement => screen.getByLabelText(/access code/i) as HTMLInputElement;
-const submit = (): HTMLElement => screen.getByRole('button', { name: /view output/i });
+const submit = (): HTMLElement => screen.getByRole('button', { name: /open/i });
 
 function type(value: string): void {
   fireEvent.input(field(), { target: { value } });
@@ -122,5 +122,51 @@ describe('JoinGate', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(fetchBody(fetchMock)).toEqual({ code: 'K3P9-2QXA' });
+  });
+});
+
+describe('JoinGate identity', () => {
+  it('defaults to the brand, never a mode', async () => {
+    // `sharing/gate.py` serves a document with no per-share information in it:
+    // an unauthenticated visitor must not learn what is behind the gate. The
+    // block wordmark is the most tempting place to put "RETRO", so the default
+    // is pinned here rather than left to whoever next edits the component.
+    render(<JoinGate />);
+    expect(screen.getByRole('img', { name: 'yeaboi' })).toBeTruthy();
+    expect(screen.queryByRole('img', { name: /retro|poker|standup/i })).toBeNull();
+  });
+
+  it('lets a board name its own mode', () => {
+    // The boards may: their page title already says it.
+    render(<JoinGate wordmark="retro" heading="Join the retro" cta="Join" />);
+    expect(screen.getByRole('img', { name: 'retro' })).toBeTruthy();
+  });
+
+  it('sets the duck off when the code is refused', async () => {
+    // The gate's worst moment, turned into its most memorable one.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 403 })));
+    const { container } = render(<JoinGate />);
+    expect(container.querySelector('[data-state]')?.getAttribute('data-state')).toBe('idle');
+
+    fireEvent.input(field(), { target: { value: 'K3P92QXA' } });
+    fireEvent.click(screen.getByRole('button', { name: /open/i }));
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-state]')?.getAttribute('data-state')).toBe('startled')
+    );
+  });
+
+  it('leaves the duck alone when the code is right', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, token: 't' }), { status: 200 }))
+    );
+    const onJoined = vi.fn();
+    const { container } = render(<JoinGate onJoined={onJoined} />);
+    fireEvent.input(field(), { target: { value: 'K3P92QXA' } });
+    fireEvent.click(screen.getByRole('button', { name: /open/i }));
+
+    await waitFor(() => expect(onJoined).toHaveBeenCalled());
+    expect(container.querySelector('[data-state]')?.getAttribute('data-state')).toBe('idle');
   });
 });
