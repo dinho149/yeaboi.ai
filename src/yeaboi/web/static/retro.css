@@ -1,0 +1,1380 @@
+/*
+ * The shared design foundation: palettes, then everything derived from them.
+ *
+ * Every yeaboi surface imports this one file — the live boards, the join gate,
+ * the slide deck, and the static exports. It is the replacement for the three
+ * hand-copied palette blocks that used to live in html_theme.py, retro/page.py
+ * and poker/page.py, which could and did drift apart.
+ *
+ * Two rules keep it honest:
+ *
+ * 1. **Nothing here is a raw colour.** Anything colour-shaped is either one of
+ *    the five palette blocks in palette.css or a `color-mix` / alias of one, so
+ *    a new theme needs no changes outside that file. The literals that used to
+ *    be scattered through the boards (`#f85149` appeared in six places across
+ *    two files, the confetti palette was a hardcoded JS array in both) are gone.
+ * 2. **Nothing here depends on JS having run.** `:root` doubles as the default
+ *    theme, so a page renders correctly before — or without — the bundle.
+ *
+ * Vite inlines the palette below at build time, so the shipped stylesheet is a
+ * single flat file with no external reference at all. `test_web_assets` asserts
+ * that — including that this comment does not name the at-rule literally, since
+ * the guard is a blunt substring search on purpose.
+ */
+/*
+ * The five palettes and the base element reset — the foundation every yeaboi
+ * page shares, whether it is an exported report opened over file:// or a live
+ * board served through a tunnel.
+ *
+ * Split out of tokens.css so that a small page (the join gate) can take the
+ * palettes without also inheriting the export report's table/header/badge
+ * styling. tokens.css pulls this in first, so the export bundle is unchanged.
+ *
+ * Palette switching is pure custom-property swaps on [data-theme] — see
+ * runtime/theme.ts. Nothing here may depend on JS having run: the :root block
+ * doubles as the default, so a page with no data-theme attribute still renders.
+ */
+
+:root, [data-theme="midnight"] {
+  --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#c9d1d9;
+  --muted:#8b949e; --accent:#50bebe; --accent2:#a371f7; --card:#0d1117; --ink:#04211f;
+  --ok:#3fb950; --warn:#d29922; --danger:#f85149; --info:#58a6ff;
+  --critical:#f85149; --high:#f0883e; --medium:#58a6ff; --low:#8b949e;
+}
+[data-theme="light"] {
+  --bg:#f6f8fa; --panel:#ffffff; --line:#d0d7de; --text:#1f2328;
+  --muted:#656d76; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
+  --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; --info:#0969da;
+  --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
+}
+/*
+ * Solarized, lifted to WCAG AA.
+ *
+ * The canonical Solarized accents are tuned against base03 (#002b36) and only
+ * just clear 4.5:1 there. Against base02 (#073642) — this theme's `--panel`,
+ * which is what every chip, badge and status label actually sits on — several
+ * of them do not: `--danger` measured 2.81:1 and `--accent2` 2.86:1, i.e. below
+ * even the 3:1 floor for non-text UI. The hues are unchanged; each colour is
+ * lifted in HSL lightness by the smallest amount that clears 4.5:1 against BOTH
+ * `--panel` and `--bg`. `theme.test.ts` re-measures this on every run.
+ */
+[data-theme="solarized"] {
+  --bg:#002b36; --panel:#073642; --line:#0a4b59; --text:#eee8d5;
+  --muted:#93a1a1; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
+  --ok:#8ea300; --warn:#c29300; --danger:#e87775; --info:#48a0de;
+  --critical:#e87775; --high:#eb794a; --medium:#48a0de; --low:#93a1a1;
+}
+[data-theme="synthwave"] {
+  --bg:#1a1033; --panel:#241847; --line:#3d2a6b; --text:#f5e6ff;
+  --muted:#a48fd0; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
+  --ok:#3ddc97; --warn:#ffd166; --danger:#ff6b81; --info:#36e0ff;
+  --critical:#ff6b81; --high:#ff9e64; --medium:#36e0ff; --low:#a48fd0;
+}
+[data-theme="forest"] {
+  --bg:#0c1a12; --panel:#12261b; --line:#1f3a2a; --text:#d7e8dc;
+  --muted:#89a894; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
+  /* danger/critical lifted from #e5534b, which measured 4.30:1 on --panel. */
+  --ok:#4cc38a; --warn:#d9c26a; --danger:#e65b53; --info:#6cb6ff;
+  --critical:#e65b53; --high:#db9b4a; --medium:#6cb6ff; --low:#89a894;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 15px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { color: var(--text); font-weight: 700; line-height: 1.25; }
+h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.9rem; }
+h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+p { margin: 0 0 0.75rem; }
+ul, ol { margin: 0 0 0.75rem; padding-left: 1.25rem; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+
+:root {
+  /* ── Space ────────────────────────────────────────────────────────
+     A 4px scale. Promoted from poker/page.py, which already had it. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* ── Radius ─────────────────────────────────────────────────────── */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 16px;
+  --r-pill: 999px;
+
+  /* ── Type ───────────────────────────────────────────────────────── */
+  --fs-2xs: 11px;
+  --fs-xs: 12.5px;
+  --fs-s: 13.5px;
+  --fs-m: 15px;
+  --fs-l: 17px;
+  --fs-xl: 21px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* The "numbers voice": every value, count, key and readout is mono, prose is
+     sans. Poker already declared this for its deck; it is universal now, and
+     it is the one genuinely distinctive thing about how these pages read. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* ── Elevation ──────────────────────────────────────────────────── */
+  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
+  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+
+  /* ── Derived surfaces ───────────────────────────────────────────────
+     color-mix keeps the five theme blocks to the handful of decisions a
+     theme actually is; everything shaded off them is computed here once. */
+  --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  --focus: var(--accent2);
+
+  /* Themed confetti. This was a hardcoded array of six hex literals in *both*
+     board files; expressing it as tokens means the celebration matches the
+     palette the room is actually looking at, and costs nothing to maintain. */
+  --confetti-1: var(--accent);
+  --confetti-2: var(--accent2);
+  --confetti-3: var(--ok);
+  --confetti-4: var(--warn);
+  --confetti-5: var(--info);
+  --confetti-6: var(--high);
+
+  /* ── Stacking ───────────────────────────────────────────────────────
+     The boards used bare 24/26/28/29/30/31 scattered across two files, so
+     "is this above the deck?" could only be answered by grepping. Named,
+     ordered, and spaced by 10 so anything can be slotted between later. */
+  --z-rail: 20;
+  --z-deck: 30;
+  --z-console: 40;
+  --z-popover: 50;
+  --z-banner: 60;
+  --z-modal: 70;
+  --z-confetti: 80;
+
+  /* ── Breakpoints ────────────────────────────────────────────────────
+     Documented as tokens even though @media cannot read a custom property —
+     retro and poker picked different breakpoints, which is why the two
+     boards behaved differently on the same phone. These are the numbers to
+     write literally into every @media query. */
+  --bp-s: 700px;
+  --bp-m: 1100px;
+  --bp-l: 1440px;
+
+  /* ── Motion ─────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ── Touch targets ──────────────────────────────────────────────────
+     WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
+     retro board are ~13x20 today, which is why moving a card on a phone is a
+     lottery. --tap is the comfortable size, --tap-min the absolute floor. */
+  --tap: 32px;
+  --tap-min: 24px;
+}
+
+/* Per-mode accent, layered *after* the theme blocks as an override rather than
+   forked into a second set of five palettes. Retro and poker each keep their
+   identity while sharing one set of themes. */
+[data-mode="retro"] { --accent: #50bebe; }
+[data-mode="poker"] { --accent: #5ac88a; }
+
+/* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
+   never appears on a mouse click — the reason the boards had no focus styling
+   at all was that plain :focus looked broken on click. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--r-s);
+}
+
+/*
+ * Reduced motion, applied globally.
+ *
+ * Retro had no such block at all, and its finished-timer readout runs
+ * `animation: blink 1s steps(2) infinite` — a literal flashing element. That is
+ * a photosensitivity hazard, not a stylistic preference, so this belongs in the
+ * foundation where no surface can forget it. Animations are neutralised rather
+ * than removed so anything whose *end state* matters still reaches it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Print: force the light palette and drop interactive chrome.
+ *
+ * Cmd-P on a dark-themed page otherwise floods the page with ink. Shared here
+ * because the boards are printed too (people print a finished retro), and the
+ * palette override has to come after palette.css to win the cascade — equal
+ * specificity, later wins.
+ */
+@media print {
+  :root, [data-theme] {
+    --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
+    --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
+  }
+  [data-print-hide] { display: none !important; }
+}
+/*
+ * Styling for the shared board components.
+ *
+ * Every value is a token from design/tokens.css. Two rules worth keeping in
+ * mind while editing:
+ *
+ * * **`100dvh`, never `100vh`.** iOS Safari counts the collapsing URL bar in
+ *   `vh`, so a `100vh` scroll container is taller than the visible viewport and
+ *   its last row sits permanently under the chrome. Both boards do this today
+ *   (poker/page.py:170,330) and it is why the poker deck is unreachable on an
+ *   iPhone until you scroll the whole page.
+ * * **Safe-area insets on anything edge-anchored.** A phone held in landscape
+ *   puts the notch over the left or right gutter.
+ */
+
+/* ── App bar ──────────────────────────────────────────────────── */
+._appbar_1qfri_17 {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  min-height: 52px;
+  padding: var(--s2) max(var(--s4), env(safe-area-inset-right)) var(--s2) max(var(--s4), env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+._brand_1qfri_27 { display: flex; align-items: baseline; gap: var(--s2); }
+._brandTitle_1qfri_28 { color: var(--accent); font-size: var(--fs-l); font-weight: 700; letter-spacing: 0.01em; }
+._brandSub_1qfri_29 { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
+._spacer_1qfri_30 { flex: 1; }
+._tools_1qfri_31 { display: flex; align-items: center; gap: var(--s2); }
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+._iconBtn_1qfri_34 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and the
+     board's old .act buttons were about 13x20. */
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+._iconBtn_1qfri_34:hover { border-color: var(--accent); }
+._iconBtnCompact_1qfri_54 {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--s1);
+  font-size: var(--fs-s);
+  /* Visible at rest, not on hover: a hover-only control does not exist on a
+     touch screen, which is where most of these boards are actually used. */
+  opacity: 0.72;
+}
+._iconBtnCompact_1qfri_54:hover, ._iconBtnCompact_1qfri_54:focus-visible { opacity: 1; }
+._iconBtnActive_1qfri_64 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._iconBtnPrimary_1qfri_65 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._iconBtnPrimary_1qfri_65:hover { filter: brightness(1.08); }
+._iconBtnDanger_1qfri_67 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._iconGlyph_1qfri_68 { font-size: var(--fs-m); line-height: 1; }
+
+._primaryBtn_1qfri_70 {
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  background: var(--accent);
+  color: var(--ink);
+  border: 1px solid transparent;
+  border-radius: var(--r-s);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+._primaryBtn_1qfri_70:hover { filter: brightness(1.08); }
+
+._preset_1qfri_83 {
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+._preset_1qfri_83:hover { border-color: var(--accent); }
+
+/* ── Toolbar popover ──────────────────────────────────────────── */
+._popoverGroup_1qfri_97 { display: contents; }
+._popoverAnchor_1qfri_98 { position: relative; display: inline-flex; }
+._tbtn_1qfri_99 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+._tbtn_1qfri_99:hover { border-color: var(--accent); }
+._tbtnOpen_1qfri_115 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+._popover_1qfri_97 {
+  position: absolute;
+  top: calc(100% + var(--s2));
+  right: 0;
+  z-index: var(--z-popover);
+  min-width: 220px;
+  /* Never taller than the screen minus the bar it hangs from: an over-long
+     panel on a phone otherwise runs off the bottom with no way to scroll it. */
+  max-height: min(70vh, 480px);
+  overflow: auto;
+  padding: var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-2);
+}
+._popoverLeft_1qfri_133 { right: auto; left: 0; }
+._popover_1qfri_97[hidden] { display: none; }
+
+/* ── Form controls ────────────────────────────────────────────── */
+._fieldLabel_1qfri_137 {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+._select_1qfri_144, ._textInput_1qfri_144, ._numberInput_1qfri_144 {
+  min-height: var(--tap);
+  padding: 0 var(--s2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  font: inherit;
+  font-size: var(--fs-s);
+}
+._textInput_1qfri_144 { flex: 1; min-width: 0; }
+._numberInput_1qfri_144 { width: 5.5rem; font-family: var(--font-mono); }
+._range_1qfri_156 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+
+/* ── Music ────────────────────────────────────────────────────── */
+._musicPanel_1qfri_159 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_1qfri_160 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_1qfri_161 {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--ink);
+  border: none;
+  cursor: pointer;
+  font-size: var(--fs-m);
+}
+._viz_1qfri_171 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_1qfri_172 { opacity: 1; }
+
+/* ── Timer ────────────────────────────────────────────────────── */
+._timerPanel_1qfri_175 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_1qfri_176 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_1qfri_177 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 4.5ch;
+  text-align: right;
+}
+/* Finished state is carried by colour AND the words "time's up", not by the
+   old infinite blink alone — motion is suppressed for anyone who asked for it. */
+._timerDone_1qfri_187 { color: var(--danger); }
+
+._confetti_1qfri_189 {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: var(--z-confetti);
+}
+
+/* ── Themes ───────────────────────────────────────────────────── */
+._themeSwitcher_1qfri_199 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_1qfri_200 { display: flex; gap: var(--s2); }
+._swatch_1qfri_200 {
+  position: relative;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  padding: 0;
+}
+._swatchOn_1qfri_210 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_1qfri_211 {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ── Presence ─────────────────────────────────────────────────── */
+._presence_1qfri_221 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_1qfri_222 { display: inline-flex; align-items: center; }
+._stacked_1qfri_223 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_1qfri_223:first-child { margin-left: 0; }
+._presenceMore_1qfri_225 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_1qfri_226 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+
+._roster_1qfri_228 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_1qfri_229 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_1qfri_230 { flex: 1; }
+._rosterYou_1qfri_231 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_1qfri_232 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+
+/* ── Profile ──────────────────────────────────────────────────── */
+._avatarGrid_1qfri_235 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_1qfri_236 {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: var(--fs-l);
+  line-height: 1;
+}
+._avatarChoiceOn_1qfri_246 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ── Invite ───────────────────────────────────────────────────── */
+._invite_1qfri_249 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_1qfri_250 { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
+._inviteCode_1qfri_251 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_1qfri_252 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
+     the entire failure mode. */
+  letter-spacing: 0.14em;
+}
+._inviteUrl_1qfri_259 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+
+/* ── Modal ────────────────────────────────────────────────────── */
+._modal_1qfri_262 {
+  /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
+     Only the skin is ours. */
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0;
+  max-width: min(92vw, 440px);
+  box-shadow: var(--shadow-2);
+}
+._modal_1qfri_262::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_1qfri_274 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_1qfri_275 { font-size: var(--fs-l); margin: 0; }
+._modalActions_1qfri_276 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+
+/* Visually hidden but reachable by assistive tech. Not `display:none`, which
+   removes it from the accessibility tree along with everything else. */
+._srOnly_1qfri_280 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/*
+ * Join gate. Everything colour-bearing comes from design/palette.css, so the
+ * gate follows whichever theme the visitor last chose rather than being
+ * hardcoded to midnight the way the old inline string was.
+ */
+
+._card_r9ler_7 {
+  width: min(92vw, 430px);
+  /* Centred by the page shell (see gate/main.tsx's own rules) — this element
+     only owns the panel itself, so the boards can drop it into any layout. */
+  padding: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 50%);
+}
+
+._brand_r9ler_18 {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+._heading_r9ler_23 {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 1.45rem;
+}
+
+._blurb_r9ler_28 {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+._label_r9ler_34 {
+  display: block;
+  margin: 1.4rem 0 0.45rem;
+  font-weight: 650;
+}
+
+._code_r9ler_40 {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  /* Monospace + wide tracking so an O/0 or 5/S mix-up is visible while typing.
+     The alphabet in access.py already excludes I, O, 0 and 1 for the same
+     reason — this is the client half of that decision. */
+  font: 700 1.15rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+._code_r9ler_40::placeholder {
+  color: var(--muted);
+  opacity: 0.55;
+  font-weight: 500;
+}
+
+._code_r9ler_40:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+._wrong_r9ler_68 {
+  border-color: var(--danger);
+  animation: _shake_r9ler_1 220ms ease-in-out;
+}
+
+._go_r9ler_73 {
+  width: 100%;
+  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
+     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+  min-height: 44px;
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 750;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: filter 120ms ease, opacity 120ms ease;
+}
+
+._go_r9ler_73:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+._go_r9ler_73:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+._go_r9ler_73:disabled {
+  /* Visibly inert rather than hidden: the button is disabled until eight
+     characters are in, which doubles as progress feedback. */
+  opacity: 0.45;
+  cursor: default;
+}
+
+._status_r9ler_106 {
+  /* Reserved height — the card must not resize when a message appears. */
+  min-height: 1.4rem;
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+._bad_r9ler_114 {
+  color: var(--danger);
+}
+
+@keyframes _shake_r9ler_1 {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* A wrong code already announces itself through the alert region and the
+   colour change; the motion is decoration and must be droppable. */
+@media (prefers-reduced-motion: reduce) {
+  ._wrong_r9ler_68 { animation: none; }
+  ._go_r9ler_73 { transition: none; }
+}
+/*
+ * Styling for the shared primitives.
+ *
+ * One module for the whole set rather than twelve files: they are a single
+ * cohesive vocabulary, they are all small, and keeping them together makes the
+ * spacing and radius choices comparable at a glance instead of scattered.
+ *
+ * Every value here is a token. If you find yourself typing a hex colour or a
+ * pixel gap, it belongs in tokens.css first.
+ */
+
+/* ── Chip ─────────────────────────────────────────────────────── */
+._chip_1k7st_13 {
+  display: inline-block;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+/* Tone-specific colours come from an inline style built by toneMix(), because
+   the set of tones is a TypeScript union rather than a set of class names —
+   one source of truth, and adding a tone needs no CSS change. */
+._chipLink_1k7st_29 { text-decoration: none; }
+._chipLink_1k7st_29:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Stat tile ────────────────────────────────────────────────── */
+._statGrid_1k7st_33 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+._stat_1k7st_33 {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+._statValue_1k7st_44 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent);
+  /* Tabular figures: a value that ticks (a count, a countdown) must not make
+     the tile jitter as digit widths change. */
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+._statLabel_1k7st_54 {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+._statHint_1k7st_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+
+/* ── Bars ─────────────────────────────────────────────────────── */
+._bar_1k7st_64 {
+  height: 6px;
+  background: var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+._barFill_1k7st_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+
+._segTrack_1k7st_72 {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  min-width: 2px;
+}
+._segTrack_1k7st_72 > i { display: block; height: 100%; }
+
+/* ── Legend ───────────────────────────────────────────────────── */
+._legend_1k7st_83 {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+._legend_1k7st_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_1k7st_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_1k7st_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+._sparkWrap_1k7st_96 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_1k7st_96 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_1k7st_98 {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Avatar ───────────────────────────────────────────────────── */
+._avatar_1k7st_108 {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  flex: none;
+  user-select: none;
+}
+
+/* ── Notice ───────────────────────────────────────────────────── */
+._notice_1k7st_122 {
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+._noticeTitle_1k7st_128 {
+  font-weight: 600;
+  font-size: var(--fs-s);
+  color: var(--warn);
+  margin-bottom: var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+._notice_1k7st_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+
+/* ── Card / Section ───────────────────────────────────────────── */
+._card_1k7st_140 {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+._cardHover_1k7st_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_1k7st_148 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+._cardTitle_1k7st_155 { font-weight: 600; font-size: var(--fs-s); }
+
+._section_1k7st_157 { margin-bottom: var(--s6); }
+._sectionTitle_1k7st_158 {
+  font-size: var(--fs-l);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--s1);
+  margin-bottom: var(--s4);
+}
+
+/* ── Data table ───────────────────────────────────────────────── */
+/* The wrapper, not the table, scrolls. A table wide enough to overflow must
+   never make the *page* scroll sideways — on a phone that breaks every
+   vertical swipe on the board behind it. */
+._tableWrap_1k7st_171 { overflow-x: auto; }
+._table_1k7st_171 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_1k7st_171 th {
+  background: var(--card);
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  font-weight: 600;
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+._table_1k7st_171 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_1k7st_171 tr:last-child td { border-bottom: none; }
+._numeric_1k7st_186 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Prose ────────────────────────────────────────────────────── */
+._prose_1k7st_189 { font-size: var(--fs-s); line-height: 1.6; }
+/* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
+   (tickets.py already strips their HTML) and must never be re-parsed as
+   markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
+._proseText_1k7st_193 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_1k7st_194 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_1k7st_194 > li {
+  position: relative;
+  padding: var(--s1) 0 var(--s1) var(--s4);
+  line-height: 1.55;
+}
+._proseList_1k7st_194 > li::before {
+  content: "•";
+  color: var(--accent);
+  position: absolute;
+  left: var(--s1);
+}
+/*
+ * Retro board styles.
+ *
+ * Every colour is a token from design/tokens.css — a literal here would not
+ * follow the palette, and a Python test fails the build if one appears.
+ *
+ * Three things to know before editing:
+ *
+ * 1. `100dvh`, never `100vh`. iOS Safari's `vh` excludes the retracting URL
+ *    bar, so a `100vh` app shell is taller than the visible viewport and the
+ *    composer sits under the browser chrome — on the exact devices a tunnel
+ *    link is opened on.
+ * 2. Tap targets are `--tap` (32px) and never below `--tap-min` (24px, the
+ *    WCAG 2.2 floor). The old `.act` buttons were about 13×20.
+ * 3. Card actions stay visible at reduced opacity rather than appearing on
+ *    hover. There is no hover on a touchscreen, so a hover-only control is an
+ *    invisible one for half the room.
+ */
+
+._app_bkqgv_20 {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: var(--fs-m) / 1.5 var(--font-sans);
+  /* Landscape on a notched phone puts the outer columns under the cutout. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+._offline_bkqgv_32 { color: var(--warn); font-family: var(--font-sans); }
+
+/* ── Identity cluster ─────────────────────────────────────────────────── */
+._identity_bkqgv_35 { display: flex; align-items: center; gap: var(--s3); }
+
+._meChip_bkqgv_37 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+._meChip_bkqgv_37:hover { border-color: var(--accent); }
+._meName_bkqgv_52 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_bkqgv_53 { color: var(--muted); font-size: var(--fs-2xs); }
+._roomCount_bkqgv_54 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+._viewCtl_bkqgv_56 { display: flex; align-items: center; gap: var(--s2); }
+
+/* ── Banners ──────────────────────────────────────────────────────────── */
+._lockBanner_bkqgv_59, ._musicBanner_bkqgv_59 {
+  margin: 0;
+  padding: var(--s2) var(--s4);
+  font-size: var(--fs-s);
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+._lockBanner_bkqgv_59 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_bkqgv_59 {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  width: 100%;
+  min-height: var(--tap);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+._castBtn_bkqgv_78, ._ghostBtn_bkqgv_78, ._saveBtn_bkqgv_78, ._addBtn_bkqgv_78, ._focusExit_bkqgv_78 {
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+._castBtn_bkqgv_78:hover, ._ghostBtn_bkqgv_78:hover, ._focusExit_bkqgv_78:hover { border-color: var(--accent); }
+._saveBtn_bkqgv_78, ._addBtn_bkqgv_78 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._saveBtn_bkqgv_78:hover, ._addBtn_bkqgv_78:hover:not(:disabled) { filter: brightness(1.08); }
+._addBtn_bkqgv_78:disabled { opacity: 0.45; cursor: default; }
+
+._popNote_bkqgv_94 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+
+/* ── Carried-over review strip ────────────────────────────────────────── */
+._carried_bkqgv_97 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_bkqgv_98 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_bkqgv_99 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  font-weight: 600;
+  cursor: pointer;
+}
+._chevron_bkqgv_113 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_bkqgv_114 { transform: rotate(90deg); }
+._carriedProgress_bkqgv_115 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_bkqgv_116 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_bkqgv_116[hidden] { display: none; }
+._carriedHint_bkqgv_118 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_bkqgv_119 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_bkqgv_120 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1 1 320px;
+  padding: var(--s2) var(--s3);
+  background: var(--card);
+  border: 1px solid var(--line);
+  /* The status colour rides on the left edge, so the four states are
+     distinguishable at a glance without relying on the text alone. */
+  border-left-width: 3px;
+  border-radius: var(--r-s);
+  font-size: var(--fs-s);
+}
+._carriedText_bkqgv_134 { flex: 1; min-width: 0; }
+._carriedSelect_bkqgv_135 {
+  min-height: var(--tap);
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+._statusPending_bkqgv_144 { border-left-color: var(--line); }
+._statusDone_bkqgv_145 { border-left-color: var(--ok); }
+._statusProgress_bkqgv_146 { border-left-color: var(--info); }
+._statusCarried_bkqgv_147 { border-left-color: var(--warn); }
+._statusMuted_bkqgv_148 { border-left-color: var(--muted); opacity: 0.7; }
+
+/* ── Walkthrough bar ──────────────────────────────────────────────────── */
+._focusBar_bkqgv_151 {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-bottom: 1px solid var(--line);
+}
+._focusStep_bkqgv_159 {
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+._focusStep_bkqgv_159:disabled { opacity: 0.4; cursor: default; }
+._focusWho_bkqgv_172 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_bkqgv_173 { font-size: var(--fs-m); }
+._focusCount_bkqgv_174 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+
+/* ── Board layout ─────────────────────────────────────────────────────── */
+._board_bkqgv_177 {
+  flex: 1;
+  /* Without an explicit floor a flex child refuses to shrink below its content,
+     so the columns would push the composer off the bottom instead of scrolling. */
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  overflow: hidden;
+}
+
+@media (max-width: 1099px) {
+  ._board_bkqgv_177 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+}
+
+@media (max-width: 699px) {
+  /* One column per screen. A vertical stack would mean scrolling past a dozen
+     cards to reach the next heading; four slivers would be unreadable. */
+  ._board_bkqgv_177 {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  ._board_bkqgv_177::-webkit-scrollbar { display: none; }
+  ._column_bkqgv_206 { scroll-snap-align: center; }
+}
+
+._pager_bkqgv_209 { display: none; }
+@media (max-width: 699px) {
+  ._pager_bkqgv_209 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_bkqgv_212 {
+    /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
+    width: var(--tap-min);
+    height: var(--tap-min);
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  ._pagerDot_bkqgv_212::after {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: auto;
+    border-radius: var(--r-pill);
+    background: var(--line);
+  }
+  ._pagerDotOn_bkqgv_230::after { background: var(--accent); }
+}
+
+/* ── Column ───────────────────────────────────────────────────────────── */
+._column_bkqgv_206 {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--felt);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-m);
+}
+._columnHead_bkqgv_242 { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
+._columnTitle_bkqgv_243 { margin: 0; font-size: var(--fs-s); font-weight: 600; letter-spacing: 0.01em; }
+._columnCount_bkqgv_244 {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  flex: 1;
+}
+._columnAdd_bkqgv_251 {
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-l);
+  cursor: pointer;
+}
+._columnAdd_bkqgv_251:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+
+._cards_bkqgv_266 {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--s2) var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+._cardsOver_bkqgv_275 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+._columnEmpty_bkqgv_276 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._columnTyping_bkqgv_277 { padding: 0 var(--s3) var(--s2); min-height: 1.2em; }
+
+._authorGroup_bkqgv_279 { display: flex; flex-direction: column; gap: var(--s2); }
+._authorGroupHead_bkqgv_280 {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+._cardSlot_bkqgv_289 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._dropLine_bkqgv_290 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+._card_bkqgv_266 {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: var(--s3);
+  box-shadow: var(--shadow-1);
+}
+._cardAI_bkqgv_300 { border-left: 3px solid var(--accent2); }
+._cardDragging_bkqgv_301 { opacity: 0.4; }
+._cardText_bkqgv_302 {
+  margin: 0;
+  /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
+     the only formatting it can carry — and the only one it should. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-s);
+}
+
+._cardMeta_bkqgv_311 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+._metaSpacer_bkqgv_312 { flex: 1; }
+._author_bkqgv_279 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_bkqgv_314 {
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+._aiBadge_bkqgv_322 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_bkqgv_323 {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+._act_bkqgv_14, ._grip_bkqgv_330 {
+  width: var(--tap);
+  height: var(--tap);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-s);
+  /* Dimmed but present. Hover-only controls do not exist on a touchscreen. */
+  opacity: 0.65;
+  cursor: pointer;
+}
+._act_bkqgv_14:hover, ._grip_bkqgv_330:hover, ._act_bkqgv_14:focus-visible, ._grip_bkqgv_330:focus-visible { opacity: 1; color: var(--text); }
+._actDanger_bkqgv_347:hover, ._actDanger_bkqgv_347:focus-visible { color: var(--danger); }
+
+._gripWrap_bkqgv_349 { position: relative; display: inline-flex; }
+._grip_bkqgv_330 {
+  cursor: grab;
+  /* Required for a pointer drag on touch. Confined to the grip so the column
+     itself still scrolls — see useCardDrag. */
+  touch-action: none;
+}
+._grip_bkqgv_330:active { cursor: grabbing; }
+
+._moveMenu_bkqgv_358 {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--s1));
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: var(--s1);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  box-shadow: var(--shadow-2);
+}
+._moveItem_bkqgv_372 {
+  min-height: var(--tap);
+  padding: 0 var(--s2);
+  text-align: left;
+  border: 0;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+  cursor: pointer;
+}
+._moveItem_bkqgv_372:hover { background: var(--panel-2); }
+
+/* ── Inline editor ────────────────────────────────────────────────────── */
+._editor_bkqgv_387 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_bkqgv_388 {
+  width: 100%;
+  resize: vertical;
+  padding: var(--s2);
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-s);
+  font: inherit;
+  font-size: var(--fs-s);
+}
+._editActions_bkqgv_399 { display: flex; justify-content: flex-end; gap: var(--s2); }
+
+/* ── Reactions ────────────────────────────────────────────────────────── */
+._reactions_bkqgv_402 { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+._rxChip_bkqgv_403, ._rxAdd_bkqgv_403, ._rxPick_bkqgv_403 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  justify-content: center;
+  padding: 0 var(--s1);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+._rxChip_bkqgv_403:hover, ._rxAdd_bkqgv_403:hover, ._rxPick_bkqgv_403:hover { border-color: var(--accent); }
+._rxChip_bkqgv_403:disabled, ._rxAdd_bkqgv_403:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_bkqgv_421 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_bkqgv_422 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxAdd_bkqgv_403 { background: none; color: var(--muted); }
+
+._rxPicker_bkqgv_425 {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + var(--s1));
+  z-index: var(--z-popover);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  max-width: 16rem;
+  padding: var(--s2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  box-shadow: var(--shadow-2);
+}
+
+/* ── Composer ─────────────────────────────────────────────────────────── */
+._composer_bkqgv_442 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  /* Plus the home-indicator inset, or the Add button sits under it. */
+  padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+._composerLocked_bkqgv_452 { margin: 0; text-align: center; color: var(--muted); font-size: var(--fs-s); }
+._composerRow_bkqgv_453 { display: flex; align-items: flex-end; gap: var(--s2); }
+._composerBox_bkqgv_454 {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  max-height: 8rem;
+  resize: vertical;
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  font: inherit;
+  font-size: var(--fs-s);
+}
+._composerBox_bkqgv_454:focus-visible { border-color: var(--accent); }
+
+._segmented_bkqgv_470 { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; }
+._segmented_bkqgv_470::-webkit-scrollbar { display: none; }
+._segment_bkqgv_470 {
+  flex: 1 0 auto;
+  min-height: var(--tap-min);
+  padding: 0 var(--s3);
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+._segment_bkqgv_470:hover { border-color: var(--accent); }
+._segmentOn_bkqgv_486 {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ── Floating reaction overlay ────────────────────────────────────────── */
+._floatLayer_bkqgv_494 {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-banner);
+  pointer-events: none;
+  overflow: hidden;
+}
+._floater_bkqgv_501 {
+  position: absolute;
+  bottom: 0;
+  animation: _rise_bkqgv_1 2.6s ease-out forwards;
+}
+
+@keyframes _rise_bkqgv_1 {
+  from { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  to { transform: translateY(-70vh); opacity: 0; }
+}
+
+._srOnly_bkqgv_513 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

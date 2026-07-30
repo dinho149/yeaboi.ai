@@ -90,6 +90,11 @@ and never builds anything.
   **Never also ship them in a boot payload** — the island would win at runtime, so a stale bundle
   would render a board that disagrees with what the server accepts. Payloads carry only what a
   codegen cannot pin.
+- **Retro is mid-migration.** `RETRO_UI=react` serves the React board (`frontend/src/retro`);
+  anything else serves the legacy page in `retro/page.py`. `make dev-board-react` runs a seeded
+  board on the new UI. Both are covered by tests; the flag and `build_legacy_board_html` go away
+  together.
+
 ## Code Style
 
 - Python 3.11+, ruff for linting/formatting (line-length 120)

@@ -1,0 +1,186 @@
+/**
+ * The board, end to end against a fake server.
+ *
+ * Mounting the whole app is what catches the wiring the unit tests cannot: that
+ * the snapshot reaches the columns, that host controls appear for a host and
+ * not for a guest, and that the tree a real participant sees passes axe.
+ */
+
+import { render, screen, waitFor, within } from '@testing-library/preact';
+import userEvent from '@testing-library/user-event';
+import { axe } from 'vitest-axe';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { card, person, state, typing } from '../test/retroState';
+import { App } from './App';
+import type { RetroBoot } from './boot';
+
+const BOOT: RetroBoot = {
+  title: 'Sprint Retro',
+  sprint: 'Sprint 42',
+  adjectives: ['Cosmic'],
+  nouns: ['Llama'],
+  musicChannels: [{ name: 'Lofi', url: 'https://example.invalid/lofi' }],
+};
+
+const SNAPSHOT = state({
+  revision: 4,
+  cards: [
+    card({ id: 'a', grid: 'went_well', text: 'Pairing paid off', author: 'Ada', mine: true }),
+    card({ id: 'b', grid: 'went_well', text: 'Zero flaky tests', author: 'Grace' }),
+    card({ id: 'c', grid: 'action_items', text: 'Alert on staging', author: 'Grace' }),
+  ],
+  presence: [person('Ada', '🤠'), person('Grace', '🦊')],
+  typing: [typing('Grace', 'demos')],
+});
+
+/**
+ * A server that answers the first `/api/state` and then parks.
+ *
+ * Parking rather than answering repeatedly is what stops the long-poll loop
+ * spinning at full speed for the duration of every test — and it is what the
+ * real endpoint does.
+ */
+function fakeServer(snapshot = SNAPSHOT) {
+  let served = false;
+  return vi.fn().mockImplementation(async (url: string) => {
+    if (url.startsWith('/api/presence')) return new Response(JSON.stringify({ ok: true }));
+    if (url.startsWith('/api/state')) {
+      if (served) return new Promise<Response>(() => {});
+      served = true;
+      return new Response(JSON.stringify(snapshot), { headers: { ETag: 'W/"1"' } });
+    }
+    return new Response(JSON.stringify({ ok: true, state: snapshot }));
+  });
+}
+
+/** Arrive as somebody who has been here before, so the profile modal stays shut. */
+function seedIdentity({ admin = false } = {}): void {
+  localStorage.setItem('retro_pid', 'pid-1');
+  localStorage.setItem('retro_name', 'Ada');
+  localStorage.setItem('retro_avatar', '🤠');
+  sessionStorage.setItem('retro_token', 'tok');
+  if (admin) sessionStorage.setItem('retro_admin', 'sec');
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  vi.stubGlobal('fetch', fakeServer());
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('retro App', () => {
+  it('shows the join gate, not the board, without a token', () => {
+    render(<App boot={BOOT} />);
+    expect(screen.getByLabelText('Access code')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'What went well' })).toBeNull();
+  });
+
+  it('renders the snapshot into its columns', async () => {
+    seedIdentity();
+    render(<App boot={BOOT} />);
+
+    await screen.findByText('Pairing paid off');
+    const wentWell = screen.getByRole('region', { name: 'What went well' });
+    expect(within(wentWell).getByText('Zero flaky tests')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Action items' })).getByText('Alert on staging')).toBeTruthy();
+    // The subtitle counts every card on the board, not just one column.
+    expect(screen.getByText(/3 cards/)).toBeTruthy();
+  });
+
+  it("shows other people's typing but not your own", async () => {
+    seedIdentity();
+    render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+    expect(screen.getByText('Grace is typing…')).toBeTruthy();
+  });
+
+  it('offers host controls only when the link carried the admin secret', async () => {
+    seedIdentity();
+    const { unmount } = render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+    expect(screen.queryByRole('button', { name: /Lock the board/ })).toBeNull();
+    unmount();
+
+    // A fresh server: the previous one has already spent its single snapshot
+    // and now parks, which is what a second mount would otherwise inherit.
+    seedIdentity({ admin: true });
+    vi.stubGlobal('fetch', fakeServer());
+    render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+    expect(screen.getByRole('button', { name: 'Lock the board' })).toBeTruthy();
+  });
+
+  it('posts a new card to the column the composer names', async () => {
+    seedIdentity();
+    const user = userEvent.setup();
+    const server = fakeServer();
+    vi.stubGlobal('fetch', server);
+    render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+
+    await user.click(screen.getByRole('radio', { name: 'Demos' }));
+    await user.type(screen.getByRole('textbox', { name: /Add a card to Demos/ }), 'a demo');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => {
+      const post = server.mock.calls.find(([url]) => String(url).startsWith('/api/cards'));
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String((post?.[1] as RequestInit).body))).toMatchObject({
+        grid: 'demos',
+        text: 'a demo',
+        author: 'Ada',
+      });
+    });
+  });
+
+  it('filters every column to one person during a walkthrough', async () => {
+    seedIdentity();
+    const user = userEvent.setup();
+    render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+
+    await user.click(screen.getByRole('button', { name: /Walk through one person/ }));
+    // Ada is first alphabetically, so hers stay and Grace's go.
+    expect(screen.getByText('Pairing paid off')).toBeTruthy();
+    expect(screen.queryByText('Zero flaky tests')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Walkthrough' }).textContent).toContain('1 of 2');
+
+    // → and Escape are bound at the document, so they step without the bar
+    // holding focus — which is the point, since you are reading the cards.
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByText('Zero flaky tests')).toBeTruthy();
+    expect(screen.queryByText('Pairing paid off')).toBeNull();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('region', { name: 'Walkthrough' })).toBeNull();
+    expect(screen.getByText('Pairing paid off')).toBeTruthy();
+  });
+
+  it('announces the lock and takes the composer away with it', async () => {
+    seedIdentity();
+    vi.stubGlobal('fetch', fakeServer(state({ ...SNAPSHOT, revision: 5, locked: true })));
+    render(<App boot={BOOT} />);
+
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toContain('locked');
+    expect(screen.queryByRole('textbox', { name: /Add a card/ })).toBeNull();
+  });
+
+  it('has no axe violations on a live board', async () => {
+    seedIdentity({ admin: true });
+    const { container } = render(<App boot={BOOT} />);
+    await screen.findByText('Pairing paid off');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('has no axe violations with the profile modal open', async () => {
+    localStorage.setItem('retro_pid', 'pid-1');
+    sessionStorage.setItem('retro_token', 'tok');
+    const { container } = render(<App boot={BOOT} />);
+    await screen.findByRole('radiogroup', { name: 'Avatar' });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});

@@ -1,0 +1,495 @@
+/**
+ * The retro board application.
+ *
+ * Composes the shared library into the ceremony: identity, the live stream, the
+ * columns, and the host controls. Almost nothing in here is retro-specific
+ * plumbing — the transport, the popovers, the modal, the timer, the music and
+ * the theme picker all arrive from `shared/` and `hooks/`, which is the whole
+ * point of the migration. What is left is the retro's own shape.
+ *
+ * ## Three kinds of state, kept apart
+ *
+ * 1. **Server truth** — the snapshot, in the store, read through selectors.
+ * 2. **Local UI** — composer text, focus author, grouping, which panel is open.
+ *    `useState` here, never derived from a snapshot.
+ * 3. **Identity** — name, avatar, palette. `localStorage`, so a reload mid-retro
+ *    puts you back as yourself rather than as a new anonymous participant.
+ *
+ * Keeping (2) out of (1) is what removes the `editingHere` freeze; see CardView.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { useAlarm } from '../hooks/useAlarm';
+import { useBoardStream } from '../hooks/useBoardStream';
+import { useConfetti } from '../hooks/useConfetti';
+import { useCountdown } from '../hooks/useCountdown';
+import { useHeartbeat } from '../hooks/useHeartbeat';
+import { useHostBroadcast } from '../hooks/useHostBroadcast';
+import { useMusic } from '../hooks/useMusic';
+import { apiUrl, loadSession, stripCredentialsFromUrl, type Session } from '../runtime/api';
+import { participantId, read, write } from '../runtime/storage';
+import { applyTheme, setTheme, storedTheme, THEME_KEYS, type Theme } from '../runtime/theme';
+import {
+  ConfettiCanvas,
+  IconButton,
+  InviteQR,
+  JoinGate,
+  Modal,
+  MusicPlayer,
+  Popover,
+  PresenceRow,
+  ProfileModal,
+  Roster,
+  ThemeSwitcher,
+  TimerControls,
+  TimerReadout,
+  Toolbar,
+  Visualizer,
+} from '../shared';
+import { createBoardStore } from '../store/boardStore';
+import { useBoardSelector, useBoardSnapshot } from '../store/useBoard';
+import { AVATARS, type CarriedStatuses, type RetroGrids } from '../types/enums';
+import type { Participant, ReactionEvent, RetroCard, RetroState, TypingEntry } from '../types/board';
+import { createRetroActions } from './actions';
+import { Board } from './Board';
+import { CarriedStrip } from './CarriedStrip';
+import { Composer } from './Composer';
+import { FloatingEmoji } from './FloatingEmoji';
+import { FocusBar } from './FocusBar';
+import type { RetroBoot } from './boot';
+import styles from './retro.module.css';
+
+/** How long after the last keystroke the typing indicator lingers. */
+const TYPING_LINGER_MS = 2500;
+
+/** Storage keys. Unchanged from the legacy page so an in-flight retro survives the flip. */
+const KEY = { pid: 'retro_pid', name: 'retro_name', avatar: 'retro_avatar', grouped: 'retro_grouped' } as const;
+
+// Stable empty defaults. A fresh `[]` in a selector would be a new reference
+// every call, and `useSyncExternalStore` compares with Object.is — the board
+// would re-render in a loop before the first snapshot ever arrived.
+const NO_CARDS: readonly RetroCard[] = [];
+const NO_PEOPLE: readonly Participant[] = [];
+const NO_TYPING: readonly TypingEntry[] = [];
+const NO_EVENTS: readonly ReactionEvent[] = [];
+
+export function App({ boot }: { boot: RetroBoot }) {
+  // ── Identity and session ───────────────────────────────────────────────
+  const pid = useMemo(() => participantId(KEY.pid), []);
+  // Fixed for the lifetime of the document. Arriving without a token renders
+  // the gate, which navigates to `/?token=…` on success rather than mutating
+  // this — so there is no in-place session change to model.
+  const session = useMemo<Session>(() => loadSession('retro', pid), [pid]);
+  useEffect(() => {
+    if (session.token) stripCredentialsFromUrl();
+  }, [session.token]);
+
+  const [name, setName] = useState(() => read('local', KEY.name) ?? '');
+  const [avatar, setAvatar] = useState(() => read('local', KEY.avatar) ?? (AVATARS[0] as string));
+  const [profileOpen, setProfileOpen] = useState(false);
+  const joined = Boolean(name);
+
+  // Ask for a name as soon as there is a board to join, not before — the gate
+  // is enough of a wall for someone who has not got in yet.
+  useEffect(() => {
+    if (session.token && !name) setProfileOpen(true);
+  }, [session.token, name]);
+
+  /**
+   * Host powers are decided by this flag **for rendering only**.
+   *
+   * Every privileged endpoint re-checks the admin secret server-side with a
+   * constant-time compare (`_admin_authed`), so flipping this in devtools
+   * reveals buttons whose requests then come back 403.
+   */
+  const isHost = Boolean(session.admin);
+
+  // ── Server truth ───────────────────────────────────────────────────────
+  const store = useMemo(() => createBoardStore<RetroState>(), []);
+  const actions = useMemo(() => createRetroActions(session, store), [session, store]);
+  const status = useBoardStream({ session, store, enabled: joined });
+
+  const snapshot = useBoardSnapshot(store);
+  const cards = useBoardSelector(store, (s) => s?.cards ?? NO_CARDS);
+  const carried = useBoardSelector(store, (s) => s?.carried ?? NO_CARDS);
+  const locked = useBoardSelector(store, (s) => s?.locked ?? false);
+
+  // ── Local UI state ─────────────────────────────────────────────────────
+  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.retro) ?? 'midnight');
+  const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
+  const [focus, setFocus] = useState('');
+  const [composerGrid, setComposerGrid] = useState<RetroGrids>('went_well');
+  const [composerText, setComposerText] = useState('');
+  const [focusNonce, setFocusNonce] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [musicBlocked, setMusicBlocked] = useState(false);
+  const [typingGrid, setTypingGrid] = useState('');
+  // Which emoji *this browser* has reacted with, per card. The server does not
+  // put raw pids on the wire, so "did I react" is only knowable from the
+  // `reacted` flag each toggle answers with.
+  const [myReactions, setMyReactions] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
+
+  const chooseTheme = useCallback((next: Theme) => {
+    setLocalTheme(next);
+    setTheme(next, THEME_KEYS.retro);
+  }, []);
+  useEffect(() => applyTheme(theme), [theme]);
+
+  // ── Presence, typing, and the ceremony devices ─────────────────────────
+  useHeartbeat({ session, name, avatar, typingGrid, enabled: joined });
+
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onComposerText = useCallback(
+    (text: string) => {
+      setComposerText(text);
+      setTypingGrid(composerGrid);
+      clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => setTypingGrid(''), TYPING_LINGER_MS);
+    },
+    [composerGrid]
+  );
+  useEffect(() => () => clearTimeout(typingTimer.current), []);
+
+  const music = useMusic(boot.musicChannels);
+  const [confettiRef, fireConfetti] = useConfetti();
+  const fireAlarm = useAlarm();
+  const onTimerFinish = useCallback(() => {
+    fireConfetti();
+    fireAlarm();
+  }, [fireConfetti, fireAlarm]);
+  const { remaining } = useCountdown(snapshot?.timer, onTimerFinish);
+
+  useHostBroadcast(snapshot?.broadcast, {
+    onTheme: chooseTheme,
+    onMusic: (command) => music.cast(command.channel, command.playing),
+    onAutoplayBlocked: setMusicBlocked,
+  });
+
+  // ── Derived views of the snapshot ──────────────────────────────────────
+  const presence = useBoardSelector(store, (s) => s?.presence ?? NO_PEOPLE);
+  const avatarsByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const person of presence) if (person.avatar) map.set(person.name, person.avatar);
+    return map;
+  }, [presence]);
+  const others = useMemo(() => presence.filter((person) => person.name !== name), [presence, name]);
+
+  const typingByGrid = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const entry of snapshot?.typing ?? NO_TYPING) {
+      if (entry.name === name) continue; // your own indicator is not news to you
+      const bucket = map.get(entry.grid);
+      if (bucket) bucket.push(entry.name);
+      else map.set(entry.grid, [entry.name]);
+    }
+    return map;
+  }, [snapshot?.typing, name]);
+
+  /** Human authors with at least one card, sorted — the walkthrough running order. */
+  const authors = useMemo(() => {
+    const set = new Set<string>();
+    for (const card of cards) if (card.origin !== 'ai' && card.author) set.add(card.author);
+    return [...set].sort();
+  }, [cards]);
+
+  // An author who has left mid-walkthrough would otherwise leave every column
+  // filtered to nothing, with no obvious way back.
+  useEffect(() => {
+    if (focus && !authors.includes(focus)) setFocus('');
+  }, [focus, authors]);
+
+  const stepFocus = useCallback(
+    (delta: number) => {
+      if (!authors.length) return;
+      const at = authors.indexOf(focus);
+      const next = authors[(at + delta + authors.length) % authors.length];
+      if (next) setFocus(next);
+    },
+    [authors, focus]
+  );
+
+  // Walkthrough keys, bound at the document so they work while reading the
+  // cards rather than only while the bar itself holds focus. Ignored while a
+  // text field is focused, or ← / → would steal the caret keys.
+  useEffect(() => {
+    if (!focus) return;
+    const onKey = (event: KeyboardEvent): void => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select')) return;
+      if (event.key === 'ArrowRight') stepFocus(1);
+      else if (event.key === 'ArrowLeft') stepFocus(-1);
+      else if (event.key === 'Escape') setFocus('');
+      else return;
+      event.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [focus, stepFocus]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────
+  const submitCard = useCallback(() => {
+    const text = composerText;
+    if (!text.trim()) return;
+    setComposerText('');
+    setTypingGrid('');
+    void actions.addCard(composerGrid, text, name);
+  }, [actions, composerGrid, composerText, name]);
+
+  const react = useCallback(
+    async (cardId: string, emoji: string) => {
+      const nowMine = await actions.react(cardId, emoji);
+      setMyReactions((current) => {
+        const next = new Map(current);
+        const set = new Set(current.get(cardId) ?? []);
+        if (nowMine) set.add(emoji);
+        else set.delete(emoji);
+        next.set(cardId, set);
+        return next;
+      });
+    },
+    [actions]
+  );
+
+  const saveProfile = useCallback(
+    ({ name: newName, avatar: newAvatar }: { name: string; avatar: string }) => {
+      setName(newName);
+      setAvatar(newAvatar);
+      write('local', KEY.name, newName);
+      write('local', KEY.avatar, newAvatar);
+      setProfileOpen(false);
+    },
+    []
+  );
+
+  const toggleGrouped = useCallback(() => {
+    setGrouped((current) => {
+      write('local', KEY.grouped, current ? '0' : '1');
+      return !current;
+    });
+  }, []);
+
+  // ── The gate ───────────────────────────────────────────────────────────
+  if (!session.token) {
+    // No `onJoined`: the default navigates to `/?token=…`, and the reload is
+    // wanted here. The board then boots down exactly the path a host's link
+    // takes, rather than a second one that only code-gate visitors exercise —
+    // and the accepted code leaves the JS heap with the document.
+    return (
+      <JoinGate
+        brand="🤙 Sprint Retro"
+        heading="Join the retro"
+        blurb="Enter the share code from the host's screen."
+      />
+    );
+  }
+
+  const cardCount = cards.length;
+
+  return (
+    <div className={styles['app']}>
+      <Toolbar
+        brand="Sprint Retro"
+        subtitle={
+          <>
+            {boot.sprint ? `${boot.sprint} · ` : ''}
+            {cardCount} {cardCount === 1 ? 'card' : 'cards'}
+            {status === 'retrying' ? <span className={styles['offline']}> · reconnecting…</span> : null}
+          </>
+        }
+        tools={
+          <>
+            <Visualizer playing={music.playing} />
+
+            {isHost ? (
+              <IconButton
+                icon="🔒"
+                label={locked ? 'Unlock the board' : 'Lock the board'}
+                active={locked}
+                onClick={() => void actions.setLocked(!locked)}
+              />
+            ) : null}
+
+            <Popover trigger={<span aria-hidden="true">♪</span>} label="Music">
+              <MusicPlayer
+                music={music}
+                channels={boot.musicChannels}
+                footer={
+                  isHost ? (
+                    <button
+                      type="button"
+                      className={styles['castBtn']}
+                      onClick={() => void actions.castMusic(music.playing, music.channel)}
+                    >
+                      <span aria-hidden="true">📣</span> Play for everyone
+                    </button>
+                  ) : null
+                }
+              />
+            </Popover>
+
+            <Popover
+              trigger={
+                <>
+                  <span aria-hidden="true">⏱</span>
+                  <TimerReadout remaining={remaining} />
+                </>
+              }
+              label="Timer"
+            >
+              {isHost ? (
+                <TimerControls
+                  running={Boolean(snapshot?.timer.running)}
+                  onStart={(seconds) => void actions.startTimer(seconds)}
+                  onStop={() => void actions.stopTimer()}
+                />
+              ) : (
+                <p className={styles['popNote']}>The host controls the timer.</p>
+              )}
+            </Popover>
+
+            <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme">
+              <ThemeSwitcher
+                value={theme}
+                onChange={chooseTheme}
+                footer={
+                  isHost ? (
+                    <button
+                      type="button"
+                      className={styles['castBtn']}
+                      onClick={() => void actions.castTheme(theme)}
+                    >
+                      <span aria-hidden="true">📣</span> Apply to everyone
+                    </button>
+                  ) : null
+                }
+              />
+            </Popover>
+
+            <IconButton icon="✉" label="Invite the team" tone="primary" onClick={() => setInviteOpen(true)}>
+              Invite
+            </IconButton>
+          </>
+        }
+      >
+        <div className={styles['identity']}>
+          <button type="button" className={styles['meChip']} onClick={() => setProfileOpen(true)}>
+            <span aria-hidden="true">{avatar}</span>
+            <span className={styles['meName']}>{name || 'Set your name'}</span>
+            <span aria-hidden="true" className={styles['pen']}>
+              ✎
+            </span>
+          </button>
+
+          <PresenceRow people={others} />
+
+          <Popover
+            align="left"
+            trigger={
+              <>
+                <span aria-hidden="true">👥</span>
+                <span className={styles['roomCount']}>{Math.max(1, presence.length)}</span>
+              </>
+            }
+            label="Who is in the room"
+          >
+            <Roster people={presence} meName={name} />
+          </Popover>
+        </div>
+
+        <div className={styles['viewCtl']}>
+          <IconButton
+            icon="👤"
+            label="Walk through one person at a time"
+            active={Boolean(focus)}
+            disabled={!authors.length}
+            onClick={() => setFocus(focus ? '' : (authors[0] ?? ''))}
+          />
+          <IconButton icon="⊞" label="Group cards by author" active={grouped} onClick={toggleGrouped} />
+        </div>
+      </Toolbar>
+
+      {locked ? (
+        <p className={styles['lockBanner']} role="alert">
+          <span aria-hidden="true">🔒</span> The host locked the board.
+        </p>
+      ) : null}
+
+      {musicBlocked ? (
+        <button
+          type="button"
+          className={styles['musicBanner']}
+          onClick={() => void music.play().then(() => setMusicBlocked(false)).catch(() => {})}
+        >
+          <span aria-hidden="true">▶</span> The host started music — tap to listen
+        </button>
+      ) : null}
+
+      <CarriedStrip
+        items={carried}
+        locked={locked}
+        onSetStatus={(itemId, status_) => void actions.setCarriedStatus(itemId, status_ as CarriedStatuses)}
+      />
+
+      {focus ? (
+        <FocusBar
+          authors={authors}
+          current={focus}
+          avatars={avatarsByName}
+          onStep={stepFocus}
+          onExit={() => setFocus('')}
+        />
+      ) : null}
+
+      <Board
+        cards={cards}
+        avatars={avatarsByName}
+        myReactions={myReactions}
+        typing={typingByGrid}
+        locked={locked}
+        grouped={grouped}
+        focus={focus}
+        onCompose={(grid) => {
+          setComposerGrid(grid);
+          setFocusNonce((n) => n + 1);
+        }}
+        onEdit={(cardId, text) => void actions.editCard(cardId, text)}
+        onDelete={(cardId) => void actions.deleteCard(cardId)}
+        onReact={(cardId, emoji) => void react(cardId, emoji)}
+        onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
+      />
+
+      <Composer
+        grid={composerGrid}
+        onGridChange={setComposerGrid}
+        text={composerText}
+        onTextChange={onComposerText}
+        onSubmit={submitCard}
+        locked={locked}
+        focusNonce={focusNonce}
+      />
+
+      <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
+      <ConfettiCanvas canvasRef={confettiRef} />
+
+      <ProfileModal
+        open={profileOpen}
+        name={name}
+        avatar={avatar}
+        avatars={AVATARS}
+        adjectives={boot.adjectives}
+        nouns={boot.nouns}
+        onSave={saveProfile}
+        onClose={() => setProfileOpen(false)}
+        required={!name}
+      />
+
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
+        <p className={styles['popNote']}>
+          Scan to open the retro, then enter the share code from the host&rsquo;s screen.
+        </p>
+        <InviteQR qrSrc={apiUrl(session, '/api/qr')} />
+      </Modal>
+    </div>
+  );
+}

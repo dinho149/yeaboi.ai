@@ -581,6 +581,20 @@ def get_retro_server_port() -> int:
         return 5173
 
 
+def get_retro_ui() -> str:
+    """Return which retro board front end to serve: ``"legacy"`` or ``"react"``.
+
+    A migration switch, not a permanent setting. ``RETRO_UI=react`` serves the
+    React build (``frontend/src/retro``) instead of the hand-written page in
+    ``retro/page.py``, so the two can be compared side by side on the same live
+    board before the old one is deleted. It disappears with the legacy page.
+
+    Anything other than ``react`` — including unset — keeps the legacy page, so
+    an existing install upgrades onto exactly what it had.
+    """
+    return "react" if os.getenv("RETRO_UI", "").strip().lower() == "react" else "legacy"
+
+
 def get_poker_server_port() -> int:
     """Return the base port for the Poker collaboration server (default 5273).
 

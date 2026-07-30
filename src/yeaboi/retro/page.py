@@ -982,7 +982,74 @@ else { document.getElementById("code-modal").classList.remove("hidden"); documen
 """
 
 
-def build_board_html() -> str:
+def board_config(sprint_name: str = "") -> dict[str, object]:
+    """Return the boot payload the React board reads from its JSON island.
+
+    Deliberately small. The grids, carried statuses, reaction emojis, avatars
+    and theme names are **not** here even though the plan's sketch had them:
+    every one is a server-validated tuple, and ``scripts/gen_web_types.py``
+    already emits them into ``frontend/src/types/enums.ts`` from these same
+    constants, with a ``--check`` in CI. Shipping them twice would give one
+    tuple two sources of truth that can disagree silently — the island naming a
+    column the bundle has no heading for.
+
+    So the island carries only what a codegen cannot pin: the free-form word
+    lists, the stream library, and this session's titles.
+
+    Never put a secret in here. ``GET /`` is unauthenticated, so everything in
+    this dict is readable by any LAN peer without a token.
+    """
+    return {
+        "title": "Sprint Retro",
+        "sprint": sprint_name,
+        "adjectives": list(_ADJECTIVES),
+        "nouns": list(_NOUNS),
+        # The same internet-radio library the TUI plays (yeaboi.music.CHANNELS).
+        "musicChannels": [{"name": c["name"], "url": c["url"]} for c in CHANNELS],
+    }
+
+
+# Shown before the bundle mounts, and to anyone with JavaScript disabled. The
+# board is a live collaborative surface — there is no static rendering of it to
+# fall back to — so this says so rather than leaving a blank page.
+_NOSCRIPT = (
+    "<noscript>This retro board needs JavaScript. Ask the host to export the "
+    "retro instead — the exported summary is a plain document.</noscript>"
+)
+
+
+def build_react_board_html(sprint_name: str = "") -> str:
+    """Return the React retro board: one self-contained, token-free document."""
+    from yeaboi.web.assets import render_page  # noqa: PLC0415 - avoids an import cycle via html_theme
+
+    html = render_page(
+        bundle="retro",
+        title="Sprint Retro",
+        data=board_config(sprint_name),
+        # Layers the retro accent over whichever palette the visitor chose.
+        html_attrs='data-mode="retro"',
+        body=_NOSCRIPT,
+    )
+    logger.debug("retro: react board page built (%d bytes)", len(html.encode("utf-8")))
+    return html
+
+
+def build_board_html(sprint_name: str = "") -> str:
+    """Return the retro board page (token-free), honouring ``RETRO_UI``.
+
+    Two implementations during the migration: the hand-written page below, and
+    the React build. ``RETRO_UI=react`` selects the latter so both can be driven
+    against the same live board before the old one is deleted (see
+    :func:`yeaboi.config.get_retro_ui`).
+    """
+    from yeaboi.config import get_retro_ui  # noqa: PLC0415 - config imports widely; keep this leaf light
+
+    if get_retro_ui() == "react":
+        return build_react_board_html(sprint_name)
+    return build_legacy_board_html()
+
+
+def build_legacy_board_html() -> str:
     """Return the complete self-contained retro board page (token-free)."""
 
     def _lit(v: object) -> str:
