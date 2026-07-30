@@ -312,6 +312,21 @@ class TestFeedbackComposeBubble:
         out = self._render(self._state(kind=FEEDBACK_TYPES.index("Feature"), area=FEEDBACK_AREAS.index("retro")))
         assert "‹ Feature ›" in out and "‹ retro ›" in out
 
+    def test_message_rows_carry_a_gutter_block(self):
+        from yeaboi.ui.mode_select.screens._screens import _COMPOSE_GUTTER
+
+        out = self._render(self._state(buf="one two three", cur=13))
+        gutters = [ln for ln in out.splitlines() if _COMPOSE_GUTTER.strip() in ln]
+        assert len(gutters) == 1  # only the row with text, not the blank filler rows
+        assert "one two three" in gutters[0]
+
+    def test_the_gutter_repeats_down_a_wrapped_message(self):
+        from yeaboi.ui.mode_select.screens._screens import _COMPOSE_GUTTER
+
+        long_text = "the retro board loses cards when two people type at the same time and it gets confused"
+        out = self._render(self._state(buf=long_text, cur=len(long_text)))
+        assert len([ln for ln in out.splitlines() if _COMPOSE_GUTTER.strip() in ln]) > 1
+
     def test_status_replaces_the_hint_while_sending(self):
         out = self._render(self._state(buf="x", cur=1, status="sending…"))
         assert "sending…" in out

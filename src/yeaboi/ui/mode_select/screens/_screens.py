@@ -821,6 +821,11 @@ def _wrap_with_offsets(text: str, width: int) -> list[tuple[str, int]]:
 
 
 _COMPOSE_DIM = "rgb(110,110,125)"
+# A thick block down the left of the message area, on the rows that carry text —
+# it reads as a quote gutter, so the typed message is visibly a block of writing
+# rather than loose lines under the two selectors.
+_COMPOSE_GUTTER = "▌ "
+_COMPOSE_GUTTER_STYLE = "rgb(96,112,128)"
 _COMPOSE_TEXT = "rgb(198,198,208)"
 _COMPOSE_ACCENT = "rgb(150,170,200)"
 
@@ -895,21 +900,24 @@ def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
         rows.append(line)
     rows.append(Text(""))
 
+    msg_w = max(8, inner - len(_COMPOSE_GUTTER))  # the gutter eats into the wrap width
     if not buf and live:
         placeholder = Text(justify="left")
+        placeholder.append(_COMPOSE_GUTTER, style=_COMPOSE_GUTTER_STYLE)
         if field == 2:
             placeholder.append(" ", style="reverse")  # the cursor waiting in an empty box
         placeholder.append("What's on your mind?", style=_COMPOSE_DIM)
         rows.append(placeholder)
         rows.extend(Text("") for _ in range(2))
     else:
-        wrapped = _wrap_with_offsets(buf, inner)
+        wrapped = _wrap_with_offsets(buf, msg_w)
         # Follow the cursor once the message outgrows the box.
         cur_row = max(i for i, (_ln, off) in enumerate(wrapped) if off <= cur)
         first = max(0, min(cur_row - _COMPOSE_MAX_ROWS + 1, len(wrapped) - _COMPOSE_MAX_ROWS))
         window = wrapped[first : first + _COMPOSE_MAX_ROWS]
         for line, off in window:
             t = Text(justify="left")
+            t.append(_COMPOSE_GUTTER, style=_COMPOSE_GUTTER_STYLE)
             col = cur - off
             if live and field == 2 and 0 <= col <= len(line):
                 t.append(line[:col], style=_COMPOSE_TEXT)
