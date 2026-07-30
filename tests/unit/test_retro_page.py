@@ -14,10 +14,10 @@ deleted: with one page there is one test file, per the one-file-per-module rule.
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 
+from tests._pages import island
 from yeaboi.retro.board import RETRO_THEMES, RetroBoard
 from yeaboi.retro.page import board_config, build_board_html
 from yeaboi.retro.server import RetroServer
@@ -26,13 +26,6 @@ from yeaboi.retro.server import RetroServer
 @pytest.fixture
 def page() -> str:
     return build_board_html("Sprint 42")
-
-
-def _island(html: str) -> dict:
-    """The parsed boot payload. Fails loudly if the island is malformed."""
-    match = re.search(r'<script type="application/json" id="yeaboi-data">(.*?)</script>', html, re.S)
-    assert match is not None, "no boot island in the page"
-    return json.loads(match.group(1))
 
 
 class TestSelfContained:
@@ -79,7 +72,7 @@ class TestSelfContained:
 
 class TestBootIsland:
     def test_carries_the_word_lists_and_stations(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         assert boot["sprint"] == "Sprint 42"
         assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
         assert all(set(channel) == {"name", "url"} for channel in boot["musicChannels"])
@@ -97,7 +90,7 @@ class TestBootIsland:
         assert set(board_config()) == {"title", "sprint", "adjectives", "nouns", "musicChannels"}
 
     def test_theme_names_are_not_duplicated_into_the_payload(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         assert "themes" not in boot
         # Guards the reasoning above rather than the payload: if this ever fails
         # it means the generated enums drifted from the board.
@@ -115,10 +108,10 @@ class TestBootIsland:
         assert "</script><img" not in html
         assert "\\u003c/script" in html
         # …and it is still valid JSON that parses back to exactly what went in.
-        assert _island(html)["sprint"] == "</script><img src=x onerror=alert(1)>"
+        assert island(html)["sprint"] == "</script><img src=x onerror=alert(1)>"
 
     def test_island_has_no_secrets(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         flat = json.dumps(boot).lower()
         for forbidden in ("token", "admin", "secret", "password", "code"):
             assert forbidden not in flat

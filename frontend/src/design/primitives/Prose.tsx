@@ -16,6 +16,8 @@
  * already-escaped text. Its replacement is {@link RichText} below.)
  */
 
+import type { ReactNode } from 'react';
+
 import { cx } from '../../runtime/cx';
 import { safeUrl } from '../../runtime/url';
 import styles from './primitives.module.css';
@@ -81,6 +83,9 @@ export interface Run {
   s: string;
   href?: string;
   strong?: boolean;
+  em?: boolean;
+  /** Inline code. Set by the Markdown reader; never by a server payload. */
+  code?: boolean;
 }
 
 export function RichText({ runs, className }: { runs: readonly Run[]; className?: string }) {
@@ -89,7 +94,13 @@ export function RichText({ runs, className }: { runs: readonly Run[]; className?
       {runs.map((run, index) => {
         const key = `${index}-${run.s.slice(0, 16)}`;
         const safe = run.href ? safeUrl(run.href) : '';
-        const body = run.strong ? <strong>{run.s}</strong> : run.s;
+        // Nested rather than exclusive: `**a _b_**` is one run in neither
+        // renderer's grammar today, but a run that is both is representable,
+        // and silently dropping one of the two would be the wrong answer.
+        let body: ReactNode = run.s;
+        if (run.code) body = <code>{body}</code>;
+        if (run.em) body = <em>{body}</em>;
+        if (run.strong) body = <strong>{body}</strong>;
         if (!safe) return <span key={key}>{body}</span>;
         return (
           <a key={key} href={safe} target="_blank" rel="noopener noreferrer">

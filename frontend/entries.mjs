@@ -9,7 +9,7 @@
 //
 export const ENTRIES = {
   deck: 'src/deck/main.tsx',
-  export: 'src/export/main.ts',
+  export: 'src/export/main.tsx',
   gate: 'src/gate/main.tsx',
   poker: 'src/poker/main.tsx',
   retro: 'src/retro/main.tsx',

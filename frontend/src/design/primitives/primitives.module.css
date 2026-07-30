@@ -151,6 +151,10 @@
   justify-content: space-between;
   gap: var(--s3);
   margin-bottom: var(--s2);
+  /* Wrap the actions onto their own line rather than squeezing the title.
+     Without this, a card with four chips on a phone reflows "Billing revamp"
+     to two lines to make room for them — the title is the thing being read. */
+  flex-wrap: wrap;
 }
 .cardTitle { font-weight: 600; font-size: var(--fs-s); }
 

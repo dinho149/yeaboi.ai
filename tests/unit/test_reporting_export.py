@@ -1,5 +1,6 @@
 """Unit tests for reporting/export — Markdown, HTML, and file writing."""
 
+from tests._pages import markup
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import export
 
@@ -167,7 +168,7 @@ class TestExportReport:
         assert (tmp_path / "delivered.png").exists()
         # …while the HTML draws a theme-aware inline segment bar instead of the
         # theme-blind PNG (recolors with the page's theme switcher).
-        html = paths["html"].read_text(encoding="utf-8")
+        html = markup(paths["html"].read_text(encoding="utf-8"))
         assert "data:image/png;base64," not in html
         assert 'class="seg-track"' in html
 

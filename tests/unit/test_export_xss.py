@@ -27,6 +27,15 @@ RAW_MARKERS = ("<script>window.__xss_probe__", '" onmouseover="alert(1)')
 # rather than being silently dropped.
 ESCAPED_MARKER = "&lt;script&gt;window.__xss_probe__"
 
+# The same proof for a React-rendered export, where the probe travels as a JSON
+# string rather than as markup. json_island escapes `<`, `>` and `&` to their
+# \uXXXX forms — the three characters that could otherwise end the containing
+# <script> element early and have the rest parsed as HTML.
+ISLAND_MARKER = "\\u003cscript\\u003ewindow.__xss_probe__"
+
+# How a page announces which of the two it is. Set by web.assets.render_page.
+ISLAND_TAG = 'id="yeaboi-data"'
+
 # (dataclass name, field name) pairs kept at their original value because the
 # builder needs them semantically valid. Every exclusion must state why.
 _EXCLUDE_FIELDS: frozenset[tuple[str, str]] = frozenset(
@@ -700,7 +709,17 @@ def test_injected_strings_never_land_raw(name):
     html_out = _BUILDERS[name]()
     for marker in RAW_MARKERS:
         assert marker not in html_out, f"{name}: raw XSS probe leaked into exported HTML"
-    assert ESCAPED_MARKER in html_out, f"{name}: probe neither escaped nor rendered — fixture reaches no output"
+
+    # Which proof applies depends on how the page is built, and the page says
+    # which. The distinction is load-bearing rather than tidy: on a React export
+    # the <title> alone satisfies ESCAPED_MARKER, so keeping that assertion
+    # would leave the *payload* — where every probed field actually lands —
+    # unchecked, and a builder silently dropping a field would still pass. This
+    # branch disappears when the last exporter migrates.
+    if ISLAND_TAG in html_out:
+        assert ISLAND_MARKER in html_out, f"{name}: probe never reached the boot payload"
+    else:
+        assert ESCAPED_MARKER in html_out, f"{name}: probe neither escaped nor rendered — fixture reaches no output"
 
 
 class TestDictKeyRenderedFields:
@@ -805,6 +824,16 @@ class TestUrlSchemeAllowlist:
         _assert_no_live_javascript_url(build_standup_html(_standup_report_with_url(URL_PROBE)), "standup html")
 
     def test_anonymize_markdown_link(self):
+        """The anonymize page carries Markdown, so the allowlist runs client-side.
+
+        `](javascript:` is *expected* in this document now — it is the masked
+        text, verbatim, inside a JSON island — so the Markdown marker cannot be
+        the assertion here. It is not a live link until something turns it into
+        an `href`, and the only thing that does is `RichText`, which routes
+        every run through `safeUrl`. That half is proven in
+        `frontend/src/export/reports/Anonymize.test.tsx`; this half proves the
+        page ships no anchor at all.
+        """
         from yeaboi.agent.state import AnonymizedOutput
         from yeaboi.anonymize.export import build_anonymized_html
 
@@ -813,7 +842,9 @@ class TestUrlSchemeAllowlist:
             source_mode="retro",
             generated_at="2026-07-20",
         )
-        _assert_no_live_javascript_url(build_anonymized_html(art), "anonymize html")
+        out = build_anonymized_html(art).lower()
+        assert 'href="javascript:' not in out and "href='javascript:" not in out
+        assert "<a " not in out.split("<script>", 1)[0], "the document shell must contain no anchors"
 
     def test_team_profile_example_links(self):
         from yeaboi.team_profile_exporter import build_team_profile_html

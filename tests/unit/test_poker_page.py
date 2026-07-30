@@ -11,11 +11,11 @@ with one page there is one test file, per the one-file-per-module rule.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
 
+from tests._pages import island
 from yeaboi.poker.board import POKER_DECK, PokerBoard
 from yeaboi.poker.page import board_config, build_poker_html
 from yeaboi.poker.server import PokerServer
@@ -25,12 +25,6 @@ from yeaboi.retro.board import AVATARS, RETRO_THEMES
 @pytest.fixture
 def page() -> str:
     return build_poker_html("yeaboi", "Sprint 42")
-
-
-def _island(html: str) -> dict:
-    match = re.search(r'<script type="application/json" id="yeaboi-data">(.*?)</script>', html, re.S)
-    assert match is not None, "no boot island in the page"
-    return json.loads(match.group(1))
 
 
 class TestSelfContained:
@@ -62,7 +56,7 @@ class TestSelfContained:
 
 class TestBootIsland:
     def test_carries_the_titles_word_lists_and_stations(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         assert boot["title"] == "yeaboi"
         assert boot["scope"] == "Sprint 42"
         assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
@@ -79,7 +73,7 @@ class TestBootIsland:
         assert set(board_config()) == {"title", "scope", "adjectives", "nouns", "musicChannels"}
 
     def test_deck_and_avatars_are_not_duplicated_into_the_payload(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         flat = json.dumps(boot, ensure_ascii=False)
         assert "deck" not in boot and "avatars" not in boot and "themes" not in boot
         assert "☕" not in flat  # the deck's most distinctive member
@@ -94,10 +88,10 @@ class TestBootIsland:
         html = build_poker_html("</script><img src=x onerror=alert(1)>")
         assert "</script><img" not in html
         assert "\\u003c/script" in html
-        assert _island(html)["title"] == "</script><img src=x onerror=alert(1)>"
+        assert island(html)["title"] == "</script><img src=x onerror=alert(1)>"
 
     def test_island_has_no_secrets(self, page: str):
-        boot = _island(page)
+        boot = island(page)
         flat = json.dumps(boot).lower()
         for forbidden in ("token", "admin", "secret", "password", "code"):
             assert forbidden not in flat
@@ -164,7 +158,7 @@ class TestServedPageIsTokenFree:
         server.start()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/", timeout=5) as response:
-                boot = _island(response.read().decode())
+                boot = island(response.read().decode())
         finally:
             server.stop()
 

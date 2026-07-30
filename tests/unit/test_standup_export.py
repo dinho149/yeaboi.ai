@@ -1,5 +1,6 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
+from tests._pages import markup
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.standup import export
 from yeaboi.standup.export import (
@@ -316,7 +317,7 @@ class TestHtml:
         rep = _report(
             member_updates=(MemberUpdate(name="Alice", summary="x", ticketing_activity_count=3, code_activity_count=0),)
         )
-        html = build_standup_html(rep)
+        html = markup(build_standup_html(rep))
         assert ">3 tickets</span>" in html
         assert "0 code" not in html
 
@@ -376,7 +377,9 @@ class TestHtml:
         assert "data:image/png;base64," in html
 
     def test_missing_image_skipped(self):
-        html = build_standup_html(_report(images=("/nope/gone.png",)))
+        # markup(): the inlined bundle carries the duck sprites as data URIs, so
+        # a check against the whole document reads those instead of the report.
+        html = markup(build_standup_html(_report(images=("/nope/gone.png",))))
         assert "data:image" not in html
 
 

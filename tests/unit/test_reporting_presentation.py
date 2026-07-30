@@ -9,8 +9,8 @@ JSON island — and the bundle's own deployment guards live in
 """
 
 import json
-import re
 
+from tests._pages import island
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import presentation
 from yeaboi.reporting.style import DeckStyle
@@ -31,12 +31,6 @@ def _report():
         delivered_items=(DeliveredItem(key="A-1", title="x", status="Done"),),
         emoji_theme=(("headline", "🚀"), ("themes", "🧩"), ("highlights", "⭐")),
     )
-
-
-def _island(html: str) -> dict:
-    match = re.search(r'<script type="application/json" id="yeaboi-data">(.*?)</script>', html, re.S)
-    assert match is not None, "no boot island in the page"
-    return json.loads(match.group(1))
 
 
 class TestBuildSlides:
@@ -238,7 +232,7 @@ class TestBuildPresentationHtml:
         assert "<title>Acme Portal — Delivery Report</title>" in html
 
     def test_island_parses_and_holds_the_payload(self):
-        boot = _island(presentation.build_presentation_html(_report()))
+        boot = island(presentation.build_presentation_html(_report()))
         assert boot["slides"][0]["type"] == "title"
         assert boot["theme"] == "midnight"
 
@@ -252,7 +246,7 @@ class TestBuildPresentationHtml:
         html = presentation.build_presentation_html(r)
         assert "</script><img" not in html
         assert "\\u003c/script" in html
-        listed = next(s for s in _island(html)["slides"] if s["type"] == "list")
+        listed = next(s for s in island(html)["slides"] if s["type"] == "list")
         assert listed["items"] == ["</script><img src=x onerror=alert(1)>"]
 
     def test_project_name_cannot_escape_the_title_element(self):
@@ -345,8 +339,8 @@ class TestSupportingSignalsFootnote:
         metrics = next(s for s in slides if s["type"] == "metrics")
         assert "footnote" not in metrics
 
-    def test_footnote_flows_into_the_island(self):
-        boot = _island(presentation.build_presentation_html(self._signals_report()))
+    def test_footnote_flows_into_theisland(self):
+        boot = island(presentation.build_presentation_html(self._signals_report()))
         metrics = next(s for s in boot["slides"] if s["type"] == "metrics")
         assert metrics["footnote"] == "Corroborated by 24 merged PRs and 5 doc updates"
 
