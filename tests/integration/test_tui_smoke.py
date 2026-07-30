@@ -116,7 +116,10 @@ class TestTuiLiveSmoke:
                 master_fd,
                 proc,
                 lambda b: any(m in _strip_ansi(b) for m in _MODE_SCREEN_MARKERS),
-                timeout=30.0,
+                # The splash intro grew (duck jump → wordmark → waddle-clear) and the
+                # marker now lands at ~30s here, right on the old deadline. This is a
+                # liveness check, not a performance budget — give it real headroom.
+                timeout=75.0,
             )
             text = _strip_ansi(booted)
             assert any(m in text for m in _MODE_SCREEN_MARKERS), (
