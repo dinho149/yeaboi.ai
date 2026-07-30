@@ -74,6 +74,7 @@ from yeaboi.ui.shared._animations import (
 )
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import read_key as _read_key
+from yeaboi.ui.shared._input import set_text_entry
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.splash import play_wordmark_intro
@@ -10208,7 +10209,54 @@ def select_mode(
                     # current value so you edit in place.
                     _start = "" if masked else (_settings_data.get(env, "") or "")
                     _s_edit = {"env": env, "label": label, "masked": masked, "buf": _start, "cur": len(_start)}
+                    set_text_entry(True)  # 'c' types a 'c' now, not the controls drawer
                     logger.info("Settings: editing %s", env)
+
+                def _s_commit_edit() -> None:
+                    """Save the open in-place edit — the Enter path, also used when a
+                    click moves straight to another row (clicking away commits, the
+                    way a form field blurs). No-op when nothing is being edited."""
+                    nonlocal _s_edit, _settings_data
+                    if _s_edit is None:
+                        return
+                    set_text_entry(False)
+                    _env, _label, _masked = _s_edit["env"], _s_edit["label"], _s_edit["masked"]
+                    _val = _s_edit["buf"].strip()
+                    _cur_val = _settings_data.get(_env, "")
+                    _s_edit = None
+                    _save = True
+                    if _val == "-":
+                        _val = ""  # explicit clear
+                    elif _masked and _val == "":
+                        _save = False  # empty on a hidden field = keep the value
+                    if _save and not _masked and _val == (_cur_val or ""):
+                        _save = False  # unchanged
+                    if _save and _env == "YEABOI_HOME":
+                        # Relocating the tree needs a move-or-leave answer and a write
+                        # to the pinned bootstrap .env, so it saves through its own
+                        # helper rather than the generic path.
+                        _dd_msg = _settings_save_data_dir(
+                            console, live, read_key, _FRAME_TIME, _supports_timeout, _val
+                        )
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = _dd_msg
+                    elif _save:
+                        from yeaboi.config import apply_config_value
+
+                        # apply_ (not set_) so the edit lands in os.environ too — the
+                        # page re-reads the environment, so a file-only write wouldn't
+                        # show until a restart.
+                        apply_config_value(_env, _val)
+                        if _env == "LOG_LEVEL" and _val:
+                            from yeaboi.logging_setup import apply_level
+
+                            try:
+                                apply_level(_val)
+                            except Exception:  # noqa: BLE001 - a bad level shouldn't crash settings
+                                logger.debug("apply_level failed for %r", _val, exc_info=True)
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                        logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
 
                 _s_panel = _render_settings(0.0)
                 while True:
@@ -10216,44 +10264,27 @@ def select_mode(
 
                     # ── In-place edit mode: keystrokes go to the field being edited ──
                     if _s_edit is not None:
-                        if sk == "enter":
-                            _env, _label, _masked = _s_edit["env"], _s_edit["label"], _s_edit["masked"]
-                            _val = _s_edit["buf"].strip()
-                            _cur_val = _settings_data.get(_env, "")
-                            _s_edit = None
-                            _save = True
-                            if _val == "-":
-                                _val = ""  # explicit clear
-                            elif _masked and _val == "":
-                                _save = False  # empty on a hidden field = keep the value
-                            if _save and not _masked and _val == (_cur_val or ""):
-                                _save = False  # unchanged
-                            if _save and _env == "YEABOI_HOME":
-                                # Relocating the tree needs a move-or-leave answer and
-                                # a write to the pinned bootstrap .env, so it saves
-                                # through its own helper rather than the generic path.
-                                _dd_msg = _settings_save_data_dir(
-                                    console, live, read_key, _FRAME_TIME, _supports_timeout, _val
-                                )
-                                _settings_data = _collect_settings_data()
-                                _settings_data["_message"] = _dd_msg
-                            elif _save:
-                                from yeaboi.config import apply_config_value
-
-                                # apply_ (not set_) so the edit lands in os.environ
-                                # too — the page re-reads the environment, so a
-                                # file-only write wouldn't show until a restart.
-                                apply_config_value(_env, _val)
-                                if _env == "LOG_LEVEL" and _val:
-                                    from yeaboi.logging_setup import apply_level
-
-                                    try:
-                                        apply_level(_val)
-                                    except Exception:  # noqa: BLE001 - a bad level shouldn't crash settings
-                                        logger.debug("apply_level failed for %r", _val, exc_info=True)
-                                _settings_data = _collect_settings_data()
-                                _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
-                                logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
+                        _edit_click = parse_click(sk)
+                        if _edit_click is not None:
+                            # Clicking straight onto another row (or a tab) commits what
+                            # was typed and routes normally below — no Esc round trip.
+                            # A click on empty space leaves the edit alone rather than
+                            # committing a half-typed value by accident.
+                            _ecx, _ecy = _edit_click
+                            _lands = any(
+                                _ecy == _rr and _rx0 <= _ecx <= _rx1
+                                for _rr, _rx0, _rx1, *_rest in getattr(_s_panel, "_row_regions", [])
+                            ) or any(
+                                _ecy in (_lr, _ur) and _sc <= _ecx <= _ec
+                                for _lr, _ur, _sc, _ec in getattr(_s_panel, "_tab_regions", [])
+                            )
+                            if not _lands:
+                                continue
+                            _s_commit_edit()
+                        elif sk == "enter":
+                            _s_commit_edit()
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
                         elif sk == "esc":
                             # Esc alone cancels: 'q' is a character you have to be able
                             # to type (an Ollama model name starts with one). The edit
@@ -10262,11 +10293,14 @@ def select_mode(
                             from yeaboi.ui.shared._music_bar import cancel_back_retract
 
                             cancel_back_retract()
+                            set_text_entry(False)
                             _s_edit = None  # cancel — discard the buffer
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
                         else:
                             _settings_edit_keypress(sk, _s_edit)  # mutate buffer/cursor
-                        _s_panel = _render_settings(time.monotonic() - _s_anim_start)
-                        continue
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
 
                     _s_click = parse_click(sk)
                     if _s_click is not None:
@@ -10357,6 +10391,7 @@ def select_mode(
                         _s_box, _s_field = -1, -1  # the flow may have changed the data
                     elif sk in ("esc", "q"):
                         logger.info("Settings: user pressed Esc")
+                        set_text_entry(False)  # belt and braces — never leave it latched
                         break
                     _s_panel = _render_settings(time.monotonic() - _s_anim_start)
                 _restart_mode_select = True

@@ -183,3 +183,58 @@ def test_enter_raw_mode_on_non_tty_is_safe(monkeypatch):
     finally:
         os.close(r)
         os.close(w)
+
+
+class TestGlobalLetterShortcuts:
+    """'c' toggles the controls drawer, but only where it's safe to claim.
+
+    A bare letter as an app-wide shortcut has two ways to go wrong: shadowing a
+    page's own 'c' (copy on Usage, changelog on the welcome screen) and eating a
+    character out of a field being typed into. Both are guarded.
+    """
+
+    def test_text_entry_flag_round_trips(self):
+        from yeaboi.ui.shared._input import set_text_entry
+
+        set_text_entry(True)
+        assert _input._text_entry is True
+        set_text_entry(False)
+        assert _input._text_entry is False
+
+    def _press_c(self, monkeypatch, *, tab_visible: bool, typing: bool) -> tuple[str, bool]:
+        """Drive read_key with a pending 'c'; return (key, drawer_toggled)."""
+        from yeaboi.ui.shared import _music_bar
+        from yeaboi.ui.shared._input import push_back_key, read_key, set_text_entry
+
+        toggled: list[bool] = []
+        monkeypatch.setattr(_music_bar, "controls_tab_visible", lambda: tab_visible)
+        monkeypatch.setattr(_music_bar, "toggle_controls", lambda: toggled.append(True))
+        monkeypatch.setattr(_music_bar, "nudge_music_bar", lambda: None)
+        set_text_entry(typing)
+        try:
+            push_back_key("c")
+            return read_key(timeout=0), bool(toggled)
+        finally:
+            set_text_entry(False)
+
+    def test_c_opens_the_drawer_where_its_tab_shows(self, monkeypatch):
+        key, toggled = self._press_c(monkeypatch, tab_visible=True, typing=False)
+        assert toggled and key == ""  # consumed by the drawer
+
+    def test_c_passes_through_where_the_tab_is_absent(self, monkeypatch):
+        # Usage's "c copy" and the welcome screen's "c changelog" still get their key.
+        key, toggled = self._press_c(monkeypatch, tab_visible=False, typing=False)
+        assert not toggled and key == "c"
+
+    def test_c_is_typed_into_a_field_being_edited(self, monkeypatch):
+        key, toggled = self._press_c(monkeypatch, tab_visible=True, typing=True)
+        assert not toggled and key == "c"
+
+    def test_ctrl_c_quits_outright(self, monkeypatch):
+        # ISIG is cleared so it arrives as a keypress; read_key re-raises it, so
+        # the conventional interrupt behaves exactly as it looks (no chord).
+        from yeaboi.ui.shared._input import push_back_key, read_key
+
+        push_back_key("ctrl+c")
+        with pytest.raises(KeyboardInterrupt):
+            read_key(timeout=0)

@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import sys
 import termios
-import time as _time
 import tty
 
 # Keys read ahead while coalescing a fast scroll burst but not consumed (a
@@ -22,10 +21,19 @@ _pushback: list[str] = []
 # Set by _read_key_impl so the public wrapper can distinguish a real terminal
 # event that decoded to "" (for example a consumed mouse click) from a timeout.
 _last_read_had_input = False
-# Ctrl+C opens the controls drawer; a second press within this window quits, so
-# the conventional interrupt survives as an escape hatch.
-_CTRL_C_QUIT_WINDOW = 1.5
-_last_ctrl_c = 0.0
+# Set while a field is being typed into, so the app-wide single-letter shortcuts
+# (currently 'c' for the controls drawer) don't steal characters from the buffer.
+_text_entry = False
+
+
+def set_text_entry(active: bool) -> None:
+    """Suppress/restore bare-letter global shortcuts around an in-place text edit.
+
+    Screens that type into a field WHILE showing app-wide chrome (Settings is the
+    first) bracket the edit with this, so pressing 'c' types a 'c'.
+    """
+    global _text_entry
+    _text_entry = active
 
 
 def push_back_key(key: str) -> None:
@@ -102,9 +110,9 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         #   - IEXTEN — extended input, so Ctrl+O (\x0f, VDISCARD on macOS/BSD)
         #     is delivered as a keypress (used for the music channel-switch chord)
         #     rather than swallowed as "discard output".
-        #   - ISIG — signal generation, so Ctrl+C (\x03) arrives as a keypress for
-        #     the controls drawer instead of raising SIGINT. read_key still quits on
-        #     a second Ctrl+C within _CTRL_C_QUIT_WINDOW, so the habit still works.
+        #   - ISIG — signal generation, so every control char arrives as a keypress
+        #     rather than a signal; read_key turns Ctrl+C back into KeyboardInterrupt
+        #     itself, so quitting behaves exactly as it looks.
         new_settings = termios.tcgetattr(fd)
         new_settings[0] &= ~termios.IXON  # input flags (c_iflag)
         new_settings[3] &= ~(termios.IEXTEN | termios.ISIG)  # local flags (c_lflag)
@@ -390,20 +398,21 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     if _last_read_had_input and handle_input_event():
         return ""
 
-    # Ctrl+C toggles the app-wide controls drawer (see _music_bar). It used to quit
-    # outright; pressing it TWICE in quick succession still does, so the habitual
-    # escape hatch survives — the drawer itself spells that out.
+    # ISIG is off (see enter_raw_mode), so Ctrl+C arrives here as a keypress —
+    # turn it back into the interrupt it looks like.
     if key == "ctrl+c":
-        global _last_ctrl_c
-        now = _time.monotonic()
-        if now - _last_ctrl_c < _CTRL_C_QUIT_WINDOW:
-            raise KeyboardInterrupt
-        _last_ctrl_c = now
-        from yeaboi.ui.shared._music_bar import nudge_music_bar, toggle_controls
+        raise KeyboardInterrupt
 
-        toggle_controls()
-        nudge_music_bar()  # redraw immediately so it opens on the keypress
-        return ""
+    # 'c' toggles the app-wide controls drawer, but ONLY where its tab is showing
+    # and nothing is being typed into — a bare letter must not shadow a page's own
+    # 'c' (copy on Usage, changelog on the welcome screen) or eat a character.
+    if key == "c" and not _text_entry:
+        from yeaboi.ui.shared._music_bar import controls_tab_visible, nudge_music_bar, toggle_controls
+
+        if controls_tab_visible():
+            toggle_controls()
+            nudge_music_bar()  # redraw immediately so it opens on the keypress
+            return ""
 
     # Hidden app-wide preview shortcut: Y for Yeaboi. It deliberately has no
     # on-screen hint, but uses the same rendering/wake path as genuine idleness.
@@ -447,7 +456,7 @@ def enter_raw_mode(stdin=None) -> None:
         _saved_term_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # disables ICANON + ECHO
         # Mirror read_key: drop IXON/IEXTEN/ISIG so Ctrl+S / Ctrl+O / Ctrl+C reach
-        # the app (Ctrl+C drives the controls drawer; double-tap still quits).
+        # the app rather than the line discipline (read_key re-raises Ctrl+C).
         m = termios.tcgetattr(fd)
         m[0] &= ~termios.IXON
         m[3] &= ~(termios.IEXTEN | termios.ISIG)

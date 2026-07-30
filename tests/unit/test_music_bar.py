@@ -353,3 +353,51 @@ def test_update_registers_active_bar():
 def test_nudge_is_safe_when_no_active_bar():
     _music_bar._active = None
     nudge_music_bar()  # must not raise
+
+
+# ── Controls drawer ───────────────────────────────────────────────────────────
+
+
+def test_controls_tab_only_binds_its_letter_while_it_is_showing():
+    # The drawer's shortcut is a bare 'c', so it must only claim the key on pages
+    # that actually show the tab — otherwise it would shadow the per-page 'c'
+    # bindings (copy on Usage, changelog on the welcome screen).
+    from yeaboi.ui.shared._music_bar import close_controls, controls_tab_visible
+
+    _music_bar._controls_tab_presence = 0.0
+    _music_bar._controls_open = False
+    assert controls_tab_visible() is False
+
+    _music_bar._controls_tab_presence = 1.0  # tab eased in on a qualifying page
+    assert controls_tab_visible() is True
+
+    # Still true while open even if the collapsed tab isn't being drawn, so 'c'
+    # can close what it opened.
+    _music_bar._controls_tab_presence = 0.0
+    _music_bar._controls_open = True
+    assert controls_tab_visible() is True
+    close_controls()
+
+
+def test_controls_tab_advertises_the_letter_and_the_drawer_lists_it():
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame, close_controls, toggle_controls
+
+    _music_bar._controls_tab_presence = 1.0
+    _music_bar._controls_open = False
+    _music_bar._controls_presence = 0.0
+    hint = Text("Enter  edit")
+    console = Console(width=100, height=14, file=StringIO())
+
+    def _text(frame):
+        rows = console.render_lines(frame, console.options, pad=True)
+        return "\n".join("".join(s.text for s in row) for row in rows)
+
+    collapsed = _text(_MusicPocketFrame(Panel(Text(""), height=14), hint_tab=hint))
+    assert "c  controls" in collapsed
+
+    toggle_controls()
+    _music_bar._controls_presence = 1.0  # skip the eased expansion
+    opened = _text(_MusicPocketFrame(Panel(Text(""), height=14), hint_tab=hint))
+    assert "close this" in opened  # 'c' closes it
+    assert "quit" in opened  # ctrl+C still quits outright
+    close_controls()

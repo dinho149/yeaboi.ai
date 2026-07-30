@@ -421,10 +421,11 @@ def _say_brightness(now_t: float) -> float:
 
 
 # ── Controls drawer (persistent tab beside the music pocket) ───────────────
-# A always-present "⌃C controls" tab sits just left of the music alcove; Ctrl+C
-# expands it UPWARD into a panel listing every control available on the current
-# screen (the global chords plus whatever the page handed over as _hint_tab).
-_CONTROLS_LABEL = "⌃C controls"
+# A "c controls" tab sits just left of the music alcove; 'c' expands it UPWARD
+# into a panel listing every control available on the current screen (the global
+# chords plus whatever the page handed over as _hint_tab). The shortcut is a bare
+# letter, so it only binds where the tab shows — see controls_tab_visible().
+_CONTROLS_LABEL = "c controls"
 _controls_open = False
 _controls_presence = 0.0  # eased 0→1 expansion, so it grows/collapses smoothly
 _controls_tab_presence = 0.0  # eased 0→1 entrance of the collapsed tab itself
@@ -432,13 +433,23 @@ _controls_region: tuple[int, int, int, int] | None = None
 
 
 def toggle_controls() -> None:
-    """Open/close the controls drawer (bound to Ctrl+C app-wide)."""
+    """Open/close the controls drawer (bound to 'c' on the pages that show its tab)."""
     global _controls_open
     _controls_open = not _controls_open
 
 
 def controls_open() -> bool:
     return _controls_open
+
+
+def controls_tab_visible() -> bool:
+    """True while the collapsed tab is actually on screen (or already open).
+
+    The drawer's shortcut is a bare letter, so it must only bind where the tab is
+    showing — otherwise it would shadow the per-page 'c' bindings (copy on Usage,
+    changelog on the welcome screen). See read_key in _input.py.
+    """
+    return _controls_open or _controls_tab_presence > 0.15
 
 
 def close_controls() -> None:
@@ -482,8 +493,8 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     mw = build_music_subtitle().cell_len + 4
     music_left = (width - 3) - mw + 1
     label = Text()
-    label.append("⌃C", style=theme.accent)
-    label.append(" controls", style=theme.muted)
+    label.append("c", style=theme.accent)
+    label.append("  controls", style=theme.muted)
     aw = label.cell_len + 4
     t_left = _left_tabs_end
     t_right = t_left + aw - 1
@@ -520,7 +531,8 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     # The music chords are already spelled out in the music pocket next door, so
     # they'd only be duplicated here.
     _ctl("esc", "go back")
-    _ctl("ctrl+C", "close this  ·  twice to quit")
+    _ctl("c", "close this")
+    _ctl("ctrl+C", "quit")
 
     # ── The tab IS the panel: it grows upward out of the bottom border ────────
     # Anchored bottom-right at the tab's corner, the box's roof rises as it opens
@@ -553,7 +565,7 @@ def draw_controls_pocket(console, options, lines: list, page_hint: Text | None =
     bot.append("╯" + " " * (cur_w - 2) + "╰", style=bstyle)  # open bottom, like the pocket
     label_row = _bordered(label)
 
-    # Row plan, bottom-up: open border, then either the "⌃C controls" label (while
+    # Row plan, bottom-up: open border, then either the "c controls" label (while
     # collapsed) or — once expanded — the controls themselves, since the label is
     # redundant when the list it describes is on screen. Roof last.
     plan: list[tuple[int, Text]] = [(term_h - 1, bot)]
