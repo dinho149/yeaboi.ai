@@ -48,7 +48,14 @@ export function normalizeCode(raw: string): string {
   return body.length > 4 ? `${body.slice(0, 4)}-${body.slice(4)}` : body;
 }
 
-/** Strip the display dash — the server compares the code exactly as issued. */
+/**
+ * The eight code characters, dash removed — for length checks only.
+ *
+ * NOT what goes on the wire. ``make_join_code`` issues ``XXXX-XXXX`` and all
+ * three servers compare against that string with ``compare_digest``, so the
+ * dash is part of the code, not decoration. Sending the stripped form made
+ * every join fail with 403.
+ */
 const digits = (value: string): string => value.replace('-', '');
 
 /**
@@ -96,7 +103,9 @@ export function JoinGate({
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: digits(code) }),
+          // `code` is already normalized to XXXX-XXXX, which is exactly the
+          // string the server holds. See the note on `digits` above.
+          body: JSON.stringify({ code }),
         });
         if (!response.ok) {
           setPhase('error');

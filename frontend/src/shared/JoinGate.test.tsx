@@ -91,7 +91,12 @@ describe('JoinGate', () => {
     await waitFor(() => expect(onJoined).toHaveBeenCalledWith('tok-1'));
   });
 
-  it('sends the code without the display dash', async () => {
+  it('sends the code in the XXXX-XXXX form the server issued', async () => {
+    // Regression: this sent the de-hyphenated code, so every join 403'd. The
+    // servers compare with compare_digest against make_join_code()'s output,
+    // which contains the dash — see TestJoinCodeWireFormat in
+    // tests/unit/test_sharing_gate.py, which pins the same contract from the
+    // side that owns it.
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ ok: true, token: 't' }), { status: 200 }));
@@ -101,8 +106,21 @@ describe('JoinGate', () => {
     fireEvent.click(submit());
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    // The dash is a readability affordance for the human; the server compares
-    // against the raw eight characters.
-    expect(fetchBody(fetchMock)).toEqual({ code: 'K3P92QXA' });
+    expect(fetchBody(fetchMock)).toEqual({ code: 'K3P9-2QXA' });
+  });
+
+  it('normalizes a code pasted without the dash back into the wire form', async () => {
+    // The host reads it out over a call and the visitor types eight bare
+    // characters. normalizeCode re-inserts the dash, so this still matches.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true, token: 't' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<JoinGate onJoined={vi.fn()} />);
+    type('k3p92qxa');
+    fireEvent.click(submit());
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchBody(fetchMock)).toEqual({ code: 'K3P9-2QXA' });
   });
 });
