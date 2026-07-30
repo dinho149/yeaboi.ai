@@ -73,8 +73,8 @@ from yeaboi.ui.shared._animations import (
     ease_out_cubic,
 )
 from yeaboi.ui.shared._click import button_click, parse_click
+from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
-from yeaboi.ui.shared._input import set_text_entry
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.splash import play_wordmark_intro
@@ -10285,6 +10285,14 @@ def select_mode(
                             _s_commit_edit()
                             _s_panel = _render_settings(time.monotonic() - _s_anim_start)
                             continue
+                        elif sk == "esc" and esc_came_from_back_tab():
+                            # The back BUTTON means leave, not "unwind one level at a
+                            # time" — clicking it three times to get out is not a
+                            # back button. Commit like any other click away, then go.
+                            _s_commit_edit()
+                            _s_box, _s_field = -1, -1
+                            logger.info("Settings: back tab clicked")
+                            break
                         elif sk == "esc":
                             # Esc alone cancels: 'q' is a character you have to be able
                             # to type (an Ollama model name starts with one). The edit
@@ -10358,7 +10366,7 @@ def select_mode(
                             _s_begin_edit(_env, _label, _masked)
                         elif _fields:
                             _s_field = 0  # open the section — arrows now walk its values
-                    elif sk == "esc" and _s_box >= 0:
+                    elif sk == "esc" and _s_box >= 0 and not esc_came_from_back_tab():
                         # Pops one focus level instead of leaving, so the app-wide back
                         # tab (already armed by the Esc chokepoint) must stay put.
                         from yeaboi.ui.shared._music_bar import cancel_back_retract

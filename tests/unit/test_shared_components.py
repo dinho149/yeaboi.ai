@@ -1030,3 +1030,58 @@ class TestSettingsSaveDataDir:
         _msg, written, moved = self._save(monkeypatch, tmp_path, "", move=True)
         assert moved == [Path.home() / ".yeaboi"]
         assert written == [""]  # '' clears the override back to ~/.yeaboi
+
+
+class TestSettingsWrapValue:
+    """Long read-only statuses flow onto continuation lines instead of cropping.
+
+    The voice hint carries an install command, so ellipsizing it mid-command makes
+    the row useless. Wrapping happens at build time (not at render), so one body
+    line stays one rendered row and the box height still adds up.
+    """
+
+    def _wrap(self, value, width=46, head=13):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _wrap_value
+
+        return _wrap_value(value, width, head)
+
+    def test_short_value_stays_on_one_line(self):
+        assert self._wrap("available — faster-whisper") == ["available — faster-whisper"]
+
+    def test_first_line_leaves_room_for_the_label(self):
+        out = self._wrap("unavailable — Install voice extra: uv sync --extra voice")
+        assert len(out) > 1
+        assert len(out[0]) <= 46 - 13  # shares the row with "Dictation:  "
+        assert " ".join(out) == "unavailable — Install voice extra: uv sync --extra voice"
+
+    def test_continuation_lines_get_the_wider_budget(self):
+        # Later lines only lose the 2-column indent, not the label's width.
+        out = self._wrap("unavailable — Install voice extra: uv sync --extra voice")
+        assert all(len(line) <= 46 - 2 for line in out[1:])
+
+    def test_an_overlong_word_keeps_its_line(self):
+        # Breaking before a word wider than the budget would emit an empty line.
+        out = self._wrap("supercalifragilisticexpialidocious", width=20, head=13)
+        assert out[0] == "supercalifragilisticexpialidocious"
+
+
+class TestBackTabVersusEscKey:
+    """A click on the back tab and the Esc key both arrive as "esc".
+
+    Settings uses Esc to pop one focus level at a time, so without a way to tell
+    the two apart the back BUTTON needed three clicks to leave. The input layer
+    records which it was.
+    """
+
+    def test_the_tab_click_is_flagged(self):
+        from yeaboi.ui.shared._input import _esc, esc_came_from_back_tab
+
+        assert _esc(from_tab=True) == "esc"
+        assert esc_came_from_back_tab() is True
+
+    def test_the_key_is_not(self):
+        from yeaboi.ui.shared._input import _esc, esc_came_from_back_tab
+
+        _esc(from_tab=True)  # leave the flag set, so this proves it resets
+        assert _esc() == "esc"
+        assert esc_came_from_back_tab() is False

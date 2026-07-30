@@ -4911,8 +4911,10 @@ _SETTINGS_MAX_COLS = 2
 _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # Rows a short column may gain so its bottom border lines up with the tall one.
 # Beyond this the stretch reads as padding rather than alignment, so the leftover
-# is simply left as space below the column.
-_SETTINGS_MAX_STRETCH = 2
+# is simply left as space below the column. The balancing pass keeps the shortfall
+# small, so this is enough to land level in practice — it exists to stop a lone
+# one-row box being blown up to match a column of six-row ones.
+_SETTINGS_MAX_STRETCH = 3
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -5052,6 +5054,25 @@ def _settings_tab_bar(
     return [labels_line, underline], spans
 
 
+def _wrap_value(value: str, width: int, head: int, indent: int = 2) -> list[str]:
+    """Greedily wrap ``value`` for a settings row: the first line shares the row
+    with a ``head``-wide label, later lines are indented under it."""
+    out: list[str] = []
+    budget = max(8, width - head)
+    line = ""
+    for word in value.split():
+        candidate = f"{line} {word}" if line else word
+        # A word longer than the whole budget still takes the line it starts (it
+        # ellipsizes there) — breaking before it would emit an empty line.
+        if not line or len(candidate) <= budget:
+            line = candidate
+            continue
+        out.append(line)
+        line, budget = word, max(8, width - indent)
+    out.append(line)
+    return out
+
+
 def _build_settings_screen(
     config_data: dict,
     *,
@@ -5125,7 +5146,9 @@ def _build_settings_screen(
         sections.append((text, _cur, wide))
         box_fields.append(_cur_fields)
 
-    def _row(label: str, value: str, value_style: str = "", masked: bool = False, env: str = "") -> None:
+    def _row(
+        label: str, value: str, value_style: str = "", masked: bool = False, env: str = "", wrap: bool = False
+    ) -> None:
         # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
         # click can recover the env var; plain rows stay Text.
         # no_wrap + ellipsis: a long value crops instead of wrapping, which would
@@ -5134,6 +5157,19 @@ def _build_settings_screen(
         r = _EditableRow("", **_kw) if env else Text("", **_kw)
         _focused = bool(env) and len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
         r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
+        if wrap and not env and value:
+            # A read-only status whose text can't fit a column (the voice hint
+            # carries an install command) flows onto continuation lines. Wrapping
+            # HERE rather than at render time keeps one body line per rendered row,
+            # so the box height and the click regions still add up.
+            _pre = _wrap_value(str(value), _cur_w, len(label) + 3)
+            r.append(_pre[0], style=value_style or theme.value)
+            _cur.append(r)
+            for _more in _pre[1:]:
+                _c = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+                _c.append(_more, style=value_style or theme.value)
+                _cur.append(_c)
+            return
         if editing is not None and env and editing[0] == env:
             # This row is being edited in place: show the buffer with a block cursor.
             # The buffer is windowed to what is left of the box so the cursor stays
@@ -5258,10 +5294,12 @@ def _build_settings_screen(
         from yeaboi.voice import backend_label, is_voice_available
 
         _voice_ok, _voice_reason = is_voice_available()
+        # Read-only status; the unavailable text carries an install command, so it
+        # wraps onto continuation lines rather than cropping mid-command.
         if _voice_ok:
-            _row("Dictation", f"available — {backend_label()}", value_style=theme.good)  # read-only status
+            _row("Dictation", f"available — {backend_label()}", value_style=theme.good, wrap=True)
         else:
-            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)  # read-only status
+            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn, wrap=True)
         _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
     def _sec_bedrock() -> None:

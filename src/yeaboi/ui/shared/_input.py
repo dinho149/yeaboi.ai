@@ -41,14 +41,30 @@ def push_back_key(key: str) -> None:
     _pushback.append(key)
 
 
-def _esc() -> str:
+# True when the most recent "esc" event came from clicking the back tab rather
+# than from the Esc key. Screens where Esc pops an internal focus level use this
+# to keep the two apart: the key steps back one level, the tab leaves outright.
+_esc_from_back_tab = False
+
+
+def esc_came_from_back_tab() -> bool:
+    """Whether the last ``"esc"`` was a click on the back tab, not the Esc key."""
+    return _esc_from_back_tab
+
+
+def _esc(*, from_tab: bool = False) -> str:
     """Return the ``"esc"`` key event, starting the back tab's fold-away first.
 
     Esc (and a click on the tab itself) is the app-wide go-back gesture, so the
     tab must begin retracting on the PRESS rather than when the destination screen
     finally renders — otherwise the fold trails into the next screen's entrance.
     Latching here covers every screen at once, since all input flows through here.
+
+    ``from_tab`` records which of the two it was, for the screens that care (see
+    esc_came_from_back_tab).
     """
+    global _esc_from_back_tab
+    _esc_from_back_tab = from_tab
     try:
         from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar, retract_back_tab
 
@@ -276,7 +292,9 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
 
                             _br = back_region()
                             if _br is not None and _br[0] <= cx <= _br[2] and _br[1] <= cy <= _br[3]:
-                                return _esc()  # clicking the tab IS Esc (and folds it away)
+                                # Clicking the tab IS Esc (and folds it away) — flagged
+                                # so a screen can tell the button from the key.
+                                return _esc(from_tab=True)
                             for _x0, _y0, _x1, _y1, _key in chrome_tab_regions():
                                 if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
                                     return _key  # e.g. the 'c copy' tab presses 'c'
