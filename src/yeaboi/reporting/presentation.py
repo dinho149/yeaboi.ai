@@ -3,7 +3,7 @@
 This is the "presentation" output of Reporting mode: one offline .html file — inline
 CSS + JS, no external dependencies — that opens in any browser and presents the
 delivered work to the business. It follows the same embedded-asset pattern as
-retro/page.py: big ``_CSS`` / ``_JS`` module strings with ``__PLACEHOLDER__`` markers
+poker/page.py: big ``_CSS`` / ``_JS`` module strings with ``__PLACEHOLDER__`` markers
 filled via ``str.replace`` + ``json.dumps``.
 
 Design split (the "hybrid" the user chose): the *content* — slide wording, the
@@ -11,7 +11,7 @@ outcome themes, and the section emojis — is supplied by the LLM design pass in
 engine.py (with a deterministic fallback). This file only *renders* it: layout,
 theme palettes, keyboard navigation, progress. Ticket/outcome text is written to the
 DOM via ``textContent`` (never innerHTML), so anything that came from a tracker is
-inert — the same XSS defense the retro page uses.
+inert — the same XSS defense every board page uses.
 
 This module is E501-exempt in pyproject.toml (embedded asset).
 

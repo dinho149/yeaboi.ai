@@ -57,7 +57,8 @@ def main() -> int:
     print(f"    api        {api}/api/state?token={server.token}&pid=dev&wait=25")
     # The same board through Vite, with HMR. `make web-dev` proxies /api here,
     # so the TS runs against genuine server responses rather than fixtures.
-    print(f"    react      http://localhost:5399/dev/retro.html?token={server.token}&admin={server.admin_token}")
+    # `board` above serves the committed bundle; this one serves the sources.
+    print(f"    hmr        http://localhost:5399/dev/retro.html?token={server.token}&admin={server.admin_token}")
     print("\n  Ctrl-C to stop.\n")
 
     try:

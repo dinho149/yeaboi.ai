@@ -3,7 +3,9 @@
 ``build_poker_html()`` returns ONE HTML string with inline CSS + JS and no
 external requests (no CDN, no third-party iframe) so it works on any LAN device
 — and over the Cloudflare tunnel — without the app installed, fully offline.
-It is a sibling of retro/page.py and keeps its whole shell verbatim: the
+It grew as a sibling of the retro board's hand-written page and keeps its whole
+shell verbatim — retro has since moved to React (``frontend/src/retro``), so
+this is the last surface built this way, and it is next: the
 token-free page + code-entry gate (``POST /api/join``), the profile modal
 (avatar picker + 🎲 random names), the ~1.2 s poll loop, the theme switcher,
 internet-radio music with a visualizer, the shared countdown timer with

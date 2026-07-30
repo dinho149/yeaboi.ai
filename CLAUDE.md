@@ -90,10 +90,9 @@ and never builds anything.
   **Never also ship them in a boot payload** — the island would win at runtime, so a stale bundle
   would render a board that disagrees with what the server accepts. Payloads carry only what a
   codegen cannot pin.
-- **Retro is mid-migration.** `RETRO_UI=react` serves the React board (`frontend/src/retro`);
-  anything else serves the legacy page in `retro/page.py`. `make dev-board-react` runs a seeded
-  board on the new UI. Both are covered by tests; the flag and `build_legacy_board_html` go away
-  together.
+- **Retro is fully React** (`frontend/src/retro`); `retro/page.py` is now only the shell and the
+  boot island. `make dev-board` runs a seeded board against the real Python API. Poker is the one
+  mode still served from a hand-written page (`poker/page.py`).
 
 ## Code Style
 
