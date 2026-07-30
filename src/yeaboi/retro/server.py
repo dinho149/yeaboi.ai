@@ -45,6 +45,8 @@ from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.page import build_board_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import make_join_code, make_token
+from yeaboi.sharing.events import ChangeWatcher, EventHub
+from yeaboi.sharing.live import parse_wait, serve_state
 
 logger = logging.getLogger(__name__)
 
@@ -170,11 +172,11 @@ class _RetroHandler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, self.server.page_html.encode(), "text/html; charset=utf-8")  # type: ignore[attr-defined]
             return
-        if path == "/api/state":  # the browser's unified ~1 s poll
+        if path == "/api/state":  # the browser's unified live poll
             if not self._authed():
                 self._send_json(403, {"error": "forbidden"})
                 return
-            self._send_json(200, self._board.state_snapshot(self._query("pid")))
+            self._serve_state()
             return
         if path == "/api/cards":  # legacy/simple cards-only read
             if not self._authed():
@@ -190,6 +192,22 @@ class _RetroHandler(BaseHTTPRequestHandler):
             self._send_qr()
             return
         self._send_json(404, {"error": "not found"})
+
+    def _serve_state(self) -> None:
+        """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
+
+        Long-polling, not SSE: a Cloudflare quick tunnel buffers a streaming
+        body until the origin finishes it, so an endless response delivers
+        nothing to a remote teammate. See :mod:`yeaboi.sharing.live` for the
+        experiment that established that. Each response here is complete, so it
+        flushes through the edge immediately.
+        """
+        serve_state(
+            self,
+            self.server.event_hub,  # type: ignore[attr-defined]
+            lambda: self._board.state_snapshot(self._query("pid")),
+            wait_seconds=parse_wait(self._query("wait")),
+        )
 
     def _send_qr(self) -> None:
         """Render a QR of the token-free join URL (``scheme://<Host header>/``) as inline SVG.
@@ -348,6 +366,13 @@ class _RetroHandler(BaseHTTPRequestHandler):
                 avatar=str(payload.get("avatar", "")),
                 typing_grid=str(payload.get("typing_grid", "")),
             )
+            # ?quiet=1: a client on the long-poll already gets state the moment
+            # anything changes, so echoing ~40 KB back on every heartbeat is pure
+            # waste. It still has to send the heartbeat itself — presence and
+            # typing are carried by this request, not by /api/state.
+            if self._query("quiet") == "1":
+                self._send_json(200, {"ok": True})
+                return
             self._send_json(200, _state())
             return
 
@@ -383,8 +408,26 @@ class RetroServer:
         self.join_limiter = JoinLimiter()
         self.ip = get_lan_ip()
         self.port = port
+        # Live-update plumbing. Built here rather than in start() so stop() is
+        # safe on a server that was never started.
+        self.event_hub = EventHub()
+        self._watcher = ChangeWatcher(self.event_hub, self._change_probe, name="retro-live-watch")
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+
+    def _change_probe(self) -> tuple:
+        """The value the watcher diffs to decide whether to release parked polls.
+
+        ``revision`` alone is not enough: presence and typing deliberately do NOT
+        bump it (heartbeats fire ~1/s and bumping would defeat change detection —
+        see :meth:`RetroBoard.heartbeat`). Without the two lists here, the
+        who's-here row and the "… is typing" hint would only refresh when
+        something unrelated happened to change.
+        """
+        # revision() is a METHOD on both boards, not a property — calling it is
+        # load-bearing. Comparing the bound method instead always reports "equal"
+        # and silently blinds the watcher to every card, timer and lock change.
+        return (self.board.revision(), self.board.presence_list(), self.board.typing_list())
 
     @property
     def url(self) -> str:
@@ -417,7 +460,7 @@ class RetroServer:
         # The served page is token-FREE: GET / is unauthenticated, so baking the
         # token in would leak it to any LAN peer. The client reads the token from
         # its own URL (?token=) or obtains it via the join code (/api/join).
-        page_html = build_board_html()
+        page_html = build_board_html(self.board.sprint_name)
         httpd: ThreadingHTTPServer | None = None
         for candidate in range(self.port, self.port + _PORT_WALK):
             try:
@@ -438,9 +481,11 @@ class RetroServer:
         httpd.join_code = self.join_code  # type: ignore[attr-defined]
         httpd.join_limiter = self.join_limiter  # type: ignore[attr-defined]
         httpd.page_html = page_html  # type: ignore[attr-defined]
+        httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="retro-http", daemon=True)
         self._thread.start()
+        self._watcher.start()  # begins releasing parked long-polls on board changes
         # Never log any part of the token — even a 6-char prefix is real
         # entropy loss on a short join token, and truncation happens before
         # the redaction layer could catch it.
@@ -448,6 +493,12 @@ class RetroServer:
 
     def stop(self) -> None:
         """Stop serving and free the socket. Safe to call from the TUI thread."""
+        # Retire the watcher and wake every parked request BEFORE touching the
+        # socket: daemon_threads = True means shutdown() never joins handler
+        # threads, so a request held on the hub for its 25 s deadline would
+        # otherwise linger holding a thread until the process exits.
+        self._watcher.stop()
+        self.event_hub.close()
         if self._httpd is None:
             return
         try:

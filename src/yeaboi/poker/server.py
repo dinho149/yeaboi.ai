@@ -51,6 +51,8 @@ from yeaboi.poker.page import build_poker_html
 from yeaboi.retro.server import encode_share_code, get_lan_ip
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import make_join_code, make_token
+from yeaboi.sharing.events import ChangeWatcher, EventHub
+from yeaboi.sharing.live import parse_wait, serve_state
 
 logger = logging.getLogger(__name__)
 
@@ -285,11 +287,11 @@ class _PokerHandler(BaseHTTPRequestHandler):
             # the HTML would leak it to any LAN peer (see retro/server.py).
             self._send(200, self.server.page_html.encode(), "text/html; charset=utf-8")  # type: ignore[attr-defined]
             return
-        if path == "/api/state":  # the browser's unified ~1 s poll
+        if path == "/api/state":  # the browser's unified live poll
             if not self._authed():
                 self._send_json(403, {"error": "forbidden"})
                 return
-            self._send_json(200, self._board.state_snapshot(self._query("pid")))
+            self._serve_state()
             return
         if path == "/api/ticket":  # read-only peek — any token-holder may read any ticket
             if not self._authed():
@@ -308,6 +310,21 @@ class _PokerHandler(BaseHTTPRequestHandler):
             self._send_qr()
             return
         self._send_json(404, {"error": "not found"})
+
+    def _serve_state(self) -> None:
+        """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
+
+        Same contract as retro's — see :mod:`yeaboi.sharing.live` for why this is
+        long-polling rather than SSE. Vote secrecy is preserved for free: every
+        response is built by ``state_snapshot(pid)``, the same function the plain
+        poll uses, so a waiting client can never see more than a polling one.
+        """
+        serve_state(
+            self,
+            self.server.event_hub,  # type: ignore[attr-defined]
+            lambda: self._board.state_snapshot(self._query("pid")),
+            wait_seconds=parse_wait(self._query("wait")),
+        )
 
     def _send_qr(self) -> None:
         """Render a QR of the token-free join URL as inline SVG (see retro/server.py).
@@ -408,6 +425,13 @@ class _PokerHandler(BaseHTTPRequestHandler):
         if path == "/api/presence":
             # The ~1 s tick: record presence AND return the live state in one round-trip.
             self._board.heartbeat(pid, name=str(payload.get("name", "")), avatar=str(payload.get("avatar", "")))
+            # ?quiet=1: a client on the long-poll already gets state pushed to it,
+            # so echoing the whole snapshot back on every heartbeat is waste. It
+            # still has to send the heartbeat — presence rides on this request,
+            # not on the stream.
+            if self._query("quiet") == "1":
+                self._send_json(200, {"ok": True})
+                return
             self._send_json(200, _state())
             return
 
@@ -753,8 +777,25 @@ class PokerServer:
         self.duel_capture = _DuelCapture()
         self.ip = get_lan_ip()
         self.port = port
+        # Live-update plumbing. Built here rather than in start() so stop() is
+        # safe on a server that was never started.
+        self.event_hub = EventHub()
+        self._watcher = ChangeWatcher(self.event_hub, self._change_probe, name="poker-live-watch")
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+
+    def _change_probe(self) -> tuple:
+        """The value the watcher diffs to decide whether to release parked polls.
+
+        ``revision`` covers every board mutation (votes, reveals, duels, the AI
+        worker's ``set_ai_note``), but presence deliberately does NOT bump it —
+        heartbeats fire ~1/s and bumping would defeat change detection. Without
+        the presence list here, the who's-here row and the voting-phase "voted"
+        dots would only refresh when something unrelated changed.
+        """
+        # revision() is a METHOD, not a property — see retro/server.py for why
+        # comparing the bound method silently blinds the watcher.
+        return (self.board.revision(), self.board.presence_list())
 
     @property
     def url(self) -> str:
@@ -800,15 +841,23 @@ class PokerServer:
         httpd.join_limiter = self.join_limiter  # type: ignore[attr-defined]
         httpd.duel_capture = self.duel_capture  # type: ignore[attr-defined]
         httpd.page_html = page_html  # type: ignore[attr-defined]
+        httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="poker-http", daemon=True)
         self._thread.start()
+        self._watcher.start()  # begins releasing parked long-polls on board changes
         # Never log any part of the token (see retro/server.py — same rationale).
         logger.info("poker server up on %s (token_len=%d)", self.url.split("?")[0], len(self.token))
 
     def stop(self) -> None:
         """Stop serving and free the socket. Safe to call from the TUI thread."""
         self.duel_capture.abort()  # never leave a mic stream open past the session
+        # Retire the watcher and wake every parked request BEFORE touching the
+        # socket: daemon_threads = True means shutdown() never joins handler
+        # threads, so a request held on the hub for its 25 s deadline would
+        # otherwise linger holding a thread until the process exits.
+        self._watcher.stop()
+        self.event_hub.close()
         if self._httpd is None:
             return
         try:
