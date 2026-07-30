@@ -839,31 +839,51 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * whichever theme the visitor last chose.
  */
 
-._card_10s6b_20 {
-  width: min(92vw, 430px);
-  /* Centred by the page shell (see gate/page.css) — this element owns only the
-     panel, so the boards can drop it into any layout. */
+/*
+ * The gate centres itself.
+ *
+ * This used to live on `body` in gate/page.css, on the theory that a consumer
+ * should be free to place the panel anywhere. In practice there are three
+ * consumers and all three want it dead centre — and the two that were left to
+ * do it themselves (the retro and poker boards, which render the gate as their
+ * entire tree) did not, so a teammate following a tunnel link met a card jammed
+ * into the top-left corner. One definition, in the component that needs it.
+ */
+._shell_1f07a_30 {
+  /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
+     the visible viewport, which pushes a centred card off-screen. Most people
+     open a tunnel link on a phone, so this is the common case, not the edge. */
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  /* Landscape on a notched phone otherwise clips the card against the sensor
+     housing. Padding, not margin, so the grid centring still applies. */
+  padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
 }
 
-._wordmark_10s6b_26 {
+._card_1f07a_42 {
+  width: min(92vw, 430px);
+}
+
+._wordmark_1f07a_46 {
   /* Large enough to be the first thing seen, and the reason there is no logo
      image on this page: it is text, so it costs nothing and scales cleanly. */
   font-size: 17px;
   margin-bottom: var(--s4);
 }
 
-._eyebrow_10s6b_33 {
+._eyebrow_1f07a_53 {
   display: block;
   margin-bottom: var(--s2);
 }
 
-._heading_10s6b_38 {
+._heading_1f07a_58 {
   margin: 0 0 var(--s2);
   font-size: 1.35rem;
   line-height: 1.25;
 }
 
-._blurb_10s6b_44 {
+._blurb_1f07a_64 {
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.55;
@@ -872,7 +892,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* The label and the duck share a baseline row, so the bird sits on the field
    rather than floating beside it. */
-._labelRow_10s6b_53 {
+._labelRow_1f07a_73 {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -883,7 +903,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: visible;
 }
 
-._label_10s6b_53 {
+._label_1f07a_73 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 500;
@@ -892,14 +912,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._duck_10s6b_73 {
+._duck_1f07a_93 {
   /* Sits down onto the input's top edge. Negative margin rather than absolute
      positioning so it still participates in the flex row and cannot end up
      overlapping the label on a narrow phone. */
   margin-bottom: -10px;
 }
 
-._code_10s6b_80 {
+._code_1f07a_100 {
   width: 100%;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line-strong);
@@ -917,20 +937,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
 }
 
-._code_10s6b_80::placeholder {
+._code_1f07a_100::placeholder {
   color: var(--dim);
   font-weight: 500;
 }
 
-._code_10s6b_80:focus-visible {
+._code_1f07a_100:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-._wrong_10s6b_109 {
+._wrong_1f07a_129 {
   border-color: var(--danger);
-  animation: _shake_10s6b_1 220ms ease-in-out;
+  animation: _shake_1f07a_1 220ms ease-in-out;
 }
 
 /*
@@ -940,12 +960,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * and the red never showed: the one state the border exists to signal was the
  * one state it could not reach.
  */
-._wrong_10s6b_109:focus-visible {
+._wrong_1f07a_129:focus-visible {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
-._go_10s6b_126 {
+._go_1f07a_146 {
   width: 100%;
   /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
      minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
@@ -967,23 +987,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 
-._go_10s6b_126:hover:not(:disabled) {
+._go_1f07a_146:hover:not(:disabled) {
   filter: brightness(1.08);
 }
 
-._go_10s6b_126:focus-visible {
+._go_1f07a_146:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-._go_10s6b_126:disabled {
+._go_1f07a_146:disabled {
   /* Visibly inert rather than hidden: the button is disabled until eight
      characters are in, which doubles as progress feedback. */
   opacity: 0.45;
   cursor: default;
 }
 
-._status_10s6b_164 {
+._status_1f07a_184 {
   /* Reserved height — the card must not resize when a message appears. */
   min-height: 1.4rem;
   margin: var(--s2) 0 0;
@@ -992,11 +1012,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-align: center;
 }
 
-._bad_10s6b_173 {
+._bad_1f07a_193 {
   color: var(--danger);
 }
 
-@keyframes _shake_10s6b_1 {
+@keyframes _shake_1f07a_1 {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
@@ -1006,28 +1026,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    colour change; the motion is decoration and must be droppable. The duck's
    own startle is neutralised by the global guard in tokens.css. */
 @media (prefers-reduced-motion: reduce) {
-  ._wrong_10s6b_109 { animation: none; }
-  ._go_10s6b_126 { transition: none; }
+  ._wrong_1f07a_129 { animation: none; }
+  ._go_1f07a_146 { transition: none; }
 }
 /*
- * Page shell for the join gate — one centred card and nothing else.
+ * Page shell for the join gate.
  *
  * Global (not a CSS Module) because it styles `body` and the mount point, which
- * `render_page` in Python owns. The card's own styling lives with the component
- * in shared/JoinGate.module.css so the boards can reuse it in any layout.
+ * `render_page` in Python owns.
+ *
+ * The centring used to be here, on the theory that a consumer should be free to
+ * place the panel wherever it liked. There are three consumers, all three want
+ * it dead centre, and the two that were left to arrange it themselves — the
+ * retro and poker boards, which render the gate as their whole tree — did not,
+ * so a teammate following a tunnel link met a card in the top-left corner. It
+ * now lives with the component, in `shared/JoinGate.module.css`.
  */
-
-body {
-  /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
-     the visible viewport, which pushes a centred card off-screen. Most people
-     open a tunnel link on a phone, so this is the common case, not the edge. */
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  /* Landscape on a notched phone otherwise clips the card against the sensor
-     housing. Padding, not margin, so the grid centring still applies. */
-  padding: 1rem max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left));
-}
 
 #root {
   display: contents;

@@ -17,10 +17,30 @@
  * whichever theme the visitor last chose.
  */
 
+/*
+ * The gate centres itself.
+ *
+ * This used to live on `body` in gate/page.css, on the theory that a consumer
+ * should be free to place the panel anywhere. In practice there are three
+ * consumers and all three want it dead centre — and the two that were left to
+ * do it themselves (the retro and poker boards, which render the gate as their
+ * entire tree) did not, so a teammate following a tunnel link met a card jammed
+ * into the top-left corner. One definition, in the component that needs it.
+ */
+.shell {
+  /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
+     the visible viewport, which pushes a centred card off-screen. Most people
+     open a tunnel link on a phone, so this is the common case, not the edge. */
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  /* Landscape on a notched phone otherwise clips the card against the sensor
+     housing. Padding, not margin, so the grid centring still applies. */
+  padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
+}
+
 .card {
   width: min(92vw, 430px);
-  /* Centred by the page shell (see gate/page.css) — this element owns only the
-     panel, so the boards can drop it into any layout. */
 }
 
 .wordmark {

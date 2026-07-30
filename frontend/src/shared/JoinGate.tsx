@@ -157,61 +157,63 @@ export function JoinGate({
   );
 
   return (
-    <TerminalFrame title={frameTitle} className={styles.card}>
-      <main>
-        <Wordmark text={wordmark} className={styles.wordmark} />
-        <Eyebrow className={styles.eyebrow}>{eyebrow}</Eyebrow>
-        <h1 className={styles.heading}>{heading}</h1>
-        <p className={styles.blurb}>{blurb}</p>
+    <div className={styles.shell}>
+      <TerminalFrame title={frameTitle} className={styles.card}>
+        <main>
+          <Wordmark text={wordmark} className={styles.wordmark} />
+          <Eyebrow className={styles.eyebrow}>{eyebrow}</Eyebrow>
+          <h1 className={styles.heading}>{heading}</h1>
+          <p className={styles.blurb}>{blurb}</p>
 
-        <form onSubmit={submit} noValidate>
-          <div className={styles.labelRow}>
-            <label className={styles.label} htmlFor={inputId}>
-              Access code
-            </label>
-            {/* Perched on the field, watching you type. Purely decorative until
-                the code is refused, which is the moment it earns its place. */}
-            <Duck state={duck} size={44} className={styles.duck} />
-          </div>
-          <input
-            ref={inputRef}
-            id={inputId}
-            className={cx(styles.code, phase === 'error' && styles.wrong)}
-            value={code}
-            onInput={(event) => {
-              setCode(normalizeCode((event.target as HTMLInputElement).value));
-              if (phase === 'error') {
-                setPhase('idle');
-                setMessage('');
-              }
-            }}
-            // maxLength counts the dash. inputMode/autocapitalize matter on
-            // phones, which is where most people open a tunnel link.
-            maxLength={CODE_LENGTH + 1}
-            placeholder="XXXX-XXXX"
-            autoComplete="one-time-code"
-            autoCapitalize="characters"
-            autoCorrect="off"
-            // Lowercase `spellcheck`: preact's JSX types accept React's camelCase
-            // for every other attribute here, but not this one. Both work at
-            // runtime — it is a typing gap, not a behaviour difference.
-            spellcheck={false}
-            aria-describedby={statusId}
-            aria-invalid={phase === 'error'}
-            // readOnly rather than disabled: disabling blurs the field, so the
-            // caret would be gone by the time an error comes back.
-            readOnly={busy}
-            autoFocus
-          />
-          <button className={styles.go} type="submit" disabled={!complete || busy}>
-            {busy ? 'Checking…' : cta}
-          </button>
-          {/* Reserved height so the card does not jump when a message appears. */}
-          <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
-            {message}
-          </p>
-        </form>
-      </main>
-    </TerminalFrame>
+          <form onSubmit={submit} noValidate>
+            <div className={styles.labelRow}>
+              <label className={styles.label} htmlFor={inputId}>
+                Access code
+              </label>
+              {/* Perched on the field, watching you type. Purely decorative until
+                  the code is refused, which is the moment it earns its place. */}
+              <Duck state={duck} size={44} className={styles.duck} />
+            </div>
+            <input
+              ref={inputRef}
+              id={inputId}
+              className={cx(styles.code, phase === 'error' && styles.wrong)}
+              value={code}
+              onInput={(event) => {
+                setCode(normalizeCode((event.target as HTMLInputElement).value));
+                if (phase === 'error') {
+                  setPhase('idle');
+                  setMessage('');
+                }
+              }}
+              // maxLength counts the dash. inputMode/autocapitalize matter on
+              // phones, which is where most people open a tunnel link.
+              maxLength={CODE_LENGTH + 1}
+              placeholder="XXXX-XXXX"
+              autoComplete="one-time-code"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              // Lowercase `spellcheck`: preact's JSX types accept React's camelCase
+              // for every other attribute here, but not this one. Both work at
+              // runtime — it is a typing gap, not a behaviour difference.
+              spellcheck={false}
+              aria-describedby={statusId}
+              aria-invalid={phase === 'error'}
+              // readOnly rather than disabled: disabling blurs the field, so the
+              // caret would be gone by the time an error comes back.
+              readOnly={busy}
+              autoFocus
+            />
+            <button className={styles.go} type="submit" disabled={!complete || busy}>
+              {busy ? 'Checking…' : cta}
+            </button>
+            {/* Reserved height so the card does not jump when a message appears. */}
+            <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
+              {message}
+            </p>
+          </form>
+        </main>
+      </TerminalFrame>
+    </div>
   );
 }
