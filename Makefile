@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-board-react
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -83,6 +83,42 @@ bump-minor: ## Bump the minor version in pyproject.toml (X.Y.Z -> X.Y+1.0)
 
 bump-major: ## Bump the major version in pyproject.toml (X.Y.Z -> X+1.0.0)
 	$(UV) run python scripts/bump_version.py major
+
+# --- Front end — TS sources in frontend/, built output committed ------------
+#
+# `make test` never runs any of these: the Python suite reads the committed
+# bundles, so contributors (and CI's Python jobs) need no Node at all.
+
+web-install: ## Install front-end dependencies (npm ci from the committed lockfile)
+	cd frontend && npm ci
+
+web: ## Build the front-end bundles into src/yeaboi/web/static (commit the result)
+	@test -d frontend/node_modules || $(MAKE) web-install
+	cd frontend && npm run build
+	@echo "✓ bundles built — remember to commit src/yeaboi/web/static"
+
+web-test: ## Front-end unit tests (vitest + jsdom + axe + the theme contrast matrix)
+	@test -d frontend/node_modules || $(MAKE) web-install
+	cd frontend && npm test
+
+web-check: ## What CI runs: typecheck, test, rebuild, fail if the committed bundles are stale
+	@test -d frontend/node_modules || $(MAKE) web-install
+	cd frontend && npm run typecheck && npm test && npm run build
+	@# --porcelain rather than `git diff --exit-code`: diff is blind to untracked
+	@# files, so a brand-new entry that nobody committed would slip through.
+	@test -z "$$(git status --porcelain -- src/yeaboi/web/static)" \
+	  || { echo ""; git status --short -- src/yeaboi/web/static; \
+	       echo "✗ committed bundles are stale — run 'make web' and commit src/yeaboi/web/static"; exit 1; }
+	@echo "✓ committed bundles match the sources"
+
+web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev board
+	cd frontend && npm run dev
+
+dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
+	$(UV) run python scripts/dev_board.py
+
+dev-board-react: ## Same, but serving the React board at / instead of the legacy page
+	RETRO_UI=react $(UV) run python scripts/dev_board.py
 
 build: ## Build sdist + wheel into dist/
 	$(UV) build

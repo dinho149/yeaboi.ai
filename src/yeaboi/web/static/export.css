@@ -1,0 +1,528 @@
+/*
+ * Markup styling for the ten static exported reports (planning, standup, retro,
+ * poker, performance, reporting, roadmap, analysis, anonymize, team profile).
+ *
+ * Split out of tokens.css: these class names are a contract with the Python
+ * exporters in html_theme.py, which still write the markup as strings. The
+ * foundation below them is shared with the live boards; this file is not.
+ * When phase 9 moves the exporters to TSX, this file goes with them.
+ */
+/*
+ * The shared design foundation: palettes, then everything derived from them.
+ *
+ * Every yeaboi surface imports this one file — the live boards, the join gate,
+ * the slide deck, and the static exports. It is the replacement for the three
+ * hand-copied palette blocks that used to live in html_theme.py, retro/page.py
+ * and poker/page.py, which could and did drift apart.
+ *
+ * Two rules keep it honest:
+ *
+ * 1. **Nothing here is a raw colour.** Anything colour-shaped is either one of
+ *    the five palette blocks in palette.css or a `color-mix` / alias of one, so
+ *    a new theme needs no changes outside that file. The literals that used to
+ *    be scattered through the boards (`#f85149` appeared in six places across
+ *    two files, the confetti palette was a hardcoded JS array in both) are gone.
+ * 2. **Nothing here depends on JS having run.** `:root` doubles as the default
+ *    theme, so a page renders correctly before — or without — the bundle.
+ *
+ * Vite inlines the palette below at build time, so the shipped stylesheet is a
+ * single flat file with no external reference at all. `test_web_assets` asserts
+ * that — including that this comment does not name the at-rule literally, since
+ * the guard is a blunt substring search on purpose.
+ */
+/*
+ * The five palettes and the base element reset — the foundation every yeaboi
+ * page shares, whether it is an exported report opened over file:// or a live
+ * board served through a tunnel.
+ *
+ * Split out of tokens.css so that a small page (the join gate) can take the
+ * palettes without also inheriting the export report's table/header/badge
+ * styling. tokens.css pulls this in first, so the export bundle is unchanged.
+ *
+ * Palette switching is pure custom-property swaps on [data-theme] — see
+ * runtime/theme.ts. Nothing here may depend on JS having run: the :root block
+ * doubles as the default, so a page with no data-theme attribute still renders.
+ */
+
+:root, [data-theme="midnight"] {
+  --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#c9d1d9;
+  --muted:#8b949e; --accent:#50bebe; --accent2:#a371f7; --card:#0d1117; --ink:#04211f;
+  --ok:#3fb950; --warn:#d29922; --danger:#f85149; --info:#58a6ff;
+  --critical:#f85149; --high:#f0883e; --medium:#58a6ff; --low:#8b949e;
+}
+[data-theme="light"] {
+  --bg:#f6f8fa; --panel:#ffffff; --line:#d0d7de; --text:#1f2328;
+  --muted:#656d76; --accent:#0969da; --accent2:#8250df; --card:#f6f8fa; --ink:#ffffff;
+  --ok:#1a7f37; --warn:#9a6700; --danger:#cf222e; --info:#0969da;
+  --critical:#cf222e; --high:#bc4c00; --medium:#0969da; --low:#57606a;
+}
+/*
+ * Solarized, lifted to WCAG AA.
+ *
+ * The canonical Solarized accents are tuned against base03 (#002b36) and only
+ * just clear 4.5:1 there. Against base02 (#073642) — this theme's `--panel`,
+ * which is what every chip, badge and status label actually sits on — several
+ * of them do not: `--danger` measured 2.81:1 and `--accent2` 2.86:1, i.e. below
+ * even the 3:1 floor for non-text UI. The hues are unchanged; each colour is
+ * lifted in HSL lightness by the smallest amount that clears 4.5:1 against BOTH
+ * `--panel` and `--bg`. `theme.test.ts` re-measures this on every run.
+ */
+[data-theme="solarized"] {
+  --bg:#002b36; --panel:#073642; --line:#0a4b59; --text:#eee8d5;
+  --muted:#93a1a1; --accent:#2ca9a0; --accent2:#e175a9; --card:#002b36; --ink:#002b36;
+  --ok:#8ea300; --warn:#c29300; --danger:#e87775; --info:#48a0de;
+  --critical:#e87775; --high:#eb794a; --medium:#48a0de; --low:#93a1a1;
+}
+[data-theme="synthwave"] {
+  --bg:#1a1033; --panel:#241847; --line:#3d2a6b; --text:#f5e6ff;
+  --muted:#a48fd0; --accent:#ff5edb; --accent2:#36e0ff; --card:#150c29; --ink:#1a1033;
+  --ok:#3ddc97; --warn:#ffd166; --danger:#ff6b81; --info:#36e0ff;
+  --critical:#ff6b81; --high:#ff9e64; --medium:#36e0ff; --low:#a48fd0;
+}
+[data-theme="forest"] {
+  --bg:#0c1a12; --panel:#12261b; --line:#1f3a2a; --text:#d7e8dc;
+  --muted:#89a894; --accent:#4cc38a; --accent2:#d9c26a; --card:#0a160f; --ink:#04211a;
+  /* danger/critical lifted from #e5534b, which measured 4.30:1 on --panel. */
+  --ok:#4cc38a; --warn:#d9c26a; --danger:#e65b53; --info:#6cb6ff;
+  --critical:#e65b53; --high:#db9b4a; --medium:#6cb6ff; --low:#89a894;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 15px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { color: var(--text); font-weight: 700; line-height: 1.25; }
+h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.9rem; }
+h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+p { margin: 0 0 0.75rem; }
+ul, ol { margin: 0 0 0.75rem; padding-left: 1.25rem; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+
+:root {
+  /* ── Space ────────────────────────────────────────────────────────
+     A 4px scale. Promoted from poker/page.py, which already had it. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* ── Radius ─────────────────────────────────────────────────────── */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 16px;
+  --r-pill: 999px;
+
+  /* ── Type ───────────────────────────────────────────────────────── */
+  --fs-2xs: 11px;
+  --fs-xs: 12.5px;
+  --fs-s: 13.5px;
+  --fs-m: 15px;
+  --fs-l: 17px;
+  --fs-xl: 21px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* The "numbers voice": every value, count, key and readout is mono, prose is
+     sans. Poker already declared this for its deck; it is universal now, and
+     it is the one genuinely distinctive thing about how these pages read. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* ── Elevation ──────────────────────────────────────────────────── */
+  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
+  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+
+  /* ── Derived surfaces ───────────────────────────────────────────────
+     color-mix keeps the five theme blocks to the handful of decisions a
+     theme actually is; everything shaded off them is computed here once. */
+  --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  --focus: var(--accent2);
+
+  /* Themed confetti. This was a hardcoded array of six hex literals in *both*
+     board files; expressing it as tokens means the celebration matches the
+     palette the room is actually looking at, and costs nothing to maintain. */
+  --confetti-1: var(--accent);
+  --confetti-2: var(--accent2);
+  --confetti-3: var(--ok);
+  --confetti-4: var(--warn);
+  --confetti-5: var(--info);
+  --confetti-6: var(--high);
+
+  /* ── Stacking ───────────────────────────────────────────────────────
+     The boards used bare 24/26/28/29/30/31 scattered across two files, so
+     "is this above the deck?" could only be answered by grepping. Named,
+     ordered, and spaced by 10 so anything can be slotted between later. */
+  --z-rail: 20;
+  --z-deck: 30;
+  --z-console: 40;
+  --z-popover: 50;
+  --z-banner: 60;
+  --z-modal: 70;
+  --z-confetti: 80;
+
+  /* ── Breakpoints ────────────────────────────────────────────────────
+     Documented as tokens even though @media cannot read a custom property —
+     retro and poker picked different breakpoints, which is why the two
+     boards behaved differently on the same phone. These are the numbers to
+     write literally into every @media query. */
+  --bp-s: 700px;
+  --bp-m: 1100px;
+  --bp-l: 1440px;
+
+  /* ── Motion ─────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ── Touch targets ──────────────────────────────────────────────────
+     WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
+     retro board are ~13x20 today, which is why moving a card on a phone is a
+     lottery. --tap is the comfortable size, --tap-min the absolute floor. */
+  --tap: 32px;
+  --tap-min: 24px;
+}
+
+/* Per-mode accent, layered *after* the theme blocks as an override rather than
+   forked into a second set of five palettes. Retro and poker each keep their
+   identity while sharing one set of themes. */
+[data-mode="retro"] { --accent: #50bebe; }
+[data-mode="poker"] { --accent: #5ac88a; }
+
+/* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
+   never appears on a mouse click — the reason the boards had no focus styling
+   at all was that plain :focus looked broken on click. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--r-s);
+}
+
+/*
+ * Reduced motion, applied globally.
+ *
+ * Retro had no such block at all, and its finished-timer readout runs
+ * `animation: blink 1s steps(2) infinite` — a literal flashing element. That is
+ * a photosensitivity hazard, not a stylistic preference, so this belongs in the
+ * foundation where no surface can forget it. Animations are neutralised rather
+ * than removed so anything whose *end state* matters still reaches it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Print: force the light palette and drop interactive chrome.
+ *
+ * Cmd-P on a dark-themed page otherwise floods the page with ink. Shared here
+ * because the boards are printed too (people print a finished retro), and the
+ * palette override has to come after palette.css to win the cascade — equal
+ * specificity, later wins.
+ */
+@media print {
+  :root, [data-theme] {
+    --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
+    --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
+  }
+  [data-print-hide] { display: none !important; }
+}
+
+/* Compat aliases — pre-existing exporter markup references the old token
+   names inline (var(--surface) etc.); alias them so it all keeps working. */
+:root, [data-theme] {
+  --surface: var(--panel);
+  --border: var(--line);
+  --text-muted: var(--muted);
+  --tag-bg: var(--card);
+  --accent-dark: var(--accent);
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.site-header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 1.6rem 3rem 1.4rem;
+}
+.site-header h1 {
+  font-size: 1.45rem;
+  margin: 0;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.site-header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.3rem; }
+.site-header .meta {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.site-header .badge { font-size: 0.75rem; }
+.theme-btn {
+  margin-left: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.7rem;
+  cursor: pointer;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--text); }
+
+/* ── Nav ─────────────────────────────────────────────── */
+.toc {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 0.55rem 3rem;
+  display: flex;
+  gap: 1.4rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.toc a { color: var(--muted); font-weight: 500; }
+.toc a:hover { color: var(--accent); text-decoration: none; }
+
+/* ── Layout ──────────────────────────────────────────── */
+.container { max-width: 1100px; margin: 0 auto; padding: 2rem 3rem; }
+section { margin-bottom: 3rem; }
+section h2 {
+  font-size: 1.15rem;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.45rem;
+  margin-bottom: 1.25rem;
+}
+
+/* ── Cards ───────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.1rem 1.35rem;
+  margin-bottom: 1rem;
+  transition: border-color 0.15s ease;
+}
+.card:hover { border-color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.card-title { font-weight: 600; font-size: 0.95rem; }
+.card-id { font-size: 0.75rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; margin-right: 0.5rem; }
+.card-desc { font-size: 0.875rem; color: var(--muted); margin-top: 0.3rem; }
+.card-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.quote { border-left: 3px solid var(--line); padding-left: 0.75rem; color: var(--muted);
+         font-style: italic; font-size: 0.875rem; margin-top: 0.5rem; }
+
+/* ── Badges / chips ──────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; white-space: nowrap;
+  background: var(--card); color: var(--muted); border: 1px solid var(--line);
+}
+.badge-critical { color: var(--critical); background: color-mix(in srgb, var(--critical) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
+.badge-high     { color: var(--high); background: color-mix(in srgb, var(--high) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--high) 40%, transparent); }
+.badge-medium   { color: var(--medium); background: color-mix(in srgb, var(--medium) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--medium) 40%, transparent); }
+.badge-low      { color: var(--low); background: color-mix(in srgb, var(--low) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--low) 40%, transparent); }
+.badge-tag      { background: var(--card); color: var(--muted); border: 1px solid var(--line); }
+.badge-pts      { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent);
+                  border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.badge-ok       { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.badge-warn     { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.badge-danger   { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.badge-info     { color: var(--info); background: color-mix(in srgb, var(--info) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+.badge-accent   { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+                  border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ── Discipline colours (hues readable on dark and light) ── */
+.disc-fullstack { color: var(--accent2); border-color: transparent;
+                  background: color-mix(in srgb, var(--accent2) 15%, transparent); }
+.disc-frontend  { color: var(--info); border-color: transparent;
+                  background: color-mix(in srgb, var(--info) 15%, transparent); }
+.disc-backend   { color: var(--ok); border-color: transparent;
+                  background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.disc-qa        { color: var(--warn); border-color: transparent;
+                  background: color-mix(in srgb, var(--warn) 15%, transparent); }
+.disc-devops    { color: var(--high); border-color: transparent;
+                  background: color-mix(in srgb, var(--high) 15%, transparent); }
+.disc-design    { color: var(--accent); border-color: transparent;
+                  background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+/* ── Tables ──────────────────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.data-table th {
+  background: var(--card);
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.data-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.data-table .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; color: var(--muted); }
+
+/* ── Story cards ─────────────────────────────────────── */
+.story-card { border-left: 3px solid var(--accent); }
+.story-card.critical { border-left-color: var(--critical); }
+.story-card.high     { border-left-color: var(--high); }
+.story-card.medium   { border-left-color: var(--medium); }
+.story-card.low      { border-left-color: var(--low); }
+
+/* ── Acceptance criteria ─────────────────────────────── */
+.ac-list { list-style: none; margin-top: 0.6rem; padding-left: 0; }
+.ac-list li { font-size: 0.82rem; padding: 0.2rem 0; color: var(--muted); }
+.ac-list li + li { border-top: 1px dotted var(--line); padding-top: 0.3rem; }
+.ac-given { color: var(--ok); font-weight: 600; }
+.ac-when  { color: var(--warn); font-weight: 600; }
+.ac-then  { color: var(--accent2); font-weight: 600; }
+
+/* ── Sprint cards ────────────────────────────────────── */
+.sprint-card { border-top: 3px solid var(--accent); }
+.sprint-header { display: flex; justify-content: space-between; align-items: center; }
+.sprint-goal { font-size: 0.875rem; color: var(--muted); margin: 0.5rem 0; }
+.capacity-bar { height: 6px; background: var(--line); border-radius: 999px;
+                margin: 0.5rem 0 0.75rem; overflow: hidden; }
+.capacity-fill { height: 100%; background: var(--accent); border-radius: 999px; max-width: 100%; }
+.sprint-stories { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+
+/* ── Stat tiles (metric summaries) ───────────────────── */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+             gap: 0.75rem; margin-bottom: 1rem; }
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+}
+.stat .num { font-size: 1.35rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stat .lbl { font-size: 0.75rem; color: var(--muted); text-transform: uppercase;
+             letter-spacing: 0.05em; margin-top: 0.15rem; }
+
+/* ── Charts (inline SVG + CSS bars — theme-aware via var(--*)) ── */
+.spark-wrap { margin: 0.25rem 0 1rem; }
+.spark-wrap svg { display: block; width: 100%; height: 48px; }
+.spark-labels { display: flex; justify-content: space-between; font-size: 0.72rem;
+                color: var(--muted); margin-top: 0.2rem; }
+.seg-track { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; min-width: 2px; }
+.seg-track i { display: block; height: 100%; }
+.legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--muted);
+          margin: 0.35rem 0 0.6rem; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 0.3rem; }
+.bar-row { display: grid; grid-template-columns: minmax(80px, 150px) 1fr 2.5rem; gap: 0.6rem;
+           align-items: center; font-size: 0.8rem; margin-bottom: 0.4rem; }
+.bar-row .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row .bar-total { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 0.35rem; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center;
+          justify-content: center; font-size: 0.7rem; font-weight: 700; flex: none; }
+
+/* ── Notices ─────────────────────────────────────────── */
+.notice {
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.notice .notice-title { font-weight: 600; font-size: 0.85rem; color: var(--warn); margin-bottom: 0.4rem; }
+.notice ul { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; color: var(--muted); }
+
+/* ── Analysis grid ───────────────────────────────────── */
+.analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.analysis-section h3 {
+  font-size: 0.78rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;
+}
+.analysis-section ul { list-style: none; padding-left: 0; }
+/* Hanging indent: the bullet sits in the padding gutter so wrapped lines align
+   with the text, and each item gets enough vertical air to scan. */
+.analysis-section ul li { font-size: 0.875rem; padding: 0.3rem 0 0.3rem 1.05rem;
+                          position: relative; line-height: 1.55; }
+.analysis-section ul li::before { content: "\\2022 "; color: var(--accent); position: absolute; left: 0.15rem; }
+.assumption-item::before { content: "\\26A0 " !important; color: var(--warn) !important; }
+/* Standup member cards: wider columns + roomier gutters than the shared grid. */
+.member-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.1rem 1.75rem; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
+a.badge { text-decoration: none; }
+a.badge:hover { border-color: var(--accent); color: var(--accent); }
+.card-footnote { color: var(--muted); font-size: 0.82rem; margin: 0.55rem 0 0; }
+
+/* ── Questionnaire ───────────────────────────────────── */
+.q-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.q-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.q-table td:first-child { width: 2.5rem; font-weight: 600; color: var(--accent);
+                          font-family: ui-monospace, Menlo, monospace; }
+.q-table td:nth-child(2) { width: 40%; color: var(--muted); }
+.q-table td:nth-child(3) { font-weight: 500; }
+.q-table tr:last-child td { border-bottom: none; }
+
+/* ── Footer ──────────────────────────────────────────── */
+.site-footer {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 2rem;
+  border-top: 1px solid var(--line);
+  margin-top: 2rem;
+}
+
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 640px) {
+  .site-header, .toc, .container { padding-left: 1rem; padding-right: 1rem; }
+  .analysis-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Print ───────────────────────────────────────────────
+   The palette override lives in tokens.css (every surface prints); only the
+   export page's own chrome is hidden here. */
+@media print {
+  .theme-btn { display: none; }
+  .toc { position: static; }
+}

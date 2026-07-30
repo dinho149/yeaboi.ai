@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Dev-server shell for the `gate` entry. NEVER built — Vite's lib mode ignores
+  HTML entirely; this exists so `make web-dev` can render the gate with HMR.
+
+  The markup mirrors what sharing/gate.py's render_gate_page() emits. There is
+  no /api/join behind the Vite dev server unless you also point the proxy at a
+  running share server, so submitting here exercises the transport-error path —
+  which is the one worth looking at anyway.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shared with yeaboi — dev</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/gate/main.tsx"></script>
+  </body>
+</html>

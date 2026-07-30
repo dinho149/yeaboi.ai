@@ -1,0 +1,160 @@
+/*
+ * The shared design foundation: palettes, then everything derived from them.
+ *
+ * Every yeaboi surface imports this one file — the live boards, the join gate,
+ * the slide deck, and the static exports. It is the replacement for the three
+ * hand-copied palette blocks that used to live in html_theme.py, retro/page.py
+ * and poker/page.py, which could and did drift apart.
+ *
+ * Two rules keep it honest:
+ *
+ * 1. **Nothing here is a raw colour.** Anything colour-shaped is either one of
+ *    the five palette blocks in palette.css or a `color-mix` / alias of one, so
+ *    a new theme needs no changes outside that file. The literals that used to
+ *    be scattered through the boards (`#f85149` appeared in six places across
+ *    two files, the confetti palette was a hardcoded JS array in both) are gone.
+ * 2. **Nothing here depends on JS having run.** `:root` doubles as the default
+ *    theme, so a page renders correctly before — or without — the bundle.
+ *
+ * Vite inlines the palette below at build time, so the shipped stylesheet is a
+ * single flat file with no external reference at all. `test_web_assets` asserts
+ * that — including that this comment does not name the at-rule literally, since
+ * the guard is a blunt substring search on purpose.
+ */
+@import './palette.css';
+
+:root {
+  /* ── Space ────────────────────────────────────────────────────────
+     A 4px scale. Promoted from poker/page.py, which already had it. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* ── Radius ─────────────────────────────────────────────────────── */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 16px;
+  --r-pill: 999px;
+
+  /* ── Type ───────────────────────────────────────────────────────── */
+  --fs-2xs: 11px;
+  --fs-xs: 12.5px;
+  --fs-s: 13.5px;
+  --fs-m: 15px;
+  --fs-l: 17px;
+  --fs-xl: 21px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* The "numbers voice": every value, count, key and readout is mono, prose is
+     sans. Poker already declared this for its deck; it is universal now, and
+     it is the one genuinely distinctive thing about how these pages read. */
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+
+  /* ── Elevation ──────────────────────────────────────────────────── */
+  --shadow-1: 0 1px 3px rgb(0 0 0 / 25%);
+  --shadow-2: 0 16px 40px rgb(0 0 0 / 40%);
+
+  /* ── Derived surfaces ───────────────────────────────────────────────
+     color-mix keeps the five theme blocks to the handful of decisions a
+     theme actually is; everything shaded off them is computed here once. */
+  --panel-2: color-mix(in srgb, var(--text) 5%, var(--panel));
+  --felt: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  --line-soft: color-mix(in srgb, var(--line) 55%, transparent);
+  --focus: var(--accent2);
+
+  /* Themed confetti. This was a hardcoded array of six hex literals in *both*
+     board files; expressing it as tokens means the celebration matches the
+     palette the room is actually looking at, and costs nothing to maintain. */
+  --confetti-1: var(--accent);
+  --confetti-2: var(--accent2);
+  --confetti-3: var(--ok);
+  --confetti-4: var(--warn);
+  --confetti-5: var(--info);
+  --confetti-6: var(--high);
+
+  /* ── Stacking ───────────────────────────────────────────────────────
+     The boards used bare 24/26/28/29/30/31 scattered across two files, so
+     "is this above the deck?" could only be answered by grepping. Named,
+     ordered, and spaced by 10 so anything can be slotted between later. */
+  --z-rail: 20;
+  --z-deck: 30;
+  --z-console: 40;
+  --z-popover: 50;
+  --z-banner: 60;
+  --z-modal: 70;
+  --z-confetti: 80;
+
+  /* ── Breakpoints ────────────────────────────────────────────────────
+     Documented as tokens even though @media cannot read a custom property —
+     retro and poker picked different breakpoints, which is why the two
+     boards behaved differently on the same phone. These are the numbers to
+     write literally into every @media query. */
+  --bp-s: 700px;
+  --bp-m: 1100px;
+  --bp-l: 1440px;
+
+  /* ── Motion ─────────────────────────────────────────────────────── */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ── Touch targets ──────────────────────────────────────────────────
+     WCAG 2.2 (2.5.8) puts the floor at 24px. The card action buttons on the
+     retro board are ~13x20 today, which is why moving a card on a phone is a
+     lottery. --tap is the comfortable size, --tap-min the absolute floor. */
+  --tap: 32px;
+  --tap-min: 24px;
+}
+
+/* Per-mode accent, layered *after* the theme blocks as an override rather than
+   forked into a second set of five palettes. Retro and poker each keep their
+   identity while sharing one set of themes. */
+[data-mode="retro"] { --accent: #50bebe; }
+[data-mode="poker"] { --accent: #5ac88a; }
+
+/* One visible focus ring everywhere. Keyboard-only (:focus-visible), so it
+   never appears on a mouse click — the reason the boards had no focus styling
+   at all was that plain :focus looked broken on click. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: var(--r-s);
+}
+
+/*
+ * Reduced motion, applied globally.
+ *
+ * Retro had no such block at all, and its finished-timer readout runs
+ * `animation: blink 1s steps(2) infinite` — a literal flashing element. That is
+ * a photosensitivity hazard, not a stylistic preference, so this belongs in the
+ * foundation where no surface can forget it. Animations are neutralised rather
+ * than removed so anything whose *end state* matters still reaches it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Print: force the light palette and drop interactive chrome.
+ *
+ * Cmd-P on a dark-themed page otherwise floods the page with ink. Shared here
+ * because the boards are printed too (people print a finished retro), and the
+ * palette override has to come after palette.css to win the cascade — equal
+ * specificity, later wins.
+ */
+@media print {
+  :root, [data-theme] {
+    --bg: #ffffff; --panel: #ffffff; --line: #d0d7de; --text: #1f2328;
+    --muted: #656d76; --accent: #0969da; --accent2: #8250df; --card: #f6f8fa; --ink: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --danger: #cf222e; --info: #0969da;
+    --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
+  }
+  [data-print-hide] { display: none !important; }
+}

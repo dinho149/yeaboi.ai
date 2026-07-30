@@ -2,12 +2,17 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # src/yeaboi/web/static/ is Vite output. end-of-file-fixer would append a
+      # newline Vite did not write, so every `make web` would leave a permanent
+      # diff and `make web-check` would fail in CI. Same reasoning for
+      # trailing-whitespace and the 500 KB size gate.
       - id: trailing-whitespace
-        exclude: \.ambr$
+        exclude: \.ambr$|^src/yeaboi/web/static/
       - id: end-of-file-fixer
+        exclude: ^src/yeaboi/web/static/
       - id: check-yaml
       - id: check-added-large-files
-        exclude: ^docs/
+        exclude: ^docs/|^src/yeaboi/web/static/
       - id: check-merge-conflict
 
   # ruff also enforces the flake8-bandit "S" SAST rules (see pyproject `select`).
