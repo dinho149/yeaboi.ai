@@ -9000,8 +9000,10 @@ def select_mode(
                     # Open the Changelog page (bottom-left hint). Handled inline
                     # like `t` — no break, so returning falls straight back into
                     # this loop and the frame update below repaints mode select.
+                    # No wordmark intro: its shine sweep reads as a loader, and these
+                    # two open instantly (bundled JSON / an empty form). The All Tips
+                    # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
-                    play_wordmark_intro(console, live, "Changelog", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
@@ -9009,7 +9011,6 @@ def select_mode(
                     # Open the Feedback form (bottom-left hint) — same inline
                     # pattern as the Changelog page above.
                     logger.info("feedback opened from mode select")
-                    play_wordmark_intro(console, live, "Feedback", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
