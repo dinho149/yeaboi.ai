@@ -183,7 +183,9 @@ def _all_tips_rendered(**kwargs) -> str:
 def test_all_tips_screen_renders_panel(monkeypatch):
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     _tips.get_tips.cache_clear()
-    result = _build_all_tips_screen(shimmer_tick=0.0, sub_reveal=99, actions=["Copy all", "Back"])
+    # No actions of its own any more — the gallery is read-only and going back is
+    # the app-wide back tab (the "Copy all" button was dropped with the button row).
+    result = _build_all_tips_screen(shimmer_tick=0.0, sub_reveal=99)
     assert isinstance(result, Panel)
     _tips.get_tips.cache_clear()
 
@@ -270,3 +272,147 @@ def test_all_tips_screen_scrolls(monkeypatch):
     result = _build_all_tips_screen(scroll_offset=999, shimmer_tick=1.0, sub_reveal=99)
     assert isinstance(result, Panel)
     _tips.get_tips.cache_clear()
+
+
+class TestFeedbackComposeBubble:
+    """The duck's feedback composer — the `f` shortcut's speech bubble.
+
+    Three fields (Type / Area / message) in a bubble that replaces the tip in the
+    companion lane, so feedback is given to the duck rather than on a page of its
+    own. Wrapping happens here, at build time, because the box is a fixed width.
+    """
+
+    def _state(self, **over):
+        base = {"field": 2, "kind": 0, "area": 0, "buf": "", "cur": 0, "status": ""}
+        return {**base, **over}
+
+    def _render(self, state, *, width=140, height=44):
+        import io
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+
+        buf = io.StringIO()
+        Console(file=buf, width=width, height=height, legacy_windows=False).print(
+            _build_mode_screen(0, width=width, height=height, shimmer_tick=1.0, desc_reveal=999, compose=state)
+        )
+        return buf.getvalue()
+
+    def test_bubble_replaces_the_tip_and_shows_both_selectors(self):
+        out = self._render(self._state())
+        assert "Tell the duck" in out
+        assert "Type" in out and "Area" in out
+        assert "‹ Bug ›" in out and "‹ general ›" in out  # the current choices, bracketed
+        assert "What's on your mind?" in out  # placeholder while empty
+
+    def test_selected_values_follow_the_state(self):
+        from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES
+
+        out = self._render(self._state(kind=FEEDBACK_TYPES.index("Feature"), area=FEEDBACK_AREAS.index("retro")))
+        assert "‹ Feature ›" in out and "‹ retro ›" in out
+
+    def test_status_replaces_the_hint_while_sending(self):
+        out = self._render(self._state(buf="x", cur=1, status="sending…"))
+        assert "sending…" in out
+        assert "Esc cancel" not in out  # the keys don't apply mid-flight
+
+    def test_composer_takes_a_wider_lane_than_the_tip(self):
+        from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _COMPOSE_COLS, _compose_lane_cols
+
+        assert _COMPOSE_COLS > _COMPANION_COLS
+        assert _compose_lane_cols(140) == _COMPOSE_COLS
+        # Too narrow to spare the columns → fall back to the tip lane rather than
+        # squeezing the mode list.
+        assert _compose_lane_cols(60) == _COMPANION_COLS
+
+
+class TestComposeWrap:
+    """_wrap_with_offsets — wrapping that can map a cursor index back to a row."""
+
+    def _wrap(self, text, width=20):
+        from yeaboi.ui.mode_select.screens._screens import _wrap_with_offsets
+
+        return _wrap_with_offsets(text, width)
+
+    def test_short_text_is_one_line(self):
+        assert self._wrap("hello there") == [("hello there", 0)]
+
+    def test_offsets_point_at_the_original_string(self):
+        text = "the retro board loses cards when two people type at once"
+        for line, off in self._wrap(text):
+            assert text[off : off + len(line)] == line  # the offset really indexes the source
+
+    def test_an_overlong_word_is_hard_broken(self):
+        # A pasted URL or a keysmash has no spaces to break on; it must still wrap
+        # rather than run off the edge of a fixed-width box.
+        out = self._wrap("w" * 55, width=20)
+        assert len(out) == 3
+        assert all(len(line) <= 20 for line, _ in out)
+        assert "".join(line for line, _ in out) == "w" * 55
+
+    def test_every_line_fits_the_width(self):
+        text = "feedback from the duck should wrap neatly at the box edge every single time"
+        assert all(len(line) <= 20 for line, _ in self._wrap(text))
+
+
+class TestFeedbackComposeKeys:
+    """_feedback_compose_key — the bubble's three-field state machine."""
+
+    def _state(self, **over):
+        base = {"field": 2, "kind": 0, "area": 0, "buf": "", "cur": 0, "status": "", "thread": None, "done_at": 0.0}
+        return {**base, **over}
+
+    def _press(self, key, state):
+        from yeaboi.ui import mode_select
+
+        return mode_select._feedback_compose_key(key, state)
+
+    def test_up_down_walk_the_fields(self):
+        st = self._press("up", self._state(field=2))
+        assert st["field"] == 1  # message -> area
+        assert self._press("up", st)["field"] == 0  # -> type
+        assert self._press("up", self._state(field=0))["field"] == 2  # wraps back round
+
+    def test_left_right_cycle_the_focused_selector(self):
+        from yeaboi.feedback import FEEDBACK_TYPES
+
+        st = self._press("right", self._state(field=0))
+        assert st["kind"] == 1
+        assert self._press("left", self._state(field=0, kind=0))["kind"] == len(FEEDBACK_TYPES) - 1  # wraps
+
+    def test_typing_only_reaches_the_message_field(self):
+        # On a selector, a stray letter must not leak into the message buffer.
+        assert self._press("x", self._state(field=0))["buf"] == ""
+        assert self._press("x", self._state(field=2))["buf"] == "x"
+
+    def test_esc_closes_and_keeps_the_back_tab_up(self, monkeypatch):
+        # Esc is armed by the input chokepoint before the screen sees it, so a
+        # screen that KEEPS the key has to un-arm the tab's fold-away.
+        from yeaboi.ui.shared import _music_bar
+
+        cancelled: list = []
+        monkeypatch.setattr(_music_bar, "cancel_back_retract", lambda: cancelled.append(True))
+        assert self._press("esc", self._state(buf="half a thought", cur=5)) is None
+        assert cancelled
+
+    def test_enter_on_an_empty_message_just_closes(self):
+        assert self._press("enter", self._state()) is None
+
+    def test_enter_sends_the_chosen_type_and_area(self, monkeypatch):
+        from yeaboi import feedback
+
+        sent: list = []
+        monkeypatch.setattr(
+            feedback, "submit_feedback", lambda *a, **k: sent.append(a) or feedback.FeedbackResult(ok=True)
+        )
+        st = self._press("enter", self._state(field=2, kind=1, area=4, buf="cards vanish\nsometimes", cur=0))
+        st["thread"].join(timeout=5)
+        kind, area, title, body = sent[0]
+        assert (kind, area) == (feedback.FEEDBACK_TYPES[1], feedback.FEEDBACK_AREAS[4])
+        assert title == "cards vanish"  # the opening line, so the issue is scannable
+        assert body == "cards vanish\nsometimes"
+
+    def test_keys_are_ignored_while_in_flight(self):
+        st = self._state(buf="x", cur=1, status="sending…", thread=object())
+        assert self._press("y", st)["buf"] == "x"

@@ -78,7 +78,6 @@ from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
-from yeaboi.ui.splash import play_wordmark_intro
 
 logger = logging.getLogger(__name__)
 
@@ -1457,6 +1456,91 @@ def _settings_save_data_dir(console: Console, live, read_key, frame_time, suppor
     set_data_dir(value)
     logger.info("Settings: data directory set to %r", value)
     return message
+
+
+# How long the duck holds the result in his bubble before it closes itself.
+_COMPOSE_RESULT_SECONDS = 2.6
+
+
+_COMPOSE_FIELDS = 3  # 0 type, 1 area, 2 message
+
+
+def _feedback_compose_key(key: str, compose: dict) -> dict | None:
+    """Apply one keystroke to the duck's feedback bubble.
+
+    Three fields: Type, Area and the message. Up/Down move between them, Left/
+    Right change a selector (or move the cursor in the message), Enter sends from
+    anywhere and Esc cancels. Returns the (mutated) state, or None once the bubble
+    should close. Sending runs on a daemon thread so the welcome screen keeps
+    animating behind it; the caller polls it each frame (_feedback_compose_tick).
+    """
+    import threading
+
+    from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, submit_feedback
+
+    if compose.get("thread") is not None or compose.get("done_at"):
+        return compose  # in flight or showing its result — keys do nothing
+    if key == "esc":
+        # The bubble eats the key, so the app-wide back tab must not fold away:
+        # the Esc chokepoint armed its retract before we got a say.
+        from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+        cancel_back_retract()
+        set_text_entry(False)
+        logger.info("feedback bubble: cancelled (%d chars)", len(compose["buf"]))
+        return None
+    if key == "enter":
+        text = compose["buf"].strip()
+        if not text:
+            return None  # nothing typed — Enter just closes it
+        kind = FEEDBACK_TYPES[compose["kind"] % len(FEEDBACK_TYPES)]
+        area = FEEDBACK_AREAS[compose["area"] % len(FEEDBACK_AREAS)]
+        title = text.splitlines()[0][:80]  # opening line, so the issue is scannable
+        out: list = []
+        compose["status"] = "sending…"
+        compose["thread"] = threading.Thread(
+            target=lambda: out.append(submit_feedback(kind, area, title, text)),
+            daemon=True,
+        )
+        compose["out"] = out
+        compose["thread"].start()
+        set_text_entry(False)
+        logger.info("feedback bubble: submitting %s/%s (%d chars)", kind, area, len(text))
+        return compose
+    if key in ("up", "down"):
+        step = 1 if key == "down" else -1
+        compose["field"] = (compose.get("field", 2) + step) % _COMPOSE_FIELDS
+        return compose
+    field = compose.get("field", 2)
+    if field < 2:  # a selector: Left/Right cycle it, everything else is ignored
+        if key in ("left", "right"):
+            values = FEEDBACK_TYPES if field == 0 else FEEDBACK_AREAS
+            key_name = "kind" if field == 0 else "area"
+            compose[key_name] = (compose[key_name] + (1 if key == "right" else -1)) % len(values)
+        return compose
+    _settings_edit_keypress(key, compose)  # shares the settings buffer/cursor editor
+    return compose
+
+
+def _feedback_compose_tick(compose: dict) -> dict | None:
+    """Advance a composer that is sending or showing its result; None to close."""
+    thread = compose.get("thread")
+    if thread is not None and not thread.is_alive():
+        result = (compose.get("out") or [None])[0]
+        compose["thread"] = None
+        compose["done_at"] = time.monotonic()
+        set_text_entry(False)
+        if result is None:
+            compose["status"] = "couldn't send — try f again"
+        elif result.ok:
+            compose["status"] = "sent — thank you!"
+        else:
+            compose["status"] = result.message or "opened in your browser"
+        logger.info("feedback bubble: %s", compose["status"])
+    done_at = compose.get("done_at")
+    if done_at and time.monotonic() - done_at > _COMPOSE_RESULT_SECONDS:
+        return None
+    return compose
 
 
 def _settings_save_allowed_paths(value: str) -> str:
@@ -3411,62 +3495,44 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
 def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the All Tips page (opened with `a` from mode select).
 
-    Read-only gallery of every tip: Up/Down scrolls, "Copy all" copies the whole
-    list to the clipboard, Enter/Esc/q returns to mode select. Mirrors
-    ``_run_changelog_page``; content comes live from ``get_tips()``.
+    Read-only gallery of every tip: Up/Down scrolls, Enter/Esc/q returns to mode
+    select. Mirrors ``_run_changelog_page`` — including having no actions of its
+    own; content comes live from ``get_tips()``.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_all_tips_screen
 
     logger.info("all tips: page opened")
     scroll = 0
     _scroll_meta: dict = {}
-    actions = ["Copy all", "Back"]
-    sel = 0
-    message = ""
-    anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
-
-    _last_panel = None  # most recently rendered panel, for click hit-testing
+    anim_start = time.monotonic()  # typewriter subtitle clock
 
     def _render() -> None:
-        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
-        _last_panel = _build_all_tips_screen(
-            scroll_offset=scroll,
-            scroll_meta=_scroll_meta,
-            width=w,
-            height=max(10, h - 1),
-            action_sel=sel,
-            shimmer_tick=elapsed,
-            sub_reveal=elapsed * _HEADER_SUB_SPEED,
-            actions=actions,
-            message=message,
+        live.update(
+            _build_all_tips_screen(
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                # No shimmer clock — the travelling title highlight reads as a
+                # loader on a page that opens instantly (see the changelog).
+                shimmer_tick=None,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            )
         )
-        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        _clicked = parse_click(k)
-        if _clicked is not None:
-            if _last_panel is None:
-                continue
-            # actions = ["Copy all", "Back"]; map the clicked button to its shortcut key.
-            _idx = button_click(console, _last_panel, *_clicked, actions)
-            if _idx is None:
-                continue  # click missed the buttons — ignore it
-            k = "c" if _idx == 0 else "esc"
+        # Read-only page with no buttons of its own — a click has nothing to hit.
+        if parse_click(k) is not None:
+            continue
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k in ("c", "C"):
-            from yeaboi.clipboard import copy_markdown_status
-            from yeaboi.ui.shared._tips import build_tips_text
-
-            logger.info("all tips: Copy all pressed")
-            message = copy_markdown_status(build_tips_text())
         elif k in ("esc", "q"):
             break
         _render()
@@ -9931,6 +9997,7 @@ def select_mode(
             _companion_intro_start = time.monotonic() - (_COMPANION_INTRO_SECONDS if _returning else 0.0)
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
+            _compose: dict | None = None  # the duck's feedback bubble, when open
             while True:
                 # Terminal-size guard: below the minimum the welcome screen can't
                 # show every mode + description + hints without clipping, so the
@@ -9946,7 +10013,16 @@ def select_mode(
 
                 key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
 
-                if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
+                if _compose is not None:
+                    # The duck's feedback bubble owns every key while it's open —
+                    # including 'q', which is a character you may want to type.
+                    if key:
+                        _compose = _feedback_compose_key(key, _compose)
+                    if _compose is not None:
+                        _compose = _feedback_compose_tick(_compose)
+                    if _compose is None:
+                        select_time = time.monotonic()  # restart the description reveal
+                elif key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
                     # Coalesce a fast wheel/held-key burst into one net move + one
                     # repaint, so the animated mode carousel doesn't stutter.
                     _delta = coalesce_steps(
@@ -10015,8 +10091,25 @@ def select_mode(
                     _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
-                    # Open the Feedback form (bottom-left hint) — same inline
-                    # pattern as the Changelog page above.
+                    # Quick feedback comes out of the duck: his tip bubble becomes a
+                    # composer in place, so the welcome screen never leaves. The full
+                    # form (type/area/AI polish/attachments) is Tab from inside it.
+                    logger.info("feedback bubble opened from mode select")
+                    # set_text_entry so 'c' types a 'c' instead of opening the
+                    # controls drawer while the message is being written.
+                    set_text_entry(True)
+                    _compose = {
+                        "field": 2,  # land in the message; the selectors are up from there
+                        "kind": 0,
+                        "area": 0,
+                        "buf": "",
+                        "cur": 0,
+                        "status": "",
+                        "thread": None,
+                        "done_at": 0.0,
+                    }
+                elif key == "F":
+                    # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n)  # animate the menu back in
@@ -10024,8 +10117,8 @@ def select_mode(
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
                     # pattern as the Changelog/Feedback pages above.
+                    # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
-                    play_wordmark_intro(console, live, "All Tips", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                     _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
@@ -10086,6 +10179,7 @@ def select_mode(
                         desc_reveal=reveal,
                         tip_offset=tip_offset,
                         companion_intro=companion_intro,
+                        compose=_compose,
                     )
                 )
 

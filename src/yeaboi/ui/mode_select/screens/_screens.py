@@ -517,6 +517,7 @@ def _build_mode_screen(
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
+    compose: dict | None = None,
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -534,7 +535,10 @@ def _build_mode_screen(
     # one line so the layout height stays predictable.
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
     inner_w = width - 6  # borders (2) + horizontal padding (4)
-    left_w = inner_w - _COMPANION_COLS if show_companion else inner_w
+    # Composing widens the right-hand lane (a feedback box you can read what you
+    # typed in); the mode list keeps whatever is left.
+    lane_cols = _compose_lane_cols(inner_w) if compose is not None else _COMPANION_COLS
+    left_w = inner_w - lane_cols if show_companion else inner_w
     desc_width = max(10, left_w - len(_PAD) - 2)
 
     # Mode rows
@@ -587,7 +591,7 @@ def _build_mode_screen(
     # exists and there's room for the companion lane — it's more pressing than a
     # tip. When it shows, the bottom-left version row drops its inline advisory so
     # the same news isn't in two places.
-    update_box = _build_update_box(cols=_COMPANION_COLS) if show_companion else None
+    update_box = _build_update_box(cols=lane_cols) if show_companion else None
 
     # Bottom-left version hint (+ upgrade advisory when a newer release exists and
     # the update box isn't already carrying it), opposite the music bar below it.
@@ -619,7 +623,7 @@ def _build_mode_screen(
         # width, the duck + speech bubble get a reserved right-hand lane.
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
-        grid.add_column(width=_COMPANION_COLS)
+        grid.add_column(width=lane_cols)
         grid.add_row(
             left_col,
             _build_companion(
@@ -630,6 +634,8 @@ def _build_mode_screen(
                 duck_lift=duck_lift,
                 companion_intro=companion_intro,
                 extras_reveal=extras_reveal,
+                compose=compose,
+                lane_cols=lane_cols,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -764,6 +770,165 @@ def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
     return duck_top - 1 <= row <= duck_bottom + 2  # margin: crown above, caption below
 
 
+# The duck's compose bubble: how tall the typing area may grow before it starts
+# scrolling with the cursor. The lane is bottom-anchored, so a taller bubble eats
+# upward into the update box's space rather than pushing the duck off-screen.
+_COMPOSE_COLS = 62
+_COMPOSE_MIN_LEFT = 46  # columns the mode list still needs beside a wide composer
+_COMPOSE_MAX_ROWS = 10  # typing rows before the box scrolls with the cursor
+
+
+def _compose_lane_cols(inner_w: int) -> int:
+    """Width of the right-hand lane while composing (the tip lane when too narrow)."""
+    if inner_w - _COMPOSE_COLS >= _COMPOSE_MIN_LEFT:
+        return _COMPOSE_COLS
+    return _COMPANION_COLS
+
+
+def _wrap_with_offsets(text: str, width: int) -> list[tuple[str, int]]:
+    """Greedy word-wrap returning ``(line, start_offset)`` pairs.
+
+    Written out rather than using textwrap because the caller has to map a cursor
+    INDEX back to a (row, column) — which needs each line's offset into the
+    original string, and needs every character preserved (textwrap drops the
+    whitespace the cursor may be sitting on). A word longer than ``width`` is
+    hard-broken, so a pasted URL or a keysmash wraps instead of running off the box.
+    """
+    width = max(4, width)
+    out: list[tuple[str, int]] = []
+    line, start = "", 0
+    pos = 0  # index in ``text`` of the word being placed
+    for w_i, word in enumerate(text.split(" ")):
+        if w_i:
+            pos += 1  # the space that separated the words
+        while len(word) > width:  # hard-break an over-long word (a URL, a keysmash)
+            if line:
+                out.append((line, start))
+                line = ""
+            out.append((word[:width], pos))
+            word, pos = word[width:], pos + width
+        candidate = f"{line} {word}" if line else word
+        if line and len(candidate) > width:
+            out.append((line, start))
+            line, start = word, pos
+        else:
+            if not line:
+                start = pos
+            line = candidate
+        pos += len(word)
+    out.append((line, start))
+    return out
+
+
+_COMPOSE_DIM = "rgb(110,110,125)"
+_COMPOSE_TEXT = "rgb(198,198,208)"
+_COMPOSE_ACCENT = "rgb(150,170,200)"
+
+
+def _compose_chips(values: tuple[str, ...], idx: int, focused: bool, width: int) -> Text:
+    """One selector row: the neighbouring options dimmed, the chosen one bracketed.
+
+    Windowed around the selection so a long list (the nine feedback areas) still
+    fits the box — cropping it could hide the choice itself.
+    """
+    row = Text(justify="left", no_wrap=True, overflow="ellipsis")
+    picked = f"\u2039 {values[idx]} \u203a"
+    budget = width - len(picked) - 2
+    before: list[str] = []
+    after: list[str] = []
+    for step in range(1, len(values)):
+        if len(before) + len(after) >= len(values) - 1:
+            break
+        right = values[(idx + step) % len(values)]
+        if right not in before and len(right) + 2 <= budget:
+            after.append(right)
+            budget -= len(right) + 2
+        left = values[(idx - step) % len(values)]
+        if left not in after and left not in before and len(left) + 2 <= budget:
+            before.insert(0, left)
+            budget -= len(left) + 2
+    for value in before:
+        row.append(f"{value}  ", style=_COMPOSE_DIM)
+    row.append(picked, style=f"bold {_COMPOSE_ACCENT}" if focused else _COMPOSE_TEXT)
+    for value in after:
+        row.append(f"  {value}", style=_COMPOSE_DIM)
+    return row
+
+
+def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
+    """The duck's feedback composer: a speech bubble you actually write in.
+
+    ``compose`` is the loop's state — ``kind``/``area`` (indices into
+    FEEDBACK_TYPES / FEEDBACK_AREAS), ``buf``/``cur`` (the message and cursor),
+    ``field`` (0 type, 1 area, 2 message) and an optional ``status`` shown instead
+    of the hint while sending or once sent. It replaces the tip bubble in the
+    companion lane, so the duck reads as the one asking for the feedback.
+    """
+    from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES
+
+    inner = max(12, cols - 6)  # borders (2) + padding (2) + breathing room
+    buf, cur = compose.get("buf", ""), compose.get("cur", 0)
+    status, field = compose.get("status", ""), compose.get("field", 2)
+    live = not status  # nothing is focused once it is sending
+
+    rows: list = []
+    label_w = 6
+    for i, (label, values, key) in enumerate((("Type", FEEDBACK_TYPES, "kind"), ("Area", FEEDBACK_AREAS, "area"))):
+        line = Text(justify="left", no_wrap=True, overflow="ellipsis")
+        focused = live and field == i
+        line.append(label.ljust(label_w), style=_COMPOSE_ACCENT if focused else _COMPOSE_DIM)
+        line.append_text(_compose_chips(values, compose.get(key, 0), focused, inner - label_w))
+        rows.append(line)
+    rows.append(Text(""))
+
+    if not buf and live:
+        placeholder = Text(justify="left")
+        if field == 2:
+            placeholder.append(" ", style="reverse")  # the cursor waiting in an empty box
+        placeholder.append("What's on your mind?", style=_COMPOSE_DIM)
+        rows.append(placeholder)
+        rows.extend(Text("") for _ in range(2))
+    else:
+        wrapped = _wrap_with_offsets(buf, inner)
+        # Follow the cursor once the message outgrows the box.
+        cur_row = max(i for i, (_ln, off) in enumerate(wrapped) if off <= cur)
+        first = max(0, min(cur_row - _COMPOSE_MAX_ROWS + 1, len(wrapped) - _COMPOSE_MAX_ROWS))
+        window = wrapped[first : first + _COMPOSE_MAX_ROWS]
+        for line, off in window:
+            t = Text(justify="left")
+            col = cur - off
+            if live and field == 2 and 0 <= col <= len(line):
+                t.append(line[:col], style=_COMPOSE_TEXT)
+                t.append(line[col : col + 1] or " ", style="reverse")  # block cursor
+                t.append(line[col + 1 :], style=_COMPOSE_TEXT)
+            else:
+                t.append(line, style=_COMPOSE_TEXT)
+            rows.append(t)
+        rows.extend(Text("") for _ in range(max(0, 3 - len(window))))
+
+    hint = Text(justify="center")
+    if status:
+        hint.append(f" {status} ", style=_COMPOSE_ACCENT)
+    else:
+        for i, (key, what) in enumerate((("\u2191/\u2193", "field"), ("Enter", "send"), ("Esc", "cancel"))):
+            hint.append("  \u00b7  " if i else " ", style=_COMPOSE_DIM)
+            hint.append(key, style=_COMPOSE_ACCENT)
+            hint.append(f" {what}", style=_COMPOSE_DIM)
+        hint.append(" ", style=_COMPOSE_DIM)
+    bubble = Panel(
+        Group(*rows),
+        title=Text(" Tell the duck ", style=_COMPOSE_TEXT),
+        title_align="left",
+        box=rich.box.ROUNDED,
+        border_style="rgb(120,135,150)",
+        padding=(0, 1),
+        width=cols - 2,
+    )
+    bubble.subtitle = hint
+    bubble.subtitle_align = "center"
+    return bubble
+
+
 def _build_companion(
     tip_line: Text,
     *,
@@ -773,9 +938,15 @@ def _build_companion(
     duck_lift: int | None = None,
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
+    compose: dict | None = None,
+    lane_cols: int = _COMPANION_COLS,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
+
+    ``compose`` swaps the tip bubble for the feedback composer (see
+    :func:`_build_compose_bubble`) and drops the update box, so the whole lane
+    belongs to what you're typing.
 
     ``tip_line`` is the tip text from :func:`_build_tip_rows` (may be blank when
     tips are hidden — then only the duck shows). The bubble uses a plain, static
@@ -803,16 +974,16 @@ def _build_companion(
     # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
     # old Align.center(head) exactly). Extras only appear once he's ~settled.
     intro = min(1.0, max(0.0, companion_intro))
-    center_pad = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
+    center_pad = max(0, (lane_cols - _COMPANION_HEAD_W) // 2)
     # Constant-speed (linear) glide: the duck reaches its resting column exactly at
     # intro 1.0, so the last few characters glide in rather than snapping — the
     # ease-out variants reached the spot early (~85%) then sat, which read as the
     # duck jumping the final stretch.
-    left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - intro))
+    left_pad = int(center_pad + (lane_cols - center_pad) * (1.0 - intro))
     # Pad on BOTH sides to the full lane width so the duck's column never shifts when
     # the tip bubble/controls above him appear or disappear (otherwise the group
     # narrows and Align.center re-centres the lone duck).
-    right_pad = max(0, _COMPANION_COLS - _COMPANION_HEAD_W - left_pad)
+    right_pad = max(0, lane_cols - _COMPANION_HEAD_W - left_pad)
     duck = Padding(head, (0, right_pad, 0, left_pad))
     # Tip/update-box opacity. Normally derived from the duck's entrance (they appear
     # once he's ~settled); ``extras_reveal`` overrides it so the exit transition can
@@ -825,6 +996,10 @@ def _build_companion(
 
     has_controls = controls is not None and controls.plain.strip()
     parts: list[RenderableType] = []
+    if compose is not None:
+        # Composing takes the lane: no tip, no update box competing for height.
+        tail = Align.center(Text("▾", style="rgb(120,135,150)"))
+        return Align.center(Group(_build_compose_bubble(compose, cols=lane_cols), tail, duck), vertical="bottom")
     if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the
         # bubble, with a blank line separating the two boxes.

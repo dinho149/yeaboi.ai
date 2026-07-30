@@ -2994,7 +2994,7 @@ def _build_changelog_screen(
             chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 3)) or [""]
             for i, chunk in enumerate(chunks):
                 prefix = "    •  " if i == 0 else "       "
-                line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
+                line = Text(PAD + prefix + chunk, style=theme.value, justify="left")
                 if i == len(chunks) - 1 and len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
                     for area in hl.areas:
                         line.append("  ")
@@ -3077,7 +3077,6 @@ def _build_all_tips_screen(
     action_sel: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
-    actions: list[str] | None = None,
     message: str = "",
 ) -> Panel:
     """Build the All Tips gallery page: every discoverability tip in one scroll.
@@ -3086,8 +3085,7 @@ def _build_all_tips_screen(
     the live ``get_tips()`` list, grouped into modes, workflows, and setup so the
     gallery scans like the other sectioned pages. Freshly-shipped features get a
     gold ``NEW`` badge and tips that map to a home card note the mode they open.
-    The ``Copy all`` action copies the whole list to the clipboard (see the run
-    loop in mode_select/__init__.py).
+    Read-only, with no actions of its own — going back is the app-wide back tab.
     """
     import textwrap
 
@@ -3111,8 +3109,11 @@ def _build_all_tips_screen(
     # wide glyphs or metadata from visually colliding with the right frame.
     panel_inner_w = max(20, width - 2 - 4)
     viewport_body_w = max(18, panel_inner_w - 3)
-    bullet_prefix = _PAD + "    •  "
-    continuation_prefix = _PAD + "       "
+    # PAD (four), not this module's tighter _PAD (two): a bullet list wants to sit
+    # clearly under its section heading, and the branch-wide PAD → _PAD rename had
+    # quietly pulled every bullet two columns left.
+    bullet_prefix = PAD + "    •  "
+    continuation_prefix = PAD + "       "
     tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
     separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 
@@ -3215,11 +3216,6 @@ def _build_all_tips_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
-    hint = Text(_PAD + "  ", justify="left")
-    if actions and any("Copy" in a for a in actions):
-        hint.append("c", style=theme.accent)
-        hint.append("  copy all", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
-
     content = Group(
         Text(""),
         title,
@@ -3228,9 +3224,9 @@ def _build_all_tips_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        hint,  # where the old top button sat — crop-safe against viewport overflow
+        Text(""),  # the copy-all hint used to sit here; kept blank to hold the layout
         Text(""),
-        Text(""),  # keeps the hint above the music pocket band
+        Text(""),  # keeps the content above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
