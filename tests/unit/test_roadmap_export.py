@@ -122,3 +122,66 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+class TestVisuals:
+    def _analysis(self):
+        from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject
+
+        return RoadmapAnalysis(
+            source_type="file",
+            source_label="Q3 plan",
+            summary="Two candidates.",
+            projects=(
+                RoadmapProject(
+                    name="SSO rollout",
+                    description="Ship SSO for all tenants. Cover break-glass; add audit logs.",
+                    size="large",
+                    rationale="Security deadline.",
+                    quarter="Q3 2026",
+                    themes=("Security", "Platform"),
+                ),
+                RoadmapProject(name="Docs refresh", description="Update onboarding.", size="small", quarter="Q4 2026"),
+            ),
+            generated_at="2026-07-27T10:00:00+00:00",
+        )
+
+    def test_project_cards_with_chips(self):
+        from yeaboi.roadmap.export import build_roadmap_html
+
+        html = build_roadmap_html(self._analysis())
+        assert html.count("class='card story-card'") == 2
+        assert ">Q3 2026</span>" in html
+        assert ">Security</span>" in html and ">Platform</span>" in html
+
+    def test_description_split_into_bullets(self):
+        from yeaboi.roadmap.export import build_roadmap_html
+
+        html = build_roadmap_html(self._analysis())
+        assert "<li>Ship SSO for all tenants.</li>" in html
+        assert "<li>Cover break-glass</li>" in html
+        assert "<li>add audit logs.</li>" in html
+
+    def test_size_and_quarter_breakdown_bars(self):
+        from yeaboi.roadmap.export import build_roadmap_html
+
+        html = build_roadmap_html(self._analysis())
+        assert 'class="seg-track"' in html
+        assert "Large 1" in html and "Small 1" in html
+        assert "Q3 2026 1" in html  # two distinct quarters → by-quarter bar renders
+
+    def test_rationale_badge(self):
+        from yeaboi.roadmap.export import build_roadmap_html
+
+        html = build_roadmap_html(self._analysis())
+        assert ">Why now</span>" in html
+        assert "Security deadline." in html
+
+    def test_hostile_fields_escaped(self):
+        from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject
+        from yeaboi.roadmap.export import build_roadmap_html
+
+        html = build_roadmap_html(
+            RoadmapAnalysis(projects=(RoadmapProject(name="<b>x</b>", description="<i>d</i>", themes=("<u>t</u>",)),))
+        )
+        assert "<b>x</b>" not in html and "<i>d</i>" not in html and "<u>t</u>" not in html

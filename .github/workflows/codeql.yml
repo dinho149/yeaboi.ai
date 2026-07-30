@@ -1,0 +1,52 @@
+name: CodeQL
+
+# Deep static analysis (taint/dataflow) on top of the CI security job's
+# ruff-bandit + pip-audit + gitleaks. Two languages: `python` scans src/ and
+# tests/; `actions` scans the workflow files themselves for injection and
+# misconfiguration. Non-blocking by design — this check is NOT part of the
+# main-branch ruleset; findings land in the Security tab and as PR annotations,
+# and get triaged before we consider making it required.
+#
+# NOTE: CodeQL is free because this repo is public. A private fork would need
+# GitHub Code Security licensing for this workflow to run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Tuesdays, offset from security-scan.yml's Monday sweep and off the hour
+    # (":00" is the most contended slot and queues these ~3h late).
+    - cron: "29 7 * * 2" # Tuesdays 07:29 UTC
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  security-events: write # upload SARIF results
+  contents: read
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

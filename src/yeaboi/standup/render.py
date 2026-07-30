@@ -37,7 +37,18 @@ def _confidence_line(report: StandupReport) -> str:
     emoji = _CONFIDENCE_EMOJI.get(report.confidence_label, "")
     label = report.confidence_label or "Unknown"
     pct = f" ({report.confidence_pct}%)" if report.confidence_label not in ("", "Insufficient data") else ""
-    return f"{emoji} {label}{pct}".strip()
+    return f"{emoji} {label}{pct}{_trend_fragment(report)}".strip()
+
+
+def _trend_fragment(report: StandupReport) -> str:
+    """Day-over-day movement suffix, e.g. " ▲ +6 vs last" — empty when steady/no history."""
+    trend = getattr(report, "confidence_trend", "")
+    delta = getattr(report, "confidence_delta", 0)
+    if trend == "improving":
+        return f" ▲ +{delta} vs last"
+    if trend == "declining":
+        return f" ▼ {abs(delta)} vs last"
+    return ""
 
 
 def format_standup_lines(report: StandupReport) -> list[str]:
@@ -68,9 +79,13 @@ def format_standup_lines(report: StandupReport) -> list[str]:
             tag = "✍️" if m.self_report else "•"
             lines.append(f"  {tag} {m.name}")
             lines.append(f"      General overview: {m.summary or 'No activity detected.'}")
+            if getattr(m, "progress_note", ""):
+                lines.append(f"      ↺ Since last standup: {m.progress_note}")
             lines.append(f"      Ticketing: {m.ticketing_summary or 'Ticketing summary unavailable.'}")
             lines.append(f"      Code: {m.code_summary or 'Code summary unavailable.'}")
             lines.append(f"      Documentation: {m.documentation_summary or 'Documentation summary unavailable.'}")
+            if getattr(m, "outlook", ""):
+                lines.append(f"      → Outlook: {m.outlook}")
             # Their own typed words ride alongside the activity analysis, never replace it.
             for i, sr_line in enumerate(m.self_report.splitlines()):
                 prefix = "✍ In their words: " if i == 0 else "  "
@@ -160,6 +175,8 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
             row.append(m.name, style="bold")
             body.append(row)
             body.append(Text(f"      General overview: {m.summary or 'No activity detected.'}"))
+            if getattr(m, "progress_note", ""):
+                body.append(Text(f"      ↺ Since last standup: {m.progress_note}", style="italic"))
             body.append(Text(f"      Ticketing: {m.ticketing_summary or 'Ticketing summary unavailable.'}"))
             body.append(Text(f"      Code: {m.code_summary or 'Code summary unavailable.'}", style="rgb(120,190,220)"))
             body.append(
@@ -168,6 +185,8 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
                     style="rgb(170,160,220)",
                 )
             )
+            if getattr(m, "outlook", ""):
+                body.append(Text(f"      → Outlook: {m.outlook}", style="italic dim"))
             # Their own typed words ride alongside the activity analysis, never replace it.
             for i, sr_line in enumerate(m.self_report.splitlines()):
                 prefix = "✍ In their words: " if i == 0 else "  "

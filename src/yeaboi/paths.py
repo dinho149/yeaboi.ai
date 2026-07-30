@@ -14,7 +14,9 @@ Directory structure:
     ├── data/
     │   ├── sessions.db           # SQLite: sessions, team profiles, token usage
     │   ├── states/               # Legacy checkpoint JSON files
-    │   └── projects.json         # Project metadata
+    │   ├── projects.json         # Project metadata
+    │   ├── reporting_themes.json # User-defined Reporting palette definitions
+    │   └── reporting_prefs.json  # Persisted Reporting deck-style preferences
     ├── exports/
     │   ├── analysis/             # Team analysis exports (HTML + MD)
     │   │   └── {project_key}/
@@ -83,6 +85,8 @@ DATA_DIR = ROOT_DIR / "data"
 DB_PATH = DATA_DIR / "sessions.db"
 STATES_DIR = DATA_DIR / "states"
 PROJECTS_FILE = DATA_DIR / "projects.json"
+REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Reporting palettes
+REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -146,8 +150,21 @@ def get_db_path() -> Path:
 
     If both old and new DB exist, merges team_profiles and token_usage from the
     old DB into the new one, then removes the old DB to prevent divergence.
+
+    Also hardens permissions: the DB holds team/performance content, so the
+    data dir is 0o700 and the DB file 0o600 (repaired on every call — cheap,
+    and covers files created before this hardening existed). ``touch(mode=)``
+    applies only at creation, so whichever store connects first inherits an
+    already-restricted file.
     """
+    from yeaboi.config import restrict_permissions
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    restrict_permissions(DATA_DIR, mode=0o700)
+    if DB_PATH.exists():
+        restrict_permissions(DB_PATH, mode=0o600)
+    elif not LEGACY_DB_PATH.exists():
+        DB_PATH.touch(mode=0o600)
 
     if DB_PATH.exists() and LEGACY_DB_PATH.exists():
         # Both exist — merge legacy data into new DB, then remove legacy
@@ -189,37 +206,62 @@ def get_db_path() -> Path:
     return DB_PATH
 
 
+def get_reporting_themes_path() -> Path:
+    """Return the path of the user's Reporting palette definitions (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTING_THEMES_FILE
+
+
+def get_reporting_prefs_path() -> Path:
+    """Return the path of the persisted Reporting deck-style preferences (may not exist yet)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return REPORTING_PREFS_FILE
+
+
+def _safe_key(key: str, fallback: str) -> str:
+    """Normalize a project/engineer key into a single safe directory name.
+
+    Keys come from project names and tracker ids — app-derived, but defense in
+    depth: a key containing separators or ``..`` must never escape its export
+    root (``EXPORTS_DIR / "a/../../x"`` would). Separator-split segments are
+    re-joined with ``-`` so "team/sub" stays recognisable as ``team-sub``.
+    """
+    cleaned = (key or "").lower().strip().replace("\\", "/")
+    joined = "-".join(part for part in cleaned.split("/") if part not in ("", ".", ".."))
+    return joined or fallback
+
+
 def get_analysis_export_dir(project_key: str) -> Path:
     """Return the analysis export directory for a project, creating it if needed."""
-    d = ANALYSIS_EXPORTS_DIR / project_key.lower()
+    d = ANALYSIS_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_planning_export_dir(project_key: str) -> Path:
     """Return the planning export directory for a project, creating it if needed."""
-    d = PLANNING_EXPORTS_DIR / project_key.lower()
+    d = PLANNING_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_standup_export_dir(project_key: str) -> Path:
     """Return the Daily Standup export directory for a project, creating it if needed."""
-    d = STANDUP_EXPORTS_DIR / project_key.lower()
+    d = STANDUP_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_retro_export_dir(project_key: str) -> Path:
     """Return the Retro export directory for a project, creating it if needed."""
-    d = RETRO_EXPORTS_DIR / project_key.lower()
+    d = RETRO_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_poker_export_dir(project_key: str) -> Path:
     """Return the Scrum Poker export directory for a project, creating it if needed."""
-    d = POKER_EXPORTS_DIR / project_key.lower()
+    d = POKER_EXPORTS_DIR / _safe_key(project_key, "project")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -231,21 +273,21 @@ def get_performance_export_dir(engineer_key: str) -> Path:
     lead can find one person's documents together — mirrors the per-project layout
     the other modes use.
     """
-    d = PERFORMANCE_EXPORTS_DIR / (engineer_key.lower() or "engineer")
+    d = PERFORMANCE_EXPORTS_DIR / _safe_key(engineer_key, "engineer")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_reporting_export_dir(project_key: str) -> Path:
     """Return the Reporting export directory for a project, creating it if needed."""
-    d = REPORTING_EXPORTS_DIR / (project_key.lower() or "report")
+    d = REPORTING_EXPORTS_DIR / _safe_key(project_key, "report")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_roadmap_export_dir(roadmap_key: str) -> Path:
     """Return the Roadmap export directory for a roadmap, creating it if needed."""
-    d = ROADMAP_EXPORTS_DIR / (roadmap_key.lower() or "roadmap")
+    d = ROADMAP_EXPORTS_DIR / _safe_key(roadmap_key, "roadmap")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -256,7 +298,7 @@ def get_anonymize_export_dir(project_key: str) -> Path:
     Holds the privacy-masked copies of a mode's output (the shareable versions), kept
     separate from the un-masked exports so the two can't be confused.
     """
-    d = ANONYMIZE_EXPORTS_DIR / (project_key.lower() or "output")
+    d = ANONYMIZE_EXPORTS_DIR / _safe_key(project_key, "output")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -381,7 +423,7 @@ def get_attachments_dir(scope_id: str) -> Path:
     Only file *paths* are stored in session state — the PNG/JPEG bytes live here,
     so sessions stay small and pasted screenshots survive ``--resume``.
     """
-    d = ATTACHMENTS_DIR / ((scope_id or "misc").lower())
+    d = ATTACHMENTS_DIR / _safe_key(scope_id, "misc")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

@@ -44,9 +44,10 @@ def _poker_export(session_id: str) -> dict:
         if session_id:
             rows = [r for r in rows if r.get("session_id") == session_id]
         report = store.get_run_by_id(rows[0]["id"]) if rows else None
+        run_history = store.get_history(report.session_id, limit=30) if report and report.session_id else []
     if report is None:
         raise ValueError("No poker session recorded yet — run one from the yeaboi TUI Poker page first.")
-    paths = export_poker(report)
+    paths = export_poker(report, history=run_history)
     logger.info("Poker session exported via MCP: session=%s date=%s", report.session_id, report.date)
     return {
         "session_id": report.session_id,

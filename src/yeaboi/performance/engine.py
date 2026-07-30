@@ -366,9 +366,12 @@ def _load_framework() -> tuple[str, str, bool]:
         try:
             from pathlib import Path
 
-            text = Path(custom_path).read_text(encoding="utf-8")
+            from yeaboi.fs_policy import resolve_and_check
+
+            resolved = resolve_and_check(custom_path, mode="read", context="PERFORMANCE_FRAMEWORK_PATH")
+            text = resolved.read_text(encoding="utf-8")
             return text, f"custom ({Path(custom_path).name})", True
-        except Exception as e:  # noqa: BLE001 — fall back to bundled default
+        except Exception as e:  # noqa: BLE001 — fall back to bundled default (incl. sandbox denials)
             logger.warning("performance: could not read custom framework %s: %s", custom_path, e)
     try:
         from importlib.resources import files

@@ -13,13 +13,13 @@ Analysis logs are written to ~/.scrum-agent/logs/:
 
 from __future__ import annotations
 
-import html
 import logging
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 from yeaboi.analysis.ai_usage import _source_label
+from yeaboi.html_theme import escape as _e
 from yeaboi.team_profile import TeamProfile
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY, INSIGHT_CATEGORIES
 
@@ -44,7 +44,12 @@ _SPRINT_GLOSSARY_KEYS = ("churn", "delta", "spill")
 def _project_export_dir(project_key: str, base_dir: Path | None = None) -> Path:
     """Return the per-project analysis export directory, creating it if needed."""
     if base_dir:
-        out_dir = base_dir / project_key.lower()
+        from yeaboi.fs_policy import resolve_and_check
+        from yeaboi.paths import _safe_key
+
+        out_dir = resolve_and_check(base_dir, mode="write", context="analysis export dir") / _safe_key(
+            project_key, "project"
+        )
     else:
         from yeaboi.paths import get_analysis_export_dir
 
@@ -56,11 +61,6 @@ def _project_export_dir(project_key: str, base_dir: Path | None = None) -> Path:
 def _format_pct(val: float) -> str:
     """Format a percentage, dropping the decimal if it's .0."""
     return f"{val:.0f}%" if val == int(val) else f"{val:.1f}%"
-
-
-def _e(text: str) -> str:
-    """HTML-escape a string."""
-    return html.escape(str(text), quote=True)
 
 
 def _pct_bar_html(pct: float, width_px: int = 120) -> str:
@@ -160,7 +160,11 @@ def _section(id_: str, title: str, content: str) -> str:
 
 
 def _kv_table(rows: list[tuple[str, str]]) -> str:
-    """Render label/value pairs as a two-column card table."""
+    """Render label/value pairs as a two-column card table.
+
+    Labels are escaped here; values are trusted pre-built HTML — every caller
+    must escape interpolated user/LLM strings (enforced by test_export_xss.py).
+    """
     trs = "".join(
         f"<tr><td style='width:40%;color:var(--text-muted);'>{_e(lbl)}</td><td style='font-weight:500;'>{v}</td></tr>"
         for lbl, v in rows
@@ -283,7 +287,9 @@ def _ceremony_html(ceremony) -> str:
         ("Recurring pain points", ceremony.didnt_go_well_themes),
     ):
         if themes:
-            items = "".join(f"<li>{_e(t)} <span style='color:var(--text-muted);'>({n}×)</span></li>" for t, n in themes)
+            items = "".join(
+                f"<li>{_e(t)} <span style='color:var(--text-muted);'>({_e(n)}×)</span></li>" for t, n in themes
+            )
             parts.append(f'<div class="card"><strong>{_e(title)}</strong><ul>{items}</ul></div>')
     return "".join(parts)
 
@@ -387,9 +393,9 @@ def build_team_profile_html(
         if ai_sig.scanned_prs:
             a_rows.append(("PRs with AI marker", f"{ai_sig.ai_prs} of {ai_sig.scanned_prs}"))
         if ai_sig.sources_scanned:
-            a_rows.append(("Sources scanned", ", ".join(_source_label(s) for s in ai_sig.sources_scanned)))
+            a_rows.append(("Sources scanned", ", ".join(_e(_source_label(s)) for s in ai_sig.sources_scanned)))
         if isinstance(ai_blob, dict) and ai_blob.get("selected_users"):
-            a_rows.append(("Selected users", ", ".join(str(u) for u in ai_blob["selected_users"])))
+            a_rows.append(("Selected users", ", ".join(_e(u) for u in ai_blob["selected_users"])))
             a_rows.append(
                 (
                     "Matched identities",
@@ -446,7 +452,13 @@ def build_team_profile_html(
             act_lis = "".join(f"<li>{_e(a)}: {n}</li>" for a, n in ai_sig.per_activity)
             a_html += f"<h4>By activity</h4><ul>{act_lis}</ul>"
         if ai_sig.per_author:
-            auth_lis = "".join(f"<li>{_e(a)}: {n}</li>" for a, n in ai_sig.per_author[:8])
+            from yeaboi.html_theme import avatar as _avatar
+
+            auth_lis = "".join(
+                f"<li><span style='display:inline-flex;align-items:center;gap:.4rem'>"
+                f"{_avatar(a)}{_e(a)}: {n}</span></li>"
+                for a, n in ai_sig.per_author[:8]
+            )
             a_html += f"<h4>By contributor</h4><ul>{auth_lis}</ul>"
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
@@ -516,7 +528,7 @@ def build_team_profile_html(
                 [
                     ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
                     ("Average usefulness", f"{getattr(dq_sig, 'avg_usefulness', 0):.0f}/100"),
-                    ("Pages scanned", _doc_pages_value(dq_sig, dq_pages)),
+                    ("Pages scanned", _e(_doc_pages_value(dq_sig, dq_pages))),
                     ("Clarity split", d_split),
                     (
                         "Owned / actionable",
@@ -562,7 +574,7 @@ def build_team_profile_html(
     if team_sz and isinstance(team_sz, int):
         mem_str = f"{team_sz} contributors"
         if members and isinstance(members, list):
-            mem_str += f" ({', '.join(str(m) for m in members[:8])})"
+            mem_str += f" ({', '.join(_e(m) for m in members[:8])})"
         vel_rows.append(("Team size", mem_str))
 
     # Use sprint_details for accurate velocity if available
@@ -625,7 +637,7 @@ def build_team_profile_html(
             (
                 "Trend",
                 f'<span style="color:{color};font-weight:600;">{icon} {_e(trend.capitalize())}</span>'
-                f" ({first_v} &rarr; {last_v}, {slope:+.1f}/sprint)",
+                f" ({_e(first_v)} &rarr; {_e(last_v)}, {slope:+.1f}/sprint)",
             )
         )
 
@@ -667,13 +679,13 @@ def build_team_profile_html(
             sc_rows: list[tuple[str, str]] = []
             if by_size:
                 sorted_sizes = sorted(by_size.items(), key=lambda x: int(x[0]))
-                parts = " &middot; ".join(f"{sz}pt={pct:.0f}%" for sz, pct in sorted_sizes)
+                parts = " &middot; ".join(f"{_e(sz)}pt={pct:.0f}%" for sz, pct in sorted_sizes)
                 sc_rows.append(("By story size", parts))
             if by_disc:
-                parts = " &middot; ".join(f"{d}={pct:.0f}%" for d, pct in sorted(by_disc.items()))
+                parts = " &middot; ".join(f"{_e(d)}={pct:.0f}%" for d, pct in sorted(by_disc.items()))
                 sc_rows.append(("By discipline", parts))
             if by_tasks:
-                parts = " &middot; ".join(f"{b}={pct:.0f}%" for b, pct in by_tasks.items())
+                parts = " &middot; ".join(f"{_e(b)}={pct:.0f}%" for b, pct in by_tasks.items())
                 sc_rows.append(("By task count", parts))
             _nav("spillover", "Spillover")
             sections.append(_section("spillover", "Spillover Root Causes", _kv_table(sc_rows)))
@@ -752,7 +764,7 @@ def build_team_profile_html(
                         sm = _e(item.get("summary", ""))
                         shadow = item.get("shadow", False)
                         pts_v = item.get("points", 0)
-                        detail = " (re-created)" if shadow else (f" ({pts_v}pts)" if pts_v else "")
+                        detail = " (re-created)" if shadow else (f" ({_e(pts_v)}pts)" if pts_v else "")
                         sprint_content += (
                             f'<div style="margin-left:1rem;font-size:0.85rem;color:var(--text-muted);">'
                             f"<code>{ek}</code> {sm}"
@@ -794,6 +806,22 @@ def build_team_profile_html(
                         _dcol = "var(--ok)" if _d == 0 else ("var(--warn)" if abs(_d) < 5 else "var(--danger)")
                         _ns = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
                         _nf = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
+                        # Day-by-day scope sparkline (points in scope per snapshot day).
+                        _spark = ""
+                        if len(tl.daily_snapshots) >= 2:
+                            from yeaboi.html_theme import sparkline_svg
+
+                            _vals = [s.total_scope_pts for s in tl.daily_snapshots]
+                            _pad = max((max(_vals) - min(_vals)) * 0.15, 1.0)
+                            _spark = sparkline_svg(
+                                _vals,
+                                vmin=max(0.0, min(_vals) - _pad),
+                                vmax=max(_vals) + _pad,
+                                end_color_var=_dcol[4:-1],
+                                start_label=tl.daily_snapshots[0].date,
+                                end_label=tl.daily_snapshots[-1].date,
+                                title=f"{tl.sprint_name}: scope points per day",
+                            )
                         sprint_content += (
                             f'<div style="margin:1rem 0 0.5rem 0;padding:0.5rem;'
                             f'border-left:3px solid {_dcol};background:rgba(255,255,255,0.02);">'
@@ -801,6 +829,7 @@ def build_team_profile_html(
                             f'<span style="color:{_dcol};">{_ds} scope ({_p:+d}%)</span>'
                             f'<div style="font-size:0.85rem;color:var(--text-muted);margin:0.25rem 0;">'
                             f"committed {tl.committed_pts:g} pts ({_ns} stories)</div>"
+                            f"{_spark}"
                         )
                         for ev in tl.change_events[:5]:
                             ct = ev.change_type.replace("re_estimated_", "re-est ").replace("_", " ")
@@ -873,6 +902,8 @@ def build_team_profile_html(
             "<th>Spill%</th><th>Cycle</th><th>Sprints</th><th>Focus</th><th>Pts/sprint</th>"
             "</tr>"
         )
+        from yeaboi.html_theme import avatar as _avatar
+
         for cs in _h_contrib[:10]:
             sp_r = cs.get("spill_rate", 0)
             sp_col = "var(--ok)" if sp_r < 10 else ("var(--warn)" if sp_r < 25 else "var(--danger)")
@@ -885,7 +916,8 @@ def build_team_profile_html(
             ps_col = "var(--ok)" if ps >= 3 else ("var(--warn)" if ps >= 1.5 else "var(--low)")
             sa = cs.get("sprints_active", 0)
             tm_content += (
-                f"<tr><td>{_e(cs.get('name', ''))}</td>"
+                f"<tr><td><span style='display:inline-flex;align-items:center;gap:.4rem'>"
+                f"{_avatar(cs.get('name', ''))}{_e(cs.get('name', ''))}</span></td>"
                 f'<td style="text-align:right;">{cs.get("delivery_pts", 0)}</td>'
                 f'<td style="text-align:right;">{cs.get("stories_completed", 0)}</td>'
                 f'<td style="text-align:right;color:{sp_col};">{sp_r}%</td>'
@@ -985,7 +1017,7 @@ def build_team_profile_html(
         for c in cals:
             conf = conf_levels.get(c.point_value, "")
             conf_color = {"high": "var(--ok)", "medium": "var(--text-muted)", "low": "var(--warn)"}.get(conf, "")
-            conf_html = f'<span style="color:{conf_color};font-weight:600;">{conf.upper()}</span>' if conf else ""
+            conf_html = f'<span style="color:{conf_color};font-weight:600;">{_e(conf.upper())}</span>' if conf else ""
             cal_rows_html.append(
                 f"<tr><td><strong>{c.point_value} pt{'s' if c.point_value != 1 else ''}</strong></td>"
                 f"<td>{c.avg_cycle_time_days:.0f} days</td>"
@@ -1051,6 +1083,15 @@ def build_team_profile_html(
 
         type_dist = td.get("type_distribution", {})
         if type_dist:
+            # One theme-aware stacked bar reads the mix at a glance; the
+            # per-row table keeps the exact numbers below it.
+            from yeaboi.html_theme import counted_segment_bar
+
+            mix = counted_segment_bar(
+                [(cat, int(round(pct))) for cat, pct in type_dist.items()], title="Task type distribution"
+            )
+            if mix:
+                td_content += f"<div style='margin-top:0.5rem'>{mix}</div>"
             dist_rows = "".join(
                 f"<tr><td>{_e(cat)}</td><td>{_pct_bar_html(pct)}</td></tr>" for cat, pct in type_dist.items()
             )
@@ -1066,14 +1107,14 @@ def build_team_profile_html(
                 f'<div class="card" style="border-left:3px solid var(--warn);margin-top:0.5rem;">'
                 f'<strong style="color:var(--warn);">&#x26a0; {_e(str(cat))} bottleneck</strong>'
                 f'<p style="color:var(--text-muted);">'
-                f"Only {rate_val}% completion ({count} tasks)</p></div>"
+                f"Only {_e(rate_val)}% completion ({_e(count)} tasks)</p></div>"
             )
 
         # Common task patterns
         common_tasks = td.get("common_tasks", [])
         if common_tasks:
             ct_rows = "".join(
-                f"<tr><td>{_e(str(title)[:45])}</td><td>&times;{cnt}</td></tr>" for title, cnt in common_tasks[:4]
+                f"<tr><td>{_e(str(title)[:45])}</td><td>&times;{_e(cnt)}</td></tr>" for title, cnt in common_tasks[:4]
             )
             td_content += (
                 f'<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">'
@@ -1086,7 +1127,8 @@ def build_team_profile_html(
         assignees = td.get("task_assignees", {})
         if assignees:
             ta_rows = "".join(
-                f"<tr><td>{_e(str(name))}</td><td>{cnt} tasks</td></tr>" for name, cnt in list(assignees.items())[:5]
+                f"<tr><td>{_e(str(name))}</td><td>{_e(cnt)} tasks</td></tr>"
+                for name, cnt in list(assignees.items())[:5]
             )
             td_content += (
                 f'<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">'
@@ -1176,7 +1218,7 @@ def build_team_profile_html(
             )
         custom_steps = pdod.get("custom_steps", [])
         if custom_steps:
-            parts = ", ".join(f"&ldquo;{_e(cs['title'])}&rdquo; ({cs['pct']}%)" for cs in custom_steps[:4])
+            parts = ", ".join(f"&ldquo;{_e(cs['title'])}&rdquo; ({_e(cs['pct'])}%)" for cs in custom_steps[:4])
             pdod_html += f'<p style="color:var(--text-muted);">Team-specific steps: {parts}</p>'
         _nav("proposed-dod", "Proposed DoD")
         sections.append(_section("proposed-dod", "Proposed Definition of Done", pdod_html))
@@ -1220,11 +1262,18 @@ def build_team_profile_html(
             name_style = "color:var(--warn);font-weight:600;" if rname in spill_repos_set else ""
             repo_rows_html += (
                 f'<tr><td style="{name_style}"><strong>{_e(rname)}</strong></td>'
-                f"<td>{cnt}</td><td>{_pct_bar_html(pct, 80)}</td>"
+                f"<td>{_e(cnt)}</td><td>{_pct_bar_html(pct, 80)}</td>"
                 f'<td style="color:{ct_color};">{ct_html}</td></tr>'
             )
 
-        repo_content = (
+        # One stacked bar shows where the team's story work concentrates.
+        from yeaboi.html_theme import counted_segment_bar
+
+        repo_mix = counted_segment_bar(
+            [(r.get("repo", ""), int(r.get("stories", 0))) for r in top[:8] if isinstance(r, dict)],
+            title="Stories per repository",
+        )
+        repo_content = (f"<div style='margin-bottom:0.5rem'>{repo_mix}</div>" if repo_mix else "") + (
             f'<div class="card" style="padding:0;overflow:hidden;">'
             f'<table class="data-table">{repo_hdr}{repo_rows_html}</table></div>'
         )
@@ -1243,7 +1292,7 @@ def build_team_profile_html(
                     f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
                     f'<strong style="color:var(--warn);">{_e(sr.get("repo", ""))}</strong>'
                     f' <span style="color:var(--text-muted);">'
-                    f"{sr.get('spill_rate', 0)}% spillover ({sr.get('spills', 0)} times)</span></div>"
+                    f"{_e(sr.get('spill_rate', 0))}% spillover ({_e(sr.get('spills', 0))} times)</span></div>"
                 )
 
         # Repos by point value
@@ -1277,7 +1326,7 @@ def build_team_profile_html(
         nm_rows: list[tuple[str, str]] = []
         _nm_prefixes = _h_naming.get("title_prefixes", [])
         if _nm_prefixes:
-            nm_rows.append(("Title prefixes", " &middot; ".join(f"{p} {pct}%" for p, pct in _nm_prefixes[:5])))
+            nm_rows.append(("Title prefixes", " &middot; ".join(f"{_e(p)} {_e(pct)}%" for p, pct in _nm_prefixes[:5])))
         else:
             nm_rows.append(("Title prefixes", "none detected"))
         _nm_lbls = _h_naming.get("label_distribution", [])
@@ -1286,14 +1335,15 @@ def build_team_profile_html(
             nm_rows.append(
                 (
                     "Labels",
-                    f"{_nm_lpct}% labelled: " + " &middot; ".join(f"{lbl} {pct}%" for lbl, pct in _nm_lbls[:6]),
+                    f"{_e(_nm_lpct)}% labelled: "
+                    + " &middot; ".join(f"{_e(lbl)} {_e(pct)}%" for lbl, pct in _nm_lbls[:6]),
                 )
             )
         _nm_style = _h_naming.get("epic_naming_style", "")
         _nm_epex = _h_naming.get("epic_examples", [])
         if _nm_style and _nm_epex:
             _nm_exs = ", ".join(f"&ldquo;{_e(e[:40])}&rdquo;" for e in _nm_epex[:3])
-            nm_rows.append(("Epic naming", f"{_nm_style} &mdash; {_nm_exs}"))
+            nm_rows.append(("Epic naming", f"{_e(_nm_style)} &mdash; {_nm_exs}"))
         _nm_secs = _h_naming.get("template_sections", [])
         if _nm_secs:
             _nm_ss = " &rarr; ".join(f"&ldquo;{_e(s)}&rdquo;" for s, _ in _nm_secs[:5])
@@ -1313,7 +1363,7 @@ def build_team_profile_html(
             st_rows.append(
                 (
                     "Rarely created",
-                    " &middot; ".join(f"{s['type']} ({s['present_pct']}%)" for s in _st_skip),
+                    " &middot; ".join(f"{_e(s['type'])} ({_e(s['present_pct'])}%)" for s in _st_skip),
                 )
             )
         _st_avg = _h_struct.get("avg_epic_completion", 0)
@@ -1325,7 +1375,7 @@ def build_team_profile_html(
                 st_rows.append(
                     (
                         _e(ep.get("epic_title", "?")),
-                        f"{ep['completed']}/{ep['total']} done ({ep['rate']}%)",
+                        f"{_e(ep['completed'])}/{_e(ep['total'])} done ({_e(ep['rate'])}%)",
                     )
                 )
         _st_spread = _h_struct.get("epic_sprint_spread", [])
@@ -1334,7 +1384,7 @@ def build_team_profile_html(
                 st_rows.append(
                     (
                         _e(ep.get("epic", "?")),
-                        f"{ep['stories']} stories across {ep['sprints']} sprints",
+                        f"{_e(ep['stories'])} stories across {_e(ep['sprints'])} sprints",
                     )
                 )
         if st_rows:
@@ -1358,7 +1408,7 @@ def build_team_profile_html(
             ac_rows.extend(
                 [
                     ("Median ACs/story", str(ac_pat.get("median_ac", 0))),
-                    ("Specificity", f"{spec.get('label', '?')} ({spec.get('precise_pct', 0)}% precise)"),
+                    ("Specificity", f"{_e(spec.get('label', '?'))} ({_e(spec.get('precise_pct', 0))}% precise)"),
                 ]
             )
             themes = ac_pat.get("themes", {})
@@ -1374,11 +1424,11 @@ def build_team_profile_html(
                         _sm = _e(_ex_d.get("summary", "")[:30])
                         _lk = f'<a href="{_e(_eu)}"><code>{_ek}</code></a>' if _eu else f"<code>{_ek}</code>"
                         _ex_h = f' {_lk} <span style="color:var(--text-muted);">{_sm}</span>'
-                    _tp.append(f"<strong>{_e(t)}</strong> {p}%{_ex_h}")
+                    _tp.append(f"<strong>{_e(t)}</strong> {_e(p)}%{_ex_h}")
                 ac_rows.append(("Topics", "<br>".join(_tp)))
             by_disc = ac_pat.get("by_discipline", {})
             if len(by_disc) >= 2:
-                parts = " &middot; ".join(f"{d} {v['avg_ac']:.0f} avg" for d, v in by_disc.items())
+                parts = " &middot; ".join(f"{_e(d)} {v['avg_ac']:.0f} avg" for d, v in by_disc.items())
                 ac_rows.append(("By discipline", parts))
             spill = ac_pat.get("spillover_correlation", {})
             low_s = spill.get("low_ac_spill_pct", 0)
@@ -1428,7 +1478,7 @@ def build_team_profile_html(
         ]
         worst = est_bias.get("worst_overestimate_sizes", [])
         if worst:
-            eb_rows.append(("Most overestimated sizes", ", ".join(f"{s}pt" for s in worst)))
+            eb_rows.append(("Most overestimated sizes", ", ".join(f"{_e(s)}pt" for s in worst)))
         _nav("estimation", "Estimation")
         sections.append(_section("estimation", "Estimation Accuracy", _kv_table(eb_rows)))
 
@@ -1449,14 +1499,14 @@ def build_team_profile_html(
     # ── Workflow ──────────────────────────────────────────────────
     wf = ex.get("workflow_style", {})
     if isinstance(wf, dict) and wf.get("workflow"):
-        wf_seq = " \u2192 ".join(wf["workflow"])
+        wf_seq = " \u2192 ".join(_e(step) for step in wf["workflow"])
         wf_rows = [("Workflow", wf_seq)]
         wf_style_label = {"columns-as-dod": "Columns as DoD steps", "minimal": "Minimal workflow"}.get(
             wf.get("style", "minimal"), wf.get("style", "minimal")
         )
-        wf_rows.append(("Style", wf_style_label))
+        wf_rows.append(("Style", _e(wf_style_label)))
         for col, rate in wf.get("dod_columns", {}).items():
-            wf_rows.append((f"  {col} pass-through", f"{rate}%"))
+            wf_rows.append((f"  {col} pass-through", f"{_e(rate)}%"))
         _nav("workflow", "Workflow")
         sections.append(_section("workflow", "Board Workflow", _kv_table(wf_rows)))
 
@@ -1565,14 +1615,14 @@ def build_team_profile_html(
             recs.append(
                 (
                     "Low task completion",
-                    f"Only {td['task_completion_rate']}% of sub-tasks are completed.",
+                    f"Only {_e(td['task_completion_rate'])}% of sub-tasks are completed.",
                 )
             )
         for cat, rate_val, count in td.get("bottlenecks", []):
             recs.append(
                 (
-                    f"{cat} bottleneck",
-                    f"{cat} tasks have only {rate_val}% completion ({count} tasks).",
+                    f"{_e(str(cat))} bottleneck",
+                    f"{_e(str(cat))} tasks have only {_e(rate_val)}% completion ({_e(count)} tasks).",
                 )
             )
         sw = td.get("stories_with_tasks", 0)

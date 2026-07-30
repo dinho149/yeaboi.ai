@@ -109,7 +109,7 @@ class TestBuildStandupScreen:
 
     def test_action_selection_variants(self):
         data = {"report": _report(), "schedule": {}}
-        for sel in range(4):  # Generate, Team, Configure, Back
+        for sel in range(4):  # Generate, Team, Identity, Back
             assert isinstance(_build_standup_screen(data, width=80, height=24, action_sel=sel), Panel)
 
     def test_team_source_picker_renders_saved_selection(self):
@@ -680,7 +680,7 @@ class TestButtonRowNotClipped:
             console.print(panel)
         out = cap.get()
         assert "Open" not in out  # Enter opens sections directly now
-        for label in ("Generate", "Configure", "Back"):
+        for label in ("Generate", "Identity", "Back"):
             assert label in out
         # The My Update button is gone — Generate collects the user's update itself.
         assert "│ My Update │" not in out
@@ -752,3 +752,150 @@ class TestStandupProgressScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
         assert isinstance(_build_standup_progress_screen([], width=60, height=12), Panel)
+
+
+class TestBuildScheduleStepScreen:
+    """Render tests for the schedule wizard's radio/checkbox step screen."""
+
+    def _render(self, panel, width=100):
+        from rich.console import Console
+
+        console = Console(width=width, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        return cap.get()
+
+    def _options(self):
+        return [("09:00", ""), ("09:30", ""), ("10:00", "current"), ("Custom…", "type any HH:MM")]
+
+    def test_radio_step_marks_cursor_row(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        panel = _build_standup_schedule_step_screen(
+            self._options(), 2, step_index=0, heading="Standup time", width=90, height=24
+        )
+        assert isinstance(panel, Panel)
+        out = self._render(panel)
+        assert "Standup time" in out
+        assert "‹ ● 10:00 ›" in out  # cursor row is the selection on radio steps
+        assert "○ 09:00" in out
+        assert "Custom…" in out and "type any HH:MM" in out
+        # Radio steps don't offer Space toggling.
+        assert "Space toggle" not in out
+        assert "Esc back" in out
+
+    def test_progress_dots_show_step_names(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _SCHEDULE_STEP_NAMES,
+            _build_standup_schedule_step_screen,
+        )
+
+        panel = _build_standup_schedule_step_screen(self._options(), 0, step_index=1, heading="Lead")
+        out = self._render(panel)
+        for name in _SCHEDULE_STEP_NAMES:
+            assert name in out
+
+    def test_multi_step_checked_glyphs_and_count(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        days = [(d, "") for d in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")]
+        panel = _build_standup_schedule_step_screen(
+            days, 5, checked={0, 1, 2, 3, 4}, step_index=2, heading="Which days", width=90, height=30
+        )
+        out = self._render(panel)
+        assert "5 of 7 selected" in out
+        assert "● Mon" in out and "● Fri" in out
+        assert "‹ ○ Sat ›" in out  # cursor on an unchecked row
+        assert "Space toggle" in out
+
+    def test_message_row_renders(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        panel = _build_standup_schedule_step_screen(
+            [("terminal", "")], 0, checked=set(), step_index=3, heading="Channels", message="Select at least one"
+        )
+        assert "Select at least one" in self._render(panel)
+
+    def test_small_terminal_does_not_crash(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        panel = _build_standup_schedule_step_screen(
+            self._options(), 3, step_index=4, heading="Enable", width=60, height=12
+        )
+        assert isinstance(panel, Panel)
+        self._render(panel, width=60)
+
+
+class TestDayOverDayScreen:
+    def test_member_detail_shows_progress_note_and_outlook(self):
+        from rich.console import Console
+
+        rep = StandupReport(
+            date="2026-07-10",
+            member_updates=(
+                MemberUpdate(
+                    name="Bob",
+                    summary="Merged the auth PR.",
+                    progress_note="Wrapped up yesterday's PSOT-9 work.",
+                    outlook="Likely to start on tokens.",
+                ),
+            ),
+        )
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=100, view="member:Bob")
+        console = Console(width=110, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Since last standup" in out
+        assert "Wrapped up yesterday's PSOT-9 work." in out
+        assert "Outlook" in out
+        assert "Likely to start on tokens." in out
+
+    def test_member_detail_without_fields_hides_panels(self):
+        from rich.console import Console
+
+        rep = StandupReport(date="2026-07-10", member_updates=(MemberUpdate(name="Bob", summary="x"),))
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=100, view="member:Bob")
+        console = Console(width=110, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Since last standup" not in out
+        assert "Outlook" not in out
+
+    def test_status_strip_shows_trend_arrow(self):
+        from rich.console import Console
+
+        for trend, delta, marker in (("improving", 6, "▲+6"), ("declining", -8, "▼8")):
+            rep = StandupReport(
+                date="2026-07-10",
+                sprint_name="Sprint 5",
+                sprint_day=3,
+                sprint_total_days=10,
+                confidence_pct=74,
+                confidence_label="At risk",
+                confidence_delta=delta,
+                confidence_trend=trend,
+            )
+            panel = _build_standup_screen({"report": rep, "schedule": {}}, width=120, height=100, view="overview")
+            console = Console(width=130, file=open("/dev/null", "w"))
+            with console.capture() as cap:
+                console.print(panel)
+            assert marker in cap.get()
+
+    def test_status_strip_no_trend_no_arrow(self):
+        from rich.console import Console
+
+        rep = StandupReport(
+            date="2026-07-10",
+            sprint_name="Sprint 5",
+            confidence_pct=74,
+            confidence_label="At risk",
+        )
+        panel = _build_standup_screen({"report": rep, "schedule": {}}, width=120, height=100, view="overview")
+        console = Console(width=130, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "▲" not in out
+        assert "▼" not in out

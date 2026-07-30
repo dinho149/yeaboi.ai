@@ -150,3 +150,47 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+class TestVisuals:
+    def test_engineer_avatar_row_on_all_docs(self):
+        from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+        from yeaboi.performance import export
+
+        prep_html = export.build_prep_html(OneOnOnePrep(engineer="Ada Lovelace", date="2026-07-27"))
+        rec_html = export.build_completion_html(OneOnOneRecord(engineer="Ada Lovelace", date="2026-07-27"))
+        rev_html = export.build_review_html(SixMonthReview(engineer="Ada Lovelace"))
+        for html in (prep_html, rec_html, rev_html):
+            # class attribute, not the bare token — ".avatar" also lives in the stylesheet.
+            assert 'class="avatar"' in html
+            assert ">AL</span>" in html
+
+    def test_avatar_name_escaped(self):
+        from yeaboi.agent.state import OneOnOnePrep
+        from yeaboi.performance import export
+
+        html = export.build_prep_html(OneOnOnePrep(engineer="<b>Eve</b>", date="2026-07-27"))
+        assert "<b>Eve</b>" not in html
+
+    def test_long_items_split_into_bullets(self):
+        from yeaboi.agent.state import OneOnOnePrep
+        from yeaboi.performance import export
+
+        long_item = (
+            "Ada shipped the SSO rollout across every tenant and closed the audit findings. "
+            "The break-glass path is still untested; the follow-up work needs a dedicated spike "
+            "before the compliance review lands next month."
+        )
+        html = export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-27", talking_points=(long_item,)))
+        assert "<li>Ada shipped the SSO rollout across every tenant and closed the audit findings.</li>" in html
+        assert "<li>The break-glass path is still untested</li>" in html
+        assert "class='analysis-section'" in html
+
+    def test_short_items_stay_whole(self):
+        from yeaboi.agent.state import OneOnOnePrep
+        from yeaboi.performance import export
+
+        html = export.build_prep_html(
+            OneOnOnePrep(engineer="Ada", date="2026-07-27", talking_points=("Discuss growth; align on goals.",))
+        )
+        assert "<li>Discuss growth; align on goals.</li>" in html

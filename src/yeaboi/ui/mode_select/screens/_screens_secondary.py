@@ -27,6 +27,7 @@ from yeaboi.ui.mode_select.screens._analysis_sections import (
 from yeaboi.ui.mode_select.screens._screens import _INTAKE_CARDS, _OFFLINE_CARDS, _build_mode_row
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
+    PAD,
     PLANNING_THEME,
     build_action_buttons,
     build_page_panel,
@@ -152,6 +153,9 @@ def _build_analysis_review_screen(
 # 2-space content indent for every secondary screen: headings then land at the
 # title's column and value rows one level in, matching the Settings screen. This
 # is the single knob — all these screens indent via _PAD (and size via len(_PAD)).
+# This module's own tighter page pad. Distinct from the shared four-space PAD
+# (imported above), which the reporting/analysis setup screens use — do not
+# collapse the two: several layouts are measured against one or the other.
 _PAD = "  "
 
 
@@ -500,6 +504,7 @@ _COMPONENT_LABELS: dict[str, str] = {k: f"{_COMPONENT_NAMES[k]} — {_COMPONENT_
 _SUBSOURCE_TITLES: dict[str, str] = {
     "jira": "Jira",
     "azdevops": "Azure DevOps",
+    "azuredevops": "Azure DevOps",  # reporting's canonical spelling of the same tracker
     "github": "GitHub",
     "azdo": "Azure Repos",
     "confluence": "Confluence",
@@ -534,9 +539,14 @@ def _analysis_toggle_row(
     selected: bool = False,
     enabled: bool = True,
     note: str = "",
+    theme=None,
 ) -> Text:
-    """Match the inline toggle style used by Reporting and questionnaire cards."""
-    theme = ANALYSIS_THEME
+    """The shared setup-wizard option row (``‹ ● Title ›  ·  hint``).
+
+    Defaults to the Analysis look; ``theme`` re-brands it for other modes'
+    setup screens (Reporting passes REPORTING_THEME).
+    """
+    theme = theme or ANALYSIS_THEME
     row = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
     row.append("‹ " if focused else "  ", style=theme.accent_bright if enabled else theme.dim)
     row.append(
@@ -598,11 +608,17 @@ def _analysis_card_grid(
     return grid
 
 
-def _analysis_setup_header(section: str, help_text: str, *, message: str = "") -> list:
-    """Consistent hierarchy for every pre-run Analysis selector."""
-    theme = ANALYSIS_THEME
+def _analysis_setup_header(
+    section: str, help_text: str, *, message: str = "", brand: str = "ANALYSIS SETUP", theme=None
+) -> list:
+    """Consistent hierarchy for every pre-run setup selector (breadcrumb + hint + ⚠).
+
+    Defaults to the Analysis branding; ``brand``/``theme`` re-brand it for other
+    modes' setup screens (Reporting passes "REPORTING SETUP" + REPORTING_THEME).
+    """
+    theme = theme or ANALYSIS_THEME
     out: list = [
-        Text(_PAD + f"ANALYSIS SETUP  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
+        Text(_PAD + f"{brand}  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
         Text(_PAD + help_text, style=theme.muted),
     ]
     if message:
@@ -684,15 +700,23 @@ def _build_component_select_screen(
     height: int = 24,
     message: str = "",
     descriptions: dict[str, str] | None = None,
+    theme=None,
+    brand: str = "ANALYSIS SETUP",
+    title_builder=None,
+    footer_verb: str = "analyse",
 ) -> Panel:
     """Ragged component × sub-source multi-select.
 
     ``grid`` maps each component to its CONFIGURED sub-sources (delivery ←
     jira/azdevops, code ← github/azdo, docs ← confluence/notion). ``rows_order`` is
     the components with at least one sub-source. ``checked`` maps component → set of
-    selected sub-source indices. ``row_idx``/``col_idx`` locate the focused cell."""
-    theme = ANALYSIS_THEME
-    title = _analysis_setup_title(width, height)
+    selected sub-source indices. ``row_idx``/``col_idx`` locate the focused cell.
+
+    Defaults to the Analysis look; ``theme``/``brand``/``title_builder`` (a
+    callable(width, height) → renderable) / ``footer_verb`` re-brand it for other
+    modes' setup screens (Reporting passes REPORTING_THEME + "REPORTING SETUP")."""
+    theme = theme or ANALYSIS_THEME
+    title = (title_builder or _analysis_setup_title)(width, height)
     sections: list = []
 
     per_component: list[tuple[str, int]] = []
@@ -724,6 +748,7 @@ def _build_component_select_screen(
                     "",
                     focused=is_focused,
                     selected=is_checked,
+                    theme=theme,
                 )
             )
         sections.extend((header, Group(*source_rows), Text("")))
@@ -736,18 +761,20 @@ def _build_component_select_screen(
         footer.append("  ·  " + "  ·  ".join(f"{nm} {n}" for nm, n in per_component), style=theme.muted)
         footer.append("     Enter ⏎", style=theme.dim)
     else:
-        footer.append("Select at least one source to analyse", style=theme.accent_bright)
+        footer.append(f"Select at least one source to {footer_verb}", style=theme.accent_bright)
     header = _analysis_setup_header(
         "Sources",
         "Arrows move · Space selects · Enter continues",
         message=message,
+        brand=brand,
+        theme=theme,
     )
     if width < 70 or height < 28:
         sections = list(sections[row_idx * 3 : row_idx * 3 + 3])
         counts = "  ·  ".join(f"{name} {count}" for name, count in per_component)
         sections.insert(0, Text(_PAD + counts, style=theme.muted))
     content = Group(Text(""), title, Text(""), *header, Group(*sections), footer)
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+    return build_page_panel(content, theme=theme, height=height)
 
 
 def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: int = 24) -> Panel:
@@ -2584,6 +2611,12 @@ def _build_standup_screen(
             if report.confidence_label != "Insufficient data":
                 strip.append_text(build_meter(report.confidence_pct, 100, theme=theme, style=conf_style))
                 strip.append(f" {report.confidence_pct}%", style=conf_style)
+                trend = getattr(report, "confidence_trend", "")
+                delta = getattr(report, "confidence_delta", 0)
+                if trend == "improving":
+                    strip.append(f" ▲+{delta}", style=theme.good)
+                elif trend == "declining":
+                    strip.append(f" ▼{abs(delta)}", style=theme.bad)
     else:
         strip.append("No standup yet — Generate creates today's standup", style=theme.muted)
 
@@ -2665,7 +2698,7 @@ def _build_standup_screen(
         padded_lines.append(Text(""))
 
     if actions is None:
-        actions = ["Generate", "Team", "Configure", "Back"] if view == "overview" else ["Back", "Export"]
+        actions = ["Generate", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
     if _sb_text is not None:
@@ -2812,6 +2845,81 @@ def _build_standup_team_member_screen(
         viewport,
     )
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
+
+
+_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable"]
+
+
+def _build_standup_schedule_step_screen(
+    options: list[tuple[str, str]],
+    cursor: int,
+    *,
+    checked: set[int] | None = None,
+    step_index: int = 0,
+    heading: str = "",
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+) -> Panel:
+    """Build one step of the schedule wizard: a radio or checkbox option list.
+
+    ``checked is None`` renders a single-select (radio) step — the cursor row IS
+    the selection, Enter confirms it. A ``set`` renders a multi-select step where
+    Space toggles membership. ``options`` are ``(label, description)`` pairs; the
+    description renders dimmed after the label. Progress dots across the top show
+    the five wizard steps (``_SCHEDULE_STEP_NAMES``).
+    """
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    multi = checked is not None
+    rows: list[Text] = []
+    if message:
+        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+    if multi:
+        rows.append(Text(_PAD + f"{len(checked)} of {len(options)} selected", style=theme.muted))
+        rows.append(Text(""))
+    for idx, (label, desc) in enumerate(options):
+        selected = (idx in checked) if multi else (idx == cursor)
+        active = idx == cursor
+        row = Text(_PAD + "  ")
+        row.append("‹ " if active else "  ", style=theme.accent_bright)
+        row.append("●" if selected else "○", style=theme.accent_bright if selected else theme.dim)
+        row.append(f" {label}", style="bold white" if active else (theme.accent if selected else theme.desc))
+        if active:
+            row.append(" ›", style=theme.accent_bright)
+        if desc:
+            row.append(f"  ·  {desc}", style=theme.muted if active else theme.dim)
+        rows.append(row)
+
+    hints = "↑/↓ move · Space toggle · Enter continue · Esc back" if multi else "↑/↓ move · Enter continue · Esc back"
+    viewport_h = calc_viewport(height, header_h=11, action_h=2)
+    total = len(rows)
+    max_scroll = max(0, total - viewport_h)
+    start = min(max(0, cursor - viewport_h // 2 + 2), max_scroll)
+    visible = rows[start : start + viewport_h]
+    visible.extend(Text("") for _ in range(max(0, viewport_h - len(visible))))
+    scrollbar = build_scrollbar(viewport_h, total, start, max_scroll)
+    if scrollbar is not None:
+        viewport: Table | Group = Table(
+            show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True
+        )
+        viewport.add_column(ratio=1)
+        viewport.add_column(width=1)
+        viewport.add_row(Group(*visible), scrollbar)
+    else:
+        viewport = Group(*visible)
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + heading, style="bold white"),
+        build_progress_dots(_SCHEDULE_STEP_NAMES, step_index, theme=theme),
+        Text(_PAD + hints, style=theme.muted),
+        Text(""),
+        viewport,
+    )
+    return build_page_panel(content, theme=theme, height=height)
 
 
 def _build_changelog_screen(
@@ -3537,6 +3645,305 @@ def _build_performance_screen(
     return build_page_panel(content, theme=PERFORMANCE_THEME, height=height)
 
 
+def _reporting_theme_swatch(palette: dict) -> Text:
+    """A small strip of colored blocks previewing a palette's key roles."""
+    swatch = Text()
+    for role in ("bg2", "accent", "accent2", "fg", "muted"):
+        swatch.append("  ", style=f"on {palette.get(role, '#888888')}")
+    return swatch
+
+
+def _reporting_detail_rows(report, theme, width: int) -> list:
+    """One-line Text renderables for the report detail viewport.
+
+    Renders the DeliveryReport artifact directly (headline banner, metric meters,
+    titled theme/highlight sections, delivered-items table) instead of coloring
+    pre-rendered plaintext by prefix. Every renderable is exactly one terminal
+    line (prose is wrapped manually) so the line-based scroll math stays exact.
+    """
+    import textwrap
+
+    from yeaboi.ui.shared._components import build_meter
+
+    if report is None:
+        return [Text(PAD + "  (nothing to show)", style=theme.muted, justify="left")]
+
+    wrap_w = max(24, width - len(PAD) - 12)
+    rows: list = []
+
+    def _emoji_for(slot: str, default: str) -> str:
+        for s, e in report.emoji_theme:
+            if s == slot and e:
+                return e
+        return default
+
+    def _wrapped(text: str, style: str, indent: str = "  ") -> None:
+        for seg in textwrap.wrap(str(text), wrap_w) or [""]:
+            rows.append(Text(PAD + indent + seg, style=style, justify="left"))
+
+    def _section(slot: str, default_emoji: str, label: str) -> None:
+        rows.append(Text(""))
+        rows.append(Text(PAD + f"  {_emoji_for(slot, default_emoji)} {label}", style=f"bold {theme.accent}"))
+
+    # Headline banner + period framing.
+    if report.headline:
+        _wrapped(report.headline, f"bold {theme.accent_bright}")
+    dates = f"{report.period_start} → {report.period_end}".strip(" →")
+    period_line = report.period_label + (f"  ·  {dates}" if dates else "")
+    if report.sprint_names:
+        period_line += f"  ·  {', '.join(report.sprint_names)}"
+    rows.append(Text(PAD + "  " + period_line, style=theme.muted, justify="left", overflow="ellipsis", no_wrap=True))
+
+    # Metrics — value + label + a compact meter scaled to the largest number.
+    if report.metrics:
+        _section("metrics", "📊", "By the numbers")
+        numeric: dict[str, int] = {}
+        for label, value in report.metrics:
+            try:
+                numeric[label] = int(str(value))
+            except ValueError:
+                pass
+        max_n = max(numeric.values(), default=0)
+        label_w = max(len(str(label)) for label, _ in report.metrics)
+        for label, value in report.metrics:
+            row = Text(PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+            row.append(f"{label:<{label_w}}  ", style=theme.desc)
+            row.append(f"{value:>4}", style=f"bold {theme.accent_bright}")
+            if label in numeric and max_n > 0:
+                row.append("  ")
+                row.append_text(build_meter(numeric[label], max_n, width=12, theme=theme))
+            rows.append(row)
+
+    # Supporting signals — code/docs corroboration (reference, never the subject).
+    if getattr(report, "supporting_signals", ()):
+        _section("metrics", "🧾", "Supporting signals")
+        kind_labels = {"pull_requests": "Pull requests", "commits": "Commits", "doc_updates": "Doc updates"}
+        source_labels = {
+            "github": "GitHub",
+            "azuredevops": "Azure DevOps",
+            "confluence": "Confluence",
+            "notion": "Notion",
+        }
+        for sig in report.supporting_signals:
+            row = Text(PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+            row.append(f"{kind_labels.get(sig.kind, sig.kind)} · {source_labels.get(sig.source, sig.source)}  ")
+            row.stylize(theme.desc)
+            row.append(str(sig.count), style=f"bold {theme.accent_bright}")
+            rows.append(row)
+            for sample in sig.samples[:2]:
+                rows.append(
+                    Text(PAD + "    • " + sample, style=theme.muted, justify="left", no_wrap=True, overflow="ellipsis")
+                )
+
+    if report.executive_summary:
+        _section("summary", "📋", "Executive summary")
+        _wrapped(report.executive_summary, theme.value)
+
+    for ttitle, outcomes in report.themes:
+        _section("themes", "🧩", ttitle)
+        for outcome in outcomes:
+            for i, seg in enumerate(textwrap.wrap(str(outcome), wrap_w - 2) or [""]):
+                bullet = "• " if i == 0 else "  "
+                rows.append(Text(PAD + "  " + bullet + seg, style=theme.desc, justify="left"))
+
+    if report.highlights:
+        _section("highlights", "⭐", "Highlights")
+        for hl in report.highlights:
+            for i, seg in enumerate(textwrap.wrap(str(hl), wrap_w - 2) or [""]):
+                bullet = "• " if i == 0 else "  "
+                rows.append(Text(PAD + "  " + bullet + seg, style=theme.desc, justify="left"))
+
+    if report.delivered_items:
+        _section("thanks", "✅", f"Delivered items ({len(report.delivered_items)})")
+        shown = report.delivered_items[:30]
+        key_w = max((len(i.key) for i in shown if i.key), default=0)
+        for item in shown:
+            row = Text(PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+            if key_w:
+                row.append(f"{item.key:<{key_w}}  ", style=theme.id)
+            row.append(item.title, style=theme.value)
+            if item.status:
+                row.append(f"  · {item.status}", style=theme.good)
+            if item.assignee:
+                row.append(f"  · {item.assignee}", style=theme.muted)
+            rows.append(row)
+        if len(report.delivered_items) > 30:
+            rows.append(Text(PAD + f"  … and {len(report.delivered_items) - 30} more", style=theme.dim))
+
+    if report.warnings:
+        _section("summary", "⚠", "Notices")
+        for warning in report.warnings:
+            _wrapped(warning, theme.warn)
+
+    return rows
+
+
+def _build_reporting_theme_screen(
+    reporting_data: dict,
+    *,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+) -> Panel:
+    """The Reporting palette picker — every theme previewed as a color swatch strip.
+
+    Lists the built-in deck palettes plus any custom ones from
+    ``~/.yeaboi/data/reporting_themes.json``; the footer tells the user where to
+    add their own.
+    """
+    from yeaboi.ui.shared._components import REPORTING_THEME, build_reveal_subtitle, reporting_title
+
+    theme = REPORTING_THEME
+    title = reporting_title(shimmer_tick, width=width)
+    sub = build_reveal_subtitle("Choose a presentation palette", sub_reveal, pad=PAD)
+    names = reporting_data.get("theme_names", []) or ["midnight"]
+    palettes = reporting_data.get("palettes", {}) or {}
+    cursor = max(0, min(reporting_data.get("theme_cursor", 0), len(names) - 1))
+    current = reporting_data.get("theme", "midnight")
+    from yeaboi.reporting.themes import BUILTIN_PALETTES
+
+    builtin_count = len(BUILTIN_PALETTES)  # built-ins are listed first (themes.all_palettes order)
+
+    rows: list = []
+    for idx, name in enumerate(names):
+        focused = idx == cursor
+        is_current = name == current
+        row = Text(PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+        row.append("‹ " if focused else "  ", style=theme.accent_bright)
+        row.append("●" if is_current else "○", style=theme.accent_bright if is_current else theme.dim)
+        row.append(f" {name:<12}", style="bold white" if focused else theme.accent if is_current else theme.desc)
+        if focused:
+            row.append("› ", style=theme.accent_bright)
+        else:
+            row.append("  ")
+        row.append_text(_reporting_theme_swatch(palettes.get(name, {})))
+        if idx >= builtin_count:
+            row.append("  · custom", style=theme.dim)
+        rows.append(row)
+
+    header = _analysis_setup_header(
+        "Theme",
+        "↑/↓ preview · Enter selects · Esc keeps the current palette",
+        brand="REPORTING SETUP",
+        theme=theme,
+    )
+    footer = Text(PAD + "Add your own palettes in ~/.yeaboi/data/reporting_themes.json", style=theme.dim)
+    # header_h counts ALL non-viewport rows: borders+padding 4, title block 9
+    # (blank/title/blank/sub/blank), setup header 3, footer block 3, buttons 3+blank.
+    viewport = _analysis_toggle_viewport(rows, cursor, height=height, header_h=23)
+
+    actions = reporting_data.get("actions") or ["Select", "Back"]
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        *header,
+        viewport,
+        Text(""),
+        footer,
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+    return build_page_panel(content, theme=REPORTING_THEME, height=height)
+
+
+def _build_reporting_style_screen(
+    reporting_data: dict,
+    *,
+    width: int = 80,
+    height: int = 24,
+    action_sel: int = 0,
+    shimmer_tick: float | None = None,
+    sub_reveal: float | None = None,
+) -> Panel:
+    """The Reporting deck-style options list — one row per DeckStyle field.
+
+    ↑/↓ move the cursor, Space changes the focused option in a working copy; the
+    runner's Save button persists it to ``~/.yeaboi/data/reporting_prefs.json``,
+    Reset restores the defaults, Back/Esc discards unsaved edits. Color rows
+    preview their resolved hex as a small swatch against the currently selected
+    palette.
+    """
+    from yeaboi.reporting.style import CONTENT_FIT_LABELS, FONT_PRESETS, STYLE_FIELDS, DeckStyle, resolve_color
+    from yeaboi.ui.shared._components import REPORTING_THEME, build_reveal_subtitle, reporting_title
+
+    theme = REPORTING_THEME
+    title = reporting_title(shimmer_tick, width=width)
+    sub = build_reveal_subtitle("Customize the presentation style", sub_reveal, pad=PAD)
+    style = reporting_data.get("style") or DeckStyle()
+    palette = (reporting_data.get("palettes", {}) or {}).get(reporting_data.get("theme", "midnight"), {})
+    cursor = max(0, min(reporting_data.get("style_cursor", 0), len(STYLE_FIELDS) - 1))
+
+    rows: list = []
+    for idx, (field, label, kind) in enumerate(STYLE_FIELDS):
+        focused = idx == cursor
+        value = getattr(style, field)
+        row = Text(PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
+        row.append("‹ " if focused else "  ", style=theme.accent_bright)
+        row.append(f"{label:<28}", style="bold white" if focused else theme.desc)
+        row.append("› " if focused else "  ", style=theme.accent_bright)
+        if kind == "bool":
+            row.append("● on" if value else "○ off", style=theme.good if value else theme.dim)
+        elif kind == "color":
+            row.append(value if value else "theme default", style=theme.accent if value else theme.dim)
+            resolved = resolve_color(value, palette, "")
+            if resolved:
+                row.append("  ")
+                row.append("  ", style=f"on {resolved}")
+        elif kind == "choice":
+            if field == "font_family":
+                pretty = FONT_PRESETS[value]["label"]
+            elif field == "content_fit":
+                pretty = CONTENT_FIT_LABELS.get(value, value)
+            else:
+                pretty = value
+            row.append(str(pretty), style=theme.accent)
+        elif kind == "int":
+            row.append(str(value), style=theme.accent)
+        else:  # text
+            row.append(value if value else "(none)", style=theme.accent if value else theme.dim)
+        rows.append(row)
+
+    header = _analysis_setup_header(
+        "Style",
+        "↑/↓ choose · Space changes · Save persists · Esc discards",
+        brand="REPORTING SETUP",
+        theme=theme,
+    )
+    footer = Text(
+        PAD + "Save writes ~/.yeaboi/data/reporting_prefs.json — applies to the deck and .pptx", style=theme.dim
+    )
+    # header_h counts ALL non-viewport rows: borders+padding 4, title block 9
+    # (blank/title/blank/sub/blank), setup header 3, footer block 3, buttons 3+blank.
+    viewport = _analysis_toggle_viewport(rows, cursor, height=height, header_h=23)
+
+    actions = reporting_data.get("actions") or ["Save", "Reset", "Back"]
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        sub,
+        Text(""),
+        *header,
+        viewport,
+        Text(""),
+        footer,
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+    return build_page_panel(content, theme=REPORTING_THEME, height=height)
+
+
 def _build_reporting_screen(
     reporting_data: dict,
     *,
@@ -3551,19 +3958,28 @@ def _build_reporting_screen(
 ) -> Panel:
     """Build the Reporting screen using shared TUI components.
 
-    Three views, all rendered here (the run page owns which is active):
-    - "picker": choose a reporting period (Last sprint / Last month / Whole quarter)
-      with ▲/▼, then Generate a business-friendly delivery report.
-    - "sprint_select": for a quarter, a checkbox list of sprints (▸ cursor, ■/□
-      toggle) with the quarter's sprints pre-checked — Space toggles, Enter generates.
-    - "detail": the generated report (headline, metrics, themes, highlights),
-      scrollable, with Export / Theme / Back buttons.
+    Four views, all rendered here (the run page owns which is active):
+    - "picker": choose a reporting period (Last week / Last sprint / Last month /
+      Whole quarter / Custom date range) as analysis-style setup toggle rows.
+    - "sprint_select": for a quarter, a multi-select of sprints (same toggle-row
+      treatment) with the quarter's sprints pre-checked — Space toggles, Enter
+      generates.
+    - "theme_select": palette list with color-swatch previews (built-ins + custom)
+      — delegated to ``_build_reporting_theme_screen``.
+    - "style_select": the persisted deck-style options list — delegated to
+      ``_build_reporting_style_screen``.
+    - "detail": the generated report rendered richly from the DeliveryReport
+      artifact (``_reporting_detail_rows``), scrollable, with Export / Share /
+      Anonymize / Theme / Back buttons.
 
-    reporting_data keys: session_name, view ("picker"|"sprint_select"|"detail"),
-    periods (list[(key, label, hint)]), selected_idx (int), theme (str), detail_lines
-    (list[str] plaintext), detail_title (str), actions (list[str]), message (str),
-    quarter_label (str), sprints (list[SprintRef]), sprint_cursor (int),
-    sprint_checked (set[int]).
+    reporting_data keys: session_name, view, periods (list[(key, label, hint)]),
+    selected_idx (int), theme (str), report (DeliveryReport | None), detail_title
+    (str), actions (list[str]), message (str), sources_summary (str — the picker's
+    "Sources: … · Code: … · Docs: …" status line), quarter_label (str), sprints
+    (list[SprintRef]), sprint_cursor (int), sprint_checked (set[int]),
+    theme_names (list[str]), palettes (dict), theme_cursor (int), style
+    (DeckStyle), style_cursor (int), style_summary (str — the picker's
+    "Style: …" status line).
 
     Uses REPORTING_THEME (indigo) with shared buttons, scrollbar, and viewport.
 
@@ -3572,10 +3988,30 @@ def _build_reporting_screen(
     from yeaboi.ui.shared._components import REPORTING_THEME, build_reveal_subtitle, reporting_title
 
     theme = REPORTING_THEME
-    title = reporting_title(shimmer_tick, width=width)
     view = reporting_data.get("view", "picker")
+    if view == "theme_select":
+        return _build_reporting_theme_screen(
+            reporting_data,
+            width=width,
+            height=height,
+            action_sel=action_sel,
+            shimmer_tick=shimmer_tick,
+            sub_reveal=sub_reveal,
+        )
+    if view == "style_select":
+        return _build_reporting_style_screen(
+            reporting_data,
+            width=width,
+            height=height,
+            action_sel=action_sel,
+            shimmer_tick=shimmer_tick,
+            sub_reveal=sub_reveal,
+        )
+
+    title = reporting_title(shimmer_tick, width=width)
     session_name = reporting_data.get("session_name", "")
     deck_theme = reporting_data.get("theme", "midnight")
+    palettes = reporting_data.get("palettes", {}) or {}
     message = reporting_data.get("message", "")
 
     if view == "detail":
@@ -3591,7 +4027,7 @@ def _build_reporting_screen(
     actions = reporting_data.get("actions") or ["Generate Report", "Theme", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
-    # ── Sprint-select view — checkbox list of the quarter's sprints ──────────────
+    # ── Sprint-select view — multi-select of the quarter's sprints ───────────────
     if view == "sprint_select":
         sprints = reporting_data.get("sprints", []) or []
         cursor = max(0, min(reporting_data.get("sprint_cursor", 0), len(sprints) - 1)) if sprints else 0
@@ -3601,36 +4037,32 @@ def _build_reporting_screen(
         if message:
             rows.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
             rows.append(Text(""))
-        n_checked = len(checked)
-        rows.append(Text(_PAD + f"  Space to toggle · {n_checked} selected · Enter to generate", style=theme.muted))
-        rows.append(Text(""))
         for idx, sp in enumerate(sprints):
-            is_cursor = idx == cursor
-            is_checked = idx in checked
-            box = "■" if is_checked else "□"
-            cur_mark = "▸ " if is_cursor else "  "
-            rng = f"({sp.start_date} → {sp.end_date})" if sp.start_date else "(no dates)"
-            row = Text(justify="left")
-            row.append(_PAD + "  " + cur_mark, style=theme.accent_bright if is_cursor else theme.dim)
-            row.append(box + " ", style=theme.accent if is_checked else theme.dim)
-            name_style = "bold white" if is_cursor else (theme.value if is_checked else theme.desc)
-            row.append(f"{sp.name}  ", style=name_style)
-            row.append(rng, style=theme.muted)
-            if getattr(sp, "in_quarter", False):
-                row.append("  · in quarter", style=theme.dim)
-            rows.append(row)
+            rng = f"{sp.start_date} → {sp.end_date}" if sp.start_date else "no dates"
+            note = rng + ("  · in quarter" if getattr(sp, "in_quarter", False) else "")
+            rows.append(
+                _analysis_toggle_row(
+                    sp.name, "", focused=idx == cursor, selected=idx in checked, note=note, theme=theme
+                )
+            )
         if not sprints:
             rows.append(Text(_PAD + "  No sprints found.", style=theme.muted, justify="left"))
 
-        viewport_h = calc_viewport(height, header_h=6, action_h=4)
+        header = _analysis_setup_header(
+            "Sprints",
+            f"Space toggles · {len(checked)} selected · Enter generates · Esc back",
+            brand="REPORTING SETUP",
+            theme=theme,
+        )
+        viewport_h = calc_viewport(height, header_h=13, action_h=4)
         total_lines = len(rows)
         # Window around the cursor row so it stays visible as you move.
-        cursor_line = min(total_lines - 1, cursor + (3 if message else 1) + 1) if sprints else 0
+        cursor_line = min(total_lines - 1, cursor + (2 if message else 0)) if sprints else 0
         max_scroll = max(0, total_lines - viewport_h)
         start = 0 if total_lines <= viewport_h else max(0, min(cursor_line - viewport_h // 2, max_scroll))
         visible = rows[start : start + viewport_h]
 
-        _sb_text = build_scrollbar(viewport_h, total_lines, start, max_scroll, always_show=True)
+        _sb_text = build_scrollbar(viewport_h, total_lines, start, max_scroll)
         padded_lines = list(visible)
         for _ in range(max(0, viewport_h - len(visible))):
             padded_lines.append(Text(""))
@@ -3651,6 +4083,7 @@ def _build_reporting_screen(
             Text(""),
             sub,
             Text(""),
+            *header,
             viewport_renderable,
             Text(""),
             btn_top,
@@ -3659,7 +4092,7 @@ def _build_reporting_screen(
         )
         return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
-    # ── Picker view — choose the reporting period ────────────────────────────────
+    # ── Picker view — choose the reporting period (setup toggle rows) ────────────
     if view != "detail":
         periods = reporting_data.get("periods", []) or []
         selected_idx = max(0, min(reporting_data.get("selected_idx", 0), len(periods) - 1)) if periods else 0
@@ -3668,19 +4101,37 @@ def _build_reporting_screen(
         if message:
             body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
-        body.append(Text(_PAD + "Choose a reporting period:", style=f"bold {theme.accent}", justify="left"))
-        body.append(Text(""))
+        body.extend(
+            _analysis_setup_header(
+                "Period",
+                "↑/↓ choose · ←/→ buttons · Enter generates",
+                brand="REPORTING SETUP",
+                theme=theme,
+            )
+        )
         for idx, (_key, label, hint) in enumerate(periods):
             is_sel = idx == selected_idx
-            marker = "▸ " if is_sel else "  "
-            row = Text(justify="left")
-            row.append(_PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
-            row.append(label, style=theme.value if is_sel else theme.desc)
-            body.append(row)
-            if hint:
-                body.append(Text(_PAD + "    " + hint, style=theme.muted, justify="left"))
-            body.append(Text(""))
-        body.append(Text(_PAD + f"Presentation theme: {deck_theme}", style=theme.muted, justify="left"))
+            body.append(_analysis_toggle_row(label, hint, focused=is_sel, selected=is_sel, theme=theme))
+        body.append(Text(""))
+        theme_row = Text(PAD + f"Presentation theme: {deck_theme}  ", style=theme.muted, justify="left")
+        theme_row.append_text(_reporting_theme_swatch(palettes.get(deck_theme, {})))
+        body.append(theme_row)
+        sources_summary = reporting_data.get("sources_summary", "")
+        if sources_summary:
+            body.append(
+                Text(PAD + sources_summary, style=theme.muted, justify="left", no_wrap=True, overflow="ellipsis")
+            )
+        style_summary = reporting_data.get("style_summary", "")
+        if style_summary:
+            body.append(
+                Text(
+                    PAD + f"Style: {style_summary}",
+                    style=theme.muted,
+                    justify="left",
+                    no_wrap=True,
+                    overflow="ellipsis",
+                )
+            )
 
         content = Group(
             Text(""),
@@ -3696,35 +4147,33 @@ def _build_reporting_screen(
         )
         return build_page_panel(content, theme=REPORTING_THEME, height=height)
 
-    # ── Detail view — the generated report, scrollable ───────────────────────────
-    def _styled(line: str) -> Text:
-        stripped = line.strip()
-        if not stripped:
-            return Text("")
-        style = theme.value
-        if stripped.startswith("⚠"):
-            style = theme.warn
-        elif stripped.startswith(("•", "-")) or line.startswith("  "):
-            style = theme.desc
-        elif stripped.endswith(":") or line == line.lstrip():
-            style = f"bold {theme.accent}"
-        return Text(_PAD + "  " + line, style=style, justify="left")
-
-    body_lines: list = []
+    # ── Detail view — the generated report, rendered richly, scrollable ──────────
+    # Transient status messages (e.g. "Exported PowerPoint to …") render as a
+    # PINNED one-row banner in the header area, never inside the scroll viewport —
+    # otherwise a scrolled-down reader would miss them entirely (standup pattern).
+    banner: Text | None = None
     if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        body_lines.append(Text(""))
-    for line in reporting_data.get("detail_lines", []) or ["(nothing to show)"]:
-        body_lines.append(_styled(line))
+        # no_wrap is load-bearing: header_h counts the banner as exactly one row.
+        banner = Text(PAD + message, style=theme.accent_bright, justify="left", no_wrap=True, overflow="ellipsis")
 
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    body_lines: list = list(_reporting_detail_rows(reporting_data.get("report"), theme, width))
+
+    # header_h must match the Group rows above the viewport exactly (blank +
+    # 6-row title + blank + sub + optional banner + blank), else the button
+    # bottom border falls off the fixed-height panel.
+    header_h = 10 + (1 if banner is not None else 0)
+    if banner is not None and (height - 4) - header_h - 4 < 3:
+        # Terminal too short — drop the banner rather than push the buttons off.
+        banner = None
+        header_h = 10
+    viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, viewport_h)
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
@@ -3745,6 +4194,7 @@ def _build_reporting_screen(
         title,
         Text(""),
         sub,
+        *((banner,) if banner is not None else ()),
         Text(""),
         viewport_renderable,
         Text(""),
@@ -4584,7 +5034,9 @@ def _build_standup_progress_screen(
     if theme is None:
         theme = STANDUP_THEME
     if title is None:
-        title = standup_title()
+        # width picks the tall ANSI wordmark where it fits; without it the title
+        # helper assumes 80 cols and drops to the pixel-block fallback art.
+        title = standup_title(width=width)
 
     _spinners = ["◐", "◓", "◑", "◒"]
     spinner = _spinners[int(anim_tick * 4) % len(_spinners)]
@@ -5276,6 +5728,15 @@ def _build_settings_screen(
         # sessions DB…). Clicking it opens the data-dir editor (with the move offer).
         _heading("Storage")
         _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)", env="YEABOI_HOME")
+        # Filesystem-sandbox whitelist (fs_policy.py): the folders yeaboi may touch
+        # outside its data home. Comma-separated, edited in place like any other row.
+        _allowed = config_data.get("YEABOI_ALLOWED_PATHS", "")
+        _row(
+            "Allowed Paths",
+            _allowed or "none — sandboxed to data dir",
+            value_style="" if _allowed else theme.dim,
+            env="YEABOI_ALLOWED_PATHS",
+        )
 
     def _sec_standup() -> None:
         # Secrets (Slack webhook, SMTP password) are masked like every other credential.

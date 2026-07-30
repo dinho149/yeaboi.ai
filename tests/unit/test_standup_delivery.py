@@ -228,3 +228,66 @@ class TestFactoryAndFanOut:
         results = deliver(_report(), ["terminal", "slack"])
         assert results["terminal"] is True
         assert results["slack"] is False
+
+
+class TestDayOverDayRender:
+    def _report(self):
+        return StandupReport(
+            date="2026-07-10",
+            confidence_pct=74,
+            confidence_label="At risk",
+            confidence_delta=-8,
+            confidence_trend="declining",
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="login page",
+                    progress_note="Still on PSOT-9 from the last standup.",
+                    outlook="Likely to finish PSOT-9 today.",
+                ),
+            ),
+        )
+
+    def test_plaintext_progress_and_outlook_lines(self):
+        text = render.format_standup_plaintext(self._report())
+        assert "↺ Since last standup: Still on PSOT-9 from the last standup." in text
+        assert "→ Outlook: Likely to finish PSOT-9 today." in text
+
+    def test_plaintext_confidence_trend_fragment(self):
+        assert "▼ 8 vs last" in render.format_standup_plaintext(self._report())
+
+    def test_improving_fragment(self):
+        rep = StandupReport(
+            date="2026-07-10",
+            confidence_pct=90,
+            confidence_label="On track",
+            confidence_delta=6,
+            confidence_trend="improving",
+        )
+        assert "▲ +6 vs last" in render.format_standup_plaintext(rep)
+
+    def test_steady_or_no_history_no_fragment(self):
+        for trend in ("steady", ""):
+            rep = StandupReport(
+                date="2026-07-10",
+                confidence_pct=90,
+                confidence_label="On track",
+                confidence_delta=1,
+                confidence_trend=trend,
+            )
+            assert "vs last" not in render.format_standup_plaintext(rep)
+
+    def test_empty_fields_render_no_lines(self):
+        text = render.format_standup_plaintext(_report())
+        assert "Since last standup" not in text
+        assert "Outlook" not in text
+
+    def test_rich_includes_progress_and_outlook(self):
+        from rich.console import Console
+
+        console = Console(width=120, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(render.format_standup_rich(self._report()))
+        out = cap.get()
+        assert "Since last standup" in out
+        assert "Outlook" in out

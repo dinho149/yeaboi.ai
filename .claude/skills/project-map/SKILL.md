@@ -170,6 +170,7 @@ Key flags to know about when modifying the CLI:
 | `--theme {dark,light}` | Terminal colour theme |
 | `--dry-run` | TUI with mock data, no LLM calls |
 | `--setup` | Re-run first-time setup wizard |
+| `--allow-path PATH` | Session-only filesystem sandbox grant (repeatable); persistent allowances via `YEABOI_ALLOWED_PATHS` |
 | `--install-skill [DIR]` | Install bundled OpenClaw skill to `~/.openclaw/skills/` (or custom dir) |
 | `--standup-run` | Headless: run a daily standup and deliver it (what the OS scheduler invokes) |
 | `--standup-interactive` | With `--standup-run`: timed prompt for the user's update + confirm before generating (TTY-aware; headless fallback) |
@@ -213,6 +214,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `CONFLUENCE_BASE_URL` / `CONFLUENCE_EMAIL` / `CONFLUENCE_API_TOKEN` — optional standalone Atlassian login for Confluence. Confluence reuses the Jira creds by default; these let it be configured **without** Jira (they win over `JIRA_*` when set — see `config.get_confluence_base_url`). The Docs setup step collects them inline when Jira wasn't configured.
 - `NOTION_TOKEN` — optional, Notion integration token (independent doc tool; its own auth, not shared with Jira/Confluence). Enables the 5 `notion_*` tools + analysis/standup context.
 - `NOTION_ROOT_PAGE_ID` — optional, default parent for created Notion pages; also gates the Notion source in the Daily Standup activity feed (the Confluence-space-key analog)
+- `YEABOI_ALLOWED_PATHS` — optional, comma-separated filesystem whitelist for the sandbox (`fs_policy.py`). The app may only read/write inside `~/.yeaboi` (or `$YEABOI_HOME`), a small documented built-in allowlist (CWD `.env`/`SCRUM.md`/`scrum-docs`, `~/.openclaw`, `~/.aws/config` read-only, LaunchAgents + Application Support for standup scheduling, legacy `~/.scrum-agent`), and the paths listed here. Session-only grants: `--allow-path`. Editable in the TUI via Settings → Allowed Paths.
 - `YEABOI_HOME` — optional, relocates the whole data tree (exports, logs, sessions DB, scrum-docs…; default `~/.yeaboi`). Resolved once at import time in `paths.py` (`_resolve_root()`); `.env` itself always stays at `~/.yeaboi/.env` (the bootstrap file that holds this var). Editable in the TUI via Settings → Data Dir, which offers to move the existing tree (`paths.move_data_tree`) and notes a restart is needed to fully apply.
 - `NOTION_EXPORT_PARENT_PAGE_ID` — optional, a dedicated Notion page the Export buttons publish under; **blank groups exports under an auto-created "yeaboi" page (🤙 icon) inside `NOTION_ROOT_PAGE_ID`**. With neither set, Notion export shows a warning pointing at Setup (the Notion API can't create top-level pages).
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).

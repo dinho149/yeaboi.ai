@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,76 @@ class TestExportDirHelpers:
     def test_reporting_empty_key_fallback(self, monkeypatch, tmp_path):
         monkeypatch.setattr(paths, "REPORTING_EXPORTS_DIR", tmp_path / "reporting")
         assert paths.get_reporting_export_dir("").name == "report"
+
+    def test_reporting_prefs_path_under_data_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(paths, "REPORTING_PREFS_FILE", tmp_path / "data" / "reporting_prefs.json")
+        p = paths.get_reporting_prefs_path()
+        assert p == tmp_path / "data" / "reporting_prefs.json"
+        assert p.parent.is_dir()  # data dir created, file itself may not exist yet
+
+
+class TestSafeKey:
+    """_safe_key must never let a key escape its export root."""
+
+    def test_normal_key_lowercased(self):
+        assert paths._safe_key("MyProj", "project") == "myproj"
+
+    def test_empty_key_falls_back(self):
+        assert paths._safe_key("", "project") == "project"
+        assert paths._safe_key("   ", "project") == "project"
+
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            ("../evil", "evil"),
+            ("../../etc/passwd", "etc-passwd"),
+            ("a/b", "a-b"),
+            ("a\\b", "a-b"),
+            ("..", "project"),
+            ("./.", "project"),
+            ("/absolute/path", "absolute-path"),
+        ],
+    )
+    def test_traversal_neutralized(self, key, expected):
+        assert paths._safe_key(key, "project") == expected
+
+    def test_export_helper_cannot_escape(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "ANALYSIS_EXPORTS_DIR", tmp_path / "exports" / "analysis")
+        d = paths.get_analysis_export_dir("../../outside")
+        assert d.is_relative_to(tmp_path / "exports" / "analysis")
+
+
+class TestGetDbPathPermissions:
+    """get_db_path() hardens the data dir (0o700) and DB file (0o600)."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_db(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(paths, "DB_PATH", tmp_path / "data" / "sessions.db")
+        monkeypatch.setattr(paths, "LEGACY_DB_PATH", tmp_path / "sessions.db")
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_creates_restricted_db_and_dir(self):
+        db = paths.get_db_path()
+        assert (db.stat().st_mode & 0o777) == 0o600
+        assert (db.parent.stat().st_mode & 0o777) == 0o700
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_repairs_existing_lax_db(self, tmp_path):
+        (tmp_path / "data").mkdir()
+        db = tmp_path / "data" / "sessions.db"
+        db.touch(mode=0o644)
+        db.chmod(0o644)
+        paths.get_db_path()
+        assert (db.stat().st_mode & 0o777) == 0o600
+
+    def test_legacy_rename_still_works(self, tmp_path):
+        (tmp_path / "sessions.db").write_bytes(b"")
+        db = paths.get_db_path()
+        assert db == tmp_path / "data" / "sessions.db"
+        assert db.exists()
+        assert not (tmp_path / "sessions.db").exists()
 
 
 class TestResolveRoot:

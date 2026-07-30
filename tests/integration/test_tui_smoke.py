@@ -112,16 +112,18 @@ class TestTuiLiveSmoke:
         """The real TUI reaches mode-select in a pty and exits 0 on 'q'."""
         proc, master_fd = _spawn_tui_in_pty(tmp_path)
         try:
+            # Strip only a bounded tail: the markers repaint on EVERY frame, and
+            # re-stripping the whole multi-MB buffer each poll throttles the pty
+            # drain quadratically (the child blocks on a full pty buffer) —
+            # since the full-screen background tint landed, that pushed the
+            # match past the deadline. 256 KiB spans several full frames.
             booted = _read_until(
                 master_fd,
                 proc,
-                lambda b: any(m in _strip_ansi(b) for m in _MODE_SCREEN_MARKERS),
-                # The splash intro grew (duck jump → wordmark → waddle-clear) and the
-                # marker now lands at ~30s here, right on the old deadline. This is a
-                # liveness check, not a performance budget — give it real headroom.
-                timeout=75.0,
+                lambda b: any(m in _strip_ansi(b[-262_144:]) for m in _MODE_SCREEN_MARKERS),
+                timeout=30.0,
             )
-            text = _strip_ansi(booted)
+            text = _strip_ansi(booted[-262_144:])
             assert any(m in text for m in _MODE_SCREEN_MARKERS), (
                 f"mode-select screen never rendered; exit={proc.poll()}; last output:\n{text[-2000:]}"
             )

@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from datetime import datetime
-from html import escape as _e
 from pathlib import Path
 
 from yeaboi.agent.state import RetroReport
+from yeaboi.html_theme import escape as _e
 from yeaboi.retro.board import CARRIED_STATUS_LABELS, RETRO_GRID_LABELS, RETRO_GRIDS
 
 logger = logging.getLogger(__name__)
@@ -99,38 +100,97 @@ def build_retro_markdown(report: RetroReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_retro_html(report: RetroReport) -> str:
-    """Return the retro as a self-contained HTML document (shared design system)."""
-    from yeaboi.html_theme import chip, html_page
+# Fixed semantic hues for the four retro columns (board order, not count order).
+_GRID_VARS = {"went_well": "--ok", "didnt_go_well": "--warn", "action_items": "--accent", "demos": "--info"}
+
+
+def _column_bar(by_grid: dict) -> str:
+    """Cards-per-column segmented bar + counted legend, in board order, or ""."""
+    from yeaboi.html_theme import legend, segment_bar
+
+    counts = [(grid, len(by_grid.get(grid, []))) for grid in RETRO_GRIDS]
+    if sum(n for _, n in counts) <= 0:
+        return ""
+    present = [(grid, n) for grid, n in counts if n > 0]
+    bar = segment_bar([(n, _GRID_VARS[grid]) for grid, n in present], title="Cards per column")
+    key = legend([(f"{RETRO_GRID_LABELS[grid]} {n}", _GRID_VARS[grid]) for grid, n in present])
+    return f"<div style='margin-bottom:.6rem'>{bar}{key}</div>"
+
+
+def _volume_sparkline(report: RetroReport, history) -> str:
+    """Card-volume trend across this session's past retros, or ""."""
+    from yeaboi.html_theme import history_series, sparkline_card
+
+    points = history_series(
+        history,
+        date_key="retro_date",
+        value_key="card_count",
+        cutoff_date=report.date,
+        current=(report.date, len(report.cards)),
+    )
+    return sparkline_card(
+        points,
+        title="Card volume trend",
+        svg_title=f"Card volume — last {len(points)} retros",
+    )
+
+
+def build_retro_html(report: RetroReport, *, history: Sequence[dict] = ()) -> str:
+    """Return the retro as a self-contained HTML document (shared design system).
+
+    ``history`` is optional ``RetroStore.get_history`` rows (newest-first); with
+    two or more retros it powers the card-volume trend sparkline.
+    """
+    from yeaboi.html_theme import avatar, chip, html_page
 
     by_grid = report.by_grid()
-    participants = _e(", ".join(report.participants)) if report.participants else "&mdash;"
+    if report.participants:
+        participants = "".join(
+            f"<span style='display:inline-flex;align-items:center;gap:.35rem;margin-right:.8rem'>"
+            f"{avatar(name)}{_e(name)}</span>"
+            for name in report.participants
+        )
+    else:
+        participants = "&mdash;"
     parts: list[str] = [
-        f"<p><strong>Participants:</strong> {participants}</p>",
-        # Responsive grid of the four retro columns.
-        "<div class='analysis-grid'>",
+        f"<p style='display:flex;flex-wrap:wrap;align-items:center;gap:.3rem'>"
+        f"<strong>Participants:</strong> {participants}</p>",
+        _column_bar(by_grid),
+        _volume_sparkline(report, history),
     ]
+
+    # Responsive grid of the retro columns — only columns WITH cards get a
+    # card; empty ones collapse to footnote lines so the busy columns widen.
+    footnotes: list[str] = []
+    sections: list[str] = []
     for grid in RETRO_GRIDS:
         cards = by_grid.get(grid, [])
-        parts.append(f"<div class='card'><h3>{_e(RETRO_GRID_LABELS[grid])}</h3>")
-        if cards:
-            parts.append("<ul style='margin:0;padding-left:1.1rem'>")
-            for c in cards:
-                if c.origin == "ai":
-                    tag = " <em style='color:var(--text-muted)'>(AI)</em>"
-                elif c.author:
-                    tag = f" <em style='color:var(--text-muted)'>— {_e(c.author)}</em>"
-                else:
-                    tag = ""
-                rx = _reactions_str(c)
-                # Reaction emojis are from a fixed set, but chip() escapes defensively anyway.
-                rx_html = f" {chip(rx)}" if rx else ""
-                parts.append(f"<li>{_e(c.text)}{tag}{rx_html}</li>")
-            parts.append("</ul>")
-        else:
-            parts.append("<p style='color:var(--text-muted)'>No cards.</p>")
-        parts.append("</div>")
-    parts.append("</div>")  # grid
+        if not cards:
+            footnotes.append(f"<p class='card-footnote'>{_e(RETRO_GRID_LABELS[grid])} — no cards.</p>")
+            continue
+        rows = [
+            f"<div class='card'><h3>{_e(RETRO_GRID_LABELS[grid])}</h3>",
+            "<ul style='margin:0;padding-left:1.1rem'>",
+        ]
+        for c in cards:
+            if c.origin == "ai":
+                tag = " <em style='color:var(--text-muted)'>(AI)</em>"
+            elif c.author:
+                tag = (
+                    f" <em style='color:var(--text-muted);display:inline-flex;align-items:center;gap:.3rem'>"
+                    f"— {avatar(c.author)}{_e(c.author)}</em>"
+                )
+            else:
+                tag = ""
+            rx = _reactions_str(c)
+            # Reaction emojis are from a fixed set, but chip() escapes defensively anyway.
+            rx_html = f" {chip(rx)}" if rx else ""
+            rows.append(f"<li>{_e(c.text)}{tag}{rx_html}</li>")
+        rows.append("</ul></div>")
+        sections.append("".join(rows))
+    if sections:
+        parts.append(f"<div class='analysis-grid member-grid'>{''.join(sections)}</div>")
+    parts.extend(footnotes)
 
     # Last sprint's action items + their recorded progress.
     if report.carried_action_items:
@@ -155,11 +215,12 @@ def build_retro_html(report: RetroReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def export_retro(report: RetroReport, *, project_name: str = "") -> dict[str, Path]:
+def export_retro(report: RetroReport, *, project_name: str = "", history: Sequence[dict] = ()) -> dict[str, Path]:
     """Write the retro as Markdown + HTML under the retro export dir.
 
     Returns ``{"markdown": Path, "html": Path}``. One file per day (dated
     filename) — a re-run the same day overwrites so the latest wins.
+    ``history`` (RetroStore.get_history rows) feeds the HTML trend chart.
     """
     from yeaboi.paths import get_retro_export_dir
 
@@ -169,6 +230,6 @@ def export_retro(report: RetroReport, *, project_name: str = "") -> dict[str, Pa
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     md_path.write_text(build_retro_markdown(report), encoding="utf-8")
-    html_path.write_text(build_retro_html(report), encoding="utf-8")
+    html_path.write_text(build_retro_html(report, history=history), encoding="utf-8")
     logger.info("Retro exported: %s , %s", md_path, html_path)
     return {"markdown": md_path, "html": html_path}

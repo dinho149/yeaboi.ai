@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from datetime import datetime
-from html import escape as _e
 from pathlib import Path
 
 from yeaboi.agent.state import DeliveryReport
+from yeaboi.html_theme import escape as _e
+from yeaboi.reporting.style import DeckStyle
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,19 @@ def build_report_markdown(report: DeliveryReport, *, charts_dir: Path | None = N
         lines += ["| Metric | Value |", "|--------|-------|"]
         lines += [f"| {_cell(label)} | **{_cell(value)}** |" for label, value in report.metrics]
         lines += [""]
+    if report.supporting_signals:
+        from yeaboi.reporting.context import SIGNAL_KIND_LABELS, SIGNAL_SOURCE_LABELS, signals_sentence
+
+        lines += ["### Supporting signals", ""]
+        sentence = signals_sentence(report.supporting_signals)
+        if sentence:
+            lines += [f"_{sentence} from the same period (reference only)._", ""]
+        for sig in report.supporting_signals:
+            kind = SIGNAL_KIND_LABELS.get(sig.kind, sig.kind)
+            source = SIGNAL_SOURCE_LABELS.get(sig.source, sig.source)
+            lines.append(f"- **{kind} · {source}:** {sig.count}")
+            lines += [f"  - {s}" for s in sig.samples[:3]]
+        lines += [""]
     if report.executive_summary:
         lines += [f"## {_emoji(report, 'summary')}Executive summary", "", report.executive_summary, ""]
     for ttitle, outcomes in report.themes:
@@ -135,17 +150,46 @@ def build_report_markdown(report: DeliveryReport, *, charts_dir: Path | None = N
 
 
 def _html_list(items: tuple[str, ...]) -> str:
-    return "<ul>" + "".join(f"<li>{_e(it)}</li>" for it in items) + "</ul>"
+    """Hanging-indent bullet list; packed prose items split into fragments."""
+    from yeaboi.html_theme import prose_bullets
+
+    lis: list[str] = []
+    for item in items:
+        fragments = prose_bullets(item) or [item]
+        lis.extend(f"<li>{_e(fragment)}</li>" for fragment in fragments)
+    return f"<div class='analysis-section'><ul>{''.join(lis)}</ul></div>"
 
 
-def build_report_html(report: DeliveryReport, *, chart_path: Path | None = None) -> str:
-    """Return the delivery report as a self-contained HTML document (reuses plan CSS).
+def _volume_sparkline(report: DeliveryReport, history: Sequence[dict]) -> str:
+    """Delivered-volume trend across this project's past reports, or ""."""
+    from yeaboi.html_theme import history_series, sparkline_card
 
-    ``chart_path`` (a PNG rendered by the markdown builder) is base64-embedded
-    so the HTML stays offline-openable.
+    # Reporting history can be cross-session; keep the trend to this project.
+    if report.project_name:
+        history = [r for r in history if r.get("project_name") in ("", report.project_name)]
+    points = history_series(
+        history,
+        date_key="period_end",
+        value_key="item_count",
+        cutoff_date=report.period_end,
+        current=(report.period_end, len(report.delivered_items)),
+    )
+    return sparkline_card(
+        points,
+        title="Delivery volume trend",
+        svg_title=f"Delivered items — last {len(points)} reports",
+    )
+
+
+def build_report_html(report: DeliveryReport, *, history: Sequence[dict] = ()) -> str:
+    """Return the delivery report as a self-contained HTML document (shared design system).
+
+    The delivered-work breakdown renders as a theme-aware inline segment bar
+    (no matplotlib PNG in the HTML path — the Markdown/Notion/Confluence path
+    keeps its chart image). ``history`` is optional ``ReportingStore.get_history``
+    rows (newest-first); with two or more reports it powers the volume trend.
     """
-    from yeaboi.html_exporter import img_b64_tag
-    from yeaboi.html_theme import html_page, notice_block, stat_tile
+    from yeaboi.html_theme import avatar, counted_segment_bar, html_page, notice_block, stat_tile
 
     parts: list[str] = []
     if report.headline:
@@ -154,6 +198,9 @@ def build_report_html(report: DeliveryReport, *, chart_path: Path | None = None)
         cards = "".join(stat_tile(value, label) for label, value in report.metrics)
         parts.append(f"<h2>{_e(_emoji(report, 'metrics'))}By the numbers</h2>")
         parts.append(f"<div class='stat-grid'>{cards}</div>")
+    sparkline = _volume_sparkline(report, history)
+    if sparkline:
+        parts.append(sparkline)
     if report.executive_summary:
         body = _e(report.executive_summary).replace("\n", "<br>")
         parts.append(f"<h2>{_e(_emoji(report, 'summary'))}Executive summary</h2><p>{body}</p>")
@@ -164,10 +211,13 @@ def build_report_html(report: DeliveryReport, *, chart_path: Path | None = None)
     if report.delivered_items:
         rows = "".join(
             f"<tr><td><code>{_e(it.key)}</code></td><td>{_e(it.title)}</td>"
-            f"<td>{_e(it.status)}</td><td>{_e(it.assignee)}</td></tr>"
+            f"<td>{_e(it.status)}</td>"
+            f"<td><span style='display:inline-flex;align-items:center;gap:.35rem'>"
+            f"{avatar(it.assignee) if it.assignee else ''}{_e(it.assignee) or '&mdash;'}</span></td></tr>"
             for it in report.delivered_items
         )
-        chart_tag = img_b64_tag(chart_path, "Delivered items") if chart_path else ""
+        breakdown = counted_segment_bar(_delivered_counts(report), title="Delivered items breakdown")
+        chart_tag = f"<div style='margin-bottom:.6rem'>{breakdown}</div>" if breakdown else ""
         parts.append(
             "<h2>Delivered items</h2>" + chart_tag + "<table class='data-table'>"
             "<thead><tr><th>Key</th><th>Title</th><th>Status</th><th>Delivered by</th></tr></thead>"
@@ -189,19 +239,48 @@ def build_report_html(report: DeliveryReport, *, chart_path: Path | None = None)
 # ---------------------------------------------------------------------------
 
 
-def export_report(report: DeliveryReport, *, project_name: str = "", theme: str = "midnight") -> dict[str, Path]:
-    """Write the report as Markdown + HTML + a slide deck under the reporting export dir.
-
-    Returns ``{"markdown": Path, "html": Path, "slides": Path}``. Filenames carry the
-    period + end date — a re-run for the same period/day overwrites so the latest wins.
-    """
+def _export_stem(report: DeliveryReport, project_name: str) -> tuple[Path, str]:
+    """The export directory + filename stem shared by every reporting format."""
     from yeaboi.paths import get_reporting_export_dir
-    from yeaboi.reporting.presentation import build_presentation_html
 
     key = _slug(project_name or report.project_name or "report")
     out_dir = get_reporting_export_dir(key)
     period_slug = _slug(report.period_label) or "period"
-    stem = f"report-{period_slug}-{report.period_end or 'latest'}"
+    return out_dir, f"report-{period_slug}-{report.period_end or 'latest'}"
+
+
+def export_pptx_only(
+    report: DeliveryReport, *, project_name: str = "", theme: str = "midnight", style: DeckStyle | None = None
+) -> Path | None:
+    """Write just the .pptx deck (the export picker's PowerPoint option).
+
+    Returns the written path, or None when python-pptx isn't installed.
+    """
+    from yeaboi.reporting.pptx_export import build_report_pptx
+
+    out_dir, stem = _export_stem(report, project_name)
+    return build_report_pptx(report, out_dir / f"{stem}.pptx", theme=theme, style=style)
+
+
+def export_report(
+    report: DeliveryReport,
+    *,
+    project_name: str = "",
+    theme: str = "midnight",
+    history: Sequence[dict] = (),
+    style: DeckStyle | None = None,
+) -> dict[str, Path]:
+    """Write the report as Markdown + HTML + a slide deck under the reporting export dir.
+
+    Returns ``{"markdown": Path, "html": Path, "slides": Path}`` plus a ``"pptx"`` entry
+    when python-pptx is installed (the optional ``docs`` extra). Filenames carry the
+    period + end date — a re-run for the same period/day overwrites so the latest wins.
+    ``style`` customizes only the presentation outputs (slide deck + .pptx); the
+    Markdown/HTML report is a document, not a presentation, and stays unstyled.
+    """
+    from yeaboi.reporting.presentation import build_presentation_html
+
+    out_dir, stem = _export_stem(report, project_name)
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     slides_path = out_dir / f"{stem}-slides.html"
@@ -209,10 +288,18 @@ def export_report(report: DeliveryReport, *, project_name: str = "", theme: str 
 
     md = build_report_markdown(report, charts_dir=out_dir)
     md_path.write_text(localize_images(md, out_dir), encoding="utf-8")
-    chart_path = out_dir / "delivered.png"
-    html_path.write_text(
-        build_report_html(report, chart_path=chart_path if chart_path.is_file() else None), encoding="utf-8"
-    )
-    slides_path.write_text(build_presentation_html(report, theme=theme), encoding="utf-8")
-    logger.info("Reporting exported: %s , %s , %s", md_path, html_path, slides_path)
-    return {"markdown": md_path, "html": html_path, "slides": slides_path}
+    # The HTML path draws its breakdown as an inline theme-aware segment bar;
+    # only the Markdown/Notion/Confluence path embeds the matplotlib PNG.
+    html_path.write_text(build_report_html(report, history=history), encoding="utf-8")
+    slides_path.write_text(build_presentation_html(report, theme=theme, style=style), encoding="utf-8")
+    paths = {"markdown": md_path, "html": html_path, "slides": slides_path}
+    try:
+        from yeaboi.reporting.pptx_export import build_report_pptx
+
+        pptx_path = build_report_pptx(report, out_dir / f"{stem}.pptx", theme=theme, style=style)
+        if pptx_path is not None:
+            paths["pptx"] = pptx_path
+    except Exception as e:  # noqa: BLE001 — the .pptx is a best-effort extra format
+        logger.warning("reporting pptx export failed: %s", e)
+    logger.info("Reporting exported: %s", " , ".join(str(p) for p in paths.values()))
+    return paths

@@ -258,6 +258,49 @@ class TestHistoryTools:
         # No report recorded → the tool raises, surfaced as ok=False in the envelope.
         assert payload["ok"] is False
 
+    def test_reporting_export_style_merges_over_saved_prefs(self, seeded_session, tmp_db, monkeypatch, tmp_path):
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.reporting.store import ReportingStore
+        from yeaboi.reporting.style import DeckStyle
+
+        with ReportingStore(tmp_db) as store:
+            store.record_run(DeliveryReport(period_label="Last month"), session_id=seeded_session)
+        # Saved prefs say classic font; the per-call dict overrides only the layout.
+        monkeypatch.setattr("yeaboi.reporting.style.load_deck_style", lambda: DeckStyle(font_family="classic"))
+        seen = {}
+
+        def _capture(report, **kw):
+            seen.update(kw)
+            p = tmp_path / "out.md"
+            p.write_text("x")
+            return {"markdown": p, "html": p, "slides": p}
+
+        monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
+        payload = call_tool("reporting_export", {"style": {"layout": "compact", "footer_text": "ACME"}})
+        assert payload["ok"] is True
+        assert seen["style"] == DeckStyle(font_family="classic", layout="compact", footer_text="ACME")
+
+    def test_reporting_export_tolerates_garbage_style(self, seeded_session, tmp_db, monkeypatch, tmp_path):
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.reporting.store import ReportingStore
+        from yeaboi.reporting.style import DEFAULT_STYLE, DeckStyle
+
+        with ReportingStore(tmp_db) as store:
+            store.record_run(DeliveryReport(period_label="Last month"), session_id=seeded_session)
+        monkeypatch.setattr("yeaboi.reporting.style.load_deck_style", lambda: DeckStyle())
+        seen = {}
+
+        def _capture(report, **kw):
+            seen.update(kw)
+            p = tmp_path / "out.md"
+            p.write_text("x")
+            return {"markdown": p, "html": p, "slides": p}
+
+        monkeypatch.setattr("yeaboi.reporting.export.export_report", _capture)
+        payload = call_tool("reporting_export", {"style": {"layout": "diagonal", "max_bullets": "lots"}})
+        assert payload["ok"] is True  # tolerant validation, never a crash
+        assert seen["style"] == DEFAULT_STYLE
+
     def test_team_profile_get_no_db(self, tmp_db):
         payload = call_tool("team_profile_get")
         assert payload["ok"] is True
@@ -839,6 +882,19 @@ class TestStandupConfigTools:
         assert payload["data"]["tracker_sources"] == ["jira"]
         assert payload["data"]["members"] == ["Alice", "Bob"]
 
+    def test_config_set_rejects_sandboxed_repo_path(self, seeded_session, tmp_path):
+        """A repo_path outside the sandbox whitelist is refused at write time."""
+        payload = call_tool("standup_config_set", {"repo_path": "/denied-sandbox-dir/repo"})
+        assert payload["ok"] is False
+        assert "YEABOI_ALLOWED_PATHS" in payload["error"]["message"]
+
+    def test_config_set_accepts_whitelisted_repo_path(self, seeded_session, tmp_path):
+        repo = tmp_path / "repo"  # tmp_path is whitelisted by the conftest fixture
+        repo.mkdir()
+        payload = call_tool("standup_config_set", {"repo_path": str(repo)})
+        assert payload["ok"] is True
+        assert payload["data"]["config"]["repo_path"] == str(repo)
+
     def test_config_set_rejects_bad_time(self, seeded_session):
         payload = call_tool("standup_config_set", {"time": "quarter past nine"})
         assert payload["ok"] is False
@@ -848,6 +904,24 @@ class TestStandupConfigTools:
         payload = call_tool("standup_config_set", {"delivery_channels": ["pager"]})
         assert payload["ok"] is False
         assert "unknown delivery channel" in payload["error"]["message"]
+
+    def test_config_set_automation_fields_merge(self, seeded_session):
+        call_tool("standup_config_set", {"time": "09:15"})
+        payload = call_tool("standup_config_set", {"automation_markers": "wiz", "automation_handling": "off"})
+        config = payload["data"]["config"]
+        assert config["automation_markers"] == "wiz"
+        assert config["automation_handling"] == "off"
+        assert config["time"] == "09:15"  # earlier value preserved
+        # Omitting both keeps the tuned values.
+        payload = call_tool("standup_config_set", {"enabled": True})
+        config = payload["data"]["config"]
+        assert config["automation_markers"] == "wiz"
+        assert config["automation_handling"] == "off"
+
+    def test_config_set_rejects_bad_automation_handling(self, seeded_session):
+        payload = call_tool("standup_config_set", {"automation_handling": "flag"})
+        assert payload["ok"] is False
+        assert "automation_handling" in payload["error"]["message"]
 
 
 class TestServerEntry:

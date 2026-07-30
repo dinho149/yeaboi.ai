@@ -62,7 +62,9 @@ def export_questionnaire_md(questionnaire: QuestionnaireState | None, path: Path
     Returns:
         The resolved path that was written.
     """
-    path = Path(path).resolve()
+    from yeaboi.fs_policy import resolve_and_check
+
+    path = resolve_and_check(path, mode="write", context="questionnaire export")
     essential_list = ", ".join(f"Q{q}" for q in sorted(ESSENTIAL_QUESTIONS))
     lines = [_TEMPLATE_HEADER.format(essential=essential_list)]
 
@@ -114,7 +116,9 @@ def parse_questionnaire_md(path: Path) -> dict[int, str]:
         FileNotFoundError: If path does not exist.
         ValueError: If zero valid question/answer pairs are found.
     """
-    path = Path(path)
+    from yeaboi.fs_policy import resolve_and_check
+
+    path = resolve_and_check(path, mode="read", context="questionnaire import")
     text = path.read_text()
     lines = text.splitlines()
 

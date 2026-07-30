@@ -277,6 +277,8 @@ class MemberUpdate:
     name: str = ""
     summary: str = ""  # general overview synthesizing all category evidence + self-report
     blockers: str = ""  # anything blocking them (empty if none)
+    progress_note: str = ""  # one sentence linking yesterday's standup to today (continued/completed/stalled)
+    outlook: str = ""  # one sentence predicting the member's likely focus for the day ahead
     source: str = "inferred"  # "inferred" (activity only) | "self-reported" (typed, no activity) | "combined" (both)
     self_report: str = ""  # the member's own typed update, kept verbatim as supporting context
     links: tuple[tuple[str, str], ...] = ()  # (label, url) refs from their activity — tuple-of-pairs stays frozen
@@ -308,6 +310,8 @@ class StandupReport:
     confidence_pct: int = 0  # 0-100 confidence we'll hit the sprint goal
     confidence_label: str = ""  # "On track" | "At risk" | "Behind" | "Insufficient data"
     confidence_rationale: str = ""  # short human-readable explanation
+    confidence_delta: int = 0  # today's pct minus the previous standup's pct (0 when no usable history)
+    confidence_trend: str = ""  # "improving" | "steady" | "declining" | "" (no usable history)
     team_summary: str = ""  # LLM-synthesized team-level narrative
     member_updates: tuple[MemberUpdate, ...] = ()
     activity_counts: tuple[tuple[str, int], ...] = ()  # (source, count) — tuple so it stays frozen/serializable
@@ -585,6 +589,23 @@ class DeliveredItem:
 
 
 @dataclass(frozen=True)
+class SupportingSignal:
+    """One corroborating activity stream from the same reporting period.
+
+    Deterministic reference context (no LLM) — assembled by reporting/context.py
+    from the standup code collector and the analysis doc reader. These signals
+    corroborate the delivered-ticket story ("backed by 24 merged PRs and 5 doc
+    updates"); they are never the report's subject, so only bounded counts and
+    sample titles are kept — never bodies.
+    """
+
+    kind: str = ""  # "pull_requests" | "commits" | "doc_updates"
+    source: str = ""  # "github" | "azuredevops" | "confluence" | "notion"
+    count: int = 0
+    samples: tuple[str, ...] = ()  # bounded "Title (ref)" strings
+
+
+@dataclass(frozen=True)
 class DeliveryReport:
     """A business-friendly summary of delivered work over a reporting period.
 
@@ -611,6 +632,7 @@ class DeliveryReport:
     metrics: tuple[tuple[str, str], ...] = ()  # (label, value), e.g. ("Items delivered", "23")
     delivered_items: tuple[DeliveredItem, ...] = ()  # raw completed-ticket evidence (deterministic)
     emoji_theme: tuple[tuple[str, str], ...] = ()  # (slot, emoji) chosen by the LLM, e.g. ("highlights", "🚀")
+    supporting_signals: tuple[SupportingSignal, ...] = ()  # code/docs corroboration (deterministic)
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
 

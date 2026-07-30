@@ -116,6 +116,10 @@ def _reconstructor_for(cls):
         from yeaboi.team_profile import _dict_to_profile
 
         return _dict_to_profile
+    if name == "DeliveryReport":
+        from yeaboi.reporting.store import _dict_to_report
+
+        return _dict_to_report
     return None
 
 

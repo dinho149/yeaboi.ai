@@ -14,10 +14,10 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
-from html import escape as _e
 from pathlib import Path
 
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.html_theme import escape as _e
 from yeaboi.html_theme import html_page, notice_block
 
 logger = logging.getLogger(__name__)
@@ -110,8 +110,26 @@ def build_review_markdown(review: SixMonthReview) -> str:
 def _html_section(title: str, items: tuple[str, ...]) -> str:
     if not items:
         return ""
-    lis = "".join(f"<li>{_e(it)}</li>" for it in items)
-    return f"<h2>{_e(title)}</h2><ul>{lis}</ul>"
+    from yeaboi.html_theme import prose_bullets
+
+    lis: list[str] = []
+    for item in items:
+        # Long packed items split into scannable fragments; short ones stay whole.
+        fragments = prose_bullets(item) if len(item) > 160 else [item]
+        lis.extend(f"<li>{_e(fragment)}</li>" for fragment in fragments or [item])
+    return f"<h2>{_e(title)}</h2><div class='analysis-section'><ul>{''.join(lis)}</ul></div>"
+
+
+def _engineer_row(name: str) -> str:
+    """Identity row with the initials avatar (html_page escapes its heading, so it lives in the body)."""
+    if not name:
+        return ""
+    from yeaboi.html_theme import avatar
+
+    return (
+        f"<p style='display:inline-flex;align-items:center;gap:.45rem;font-size:1.05rem'>"
+        f"{avatar(name)}<strong>{_e(name)}</strong></p>"
+    )
 
 
 def _html_doc(title: str, body: str, *, subtitle: str = "") -> str:
@@ -125,7 +143,7 @@ def _html_doc(title: str, body: str, *, subtitle: str = "") -> str:
 
 def build_prep_html(prep: OneOnOnePrep) -> str:
 
-    parts = []
+    parts = [_engineer_row(prep.engineer)]
     if prep.activity_summary:
         parts.append(f"<h2>Sprint work</h2><p>{_e(prep.activity_summary)}</p>")
     parts.append(_html_section("Carried-over action items", prep.carried_action_items))
@@ -140,7 +158,7 @@ def build_prep_html(prep: OneOnOnePrep) -> str:
 
 def build_completion_html(record: OneOnOneRecord) -> str:
 
-    parts = []
+    parts = [_engineer_row(record.engineer)]
     if record.email_subject:
         parts.append(f"<p><strong>Subject:</strong> {_e(record.email_subject)}</p>")
     if record.email_summary:
@@ -154,7 +172,7 @@ def build_completion_html(record: OneOnOneRecord) -> str:
 
 def build_review_html(review: SixMonthReview) -> str:
 
-    parts = []
+    parts = [_engineer_row(review.engineer)]
     if review.overall:
         parts.append(f"<h2>Overall</h2><p>{_e(review.overall)}</p>")
     parts.append(_html_section("Strengths", review.strengths))

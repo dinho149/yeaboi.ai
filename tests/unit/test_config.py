@@ -361,6 +361,30 @@ class TestApplyConfigValue:
         assert "JIRA_EMAIL" not in os.environ  # cleared, not left stale
 
 
+class TestGetSessionsDb:
+    """get_sessions_db() — legacy DB path, hardened to 0o600 when present."""
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_existing_db_perms_repaired(self, monkeypatch, tmp_path):
+        import stat
+
+        from yeaboi.config import get_sessions_db
+
+        monkeypatch.setattr("yeaboi.config.Path.home", lambda: tmp_path)
+        db = tmp_path / ".yeaboi" / "sessions.db"
+        db.parent.mkdir()
+        db.touch(mode=0o644)
+        db.chmod(0o644)
+        assert get_sessions_db() == db
+        assert stat.S_IMODE(db.stat().st_mode) == 0o600
+
+    def test_missing_db_not_created(self, monkeypatch, tmp_path):
+        from yeaboi.config import get_sessions_db
+
+        monkeypatch.setattr("yeaboi.config.Path.home", lambda: tmp_path)
+        assert not get_sessions_db().exists()
+
+
 class TestGetConfigFile:
     """Tests for get_config_file() — returns ~/.yeaboi/.env path."""
 
@@ -624,6 +648,40 @@ class TestNotionConfig:
 
         monkeypatch.delenv("NOTION_ROOT_PAGE_ID", raising=False)
         assert get_notion_root_page_id() is None
+
+
+class TestAllowedPaths:
+    """The sandbox whitelist setting (YEABOI_ALLOWED_PATHS)."""
+
+    def test_empty_by_default(self, monkeypatch):
+        from yeaboi.config import get_allowed_paths
+
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        assert get_allowed_paths() == ()
+
+    def test_csv_parsed_and_deduped(self, monkeypatch):
+        from yeaboi.config import get_allowed_paths
+
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/a, /b ,/a,,  ")
+        assert get_allowed_paths() == ("/a", "/b")
+
+    def test_set_round_trip(self, monkeypatch, tmp_path):
+        from yeaboi.config import get_allowed_paths, set_allowed_paths
+
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        set_allowed_paths(["/x", " /y ", "/x"])
+        assert os.environ["YEABOI_ALLOWED_PATHS"] == "/x,/y"
+        assert get_allowed_paths() == ("/x", "/y")
+        assert "YEABOI_ALLOWED_PATHS" in (tmp_path / ".env").read_text()
+
+    def test_add_allowed_path_appends(self, monkeypatch, tmp_path):
+        from yeaboi.config import add_allowed_path, get_allowed_paths
+
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/existing")
+        add_allowed_path("/new")
+        assert get_allowed_paths() == ("/existing", "/new")
 
 
 class TestStorageAndExportConfig:

@@ -442,6 +442,19 @@ def _since_dt(days: int, since=None):
     return datetime.now(UTC) - timedelta(days=int(days))
 
 
+def _author_type(user) -> str:
+    """Return "bot" when a GitHub user object is an app/bot account, else "".
+
+    GitHub marks integrations with ``type == "Bot"`` and their logins end in
+    ``[bot]`` — free provider metadata the standup's automation filter uses
+    (see standup/automation.py).
+    """
+    login = getattr(user, "login", "") or ""
+    if (getattr(user, "type", "") or "").lower() == "bot" or login.lower().endswith("[bot]"):
+        return "bot"
+    return ""
+
+
 def _raise_if_github_auth(e: Exception) -> None:
     """Re-raise a GitHub 401/403 credential error as a StandupSourceError.
 
@@ -798,6 +811,7 @@ def github_recent_reviews(repo_url: str, days: int = 1, since=None, metadata_cac
                     out.append(
                         {
                             "author": getattr(user, "login", "") or "",
+                            "author_type": _author_type(user),
                             "kind": "review",
                             "title": f"{state} PR #{pr.number}: {pr.title or ''}",
                             "body": getattr(review, "body", "") or "",
@@ -813,9 +827,14 @@ def github_recent_reviews(repo_url: str, days: int = 1, since=None, metadata_cac
                     if created is None or created.tzinfo is None or created < cutoff:
                         continue
                     user = getattr(comment, "user", None)
-                    items.append(
+                    # Appending to `out` (NOT the enclosing `items`, which is unbound
+                    # until the pool.map below runs) — the old `items.append` raised
+                    # NameError inside the worker and silently dropped every inline
+                    # review comment via the broad except.
+                    out.append(
                         {
                             "author": getattr(user, "login", "") or "",
+                            "author_type": _author_type(user),
                             "kind": "review",
                             "title": f"reviewed code on PR #{pr.number}: {pr.title or ''}",
                             "body": getattr(comment, "body", "") or "",

@@ -20,7 +20,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import DeliveredItem, DeliveryReport
+from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,15 @@ def _dict_to_report(d: dict) -> DeliveryReport:
     themes = tuple((str(t[0]), tuple(str(o) for o in t[1])) for t in d.get("themes", ()) if len(t) == 2)
     metrics = tuple((str(m[0]), str(m[1])) for m in d.get("metrics", ()) if len(m) == 2)
     emoji_theme = tuple((str(e[0]), str(e[1])) for e in d.get("emoji_theme", ()) if len(e) == 2)
+    signals = tuple(
+        SupportingSignal(
+            kind=s.get("kind", ""),
+            source=s.get("source", ""),
+            count=int(s.get("count", 0) or 0),
+            samples=tuple(str(x) for x in s.get("samples", ())),
+        )
+        for s in d.get("supporting_signals", ())
+    )
     return DeliveryReport(
         period_label=d.get("period_label", ""),
         period_start=d.get("period_start", ""),
@@ -85,6 +94,7 @@ def _dict_to_report(d: dict) -> DeliveryReport:
         metrics=metrics,
         delivered_items=items,
         emoji_theme=emoji_theme,
+        supporting_signals=signals,
         warnings=tuple(d.get("warnings", ())),
         generated_at=d.get("generated_at", ""),
     )

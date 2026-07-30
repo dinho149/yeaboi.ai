@@ -152,8 +152,15 @@ def _extract_pptx(path: Path) -> str | None:
 
 def _read_local_file(path_str: str) -> tuple[str, str, list[str]]:
     """Read a local roadmap file by suffix. Returns (text, label, warnings)."""
-    path = Path(path_str).expanduser()
-    label = path.name
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+    label = Path(path_str).expanduser().name
+    try:
+        path = resolve_and_check(path_str, mode="read", context="roadmap intake file")
+    except SandboxViolationError as e:
+        # Warning channel, not a crash — the roadmap run continues without
+        # this source and the message tells the user how to allow the path.
+        return "", label, [str(e)]
     if not path.exists() or not path.is_file():
         return "", label, [f"Roadmap file not found: {path}"]
 

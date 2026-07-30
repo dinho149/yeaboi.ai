@@ -1749,6 +1749,43 @@ def _phase_pipeline(
 # ---------------------------------------------------------------------------
 
 
+def _drain_sandbox_consents(console, live, _key, run_turn, note_message) -> None:
+    """Post-turn filesystem consent loop — ask about queued sandbox denials, then retry.
+
+    Why post-turn and not mid-graph: the graph runs on a worker thread
+    (_invoke_graph_thread) while the main thread owns the Live display, so a
+    tool that blocked on a terminal prompt would deadlock the render loop.
+    Instead fs_policy fails the tool call immediately (the LLM relays the
+    denial as a normal tool error) and queues a ConsentRequest; this function
+    pops the queue here — between turns, on the main thread — where taking
+    over the screen is safe. See docs: "Guardrails" — human-in-the-loop.
+
+    run_turn(text): submit a synthetic user turn through the normal chat
+    machinery so a granted path is retried automatically.
+    note_message(text): record that synthetic message in the visible transcript
+    (transparency — the user sees exactly what was injected).
+
+    Loops because the retried turn can itself hit a new path; terminates as
+    soon as every remaining request is denied (or the queue is empty).
+    """
+    from yeaboi import fs_policy
+    from yeaboi.ui.shared._consent import _apply_consent, _fs_consent_popup
+
+    while True:
+        granted: list = []
+        for req in fs_policy.pop_pending_denials():
+            choice = _fs_consent_popup(console, live, _key, FRAME_TIME_30FPS, True, req)
+            if _apply_consent(choice, req):
+                granted.append(req.path)
+        if not granted:
+            return
+        paths_txt = ", ".join(str(p) for p in granted)
+        retry_text = f"Access to {paths_txt} has been granted — please retry."
+        logger.info("sandbox consent: auto-retrying turn after grant of %s", paths_txt)
+        note_message(retry_text)
+        run_turn(retry_text)
+
+
 def _phase_chat(
     live: Live,
     console: Console,
@@ -1793,9 +1830,81 @@ def _phase_chat(
     def _chat_bottom() -> int:
         return _chat_scroll_meta.get("max_offset", 0)
 
+    def _run_graph_turn(text: str, chat_images: list[str]) -> None:
+        """Submit one user turn: graph.invoke on a worker thread + pulsing animation.
+
+        Shared by the Enter handler and the sandbox consent auto-retry, so a
+        synthetic retry message goes through exactly the same machinery as a
+        typed one (threading, error handling, snapshot, scroll pinning).
+        """
+        nonlocal graph_state, scroll_offset, _chat_follow
+        # The message itself stays text-only (nodes string-op on .content);
+        # surviving screenshots travel via the chat_images state field and are
+        # attached inside call_model.
+        user_msg = HumanMessage(content=text)
+        invoke_state = {**graph_state, "messages": [*graph_state.get("messages", []), user_msg]}
+        if chat_images:
+            invoke_state["chat_images"] = chat_images
+            logger.info("Chat message includes %d pasted image(s)", len(chat_images))
+
+        # Show processing state while the worker thread runs the graph.
+        result_box: list = [None, None]
+        thread = threading.Thread(
+            target=_invoke_graph_thread,
+            args=(graph, invoke_state, result_box),
+            daemon=True,
+        )
+        thread.start()
+
+        start = time.monotonic()
+        while thread.is_alive():
+            tick = time.monotonic() - start
+            w, h = console.size
+            live.update(
+                _build_chat_screen(
+                    messages,
+                    "",
+                    scroll_offset,
+                    width=w,
+                    height=h,
+                    processing=True,
+                    tick=tick,
+                    shimmer_tick=tick,
+                    scroll_meta=_chat_scroll_meta,
+                )
+            )
+            time.sleep(FRAME_TIME_30FPS)
+        thread.join()
+
+        if result_box[0] is not None:
+            graph_state = result_box[0]
+            ai_msgs = graph_state.get("messages", [])
+            if ai_msgs and isinstance(ai_msgs[-1], AIMessage):
+                messages.append(("ai", ai_msgs[-1].content))
+            # Save Point D — persist after chat messages
+            if project_id:
+                save_project_snapshot(project_id, graph_state)
+        elif result_box[1] is not None:
+            logger.error("Chat graph invoke failed: %s", result_box[1])
+            messages.append(("ai", f"Error: {result_box[1]}"))
+
+        # New reply — pin to the bottom (adopted after the next render).
+        scroll_offset = _SCROLL_BOTTOM
+        _chat_follow = True
+
     w, h = console.size
     live.update(
         _build_chat_screen(messages, input_value, scroll_offset, width=w, height=h, scroll_meta=_chat_scroll_meta)
+    )
+
+    # Denials can also queue during the earlier pipeline turns (project context
+    # loading, tracker tools) — surface them the moment the chat prompt opens.
+    _drain_sandbox_consents(
+        console,
+        live,
+        _key,
+        lambda t: _run_graph_turn(t, []),
+        lambda t: messages.append(("user", t)),
     )
 
     _chat_anim0 = time.monotonic()  # shimmer title clock
@@ -1838,61 +1947,21 @@ def _phase_chat(
             input_value = ""
             logger.debug("Chat message sent: len=%d", len(text))
 
-            # Invoke graph in background. The message itself stays text-only
-            # (nodes string-op on .content); surviving screenshots travel via
-            # the chat_images state field and are attached inside call_model.
             chat_images = referenced_images(text, chat_attachments)
             chat_attachments = []
-            user_msg = HumanMessage(content=text)
-            invoke_state = {**graph_state, "messages": [*graph_state.get("messages", []), user_msg]}
-            if chat_images:
-                invoke_state["chat_images"] = chat_images
-                logger.info("Chat message includes %d pasted image(s)", len(chat_images))
+            _run_graph_turn(text, chat_images)
 
-            # Show processing state
-            result_box: list = [None, None]
-            thread = threading.Thread(
-                target=_invoke_graph_thread,
-                args=(graph, invoke_state, result_box),
-                daemon=True,
+            # Turn complete (thread joined, result handled) — before the input
+            # prompt returns, surface any filesystem-sandbox denials the
+            # agent's tools hit during the turn. A grant auto-retries via a
+            # synthetic user turn through _run_graph_turn.
+            _drain_sandbox_consents(
+                console,
+                live,
+                _key,
+                lambda t: _run_graph_turn(t, []),
+                lambda t: messages.append(("user", t)),
             )
-            thread.start()
-
-            start = time.monotonic()
-            while thread.is_alive():
-                tick = time.monotonic() - start
-                w, h = console.size
-                live.update(
-                    _build_chat_screen(
-                        messages,
-                        "",
-                        scroll_offset,
-                        width=w,
-                        height=h,
-                        processing=True,
-                        tick=tick,
-                        shimmer_tick=tick,
-                        scroll_meta=_chat_scroll_meta,
-                    )
-                )
-                time.sleep(FRAME_TIME_30FPS)
-            thread.join()
-
-            if result_box[0] is not None:
-                graph_state = result_box[0]
-                ai_msgs = graph_state.get("messages", [])
-                if ai_msgs and isinstance(ai_msgs[-1], AIMessage):
-                    messages.append(("ai", ai_msgs[-1].content))
-                # Save Point D — persist after chat messages
-                if project_id:
-                    save_project_snapshot(project_id, graph_state)
-            elif result_box[1] is not None:
-                logger.error("Chat graph invoke failed: %s", result_box[1])
-                messages.append(("ai", f"Error: {result_box[1]}"))
-
-            # New reply — pin to the bottom (adopted after the render below).
-            scroll_offset = _SCROLL_BOTTOM
-            _chat_follow = True
 
         elif key in ("up", "scroll_up", "pageup", "home"):
             _ns = coalesce_scroll(scroll_offset, key, _chat_scroll_meta, _key)

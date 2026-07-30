@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
-from yeaboi.standup import categories, collector, confidence, sprint_context
+from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
 from yeaboi.standup.store import StandupStore
 
 logger = logging.getLogger(__name__)
@@ -254,7 +255,14 @@ def _detect_git_identity(repo_path: str) -> list[str]:
 
     commands: list[list[str]] = []
     if (repo_path or "").strip():
-        commands += [["git", "-C", repo_path, "config", key] for key in ("user.name", "user.email")]
+        # Sandbox: a configured-but-not-whitelisted repo_path contributes no
+        # repo-local identity (global git config still applies below).
+        from yeaboi.fs_policy import is_allowed
+
+        if is_allowed(repo_path, mode="read"):
+            commands += [["git", "-C", repo_path, "config", key] for key in ("user.name", "user.email")]
+        else:
+            logger.warning("standup: repo_path %s is outside the sandbox whitelist — skipping repo identity", repo_path)
     commands += [["git", "config", "--global", key] for key in ("user.name", "user.email")]
 
     identities: list[str] = []
@@ -395,6 +403,26 @@ def _group_activity_by_author(
     return grouped
 
 
+def _rebuild_bundle(bundle: collector.ActivityBundle, items: list[dict]) -> collector.ActivityBundle:
+    """Return a copy of ``bundle`` holding only ``items``, with per-source counts recomputed.
+
+    Carries errors, skipped, AND partial_sources — dropping partial_sources here
+    used to silently swallow partial-coverage warnings downstream.
+    """
+    per_source: dict[str, int] = {}
+    for item in items:
+        source = item.get("source", "")
+        per_source[source] = per_source.get(source, 0) + 1
+    counts = [(source, per_source.get(source, 0)) for source, _count in bundle.counts]
+    return collector.ActivityBundle(
+        items=items,
+        counts=counts,
+        errors=list(bundle.errors),
+        skipped=list(bundle.skipped),
+        partial_sources=list(bundle.partial_sources),
+    )
+
+
 def _filter_bundle_to_members(
     bundle: collector.ActivityBundle,
     alias_map: dict[str, set[str]],
@@ -402,23 +430,43 @@ def _filter_bundle_to_members(
     """Return only activity attributable to the authoritative saved roster."""
     known_aliases: set[str] = set().union(*alias_map.values()) if alias_map else set()
     items = [item for item in bundle.items if _normalize_author(item.get("author", "")) & known_aliases]
-    per_source: dict[str, int] = {}
-    for item in items:
-        source = item.get("source", "")
-        per_source[source] = per_source.get(source, 0) + 1
-    counts = [(source, per_source.get(source, 0)) for source, _count in bundle.counts]
     logger.info(
         "standup: roster filter retained %d/%d activity item(s) for %d member(s)",
         len(items),
         len(bundle.items),
         len(alias_map),
     )
-    return collector.ActivityBundle(
-        items=items,
-        counts=counts,
-        errors=list(bundle.errors),
-        skipped=list(bundle.skipped),
+    return _rebuild_bundle(bundle, items)
+
+
+def _drop_automated_activity(
+    bundle: collector.ActivityBundle,
+    config: dict | None,
+) -> tuple[collector.ActivityBundle, list[str]]:
+    """Remove service-hook/bot activity posted under members' identities.
+
+    The motivating case: a Wiz scanner hook posting PR review comments with the
+    user's PAT, which pure author matching credits to the human. Detection is
+    content/metadata/burst-based (standup/automation.py); anything excluded is
+    reported via the returned notice lines — never silent. ``automation_handling
+    = "off"`` disables the filter entirely.
+    """
+    handling = (config or {}).get("automation_handling", "exclude")
+    if handling == "off":
+        return bundle, []
+    kept, clusters = automation.partition_automated(
+        bundle.items,
+        custom_markers=automation.parse_custom_markers((config or {}).get("automation_markers", "")),
     )
+    if not clusters:
+        return bundle, []
+    logger.info(
+        "standup: excluded %d automated item(s) in %d cluster(s): %s",
+        sum(c.count for c in clusters),
+        len(clusters),
+        "; ".join(f"{c.reason} author={c.author!r} n={c.count} keys={list(c.keys[:3])}…" for c in clusters),
+    )
+    return _rebuild_bundle(bundle, kept), automation.notice_lines(clusters)
 
 
 def _member_links(acts: list[dict]) -> tuple[tuple[str, str], ...]:
@@ -491,19 +539,50 @@ def _fallback_summary(acts: list[dict]) -> str:
     return "No activity detected."
 
 
+_TICKET_KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+
+
+def _fallback_progress_note(yesterday_entry: dict, acts: list[dict]) -> str:
+    """Carried-over-work note without an LLM: yesterday's ticket keys ∩ today's.
+
+    Only states what the data proves (the same ticket keys appear on both
+    days); anything more interpretive is left to the LLM path.
+    """
+    yesterday_text = " ".join(str(v) for v in yesterday_entry.values())
+    yesterday_keys = set(_TICKET_KEY_RE.findall(yesterday_text))
+    today_keys = {str(a.get("key") or "") for a in acts}
+    carried = sorted(yesterday_keys & today_keys)
+    if not carried:
+        return ""
+    return f"Still on {', '.join(carried[:3])} (carried over from the last standup)."
+
+
+def _fallback_outlook(acts: list[dict]) -> str:
+    """Deterministic day-ahead prediction: assigned in-progress tickets only."""
+    wip_titles = [str(a.get("title") or "") for a in acts if a.get("kind") == "wip" and a.get("title")]
+    if not wip_titles:
+        return ""
+    return f"Likely continuing: {'; '.join(wip_titles[:2])}."[:300]
+
+
 def _build_fallback_member_updates(
     grouped: dict[str, list[dict]],
     self_reported: dict[str, str],
     coverage: dict[str, str] | None = None,
+    blocker_signals: dict[str, tuple[str, ...]] | None = None,
+    yesterday: dict[str, dict] | None = None,
 ) -> list[MemberUpdate]:
     """Deterministic per-member updates when the LLM is unavailable.
 
     Every member gets an activity-derived summary (a plain join of their
     activity titles); a self-report is carried alongside as supporting context,
-    never replacing the activity view.
+    never replacing the activity view. Detected blocker signals become the
+    blockers text directly, so blocker highlighting works without an LLM.
     """
     updates: list[MemberUpdate] = []
     coverage = coverage or {category: categories.COVERED for category in categories.CATEGORIES}
+    blocker_signals = blocker_signals or {}
+    yesterday = yesterday or {}
     for name, acts in grouped.items():
         split = categories.split_activity(acts)
         summary = _fallback_summary(acts)
@@ -513,6 +592,9 @@ def _build_fallback_member_updates(
             MemberUpdate(
                 name=name,
                 summary=summary,
+                blockers="; ".join(blocker_signals.get(name, ())),
+                progress_note=_fallback_progress_note(yesterday.get(name, {}), acts),
+                outlook=_fallback_outlook(acts),
                 self_report=self_reported.get(name, ""),
                 source=_member_source(name in self_reported, bool(acts)),
                 links=_member_links(acts),
@@ -579,6 +661,9 @@ def _summarize_members(
     self_reported_images: dict[str, list[str]] | None = None,
     alias_map: dict[str, set[str]] | None = None,
     category_coverage: tuple[tuple[str, str], ...] = (),
+    grouped: dict[str, list[dict]] | None = None,
+    blocker_signals: dict[str, tuple[str, ...]] | None = None,
+    yesterday: dict[str, dict] | None = None,
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
 
@@ -594,8 +679,14 @@ def _summarize_members(
     self_reported_images: per-member screenshot paths pasted (Ctrl+V) into "My
         Update" — attached to the summary LLM call as multimodal image blocks so
         the model can fold what they show into the team summary.
+    grouped/blocker_signals/yesterday: precomputed by run_standup (grouping is
+        shared with insights); all default to None so direct callers/tests keep
+        working — grouped is recomputed here when absent.
     """
-    grouped = _group_activity_by_author(bundle.items, members, alias_map)
+    if grouped is None:
+        grouped = _group_activity_by_author(bundle.items, members, alias_map)
+    blocker_signals = blocker_signals or {}
+    yesterday = yesterday or {}
     coverage = dict(category_coverage) or {category: categories.COVERED for category in categories.CATEGORIES}
 
     def _for_llm(acts: list[dict]) -> list[dict]:
@@ -628,13 +719,20 @@ def _summarize_members(
             ),
             "self_report": self_reported.get(name, ""),
             "coverage": coverage,
+            # Previous-standup context + deterministic blocker evidence — the
+            # prompt instructs the model to write a day-over-day progress_note
+            # from "yesterday" and to reflect every signal in "blockers".
+            "yesterday": yesterday.get(name, {}),
+            "blocker_signals": list(blocker_signals.get(name, ())),
         }
         for name in members
     ]
 
     def _fallback(extra_warnings: list[str]) -> tuple[list[MemberUpdate], str, list[str]]:
         return (
-            _build_fallback_member_updates(grouped, self_reported, coverage),
+            _build_fallback_member_updates(
+                grouped, self_reported, coverage, blocker_signals=blocker_signals, yesterday=yesterday
+            ),
             _build_fallback_team_summary(bundle, progress),
             extra_warnings,
         )
@@ -716,11 +814,21 @@ def _summarize_members(
         code_summary = _structured_summary(categories.CATEGORY_CODE, "code_summary")
         documentation_summary = _structured_summary(categories.CATEGORY_DOCUMENTATION, "documentation_summary")
         ticketing_summary = _structured_summary(categories.CATEGORY_TICKETING, "ticketing_summary")
+        # Deterministic clamps on the day-over-day fields: no progress note
+        # without an actual previous standup to compare against (the model can
+        # never invent a "yesterday"), and detected blocker signals surface
+        # even if the model dropped them from its 'blockers'.
+        progress_note = (m.get("progress_note") or "").strip() if name in yesterday else ""
+        blockers = (m.get("blockers") or "").strip()
+        if not blockers and blocker_signals.get(name):
+            blockers = "; ".join(blocker_signals[name])
         updates.append(
             MemberUpdate(
                 name=name,
                 summary=summary,
-                blockers=(m.get("blockers") or "").strip(),
+                blockers=blockers,
+                progress_note=progress_note,
+                outlook=(m.get("outlook") or "").strip(),
                 self_report=self_reported.get(name, ""),
                 source=_member_source(name in self_reported, bool(acts)),
                 links=_member_links(acts),
@@ -811,6 +919,12 @@ def run_standup(
         config = store.load_config(session_id)
         self_reported = store.get_my_updates(session_id, date_str)
         self_reported_images = store.get_my_update_images(session_id, date_str)
+        # Day-over-day context: the previous standup's full report (for the
+        # per-member progress notes + cross-standup blocker signals) and prior
+        # run metadata (for the confidence trend). Both are date-scoped so a
+        # same-day rerun never compares today against itself.
+        previous_report = store.get_previous_report(session_id, date_str)
+        prior_history = store.get_history(session_id, limit=10)
 
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
@@ -941,10 +1055,23 @@ def run_standup(
     # The Team selection is authoritative. Unlike the legacy behavior, an
     # unmatched activity author is never promoted into a new standup member.
     bundle = _filter_bundle_to_members(bundle, alias_map)
+    # Service hooks (e.g. a Wiz scanner using a member's PAT) post as the human;
+    # strip that noise BEFORE coverage/confidence/summaries so it never counts
+    # as personal work. Exclusions surface as Notices below.
+    bundle, automation_notices = _drop_automated_activity(bundle, config)
     category_coverage = categories.coverage_states(enabled_sources, bundle)
 
+    # Day-over-day insights over the final (roster-filtered, de-botted) view:
+    # deterministic blocker evidence + each member's previous-standup context.
+    grouped = _group_activity_by_author(bundle.items, members, alias_map)
+    blocker_signals = insights.detect_blocker_signals(grouped, previous_report=previous_report)
+    yesterday = insights.yesterday_context(previous_report)
+    if blocker_signals:
+        logger.info("standup: blocker signals detected for %d member(s)", len(blocker_signals))
+
     # Confidence must use the roster-filtered activity, otherwise work by an
-    # excluded outsider can make this team's sprint appear healthier.
+    # excluded outsider can make this team's sprint appear healthier. Prior
+    # runs feed the trend (delta + sustained-decline damping).
     progress = confidence.compute(
         sprint_name=ctx.sprint_name,
         start_date=ctx.start_date,
@@ -953,6 +1080,7 @@ def run_standup(
         completed_points=ctx.completed_points,
         activity_count=bundle.total(exclude_kinds=("wip",)),
         today=today,
+        history=prior_history,
     )
 
     # 5. Per-member + team summary (one LLM call, deterministic fallback).
@@ -966,13 +1094,18 @@ def run_standup(
         self_reported_images=self_reported_images,
         alias_map=alias_map,
         category_coverage=category_coverage,
+        grouped=grouped,
+        blocker_signals=blocker_signals,
+        yesterday=yesterday,
     )
 
     # Warnings the user must see: source auth failures (from the collector) first,
     # then any LLM/config issue. These render as a "Notices" section, never silent.
-    warnings = [
-        f"{src.replace('_', ' ').title()}: {msg}" for src, msg in (*bundle.errors, *bundle.partial_sources)
-    ] + llm_warnings
+    warnings = (
+        [f"{src.replace('_', ' ').title()}: {msg}" for src, msg in (*bundle.errors, *bundle.partial_sources)]
+        + llm_warnings
+        + automation_notices
+    )
     if not bundle.counts and not bundle.errors:
         warnings.insert(
             0,
@@ -994,6 +1127,8 @@ def run_standup(
         confidence_pct=progress.confidence_pct,
         confidence_label=progress.confidence_label,
         confidence_rationale=progress.confidence_rationale,
+        confidence_delta=progress.confidence_delta,
+        confidence_trend=progress.confidence_trend,
         team_summary=team_summary,
         member_updates=tuple(member_updates),
         activity_counts=tuple(bundle.counts),
@@ -1024,6 +1159,9 @@ def run_standup(
 
     with StandupStore(db_path) as store:
         store.record_run(report, delivery_status=delivery_status, status=status)
+        # Fetched after record_run so today's confidence is part of the trend
+        # the HTML export draws.
+        run_history = store.get_history(session_id, limit=30)
 
     # Persist readable output (Markdown + HTML) alongside the logs, so a standup's
     # result is a shareable document — not something you can only reconstruct from
@@ -1031,7 +1169,7 @@ def run_standup(
     try:
         from yeaboi.standup.export import export_standup
 
-        export_standup(report, project_name=state.get("project_name", "") or session_id)
+        export_standup(report, project_name=state.get("project_name", "") or session_id, history=run_history)
     except Exception as e:
         logger.warning("standup export failed: %s", e)
 

@@ -50,6 +50,14 @@ jobs:
         id: dedupe
         env:
           GH_TOKEN: ${{ github.token }}
+          # This step runs BEFORE the checkout below, so `gh` has no git remote to
+          # infer the repo from and would die with "fatal: not a git repository".
+          # Deliberately step-scoped, NOT job-level: every later `gh` call runs
+          # after the checkout and resolves from `origin` on its own, and the
+          # Claude step's main output path is `gh pr create`, which misbehaves
+          # when GH_REPO is set (it can no longer infer the head branch from the
+          # local repo and demands an explicit --head).
+          GH_REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
           open_pr=$(gh pr list --label ci-sentinel --state open --json number --jq 'length')

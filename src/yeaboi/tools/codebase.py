@@ -292,7 +292,14 @@ def read_codebase(path: str, max_depth: int = 4) -> str:
     max_depth: How many directory levels deep to scan (default 4).
     """
     # See docs: "Tools" — read-only tool pattern
-    root = pathlib.Path(path).expanduser().resolve()
+    # Sandbox check first: tools return errors as strings (the LLM relays the
+    # message, which names the whitelist remedies) rather than raising.
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+    try:
+        root = resolve_and_check(path, mode="read", context="read_codebase")
+    except SandboxViolationError as e:
+        return f"Error: {e}"
 
     if not root.exists():
         return f"Error: path does not exist: {path}"
@@ -411,12 +418,18 @@ def read_local_file(repo_path: str, file_path: str) -> str:
     file_path: Path to the file relative to the repo root (e.g. "src/main.py").
     """
     # See docs: "Tools" — read-only tool pattern
-    root = pathlib.Path(repo_path).expanduser().resolve()
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+    try:
+        root = resolve_and_check(repo_path, mode="read", context="read_local_file")
+    except SandboxViolationError as e:
+        return f"Error: {e}"
     target = (root / file_path).resolve()
 
     # Security: ensure the resolved path is inside the repo root to prevent
-    # path traversal attacks (e.g. file_path="../../etc/passwd").
-    if not str(target).startswith(str(root)):
+    # path traversal (e.g. file_path="../../etc/passwd"). is_relative_to, not
+    # a string-prefix test — "/repo" must not authorize "/repo-secret".
+    if not target.is_relative_to(root):
         return f"Error: path traversal detected — {file_path} resolves outside the repository"
 
     if not target.exists():
@@ -499,12 +512,24 @@ def load_project_context(path: str = "", docs_dir: str = "") -> str:
 
     # See docs: "Tools" — read-only tool pattern
     """
+    from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
     sections: list[str] = []
     loaded_names: list[str] = []
 
     try:
-        # 1. Load SCRUM.md
-        target = path.strip() if path.strip() else os.path.join(os.getcwd(), "SCRUM.md")
+        # 1. Load SCRUM.md — the CWD defaults are builtin-allowed in fs_policy;
+        # explicit overrides must be whitelisted. Denials return as the tool's
+        # error JSON so the LLM can relay the remedy.
+        try:
+            target = str(
+                resolve_and_check(
+                    path.strip() or os.path.join(os.getcwd(), "SCRUM.md"), mode="read", context="load_project_context"
+                )
+            )
+        except SandboxViolationError as e:
+            status = {"name": "User context", "status": "error", "detail": str(e)}
+            return json.dumps({"context": None, "status": status})
         if os.path.isfile(target):
             content = open(target).read().strip()  # noqa: WPS515
             if content:
@@ -512,7 +537,17 @@ def load_project_context(path: str = "", docs_dir: str = "") -> str:
                 loaded_names.append("SCRUM.md")
 
         # 2. Scan scrum-docs/ directory for additional documents
-        docs_path = docs_dir.strip() if docs_dir.strip() else os.path.join(os.getcwd(), "scrum-docs")
+        try:
+            docs_path = str(
+                resolve_and_check(
+                    docs_dir.strip() or os.path.join(os.getcwd(), "scrum-docs"),
+                    mode="read",
+                    context="load_project_context docs_dir",
+                )
+            )
+        except SandboxViolationError as e:
+            status = {"name": "User context", "status": "error", "detail": str(e)}
+            return json.dumps({"context": None, "status": status})
         if os.path.isdir(docs_path):
             budget = _MAX_DOCS_CHARS
             doc_files = sorted(

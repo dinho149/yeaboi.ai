@@ -74,6 +74,62 @@ class TestHubList:
         _text(_build_run_hub_screen(_runs(8), 5, title_fn=reporting_title), width=60, height=16)
 
 
+class TestHubExtraCard:
+    """The optional fixed card below "+ New run" (standup's schedule entry)."""
+
+    def test_extra_card_renders_in_populated_list(self):
+        runs = _runs(2)
+        panel = _build_run_hub_screen(
+            runs, len(runs) + 1, title_fn=standup_title, new_label="+ New standup", extra_label="⏰ Set up a schedule"
+        )
+        out = _text(panel)
+        assert "+ New standup" in out
+        assert "Set up a schedule" in out
+
+    def test_extra_card_renders_in_empty_state(self):
+        panel = _build_run_hub_screen(
+            [],
+            1,
+            title_fn=standup_title,
+            empty_title="No standups yet",
+            new_label="+ New standup",
+            extra_label="⏰ Schedule · On · 09:50 · Mon–Fri · terminal",
+            height=30,
+        )
+        out = _text(panel)
+        assert "No standups yet" in out
+        assert "+ New standup" in out
+        assert "Schedule · On · 09:50" in out
+
+    def test_without_extra_label_output_unchanged(self):
+        # Retro/reporting pass nothing — the extra card must not appear.
+        with_default = _text(_build_run_hub_screen(_runs(), 0, title_fn=reporting_title))
+        explicit_empty = _text(_build_run_hub_screen(_runs(), 0, title_fn=reporting_title, extra_label=""))
+        assert with_default == explicit_empty
+        assert "schedule" not in with_default.lower()
+
+    def test_delete_popup_with_extra_card_does_not_crash(self):
+        panel = _build_run_hub_screen(
+            _runs(6),
+            2,
+            title_fn=standup_title,
+            delete_popup_name="Standup — 2026-07-03",
+            delete_popup_t=1.0,
+            extra_label="⏰ Set up a schedule",
+        )
+        _text(panel, height=20)  # must render at a cramped height without raising
+        # The confirmation is spoken by the companion duck, not drawn in the body
+        # (see TestHubList.test_delete_confirmation_comes_from_the_duck).
+        assert "Enter to confirm" in panel._duck_say
+
+    def test_small_terminal_with_extra_card_does_not_crash(self):
+        _text(
+            _build_run_hub_screen(_runs(8), 9, title_fn=standup_title, extra_label="⏰ Set up a schedule"),
+            width=60,
+            height=16,
+        )
+
+
 _SNAP_ACTIONS = ["Export", "Delete", "Run again", "Back"]
 
 
@@ -86,12 +142,19 @@ class TestSnapshotRendering:
     """
 
     def test_reporting_detail_renders_rich(self):
+        from yeaboi.agent.state import DeliveryReport
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
 
+        report = DeliveryReport(
+            period_label="Last month",
+            headline="A good month.",
+            executive_summary="shipped auth",
+            metrics=(("Items delivered", "5"),),
+        )
         panel = _build_reporting_screen(
             {
                 "view": "detail",
-                "detail_lines": ["Executive summary:", "• shipped auth"],
+                "report": report,
                 "detail_title": "Delivery Report — Last month",
                 "actions": _SNAP_ACTIONS,
             },
@@ -102,6 +165,7 @@ class TestSnapshotRendering:
         out = _text(panel)
         assert "Delivery Report — Last month" in out
         assert "shipped auth" in out and "Run again" in out
+        assert "By the numbers" in out  # rich metrics section, not flat lines
 
     def test_performance_detail_renders_rich(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen
@@ -303,3 +367,123 @@ class TestStandupSnapshotLoop:
             return next(keys, "q")
 
         ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)  # must not raise
+
+
+class TestHubScheduleCardLoop:
+    """Driving the standup hub to the schedule card must invoke the wizard."""
+
+    def test_enter_on_schedule_card_runs_wizard_and_shows_toast(self, tmp_path, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.sessions import SessionStore
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        with SessionStore(db) as sstore:
+            sstore.create_session("s1", "Proj")
+        with StandupStore(db) as store:
+            store.record_run(StandupReport(date="2026-07-01", session_id="s1", team_summary="ok"))
+        monkeypatch.setattr(ms, "_ana_dbp", db)
+
+        calls = []
+        monkeypatch.setattr(
+            ms,
+            "_run_standup_schedule_wizard",
+            lambda console, live, rk, ft, st, session_id: calls.append(session_id) or "Schedule saved.",
+        )
+
+        class _Console:
+            size = (120, 40)
+
+            def print(self, *a, **k):
+                pass
+
+        rendered = []
+
+        class _Live:
+            def update(self, panel):
+                rendered.append(panel)
+
+        # One run in the list → indices: 0 run, 1 "+ New standup", 2 schedule card.
+        keys = iter(["down", "down", "enter", "q"])
+
+        def read_key(timeout=None):
+            return next(keys, "q")
+
+        ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
+        assert calls == ["s1"]  # wizard invoked with the latest session
+        # The wizard's message surfaces as the hub toast on the reload render —
+        # handed to the companion duck rather than taking a body row.
+        assert rendered[-1]._duck_say == "Schedule saved."
+
+    def test_no_session_shows_hint_instead_of_wizard(self, tmp_path, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(ms, "_ana_dbp", db)
+        monkeypatch.setattr(
+            ms,
+            "_run_standup_schedule_wizard",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("wizard must not run without a session")),
+        )
+
+        class _Console:
+            size = (120, 40)
+
+            def print(self, *a, **k):
+                pass
+
+        rendered = []
+
+        class _Live:
+            def update(self, panel):
+                rendered.append(panel)
+
+        # Empty hub → indices: 0 "+ New standup", 1 schedule card.
+        keys = iter(["down", "enter", "q"])
+
+        def read_key(timeout=None):
+            return next(keys, "q")
+
+        ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
+        assert "No session yet" in rendered[-1]._duck_say  # the duck says it
+
+
+class TestHubSchedulePrefersEnabledSession:
+    def test_wizard_targets_session_with_enabled_schedule(self, tmp_path, monkeypatch):
+        # A schedule enabled for an OLDER session must stay visible/editable —
+        # the hub wizard targets it instead of the bare latest session (which
+        # would silently create a second schedule).
+        import yeaboi.ui.mode_select as ms
+        from yeaboi.sessions import SessionStore
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        with SessionStore(db) as sstore:
+            sstore.create_session("old-sess", "Old")
+            sstore.create_session("new-sess", "New")  # latest
+        with StandupStore(db) as store:
+            store.save_config("old-sess", enabled=True, time="09:30", weekdays="1-5", delivery_channels=["terminal"])
+        monkeypatch.setattr(ms, "_ana_dbp", db)
+
+        calls = []
+        monkeypatch.setattr(
+            ms,
+            "_run_standup_schedule_wizard",
+            lambda console, live, rk, ft, st, session_id: calls.append(session_id) or "ok",
+        )
+
+        class _Console:
+            size = (120, 40)
+
+            def print(self, *a, **k):
+                pass
+
+        class _Live:
+            def update(self, panel):
+                pass
+
+        # Empty run list → indices: 0 "+ New standup", 1 schedule card.
+        keys = iter(["down", "enter", "q"])
+        ms._run_standup_hub(_Console(), _Live(), lambda timeout=None: next(keys, "q"), 0.05, True)
+        assert calls == ["old-sess"]

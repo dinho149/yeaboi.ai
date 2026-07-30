@@ -80,6 +80,7 @@ from yeaboi.prompts.story_writer import MAX_STORIES_PER_FEATURE, MIN_STORIES_PER
 from yeaboi.prompts.system import get_system_prompt  # noqa: E402 — direct submodule imports avoid circular import
 from yeaboi.prompts.task_decomposer import get_task_decomposer_prompt
 from yeaboi.tools import detect_platform
+from yeaboi.tools.risk import high_risk_tool_names
 
 logger = logging.getLogger(__name__)
 
@@ -314,35 +315,43 @@ def _invoke_json(prompt: str, *, image_paths=None):
 # High-risk tool constants
 # ---------------------------------------------------------------------------
 
-# These are write operations that modify external systems (Jira, Confluence, Notion).
-# They require explicit user confirmation before execution — the agent must ask
-# and receive a "yes" before the graph routes to the ToolNode.
+# Write operations that modify external systems (Jira, Azure DevOps, Confluence,
+# Notion). They require explicit user confirmation before execution — the agent
+# must ask and receive a "yes" before the graph routes to the ToolNode. The
+# source of truth is the per-tool registry in tools/risk.py, where every
+# registered tool is classified READ or WRITE (enforced two-way by
+# tests/unit/tools/test_risk.py, so a new tool cannot ship ungated silently).
 # See docs: "Guardrails" — human-in-the-loop pattern (Tool layer)
-_HIGH_RISK_TOOLS: frozenset[str] = frozenset(
-    {
-        "jira_create_epic",
-        "jira_create_story",
-        "jira_create_sprint",
-        "confluence_create_page",
-        "confluence_update_page",
-        "notion_create_page",
-        "notion_update_page",
-    }
-)
+_HIGH_RISK_TOOLS: frozenset[str] = high_risk_tool_names()
+
+# Words that signal the user is declining, hesitating, or qualifying —
+# checked before any affirmative so "surely not" / "yes but cancel it" never
+# count as consent. Erring toward not-confirmed is safe: the agent just asks
+# again; a false positive would write to an external tracker.
+_NEGATION_RE = re.compile(r"\b(no|not|don'?t|never|stop|cancel|wait|hold)\b")
+
+# Bare "go" is deliberately NOT here — "go back to the plan" / "go to the board"
+# are not consent to a write. It only confirms as the phrase "go ahead" below.
+_AFFIRM_TOKENS = {"yes", "y", "ok", "okay", "sure", "confirm", "proceed", "yep", "yup"}
+_AFFIRM_PHRASES = ("go ahead", "please proceed", "please go ahead")
 
 
 def _user_confirmed(text: str) -> bool:
-    """Return True if the text looks like an affirmative confirmation.
+    """Return True if the text is an unqualified affirmative confirmation.
 
     Used by should_continue to detect whether the user approved a high-risk
-    tool call in the preceding HumanMessage.
+    tool call in the preceding HumanMessage. Negations veto first (so
+    "surely not" or "yes but actually cancel" never confirm); then the first
+    token (punctuation-stripped) must be an affirmative, or the message must
+    start with an exact affirmative phrase.
     """
     lowered = text.strip().lower()
-    affirm_exact = {"yes", "y", "ok", "sure", "confirm", "go", "proceed", "yep", "yup"}
-    if lowered in affirm_exact:
+    if not lowered or _NEGATION_RE.search(lowered):
+        return False
+    if lowered.startswith(_AFFIRM_PHRASES):
         return True
-    affirm_prefixes = ("yes ", "y ", "ok ", "sure", "go ahead", "proceed", "confirm", "please go")
-    return any(lowered.startswith(p) for p in affirm_prefixes)
+    first_token = lowered.split()[0].strip(".,!?:;")
+    return first_token in _AFFIRM_TOKENS
 
 
 def _attach_chat_images(state: ScrumState, all_messages: list[BaseMessage]) -> list[BaseMessage]:
@@ -592,8 +601,9 @@ def should_continue(state: ScrumState) -> str:
     #   low/medium-risk      → "tools"         (auto-execute via ToolNode)
     #   high-risk            → "human_review"  (pause for user confirmation)
     #
-    # High-risk tools are Jira/Confluence write operations that create or modify
-    # external records and cannot be easily undone. _HIGH_RISK_TOOLS lists them.
+    # High-risk tools are external write operations (Jira, Azure DevOps,
+    # Confluence, Notion) that create or modify records and cannot be easily
+    # undone. _HIGH_RISK_TOOLS lists them (the WRITE rows of tools/risk.py).
     #
     # Confirmation detection: if the immediately preceding messages show that
     # the user already confirmed (human_review asked → user said "yes"), route
@@ -626,8 +636,10 @@ def should_continue(state: ScrumState) -> str:
             and isinstance(prev_human, HumanMessage)
             and _user_confirmed(prev_human.content)
         ):
+            logger.info("high-risk tool confirmed by user: %s", sorted(tool_names & _HIGH_RISK_TOOLS))
             return "tools"
 
+    logger.info("high-risk tool gated for confirmation: %s", sorted(tool_names & _HIGH_RISK_TOOLS))
     return "human_review"
 
 

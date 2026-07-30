@@ -144,6 +144,9 @@ def localize_images(markdown: str, dest_dir: Path) -> str:
     paths = _publishable_images(markdown)
     if not paths:
         return markdown
+    from yeaboi.fs_policy import resolve_and_check
+
+    dest_dir = resolve_and_check(dest_dir, mode="write", context="export image localization")
     names = _unique_names(paths)
     img_dir = dest_dir / "images"
     for p in paths:

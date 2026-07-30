@@ -13,6 +13,7 @@ not selectable.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import time
@@ -1357,8 +1358,9 @@ def _collect_settings_data() -> dict:
         # Notion (rendered by the settings screen; was missing from this list)
         "NOTION_TOKEN",
         "NOTION_ROOT_PAGE_ID",
-        # Storage (Settings → Data Dir)
+        # Storage (Settings → Data Dir / Paths)
         "YEABOI_HOME",
+        "YEABOI_ALLOWED_PATHS",
         "AZURE_DEVOPS_ORG_URL",
         "AZURE_DEVOPS_PROJECT",
         "AZURE_DEVOPS_TOKEN",
@@ -1455,6 +1457,26 @@ def _settings_save_data_dir(console: Console, live, read_key, frame_time, suppor
     set_data_dir(value)
     logger.info("Settings: data directory set to %r", value)
     return message
+
+
+def _settings_save_allowed_paths(value: str) -> str:
+    """Persist an edited sandbox whitelist (YEABOI_ALLOWED_PATHS).
+
+    The path list is typed on the Settings page like every other value; this is
+    the save half. It goes through ``set_allowed_paths`` rather than the generic
+    ``apply_config_value`` because that setter dedups and writes the pinned
+    bootstrap ~/.yeaboi/.env — the whitelist has to survive relocating the data
+    tree it guards. ``value`` is the raw comma-separated text; returns the status
+    message for the duck.
+    """
+    from yeaboi.config import set_allowed_paths
+
+    paths = [p.strip() for p in value.split(",") if p.strip()]
+    set_allowed_paths(paths)
+    logger.info("Settings: allowed paths whitelist edited → %r", paths)
+    if not paths:
+        return "Allowed paths cleared — yeaboi is sandboxed to its data directory"
+    return f"Allowed paths saved — {len(paths)} path(s) whitelisted"
 
 
 def _confirm_move_data(console: Console, live, read_key, frame_time, supports_timeout, new_root: Path) -> bool:
@@ -2126,11 +2148,12 @@ def _standup_export(session_id: str, data: dict) -> str:
 
     with StandupStore(_ana_dbp) as store:
         report = store.get_latest_report(session_id)
+        history = store.get_history(session_id, limit=30) if report is not None else []
     if report is None:
         logger.info("standup export: nothing to export yet (session=%s)", session_id)
         return "Nothing to export yet — press Generate first."
     try:
-        paths = export_standup(report, project_name=data.get("session_name", "") or session_id)
+        paths = export_standup(report, project_name=data.get("session_name", "") or session_id, history=history)
         logger.info("standup export: wrote Markdown + HTML to %s (session=%s)", paths["markdown"].parent, session_id)
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
     except Exception as e:
@@ -2669,6 +2692,8 @@ def _standup_team_configure(
             code_scope_configured=merged.get("code_scope_configured", False),
             documentation_sources=merged.get("documentation_sources", []),
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -2829,6 +2854,8 @@ def _standup_code_configure(
             code_scope_configured=True,
             documentation_sources=merged.get("documentation_sources", []),
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     return True, (
         f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
@@ -2923,82 +2950,386 @@ def _standup_documentation_configure(
             code_scope_configured=merged["code_scope_configured"],
             documentation_sources=selected,
             documentation_scope_configured=True,
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
 
-def _standup_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
-    """Collect schedule/delivery settings in-TUI, persist them, and (un)install the OS schedule.
+def _run_schedule_choice_step(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    options: list[tuple[str, str]],
+    initial: int,
+    step_index: int,
+    heading: str,
+) -> int | str:
+    """One single-select (radio) step of the schedule wizard.
 
-    Each field defaults to the existing config (Enter keeps it). Esc at any field
-    cancels the whole flow. Returns a status message for the dashboard.
+    The cursor row IS the selection: Enter returns its index, Esc returns
+    ``"back"`` so the wizard can step backwards (analysis-wizard convention).
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+    cursor = initial if 0 <= initial < len(options) else 0
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_schedule_step_screen(
+                options, cursor, step_index=step_index, heading=heading, width=w, height=max(10, h - 1)
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up", "left"):
+            cursor = (cursor - 1) % len(options)
+        elif key in ("down", "scroll_down", "right"):
+            cursor = (cursor + 1) % len(options)
+        elif key == "enter":
+            return cursor
+        elif key in ("esc", "q"):
+            return "back"
+
+
+def _run_schedule_multi_step(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    options: list[tuple[str, str]],
+    initial: set[int],
+    step_index: int,
+    heading: str,
+    empty_message: str,
+) -> set[int] | str:
+    """One multi-select (checkbox) step of the schedule wizard.
+
+    Space toggles the cursor row, Enter confirms (requires at least one
+    selection), Esc returns ``"back"``.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+    checked = {i for i in initial if 0 <= i < len(options)}
+    cursor = 0
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_schedule_step_screen(
+                options,
+                cursor,
+                checked=checked,
+                step_index=step_index,
+                heading=heading,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up"):
+            cursor = (cursor - 1) % len(options)
+        elif key in ("down", "scroll_down"):
+            cursor = (cursor + 1) % len(options)
+        elif key == " ":
+            checked.symmetric_difference_update({cursor})
+            message = ""
+        elif key == "enter":
+            if not checked:
+                message = empty_message
+                continue
+            return checked
+        elif key in ("esc", "q"):
+            return "back"
+
+
+_SCHEDULE_TIME_PRESETS = ["09:00", "09:30", "10:00", "10:30", "11:00"]
+_SCHEDULE_LEAD_PRESETS = [5, 10, 15, 30]
+_SCHEDULE_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+_SCHEDULE_CHANNEL_DESCS = {
+    "terminal": "print in the terminal the run opens",
+    "desktop": "macOS/Linux system notification",
+    "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
+    "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
+}
+
+
+def _run_standup_schedule_wizard(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str
+) -> str:
+    """Option-list schedule wizard: Time → Lead → Days → Channels → Enable.
+
+    Arrow-key driven replacement for the old free-text Configure flow. Esc steps
+    BACK one step (Esc on the first step cancels); Time/Lead offer presets plus a
+    "Custom…" escape hatch into the themed line editor. On completion the config
+    is merge-saved (identity + scope fields untouched) and the OS schedule is
+    installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import install_schedule, remove_schedule
+    from yeaboi.standup.scheduler import install_schedule, parse_time, remove_schedule, weekday_list, weekday_spec
     from yeaboi.standup.store import StandupStore
 
     with StandupStore(_ana_dbp) as store:
         existing = store.load_config(session_id) or {}
-    cur_time = existing.get("time", "10:00")
-    cur_lead = str(existing.get("lead_minutes", 10))
-    cur_days = existing.get("weekdays", "1-5")
-    cur_channels = ", ".join(existing.get("delivery_channels", ["terminal"]))
-    cur_repo = existing.get("repo_path", "")
-    cur_aliases = existing.get("my_aliases", "")
-    cur_enabled = "yes" if existing.get("enabled") else "no"
+    time_val = existing.get("time", "10:00")
+    lead_val = int(existing.get("lead_minutes", 10))
+    days = set(weekday_list(existing.get("weekdays", "1-5")))
+    channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
+    enabled = bool(existing.get("enabled"))
+    logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
-    def _ask(prompt: str, step: str, default: str) -> str | None:
-        value = _standup_read_line(
-            console, live, read_key, frame_time, supports_timeout, prompt=prompt, step=step, default=default
-        )
-        if value is None:
-            logger.info("standup configure: cancelled at %s (session=%s)", step.strip(), session_id)
-        return value
+    def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
+        """Line-input loop for the Custom… options: re-prompts until ``parse``
+        accepts the value; Esc returns None (back to the option list)."""
+        current_prompt = prompt
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=current_prompt,
+                step=step,
+                default=default,
+            )
+            if raw is None:
+                return None
+            try:
+                return parse(raw)
+            except (ValueError, TypeError):
+                current_prompt = f"Invalid value — {prompt}"
 
-    # Ask for the STANDUP time (when it happens); the job fires a few minutes before.
-    time_in = _ask("Standup time (HH:MM) — the meeting time", "Configure standup  (1/7)", cur_time)
-    if time_in is None:
-        return "Configure cancelled."
-    lead_in = _ask("Run how many minutes before the standup?", "Configure standup  (2/7)", cur_lead)
-    if lead_in is None:
-        return "Configure cancelled."
-    days_in = _ask("Weekdays (e.g. 1-5 or 1,3,5)", "Configure standup  (3/7)", cur_days)
-    if days_in is None:
-        return "Configure cancelled."
-    channels_in = _ask("Delivery channels (terminal, desktop, slack, email)", "Configure standup  (4/7)", cur_channels)
-    if channels_in is None:
-        return "Configure cancelled."
-    repo_in = _ask("Local git repo path (optional)", "Configure standup  (5/7)", cur_repo)
-    if repo_in is None:
-        return "Configure cancelled."
-    # Aliases let your activity (GitHub handle, Jira display name, commit email)
-    # attach to YOUR standup card even when the names don't match exactly.
-    aliases_in = _ask(
-        "Your aliases across tools (comma-separated, e.g. GitHub handle, Jira name)",
-        "Configure standup  (6/7)",
-        cur_aliases,
-    )
-    if aliases_in is None:
-        return "Configure cancelled."
-    enable_in = _ask("Enable scheduled runs? (yes/no)", "Configure standup  (7/7)", cur_enabled)
-    if enable_in is None:
-        return "Configure cancelled."
+    index = 0
+    while index < 5:
+        if index == 0:
+            options = [(t, "") for t in _SCHEDULE_TIME_PRESETS]
+            if time_val in _SCHEDULE_TIME_PRESETS:
+                initial = _SCHEDULE_TIME_PRESETS.index(time_val)
+                options.append(("Custom…", "type any HH:MM"))
+            else:
+                initial = len(options)
+                options.append(("Custom…", f"currently {time_val}"))
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=options,
+                initial=initial,
+                step_index=0,
+                heading="Standup time — when the meeting happens",
+            )
+            if got == "back":
+                logger.info("standup schedule wizard: cancelled at step 1 (session=%s)", session_id)
+                return "Schedule setup cancelled."
+            if isinstance(got, int) and got < len(_SCHEDULE_TIME_PRESETS):
+                time_val = _SCHEDULE_TIME_PRESETS[got]
+                index += 1
+            else:
 
-    enabled = enable_in.strip().lower() in ("y", "yes", "true", "on", "1")
-    channels = [c.strip() for c in channels_in.split(",") if c.strip() in ALL_CHANNELS] or ["terminal"]
-    try:
-        lead_minutes = max(0, int(lead_in))
-    except ValueError:
-        lead_minutes = 10
+                def _parse_hhmm(raw: str) -> str:
+                    parse_time(raw)  # raises ValueError on bad input
+                    return raw.strip()
 
+                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/5)", time_val, _parse_hhmm)
+                if custom is not None:
+                    time_val = custom
+                    index += 1
+        elif index == 1:
+            labels = [(f"{m} minutes before", "") for m in _SCHEDULE_LEAD_PRESETS]
+            if lead_val in _SCHEDULE_LEAD_PRESETS:
+                initial = _SCHEDULE_LEAD_PRESETS.index(lead_val)
+                labels.append(("Custom…", "type any number of minutes"))
+            else:
+                initial = len(labels)
+                labels.append(("Custom…", f"currently {lead_val} min"))
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=labels,
+                initial=initial,
+                step_index=1,
+                heading="Deliver how long before the standup?",
+            )
+            if got == "back":
+                index -= 1
+            elif isinstance(got, int) and got < len(_SCHEDULE_LEAD_PRESETS):
+                lead_val = _SCHEDULE_LEAD_PRESETS[got]
+                index += 1
+            else:
+                custom = _custom_text(
+                    "Minutes before the standup",
+                    "Set up schedule  (2/5)",
+                    str(lead_val),
+                    lambda raw: max(0, int(raw)),
+                )
+                if custom is not None:
+                    lead_val = custom
+                    index += 1
+        elif index == 2:
+            got = _run_schedule_multi_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[(name, "") for name in _SCHEDULE_DAY_NAMES],
+                initial={d - 1 for d in days},
+                step_index=2,
+                heading="Which days should it run?",
+                empty_message="Select at least one day.",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                days = {i + 1 for i in got}
+                index += 1
+        elif index == 3:
+            got = _run_schedule_multi_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[(ch, _SCHEDULE_CHANNEL_DESCS.get(ch, "")) for ch in ALL_CHANNELS],
+                initial={i for i, ch in enumerate(ALL_CHANNELS) if ch in channels},
+                step_index=3,
+                heading="Where should the summary go?",
+                empty_message="Select at least one delivery channel.",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                channels = [ALL_CHANNELS[i] for i in sorted(got)]
+                index += 1
+        else:
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("On — install an OS schedule", "launchd/cron runs it automatically"),
+                    ("Off — run on demand only", "no background job"),
+                ],
+                initial=0 if enabled else 1,
+                step_index=4,
+                heading="Enable scheduled runs?",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                enabled = got == 0
+                index += 1
+        logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
+
+    weekdays = weekday_spec(days)
     with StandupStore(_ana_dbp) as store:
         store.save_config(
             session_id,
             enabled=enabled,
-            time=time_in,
-            lead_minutes=lead_minutes,
-            weekdays=days_in,
+            time=time_val,
+            lead_minutes=lead_val,
+            weekdays=weekdays,
             delivery_channels=channels,
+            repo_path=existing.get("repo_path", ""),
+            my_aliases=existing.get("my_aliases", ""),
+            tracker_sources=existing.get("tracker_sources", ["jira"]),
+            team_members=existing.get("team_members", []),
+            roster_configured=existing.get("roster_configured", False),
+            code_sources=existing.get("code_sources", []),
+            github_repositories=existing.get("github_repositories", []),
+            azdo_projects=existing.get("azdo_projects", []),
+            azdo_repositories=existing.get("azdo_repositories", []),
+            code_scope_configured=existing.get("code_scope_configured", False),
+            documentation_sources=existing.get("documentation_sources", []),
+            documentation_scope_configured=existing.get("documentation_scope_configured", False),
+            automation_markers=existing.get("automation_markers", ""),
+            automation_handling=existing.get("automation_handling", "exclude"),
+        )
+    msg = install_schedule(session_id, time_val, weekdays, lead_val) if enabled else remove_schedule(session_id)
+    logger.info("standup schedule wizard: saved session=%s enabled=%s -> %s", session_id, enabled, msg)
+    return msg
+
+
+def _standup_identity_configure(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str:
+    """Collect identity settings (repo path + aliases) in-TUI and merge-save them.
+
+    Schedule settings moved to the hub wizard (``_run_standup_schedule_wizard``);
+    this slim flow keeps the two fields that attribute YOUR activity. No scheduler
+    calls — the saved schedule/scope fields pass through untouched. Esc at either
+    field cancels. Returns a status message for the dashboard.
+    """
+    from yeaboi.standup.store import StandupStore
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+
+    repo_in = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Local git repo path (optional)",
+        step="Identity  (1/2)",
+        default=existing.get("repo_path", ""),
+    )
+    if repo_in is None:
+        logger.info("standup identity: cancelled at step 1 (session=%s)", session_id)
+        return "Identity cancelled."
+    if repo_in.strip() and repo_in.strip() != existing.get("repo_path", ""):
+        # Sandbox pre-flight (main thread): the scheduled standup runs headless
+        # later, where a denial cannot ask — so consent is collected here, at
+        # the moment the user types the path.
+        from yeaboi.ui.shared._consent import _preflight_path_consent
+
+        if not _preflight_path_consent(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            repo_in.strip(),
+            mode="read",
+            context="Daily Standup — local repo scan",
+        ):
+            return "Repo path denied — identity cancelled. Allow it via Settings → Paths."
+    # Aliases let your activity (GitHub handle, Jira display name, commit email)
+    # attach to YOUR standup card even when the names don't match exactly.
+    aliases_in = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Your aliases across tools (comma-separated, e.g. GitHub handle, Jira name)",
+        step="Identity  (2/2)",
+        default=existing.get("my_aliases", ""),
+    )
+    if aliases_in is None:
+        logger.info("standup identity: cancelled at step 2 (session=%s)", session_id)
+        return "Identity cancelled."
+
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=bool(existing.get("enabled")),
+            time=existing.get("time", "10:00"),
+            lead_minutes=int(existing.get("lead_minutes", 10)),
+            weekdays=existing.get("weekdays", "1-5"),
+            delivery_channels=existing.get("delivery_channels", ["terminal"]),
             repo_path=repo_in,
             my_aliases=aliases_in.strip(),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -3011,11 +3342,11 @@ def _standup_configure(console: Console, live, read_key, frame_time, supports_ti
             code_scope_configured=existing.get("code_scope_configured", False),
             documentation_sources=existing.get("documentation_sources", []),
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
+            automation_markers=existing.get("automation_markers", ""),
+            automation_handling=existing.get("automation_handling", "exclude"),
         )
-
-    msg = install_schedule(session_id, time_in, days_in, lead_minutes) if enabled else remove_schedule(session_id)
-    logger.info("standup configure: session=%s enabled=%s -> %s", session_id, enabled, msg)
-    return msg
+    logger.info("standup identity: saved (session=%s)", session_id)
+    return "Identity saved."
 
 
 def _run_changelog_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
@@ -3469,6 +3800,8 @@ def _run_mode_hub(
     get_share_document=None,
     share_theme=None,
     new_breaks_out: bool = False,
+    extra_label=None,
+    extra_action=None,
 ) -> None:
     """Generic saved-runs hub loop shared by standup / retro / reporting.
 
@@ -3491,11 +3824,18 @@ def _run_mode_hub(
     actions, scroll_meta, width, height, message, shimmer_tick) -> Panel`` (or None if
     the run vanished). Standup needs section drill-in beyond plain scroll, so it passes
     an ``open_snapshot`` override instead; the other three use the shared scroll loop.
+
+    ``extra_label``/``extra_action`` (both optional callables) add one fixed card
+    below "+ New run" — standup uses it for "Set up a schedule". ``extra_label()``
+    returns the card text (recomputed on every reload so status stays fresh; empty
+    string hides the card); Enter on it calls ``extra_action()`` and shows the
+    returned message. Modes that pass neither are byte-identical to before.
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
     from yeaboi.ui.shared._click import parse_click
 
     runs = load_runs()
+    extra_text = extra_label() if extra_label is not None else ""
     selected = 0
     focus = 0  # 0 = card, 1 = Delete, 2 = Export (only on a run row)
     message = ""
@@ -3504,10 +3844,14 @@ def _run_mode_hub(
     _last_panel = None  # most recently rendered hub panel, for click hit-testing
     logger.info("%s hub: opened (%d saved run(s))", mode, len(runs))
 
+    def _n_items() -> int:
+        return len(runs) + 1 + (1 if extra_text else 0)
+
     def _reload(msg: str = "") -> None:
-        nonlocal runs, selected, focus, message, confirm
+        nonlocal runs, selected, focus, message, confirm, extra_text
         runs = load_runs()
-        selected = min(selected, max(0, len(runs)))  # keep within [0, new_idx]
+        extra_text = extra_label() if extra_label is not None else ""
+        selected = min(selected, _n_items() - 1)  # keep within the item range
         focus = 0
         confirm = False
         message = msg
@@ -3537,6 +3881,7 @@ def _run_mode_hub(
             empty_title=empty_title,
             empty_subtitle=empty_subtitle,
             shimmer_tick=tick,
+            extra_label=extra_text,
         )
         live.update(_last_panel)
 
@@ -3667,8 +4012,10 @@ def _run_mode_hub(
     _render_list()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        n_items = len(runs) + 1
+        n_items = _n_items()
         on_run = selected < len(runs)
+        on_extra = extra_text and selected == len(runs) + 1
+
         # ── Mouse: click a card to open it, or the "+ New" card to start a run ──
         _pos = parse_click(k)
         if _pos is not None and not confirm:
@@ -3725,6 +4072,13 @@ def _run_mode_hub(
             if on_run:
                 focus = min(2, focus + 1)
         elif k in ("enter", " "):
+            if on_extra:
+                # The fixed extra card (e.g. standup's schedule setup) runs its
+                # action in place, then reloads so its status label refreshes.
+                msg = extra_action() if extra_action is not None else None
+                _reload(msg or "")
+                _render_list()
+                continue
             if not on_run:
                 if new_breaks_out:
                     # Performance: "+ New" hands control back to the roster (where the
@@ -3886,11 +4240,16 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
                 return
             _render()
 
+    def _history_for(report):
+        # Trend for the report's own session, clipped to its date inside the exporter.
+        with StandupStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30) if report.session_id else []
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_standup(report)
+        paths = export_standup(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -3907,11 +4266,62 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
             return None
         from yeaboi.sharing.documents import standup_document
 
-        return standup_document(report)
+        return standup_document(report, history=_history_for(report))
 
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
+
+    def _schedule_session_id() -> str:
+        """The session the hub schedule targets.
+
+        Prefer a session that already has an ENABLED schedule (most recently
+        updated first) — otherwise a schedule installed for an older session
+        would be invisible here and the wizard would create a duplicate for the
+        latest one. Fall back to the latest session (the live page's targeting).
+        """
+        from yeaboi.sessions import SessionStore
+
+        with StandupStore(_ana_dbp) as store:
+            enabled = store.get_enabled_schedule_sessions()
+        if enabled:
+            return enabled[0]
+        with SessionStore(_ana_dbp) as store:
+            return store.get_latest_session_id() or ""
+
+    def _schedule_label() -> str:
+        """Text for the hub's fixed schedule card, recomputed on every reload."""
+        from yeaboi.standup.scheduler import get_schedule_status, run_time_str, weekday_spec_label
+
+        try:
+            session_id = _schedule_session_id()
+            if not session_id:
+                return "⏰ Set up a schedule"
+            with StandupStore(_ana_dbp) as store:
+                cfg = store.load_config(session_id) or {}
+            if not cfg.get("enabled"):
+                return "⏰ Set up a schedule"
+            installed = bool(get_schedule_status(session_id).get("installed"))
+            state = "On" if installed else "Off (not installed)"
+            fire = run_time_str(cfg.get("time", "10:00"), int(cfg.get("lead_minutes", 10)))
+            days = weekday_spec_label(cfg.get("weekdays", "1-5"))
+            channels = ", ".join(cfg.get("delivery_channels", ["terminal"]))
+            label = f"⏰ Schedule · {state} · {fire} · {days} · {channels}"
+            return label if len(label) <= 52 else label[:51] + "…"
+        except Exception:
+            logger.warning("standup hub: failed to build schedule label", exc_info=True)
+            return "⏰ Set up a schedule"
+
+    def _open_schedule() -> str:
+        """Enter on the schedule card → run the wizard (never crash the hub)."""
+        session_id = _schedule_session_id()
+        if not session_id:
+            return "No session yet — run a standup or create a plan first."
+        try:
+            return _run_standup_schedule_wizard(console, live, read_key, frame_time, supports_timeout, session_id)
+        except Exception as e:
+            logger.error("standup hub: schedule wizard failed", exc_info=True)
+            return f"Schedule setup failed: {e}"
 
     _run_mode_hub(
         console,
@@ -3933,6 +4343,8 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         share_theme=STANDUP_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_standup_page(console, live, read_key, frame_time, supports_timeout),
+        extra_label=_schedule_label,
+        extra_action=_open_schedule,
     )
 
 
@@ -4005,11 +4417,18 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past retros (newest-first rows).
+        if not report.session_id:
+            return []
+        with RetroStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_retro(report)
+        paths = export_retro(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -4022,7 +4441,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
             return None
         from yeaboi.sharing.documents import retro_document
 
-        return retro_document(report)
+        return retro_document(report, history=_history_for(report))
 
     def delete_run(run):
         with RetroStore(_ana_dbp) as store:
@@ -4055,7 +4474,6 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
     """Reporting saved-runs hub → landing for the Reporting card."""
     from yeaboi.persistence import _relative_time
     from yeaboi.reporting.export import _title, build_report_markdown, export_report
-    from yeaboi.reporting.render import format_report_lines
     from yeaboi.reporting.store import ReportingStore
     from yeaboi.ui.mode_select.screens._project_cards import RunSummary
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
@@ -4088,18 +4506,17 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
     def make_detail(run):
         # Render the saved report through the live Reporting detail screen (indigo
-        # theme + semantic _styled colouring) instead of flat grey lines.
+        # theme + the rich artifact renderer) instead of flat grey lines.
         report = _report(run.run_id)
         if report is None:
             return None
-        detail_lines = format_report_lines(report)
         detail_title = f"Delivery Report — {report.period_label}"
 
         def render(*, scroll, action_sel, actions, scroll_meta, width, height, message, shimmer_tick):
             return _build_reporting_screen(
                 {
                     "view": "detail",
-                    "detail_lines": detail_lines,
+                    "report": report,
                     "detail_title": detail_title,
                     "actions": actions,
                     "message": message,
@@ -4114,12 +4531,21 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
         return render
 
+    def _history_for(run):
+        # Trend chart data: past reports for the run's session (newest-first rows).
+        with ReportingStore(_ana_dbp) as store:
+            return store.get_history(run.session_id, limit=30)
+
     def files_export(run):
+        from yeaboi.reporting.style import load_deck_style
+
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_report(report)
-        return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
+        # Saved deck-style prefs apply to every export, including hub re-exports.
+        paths = export_report(report, history=_history_for(run), style=load_deck_style())
+        kinds = "Markdown + HTML + slides" + (" + PowerPoint" if "pptx" in paths else "")
+        return f"Exported to {paths['markdown'].parent}  ({kinds})"
 
     def get_document(run):
         report = _report(run.run_id)
@@ -4131,7 +4557,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
             return None
         from yeaboi.sharing.documents import reporting_document
 
-        return reporting_document(report)
+        return reporting_document(report, history=_history_for(run))
 
     def delete_run(run):
         with ReportingStore(_ana_dbp) as store:
@@ -4345,7 +4771,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Team", "Anonymize", "Configure", "Back"]
+            base = ["Generate", "Team", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
         if data.get("report") is not None:
@@ -4512,15 +4938,20 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                 report = data.get("report")
                 if report is not None:
                     from yeaboi.sharing.documents import standup_document
+                    from yeaboi.standup.store import StandupStore as _SStore
                     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
+                    share_history = []
+                    if anon is None:  # masked shares carry no charts — skip the query
+                        with _SStore(_ana_dbp) as _sstore:
+                            share_history = _sstore.get_history(session_id, limit=30)
                     _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        document=standup_document(report, anon=anon),
+                        document=standup_document(report, anon=anon, history=share_history),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
                     )
@@ -4604,10 +5035,10 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     msg = f"Team selection failed: {e}"
                 data = _collect_standup_data(message=msg)
                 _reset_to_overview()
-            elif act == "Configure":  # in-TUI themed input (stays inside Live)
+            elif act == "Identity":  # in-TUI themed input (stays inside Live)
                 try:
-                    logger.info("standup: Configure pressed (session=%s)", session_id)
-                    msg = _standup_configure(console, live, read_key, frame_time, supports_timeout, session_id)
+                    logger.info("standup: Identity pressed (session=%s)", session_id)
+                    msg = _standup_identity_configure(console, live, read_key, frame_time, supports_timeout, session_id)
                 except Exception as e:  # never let a prompt crash the TUI
                     logger.error("standup action failed: %s", e, exc_info=True)
                     msg = f"Action failed: {e}"
@@ -4735,6 +5166,22 @@ def _performance_get_transcript(console, live, read_key, frame_time, supports_ti
         return None
     path = path.strip()
     if path:
+        # Sandbox pre-flight (main thread): consent BEFORE the read so the
+        # user gets the Allow/Deny popup instead of a SandboxViolationError.
+        from yeaboi.ui.shared._consent import _preflight_path_consent
+
+        if not _preflight_path_consent(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            path,
+            mode="read",
+            context="Performance — 1:1 transcript import",
+        ):
+            logger.info("performance: transcript path denied by sandbox consent: %s", path)
+            return None
         try:
             from pathlib import Path
 
@@ -4882,6 +5329,12 @@ def _run_component_select(
     grid: dict,
     descriptions: dict[str, str] | None = None,
     initial: dict[str, list[str]] | None = None,
+    *,
+    theme=None,
+    brand: str = "ANALYSIS SETUP",
+    title_builder=None,
+    footer_verb: str = "analyse",
+    required: dict[str, str] | None = None,
 ):
     """Blocking ragged component × sub-source picker.
 
@@ -4891,7 +5344,12 @@ def _run_component_select(
     ``components=``) or the string ``"cancel"`` on Esc. Everything is checked by
     default; at least one source overall must stay selected. ``initial`` restores a
     previous selection on wizard re-entry; a component absent from it (newly enabled
-    by a feature change) defaults to all-checked, matching the first visit."""
+    by a feature change) defaults to all-checked, matching the first visit.
+
+    ``theme``/``brand``/``title_builder``/``footer_verb`` re-brand the screen for
+    other modes (Reporting). ``required`` maps a component to the message shown
+    when Enter is pressed with that component empty (only enforced when the grid
+    actually offers the component)."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _COMPONENT_KEYS,
         _build_component_select_screen,
@@ -4925,6 +5383,10 @@ def _run_component_select(
                 height=h,
                 message=message,
                 descriptions=descriptions,
+                theme=theme,
+                brand=brand,
+                title_builder=title_builder,
+                footer_verb=footer_verb,
             )
         )
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -4942,7 +5404,11 @@ def _run_component_select(
         elif kk == "enter":
             result = {c: [grid[c][i] for i in sorted(checked[c])] for c in rows if checked[c]}
             if not result:
-                message = "Select at least one source to analyse."
+                message = f"Select at least one source to {footer_verb}."
+                continue
+            missing = next((m for c, m in (required or {}).items() if c in rows and c not in result), None)
+            if missing:
+                message = missing
                 continue
             return result
         elif kk in ("esc", "q"):
@@ -6640,26 +7106,51 @@ def _collect_reporting_data(message: str = "") -> dict:
 def _run_reporting_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the Reporting page.
 
-    Three views. In "picker": Up/Down choose a period (Last sprint / Last month /
-    Whole quarter), Left/Right pick an action (Generate Report / Theme / Back). For a
-    quarter, Generate opens "sprint_select": Up/Down move, Space toggles which sprints
-    make up the quarter (the current quarter's sprints pre-checked), Enter generates.
-    "detail" shows the report: Up/Down scroll, Export re-writes files, Theme cycles the
-    slide-deck palette, Back returns to the picker.
+    Four views. In "picker": Up/Down choose a period (Last week / Last sprint / Last
+    month / Whole quarter / Custom date range), Left/Right pick an action (Generate
+    Report / Sources / Theme / Back). The first Generate confirms the data sources
+    (ticketing / code / docs — analysis-style grid, skipped when only one source is
+    configured); the choice is sticky for the page and reopenable via Sources.
+    For a quarter, Generate opens "sprint_select": Up/Down
+    move, Space toggles which sprints make up the quarter (the current quarter's
+    sprints pre-checked), Enter generates. A custom range prompts for start/end dates
+    first. "theme_select" previews every palette (built-ins + custom) as color
+    swatches. "style_select" edits the persisted deck style (colors, font, layout,
+    section toggles — Space changes the focused option; Save persists to
+    reporting_prefs.json, Reset restores defaults, Back/Esc discards unsaved
+    edits). "detail" shows the report: Up/Down scroll, Export
+    re-writes files, Back returns to the picker. Generation runs on a worker thread
+    behind the shared progress screen — Esc cancels cooperatively.
 
     # See docs: "Reporting Mode" — TUI page
     """
     from datetime import date as _date
+    from datetime import timedelta as _timedelta
 
     from yeaboi.reporting.activity import (
         PERIOD_LABELS,
         PERIOD_LAST_MONTH,
         PERIOD_LAST_SPRINT,
+        PERIOD_LAST_WEEK,
         PERIOD_QUARTER,
+        PERIOD_WINDOW,
+        available_report_sources,
     )
-    from yeaboi.reporting.presentation import THEMES
-    from yeaboi.reporting.render import format_report_lines
     from yeaboi.reporting.sprints import list_sprints, mark_in_quarter, quarter_bounds
+    from yeaboi.reporting.style import (
+        COLOR_ROLES,
+        CONTENT_FITS,
+        DEFAULT_STYLE,
+        FONT_PRESETS,
+        FONT_SCALES,
+        LAYOUTS,
+        MAX_BULLET_CHOICES,
+        STYLE_FIELDS,
+        load_deck_style,
+        save_deck_style,
+        style_summary,
+    )
+    from yeaboi.reporting.themes import all_palettes
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_reporting_screen
 
     base = _collect_reporting_data()
@@ -6668,10 +7159,17 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     q_label, q_start, q_end = quarter_bounds()
     periods = [
+        (PERIOD_LAST_WEEK, PERIOD_LABELS[PERIOD_LAST_WEEK], "The last 7 days of completed work"),
         (PERIOD_LAST_SPRINT, PERIOD_LABELS[PERIOD_LAST_SPRINT], "The most recent sprint's completed work"),
         (PERIOD_LAST_MONTH, PERIOD_LABELS[PERIOD_LAST_MONTH], "The last ~4 weeks across ~2 sprints"),
         (PERIOD_QUARTER, f"Whole quarter ({q_label})", "Pick the sprints that make up the quarter"),
+        (PERIOD_WINDOW, PERIOD_LABELS[PERIOD_WINDOW], "Pick explicit start and end dates"),
     ]
+    # Loaded once per page entry — custom palettes come from reporting_themes.json;
+    # the source grid probes which trackers / code hosts / doc platforms have creds.
+    palettes = all_palettes()
+    theme_names = list(palettes)
+    source_grid = available_report_sources()
 
     state = {
         "view": "picker",
@@ -6681,18 +7179,28 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         "sel": 0,  # action button index
         "message": "",
         "theme": "midnight",
-        "detail_lines": [],
         "detail_title": "",
         "report": None,
+        # sources selection — None until confirmed; sticky for the page session
+        "sources": None,
         # sprint_select view state
         "sprints": [],  # list[SprintRef]
         "sprint_cursor": 0,
         "sprint_checked": set(),
+        # theme_select view state
+        "theme_cursor": 0,
+        "theme_return_view": "picker",
+        # style_select view state — the persisted deck style, edited in place
+        "style": load_deck_style(),
+        "style_cursor": 0,
+        "style_return_view": "picker",
     }
-    picker_actions = ["Generate Report", "Theme", "Back"]
-    detail_actions = ["Export", "Share Online", "Anonymize", "Theme", "Back"]
+    picker_actions = ["Generate Report", "Sources", "Theme", "Style", "Back"]
+    detail_actions = ["Export", "Share Online", "Anonymize", "Theme", "Style", "Back"]
     sprint_actions = ["Generate Report", "Back"]
-    # Anonymize state: None = real report; an AnonymizedOutput = mask the detail lines.
+    theme_actions = ["Select", "Back"]
+    style_actions = ["Save", "Reset", "Back"]
+    # Anonymize state: None = real report; an AnonymizedOutput = mask the shown report.
     anon = None
     anon_instruction = ""
 
@@ -6705,16 +7213,20 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             return acts
         if state["view"] == "sprint_select":
             return sprint_actions
+        if state["view"] == "theme_select":
+            return theme_actions
+        if state["view"] == "style_select":
+            return style_actions
         return picker_actions
 
     def _data() -> dict:
-        lines = state["detail_lines"]
+        report = state["report"]
         title = state["detail_title"]
-        # In-place mask: the detail view re-renders the SAME lines with words swapped.
-        if anon is not None and state["view"] == "detail":
-            from yeaboi.anonymize.apply import apply_replacements, mask_lines
+        # In-place mask: the detail view re-renders the SAME report with words swapped.
+        if anon is not None and state["view"] == "detail" and report is not None:
+            from yeaboi.anonymize.apply import apply_replacements, mask_artifact
 
-            lines = mask_lines(lines, anon.replacements)
+            report = mask_artifact(report, anon.replacements)
             title = apply_replacements(title, anon.replacements)
         return {
             "session_name": session_name,
@@ -6722,15 +7234,24 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             "periods": periods,
             "selected_idx": state["selected"],
             "theme": state["theme"],
-            "detail_lines": lines,
+            "report": report,
             "detail_title": title,
             "actions": _actions(),
             "message": state["message"],
+            "sources_summary": _sources_summary(),
             # sprint_select rendering
             "quarter_label": q_label,
             "sprints": state["sprints"],
             "sprint_cursor": state["sprint_cursor"],
             "sprint_checked": state["sprint_checked"],
+            # theme_select rendering
+            "theme_names": theme_names,
+            "palettes": palettes,
+            "theme_cursor": state["theme_cursor"],
+            # style_select rendering
+            "style": state["style"],
+            "style_cursor": state["style_cursor"],
+            "style_summary": style_summary(state["style"]),
         }
 
     anim_start = time.monotonic()
@@ -6756,7 +7277,6 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     def _show_report(report, msg: str) -> None:
         state["report"] = report
-        state["detail_lines"] = format_report_lines(report)
         state["detail_title"] = f"Delivery Report — {report.period_label}"
         state["view"] = "detail"
         state["sel"], state["scroll"] = 0, 0
@@ -6767,22 +7287,175 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         plural = "s" if n != 1 else ""
         return f"Report generated — {n} item{plural} delivered. Auto-saved (md/html/slides)."
 
+    source_titles = {
+        "jira": "Jira",
+        "azuredevops": "Azure DevOps",
+        "github": "GitHub",
+        "confluence": "Confluence",
+        "notion": "Notion",
+    }
+
+    def _sources_summary() -> str:
+        """One status line for the picker: what the next Generate will consult."""
+        sel = state["sources"] if state["sources"] is not None else source_grid
+
+        def _fmt(component: str) -> str:
+            chosen = [source_titles.get(s, s) for s in sel.get(component, [])]
+            return " + ".join(chosen) if chosen else "—"
+
+        return f"Sources: {_fmt('delivery')}  ·  Code: {_fmt('code')}  ·  Docs: {_fmt('docs')}"
+
+    def _confirm_sources(*, force: bool = False) -> dict | None:
+        """Confirm which data sources feed the report (analysis-style grid).
+
+        Returns the ``{component: [sources]}`` selection (sticky in
+        ``state["sources"]`` for the page session), or None when the user Esc-backs
+        out. Shown only when a real choice exists (≥2 configured sources overall);
+        otherwise the single/empty configuration is confirmed silently. The Sources
+        button passes ``force=True`` to open it regardless.
+        """
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        grid = {c: list(v) for c, v in source_grid.items() if v}
+        total = sum(len(v) for v in grid.values())
+        if not grid:
+            # Nothing configured — the engine surfaces the "no board" warning.
+            if force:
+                state["message"] = "No data sources configured — connect a tracker in Settings."
+            state["sources"] = {}
+            return {}
+        if not force and total <= 1:
+            logger.info("reporting: single configured source — skipping sources step")
+            state["sources"] = grid
+            return grid
+        logger.info("reporting: sources select opened (%d source(s))", total)
+        result = _run_component_select(
+            live,
+            console,
+            read_key,
+            frame_time,
+            supports_timeout,
+            grid,
+            descriptions={
+                "delivery": "where completed tickets come from",
+                "code": "merged PRs/commits as supporting context",
+                "docs": "doc updates as supporting context",
+            },
+            initial=state["sources"],
+            theme=REPORTING_THEME,
+            brand="REPORTING SETUP",
+            title_builder=lambda w, h: reporting_title(width=w),
+            footer_verb="report on",
+            required={"delivery": "Select at least one ticketing source."} if grid.get("delivery") else None,
+        )
+        if result == "cancel":
+            logger.info("reporting: sources selection cancelled")
+            return None
+        # A fully-unchecked component comes back absent from the picker result;
+        # store it as an explicit empty list — a missing key means "auto" to
+        # normalize_sources, which would silently re-enable what the user just
+        # deselected.
+        result = {c: result.get(c, []) for c in grid}
+        state["sources"] = result
+        logger.info("reporting: sources confirmed — %s", result)
+        return result
+
+    def _ensure_sources() -> bool:
+        """Generate-path gate: confirm sources once, then stay sticky."""
+        if state["sources"] is not None:
+            return True
+        return _confirm_sources() is not None
+
+    def _run_report_generate(make_report) -> None:
+        """Run ``make_report`` on a worker thread behind the shared progress screen.
+
+        ``make_report(on_progress=..., cancel_event=...)`` runs the engine; the frame
+        loop repaints live progress at ~30fps (the same worker-thread pattern the
+        standup generate uses — without it the whole TUI froze for the tracker fetch
+        + LLM call). Esc/q sets the cancel event; the engine raises ReportCancelledError
+        at the next stage boundary. Success lands on the detail view.
+        """
+        import threading
+
+        from yeaboi.reporting.engine import ReportCancelledError
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        progress: list[str] = ["Starting"]
+        result_box: list = [None, None]  # [report, exception]
+        cancel_event = threading.Event()
+
+        def _worker() -> None:
+            try:
+                result_box[0] = make_report(on_progress=progress.append, cancel_event=cancel_event)
+            except BaseException as e:  # noqa: BLE001 — re-surfaced on the UI thread below
+                result_box[1] = e
+
+        thread = threading.Thread(target=_worker, name="reporting-generate", daemon=True)
+        thread.start()
+        start = time.monotonic()
+        cancelling = False
+        while thread.is_alive():
+            elapsed = time.monotonic() - start
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=REPORTING_THEME,
+                    # width picks the tall ANSI wordmark (the pixel-block art is the
+                    # narrow-terminal fallback); shimmer animates like the page header.
+                    title=reporting_title(elapsed, width=w),
+                    label="Cancelling…" if cancelling else "Generating delivery report",
+                )
+            )
+            # With timeout support the key read doubles as the frame pacer; without
+            # it a blocking read would stall the spinner, so just sleep (no cancel).
+            if supports_timeout:
+                k = read_key(timeout=frame_time)
+                if k in ("esc", "q") and not cancelling:
+                    cancelling = True
+                    cancel_event.set()
+                    logger.info("reporting: generate cancel requested")
+            else:
+                time.sleep(1 / 30)
+        thread.join()
+        err = result_box[1]
+        if err is None and result_box[0] is not None:
+            report = result_box[0]
+            logger.info("reporting: report generated — %d item(s)", len(report.delivered_items))
+            _show_report(report, _delivered_msg(report))
+        elif isinstance(err, ReportCancelledError):
+            logger.info("reporting: generate cancelled")
+            state["message"] = "Generation cancelled."
+        else:
+            logger.error("reporting generate failed: %s", err, exc_info=err)
+            state["message"] = f"Generate failed: {err}"
+
     def _generate() -> None:
-        """Generate the delivery report for the selected non-quarter period."""
+        """Generate the delivery report for the selected simple period (threaded)."""
         period_key = periods[state["selected"]][0]
         logger.info("reporting: generating report (period=%s, session=%s)", period_key, session_id)
-        try:
-            from yeaboi.reporting.engine import run_delivery_report
+        from yeaboi.reporting.engine import run_delivery_report
 
-            report = run_delivery_report(period_key, session_id=session_id, db_path=_ana_dbp)
-            logger.info("reporting: report generated — %d item(s) (period=%s)", len(report.delivered_items), period_key)
-            _show_report(report, _delivered_msg(report))
-        except Exception as e:  # never let an action crash the TUI
-            logger.error("reporting generate failed: %s", e, exc_info=True)
-            state["message"] = f"Generate failed: {e}"
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
+                period_key,
+                session_id=session_id,
+                db_path=_ana_dbp,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+
+        _run_report_generate(_make)
 
     def _run_quarter(window_start: str, window_end: str, names: tuple, label: str) -> None:
-        """Generate a quarter report over an explicit sprint-derived window."""
+        """Generate a quarter report over an explicit sprint-derived window (threaded)."""
         logger.info(
             "reporting: generating quarter report %s → %s over %d sprint(s) (session=%s)",
             window_start,
@@ -6790,10 +7463,10 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             len(names),
             session_id,
         )
-        try:
-            from yeaboi.reporting.engine import run_delivery_report
+        from yeaboi.reporting.engine import run_delivery_report
 
-            report = run_delivery_report(
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
                 PERIOD_QUARTER,
                 session_id=session_id,
                 db_path=_ana_dbp,
@@ -6801,12 +7474,73 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 window_end=window_end,
                 sprint_names=names,
                 period_label_override=label,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
             )
-            logger.info("reporting: quarter report generated — %d item(s)", len(report.delivered_items))
-            _show_report(report, _delivered_msg(report))
-        except Exception as e:  # never let an action crash the TUI
-            logger.error("reporting quarter generate failed: %s", e, exc_info=True)
-            state["message"] = f"Generate failed: {e}"
+
+        _run_report_generate(_make)
+
+    def _ask_date(step: str, default: str, *, not_before: str = "") -> str | None:
+        """Prompt for one ISO date with a retry loop; None when the user Esc-cancels."""
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        prompt = "YYYY-MM-DD"
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=prompt,
+                step=step,
+                default=default,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is None:
+                return None
+            raw = (raw or "").strip() or default
+            try:
+                value = _date.fromisoformat(raw).isoformat()
+            except ValueError:
+                prompt = f"{raw!r} isn't a date — enter YYYY-MM-DD"
+                continue
+            if not_before and value < not_before:
+                prompt = f"End date must not be before {not_before} — enter YYYY-MM-DD"
+                continue
+            return value
+
+    def _generate_window() -> None:
+        """Prompt for explicit start/end dates, then generate over that window (threaded)."""
+        today = _date.today()
+        start_iso = _ask_date("Custom range — start date", (today - _timedelta(days=28)).isoformat())
+        if start_iso is None:
+            state["message"] = ""
+            return
+        end_iso = _ask_date("Custom range — end date", today.isoformat(), not_before=start_iso)
+        if end_iso is None:
+            state["message"] = ""
+            return
+        logger.info("reporting: generating custom-range report %s → %s (session=%s)", start_iso, end_iso, session_id)
+        from yeaboi.reporting.engine import run_delivery_report
+
+        def _make(on_progress=None, cancel_event=None):
+            return run_delivery_report(
+                PERIOD_WINDOW,
+                session_id=session_id,
+                db_path=_ana_dbp,
+                window_start=start_iso,
+                window_end=end_iso,
+                theme=state["theme"],
+                sources=state["sources"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+
+        _run_report_generate(_make)
 
     def _open_sprint_select() -> None:
         """Load the sprint list for the quarter and switch to the multi-select view.
@@ -6857,16 +7591,82 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         label = q_label if set(checked) == detected else f"{q_label} (custom)"
         _run_quarter(window_start, window_end, names, label)
 
+    def _tilde(p) -> str:
+        """Abbreviate $HOME to ~ so export paths survive the banner's ellipsis."""
+        home = str(Path.home())
+        s = str(p)
+        return "~" + s[len(home) :] if s.startswith(home) else s
+
+    def _resolve_fit_for_export():
+        """Resolve content_fit="ask" by offering the extra slides ("expand") or the
+        fixed grid ("tight") — the deck builders themselves can never prompt.
+
+        Returns the DeckStyle to export with, or None when the user Esc-cancels.
+        Only asks when expanding actually costs slides; the answer applies to this
+        export only (the saved preference stays "ask").
+        """
+        style = state["style"]
+        report = state.get("report")
+        if style.content_fit != "ask" or report is None:
+            return style
+        from yeaboi.reporting.layout import count_fit_slides
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        tight_n, expand_n = count_fit_slides(report, style)
+        if expand_n <= tight_n:  # everything fits without extra slides — nothing to ask
+            return dataclasses.replace(style, content_fit="expand")
+        extra = expand_n - tight_n
+        raw = _standup_read_line(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            prompt="y = add them, everything fits · n = keep it tight (may trim with '… and N more')",
+            step=f"Fit all content with {extra} extra slide{'s' if extra != 1 else ''}?",
+            default="y",
+            theme=REPORTING_THEME,
+            title=reporting_title(width=console.size[0]),
+        )
+        if raw is None:
+            return None
+        chosen = "tight" if raw.strip().lower().startswith("n") else "expand"
+        logger.info("reporting: content-fit offer (+%d slide(s)) answered %s", extra, chosen)
+        return dataclasses.replace(state["style"], content_fit=chosen)
+
     def _export_files() -> str:
         report = state.get("report")
+        style = _resolve_fit_for_export()
+        if style is None:
+            return "Export cancelled."
         try:
             from yeaboi.reporting.export import export_report
+            from yeaboi.reporting.store import ReportingStore
 
-            paths = export_report(report, theme=state["theme"])
-            return f"Exported to {paths['markdown'].parent}  (Markdown + HTML + slides)"
+            with ReportingStore(_ana_dbp) as _store:
+                run_history = _store.get_history(session_id, limit=30)
+            paths = export_report(report, theme=state["theme"], history=run_history, style=style)
+            kinds = "Markdown + HTML + slides" + (" + PowerPoint" if "pptx" in paths else "")
+            return f"Exported to {_tilde(paths['markdown'].parent)}  ({kinds})"
         except Exception as e:  # noqa: BLE001
             logger.error("reporting export failed: %s", e, exc_info=True)
             return f"Export failed: {e}"
+
+    def _export_pptx() -> str:
+        report = state.get("report")
+        style = _resolve_fit_for_export()
+        if style is None:
+            return "Export cancelled."
+        try:
+            from yeaboi.reporting.export import export_pptx_only
+
+            path = export_pptx_only(report, theme=state["theme"], style=style)
+            if path is None:
+                return "PowerPoint export needs python-pptx — install with: uv sync --extra docs"
+            return f"Exported PowerPoint to {_tilde(path)}"
+        except Exception as e:  # noqa: BLE001
+            logger.error("reporting pptx export failed: %s", e, exc_info=True)
+            return f"PowerPoint export failed: {e}"
 
     def _export_document() -> tuple[str, str] | str:
         from yeaboi.paths import get_reporting_export_dir
@@ -6912,15 +7712,135 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 mode="reporting",
                 files_export=_export_files,
                 get_document=_export_document,
+                extra_options=["PowerPoint"],
+                extra_handlers={"powerpoint": _export_pptx},
             )
         if msg is not None:
             state["message"] = msg
 
-    def _cycle_theme() -> None:
-        idx = (list(THEMES).index(state["theme"]) + 1) % len(THEMES) if state["theme"] in THEMES else 0
-        state["theme"] = THEMES[idx]
-        logger.info("reporting: presentation theme cycled to %s", state["theme"])
-        state["message"] = f"Presentation theme: {state['theme']}"
+    def _open_theme_select() -> None:
+        """Switch to the palette preview list, remembering where to return."""
+        state["theme_return_view"] = state["view"]
+        state["theme_cursor"] = theme_names.index(state["theme"]) if state["theme"] in theme_names else 0
+        state["view"] = "theme_select"
+        state["sel"], state["message"] = 0, ""
+        logger.info("reporting: theme select opened (%d palette(s))", len(theme_names))
+
+    def _close_theme_select(*, chosen: bool) -> None:
+        if chosen:
+            state["theme"] = theme_names[state["theme_cursor"]]
+            state["message"] = f"Presentation theme: {state['theme']}"
+            logger.info("reporting: presentation theme set to %s", state["theme"])
+        state["view"] = state["theme_return_view"]
+        state["sel"] = 0
+
+    # Baseline for the style editor: what's on disk. Space edits a working copy
+    # (live previews + this session's exports); Save persists, Back/Esc discards.
+    style_saved = state["style"]
+
+    def _open_style_select() -> None:
+        """Switch to the deck-style options list, remembering where to return."""
+        nonlocal style_saved
+        style_saved = state["style"]
+        state["style_return_view"] = state["view"]
+        state["view"] = "style_select"
+        state["sel"], state["message"] = 0, ""
+        logger.info("reporting: style select opened (%s)", style_summary(state["style"]))
+
+    def _save_style_select() -> None:
+        nonlocal style_saved
+        save_deck_style(state["style"])
+        style_saved = state["style"]
+        state["view"] = state["style_return_view"]
+        state["sel"] = 0
+        state["message"] = "Style saved — applies to every future export."
+        logger.info("reporting: style saved (%s)", style_summary(state["style"]))
+
+    def _close_style_select() -> None:
+        discarded = state["style"] != style_saved
+        state["style"] = style_saved  # Back/Esc drops unsaved edits
+        state["view"] = state["style_return_view"]
+        state["sel"] = 0
+        if discarded:
+            state["message"] = "Style changes discarded."
+            logger.info("reporting: style changes discarded")
+
+    def _set_style(field: str, value) -> None:
+        """Apply one style change to the working copy (persisted on Save)."""
+        state["style"] = dataclasses.replace(state["style"], **{field: value})
+        logger.info("reporting: style %s → %r", field, value)
+
+    def _read_custom_hex(label: str, current: str) -> str | None:
+        """Prompt for a #RRGGBB color; retries on bad input, Esc keeps the old value."""
+        import re as _re
+
+        from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+        prompt = "#RRGGBB, a palette role (accent/accent2/fg/muted), or blank for theme default"
+        while True:
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt=prompt,
+                step=f"{label} — custom color",
+                default=current,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is None:
+                return None
+            raw = raw.strip().lower()
+            if raw == "" or raw in COLOR_ROLES or _re.match(r"^#[0-9a-f]{6}$", raw):
+                return raw
+            prompt = f"{raw!r} isn't valid — use #RRGGBB, accent/accent2/fg/muted, or blank"
+
+    def _cycle_style() -> None:
+        """Space on a style row: flip/cycle the focused option (colors end in a custom prompt)."""
+        field, label, kind = STYLE_FIELDS[state["style_cursor"]]
+        current = getattr(state["style"], field)
+        if kind == "bool":
+            _set_style(field, not current)
+        elif kind == "choice":
+            values = {
+                "font_family": tuple(FONT_PRESETS),
+                "font_scale": tuple(FONT_SCALES),
+                "layout": LAYOUTS,
+                "content_fit": CONTENT_FITS,
+            }[field]
+            _set_style(field, values[(values.index(current) + 1) % len(values)] if current in values else values[0])
+        elif kind == "int":
+            nxt = next((v for v in MAX_BULLET_CHOICES if v > current), MAX_BULLET_CHOICES[0])
+            _set_style(field, nxt)
+        elif kind == "color":
+            # "" → roles in order → custom hex prompt → back to "".
+            cycle = ("", *COLOR_ROLES)
+            if current in cycle and current != cycle[-1]:
+                _set_style(field, cycle[cycle.index(current) + 1])
+            elif current == cycle[-1]:
+                chosen = _read_custom_hex(label, "")
+                _set_style(field, chosen if chosen is not None else "")
+            else:  # currently a custom hex — wrap to theme default
+                _set_style(field, "")
+        else:  # text (footer)
+            from yeaboi.ui.shared._components import REPORTING_THEME, reporting_title
+
+            raw = _standup_read_line(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                prompt="Shown on every slide — blank clears it",
+                step="Footer text",
+                default=current,
+                theme=REPORTING_THEME,
+                title=reporting_title(width=console.size[0]),
+            )
+            if raw is not None:
+                _set_style(field, raw.strip()[:120])
 
     _render()
     while True:
@@ -6948,14 +7868,62 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                 if label == "Back":
                     break
                 elif label == "Generate Report":
-                    if periods[state["selected"]][0] == PERIOD_QUARTER:
+                    if not _ensure_sources():
+                        state["message"] = ""
+                        _render()
+                        continue
+                    period_key = periods[state["selected"]][0]
+                    if period_key == PERIOD_QUARTER:
                         _open_sprint_select()
+                    elif period_key == PERIOD_WINDOW:
+                        _generate_window()
                     else:
                         _generate()
+                elif label == "Sources":
+                    _confirm_sources(force=True)
                 elif label == "Theme":
-                    _cycle_theme()
+                    _open_theme_select()
+                elif label == "Style":
+                    _open_style_select()
             elif k in ("esc", "q"):
                 break
+        elif state["view"] == "theme_select":
+            n_themes = len(theme_names)
+            if k in ("up", "scroll_up"):
+                state["theme_cursor"] = (state["theme_cursor"] - 1) % n_themes
+            elif k in ("down", "scroll_down"):
+                state["theme_cursor"] = (state["theme_cursor"] + 1) % n_themes
+            elif k == "left":
+                state["sel"] = max(0, state["sel"] - 1)
+            elif k == "right":
+                state["sel"] = min(len(theme_actions) - 1, state["sel"] + 1)
+            elif k in ("enter", " "):
+                _close_theme_select(chosen=theme_actions[state["sel"]] == "Select")
+            elif k in ("esc", "q"):
+                _close_theme_select(chosen=False)
+        elif state["view"] == "style_select":
+            n_fields = len(STYLE_FIELDS)
+            if k in ("up", "scroll_up"):
+                state["style_cursor"] = (state["style_cursor"] - 1) % n_fields
+            elif k in ("down", "scroll_down"):
+                state["style_cursor"] = (state["style_cursor"] + 1) % n_fields
+            elif k == " ":  # change the option under the cursor
+                _cycle_style()
+            elif k == "left":
+                state["sel"] = max(0, state["sel"] - 1)
+            elif k == "right":
+                state["sel"] = min(len(style_actions) - 1, state["sel"] + 1)
+            elif k == "enter":
+                label = style_actions[state["sel"]]
+                if label == "Save":
+                    _save_style_select()
+                elif label == "Reset":
+                    state["style"] = DEFAULT_STYLE  # working copy only — Save commits
+                    logger.info("reporting: style reset to defaults (unsaved)")
+                else:  # Back
+                    _close_style_select()
+            elif k in ("esc", "q"):
+                _close_style_select()
         elif state["view"] == "sprint_select":
             n_sprints = len(state["sprints"])
             if k in ("up", "scroll_up"):
@@ -7040,7 +8008,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                                 project_name=report.project_name or "",
                                 source_mode="reporting",
                                 theme=REPORTING_THEME,
-                                title=reporting_title(),
+                                title=reporting_title(width=console.size[0]),
                             )
                             if res is not None:
                                 anon, anon_instruction = res, ""
@@ -7059,7 +8027,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                         step="Anonymize — adjust what's masked",
                         default="",
                         theme=REPORTING_THEME,
-                        title=reporting_title(),
+                        title=reporting_title(width=console.size[0]),
                         box_rows=6,
                     )
                     if adj is not None and adj.strip():
@@ -7077,14 +8045,16 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
                                 project_name=(state.get("report").project_name if state.get("report") else "") or "",
                                 source_mode="reporting",
                                 theme=REPORTING_THEME,
-                                title=reporting_title(),
+                                title=reporting_title(width=console.size[0]),
                             )
                             if res is not None:
                                 anon = res
                 elif label == "Revert":  # restore the real names (no LLM call)
                     anon, anon_instruction = None, ""
                 elif label == "Theme":
-                    _cycle_theme()
+                    _open_theme_select()
+                elif label == "Style":
+                    _open_style_select()
             elif k in ("esc", "q"):
                 state["view"] = "picker"
                 state["sel"], state["scroll"], state["message"] = 0, 0, ""
@@ -7413,6 +8383,22 @@ def _run_roadmap_page(
             path = Path(raw).expanduser()
             if not path.exists() or not path.is_file():
                 state["message"] = f"File not found: {path}"
+                return
+            # Sandbox pre-flight (main thread): consent before the engine reads
+            # the file, so a denial is a status line, not an exception mid-run.
+            from yeaboi.ui.shared._consent import _preflight_path_consent
+
+            if not _preflight_path_consent(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                path,
+                mode="read",
+                context="Roadmap intake — local file",
+            ):
+                state["message"] = f"Access to {path} denied — allow it via Settings → Paths."
                 return
             source = RoadmapSource(source_type="local", locator=str(path), label=path.name)
         elif key == "confluence":
@@ -7956,7 +8942,9 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.retro.export import export_retro
 
                             report = board_to_report(board, sprint_name=sprint_name)
-                            paths = export_retro(report, project_name=project_name or session_name)
+                            with RetroStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_retro(report, project_name=project_name or session_name, history=run_history)
                             logger.info("retro: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8600,7 +9588,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                             from yeaboi.poker.export import export_poker
 
                             report = board_to_report(board)
-                            paths = export_poker(report, project_name=project_name or session_name)
+                            with PokerStore(_ana_dbp) as _store:
+                                run_history = _store.get_history(session_id, limit=30)
+                            paths = export_poker(report, project_name=project_name or session_name, history=run_history)
                             logger.info("poker: exported to %s", paths["markdown"].parent)
                             return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
                         except Exception as e:
@@ -8700,11 +9690,18 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
         return render
 
+    def _history_for(report):
+        # Trend chart data: this session's past poker runs (newest-first rows).
+        if not report.session_id:
+            return []
+        with PokerStore(_ana_dbp) as store:
+            return store.get_history(report.session_id, limit=30)
+
     def files_export(run):
         report = _report(run.run_id)
         if report is None:
             return "That run is no longer available."
-        paths = export_poker(report)
+        paths = export_poker(report, history=_history_for(report))
         return f"Exported to {paths['markdown'].parent}  (Markdown + HTML)"
 
     def get_document(run):
@@ -8842,6 +9839,15 @@ def select_mode(
     read_key = _read_key_fn or _read_key
     selected = 0
     n = len(_MODE_CARDS)
+
+    # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
+    # consent mode: denials still raise, but ALSO queue a ConsentRequest that
+    # the session loop pops after each graph turn to show the Allow once /
+    # Always allow / Deny popup. Headless paths (cli flags, MCP, scheduled
+    # standups) never set this, so they stay hard-deny with an actionable error.
+    from yeaboi import fs_policy
+
+    fs_policy.set_interactive(True)
 
     # Kick off the one-shot PyPI update check on a daemon thread. Idempotent and
     # fire-and-forget — the bottom-left version row picks the result up whenever
@@ -10231,13 +11237,16 @@ def select_mode(
                         _save = False  # empty on a hidden field = keep the value
                     if _save and not _masked and _val == (_cur_val or ""):
                         _save = False  # unchanged
-                    if _save and _env == "YEABOI_HOME":
+                    if _save and _env == "YEABOI_ALLOWED_PATHS":
+                        # The whitelist has its own setter (dedup + pinned .env).
+                        _ap_msg = _settings_save_allowed_paths(_val)
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = _ap_msg
+                    elif _save and _env == "YEABOI_HOME":
                         # Relocating the tree needs a move-or-leave answer and a write
                         # to the pinned bootstrap .env, so it saves through its own
                         # helper rather than the generic path.
-                        _dd_msg = _settings_save_data_dir(
-                            console, live, read_key, _FRAME_TIME, _supports_timeout, _val
-                        )
+                        _dd_msg = _settings_save_data_dir(console, live, read_key, _FRAME_TIME, _supports_timeout, _val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _dd_msg
                     elif _save:
@@ -11696,7 +12705,23 @@ def select_mode(
                             elif not p.suffix == ".md":
                                 import_error = f"Expected a .md file, got: {p.suffix or 'no extension'}"
                             else:
-                                return ("project-planning", None, str(p))
+                                # Sandbox pre-flight (main thread): cli.py will
+                                # parse this path headlessly — consent now, so
+                                # the import never dies on a sandbox error.
+                                from yeaboi.ui.shared._consent import _preflight_path_consent
+
+                                if _preflight_path_consent(
+                                    console,
+                                    live,
+                                    read_key,
+                                    _FRAME_TIME,
+                                    _supports_timeout,
+                                    str(p),
+                                    mode="read",
+                                    context="Questionnaire import",
+                                ):
+                                    return ("project-planning", None, str(p))
+                                import_error = f"Access to {p} denied — allow it via Settings → Paths"
 
                             w, h = console.size
                             live.update(

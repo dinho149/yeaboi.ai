@@ -722,6 +722,24 @@ class TestSettingsScreen:
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "YEABOI_HOME" in envs  # reachable by keyboard and click
 
+    def test_allowed_paths_row_rendered(self):
+        # The fs-sandbox whitelist lives in Storage, which folded into System (tab 1).
+        # Rendered wide: at _render's 100 columns the boxed value would ellipsize.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen(
+            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=1
+        )
+        output = self._text(panel, width=160, height=44)
+        assert "Allowed Paths" in output
+        assert "/repos/team,/tmp/exports" in output
+
+    def test_allowed_paths_empty_shows_sandbox_note(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=160, height=44, active_tab=1)
+        assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
+
     def test_status_message_spoken_by_the_duck(self):
         # The transient status no longer takes a body row: it's handed to the
         # companion duck, who says it in a speech bubble (see _duck_say).
@@ -788,6 +806,44 @@ class TestCollectSettingsData:
         data = _collect_settings_data()
         assert data.get("JIRA_BASE_URL") == ""
 
+    def test_includes_allowed_paths(self, monkeypatch):
+        from yeaboi.ui.mode_select import _collect_settings_data
+
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", "/a,/b")
+        data = _collect_settings_data()
+        assert data["YEABOI_ALLOWED_PATHS"] == "/a,/b"
+
+
+class TestSettingsSaveAllowedPaths:
+    """_settings_save_allowed_paths — the save half of the sandbox whitelist row.
+
+    The list is typed on the page like every other value, so only the persist
+    step is separate: it needs set_allowed_paths (dedup + the pinned bootstrap
+    .env) rather than the generic apply_config_value, since the whitelist has to
+    survive relocating the very data tree it guards.
+    """
+
+    def _save(self, monkeypatch, typed):
+        from yeaboi.ui import mode_select
+
+        calls: list = []
+        monkeypatch.setattr("yeaboi.config.set_allowed_paths", calls.append)
+        return calls, mode_select._settings_save_allowed_paths(typed)
+
+    def test_saves_parsed_comma_list(self, monkeypatch):
+        calls, msg = self._save(monkeypatch, " /repos/one , /repos/two ")
+        assert calls == [["/repos/one", "/repos/two"]]
+        assert "2 path" in msg
+
+    def test_blank_clears_the_whitelist(self, monkeypatch):
+        calls, msg = self._save(monkeypatch, "")
+        assert calls == [[]]
+        assert "sandboxed" in msg
+
+    def test_stray_separators_are_dropped(self, monkeypatch):
+        calls, _ = self._save(monkeypatch, "/a,,  ,/b,")
+        assert calls == [["/a", "/b"]]
+
 
 class TestSettingsTitle:
     def test_returns_text(self):
@@ -820,6 +876,9 @@ class TestLogLevelButton:
         assert "Log Level" in _BTN_COLORS
         # Same silver scheme as Configure — both are Settings-page actions.
         assert _BTN_COLORS["Log Level"] == _BTN_COLORS["Configure"]
+        # Standup's Identity action (repo path + aliases) shares the silver scheme.
+        assert "Identity" in _BTN_COLORS
+        assert _BTN_COLORS["Identity"] == _BTN_COLORS["Configure"]
 
     def test_settings_screen_renders_log_level_button(self):
         from rich.console import Console

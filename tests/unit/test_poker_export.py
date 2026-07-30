@@ -64,7 +64,9 @@ class TestMarkdown:
 class TestHtml:
     def test_escapes_untrusted_text(self):
         html = build_poker_html(_report())
-        assert "<script>" not in html
+        # The shared page shell carries its own theme-switcher <script>, so
+        # assert on the attack strings specifically.
+        assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
         assert "&lt;b&gt;risk&lt;/b&gt;" in html
         # The duel transcript is participant speech — escaped like everything else.
@@ -93,3 +95,99 @@ class TestExportPoker:
         assert paths["html"].name == "poker-2026-07-25.html"
         assert paths["markdown"].read_text(encoding="utf-8").startswith("# Planning Poker")
         assert "<!DOCTYPE html>" in paths["html"].read_text(encoding="utf-8")
+
+
+def _history(*rows):
+    """Newest-first rows mirroring PokerStore.get_history output."""
+    return [
+        {
+            "id": i,
+            "run_at": f"{d}T15:00:00",
+            "poker_date": d,
+            "project_name": "Proj",
+            "source": "jira",
+            "scope_label": "Sprint",
+            "ticket_count": t,
+            "estimated_count": e,
+        }
+        for i, (d, t, e) in enumerate(rows)
+    ]
+
+
+class TestSharedDesignSystem:
+    def test_poker_html_uses_shared_theme(self):
+        html = build_poker_html(_report())
+        assert 'data-theme="midnight"' in html
+        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'src="http' not in html and "<link" not in html  # self-contained
+
+    def test_nav_sections(self):
+        html = build_poker_html(_report())
+        assert '<section id="overview">' in html
+        assert '<section id="tickets">' in html
+        assert '<section id="ai">' in html
+        assert '<section id="duels">' in html
+
+
+class TestVisuals:
+    def test_stat_tiles_and_split_bar(self):
+        html = build_poker_html(_report())
+        assert ">Tickets</div>" in html and ">Estimated</div>" in html and ">Participants</div>" in html
+        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
+        assert 'class="seg-track"' in html
+        assert "Estimated 1" in html and "Skipped 1" in html
+
+    def test_participant_and_voter_avatars(self):
+        html = build_poker_html(_report())
+        assert html.count('class="avatar"') >= 4  # 2 participants + 2 voters
+        assert ">A</span>" in html and ">S</span>" in html
+
+    def test_avatar_name_escaped(self):
+        rep = PokerReport(
+            date="2026-07-25",
+            tickets=(
+                PokerTicketResult(
+                    key="X-1", estimated=True, final_points=3.0, votes=(PokerVote("<b>Eve</b>", "🦊", "3"),)
+                ),
+            ),
+        )
+        html = build_poker_html(rep)
+        assert "<b>Eve</b>" not in html
+
+    def test_ticket_key_is_badge_link(self):
+        html = build_poker_html(_report())
+        assert (
+            "<a class='badge' href='https://x.atlassian.net/browse/PROJ-1' target='_blank' rel='noopener'>PROJ-1</a>"
+            in html
+        )
+
+    def test_ai_notes_split_into_bullets(self):
+        rep = PokerReport(
+            date="2026-07-25",
+            tickets=(PokerTicketResult(key="X-1", ai_note="Estimate looks high. Risk is contained; scope is clear."),),
+        )
+        html = build_poker_html(rep)
+        assert "<li>Estimate looks high.</li>" in html
+        assert "<li>Risk is contained</li>" in html
+        assert "<li>scope is clear.</li>" in html
+
+    def test_sparkline_from_history(self):
+        history = _history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9), ("2026-06-27", 7, 7))
+        html = build_poker_html(_report(), history=history)
+        assert 'class="spark-wrap"' in html
+        assert "Estimation trend" in html
+        assert "2026-06-27" in html  # oldest label rendered
+
+    def test_no_history_no_sparkline(self):
+        assert 'class="spark-wrap"' not in build_poker_html(_report())
+
+    def test_self_contained_with_history(self):
+        html = build_poker_html(_report(), history=_history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9)))
+        assert 'src="http' not in html and "<link" not in html
+
+    def test_export_forwards_history(self, tmp_path, monkeypatch):
+        out_dir = tmp_path / "exports"
+        monkeypatch.setattr("yeaboi.paths.get_poker_export_dir", lambda key: out_dir / key)
+        (out_dir / "proj").mkdir(parents=True)
+        paths = export_poker(_report(), history=_history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9)))
+        assert 'class="spark-wrap"' in paths["html"].read_text(encoding="utf-8")

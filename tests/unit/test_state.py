@@ -840,6 +840,8 @@ class TestMemberUpdate:
         assert m.name == ""
         assert m.summary == ""
         assert m.blockers == ""
+        assert m.progress_note == ""
+        assert m.outlook == ""
         assert m.source == "inferred"
 
     def test_frozen(self):
@@ -855,6 +857,8 @@ class TestMemberUpdate:
             "name": "Alice",
             "summary": "Shipped login",
             "blockers": "none",
+            "progress_note": "",
+            "outlook": "",
             "source": "combined",
             "self_report": "shipped it",
             "links": (),
@@ -881,6 +885,8 @@ class TestStandupReport:
         assert r.date == ""
         assert r.sprint_day == 0
         assert r.confidence_pct == 0
+        assert r.confidence_delta == 0
+        assert r.confidence_trend == ""
         assert r.member_updates == ()
         assert r.activity_counts == ()
 

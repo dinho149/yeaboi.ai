@@ -34,6 +34,8 @@ _CONFIG_DEFAULTS = {
     "code_scope_configured": False,
     "documentation_sources": [],
     "documentation_scope_configured": False,
+    "automation_markers": "",
+    "automation_handling": "exclude",
 }
 
 
@@ -156,9 +158,12 @@ def _standup_config_set(
     azdo_projects: list | None,
     azdo_repositories: list | None,
     documentation_sources: list | None,
+    automation_markers: str | None,
+    automation_handling: str | None,
 ) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
+    from yeaboi.standup.automation import VALID_AUTOMATION_HANDLING
     from yeaboi.standup.code_scope import validate_code_sources
     from yeaboi.standup.documentation_scope import validate_documentation_sources
     from yeaboi.standup.roster import validate_tracker_sources
@@ -166,6 +171,18 @@ def _standup_config_set(
 
     if time and not re.fullmatch(r"\d{1,2}:\d{2}", time):
         raise ValueError(f"time must be HH:MM (24h), got {time!r}")
+    if repo_path:
+        # Sandbox check at write time: this path is later fed to `git -C` by the
+        # standup engine, so it must be whitelisted before it can be persisted.
+        # A violation propagates through the MCP error envelope with the
+        # message naming YEABOI_ALLOWED_PATHS.
+        from yeaboi.fs_policy import resolve_and_check
+
+        resolve_and_check(repo_path, mode="read", context="standup repo_path")
+    if automation_handling is not None and automation_handling not in VALID_AUTOMATION_HANDLING:
+        raise ValueError(
+            f"automation_handling must be one of {', '.join(VALID_AUTOMATION_HANDLING)}, got {automation_handling!r}"
+        )
     resolved = resolve_session_id(session_id)
     with StandupStore(get_db_path()) as store:
         current = store.load_config(resolved) or dict(_CONFIG_DEFAULTS)
@@ -219,6 +236,12 @@ def _standup_config_set(
             ),
             "documentation_scope_configured": (
                 current.get("documentation_scope_configured", False) or documentation_sources is not None
+            ),
+            "automation_markers": (
+                current.get("automation_markers", "") if automation_markers is None else automation_markers
+            ),
+            "automation_handling": (
+                current.get("automation_handling", "exclude") if automation_handling is None else automation_handling
             ),
         }
         store.save_config(resolved, **merged)
@@ -310,6 +333,8 @@ def register(app) -> None:
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
         documentation_sources: list[str] | None = None,
+        automation_markers: str | None = None,
+        automation_handling: str | None = None,
     ) -> dict:
         """Update a session's standup configuration; omitted fields keep their current value.
         time is HH:MM (the meeting time), weekdays like '1-5' or '1,3,5', delivery_channels from
@@ -318,6 +343,9 @@ def register(app) -> None:
         code_sources a subset of github/azure_devops, github_repositories and azdo_projects
         define the explicit code scope,
         and documentation_sources a subset of confluence/notion.
+        automation_markers is a comma-separated list of content signatures (e.g. 'wiz') marking
+        service-hook/bot comments posted under a member's identity; automation_handling is
+        'exclude' (drop detected automation from member credit, with a notice) or 'off'.
         NOTE: this saves the config only — installing the OS schedule (launchd/cron) is
         machine-local and done from the yeaboi TUI. Blank session_id = most recent session."""
         return await run_readonly(
@@ -337,4 +365,6 @@ def register(app) -> None:
             azdo_projects,
             azdo_repositories,
             documentation_sources,
+            automation_markers,
+            automation_handling,
         )

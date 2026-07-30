@@ -435,6 +435,11 @@ class SessionStore:
         # set to False to avoid spurious errors if the thread identity changes
         # (e.g. pytest reuses threads across fixtures).
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        # Belt-and-braces for direct-path callers that bypassed get_db_path():
+        # the session DB holds planning content, keep it owner-only like .env.
+        from yeaboi.config import restrict_permissions
+
+        restrict_permissions(Path(db_path), mode=0o600)
         # isolation_level=None → autocommit: each execute() commits immediately.
         # Avoids manual transaction management for simple single-row writes.
         self._conn.isolation_level = None

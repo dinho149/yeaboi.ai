@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import time
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -66,19 +66,24 @@ def test_stale_cache_is_returned_when_refresh_fails(monkeypatch, tmp_path):
 
 
 def test_sources_are_queried_concurrently(monkeypatch, tmp_path):
+    # A Barrier(2) only releases once BOTH fetchers have reached it. If the sources
+    # were queried sequentially the first fetcher would block until the timeout and
+    # trip BrokenBarrierError, so a clean pass proves they ran concurrently — with no
+    # wall-clock threshold to flake on a slow/loaded CI runner (the old `< 0.27s`
+    # assertion failed there despite correct concurrency).
+    barrier = threading.Barrier(2, timeout=5)
+
     def slow(name):
         def fetch(project, days=30):
-            time.sleep(0.15)
+            barrier.wait()
             return [{"name": name, "identity": name}]
 
         return fetch
 
     monkeypatch.setattr("yeaboi.tools.jira.jira_assignee_roster", slow("Ada"))
     monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_assignee_roster", slow("Bob"))
-    started = time.monotonic()
     result = fetch_roster_result(jira_project="J", azdo_project="A", db_path=tmp_path / "db")
 
-    assert time.monotonic() - started < 0.27
     assert [member.name for member in result.members] == ["Ada", "Bob"]
 
 

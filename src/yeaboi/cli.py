@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi import __version__, paths
+from yeaboi import __version__, fs_policy, paths
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
@@ -371,6 +371,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--allow-path",
+        metavar="PATH",
+        action="append",
+        default=[],
+        help=(
+            "Allow filesystem access to PATH for this run only (repeatable). "
+            "yeaboi is sandboxed to ~/.yeaboi; persistent allowances live in "
+            "YEABOI_ALLOWED_PATHS or Settings → Allowed Paths."
+        ),
+    )
+
+    parser.add_argument(
         "--install-skill",
         metavar="DIR",
         nargs="?",
@@ -485,10 +497,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,poker,analyze}")
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
-    report_p.add_argument("--period", choices=["last_sprint", "last_month", "quarter"], default="last_sprint")
+    report_p.add_argument(
+        "--period", choices=["last_week", "last_sprint", "last_month", "quarter", "window"], default="last_sprint"
+    )
     report_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
     report_p.add_argument(
-        "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter sprint windowing)"
+        "--window-start", default="", metavar="YYYY-MM-DD", help="Explicit window start (quarter/window periods)"
     )
     report_p.add_argument("--window-end", default="", metavar="YYYY-MM-DD", help="Explicit window end")
     report_p.add_argument(
@@ -497,8 +511,36 @@ def build_parser() -> argparse.ArgumentParser:
     report_p.add_argument("--label", default="", metavar="TEXT", help='Period label override (e.g. "Q3 2026")')
     report_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     report_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
+    report_p.add_argument(
+        "--source",
+        choices=["jira", "azdevops", "both"],
+        default="",
+        help="Ticketing source(s) for delivered work (default: every configured tracker)",
+    )
+    report_p.add_argument(
+        "--code-sources",
+        nargs="+",
+        choices=["github", "azdevops"],
+        default=None,
+        metavar="SOURCE",
+        help="Code hosts to pull supporting PR/commit context from (default: all configured)",
+    )
+    report_p.add_argument(
+        "--documentation-sources",
+        nargs="+",
+        choices=["confluence", "notion"],
+        default=None,
+        metavar="SOURCE",
+        help="Doc platforms to pull supporting doc-update context from (default: all configured)",
+    )
     report_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings/empty report)")
     report_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    report_p.add_argument(
+        "--theme",
+        default="midnight",
+        metavar="NAME",
+        help="Export palette: midnight/aurora/sunset/mono or a custom name from reporting_themes.json",
+    )
 
     standup_p = subparsers.add_parser("standup", help="Run a Daily Standup (alias of --standup-run, more knobs)")
     standup_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
@@ -1189,6 +1231,17 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
 
     console.print(f"[bold cyan]Generating {args.period.replace('_', ' ')} delivery report...[/bold cyan]")
     sprint_names = tuple(s.strip() for s in args.sprint_names.split(",") if s.strip())
+    # Assemble the engine's sources dict only when a source flag was given —
+    # None means "every configured source" (the engine's auto default).
+    sources: dict | None = None
+    if args.source or args.code_sources is not None or args.documentation_sources is not None:
+        sources = {}
+        if args.source:
+            sources["delivery"] = ["jira", "azdevops"] if args.source == "both" else [args.source]
+        if args.code_sources is not None:
+            sources["code"] = list(args.code_sources)
+        if args.documentation_sources is not None:
+            sources["docs"] = list(args.documentation_sources)
     report = run_delivery_report(
         args.period,
         session_id=_resolve_cli_session(args.session) or "",
@@ -1198,13 +1251,21 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
         window_end=args.window_end,
         sprint_names=sprint_names,
         period_label_override=args.label,
+        theme=args.theme,
+        sources=sources,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
     if args.format == "json":
         print(_json_dump(report))
     else:
+        from yeaboi.paths import REPORTING_EXPORTS_DIR
+
         console.print(format_report_rich(report))
+        console.print(
+            f"[dim]Exports (Markdown + HTML + slides, and .pptx when python-pptx is installed): "
+            f"{REPORTING_EXPORTS_DIR}[/dim]"
+        )
     return _strict_exit(args.strict, report.warnings, empty=not report.delivered_items)
 
 
@@ -1331,7 +1392,11 @@ def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
     if args.perf_command == "complete":
         transcript = args.transcript
         if transcript.startswith("@"):
-            path = Path(transcript[1:])
+            try:
+                path = fs_policy.resolve_and_check(transcript[1:], mode="read", context="perf complete @transcript")
+            except fs_policy.SandboxViolationError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
             if not path.exists():
                 print(f"Error: transcript file not found: {path}", file=sys.stderr)
                 return 1
@@ -1401,7 +1466,7 @@ def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
             return 2
         from yeaboi.retro.export import export_retro
 
-        exported = {k: str(v) for k, v in export_retro(latest).items()}
+        exported = {k: str(v) for k, v in export_retro(latest, history=history).items()}
     # Summarise the latest retro's carried-over action items by status.
     carried = list(latest.carried_action_items) if latest else []
     carried_summary = ""
@@ -1465,7 +1530,9 @@ def _cmd_poker(args: argparse.Namespace, console: "Console") -> int:
             return 2
         from yeaboi.poker.export import export_poker
 
-        exported = {k: str(v) for k, v in export_poker(latest).items()}
+        with PokerStore(get_db_path()) as _store:
+            run_history = _store.get_history(latest.session_id, limit=30) if latest.session_id else []
+        exported = {k: str(v) for k, v in export_poker(latest, history=run_history).items()}
     if args.format == "json":
         print(json.dumps({"history": rows, "exported": exported}, indent=2))
         return 0
@@ -1756,6 +1823,38 @@ def _run_retro(console: "Console", session_id: str) -> None:
         console.print(f"  [yellow]{data['note']}[/yellow]")
 
 
+def _seed_allowed_paths_from_standup() -> None:
+    """One-time sandbox grandfathering for pre-sandbox standup configs.
+
+    Standup repo paths configured before the filesystem sandbox existed would
+    silently stop being scanned. Exactly once — while YEABOI_ALLOWED_PATHS has
+    never been set (unset, not empty) — copy any configured repo_path values
+    into the whitelist and log it. Users who later edit or clear the whitelist
+    are never re-seeded.
+    """
+    if os.getenv("YEABOI_ALLOWED_PATHS") is not None:
+        return
+    db = paths.DB_PATH
+    if not db.exists():
+        return
+    try:
+        import sqlite3
+
+        with sqlite3.connect(str(db)) as conn:
+            rows = conn.execute("SELECT DISTINCT repo_path FROM standup_config WHERE repo_path != ''").fetchall()
+    except Exception:  # noqa: BLE001 — missing table/old schema: nothing to seed
+        return
+    repo_paths = [r[0] for r in rows if r and r[0]]
+    if not repo_paths:
+        return
+    from yeaboi.config import set_allowed_paths
+
+    set_allowed_paths(repo_paths)
+    logging.getLogger(__name__).info(
+        "sandbox: seeded YEABOI_ALLOWED_PATHS from existing standup repo paths: %s", repo_paths
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the yeaboi CLI."""
     parser = build_parser()
@@ -1776,6 +1875,14 @@ def main(argv: list[str] | None = None) -> None:
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
 
+    # ── Filesystem sandbox: session-scoped --allow-path grants ───────────────
+    # Applied before any flow that might touch user-supplied paths, so every
+    # denial message's "--allow-path" remedy actually works for the same
+    # command re-run. Session-only: nothing is persisted (see fs_policy.py).
+    for allowed in args.allow_path:
+        fs_policy.grant_session(allowed)
+    _seed_allowed_paths_from_standup()
+
     # ── Validation for --non-interactive mode ────────────────────────────────
     if args.non_interactive and not args.description:
         print("Error: --non-interactive requires --description", file=sys.stderr)
@@ -1787,7 +1894,11 @@ def main(argv: list[str] | None = None) -> None:
 
     # Resolve --description @file.txt → read file contents
     if args.description and args.description.startswith("@"):
-        desc_path = Path(args.description[1:])
+        try:
+            desc_path = fs_policy.resolve_and_check(args.description[1:], mode="read", context="--description @file")
+        except fs_policy.SandboxViolationError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         if not desc_path.exists():
             print(f"Error: description file not found: {desc_path}", file=sys.stderr)
             sys.exit(1)
@@ -1944,7 +2055,9 @@ def main(argv: list[str] | None = None) -> None:
             parsed = parse_questionnaire_md(qpath)
             questionnaire = build_questionnaire_from_answers(parsed)
             console.print(f"[green]Loaded {len(parsed)} answers from {qpath}[/green]")
-        except ValueError as e:
+        except (ValueError, fs_policy.SandboxViolationError) as e:
+            # A sandbox denial (path outside the whitelist) prints the same
+            # clean message as --description @file / perf @transcript, not a traceback.
             console.print(f"[red]Error: {e}[/red]")
             sys.exit(1)
 

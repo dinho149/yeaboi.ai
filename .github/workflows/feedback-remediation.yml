@@ -21,7 +21,9 @@ name: Feedback Remediation
 
 on:
   schedule:
-    - cron: "0 2 * * *" # nightly 02:00 UTC
+    # Nightly, deliberately off the hour: GitHub queues scheduled runs on shared
+    # capacity and ":00" is the most contended slot — these were firing ~3h late.
+    - cron: "17 2 * * *" # nightly 02:17 UTC
   workflow_dispatch:
     inputs:
       dry_run:
@@ -46,7 +48,22 @@ jobs:
     env:
       # Scheduled runs act for real; manual runs default to dry-run.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      # `gh` infers the repo from a git remote; make it explicit so this job never
+      # depends on checkout ordering. Job-level so it reaches both the collect step
+      # and the shells claude-code-action spawns for its own `gh` calls. (Safe
+      # here — this job only ever runs `gh issue`, never `gh pr create`, which is
+      # the one command GH_REPO interferes with.)
+      GH_REPO: ${{ github.repository }}
     steps:
+      # Shallow checkout purely so claude-code-action runs in a real repo, as it
+      # does in every other Claude job here. This job reads no source files, but
+      # it had never once got past the step below, so its Claude step is entirely
+      # unexercised — don't also make it the only one running in a bare workspace.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
       - name: Collect fresh issues (exclude bots + already-triaged)
         id: collect
         env:
@@ -76,12 +93,16 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # In a dry run, hand Claude ONLY read tools — it physically cannot edit,
           # comment, or create, so "log the plan" is enforced, not just requested.
-          # A real run adds the issue-write verbs.
+          # A real run adds the issue-write verbs, plus `date`: the DIGEST
+          # instruction below tells Claude to check the weekday with `date -u +%u`,
+          # which was previously denied outright. It stays OUT of the dry-run list
+          # — the digest is skipped on a dry run, so `date` is unreachable there,
+          # and the "hand Claude ONLY read tools" invariant stays literally true.
           claude_args: >-
             --model claude-sonnet-5 --max-turns 30 --allowedTools
             "${{ env.DRY_RUN == 'true'
               && 'Bash(gh issue list:*),Bash(gh issue view:*),Read'
-              || 'Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh issue create:*),Read' }}"
+              || 'Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh issue create:*),Bash(date:*),Read' }}"
           prompt: |
             You are the feedback-remediation triager. The fresh open issues to
             triage are in `issues.json` at the repo root (bot-authored and

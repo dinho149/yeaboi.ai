@@ -6,6 +6,7 @@ key-file detection, language breakdown, README inclusion, depth limiting,
 skipped directories, and error handling.
 """
 
+import json
 import pathlib
 
 from yeaboi.tools.codebase import (
@@ -17,6 +18,7 @@ from yeaboi.tools.codebase import (
     _SKIP_DIRS,
     _read_readme,
     _walk,
+    load_project_context,
     read_codebase,
     read_local_file,
 )
@@ -365,3 +367,43 @@ class TestReadLocalFile:
     def test_error_nonexistent_repo(self, tmp_path):
         result = read_local_file.invoke({"repo_path": str(tmp_path / "nope"), "file_path": "app.py"})
         assert result.startswith("Error:")
+
+
+class TestSandboxGating:
+    """The three codebase tools deny paths outside the sandbox whitelist.
+
+    tmp_path is whitelisted by the top-level conftest fixture; the denied
+    paths below are outside every allowed root, so the tools must return the
+    violation message (tools report errors as strings for the LLM to relay).
+    """
+
+    def test_read_codebase_denied_outside_whitelist(self):
+        result = read_codebase.invoke({"path": "/denied-sandbox-dir/repo"})
+        assert result.startswith("Error:")
+        assert "YEABOI_ALLOWED_PATHS" in result
+
+    def test_read_local_file_denied_outside_whitelist(self):
+        result = read_local_file.invoke({"repo_path": "/denied-sandbox-dir/repo", "file_path": "a.py"})
+        assert result.startswith("Error:")
+        assert "YEABOI_ALLOWED_PATHS" in result
+
+    def test_read_local_file_sibling_prefix_traversal_blocked(self, tmp_path):
+        """The old startswith() guard allowed /repo → /repo-secret; is_relative_to must not."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        sibling = tmp_path / "repo-secret"
+        sibling.mkdir()
+        (sibling / "creds.txt").write_text("secret")
+        result = read_local_file.invoke({"repo_path": str(repo), "file_path": "../repo-secret/creds.txt"})
+        assert "path traversal detected" in result
+
+    def test_load_project_context_denied_override(self):
+        result = load_project_context.invoke({"path": "/denied-sandbox-dir/SCRUM.md"})
+        payload = json.loads(result)
+        assert payload["context"] is None
+        assert "YEABOI_ALLOWED_PATHS" in payload["status"]["detail"]
+
+    def test_read_codebase_allowed_in_whitelist(self, tmp_path):
+        (tmp_path / "main.py").write_text("print('hi')")
+        result = read_codebase.invoke({"path": str(tmp_path)})
+        assert not result.startswith("Error:")

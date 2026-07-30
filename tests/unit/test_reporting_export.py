@@ -93,25 +93,83 @@ class TestHtml:
 
 
 class TestExportReport:
-    def test_writes_three_files(self, tmp_path, monkeypatch):
+    def test_writes_all_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
         paths = export.export_report(_report(), theme="aurora")
-        assert set(paths) == {"markdown", "html", "slides"}
+        try:
+            import pptx  # noqa: F401 — docs extra present → the deck rides along
+
+            assert set(paths) == {"markdown", "html", "slides", "pptx"}
+            assert paths["pptx"].suffix == ".pptx"
+        except ImportError:
+            assert set(paths) == {"markdown", "html", "slides"}
         for p in paths.values():
-            assert p.exists() and p.read_text(encoding="utf-8")
+            assert p.exists() and p.stat().st_size > 0
         assert paths["slides"].name.endswith("-slides.html")
 
-    def test_chart_written_and_embedded(self, tmp_path, monkeypatch):
+    def test_pptx_absent_without_python_pptx(self, tmp_path, monkeypatch):
+        """A missing docs extra must degrade to the three HTML/MD files, no crash."""
+        monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
+        monkeypatch.setattr("yeaboi.reporting.pptx_export.build_report_pptx", lambda *a, **k: None)
+        paths = export.export_report(_report(), theme="aurora")
+        assert set(paths) == {"markdown", "html", "slides"}
+
+    def test_export_pptx_only(self, tmp_path, monkeypatch):
+        import pytest
+
+        pytest.importorskip("pptx", reason="docs extra not installed")
+        monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
+        path = export.export_pptx_only(_report(), theme="mono")
+        assert path is not None and path.exists() and path.suffix == ".pptx"
+
+    def test_style_forwarded_to_both_presentation_builders(self, tmp_path, monkeypatch):
+        from yeaboi.reporting.style import DeckStyle
+
+        monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
+        seen: dict = {}
+
+        def fake_html(report, *, theme, style=None):
+            seen["slides"] = style
+            return "<html></html>"
+
+        def fake_pptx(report, path, *, theme, style=None):
+            seen["pptx"] = style
+            return None
+
+        monkeypatch.setattr("yeaboi.reporting.presentation.build_presentation_html", fake_html)
+        monkeypatch.setattr("yeaboi.reporting.pptx_export.build_report_pptx", fake_pptx)
+        style = DeckStyle(layout="compact")
+        export.export_report(_report(), style=style)
+        assert seen["slides"] == style and seen["pptx"] == style
+
+    def test_export_pptx_only_forwards_style(self, tmp_path, monkeypatch):
+        from yeaboi.reporting.style import DeckStyle
+
+        monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.reporting.pptx_export.build_report_pptx",
+            lambda report, path, *, theme, style=None: seen.setdefault("style", style),
+        )
+        style = DeckStyle(slide_numbers=True)
+        export.export_pptx_only(_report(), style=style)
+        assert seen["style"] == style
+
+    def test_chart_written_for_markdown_html_uses_inline_bar(self, tmp_path, monkeypatch):
         import pytest
 
         pytest.importorskip("matplotlib")
         monkeypatch.setattr("yeaboi.paths.get_reporting_export_dir", lambda key: tmp_path)
         paths = export.export_report(_report(), theme="aurora")
-        # Markdown links the chart relatively (it lives beside the .md)…
+        # Markdown links the chart relatively (it lives beside the .md, and
+        # flows to Notion/Confluence via export_targets)…
         assert "![Delivered items](delivered.png)" in paths["markdown"].read_text(encoding="utf-8")
         assert (tmp_path / "delivered.png").exists()
-        # …and the HTML embeds it base64 so it stays self-contained.
-        assert "data:image/png;base64," in paths["html"].read_text(encoding="utf-8")
+        # …while the HTML draws a theme-aware inline segment bar instead of the
+        # theme-blind PNG (recolors with the page's theme switcher).
+        html = paths["html"].read_text(encoding="utf-8")
+        assert "data:image/png;base64," not in html
+        assert 'class="seg-track"' in html
 
 
 class TestSharedDesignSystem:
@@ -120,3 +178,113 @@ class TestSharedDesignSystem:
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
         assert 'src="http' not in html and "<link" not in html  # self-contained
+
+
+def _history(*rows):
+    """Newest-first rows mirroring ReportingStore.get_history output."""
+    return [
+        {
+            "id": i,
+            "run_at": f"{d}T17:00:00",
+            "period": "sprint",
+            "period_end": d,
+            "project_name": "Acme Portal",
+            "item_count": n,
+        }
+        for i, (d, n) in enumerate(rows)
+    ]
+
+
+class TestVisuals:
+    def test_delivered_breakdown_segment_bar(self):
+        html = export.build_report_html(_report())
+        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
+        assert 'class="seg-track"' in html
+        assert "Ada 1" in html  # counted legend (by-person counts here)
+
+    def test_assignee_avatar_in_table(self):
+        html = export.build_report_html(_report())
+        assert 'class="avatar"' in html
+        assert ">A</span>" in html
+
+    def test_avatar_name_escaped(self):
+        rep = _report()
+        hostile = DeliveryReport(
+            period_label="p",
+            period_end="2026-07-13",
+            delivered_items=(DeliveredItem(key="X-1", title="t", status="Done", assignee="<b>Eve</b>"),),
+        )
+        html = export.build_report_html(hostile)
+        assert "<b>Eve</b>" not in html
+        assert rep is not None  # keep the fixture exercised
+
+    def test_theme_and_highlight_bullets_split(self):
+        rep = DeliveryReport(
+            period_label="p",
+            period_end="2026-07-13",
+            highlights=("Shipped SSO. Landed MFA; docs refreshed.",),
+        )
+        html = export.build_report_html(rep)
+        assert "<li>Shipped SSO.</li>" in html
+        assert "<li>Landed MFA</li>" in html
+        assert "<li>docs refreshed.</li>" in html
+        assert "class='analysis-section'" in html
+
+    def test_sparkline_from_history(self):
+        history = _history(("2026-07-13", 7), ("2026-06-29", 5), ("2026-06-15", 9))
+        html = export.build_report_html(_report(), history=history)
+        assert 'class="spark-wrap"' in html
+        assert "Delivery volume trend" in html
+        assert "2026-06-15" in html
+
+    def test_other_project_history_excluded(self):
+        history = _history(("2026-06-29", 5))
+        history.append(
+            {
+                "id": 9,
+                "run_at": "2026-06-01T17:00:00",
+                "period": "sprint",
+                "period_end": "2026-06-01",
+                "project_name": "Other Project",
+                "item_count": 40,
+            }
+        )
+        html = export.build_report_html(_report(), history=history)
+        assert "2026-06-01" not in html
+
+    def test_no_history_no_sparkline(self):
+        assert 'class="spark-wrap"' not in export.build_report_html(_report())
+
+    def test_self_contained_with_history(self):
+        html = export.build_report_html(_report(), history=_history(("2026-07-13", 7), ("2026-06-29", 5)))
+        assert 'src="http' not in html and "<link" not in html
+
+
+class TestSupportingSignalsMarkdown:
+    def _signals_report(self):
+        from dataclasses import replace
+
+        from yeaboi.agent.state import SupportingSignal
+
+        return replace(
+            _report(),
+            supporting_signals=(
+                SupportingSignal(
+                    kind="pull_requests", source="github", count=12, samples=("Fix auth (#41)", "SSO (#44)")
+                ),
+                SupportingSignal(kind="doc_updates", source="confluence", count=3, samples=("Runbook",)),
+            ),
+        )
+
+    def test_signals_section_rendered(self):
+        md = export.build_report_markdown(self._signals_report())
+        assert "### Supporting signals" in md
+        assert "Corroborated by 12 merged PRs and 3 doc updates" in md
+        assert "- **Pull requests · GitHub:** 12" in md
+        assert "  - Fix auth (#41)" in md
+        assert "- **Doc updates · Confluence:** 3" in md
+        # Placement: after metrics, before the executive summary.
+        assert md.index("By the numbers") < md.index("### Supporting signals") < md.index("Executive summary")
+
+    def test_no_signals_no_section(self):
+        assert "Supporting signals" not in export.build_report_markdown(_report())
