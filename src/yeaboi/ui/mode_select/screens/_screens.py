@@ -825,33 +825,47 @@ _COMPOSE_TEXT = "rgb(198,198,208)"
 _COMPOSE_ACCENT = "rgb(150,170,200)"
 
 
-def _compose_chips(values: tuple[str, ...], idx: int, focused: bool, width: int) -> Text:
-    """One selector row: the neighbouring options dimmed, the chosen one bracketed.
+def _compose_window(values: tuple[str, ...], idx: int, width: int) -> tuple[int, int]:
+    """The slice of ``values`` to show so ``idx`` is visible, kept as still as possible.
 
-    Windowed around the selection so a long list (the nine feedback areas) still
-    fits the box — cropping it could hide the choice itself.
+    The options are a FIXED list in a fixed order — they must not rotate under the
+    selection. The window therefore only slides when the selection would otherwise
+    fall off an end, so stepping through the middle moves the marker, not the words.
+    Every entry costs ``len + 4`` columns (the ``‹ ›`` brackets it may need).
     """
+    costs = [len(v) + 4 for v in values]
+    if sum(costs) <= width:
+        return 0, len(values)
+    # Widest window starting at each position; pick the left-most one holding idx.
+    best_start, best_end = idx, idx + 1
+    for start in range(len(values)):
+        total, end = 0, start
+        while end < len(values) and total + costs[end] <= width:
+            total += costs[end]
+            end += 1
+        if start <= idx < end and (end - start) > (best_end - best_start):
+            best_start, best_end = start, end
+    # Prefer the window that keeps the most context BEFORE the selection, so
+    # moving right doesn't drag the whole list left one step at a time.
+    return best_start, best_end
+
+
+def _compose_chips(values: tuple[str, ...], idx: int, focused: bool, width: int) -> Text:
+    """One selector row: every option in its fixed order, the chosen one bracketed."""
     row = Text(justify="left", no_wrap=True, overflow="ellipsis")
-    picked = f"\u2039 {values[idx]} \u203a"
-    budget = width - len(picked) - 2
-    before: list[str] = []
-    after: list[str] = []
-    for step in range(1, len(values)):
-        if len(before) + len(after) >= len(values) - 1:
-            break
-        right = values[(idx + step) % len(values)]
-        if right not in before and len(right) + 2 <= budget:
-            after.append(right)
-            budget -= len(right) + 2
-        left = values[(idx - step) % len(values)]
-        if left not in after and left not in before and len(left) + 2 <= budget:
-            before.insert(0, left)
-            budget -= len(left) + 2
-    for value in before:
-        row.append(f"{value}  ", style=_COMPOSE_DIM)
-    row.append(picked, style=f"bold {_COMPOSE_ACCENT}" if focused else _COMPOSE_TEXT)
-    for value in after:
-        row.append(f"  {value}", style=_COMPOSE_DIM)
+    start, end = _compose_window(values, idx, width)
+    if start:
+        row.append("… ", style=_COMPOSE_DIM)  # more options off to the left (… not ‹,
+        #                                       which would read as a selection bracket)
+    for i in range(start, end):
+        if i > start:
+            row.append("  ", style=_COMPOSE_DIM)
+        if i == idx:
+            row.append(f"‹ {values[i]} ›", style=f"bold {_COMPOSE_ACCENT}" if focused else _COMPOSE_TEXT)
+        else:
+            row.append(values[i], style=_COMPOSE_DIM)
+    if end < len(values):
+        row.append(" …", style=_COMPOSE_DIM)
     return row
 
 
@@ -907,8 +921,13 @@ def _build_compose_bubble(compose: dict, *, cols: int) -> RenderableType:
         rows.extend(Text("") for _ in range(max(0, 3 - len(window))))
 
     hint = Text(justify="center")
+    notice = compose.get("notice", "")
     if status:
         hint.append(f" {status} ", style=_COMPOSE_ACCENT)
+    elif notice:
+        # A one-off result (a pasted screenshot, a clipboard miss) takes the hint
+        # row until the next keypress clears it.
+        hint.append(f" {notice} ", style=_COMPOSE_ACCENT)
     else:
         for i, (key, what) in enumerate((("\u2191/\u2193", "field"), ("Enter", "send"), ("Esc", "cancel"))):
             hint.append("  \u00b7  " if i else " ", style=_COMPOSE_DIM)
@@ -974,7 +993,10 @@ def _build_companion(
     # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
     # old Align.center(head) exactly). Extras only appear once he's ~settled.
     intro = min(1.0, max(0.0, companion_intro))
-    center_pad = max(0, (lane_cols - _COMPANION_HEAD_W) // 2)
+    # Right-anchored on the TIP lane's geometry, so widening the lane for the
+    # composer grows it leftward and the duck never shifts out of his corner.
+    rest_right = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) - (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
+    center_pad = max(0, lane_cols - _COMPANION_HEAD_W - rest_right)
     # Constant-speed (linear) glide: the duck reaches its resting column exactly at
     # intro 1.0, so the last few characters glide in rather than snapping — the
     # ease-out variants reached the spot early (~85%) then sat, which read as the
@@ -983,7 +1005,7 @@ def _build_companion(
     # Pad on BOTH sides to the full lane width so the duck's column never shifts when
     # the tip bubble/controls above him appear or disappear (otherwise the group
     # narrows and Align.center re-centres the lone duck).
-    right_pad = max(0, lane_cols - _COMPANION_HEAD_W - left_pad)
+    right_pad = max(0, lane_cols - _COMPANION_HEAD_W - left_pad)  # rest_right at intro 1.0
     duck = Padding(head, (0, right_pad, 0, left_pad))
     # Tip/update-box opacity. Normally derived from the duck's entrance (they appear
     # once he's ~settled); ``extras_reveal`` overrides it so the exit transition can

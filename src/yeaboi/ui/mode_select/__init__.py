@@ -78,6 +78,7 @@ from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
+from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
 logger = logging.getLogger(__name__)
 
@@ -1465,7 +1466,9 @@ _COMPOSE_RESULT_SECONDS = 2.6
 _COMPOSE_FIELDS = 3  # 0 type, 1 area, 2 message
 
 
-def _feedback_compose_key(key: str, compose: dict) -> dict | None:
+def _feedback_compose_key(
+    key: str, compose: dict, *, console=None, live=None, read_key=None, render=None
+) -> dict | None:
     """Apply one keystroke to the duck's feedback bubble.
 
     Three fields: Type, Area and the message. Up/Down move between them, Left/
@@ -1473,13 +1476,20 @@ def _feedback_compose_key(key: str, compose: dict) -> dict | None:
     anywhere and Esc cancels. Returns the (mutated) state, or None once the bubble
     should close. Sending runs on a daemon thread so the welcome screen keeps
     animating behind it; the caller polls it each frame (_feedback_compose_tick).
+
+    ``console``/``live``/``read_key``/``render`` are only needed for the two rich
+    text affordances the full form has and the bubble keeps: Ctrl+V screenshot
+    paste and double-tap-Space dictation, both of which take over the screen while
+    they run. Omit them and those keys are simply ignored.
     """
     import threading
 
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, submit_feedback
+    from yeaboi.ui.shared._attachments import referenced_images
 
     if compose.get("thread") is not None or compose.get("done_at"):
         return compose  # in flight or showing its result — keys do nothing
+    compose["notice"] = ""  # a one-off notice lasts until the next keypress
     if key == "esc":
         # The bubble eats the key, so the app-wide back tab must not fold away:
         # the Esc chokepoint armed its retract before we got a say.
@@ -1498,14 +1508,17 @@ def _feedback_compose_key(key: str, compose: dict) -> dict | None:
         title = text.splitlines()[0][:80]  # opening line, so the issue is scannable
         out: list = []
         compose["status"] = "sending…"
+        images = referenced_images(text, compose.get("attachments") or [])
         compose["thread"] = threading.Thread(
-            target=lambda: out.append(submit_feedback(kind, area, title, text)),
+            target=lambda: out.append(submit_feedback(kind, area, title, text, images)),
             daemon=True,
         )
         compose["out"] = out
         compose["thread"].start()
         set_text_entry(False)
-        logger.info("feedback bubble: submitting %s/%s (%d chars)", kind, area, len(text))
+        logger.info(
+            "feedback bubble: submitting %s/%s (%d chars, %d image(s))", kind, area, len(text), len(images)
+        )
         return compose
     if key in ("up", "down"):
         step = 1 if key == "down" else -1
@@ -1518,8 +1531,52 @@ def _feedback_compose_key(key: str, compose: dict) -> dict | None:
             key_name = "kind" if field == 0 else "area"
             compose[key_name] = (compose[key_name] + (1 if key == "right" else -1)) % len(values)
         return compose
+    if key == "ctrl+v" and render is not None:
+        # Screenshot paste, exactly as the full form does it: the image is saved
+        # under ~/.yeaboi/attachments/ and an [image #N] chip goes in the text.
+        from yeaboi.ui.shared._attachments import handle_ctrl_v
+
+        compose["status"] = "pasting image…"
+        render()
+        compose["status"] = ""
+        chip = handle_ctrl_v(
+            compose["attachments"], scope_id="feedback", set_notice=lambda m: compose.__setitem__("notice", m)
+        )
+        if chip:
+            buf, cur = compose["buf"], compose["cur"]
+            compose["buf"], compose["cur"] = buf[:cur] + chip + buf[cur:], cur + len(chip)
+            compose["notice"] = f"screenshot attached as {chip}"
+        return compose
+    _before_cursor = compose["buf"][: compose["cur"]]
+    if key == " " and read_key is not None and compose["dts"].is_double(_before_cursor.endswith(" "), time.monotonic()):
+        # Double-tap Space → dictate. The first space is already in the buffer and
+        # stays as the separator; the transcript is appended after it.
+        from yeaboi.ui.shared._voice_input import record_voice_input
+
+        spoken = record_voice_input(
+            live, console, read_key, lambda status, tick: _compose_voice_frame(compose, status, tick, render)
+        )
+        compose["status"] = ""
+        if spoken:
+            buf, cur = compose["buf"], compose["cur"]
+            text = spoken.replace("\n", " ")
+            compose["buf"], compose["cur"] = buf[:cur] + text + buf[cur:], cur + len(text)
+        return compose
     _settings_edit_keypress(key, compose)  # shares the settings buffer/cursor editor
     return compose
+
+
+def _compose_voice_frame(compose: dict, status: str, tick: float, render):
+    """Renderable for the recording/transcribing indicator, shown IN the bubble.
+
+    record_voice_input owns the screen while it runs, so it paints through this —
+    keeping the duck and his bubble on screen instead of a centred popup.
+    """
+    from yeaboi.ui.shared._voice_input import voice_indicator
+
+    _border, line = voice_indicator(status, tick)
+    compose["status"] = line.strip()
+    return render(update=False)
 
 
 def _feedback_compose_tick(compose: dict) -> dict | None:
@@ -10017,7 +10074,30 @@ def select_mode(
                     # The duck's feedback bubble owns every key while it's open —
                     # including 'q', which is a character you may want to type.
                     if key:
-                        _compose = _feedback_compose_key(key, _compose)
+
+                        def _compose_render(update: bool = True):
+                            _w, _h = console.size
+                            _panel = _build_mode_screen(
+                                selected,
+                                width=_w,
+                                height=_h,
+                                shimmer_tick=time.monotonic() - start_time,
+                                desc_reveal=999,
+                                tip_offset=tip_offset,
+                                compose=_compose,
+                            )
+                            if update:
+                                live.update(_panel)
+                            return _panel
+
+                        _compose = _feedback_compose_key(
+                            key,
+                            _compose,
+                            console=console,
+                            live=live,
+                            read_key=read_key,
+                            render=_compose_render,
+                        )
                     if _compose is not None:
                         _compose = _feedback_compose_tick(_compose)
                     if _compose is None:
@@ -10105,6 +10185,9 @@ def select_mode(
                         "buf": "",
                         "cur": 0,
                         "status": "",
+                        "notice": "",
+                        "attachments": [],  # Ctrl+V screenshots, as [image #N] chips
+                        "dts": DoubleTapSpace(),  # double-tap Space → dictation
                         "thread": None,
                         "done_at": 0.0,
                     }

@@ -2993,8 +2993,9 @@ def _build_changelog_screen(
             tags_len = sum(len(a) + 2 for a in hl.areas)
             chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 3)) or [""]
             for i, chunk in enumerate(chunks):
-                prefix = "    •  " if i == 0 else "       "
-                line = Text(PAD + prefix + chunk, style=theme.value, justify="left")
+                # Flush with the version heading above it (see the tips gallery).
+                prefix = "  •  " if i == 0 else "     "
+                line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
                 if i == len(chunks) - 1 and len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
                     for area in hl.areas:
                         line.append("  ")
@@ -3109,11 +3110,11 @@ def _build_all_tips_screen(
     # wide glyphs or metadata from visually colliding with the right frame.
     panel_inner_w = max(20, width - 2 - 4)
     viewport_body_w = max(18, panel_inner_w - 3)
-    # PAD (four), not this module's tighter _PAD (two): a bullet list wants to sit
-    # clearly under its section heading, and the branch-wide PAD → _PAD rename had
-    # quietly pulled every bullet two columns left.
-    bullet_prefix = PAD + "    •  "
-    continuation_prefix = PAD + "       "
+    # The bullet lines up with the START of the section heading (which sits at
+    # _PAD + 2), rather than being indented under it — the list reads as the
+    # section's content, not as a sub-level of it.
+    bullet_prefix = _PAD + "  " + "•  "
+    continuation_prefix = _PAD + "  " + "   "
     tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
     separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 

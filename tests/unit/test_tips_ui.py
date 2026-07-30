@@ -408,7 +408,7 @@ class TestFeedbackComposeKeys:
         )
         st = self._press("enter", self._state(field=2, kind=1, area=4, buf="cards vanish\nsometimes", cur=0))
         st["thread"].join(timeout=5)
-        kind, area, title, body = sent[0]
+        kind, area, title, body, _images = sent[0]
         assert (kind, area) == (feedback.FEEDBACK_TYPES[1], feedback.FEEDBACK_AREAS[4])
         assert title == "cards vanish"  # the opening line, so the issue is scannable
         assert body == "cards vanish\nsometimes"
@@ -416,3 +416,121 @@ class TestFeedbackComposeKeys:
     def test_keys_are_ignored_while_in_flight(self):
         st = self._state(buf="x", cur=1, status="sending…", thread=object())
         assert self._press("y", st)["buf"] == "x"
+
+
+class TestComposeSelectorWindow:
+    """The selectors are a FIXED list — the marker moves, the words don't rotate."""
+
+    AREAS = ("general", "analysis", "planning", "standup", "retro", "performance", "reporting", "usage", "settings")
+
+    def _window(self, idx, width=48):
+        from yeaboi.ui.mode_select.screens._screens import _compose_window
+
+        return self._render(idx, width), _compose_window(self.AREAS, idx, width)
+
+    def _render(self, idx, width=48):
+        from yeaboi.ui.mode_select.screens._screens import _compose_chips
+
+        return _compose_chips(self.AREAS, idx, True, width).plain
+
+    def test_everything_fits_when_there_is_room(self):
+        from yeaboi.ui.mode_select.screens._screens import _compose_window
+
+        assert _compose_window(("Bug", "Feature", "Improvement", "Other"), 0, 60) == (0, 4)
+
+    def test_the_words_hold_still_while_the_marker_moves(self):
+        # Stepping through the middle of the list must not scroll it: the same
+        # options stay visible, only the brackets move.
+        from yeaboi.ui.mode_select.screens._screens import _compose_window
+
+        assert _compose_window(self.AREAS, 0, 48) == _compose_window(self.AREAS, 2, 48)
+        assert "‹ general ›" in self._render(0)
+        assert "‹ planning ›" in self._render(2)
+
+    def test_the_window_slides_only_at_the_edges(self):
+        _text, (start, end) = self._window(0)
+        assert start == 0
+        _text, (start_end, _e) = self._window(len(self.AREAS) - 1)
+        assert start_end > 0  # had to slide to reach the last option
+
+    def test_the_selection_is_always_visible(self):
+        for idx, name in enumerate(self.AREAS):
+            assert f"‹ {name} ›" in self._render(idx)
+
+    def test_overflow_is_marked_without_looking_like_a_bracket(self):
+        row = self._render(len(self.AREAS) - 1)
+        assert row.startswith("… ")  # not "‹ ", which reads as a selection marker
+
+
+class TestComposeRichAffordances:
+    """Ctrl+V screenshot paste and double-tap-Space dictation, kept from the full form."""
+
+    def _state(self, **over):
+        from yeaboi.ui.shared._voice_input import DoubleTapSpace
+
+        base = {
+            "field": 2,
+            "kind": 0,
+            "area": 0,
+            "buf": "",
+            "cur": 0,
+            "status": "",
+            "notice": "",
+            "attachments": [],
+            "dts": DoubleTapSpace(),
+            "thread": None,
+            "done_at": 0.0,
+        }
+        return {**base, **over}
+
+    def test_ctrl_v_inserts_a_chip_at_the_cursor(self, monkeypatch):
+        from yeaboi.ui.shared import _attachments
+
+        monkeypatch.setattr(_attachments, "handle_ctrl_v", lambda *a, **k: "[image #1]")
+        from yeaboi.ui import mode_select
+
+        st = self._state(buf="before after", cur=7)
+        out = mode_select._feedback_compose_key("ctrl+v", st, render=lambda update=True: None)
+        assert out["buf"] == "before [image #1]after"
+        assert "image #1" in out["notice"]
+
+    def test_ctrl_v_without_a_render_hook_is_ignored(self):
+        # The hook is how the paste takes over the screen; no hook, no paste.
+        from yeaboi.ui import mode_select
+
+        assert mode_select._feedback_compose_key("ctrl+v", self._state(buf="x", cur=1))["buf"] == "x"
+
+    def test_double_tap_space_dictates_into_the_message(self, monkeypatch):
+        from yeaboi.ui.shared import _voice_input
+
+        monkeypatch.setattr(_voice_input, "record_voice_input", lambda *a, **k: "spoken words")
+        import time as _t
+
+        from yeaboi.ui import mode_select
+
+        st = self._state(buf="note ", cur=5)  # the first tap's space is already in
+        st["dts"].is_double(False, _t.monotonic())  # arm it, as the first Space press would
+        out = mode_select._feedback_compose_key(
+            " ", st, console=object(), live=object(), read_key=lambda **k: "", render=lambda update=True: None
+        )
+        assert out["buf"] == "note spoken words"
+
+    def test_a_single_space_is_just_a_space(self, monkeypatch):
+        from yeaboi.ui import mode_select
+
+        out = mode_select._feedback_compose_key(
+            " ", self._state(buf="hi", cur=2), console=object(), live=object(), read_key=lambda **k: ""
+        )
+        assert out["buf"] == "hi "
+
+    def test_attachments_ride_along_on_submit(self, monkeypatch):
+        from yeaboi import feedback
+
+        sent: list = []
+        monkeypatch.setattr(feedback, "submit_feedback", lambda *a: sent.append(a) or feedback.FeedbackResult(ok=True))
+        monkeypatch.setattr("yeaboi.ui.shared._attachments.referenced_images", lambda _t, a: list(a))
+        from yeaboi.ui import mode_select
+
+        st = self._state(buf="see [image #1]", cur=0, attachments=["/tmp/a.png"])
+        mode_select._feedback_compose_key("enter", st)["thread"].join(timeout=5)
+        assert sent[0][4] == ["/tmp/a.png"]
