@@ -20,6 +20,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Duck, useDuckPulse, type DuckRest } from '../design/primitives';
+import { useArrivals } from '../motion';
 import { useAlarm } from '../hooks/useAlarm';
 import { useBoardStream } from '../hooks/useBoardStream';
 import { useConfetti } from '../hooks/useConfetti';
@@ -186,6 +188,45 @@ export function App({ boot }: { boot: RetroBoot }) {
     return map;
   }, [snapshot?.typing, name]);
 
+  /**
+   * Cards that arrived from somebody else, for the entrance animation.
+   *
+   * `card.mine` is the filter that matters: your own card must appear the
+   * instant you press Add, with no animation, or your own typing feels laggy.
+   */
+  const cardIds = useMemo(() => cards.map((card) => card.id), [cards]);
+  const notMine = useMemo(() => {
+    const mine = new Set(cards.filter((card) => card.mine).map((card) => card.id));
+    return (id: string): boolean => !mine.has(id);
+  }, [cards]);
+  const arrivals = useArrivals(cardIds, notMine);
+
+  /**
+   * What the duck is doing.
+   *
+   * Ordered by how much the state matters, because only one can show. A dead
+   * connection outranks a locked board outranks the last ten seconds on the
+   * clock — and all three outrank the decorative flap, so a card landing just
+   * as the tunnel drops cannot leave the board looking healthy while it is
+   * stale. `useDuckPulse` enforces that; this only decides the resting state.
+   */
+  const duckRest: DuckRest =
+    status === 'retrying' ? 'offline' : locked ? 'locked' : remaining !== null && remaining <= 10 ? 'urgent' : 'idle';
+  const [duckState, duckPulse] = useDuckPulse(duckRest);
+
+  const peopleHere = presence.length;
+  const lastPeople = useRef(peopleHere);
+  useEffect(() => {
+    if (peopleHere > lastPeople.current) duckPulse('joined');
+    lastPeople.current = peopleHere;
+  }, [peopleHere, duckPulse]);
+
+  const lastArrivalCount = useRef(0);
+  useEffect(() => {
+    if (arrivals.size > lastArrivalCount.current) duckPulse('card');
+    lastArrivalCount.current = arrivals.size;
+  }, [arrivals, duckPulse]);
+
   /** Human authors with at least one card, sorted — the walkthrough running order. */
   const authors = useMemo(() => {
     const set = new Set<string>();
@@ -295,7 +336,10 @@ export function App({ boot }: { boot: RetroBoot }) {
   return (
     <div className={styles['app']}>
       <Toolbar
-        brand="Sprint Retro"
+        brand="retro"
+        // The duck rides in the toolbar, where it is in peripheral vision the
+        // whole ceremony without ever being in the way.
+        mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
             {boot.sprint ? `${boot.sprint} · ` : ''}
@@ -455,6 +499,7 @@ export function App({ boot }: { boot: RetroBoot }) {
         locked={locked}
         grouped={grouped}
         focus={focus}
+        arrivals={arrivals}
         onCompose={(grid) => {
           setComposerGrid(grid);
           setFocusNonce((n) => n + 1);

@@ -9,12 +9,16 @@
  * at the bottom of whichever column you happened to scroll.
  */
 
+import { toneMix, toneVar } from '../design/tone';
+import { Ticker } from '../motion';
 import { TypingIndicator } from '../shared';
 import { cx } from '../runtime/cx';
 import { RETRO_GRID_LABELS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { CardView } from './CardView';
+import { GRID_TONE } from './gridTone';
 import type { DropTarget } from './useCardDrag';
+import motion from '../motion/motion.module.css';
 import styles from './retro.module.css';
 
 const NO_REACTIONS: ReadonlySet<string> = new Set();
@@ -28,6 +32,8 @@ export interface ColumnProps {
   myReactions: ReadonlyMap<string, ReadonlySet<string>>;
   /** Names typing into this column, excluding yourself. */
   typing: readonly string[];
+  /** Card ids that just arrived from a peer, for the entrance animation. */
+  arrivals: ReadonlySet<string>;
   locked: boolean;
   /** Cluster cards under an author heading instead of listing them flat. */
   grouped: boolean;
@@ -62,6 +68,7 @@ export function Column({
   avatars,
   myReactions,
   typing,
+  arrivals,
   locked,
   grouped,
   focus,
@@ -87,11 +94,18 @@ export function Column({
   const slots = positions.size;
 
   const renderCard = (card: RetroCard) => (
-    <div key={card.id} className={styles['cardSlot']}>
+    <div
+      key={card.id}
+      // Both classes, not one: `enter` places the card and `arrived` decays an
+      // accent edge over the next 700ms, so a facilitator who was looking at
+      // another column can still find what moved.
+      className={cx(styles['cardSlot'], arrivals.has(card.id) && motion['enter'])}
+    >
       {dropAt && dropAt.index === positions.get(card.id) ? (
         <div className={styles['dropLine']} aria-hidden="true" />
       ) : null}
       <CardView
+        arrived={arrivals.has(card.id)}
         card={card}
         authorAvatar={avatars.get(card.author)}
         myReactions={myReactions.get(card.id) ?? NO_REACTIONS}
@@ -106,13 +120,30 @@ export function Column({
     </div>
   );
 
+  const tone = GRID_TONE[grid];
+
   return (
-    <section className={styles['column']} aria-labelledby={`col-${grid}`}>
+    <section
+      className={styles['column']}
+      aria-labelledby={`col-${grid}`}
+      // The column's identity, as two custom properties the stylesheet reads.
+      // Set here rather than as four hand-written CSS rules so that the mapping
+      // lives in one typed place (gridTone.ts) and a new grid cannot ship
+      // uncoloured.
+      style={{ '--col-tone': toneVar(tone), '--col-wash': toneMix(tone, 5, 'var(--bg)') } as never}
+    >
       <header className={styles['columnHead']}>
+        {/* The heading is mono and uppercase like every other label; the count
+            rides in it rather than beside it, because a column head's useful
+            information is "how much is in here", not a sequence number. */}
         <h2 id={`col-${grid}`} className={styles['columnTitle']}>
           {label}
         </h2>
-        <span className={styles['columnCount']}>{visible.length}</span>
+        <span className={styles['columnDot']} aria-hidden="true">
+          ·
+        </span>
+        <Ticker value={visible.length} className={styles['columnCount']} />
+        <span className={styles['columnSpacer']} />
         {locked ? null : (
           <button
             type="button"
@@ -126,7 +157,15 @@ export function Column({
       </header>
 
       <div className={cx(styles['cards'], dropAt && styles['cardsOver'])} data-grid={grid}>
-        {visible.length === 0 ? (
+        {typing.length > 0 ? (
+          // A ghost card where the real one is about to land. The server has
+          // always tracked typing; it used to be rendered only as a line of
+          // text under the column, which is not where you are looking.
+          <div className={motion['ghost']} aria-hidden="true">
+            {typing.length === 1 ? `${typing[0]} is writing` : `${typing.length} people are writing`}
+          </div>
+        ) : null}
+        {visible.length === 0 && typing.length === 0 ? (
           <p className={styles['columnEmpty']}>{focus ? `Nothing from ${focus} here.` : 'Nothing yet.'}</p>
         ) : grouped ? (
           groupByAuthor(visible).map(([author, group]) => (
@@ -142,7 +181,9 @@ export function Column({
         {dropAt && dropAt.index >= slots ? <div className={styles['dropLine']} aria-hidden="true" /> : null}
       </div>
 
-      <TypingIndicator names={typing} className={styles['columnTyping']} />
+      {/* The ghost above says this visually and is aria-hidden; this keeps the
+          announcement without printing the same sentence twice on screen. */}
+      <TypingIndicator names={typing} className={styles['srOnly']} />
     </section>
   );
 }

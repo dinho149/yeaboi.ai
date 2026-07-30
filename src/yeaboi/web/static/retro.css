@@ -332,296 +332,6 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   [data-print-hide] { display: none !important; }
 }
 /*
- * Styling for the shared board components.
- *
- * Every value is a token from design/tokens.css. Two rules worth keeping in
- * mind while editing:
- *
- * * **`100dvh`, never `100vh`.** iOS Safari counts the collapsing URL bar in
- *   `vh`, so a `100vh` scroll container is taller than the visible viewport and
- *   its last row sits permanently under the chrome. Both boards do this today
- *   (poker/page.py:170,330) and it is why the poker deck is unreachable on an
- *   iPhone until you scroll the whole page.
- * * **Safe-area insets on anything edge-anchored.** A phone held in landscape
- *   puts the notch over the left or right gutter.
- */
-
-/* ── App bar ──────────────────────────────────────────────────── */
-._appbar_1qfri_17 {
-  display: flex;
-  align-items: center;
-  gap: var(--s4);
-  flex-wrap: wrap;
-  min-height: 52px;
-  padding: var(--s2) max(var(--s4), env(safe-area-inset-right)) var(--s2) max(var(--s4), env(safe-area-inset-left));
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-}
-._brand_1qfri_27 { display: flex; align-items: baseline; gap: var(--s2); }
-._brandTitle_1qfri_28 { color: var(--accent); font-size: var(--fs-l); font-weight: 700; letter-spacing: 0.01em; }
-._brandSub_1qfri_29 { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
-._spacer_1qfri_30 { flex: 1; }
-._tools_1qfri_31 { display: flex; align-items: center; gap: var(--s2); }
-
-/* ── Buttons ──────────────────────────────────────────────────── */
-._iconBtn_1qfri_34 {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s2);
-  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and the
-     board's old .act buttons were about 13x20. */
-  min-height: var(--tap);
-  min-width: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-m);
-  line-height: 1;
-}
-._iconBtn_1qfri_34:hover { border-color: var(--accent); }
-._iconBtnCompact_1qfri_54 {
-  min-height: var(--tap-min);
-  min-width: var(--tap-min);
-  padding: 0 var(--s1);
-  font-size: var(--fs-s);
-  /* Visible at rest, not on hover: a hover-only control does not exist on a
-     touch screen, which is where most of these boards are actually used. */
-  opacity: 0.72;
-}
-._iconBtnCompact_1qfri_54:hover, ._iconBtnCompact_1qfri_54:focus-visible { opacity: 1; }
-._iconBtnActive_1qfri_64 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-._iconBtnPrimary_1qfri_65 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._iconBtnPrimary_1qfri_65:hover { filter: brightness(1.08); }
-._iconBtnDanger_1qfri_67 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._iconGlyph_1qfri_68 { font-size: var(--fs-m); line-height: 1; }
-
-._primaryBtn_1qfri_70 {
-  min-height: var(--tap);
-  padding: 0 var(--s4);
-  background: var(--accent);
-  color: var(--ink);
-  border: 1px solid transparent;
-  border-radius: var(--r-s);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-._primaryBtn_1qfri_70:hover { filter: brightness(1.08); }
-
-._preset_1qfri_83 {
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  color: var(--text);
-  font: inherit;
-  font-family: var(--font-mono);
-  cursor: pointer;
-}
-._preset_1qfri_83:hover { border-color: var(--accent); }
-
-/* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_1qfri_97 { display: contents; }
-._popoverAnchor_1qfri_98 { position: relative; display: inline-flex; }
-._tbtn_1qfri_99 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-m);
-  line-height: 1;
-}
-._tbtn_1qfri_99:hover { border-color: var(--accent); }
-._tbtnOpen_1qfri_115 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-
-._popover_1qfri_97 {
-  position: absolute;
-  top: calc(100% + var(--s2));
-  right: 0;
-  z-index: var(--z-popover);
-  min-width: 220px;
-  /* Never taller than the screen minus the bar it hangs from: an over-long
-     panel on a phone otherwise runs off the bottom with no way to scroll it. */
-  max-height: min(70vh, 480px);
-  overflow: auto;
-  padding: var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  box-shadow: var(--shadow-2);
-}
-._popoverLeft_1qfri_133 { right: auto; left: 0; }
-._popover_1qfri_97[hidden] { display: none; }
-
-/* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_1qfri_137 {
-  font-size: var(--fs-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  font-weight: 600;
-}
-._select_1qfri_144, ._textInput_1qfri_144, ._numberInput_1qfri_144 {
-  min-height: var(--tap);
-  padding: 0 var(--s2);
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  font: inherit;
-  font-size: var(--fs-s);
-}
-._textInput_1qfri_144 { flex: 1; min-width: 0; }
-._numberInput_1qfri_144 { width: 5.5rem; font-family: var(--font-mono); }
-._range_1qfri_156 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
-
-/* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_1qfri_159 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_1qfri_160 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_1qfri_161 {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  border-radius: var(--r-pill);
-  background: var(--accent);
-  color: var(--ink);
-  border: none;
-  cursor: pointer;
-  font-size: var(--fs-m);
-}
-._viz_1qfri_171 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_1qfri_172 { opacity: 1; }
-
-/* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_1qfri_175 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_1qfri_176 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_1qfri_177 {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: var(--accent);
-  min-width: 4.5ch;
-  text-align: right;
-}
-/* Finished state is carried by colour AND the words "time's up", not by the
-   old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_1qfri_187 { color: var(--danger); }
-
-._confetti_1qfri_189 {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: var(--z-confetti);
-}
-
-/* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_1qfri_199 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_1qfri_200 { display: flex; gap: var(--s2); }
-._swatch_1qfri_200 {
-  position: relative;
-  width: var(--tap);
-  height: var(--tap);
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  padding: 0;
-}
-._swatchOn_1qfri_210 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_1qfri_211 {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-/* ── Presence ─────────────────────────────────────────────────── */
-._presence_1qfri_221 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_1qfri_222 { display: inline-flex; align-items: center; }
-._stacked_1qfri_223 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_1qfri_223:first-child { margin-left: 0; }
-._presenceMore_1qfri_225 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_1qfri_226 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
-
-._roster_1qfri_228 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_1qfri_229 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_1qfri_230 { flex: 1; }
-._rosterYou_1qfri_231 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_1qfri_232 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
-
-/* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_1qfri_235 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_1qfri_236 {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  cursor: pointer;
-  font-size: var(--fs-l);
-  line-height: 1;
-}
-._avatarChoiceOn_1qfri_246 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
-
-/* ── Invite ───────────────────────────────────────────────────── */
-._invite_1qfri_249 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_1qfri_250 { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
-._inviteCode_1qfri_251 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_1qfri_252 {
-  font-family: var(--font-mono);
-  font-size: var(--fs-l);
-  /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
-     the entire failure mode. */
-  letter-spacing: 0.14em;
-}
-._inviteUrl_1qfri_259 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
-
-/* ── Modal ────────────────────────────────────────────────────── */
-._modal_1qfri_262 {
-  /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
-     Only the skin is ours. */
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  background: var(--panel);
-  color: var(--text);
-  padding: 0;
-  max-width: min(92vw, 440px);
-  box-shadow: var(--shadow-2);
-}
-._modal_1qfri_262::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_1qfri_274 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_1qfri_275 { font-size: var(--fs-l); margin: 0; }
-._modalActions_1qfri_276 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
-
-/* Visually hidden but reachable by assistive tech. Not `display:none`, which
-   removes it from the accessibility tree along with everything else. */
-._srOnly_1qfri_280 {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-/*
  * Styling for the shared primitives.
  *
  * One module for the whole set rather than twelve files: they are a single
@@ -1111,6 +821,428 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
 }
 /*
+ * The liveness layer.
+ *
+ * The boards had no motion at all. That reads as a stylistic gap and is
+ * actually a functional one: the single thing a live board has to communicate
+ * is that it is live, and a peer's card blinking into existence is
+ * indistinguishable from a page that re-rendered for some other reason. These
+ * four moments — arrive, leave, someone-is-typing, count-changed — are the
+ * whole vocabulary, and the restraint is deliberate. Scatter more and it stops
+ * meaning anything.
+ *
+ * ═══ THE RULE FOR EVERY ENTER ANIMATION IN THIS CODEBASE ═══
+ *
+ * Animate **from** a start state. The end state must be the plain CSS default,
+ * with no keyframe needed to reach it.
+ *
+ * tokens.css sets `animation-duration: 0.01ms !important` globally under
+ * `prefers-reduced-motion: reduce`. That is the behaviour we want — it
+ * neutralises motion without deleting the outcome — but it only works if the
+ * resting appearance is what the element has *without* the animation. Write it
+ * the other way round (`to { opacity: 1 }` on an element that is `opacity: 0`
+ * at rest) and reduced-motion visitors get a card that flashes and vanishes.
+ *
+ * So: `from { opacity: 0; transform: … }` and no `to` block. `Motion.test.ts`
+ * checks every keyframe here for it.
+ */
+
+/* ── 1. A peer's card arrived ─────────────────────────────────────────
+   Two parts: the card takes its place, then an accent edge decays over ~700ms
+   so a facilitator who was looking elsewhere can still find it. Applied ONLY to
+   cards that arrived over the wire — your own card must feel instant, and
+   animating it makes your own typing feel laggy. */
+._enter_5guee_33 {
+  animation: _enter_5guee_33 var(--dur-base) var(--ease) both;
+}
+@keyframes _enter_5guee_33 {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+._arrived_5guee_43 {
+  animation: _arrived_5guee_43 700ms var(--ease) both;
+}
+@keyframes _arrived_5guee_43 {
+  from {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 18px -4px var(--accent);
+  }
+}
+
+/* ── 2. A card left ───────────────────────────────────────────────────
+   The one place a `to` block is correct: there is no resting state to preserve
+   because the element is being removed. Callers must keep the node mounted for
+   the duration — see `useDeparture`. */
+._leave_5guee_57 {
+  animation: _leave_5guee_57 140ms var(--ease) both;
+  pointer-events: none;
+  overflow: hidden;
+}
+@keyframes _leave_5guee_57 {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+    max-height: 0;
+    margin-block: 0;
+    padding-block: 0;
+  }
+}
+
+/* ── 3. Someone is typing ─────────────────────────────────────────────
+   The server has always tracked this; it was rendered as a line of text in the
+   toolbar, nowhere near where the card was about to appear. A placeholder in
+   the destination column says the same thing in the place it matters. */
+._ghost_5guee_76 {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--dim);
+  animation: _ghost-breathe_5guee_1 1.8s ease-in-out infinite;
+}
+@keyframes _ghost-breathe_5guee_1 {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* ── 4. A count changed ───────────────────────────────────────────────
+   The smallest of the four, and the one that carries a number rather than an
+   event: a column head whose figure ticks tells you *which* column moved
+   without you having to have been watching it. */
+._tick_5guee_101 {
+  animation: _tick_5guee_101 var(--dur-base) var(--ease) both;
+}
+@keyframes _tick_5guee_101 {
+  from {
+    transform: translateY(-0.45em);
+    opacity: 0;
+    color: var(--accent);
+  }
+}
+
+/* The counter itself. Tabular so digits do not shift sideways as they change —
+   that jitter is what makes an unstyled live counter look cheap. */
+._ticker_5guee_114 {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * Styling for the shared board components.
+ *
+ * Every value is a token from design/tokens.css. Two rules worth keeping in
+ * mind while editing:
+ *
+ * * **`100dvh`, never `100vh`.** iOS Safari counts the collapsing URL bar in
+ *   `vh`, so a `100vh` scroll container is taller than the visible viewport and
+ *   its last row sits permanently under the chrome. Both boards do this today
+ *   (poker/page.py:170,330) and it is why the poker deck is unreachable on an
+ *   iPhone until you scroll the whole page.
+ * * **Safe-area insets on anything edge-anchored.** A phone held in landscape
+ *   puts the notch over the left or right gutter.
+ */
+
+/* ── App bar ──────────────────────────────────────────────────── */
+._appbar_2d9qb_17 {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  min-height: 52px;
+  padding: var(--s2) max(var(--s4), env(safe-area-inset-right)) var(--s2) max(var(--s4), env(safe-area-inset-left));
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+/* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
+   alignment is not thrown off by a 30px sprite sharing the row. */
+._brandMark_2d9qb_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_2d9qb_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+/* The block-glyph face, at a size that reads as a wordmark and not as a title.
+   Its own colour comes from .wordmark (var(--accent)); the size is set here
+   because it is a layout decision, not a property of the typeface. */
+._brandTitle_2d9qb_34 { font-size: 10px; }
+._brandSub_2d9qb_35 {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+._spacer_2d9qb_44 { flex: 1; }
+._tools_2d9qb_45 { display: flex; align-items: center; gap: var(--s2); }
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+._iconBtn_2d9qb_48 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and the
+     board's old .act buttons were about 13x20. */
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+._iconBtn_2d9qb_48:hover { border-color: var(--accent); }
+._iconBtnCompact_2d9qb_68 {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--s1);
+  font-size: var(--fs-s);
+  /* Visible at rest, not on hover: a hover-only control does not exist on a
+     touch screen, which is where most of these boards are actually used. */
+  opacity: 0.72;
+}
+._iconBtnCompact_2d9qb_68:hover, ._iconBtnCompact_2d9qb_68:focus-visible { opacity: 1; }
+._iconBtnActive_2d9qb_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._iconBtnPrimary_2d9qb_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._iconBtnPrimary_2d9qb_79:hover { filter: brightness(1.08); }
+._iconBtnDanger_2d9qb_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._iconGlyph_2d9qb_82 { font-size: var(--fs-m); line-height: 1; }
+
+._primaryBtn_2d9qb_84 {
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  background: var(--accent);
+  color: var(--ink);
+  border: 1px solid transparent;
+  border-radius: var(--r-s);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+._primaryBtn_2d9qb_84:hover { filter: brightness(1.08); }
+
+._preset_2d9qb_97 {
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+._preset_2d9qb_97:hover { border-color: var(--accent); }
+
+/* ── Toolbar popover ──────────────────────────────────────────── */
+._popoverGroup_2d9qb_111 { display: contents; }
+._popoverAnchor_2d9qb_112 { position: relative; display: inline-flex; }
+._tbtn_2d9qb_113 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-m);
+  line-height: 1;
+}
+._tbtn_2d9qb_113:hover { border-color: var(--accent); }
+._tbtnOpen_2d9qb_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+._popover_2d9qb_111 {
+  position: absolute;
+  top: calc(100% + var(--s2));
+  right: 0;
+  z-index: var(--z-popover);
+  min-width: 220px;
+  /* Never taller than the screen minus the bar it hangs from: an over-long
+     panel on a phone otherwise runs off the bottom with no way to scroll it. */
+  max-height: min(70vh, 480px);
+  overflow: auto;
+  padding: var(--s3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-2);
+}
+._popoverLeft_2d9qb_147 { right: auto; left: 0; }
+._popover_2d9qb_111[hidden] { display: none; }
+
+/* ── Form controls ────────────────────────────────────────────── */
+._fieldLabel_2d9qb_151 {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+._select_2d9qb_158, ._textInput_2d9qb_158, ._numberInput_2d9qb_158 {
+  min-height: var(--tap);
+  padding: 0 var(--s2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  font: inherit;
+  font-size: var(--fs-s);
+}
+._textInput_2d9qb_158 { flex: 1; min-width: 0; }
+._numberInput_2d9qb_158 { width: 5.5rem; font-family: var(--font-mono); }
+._range_2d9qb_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+
+/* ── Music ────────────────────────────────────────────────────── */
+._musicPanel_2d9qb_173 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_2d9qb_174 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_2d9qb_175 {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--ink);
+  border: none;
+  cursor: pointer;
+  font-size: var(--fs-m);
+}
+._viz_2d9qb_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_2d9qb_186 { opacity: 1; }
+
+/* ── Timer ────────────────────────────────────────────────────── */
+._timerPanel_2d9qb_189 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_2d9qb_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_2d9qb_191 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 4.5ch;
+  text-align: right;
+}
+/* Finished state is carried by colour AND the words "time's up", not by the
+   old infinite blink alone — motion is suppressed for anyone who asked for it. */
+._timerDone_2d9qb_201 { color: var(--danger); }
+
+._confetti_2d9qb_203 {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: var(--z-confetti);
+}
+
+/* ── Themes ───────────────────────────────────────────────────── */
+._themeSwitcher_2d9qb_213 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_2d9qb_214 { display: flex; gap: var(--s2); }
+._swatch_2d9qb_214 {
+  position: relative;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  padding: 0;
+}
+._swatchOn_2d9qb_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_2d9qb_225 {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ── Presence ─────────────────────────────────────────────────── */
+._presence_2d9qb_235 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_2d9qb_236 { display: inline-flex; align-items: center; }
+._stacked_2d9qb_237 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_2d9qb_237:first-child { margin-left: 0; }
+._presenceMore_2d9qb_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_2d9qb_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+
+._roster_2d9qb_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_2d9qb_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_2d9qb_244 { flex: 1; }
+._rosterYou_2d9qb_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_2d9qb_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+
+/* ── Profile ──────────────────────────────────────────────────── */
+._avatarGrid_2d9qb_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_2d9qb_250 {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: var(--fs-l);
+  line-height: 1;
+}
+._avatarChoiceOn_2d9qb_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* ── Invite ───────────────────────────────────────────────────── */
+._invite_2d9qb_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_2d9qb_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
+._inviteCode_2d9qb_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_2d9qb_266 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
+     the entire failure mode. */
+  letter-spacing: 0.14em;
+}
+._inviteUrl_2d9qb_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+
+/* ── Modal ────────────────────────────────────────────────────── */
+._modal_2d9qb_276 {
+  /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
+     Only the skin is ours. */
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  color: var(--text);
+  padding: 0;
+  max-width: min(92vw, 440px);
+  box-shadow: var(--shadow-2);
+}
+._modal_2d9qb_276::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_2d9qb_288 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_2d9qb_289 { font-size: var(--fs-l); margin: 0; }
+._modalActions_2d9qb_290 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+
+/* Visually hidden but reachable by assistive tech. Not `display:none`, which
+   removes it from the accessibility tree along with everything else. */
+._srOnly_2d9qb_294 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/*
  * Join gate.
  *
  * The most important page in the product and, until this pass, the most
@@ -1318,7 +1450,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  *    invisible one for half the room.
  */
 
-._app_bkqgv_20 {
+._app_18z62_20 {
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -1330,12 +1462,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   padding-right: env(safe-area-inset-right);
 }
 
-._offline_bkqgv_32 { color: var(--warn); font-family: var(--font-sans); }
+._offline_18z62_32 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-._identity_bkqgv_35 { display: flex; align-items: center; gap: var(--s3); }
+._identity_18z62_35 { display: flex; align-items: center; gap: var(--s3); }
 
-._meChip_bkqgv_37 {
+._meChip_18z62_37 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1349,23 +1481,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._meChip_bkqgv_37:hover { border-color: var(--accent); }
-._meName_bkqgv_52 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._pen_bkqgv_53 { color: var(--muted); font-size: var(--fs-2xs); }
-._roomCount_bkqgv_54 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._meChip_18z62_37:hover { border-color: var(--accent); }
+._meName_18z62_52 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_18z62_53 { color: var(--muted); font-size: var(--fs-2xs); }
+._roomCount_18z62_54 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-._viewCtl_bkqgv_56 { display: flex; align-items: center; gap: var(--s2); }
+._viewCtl_18z62_56 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._lockBanner_bkqgv_59, ._musicBanner_bkqgv_59 {
+._lockBanner_18z62_59, ._musicBanner_18z62_59 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
   border-bottom: 1px solid var(--line);
 }
-._lockBanner_bkqgv_59 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-._musicBanner_bkqgv_59 {
+._lockBanner_18z62_59 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_18z62_59 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -1376,7 +1508,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._castBtn_bkqgv_78, ._ghostBtn_bkqgv_78, ._saveBtn_bkqgv_78, ._addBtn_bkqgv_78, ._focusExit_bkqgv_78 {
+._castBtn_18z62_78, ._ghostBtn_18z62_78, ._saveBtn_18z62_78, ._addBtn_18z62_78, ._focusExit_18z62_78 {
   min-height: var(--tap);
   padding: 0 var(--s3);
   border-radius: var(--r-s);
@@ -1387,17 +1519,17 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._castBtn_bkqgv_78:hover, ._ghostBtn_bkqgv_78:hover, ._focusExit_bkqgv_78:hover { border-color: var(--accent); }
-._saveBtn_bkqgv_78, ._addBtn_bkqgv_78 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._saveBtn_bkqgv_78:hover, ._addBtn_bkqgv_78:hover:not(:disabled) { filter: brightness(1.08); }
-._addBtn_bkqgv_78:disabled { opacity: 0.45; cursor: default; }
+._castBtn_18z62_78:hover, ._ghostBtn_18z62_78:hover, ._focusExit_18z62_78:hover { border-color: var(--accent); }
+._saveBtn_18z62_78, ._addBtn_18z62_78 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._saveBtn_18z62_78:hover, ._addBtn_18z62_78:hover:not(:disabled) { filter: brightness(1.08); }
+._addBtn_18z62_78:disabled { opacity: 0.45; cursor: default; }
 
-._popNote_bkqgv_94 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_18z62_94 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_bkqgv_97 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_bkqgv_98 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_bkqgv_99 {
+._carried_18z62_97 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_18z62_98 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_18z62_99 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1411,14 +1543,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_bkqgv_113 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_bkqgv_114 { transform: rotate(90deg); }
-._carriedProgress_bkqgv_115 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_bkqgv_116 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_bkqgv_116[hidden] { display: none; }
-._carriedHint_bkqgv_118 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_bkqgv_119 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_bkqgv_120 {
+._chevron_18z62_113 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_18z62_114 { transform: rotate(90deg); }
+._carriedProgress_18z62_115 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_18z62_116 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_18z62_116[hidden] { display: none; }
+._carriedHint_18z62_118 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_18z62_119 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_18z62_120 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -1432,8 +1564,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_bkqgv_134 { flex: 1; min-width: 0; }
-._carriedSelect_bkqgv_135 {
+._carriedText_18z62_134 { flex: 1; min-width: 0; }
+._carriedSelect_18z62_135 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -1442,14 +1574,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_bkqgv_144 { border-left-color: var(--line); }
-._statusDone_bkqgv_145 { border-left-color: var(--ok); }
-._statusProgress_bkqgv_146 { border-left-color: var(--info); }
-._statusCarried_bkqgv_147 { border-left-color: var(--warn); }
-._statusMuted_bkqgv_148 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_18z62_144 { border-left-color: var(--line); }
+._statusDone_18z62_145 { border-left-color: var(--ok); }
+._statusProgress_18z62_146 { border-left-color: var(--info); }
+._statusCarried_18z62_147 { border-left-color: var(--warn); }
+._statusMuted_18z62_148 { border-left-color: var(--muted); opacity: 0.7; }
 
 /* ── Walkthrough bar ──────────────────────────────────────────────────── */
-._focusBar_bkqgv_151 {
+._focusBar_18z62_151 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -1457,7 +1589,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
-._focusStep_bkqgv_159 {
+._focusStep_18z62_159 {
   width: var(--tap);
   height: var(--tap);
   display: inline-grid;
@@ -1469,48 +1601,56 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   cursor: pointer;
 }
-._focusStep_bkqgv_159:disabled { opacity: 0.4; cursor: default; }
-._focusWho_bkqgv_172 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-._focusName_bkqgv_173 { font-size: var(--fs-m); }
-._focusCount_bkqgv_174 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._focusStep_18z62_159:disabled { opacity: 0.4; cursor: default; }
+._focusWho_18z62_172 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_18z62_173 { font-size: var(--fs-m); }
+._focusCount_18z62_174 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_bkqgv_177 {
+._board_18z62_177 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would push the composer off the bottom instead of scrolling. */
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Weighted by card count — see the `weights` memo in Board.tsx. The fallback
+     is the old equal split, so the board still lays out if the style attribute
+     is ever missing. `minmax(0, …)` in each track is what stops a long
+     unbroken word from forcing a column wider than its share. */
+  grid-template-columns: var(--col-weights, repeat(4, minmax(0, 1fr)));
   gap: var(--s3);
   padding: var(--s3) var(--s4);
   overflow: hidden;
+  transition: grid-template-columns var(--dur-base) var(--ease);
 }
 
 @media (max-width: 1099px) {
-  ._board_bkqgv_177 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  /* Weights are a wide-screen affordance only: in a 2x2 they would make the
+     two rows different heights for no reason. */
+  ._board_18z62_177 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_bkqgv_177 {
+  ._board_18z62_177 {
     grid-template-columns: none;
     grid-auto-flow: column;
+    /* One column fills the screen; nothing to weigh. */
     grid-auto-columns: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_bkqgv_177::-webkit-scrollbar { display: none; }
-  ._column_bkqgv_206 { scroll-snap-align: center; }
+  ._board_18z62_177::-webkit-scrollbar { display: none; }
+  ._column_18z62_214 { scroll-snap-align: center; }
 }
 
-._pager_bkqgv_209 { display: none; }
+._pager_18z62_217 { display: none; }
 @media (max-width: 699px) {
-  ._pager_bkqgv_209 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_bkqgv_212 {
+  ._pager_18z62_217 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_18z62_220 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -1519,7 +1659,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_bkqgv_212::after {
+  ._pagerDot_18z62_220::after {
     content: "";
     display: block;
     width: 8px;
@@ -1528,28 +1668,54 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_bkqgv_230::after { background: var(--accent); }
+  ._pagerDotOn_18z62_238::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
-._column_bkqgv_206 {
+/*
+ * The four columns used to be identical — same border, same surface, same
+ * heading weight — so their meaning was carried by the words alone. At a
+ * glance, which is how a facilitator reads a board while somebody is talking,
+ * the board was an undifferentiated grid.
+ *
+ * `--col-tone` and `--col-wash` are set per column by Column.tsx from the typed
+ * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
+ * four saturated columns would be a traffic jam, and the cards are the content.
+ */
+._column_18z62_214 {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--felt);
+  background: var(--col-wash, var(--felt));
   border: 1px solid var(--line-soft);
+  /* The identity, in two pixels. */
+  border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
 }
-._columnHead_bkqgv_242 { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
-._columnTitle_bkqgv_243 { margin: 0; font-size: var(--fs-s); font-weight: 600; letter-spacing: 0.01em; }
-._columnCount_bkqgv_244 {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  flex: 1;
+._columnHead_18z62_262 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s1);
+  padding: var(--s3) var(--s3) var(--s2);
 }
-._columnAdd_bkqgv_251 {
+._columnTitle_18z62_268 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--col-tone, var(--text));
+}
+._columnDot_18z62_277 { color: var(--dim); }
+._columnCount_18z62_278 {
+  color: var(--text);
+  font-size: var(--fs-2xs);
+}
+/* Pushes the + to the right without making the count a flex:1 blob, which is
+   what used to stop the head from baseline-aligning. */
+._columnSpacer_18z62_284 { flex: 1; }
+._columnAdd_18z62_285 {
   width: var(--tap);
   height: var(--tap);
   display: grid;
@@ -1562,9 +1728,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   cursor: pointer;
 }
-._columnAdd_bkqgv_251:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
+._columnAdd_18z62_285:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
 
-._cards_bkqgv_266 {
+._cards_18z62_300 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1573,12 +1739,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   flex-direction: column;
   gap: var(--s2);
 }
-._cardsOver_bkqgv_275 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
-._columnEmpty_bkqgv_276 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
-._columnTyping_bkqgv_277 { padding: 0 var(--s3) var(--s2); min-height: 1.2em; }
+._cardsOver_18z62_309 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+._columnEmpty_18z62_310 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._authorGroup_bkqgv_279 { display: flex; flex-direction: column; gap: var(--s2); }
-._authorGroupHead_bkqgv_280 {
+._authorGroup_18z62_312 { display: flex; flex-direction: column; gap: var(--s2); }
+._authorGroupHead_18z62_313 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-2xs);
@@ -1587,20 +1752,27 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.06em;
 }
 
-._cardSlot_bkqgv_289 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-._dropLine_bkqgv_290 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+._cardSlot_18z62_322 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._dropLine_18z62_323 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
-._card_bkqgv_266 {
+._card_18z62_300 {
   background: var(--card);
   border: 1px solid var(--line);
+  /* The column's tone, carried onto the card. --col-tone is set on the section
+     by Column.tsx, so a card picked up and dropped in another column changes
+     colour with it and nothing has to be told. */
+  border-left: 3px solid color-mix(in srgb, var(--col-tone, var(--accent)) 55%, transparent);
   border-radius: var(--r-s);
   padding: var(--s3);
-  box-shadow: var(--shadow-1);
+  /* No shadow. Four columns of shadowed cards on a dark surface reads as
+     grubby rather than raised; the 1px line and the tone rule do the work. */
 }
-._cardAI_bkqgv_300 { border-left: 3px solid var(--accent2); }
-._cardDragging_bkqgv_301 { opacity: 0.4; }
-._cardText_bkqgv_302 {
+/* An AI card is not the column's — it is the agent's, and it should be
+   obviously distinguishable from something a colleague wrote. */
+._cardAI_18z62_340 { border-left-color: var(--accent2); }
+._cardDragging_18z62_341 { opacity: 0.4; }
+._cardText_18z62_342 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -1609,10 +1781,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
 }
 
-._cardMeta_bkqgv_311 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-._metaSpacer_bkqgv_312 { flex: 1; }
-._author_bkqgv_279 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_bkqgv_314 {
+._cardMeta_18z62_351 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+._metaSpacer_18z62_352 { flex: 1; }
+._author_18z62_312 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_18z62_354 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -1620,15 +1792,15 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_bkqgv_322 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_bkqgv_323 {
+._aiBadge_18z62_362 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_18z62_363 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
 }
 
-._act_bkqgv_14, ._grip_bkqgv_330 {
+._act_18z62_14, ._grip_18z62_370 {
   width: var(--tap);
   height: var(--tap);
   display: grid;
@@ -1644,19 +1816,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   opacity: 0.65;
   cursor: pointer;
 }
-._act_bkqgv_14:hover, ._grip_bkqgv_330:hover, ._act_bkqgv_14:focus-visible, ._grip_bkqgv_330:focus-visible { opacity: 1; color: var(--text); }
-._actDanger_bkqgv_347:hover, ._actDanger_bkqgv_347:focus-visible { color: var(--danger); }
+._act_18z62_14:hover, ._grip_18z62_370:hover, ._act_18z62_14:focus-visible, ._grip_18z62_370:focus-visible { opacity: 1; color: var(--text); }
+._actDanger_18z62_387:hover, ._actDanger_18z62_387:focus-visible { color: var(--danger); }
 
-._gripWrap_bkqgv_349 { position: relative; display: inline-flex; }
-._grip_bkqgv_330 {
+._gripWrap_18z62_389 { position: relative; display: inline-flex; }
+._grip_18z62_370 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_bkqgv_330:active { cursor: grabbing; }
+._grip_18z62_370:active { cursor: grabbing; }
 
-._moveMenu_bkqgv_358 {
+._moveMenu_18z62_398 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -1670,7 +1842,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_bkqgv_372 {
+._moveItem_18z62_412 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -1682,11 +1854,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_bkqgv_372:hover { background: var(--panel-2); }
+._moveItem_18z62_412:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_bkqgv_387 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_bkqgv_388 {
+._editor_18z62_427 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_18z62_428 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -1697,11 +1869,16 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_bkqgv_399 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_18z62_439 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
-._reactions_bkqgv_402 { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-._rxChip_bkqgv_403, ._rxAdd_bkqgv_403, ._rxPick_bkqgv_403 {
+/* Only rendered when something has actually been reacted to — see
+   ReactionChips. The row used to be unconditional because it also held the
+   "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
+._reactions_18z62_445 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+/* The trigger now lives in the card's action row; the picker hangs off it. */
+._rxAddWrap_18z62_447 { position: relative; display: inline-flex; }
+._rxChip_18z62_448, ._rxPick_18z62_448 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -1717,15 +1894,16 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._rxChip_bkqgv_403:hover, ._rxAdd_bkqgv_403:hover, ._rxPick_bkqgv_403:hover { border-color: var(--accent); }
-._rxChip_bkqgv_403:disabled, ._rxAdd_bkqgv_403:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_bkqgv_421 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-._rxCount_bkqgv_422 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
-._rxAdd_bkqgv_403 { background: none; color: var(--muted); }
+._rxChip_18z62_448:hover, ._rxAdd_18z62_447:hover, ._rxPick_18z62_448:hover { border-color: var(--accent); }
+._rxChip_18z62_448:disabled, ._rxAdd_18z62_447:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_18z62_466 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_18z62_467 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
-._rxPicker_bkqgv_425 {
+._rxPicker_18z62_469 {
   position: absolute;
-  left: 0;
+  /* Right-anchored: the trigger sits in the action row at the card's right
+     edge, so a left-anchored panel would hang off the board. */
+  right: 0;
   bottom: calc(100% + var(--s1));
   z-index: var(--z-popover);
   display: flex;
@@ -1740,7 +1918,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Composer ─────────────────────────────────────────────────────────── */
-._composer_bkqgv_442 {
+._composer_18z62_488 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -1750,9 +1928,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
   border-top: 1px solid var(--line);
 }
-._composerLocked_bkqgv_452 { margin: 0; text-align: center; color: var(--muted); font-size: var(--fs-s); }
-._composerRow_bkqgv_453 { display: flex; align-items: flex-end; gap: var(--s2); }
-._composerBox_bkqgv_454 {
+._composerLocked_18z62_498 { margin: 0; text-align: center; color: var(--muted); font-size: var(--fs-s); }
+._composerRow_18z62_499 { display: flex; align-items: flex-end; gap: var(--s2); }
+._composerBox_18z62_500 {
   flex: 1;
   min-width: 0;
   min-height: var(--tap);
@@ -1766,12 +1944,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._composerBox_bkqgv_454:focus-visible { border-color: var(--accent); }
+._composerBox_18z62_500:focus-visible { border-color: var(--accent); }
 
-._segmented_bkqgv_470 { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; }
-._segmented_bkqgv_470::-webkit-scrollbar { display: none; }
-._segment_bkqgv_470 {
+._segmented_18z62_516 { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; }
+._segmented_18z62_516::-webkit-scrollbar { display: none; }
+/* Each pill carries its column's `--col-tone`, set inline by Composer.tsx, so
+   choosing a destination is the same act as looking at the board. A dot rather
+   than a fill for the unselected ones: four filled pills under four coloured
+   columns would be twice as much colour as the board can carry. */
+._segment_18z62_516 {
   flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
   min-height: var(--tap-min);
   padding: 0 var(--s3);
   white-space: nowrap;
@@ -1779,39 +1965,52 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-pill);
   background: none;
   color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   cursor: pointer;
 }
-._segment_bkqgv_470:hover { border-color: var(--accent); }
-._segmentOn_bkqgv_486 {
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
-  border-color: var(--accent);
+._segment_18z62_516::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--col-tone, var(--accent));
+  /* Dimmed until chosen, so the row reads as one control with one active
+     option rather than as four status lights. */
+  opacity: 0.45;
+}
+._segment_18z62_516:hover { border-color: var(--col-tone, var(--accent)); }
+._segmentOn_18z62_552 {
+  background: color-mix(in srgb, var(--col-tone, var(--accent)) 16%, var(--panel));
+  border-color: var(--col-tone, var(--accent));
   color: var(--text);
   font-weight: 600;
 }
+._segmentOn_18z62_552::before { opacity: 1; }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
-._floatLayer_bkqgv_494 {
+._floatLayer_18z62_561 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
   pointer-events: none;
   overflow: hidden;
 }
-._floater_bkqgv_501 {
+._floater_18z62_568 {
   position: absolute;
   bottom: 0;
-  animation: _rise_bkqgv_1 2.6s ease-out forwards;
+  animation: _rise_18z62_1 2.6s ease-out forwards;
 }
 
-@keyframes _rise_bkqgv_1 {
+@keyframes _rise_18z62_1 {
   from { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   to { transform: translateY(-70vh); opacity: 0; }
 }
 
-._srOnly_bkqgv_513 {
+._srOnly_18z62_580 {
   position: absolute;
   width: 1px;
   height: 1px;

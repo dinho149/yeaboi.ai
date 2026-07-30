@@ -24,9 +24,23 @@
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
-.brand { display: flex; align-items: baseline; gap: var(--s2); }
-.brandTitle { color: var(--accent); font-size: var(--fs-l); font-weight: 700; letter-spacing: 0.01em; }
-.brandSub { color: var(--muted); font-size: var(--fs-xs); font-family: var(--font-mono); }
+/* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
+   alignment is not thrown off by a 30px sprite sharing the row. */
+.brandMark { display: inline-flex; flex: none; align-items: center; }
+.brand { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+/* The block-glyph face, at a size that reads as a wordmark and not as a title.
+   Its own colour comes from .wordmark (var(--accent)); the size is set here
+   because it is a layout decision, not a property of the typeface. */
+.brandTitle { font-size: 10px; }
+.brandSub {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .spacer { flex: 1; }
 .tools { display: flex; align-items: center; gap: var(--s2); }
 

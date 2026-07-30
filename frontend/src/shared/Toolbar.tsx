@@ -14,13 +14,22 @@
 
 import type { ReactNode } from 'react';
 
+import { Wordmark } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { PopoverGroup } from './Popover';
 import styles from './shared.module.css';
 
 export interface ToolbarProps {
-  /** Product/mode name. */
+  /**
+   * The mode name, set in the block-glyph display face.
+   *
+   * A string goes through {@link Wordmark}; pass a node to opt out. This is
+   * where a board stops looking like a generic kanban tool and starts looking
+   * like the thing the host has open in their terminal.
+   */
   brand: ReactNode;
+  /** Sits left of the brand — the duck, on the boards that have one. */
+  mark?: ReactNode;
   /** Small muted line beside the brand — a card count, a ticket position. */
   subtitle?: ReactNode;
   /** Presence row, focus controls — anything mode-specific and left-aligned. */
@@ -30,11 +39,16 @@ export interface ToolbarProps {
   className?: string | undefined;
 }
 
-export function Toolbar({ brand, subtitle, children, tools, className }: ToolbarProps) {
+export function Toolbar({ brand, mark, subtitle, children, tools, className }: ToolbarProps) {
   return (
     <header className={cx(styles['appbar'], className)}>
+      {mark ? <span className={styles['brandMark']}>{mark}</span> : null}
       <div className={styles['brand']}>
-        <span className={styles['brandTitle']}>{brand}</span>
+        {typeof brand === 'string' ? (
+          <Wordmark text={brand} className={styles['brandTitle']} />
+        ) : (
+          <span className={styles['brandTitle']}>{brand}</span>
+        )}
         {subtitle ? <span className={styles['brandSub']}>{subtitle}</span> : null}
       </div>
 

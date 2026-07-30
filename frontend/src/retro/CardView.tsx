@@ -22,7 +22,8 @@ import { fmtAgo } from '../runtime/format';
 import { cx } from '../runtime/cx';
 import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
-import { ReactionBar } from './ReactionBar';
+import { ReactionAdd, ReactionChips } from './ReactionBar';
+import motion from '../motion/motion.module.css';
 import styles from './retro.module.css';
 
 export interface CardViewProps {
@@ -35,6 +36,15 @@ export interface CardViewProps {
   locked: boolean;
   /** True while this card is the one being dragged. */
   dragging?: boolean;
+  /**
+   * This card just arrived from a peer over the long-poll.
+   *
+   * Decays an accent edge over ~700ms so a facilitator looking at another
+   * column can still find what moved. Never set for a card you added
+   * yourself — yours should feel instant, and animating it makes your own
+   * typing feel laggy.
+   */
+  arrived?: boolean;
   onEdit(text: string): void;
   onDelete(): void;
   onReact(emoji: string): void;
@@ -97,6 +107,7 @@ export function CardView({
   myReactions,
   locked,
   dragging,
+  arrived,
   onEdit,
   onDelete,
   onReact,
@@ -113,7 +124,12 @@ export function CardView({
 
   return (
     <article
-      className={cx(styles['card'], isAI && styles['cardAI'], dragging && styles['cardDragging'])}
+      className={cx(
+        styles['card'],
+        isAI && styles['cardAI'],
+        dragging && styles['cardDragging'],
+        arrived && motion['arrived']
+      )}
       data-card-id={card.id}
       aria-label={`Card by ${isAI ? 'AI' : card.author}`}
     >
@@ -190,6 +206,8 @@ export function CardView({
           </span>
         )}
 
+        {locked ? null : <ReactionAdd mine={myReactions} onReact={onReact} disabled={locked} />}
+
         {canModify && !editing ? (
           <>
             <button
@@ -212,7 +230,7 @@ export function CardView({
         ) : null}
       </div>
 
-      <ReactionBar reactions={card.reactions} mine={myReactions} onReact={onReact} disabled={locked} />
+      <ReactionChips reactions={card.reactions} mine={myReactions} onReact={onReact} disabled={locked} />
     </article>
   );
 }

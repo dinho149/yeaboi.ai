@@ -18,8 +18,10 @@
 
 import { useEffect, useRef } from 'react';
 
+import { toneVar } from '../design/tone';
 import { cx } from '../runtime/cx';
 import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
+import { GRID_TONE } from './gridTone';
 import styles from './retro.module.css';
 
 export interface ComposerProps {
@@ -79,6 +81,11 @@ export function Composer({
               aria-checked={selected}
               tabIndex={selected ? 0 : -1}
               className={cx(styles['segment'], selected && styles['segmentOn'])}
+              // Each destination wears its column's colour, so picking one is
+              // the same act as looking at the board. Without this the control
+              // was four identical grey pills next to four coloured columns —
+              // the one place the colour coding would have paid off most.
+              style={{ '--col-tone': toneVar(GRID_TONE[option]) } as never}
               onClick={() => onGridChange(option)}
               onKeyDown={(event) => {
                 if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {

@@ -180,13 +180,20 @@
      so the columns would push the composer off the bottom instead of scrolling. */
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Weighted by card count — see the `weights` memo in Board.tsx. The fallback
+     is the old equal split, so the board still lays out if the style attribute
+     is ever missing. `minmax(0, …)` in each track is what stops a long
+     unbroken word from forcing a column wider than its share. */
+  grid-template-columns: var(--col-weights, repeat(4, minmax(0, 1fr)));
   gap: var(--s3);
   padding: var(--s3) var(--s4);
   overflow: hidden;
+  transition: grid-template-columns var(--dur-base) var(--ease);
 }
 
 @media (max-width: 1099px) {
+  /* Weights are a wide-screen affordance only: in a 2x2 they would make the
+     two rows different heights for no reason. */
   .board { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
@@ -196,6 +203,7 @@
   .board {
     grid-template-columns: none;
     grid-auto-flow: column;
+    /* One column fills the screen; nothing to weigh. */
     grid-auto-columns: 100%;
     overflow-x: auto;
     overflow-y: hidden;
@@ -231,23 +239,49 @@
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
+/*
+ * The four columns used to be identical — same border, same surface, same
+ * heading weight — so their meaning was carried by the words alone. At a
+ * glance, which is how a facilitator reads a board while somebody is talking,
+ * the board was an undifferentiated grid.
+ *
+ * `--col-tone` and `--col-wash` are set per column by Column.tsx from the typed
+ * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
+ * four saturated columns would be a traffic jam, and the cards are the content.
+ */
 .column {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--felt);
+  background: var(--col-wash, var(--felt));
   border: 1px solid var(--line-soft);
+  /* The identity, in two pixels. */
+  border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
 }
-.columnHead { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
-.columnTitle { margin: 0; font-size: var(--fs-s); font-weight: 600; letter-spacing: 0.01em; }
-.columnCount {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  flex: 1;
+.columnHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s1);
+  padding: var(--s3) var(--s3) var(--s2);
 }
+.columnTitle {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--col-tone, var(--text));
+}
+.columnDot { color: var(--dim); }
+.columnCount {
+  color: var(--text);
+  font-size: var(--fs-2xs);
+}
+/* Pushes the + to the right without making the count a flex:1 blob, which is
+   what used to stop the head from baseline-aligning. */
+.columnSpacer { flex: 1; }
 .columnAdd {
   width: var(--tap);
   height: var(--tap);
@@ -274,7 +308,6 @@
 }
 .cardsOver { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
 .columnEmpty { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
-.columnTyping { padding: 0 var(--s3) var(--s2); min-height: 1.2em; }
 
 .authorGroup { display: flex; flex-direction: column; gap: var(--s2); }
 .authorGroupHead {
@@ -293,11 +326,18 @@
 .card {
   background: var(--card);
   border: 1px solid var(--line);
+  /* The column's tone, carried onto the card. --col-tone is set on the section
+     by Column.tsx, so a card picked up and dropped in another column changes
+     colour with it and nothing has to be told. */
+  border-left: 3px solid color-mix(in srgb, var(--col-tone, var(--accent)) 55%, transparent);
   border-radius: var(--r-s);
   padding: var(--s3);
-  box-shadow: var(--shadow-1);
+  /* No shadow. Four columns of shadowed cards on a dark surface reads as
+     grubby rather than raised; the 1px line and the tone rule do the work. */
 }
-.cardAI { border-left: 3px solid var(--accent2); }
+/* An AI card is not the column's — it is the agent's, and it should be
+   obviously distinguishable from something a colleague wrote. */
+.cardAI { border-left-color: var(--accent2); }
 .cardDragging { opacity: 0.4; }
 .cardText {
   margin: 0;
@@ -399,8 +439,13 @@
 .editActions { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
-.reactions { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-.rxChip, .rxAdd, .rxPick {
+/* Only rendered when something has actually been reacted to — see
+   ReactionChips. The row used to be unconditional because it also held the
+   "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
+.reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+/* The trigger now lives in the card's action row; the picker hangs off it. */
+.rxAddWrap { position: relative; display: inline-flex; }
+.rxChip, .rxPick {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -420,11 +465,12 @@
 .rxChip:disabled, .rxAdd:disabled { opacity: 0.5; cursor: default; }
 .rxChipMine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
-.rxAdd { background: none; color: var(--muted); }
 
 .rxPicker {
   position: absolute;
-  left: 0;
+  /* Right-anchored: the trigger sits in the action row at the card's right
+     edge, so a left-anchored panel would hang off the board. */
+  right: 0;
   bottom: calc(100% + var(--s1));
   z-index: var(--z-popover);
   display: flex;
@@ -469,8 +515,16 @@
 
 .segmented { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; }
 .segmented::-webkit-scrollbar { display: none; }
+/* Each pill carries its column's `--col-tone`, set inline by Composer.tsx, so
+   choosing a destination is the same act as looking at the board. A dot rather
+   than a fill for the unselected ones: four filled pills under four coloured
+   columns would be twice as much colour as the board can carry. */
 .segment {
   flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
   min-height: var(--tap-min);
   padding: 0 var(--s3);
   white-space: nowrap;
@@ -478,17 +532,30 @@
   border-radius: var(--r-pill);
   background: none;
   color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
   cursor: pointer;
 }
-.segment:hover { border-color: var(--accent); }
+.segment::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--col-tone, var(--accent));
+  /* Dimmed until chosen, so the row reads as one control with one active
+     option rather than as four status lights. */
+  opacity: 0.45;
+}
+.segment:hover { border-color: var(--col-tone, var(--accent)); }
 .segmentOn {
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--col-tone, var(--accent)) 16%, var(--panel));
+  border-color: var(--col-tone, var(--accent));
   color: var(--text);
   font-weight: 600;
 }
+.segmentOn::before { opacity: 1; }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
 .floatLayer {

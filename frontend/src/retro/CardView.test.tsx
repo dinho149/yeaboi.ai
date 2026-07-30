@@ -90,10 +90,30 @@ describe('CardView', () => {
   });
 
   it('hides every mutating control while the host has the board locked', () => {
+    // Including the reaction trigger, which used to be the one exception —
+    // rendered but disabled, while edit and move were removed outright. The
+    // `locked` prop has always been documented as "hide, not just disable";
+    // moving the trigger out of the reaction row was the point at which the
+    // inconsistency became visible.
     renderCard({ mine: true }, { locked: true });
     expect(screen.queryByRole('button', { name: /^Edit card/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Move card/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Add a reaction' })).toHaveProperty('disabled', true);
+    expect(screen.queryByRole('button', { name: 'Add a reaction' })).toBeNull();
+  });
+
+  it('drops the reaction row entirely when nothing has been reacted to', () => {
+    // The row used to be unconditional, because it also held the "add" trigger
+    // — so most cards showed a lone 🙂 hanging in empty space under the author
+    // line, which read as a rendering fault rather than a control.
+    const { container } = renderCard({ reactions: {} });
+    expect(container.querySelector(`.${'reactions'}`)).toBeNull();
+    // The trigger is still reachable; it just lives with the other actions now.
+    expect(screen.getByRole('button', { name: 'Add a reaction' })).toBeTruthy();
+  });
+
+  it('still shows the row once a reaction lands', () => {
+    renderCard({ reactions: { '👍': 2 } });
+    expect(screen.getByRole('button', { name: /Add 👍 reaction \(2\)/ })).toBeTruthy();
   });
 
   it('names the destination columns in the keyboard move menu, excluding its own', async () => {
