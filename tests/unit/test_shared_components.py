@@ -501,12 +501,13 @@ class TestSettingsScreen:
         panel = _build_settings_screen({}, width=120, height=44, active_tab=0)  # Credentials
         assert panel._row_regions  # editable rows attached
         lines = con.render_lines(panel, con.options, pad=True)
-        envs = {env for _, env, _, _ in panel._row_regions}
+        envs = {env for _, _, _, env, _, _ in panel._row_regions}
         assert "LLM_PROVIDER" in envs and "ANTHROPIC_API_KEY" in envs
-        # Each region's absolute row actually contains that row's label.
-        for abs_row, _env, label, _masked in panel._row_regions:
+        # Sections are boxed and can sit side by side, so a region carries a column
+        # range too — the label must fall inside that exact rect, not just the row.
+        for abs_row, x0, x1, _env, label, _masked in panel._row_regions:
             row_text = "".join(s.text for s in lines[abs_row - 1])
-            assert label in row_text
+            assert label in row_text[x0 - 1 : x1]
 
     def test_editing_renders_buffer_in_row(self):
         # When a row is being edited in place, its value is replaced by the live
@@ -521,9 +522,41 @@ class TestSettingsScreen:
 
         # The System tab's "Config File" and "Dictation" rows are read-only.
         panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=2)
-        labels = {label for _, _, label, _ in panel._row_regions}
+        labels = {label for _, _, _, _, label, _ in panel._row_regions}
         assert "Config File" not in labels
         assert "Log Level" in labels  # but editable rows on the same tab do have regions
+
+    def test_sections_render_as_boxes_in_a_grid(self):
+        # Each heading section is its own rounded box (the Usage dashboard's
+        # treatment): the heading becomes the box title, and on a wide terminal two
+        # narrow sections share a row.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)  # System
+        out = self._text(panel, width=130, height=44)
+        assert "╭─ Daily Standup" in out and "╭─ Voice Input" in out
+        # Side by side: both titles land on the same rendered row.
+        assert any("Daily Standup" in ln and "Voice Input" in ln for ln in out.splitlines())
+
+    def test_narrow_terminal_falls_back_to_one_column(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=70, height=44, active_tab=2)
+        out = self._text(panel, width=70, height=44)
+        # One box per row — a column would fall below _SETTINGS_MIN_BOX_W otherwise.
+        assert not any("Daily Standup" in ln and "Voice Input" in ln for ln in out.splitlines())
+
+    def test_editing_a_long_value_keeps_the_cursor_visible(self):
+        # The buffer is windowed to the box width, so typing past the right edge
+        # scrolls the value instead of ellipsizing over the cursor.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        buf = "sk-ant-" + "x" * 200
+        panel = _build_settings_screen(
+            {}, width=100, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", buf, len(buf))
+        )
+        row = next(ln for ln in self._text(panel, width=100, height=40).splitlines() if "Anthropic Key" in ln)
+        assert "…" not in row  # cropped from the left, not ellipsized on the right
 
     def test_tab_click_regions_map_to_each_tab(self):
         from io import StringIO
@@ -557,6 +590,18 @@ class TestSettingsScreen:
         result = _build_settings_screen(data, width=100, height=height, active_tab=active_tab, editing=editing)
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
+        return buf.getvalue()
+
+    @staticmethod
+    def _text(panel, *, width: int, height: int) -> str:
+        """Render an already-built panel at a given size (the boxed-grid layout is
+        width-sensitive, so these tests pick their own width rather than _render's)."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        buf = StringIO()
+        Console(file=buf, width=width, height=height, force_terminal=False).print(panel)
         return buf.getvalue()
 
     def test_storage_section_rendered(self):

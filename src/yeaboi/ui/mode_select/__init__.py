@@ -10265,8 +10265,10 @@ def select_mode(
                                 break
                         # Otherwise, click an editable config row → edit it in place.
                         if not _hit_tab:
-                            for _rr, _env, _label, _masked in getattr(_s_panel, "_row_regions", []):
-                                if _cy != _rr:
+                            # Sections are boxed side by side now, so two editable rows
+                            # can share a terminal row — the column range disambiguates.
+                            for _rr, _rx0, _rx1, _env, _label, _masked in getattr(_s_panel, "_row_regions", []):
+                                if _cy != _rr or not (_rx0 <= _cx <= _rx1):
                                     continue
                                 if _env == "YEABOI_HOME":  # special: move-aware data-dir flow
                                     _msg = _settings_data_dir_flow(

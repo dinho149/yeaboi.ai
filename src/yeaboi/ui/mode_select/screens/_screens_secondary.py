@@ -4891,12 +4891,25 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     "System": ["standup", "voice", "bedrock", "advanced"],
 }
 
+# Sections whose box spans the full grid width instead of taking a column slot.
+# These carry token-help sub-lines (a creation URL + a scope sentence) that a
+# half-width column would ellipsize away — same reasoning as the Usage dashboard's
+# ``wide`` sections (see _build_usage_screen).
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion"}
+
 # Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
 # The header above it is fixed height: top border + top pad + blank + title (2
 # rows) + blank → the labels row is the 7th terminal row.
 _TAB_LABELS_ROW = 7
 _TAB_UNDERLINE_ROW = 8
 _TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content column is 4
+
+# Settings section boxes, mirroring the Usage dashboard's grid (see _build_usage_screen):
+# the narrowest a box may get before the grid drops a column, and the most columns it
+# will ever use. Two reads better than three here — settings rows are "label:  value"
+# pairs whose values (URLs, model names) are longer than Usage's counters.
+_SETTINGS_MIN_BOX_W = 38
+_SETTINGS_MAX_COLS = 2
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -4996,32 +5009,62 @@ def _build_settings_screen(
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
 
-    body_lines: list = []
-
     # ── Transient status message (e.g. "Anthropic Key updated") ───
     # The companion duck speaks it (see _duck_say on the returned panel) rather
     # than it taking a body row.
     message = config_data.get("_message", "")
 
-    def _heading(text: str) -> None:
-        body_lines.append(Text(""))
-        h = Text("    ", justify="left")
-        h.append(text, style=f"bold {theme.accent}")
-        body_lines.append(h)
-        body_lines.append(Text("    " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
+    # ── Box geometry, resolved BEFORE the rows are built ──────────
+    # Each section becomes its own bordered box laid out in an adaptive-width grid
+    # (the Usage dashboard's treatment — see _build_usage_screen). The widths have
+    # to be known up front because an in-place edit windows its buffer to the box
+    # it will end up sitting in.
+    # A box's left border lands on the tab-bar rule, which puts the rows INSIDE it
+    # (border + 1 pad) at the same column the unboxed rows used and the tab labels
+    # start at — so boxing the sections doesn't shift any text sideways.
+    _grid_indent = _PAD
+    # panel chrome (border + 2 pad, both sides) + the indent + the scrollbar gutter.
+    grid_w = max(24, width - 6 - len(_grid_indent) - 1)
+    _tab_name = _SETTINGS_TABS[max(0, min(active_tab, len(_SETTINGS_TABS) - 1))]
+    _n_narrow = sum(1 for _s in _SETTINGS_TAB_SECTIONS[_tab_name] if _s not in _WIDE_SETTINGS_SECTIONS)
+    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_narrow or 1))
+    # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only; two
+    # columns of slack keep the table clear of the render width.
+    col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
+    full_w = grid_w - 2  # a wide box takes the whole grid row
+
+    # (title, rows, wide) per section; ``_cur`` is the open section's row list.
+    sections: list[tuple[str, list, bool]] = []
+    _cur: list = []
+    _cur_w = col_w - 4  # inner text width available to the open section
+
+    def _heading(text: str, *, wide: bool = False) -> None:
+        """Open a new section box — its heading is drawn as the box title."""
+        nonlocal _cur, _cur_w
+        _cur = []
+        _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
+        sections.append((text, _cur, wide))
 
     def _row(label: str, value: str, value_style: str = "", masked: bool = False, env: str = "") -> None:
         # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
         # click can recover the env var; plain rows stay Text.
-        r = _EditableRow("    ", justify="left") if env else Text("    ", justify="left")
+        # no_wrap + ellipsis: a long value crops instead of wrapping, which would
+        # give the box an unpredictable height and break the grid.
+        _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
+        r = _EditableRow("", **_kw) if env else Text("", **_kw)
         r.append(f"{label}:  ", style=theme.muted)
         if editing is not None and env and editing[0] == env:
             # This row is being edited in place: show the buffer with a block cursor.
-            _buf, _cur = editing[1], editing[2]
-            _cur = max(0, min(_cur, len(_buf)))
-            r.append(_buf[:_cur], style=theme.value)
-            r.append(_buf[_cur : _cur + 1] or " ", style="reverse bold")  # cursor cell
-            r.append(_buf[_cur + 1 :], style=theme.value)
+            # The buffer is windowed to what is left of the box so the cursor stays
+            # visible — otherwise a long key would ellipsize exactly where you type.
+            _buf, _pos = editing[1], editing[2]
+            _pos = max(0, min(_pos, len(_buf)))
+            _avail = max(8, _cur_w - len(label) - 3)
+            _lo = max(0, _pos - _avail + 1)
+            _win, _wc = _buf[_lo : _lo + _avail], _pos - _lo
+            r.append(_win[:_wc], style=theme.value)
+            r.append(_win[_wc : _wc + 1] or " ", style="reverse bold")  # cursor cell
+            r.append(_win[_wc + 1 :], style=theme.value)
         elif masked and value:
             display = value[:4] + "\u2022" * min(12, len(value) - 4) if len(value) > 4 else "\u2022" * len(value)
             r.append(display, style=value_style or theme.dim)
@@ -5031,32 +5074,32 @@ def _build_settings_screen(
             r.append("not set", style=theme.dim)
         if env:
             r.env, r.label, r.masked = env, label, masked
-        body_lines.append(r)
+        _cur.append(r)
 
     # Token help sub-lines: where to create the token + the minimum scope it needs.
     # Sourced from the shared TOKEN_HELP registry (same one the setup wizard uses)
     # so both token surfaces stay consistent. The creation URL is a clickable
     # OSC-8 hyperlink; both lines are dim so they read as a secondary hint.
     #
-    # Each line MUST render as exactly one visual row — the viewport height math
-    # below (visible = body_lines[scroll : scroll + viewport_h]) assumes one row
-    # per body line, so a wrapped line would overflow the fixed-height panel. We
+    # Each line MUST render as exactly one visual row — its section's box is built
+    # at a fixed height (rows + 2), so a wrapped line would overflow the border. We
     # force single-row with no_wrap + ellipsis; the full scope is always visible in
-    # the setup wizard, and wide terminals show it in full here too.
+    # the setup wizard, and these sections get a full-width box so wide terminals
+    # show it in full here too.
     from yeaboi.ui.provider_select._constants import TOKEN_HELP
 
     def _token_help(env_var: str) -> None:
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
-        body_lines.append(link)
-        scope = Text("        ", justify="left", no_wrap=True, overflow="ellipsis")
+        _cur.append(link)
+        scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
-        body_lines.append(scope)
+        _cur.append(scope)
 
     # ── Section builders (one per tab) — only the active one is rendered ──
     def _sec_provider() -> None:
@@ -5077,7 +5120,7 @@ def _build_settings_screen(
             _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)", env="OLLAMA_NUM_CTX")
 
     def _sec_jira() -> None:
-        _heading("Jira")
+        _heading("Jira", wide=True)
         _row("Base URL", config_data.get("JIRA_BASE_URL", ""), env="JIRA_BASE_URL")
         _row("Email", config_data.get("JIRA_EMAIL", ""), env="JIRA_EMAIL")
         _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True, env="JIRA_API_TOKEN")
@@ -5086,7 +5129,7 @@ def _build_settings_screen(
         _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""), env="CONFLUENCE_SPACE_KEY")
 
     def _sec_azure() -> None:
-        _heading("Azure DevOps")
+        _heading("Azure DevOps", wide=True)
         _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""), env="AZURE_DEVOPS_ORG_URL")
         _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""), env="AZURE_DEVOPS_PROJECT")
         _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True, env="AZURE_DEVOPS_TOKEN")
@@ -5094,13 +5137,13 @@ def _build_settings_screen(
         _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""), env="AZURE_DEVOPS_TEAM")
 
     def _sec_github() -> None:
-        _heading("GitHub")
+        _heading("GitHub", wide=True)
         _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
         _token_help("GITHUB_TOKEN")
 
     def _sec_notion() -> None:
         # Independent doc tool (its own integration token, unlike Confluence).
-        _heading("Notion")
+        _heading("Notion", wide=True)
         _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True, env="NOTION_TOKEN")
         _token_help("NOTION_TOKEN")
         _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""), env="NOTION_ROOT_PAGE_ID")
@@ -5169,6 +5212,69 @@ def _build_settings_screen(
     for _section in _SETTINGS_TAB_SECTIONS[_SETTINGS_TABS[active_tab]]:
         _builders[_section]()
 
+    # ── Section boxes, laid out in an adaptive-width grid ─────────
+    # Narrow sections fill a column grid; wide ones stack below it at full width.
+    # The boxed grid is flattened to one Text per rendered row by _render_to_lines,
+    # which keeps the "one body line == one rendered row" assumption the viewport
+    # and scrollbar math below rely on.
+    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int) -> Panel:
+        head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
+        return Panel(
+            Group(*(rows or [Text("")])),
+            title=head,
+            title_align="left",
+            box=rich.box.ROUNDED,
+            border_style=theme.sep,
+            padding=(0, 1),
+            width=box_w,
+            height=box_h,
+        )
+
+    body_lines: list = [Text("")]  # the blank the first heading used to supply
+    # body-line index → [(x0, x1, env, label, masked)] for every editable row on it.
+    # Side-by-side boxes put two editable rows on the SAME line, so a click needs the
+    # column range as well as the row (see _row_regions / the settings loop).
+    _line_meta: dict[int, list[tuple[int, int, str, str, bool]]] = {}
+    _abs_x = _TAB_COL_OFFSET + len(_grid_indent)  # grid column 0 in absolute terminal columns
+
+    def _mark(line_idx: int, x0: int, x1: int, rows: list) -> None:
+        for _k, _ln in enumerate(rows):
+            if isinstance(_ln, _EditableRow):
+                _line_meta.setdefault(line_idx + 1 + _k, []).append(
+                    (_abs_x + x0, _abs_x + x1, _ln.env, _ln.label, bool(_ln.masked))
+                )
+
+    _narrow = [s for s in sections if not s[2]]
+    _wide = [s for s in sections if s[2]]
+
+    if _narrow:
+        _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+        for _ in range(n_cols):
+            _grid.add_column(width=col_w, overflow="crop")
+        _base = len(body_lines)
+        _off = 0  # line offset within the flattened grid block
+        for _i in range(0, len(_narrow), n_cols):
+            _chunk = _narrow[_i : _i + n_cols]
+            if _i:
+                _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
+                _off += 1
+            # Boxes in the same row share a height so their bottom borders line up.
+            _box_h = max(len(_r) for _, _r, _ in _chunk) + 2
+            _cells: list = [_section_box(_t, _r, _box_h, col_w) for _t, _r, _ in _chunk]
+            _cells += [Text("")] * (n_cols - len(_chunk))
+            _grid.add_row(*_cells)
+            for _j, (_t, _r, _) in enumerate(_chunk):
+                _cs = _j * (col_w + 2)  # padding=(0,1) both sides → a 2-col gutter
+                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _r)
+            _off += _box_h
+        body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
+
+    for _t, _r, _ in _wide:
+        body_lines.append(Text(""))
+        _base = len(body_lines)
+        body_lines.extend(_render_to_lines(_section_box(_t, _r, len(_r) + 2, full_w), grid_w, _grid_indent))
+        _mark(_base, 1, full_w - 2, _r)
+
     # ── Layout: tab bar → active section (scrollable) → context hint ──────
     tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width, pos=tab_pos)
     # header = blank + title(2) + blank + tab bar; action_h reserves blank + hint +
@@ -5182,13 +5288,13 @@ def _build_settings_screen(
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
     # Editable-row click regions: each visible env-backed row maps to its absolute
-    # terminal row. The viewport starts just below the tab bar (labels + underline)
-    # and the blank line beneath it.
+    # terminal row plus the column range of the box it sits in. The viewport starts
+    # just below the tab bar (labels + underline).
     _viewport_top = _TAB_LABELS_ROW + len(tab_lines)
     row_regions = [
-        (_viewport_top + _j, _line.env, _line.label, bool(_line.masked))
-        for _j, _line in enumerate(visible)
-        if isinstance(_line, _EditableRow)
+        (_viewport_top + _j, _x0, _x1, _env, _label, _masked)
+        for _j, _idx in enumerate(range(actual_scroll, actual_scroll + len(visible)))
+        for (_x0, _x1, _env, _label, _masked) in _line_meta.get(_idx, [])
     ]
 
     _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
@@ -5258,5 +5364,5 @@ def _build_settings_screen(
     panel._tab_regions = [
         (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
     ]
-    panel._row_regions = row_regions  # (abs_row, env, label, masked) per visible editable row
+    panel._row_regions = row_regions  # (abs_row, x0, x1, env, label, masked) per visible editable row
     return panel
