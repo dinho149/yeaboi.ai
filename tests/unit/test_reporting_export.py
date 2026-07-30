@@ -1,6 +1,6 @@
 """Unit tests for reporting/export — Markdown, HTML, and file writing."""
 
-from tests._pages import markup
+from tests._pages import island, markup
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import export
 
@@ -78,19 +78,47 @@ class TestMarkdown:
 
 
 class TestHtml:
-    def test_self_contained_and_escaped(self):
+    def test_self_contained_and_untrusted_text_is_data(self):
         html = export.build_report_html(_report())
         assert html.lstrip().startswith("<!DOCTYPE html>")
         assert "<style>" in html  # inline CSS, no external stylesheet
-        # Untrusted ticket title must be escaped, never live markup.
         assert "<script>alert(1)</script>" not in html
-        assert "&lt;script&gt;" in html
-        assert "ACME-1" in html
+        item = island(html)["report"]["items"][0]
+        assert item == {
+            "key": "ACME-1",
+            "title": "SSO <script>alert(1)</script>",
+            "status": "Done",
+            "assignee": "Ada",
+        }
 
-    def test_metrics_cards_present(self):
-        html = export.build_report_html(_report())
-        assert "By the numbers" in html
-        assert "Items delivered" in html
+    def test_payload_carries_every_section(self):
+        report = island(export.build_report_html(_report()))["report"]
+        assert report["headline"] == "Shipped SSO."
+        assert report["metrics"] == [["Items delivered", "7"], ["Contributors", "3"]]
+        assert report["summary"] == "We delivered single sign-on."
+        assert report["themes"] == [{"title": "Security", "outcomes": ["SSO login", "MFA rollout"]}]
+        assert report["highlights"] == ["SSO live for all users"]
+        assert report["warnings"] == ["test warning"]
+
+    def test_chrome_facts(self):
+        boot = island(export.build_report_html(_report()))
+        # The headline emoji leads the title, as it does in the Markdown twin.
+        assert boot["chrome"]["title"] == "🚀 Delivery Report — Acme Portal"
+        assert boot["chrome"]["wordmark"] == "report"
+        assert dict(tuple(f) for f in boot["chrome"]["facts"]) == {
+            "PERIOD": "Last sprint",
+            "DATES": "2026-06-29 → 2026-07-13",
+            "DELIVERED": "1",
+        }
+
+    def test_emoji_are_the_hosts_choice_not_the_vocabulary(self):
+        assert island(export.build_report_html(_report()))["report"]["emoji"] == {
+            "headline": "🚀",
+            "metrics": "📊",
+        }
+
+    def test_noscript_names_the_markdown_twin(self):
+        assert "report-last-sprint-2026-07-13.md" in export.build_report_html(_report())
 
 
 class TestExportReport:
@@ -166,18 +194,18 @@ class TestExportReport:
         # flows to Notion/Confluence via export_targets)…
         assert "![Delivered items](delivered.png)" in paths["markdown"].read_text(encoding="utf-8")
         assert (tmp_path / "delivered.png").exists()
-        # …while the HTML draws a theme-aware inline segment bar instead of the
-        # theme-blind PNG (recolors with the page's theme switcher).
-        html = markup(paths["html"].read_text(encoding="utf-8"))
-        assert "data:image/png;base64," not in html
-        assert 'class="seg-track"' in html
+        # …while the HTML sends counts and draws its own theme-aware bar, so it
+        # never carries the theme-blind PNG.
+        html = paths["html"].read_text(encoding="utf-8")
+        assert "delivered.png" not in markup(html)
+        assert island(html)["report"]["breakdown"] == [["Ada", 1]]
 
 
 class TestSharedDesignSystem:
     def test_report_html_uses_shared_theme(self):
         html = export.build_report_html(_report())
         assert 'data-theme="midnight"' in html
-        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'data-mode="reporting"' in html  # the accent, set before first paint
         assert 'src="http' not in html and "<link" not in html  # self-contained
 
 
@@ -196,47 +224,31 @@ def _history(*rows):
     ]
 
 
-class TestVisuals:
-    def test_delivered_breakdown_segment_bar(self):
-        html = export.build_report_html(_report())
-        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
-        assert 'class="seg-track"' in html
-        assert "Ada 1" in html  # counted legend (by-person counts here)
+class TestBreakdown:
+    def test_breakdown_counts_travel_not_a_chart(self):
+        # The bar and its key are drawn from these pairs by one `countedSegments`
+        # call, so they cannot disagree about which colour meant which person.
+        assert island(export.build_report_html(_report()))["report"]["breakdown"] == [["Ada", 1]]
 
-    def test_assignee_avatar_in_table(self):
-        html = export.build_report_html(_report())
-        assert 'class="avatar"' in html
-        assert ">A</span>" in html
-
-    def test_avatar_name_escaped(self):
-        rep = _report()
-        hostile = DeliveryReport(
-            period_label="p",
-            period_end="2026-07-13",
-            delivered_items=(DeliveredItem(key="X-1", title="t", status="Done", assignee="<b>Eve</b>"),),
-        )
-        html = export.build_report_html(hostile)
-        assert "<b>Eve</b>" not in html
-        assert rep is not None  # keep the fixture exercised
-
-    def test_theme_and_highlight_bullets_split(self):
+    def test_breakdown_falls_back_to_status(self):
         rep = DeliveryReport(
             period_label="p",
             period_end="2026-07-13",
-            highlights=("Shipped SSO. Landed MFA; docs refreshed.",),
+            delivered_items=(
+                DeliveredItem(key="A-1", title="x", status="Done", source="jira"),
+                DeliveredItem(key="A-2", title="y", status="Closed", source="jira"),
+            ),
         )
-        html = export.build_report_html(rep)
-        assert "<li>Shipped SSO.</li>" in html
-        assert "<li>Landed MFA</li>" in html
-        assert "<li>docs refreshed.</li>" in html
-        assert "class='analysis-section'" in html
+        breakdown = island(export.build_report_html(rep))["report"]["breakdown"]
+        assert sorted(breakdown) == [["Closed", 1], ["Done", 1]]
 
-    def test_sparkline_from_history(self):
+
+class TestTrend:
+    def test_trend_from_history(self):
         history = _history(("2026-07-13", 7), ("2026-06-29", 5), ("2026-06-15", 9))
-        html = export.build_report_html(_report(), history=history)
-        assert 'class="spark-wrap"' in html
-        assert "Delivery volume trend" in html
-        assert "2026-06-15" in html
+        trend = island(export.build_report_html(_report(), history=history))["report"]["trend"]
+        assert trend["title"] == "Delivery volume trend"
+        assert trend["points"][0] == ["2026-06-15", 9]
 
     def test_other_project_history_excluded(self):
         history = _history(("2026-06-29", 5))
@@ -250,11 +262,11 @@ class TestVisuals:
                 "item_count": 40,
             }
         )
-        html = export.build_report_html(_report(), history=history)
-        assert "2026-06-01" not in html
+        trend = island(export.build_report_html(_report(), history=history))["report"]["trend"]
+        assert [day for day, _ in trend["points"]] == ["2026-06-29", "2026-07-13"]
 
-    def test_no_history_no_sparkline(self):
-        assert 'class="spark-wrap"' not in export.build_report_html(_report())
+    def test_no_history_no_trend(self):
+        assert island(export.build_report_html(_report()))["report"]["trend"] is None
 
     def test_self_contained_with_history(self):
         html = export.build_report_html(_report(), history=_history(("2026-07-13", 7), ("2026-06-29", 5)))

@@ -6,9 +6,10 @@ shareable document, not just on the tracker. The TUI **Export** button writes
 the current session on demand; the page loop also writes one at close.
 
 Ticket text and voter names are attacker-influenced (tracker content + LAN
-participants), so the HTML escapes every field with ``html.escape`` — the same
-defense the retro exporter uses. The HTML uses the shared design system
-(``html_theme``) so poker pages look consistent with the rest of the app.
+participants). The Markdown builder still escapes by hand, because Markdown has
+no structural defense; the HTML no longer needs one — it carries the session as
+a JSON payload that ``frontend/src/export`` draws, and a React text child cannot
+become markup however it is spelled.
 
 # See docs: "Export Formats" — Markdown, HTML
 """
@@ -22,7 +23,6 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import PokerReport, PokerTicketResult
-from yeaboi.html_theme import escape as _e
 from yeaboi.html_theme import safe_url
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,16 @@ def _slug(name: str) -> str:
 def _title(report: PokerReport) -> str:
     scope = f" — {report.scope_label}" if report.scope_label else ""
     return f"Planning Poker{scope}"
+
+
+def _stem(report: PokerReport) -> str:
+    """The filename stem both artifacts share.
+
+    Shared so the HTML's ``<noscript>`` note can name the Markdown file sitting
+    beside it. Guessing that name in two places is exactly how the note ends up
+    pointing at a file nobody wrote.
+    """
+    return f"poker-{report.date or 'latest'}"
 
 
 def _pts(value: float | None) -> str:
@@ -106,131 +116,78 @@ def build_poker_markdown(report: PokerReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _estimation_sparkline(report: PokerReport, history: Sequence[dict], estimated: int) -> str:
-    """Estimated-tickets trend across this session's past poker runs, or ""."""
-    from yeaboi.html_theme import history_series, sparkline_card
+def _ticket_payload(ticket: PokerTicketResult) -> dict:
+    """One ticket as data: what it was worth before, what the room said, who said it.
 
-    points = history_series(
-        history,
-        date_key="poker_date",
-        value_key="estimated_count",
-        cutoff_date=report.date,
-        current=(report.date, estimated),
-    )
-    return sparkline_card(
-        points,
-        title="Estimation trend",
-        svg_title=f"Tickets estimated — last {len(points)} sessions",
-    )
-
-
-def _votes_html(ticket: PokerTicketResult) -> str:
-    """Accepted votes as avatar + value pairs (falls back to a dash)."""
-    from yeaboi.html_theme import avatar
-
-    votes = [v for v in ticket.votes if v.value]
-    if not votes:
-        return "&mdash;"
-    return "".join(
-        f"<span style='display:inline-flex;align-items:center;gap:.3rem;margin-right:.6rem;white-space:nowrap'>"
-        f"{avatar(v.voter)}{_e(str(v.value))}</span>"
-        for v in votes
-    )
+    ``final`` is ``None`` whenever the room skipped the ticket, even if a stale
+    ``final_points`` survived on the record — a number beside "skipped" is a
+    contradiction, and the bundle would have to pick one to believe.
+    """
+    out: dict = {
+        "key": ticket.key,
+        "summary": ticket.summary,
+        "before": ticket.initial_points,
+        "final": ticket.final_points if ticket.estimated else None,
+        "estimated": bool(ticket.estimated),
+        "votes": [{"voter": v.voter, "value": str(v.value)} for v in ticket.votes if v.value],
+    }
+    # safe_url here, not in the bundle's `safeUrl`, only because the tracker URL
+    # is also what the Markdown twin links — one allowlist, both artifacts.
+    if safe := safe_url(ticket.url):
+        out["url"] = safe
+    if ticket.ai_note:
+        out["aiNote"] = ticket.ai_note
+    if ticket.duel_transcript:
+        out["duel"] = {"low": ticket.duel_low, "high": ticket.duel_high, "transcript": ticket.duel_transcript}
+    return out
 
 
 def build_poker_html(report: PokerReport, *, history: Sequence[dict] = ()) -> str:
-    """Return the poker session as a self-contained HTML document (shared design system).
+    """Return the poker session as a self-contained HTML document.
 
     ``history`` is optional ``PokerStore.get_history`` rows (newest-first); with
     two or more sessions it powers the estimation-trend sparkline.
     """
-    from yeaboi.html_theme import avatar, html_page, legend, section, segment_bar, stat_tile
+    from yeaboi.html_theme import export_page, trend
 
     estimated = sum(1 for t in report.tickets if t.estimated)
-    skipped = len(report.tickets) - estimated
+    tickets = [_ticket_payload(t) for t in report.tickets]
 
-    # Overview: stat tiles + estimated/skipped split + trend + participants.
-    tiles = [
-        stat_tile(str(len(report.tickets)), "Tickets"),
-        stat_tile(str(estimated), "Estimated"),
-        stat_tile(str(len(report.participants)), "Participants"),
-    ]
-    overview: list[str] = [f"<div class='stat-grid'>{''.join(tiles)}</div>"]
-    if report.tickets:
-        split_bar = segment_bar(
-            [(estimated, "--ok"), (skipped, "--muted")],
-            title=f"{estimated} of {len(report.tickets)} tickets estimated",
-        )
-        key = legend([(f"Estimated {estimated}", "--ok"), (f"Skipped {skipped}", "--muted")])
-        overview.append(f"<div style='margin-bottom:.6rem'>{split_bar}{key}</div>")
-    overview.append(_estimation_sparkline(report, history, estimated))
-    if report.participants:
-        people = "".join(
-            f"<span style='display:inline-flex;align-items:center;gap:.35rem;margin-right:.8rem'>"
-            f"{avatar(name)}{_e(name)}</span>"
-            for name in report.participants
-        )
-        overview.append(
-            f"<p style='display:flex;flex-wrap:wrap;align-items:center;gap:.3rem'>"
-            f"<strong>Participants:</strong> {people}</p>"
-        )
-    parts: list[str] = [section("overview", "Overview", "".join(overview))]
-
-    # Tickets: tabular data stays a table; keys become badge chips, votes get avatars.
-    rows = [
-        "<table class='data-table'><thead>"
-        "<tr><th>Ticket</th><th>Summary</th><th>Before</th><th>Final</th><th>Votes</th></tr></thead><tbody>"
-    ]
-    for t in report.tickets:
-        # _e() escapes markup but does NOT neutralise a `javascript:` scheme, so
-        # the URL is allowlisted first; an unsafe one degrades to a plain badge.
-        if safe := safe_url(t.url):
-            key = f"<a class='badge' href='{_e(safe, quote=True)}' target='_blank' rel='noopener'>{_e(t.key)}</a>"
-        else:
-            key = f"<span class='badge'>{_e(t.key)}</span>"
-        final = _e(_pts(t.final_points)) if t.estimated else "<em style='color:var(--muted)'>skipped</em>"
-        rows.append(
-            f"<tr><td>{key}</td><td>{_e(t.summary)}</td>"
-            f"<td>{_e(_pts(t.initial_points))}</td><td>{final}</td><td>{_votes_html(t)}</td></tr>"
-        )
-    rows.append("</tbody></table>")
-    parts.append(section("tickets", "Tickets", "".join(rows)))
-
-    ai_notes = [(t.key, t.ai_note) for t in report.tickets if t.ai_note]
-    if ai_notes:
-        from yeaboi.html_theme import prose_bullets
-
-        blocks: list[str] = []
-        for key, note in ai_notes:
-            lis = "".join(f"<li>{_e(fragment)}</li>" for fragment in prose_bullets(note)) or f"<li>{_e(note)}</li>"
-            blocks.append(f"<div class='analysis-section'><h3>{_e(key)}</h3><ul>{lis}</ul></div>")
-        parts.append(
-            section("ai", "AI perspectives", f"<div class='analysis-grid member-grid'>{''.join(blocks)}</div>")
-        )
-
-    duels = [t for t in report.tickets if t.duel_transcript]
-    if duels:
-        duel_parts: list[str] = []
-        for t in duels:
-            duel_parts.append(f"<p><strong>{_e(t.key)}</strong> &mdash; {_e(t.duel_low)} vs {_e(t.duel_high)}</p>")
-            duel_parts.append(f"<pre style='white-space:pre-wrap'>{_e(t.duel_transcript)}</pre>")
-        parts.append(section("duels", "Duels", "".join(duel_parts)))
-
+    # The contents links are built here because the shell renders before the
+    # report does; which sections exist is a fact about the payload either way.
     nav: list[tuple[str, str]] = [("overview", "Overview"), ("tickets", "Tickets")]
-    if ai_notes:
+    if any(t.get("aiNote") for t in tickets):
         nav.append(("ai", "AI perspectives"))
-    if duels:
+    if any(t.get("duel") for t in tickets):
         nav.append(("duels", "Duels"))
 
-    meta = [f"{report.source or '—'} · {report.scope_label or '—'}", f"{estimated}/{len(report.tickets)} estimated"]
-    return html_page(
-        title=f"{_title(report)} — {report.date}",
-        heading=_title(report),
-        subtitle=report.date,
-        meta=meta,
+    return export_page(
+        mode="poker",
+        title=_title(report),
+        wordmark="poker",
+        facts=[
+            ("SOURCE", report.source or ""),
+            ("SCOPE", report.scope_label or ""),
+            ("DATE", report.date or ""),
+            ("ESTIMATED", f"{estimated}/{len(report.tickets)}"),
+        ],
         nav=nav,
-        body="".join(parts),
-        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+        report={
+            "kind": "poker",
+            "tickets": tickets,
+            "participants": list(report.participants),
+            "trend": trend(
+                history,
+                date_key="poker_date",
+                value_key="estimated_count",
+                title="Estimation trend",
+                label="Tickets estimated",
+                cutoff_date=report.date,
+                current=(report.date, estimated),
+            ),
+        },
+        footer=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+        markdown_name=f"{_stem(report)}.md",
     )
 
 
@@ -250,7 +207,7 @@ def export_poker(report: PokerReport, *, project_name: str = "", history: Sequen
 
     key = _slug(project_name or report.project_name or report.session_id)
     out_dir = get_poker_export_dir(key)
-    stem = f"poker-{report.date or 'latest'}"
+    stem = _stem(report)
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     md_path.write_text(build_poker_markdown(report), encoding="utf-8")

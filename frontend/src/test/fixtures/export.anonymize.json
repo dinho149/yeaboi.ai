@@ -1,0 +1,27 @@
+{
+  "chrome": {
+    "facts": [
+      [
+        "SOURCE",
+        "retro"
+      ],
+      [
+        "MASKED",
+        "2026-07-13"
+      ]
+    ],
+    "footer": "Anonymized with yeaboi.ai • 2026-07-13",
+    "frame": "yeaboi — analysis",
+    "mode": "analysis",
+    "subtitle": "Names, tickets and identifiers have been replaced with stable placeholders.",
+    "title": "Retro",
+    "wordmark": "masked"
+  },
+  "report": {
+    "kind": "anonymize",
+    "markdown": "# Retro\n\n- **PERSON_1** shipped `TICKET_1`.\n",
+    "warnings": [
+      "2 names could not be matched."
+    ]
+  }
+}

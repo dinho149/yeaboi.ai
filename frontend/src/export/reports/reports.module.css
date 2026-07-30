@@ -63,6 +63,37 @@
   letter-spacing: 0.06em;
 }
 
+/* A counted breakdown: bar directly over its key, as one block. Two separate
+   margins let a legend drift toward the section under it and read as that
+   section's caption instead of this one's. */
+.split {
+  margin: var(--s4) 0;
+}
+.split > * + * {
+  margin-top: var(--s2);
+}
+
+.trend {
+  margin-bottom: var(--s4);
+}
+
+/* A row of people. `inline-flex` per name so an avatar never separates from the
+   name it belongs to across a wrap. */
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: 0 0 var(--s4);
+  font-size: var(--fs-s);
+}
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+}
+
 /* ── Performance ──────────────────────────────────────────────── */
 
 .identity {
@@ -129,6 +160,104 @@
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.6;
+}
+
+/* ── Poker ────────────────────────────────────────────────────── */
+
+.votes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+}
+.vote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skipped is muted, not struck through or red. The room decided not to estimate
+   it; that is an outcome, and styling it as damage misreports the meeting. */
+.skipped {
+  color: var(--dim);
+  font-style: italic;
+}
+
+.notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+
+.transcript {
+  font-size: var(--fs-s);
+}
+
+/* ── Retro ────────────────────────────────────────────────────── */
+
+/* `auto-fit` rather than four fixed tracks: on a board where only two columns
+   have cards, four tracks would leave half the page empty to preserve an
+   arrangement that no longer describes anything. */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
+   board reads — so a column is the same colour in the meeting and in the file. */
+.column {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--col-tone, var(--accent));
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+.columnTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--col-tone, var(--text));
+}
+.count {
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.column .bullets li::marker {
+  color: var(--col-tone, var(--accent));
+}
+
+.byline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.reactions {
+  margin-left: var(--s1);
+}
+.status {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+/* ── Reporting ────────────────────────────────────────────────── */
+
+/* The host's chosen decoration, held at the reader's text size rather than the
+   heading's tracking — an emoji does not letter-space, it just drifts. */
+.headingEmoji {
+  margin-right: var(--s2);
+  letter-spacing: 0;
 }
 
 /* ── Anonymize: a re-published document ───────────────────────── */
@@ -220,6 +349,7 @@
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
   .project,
+  .column,
   .lede {
     break-inside: avoid;
   }

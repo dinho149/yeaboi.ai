@@ -19,6 +19,7 @@
  */
 
 import { requireBoot } from '../runtime/boot';
+import type { CarriedStatuses, RetroGrids } from '../types/enums';
 
 /** Page furniture, identical for every report. */
 export interface ExportChrome {
@@ -43,6 +44,25 @@ export interface ExportChrome {
   footer: string;
 }
 
+/**
+ * A run-over-run series, drawn as the trend card at the top of a report.
+ *
+ * Built by `html_theme.trend`, which normalises a mode's store history: newest
+ * first in, oldest first out, same-day re-runs deduped, and anything dated after
+ * the report itself dropped — re-exporting June's retro must not draw July's.
+ *
+ * `null` rather than an absent key, because "fewer than two runs" is a state the
+ * server has decided about; an omitted field would look like a payload bug.
+ */
+export interface Trend {
+  /** Card heading, e.g. `Card volume trend`. */
+  title: string;
+  /** Accessible chart description. A chart with no label is invisible to AT. */
+  label: string;
+  /** `[date, value]`, oldest first. */
+  points: Array<[string, number]>;
+}
+
 export interface RoadmapProject {
   index: number;
   name: string;
@@ -60,6 +80,68 @@ export interface PerfSection {
   items: string[];
 }
 
+/** One accepted vote. `value` is a `POKER_DECK` card, so `?` and `☕` are legal. */
+export interface PokerVote {
+  voter: string;
+  value: string;
+}
+
+export interface PokerTicket {
+  key: string;
+  /** Tracker link. Routed through `safeUrl`, so an unsafe scheme degrades to text. */
+  url?: string;
+  summary: string;
+  /** Points already on the tracker before the room voted. */
+  before: number | null;
+  /** Points the room agreed. `null` whenever `estimated` is false. */
+  final: number | null;
+  /** False when the room skipped the ticket — which is an outcome, not a gap. */
+  estimated: boolean;
+  votes: PokerVote[];
+  aiNote?: string;
+  duel?: { low: string; high: string; transcript: string };
+}
+
+export interface RetroCard {
+  text: string;
+  author?: string;
+  /** Written by the AI facilitator. Attributed as such rather than to a person. */
+  ai?: boolean;
+  /** `[emoji, count]`, non-zero counts only. */
+  reactions: Array<[string, number]>;
+}
+
+/**
+ * One retro column.
+ *
+ * Carries the grid *key*, never its heading or its colour: `RETRO_GRID_LABELS`
+ * is codegen'd from `retro/board.py` into `types/enums.ts`, so shipping the
+ * label too would let a stale bundle disagree with the server about what the
+ * column is called. Empty columns are sent as well — whether an empty column
+ * gets a card or a footnote is a layout decision, and layout lives here.
+ */
+export interface RetroColumn {
+  grid: RetroGrids;
+  cards: RetroCard[];
+}
+
+export interface CarriedItem {
+  status: CarriedStatuses;
+  text: string;
+}
+
+export interface DeliveredItem {
+  key: string;
+  title: string;
+  status: string;
+  assignee?: string;
+}
+
+export interface ReportTheme {
+  title: string;
+  outcomes: string[];
+}
+
 export type ExportReport =
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
   | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
@@ -70,6 +152,50 @@ export type ExportReport =
       lead?: { title: string; text: string };
       sections: PerfSection[];
       footnote?: string;
+      warnings: string[];
+    }
+  | {
+      kind: 'poker';
+      tickets: PokerTicket[];
+      participants: string[];
+      trend: Trend | null;
+    }
+  | {
+      kind: 'retro';
+      /** All four, in board order, including the empty ones. */
+      columns: RetroColumn[];
+      participants: string[];
+      /** Last sprint's action items and the progress recorded against them. */
+      carried: CarriedItem[];
+      trend: Trend | null;
+    }
+  | {
+      kind: 'reporting';
+      /**
+       * The model's one-line reading of the period. Empty rather than absent —
+       * unlike the optional fields above, which the exporter omits: these two
+       * are on every `DeliveryReport` and `""` is what "the model said nothing"
+       * looks like there, so the payload says the same thing the artifact does.
+       */
+      headline: string;
+      /** `[label, value]`. Values arrive already formatted — "12 days", "94%". */
+      metrics: Array<[string, string]>;
+      summary: string;
+      themes: ReportTheme[];
+      highlights: string[];
+      items: DeliveredItem[];
+      /**
+       * `[label, count]` for the delivered-work breakdown — by person where
+       * there is more than one, else by status. Which of the two it is is a
+       * server decision, so only the resulting pairs travel.
+       */
+      breakdown: Array<[string, number]>;
+      /**
+       * The decoration the host picked per section slot, e.g. `{ metrics: '📊' }`.
+       * The *vocabulary* is server-validated and codegen'd; this is the choice.
+       */
+      emoji: Record<string, string>;
+      trend: Trend | null;
       warnings: string[];
     };
 

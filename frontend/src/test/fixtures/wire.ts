@@ -3,16 +3,17 @@
  *
  * The JSON beside this file is not hand-written. `tests/unit/test_web_wire_shapes.py`
  * drives a real `RetroBoard` and a real `PokerBoard` through a real round, and
- * builds a real slide deck from a real `DeliveryReport`, then writes the results
- * here and fails if what it wrote differs from what is committed. This file is
- * the other half: each fixture `satisfies` the interface the bundle is coded
- * against, so `npm run typecheck` fails when Python stops sending a field the
- * TypeScript promises.
+ * renders a real slide deck and every static export from real artifacts, then
+ * writes the results here and fails if what it wrote differs from what is
+ * committed. This file is the other half: each fixture `satisfies` the interface
+ * the bundle is coded against, so `npm run typecheck` fails when Python stops
+ * sending a field the TypeScript promises.
  *
- * The deck is here for the same reason the boards are, with the failure delayed
- * rather than softened: an exported deck is a *file*. A field that quietly stops
- * being written renders as a blank slide on someone's projector months later,
- * with no server, no log and no way to tell it apart from an empty report.
+ * The deck and the exports are here for the same reason the boards are, with the
+ * failure delayed rather than softened: those are *files*. A field that quietly
+ * stops being written renders as a blank slide on someone's projector, or an
+ * empty section in a report opened months later — with no server, no log and no
+ * way to tell it apart from a report that genuinely had nothing to say.
  *
  * ## What it catches
  *
@@ -47,9 +48,16 @@
  */
 
 import type { DeckBoot } from '../../deck/boot';
+import type { ExportBoot, ExportReport } from '../../export/boot';
 import type { PokerState, RetroState, TicketView } from '../../types/board';
 
 import deckJson from './deck.json';
+import exportAnonymizeJson from './export.anonymize.json';
+import exportPerformanceJson from './export.performance.json';
+import exportPokerJson from './export.poker.json';
+import exportReportingJson from './export.reporting.json';
+import exportRetroJson from './export.retro.json';
+import exportRoadmapJson from './export.roadmap.json';
 import pokerDuelJson from './poker.duel.json';
 import pokerRevealedJson from './poker.revealed.json';
 import pokerVotingJson from './poker.voting.json';
@@ -74,6 +82,14 @@ export const POKER_DUEL_WIRE = pokerDuelJson as PokerState;
 /** What `GET /api/ticket` answers with — display fields only. */
 export const TICKET_PEEK_WIRE = ticketPeekJson as TicketView;
 
+/*
+ * The six static exports have no `as` alias here, unlike the boards above.
+ * Their assertions are at the bottom of the file and that is all they are for:
+ * a report's TSX takes component props, not the boot payload, so there is
+ * nothing for a test to build its state from — and a cast would only be a
+ * second, unchecked claim about a shape this file exists to check.
+ */
+
 /**
  * `T` with every string-literal union relaxed to `string`.
  *
@@ -90,6 +106,17 @@ type Widened<T> = T extends string
       ? Widened<U>[]
       : { [K in keyof T]: Widened<T[K]> };
 
+/**
+ * The boot payload narrowed to one report kind.
+ *
+ * `Widened` relaxes `kind` to `string`, which would un-discriminate the union
+ * and let a fixture satisfy `ExportBoot` by matching *some* member — including,
+ * for a payload that had lost half its fields, a smaller one. Pinning the member
+ * first means each fixture is checked against the interface it is actually for,
+ * and the error names that interface instead of listing all six.
+ */
+type BootOf<K extends ExportReport['kind']> = ExportBoot & { report: Extract<ExportReport, { kind: K }> };
+
 // The assertions themselves — the lines that fail when the wire moves.
 void (retroJson satisfies Widened<RetroState>);
 void (pokerVotingJson satisfies Widened<PokerState>);
@@ -97,3 +124,9 @@ void (pokerRevealedJson satisfies Widened<PokerState>);
 void (pokerDuelJson satisfies Widened<PokerState>);
 void (ticketPeekJson satisfies Widened<TicketView>);
 void (deckJson satisfies Widened<DeckBoot>);
+void (exportAnonymizeJson satisfies Widened<BootOf<'anonymize'>>);
+void (exportPerformanceJson satisfies Widened<BootOf<'performance'>>);
+void (exportPokerJson satisfies Widened<BootOf<'poker'>>);
+void (exportReportingJson satisfies Widened<BootOf<'reporting'>>);
+void (exportRetroJson satisfies Widened<BootOf<'retro'>>);
+void (exportRoadmapJson satisfies Widened<BootOf<'roadmap'>>);

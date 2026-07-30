@@ -812,10 +812,19 @@ class TestUrlSchemeAllowlist:
     """Every builder must refuse a `javascript:` URL from tracker-supplied data."""
 
     def test_poker_ticket_url(self):
+        """The poker page is React, so the allowlist has to hold in the payload.
+
+        ``_assert_no_live_javascript_url`` greps for an ``href``, and this page
+        writes none — so on its own it would pass even if the hostile URL rode
+        into the island untouched. The payload assertion is the one that bites.
+        """
+        from tests._pages import island
         from yeaboi.poker.export import build_poker_html, build_poker_markdown
 
         report = _poker_report_with_url(URL_PROBE)
-        _assert_no_live_javascript_url(build_poker_html(report), "poker html")
+        out = build_poker_html(report)
+        _assert_no_live_javascript_url(out, "poker html")
+        assert "url" not in island(out)["report"]["tickets"][0], "unsafe URL reached the payload"
         _assert_no_live_javascript_url(build_poker_markdown(report), "poker md")
 
     def test_standup_ticket_url(self):
@@ -863,7 +872,10 @@ class TestUrlSchemeAllowlist:
 
     def test_safe_urls_still_render_as_links(self):
         """Guard against over-blocking: a real tracker URL must still link."""
+        from tests._pages import island
         from yeaboi.poker.export import build_poker_html
 
         out = build_poker_html(_poker_report_with_url("https://jira.example.com/browse/ABC-1"))
-        assert 'href="https://jira.example.com/browse/ABC-1"' in out.replace("'", '"')
+        # The payload keeps it; that it becomes an <a href> is asserted in
+        # Poker.test.tsx, where the Chip and `safeUrl` actually run.
+        assert island(out)["report"]["tickets"][0]["url"] == "https://jira.example.com/browse/ABC-1"

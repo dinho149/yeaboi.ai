@@ -6,9 +6,14 @@ as a shareable document, not just in the logs. The TUI **Export** button writes
 the current board on demand.
 
 Every card ``text`` / ``author`` is attacker-influenced (any LAN participant
-added it), so the HTML escapes every field with ``html.escape`` — the same
-defense the standup exporter uses. The HTML uses the shared design system
-(``html_theme``) so retro pages look consistent with the rest of the app.
+added it). The Markdown builder still escapes by hand; the HTML carries the
+board as a JSON payload that ``frontend/src/export`` draws, where a text child
+cannot become markup however it is spelled.
+
+The bundle also owns the columns' *appearance*: their labels come from
+``types/enums.ts`` (codegen'd from ``retro/board.py``) and their colours from
+``retro/gridTone.ts`` — the same typed map the live board reads, so a column is
+the same colour in the meeting and in the file.
 
 # See docs: "Export Formats" — Markdown, HTML
 """
@@ -22,7 +27,6 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import RetroReport
-from yeaboi.html_theme import escape as _e
 from yeaboi.retro.board import CARRIED_STATUS_LABELS, RETRO_GRID_LABELS, RETRO_GRIDS
 
 logger = logging.getLogger(__name__)
@@ -36,6 +40,16 @@ def _slug(name: str) -> str:
 def _title(report: RetroReport) -> str:
     sprint = f" — {report.sprint_name}" if report.sprint_name else ""
     return f"Sprint Retro{sprint}"
+
+
+def _stem(report: RetroReport) -> str:
+    """The filename stem both artifacts share.
+
+    Shared so the HTML's ``<noscript>`` note can name the Markdown file written
+    beside it; guessing that name twice is how the note ends up pointing at a
+    file nobody wrote.
+    """
+    return f"retro-{report.date or 'latest'}"
 
 
 def _reactions_str(card) -> str:
@@ -100,113 +114,58 @@ def build_retro_markdown(report: RetroReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-# Fixed semantic hues for the four retro columns (board order, not count order).
-_GRID_VARS = {"went_well": "--ok", "didnt_go_well": "--warn", "action_items": "--accent", "demos": "--info"}
-
-
-def _column_bar(by_grid: dict) -> str:
-    """Cards-per-column segmented bar + counted legend, in board order, or ""."""
-    from yeaboi.html_theme import legend, segment_bar
-
-    counts = [(grid, len(by_grid.get(grid, []))) for grid in RETRO_GRIDS]
-    if sum(n for _, n in counts) <= 0:
-        return ""
-    present = [(grid, n) for grid, n in counts if n > 0]
-    bar = segment_bar([(n, _GRID_VARS[grid]) for grid, n in present], title="Cards per column")
-    key = legend([(f"{RETRO_GRID_LABELS[grid]} {n}", _GRID_VARS[grid]) for grid, n in present])
-    return f"<div style='margin-bottom:.6rem'>{bar}{key}</div>"
-
-
-def _volume_sparkline(report: RetroReport, history) -> str:
-    """Card-volume trend across this session's past retros, or ""."""
-    from yeaboi.html_theme import history_series, sparkline_card
-
-    points = history_series(
-        history,
-        date_key="retro_date",
-        value_key="card_count",
-        cutoff_date=report.date,
-        current=(report.date, len(report.cards)),
-    )
-    return sparkline_card(
-        points,
-        title="Card volume trend",
-        svg_title=f"Card volume — last {len(points)} retros",
-    )
+def _card_payload(card) -> dict:
+    """One card as data: its text, who wrote it, and what the room did to it."""
+    out: dict = {"text": card.text, "reactions": [[emoji, count] for emoji, count in card.reactions if count]}
+    # A card the AI facilitator wrote is attributed as such, never to a person —
+    # `origin` is the fact, and `author` on those rows is the literal "AI".
+    if card.origin == "ai":
+        out["ai"] = True
+    elif card.author:
+        out["author"] = card.author
+    return out
 
 
 def build_retro_html(report: RetroReport, *, history: Sequence[dict] = ()) -> str:
-    """Return the retro as a self-contained HTML document (shared design system).
+    """Return the retro as a self-contained HTML document.
 
     ``history`` is optional ``RetroStore.get_history`` rows (newest-first); with
     two or more retros it powers the card-volume trend sparkline.
     """
-    from yeaboi.html_theme import avatar, chip, html_page
+    from yeaboi.html_theme import export_page, trend
 
     by_grid = report.by_grid()
-    if report.participants:
-        participants = "".join(
-            f"<span style='display:inline-flex;align-items:center;gap:.35rem;margin-right:.8rem'>"
-            f"{avatar(name)}{_e(name)}</span>"
-            for name in report.participants
-        )
-    else:
-        participants = "&mdash;"
-    parts: list[str] = [
-        f"<p style='display:flex;flex-wrap:wrap;align-items:center;gap:.3rem'>"
-        f"<strong>Participants:</strong> {participants}</p>",
-        _column_bar(by_grid),
-        _volume_sparkline(report, history),
-    ]
+    # Every column, including the empty ones, in board order. Whether an empty
+    # column gets a card or a footnote is a layout question, and layout is the
+    # bundle's; sending only the filled ones would decide it here.
+    columns = [{"grid": grid, "cards": [_card_payload(c) for c in by_grid.get(grid, [])]} for grid in RETRO_GRIDS]
 
-    # Responsive grid of the retro columns — only columns WITH cards get a
-    # card; empty ones collapse to footnote lines so the busy columns widen.
-    footnotes: list[str] = []
-    sections: list[str] = []
-    for grid in RETRO_GRIDS:
-        cards = by_grid.get(grid, [])
-        if not cards:
-            footnotes.append(f"<p class='card-footnote'>{_e(RETRO_GRID_LABELS[grid])} — no cards.</p>")
-            continue
-        rows = [
-            f"<div class='card'><h3>{_e(RETRO_GRID_LABELS[grid])}</h3>",
-            "<ul style='margin:0;padding-left:1.1rem'>",
-        ]
-        for c in cards:
-            if c.origin == "ai":
-                tag = " <em style='color:var(--text-muted)'>(AI)</em>"
-            elif c.author:
-                tag = (
-                    f" <em style='color:var(--text-muted);display:inline-flex;align-items:center;gap:.3rem'>"
-                    f"— {avatar(c.author)}{_e(c.author)}</em>"
-                )
-            else:
-                tag = ""
-            rx = _reactions_str(c)
-            # Reaction emojis are from a fixed set, but chip() escapes defensively anyway.
-            rx_html = f" {chip(rx)}" if rx else ""
-            rows.append(f"<li>{_e(c.text)}{tag}{rx_html}</li>")
-        rows.append("</ul></div>")
-        sections.append("".join(rows))
-    if sections:
-        parts.append(f"<div class='analysis-grid member-grid'>{''.join(sections)}</div>")
-    parts.extend(footnotes)
-
-    # Last sprint's action items + their recorded progress.
-    if report.carried_action_items:
-        parts.append("<h2>Last sprint&rsquo;s action items &mdash; progress</h2>")
-        parts.append("<ul style='margin:0;padding-left:1.1rem'>")
-        for c in report.carried_action_items:
-            status = CARRIED_STATUS_LABELS.get(c.status or "pending", c.status or "Pending")
-            parts.append(f"<li><strong style='color:var(--text-muted)'>[{_e(status)}]</strong> {_e(c.text)}</li>")
-        parts.append("</ul>")
-
-    return html_page(
-        title=f"{_title(report)} — {report.date}",
-        heading=_title(report),
-        subtitle=report.date,
-        body="".join(parts),
-        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+    return export_page(
+        mode="retro",
+        title=_title(report),
+        wordmark="retro",
+        facts=[
+            ("DATE", report.date or ""),
+            ("CARDS", str(len(report.cards))),
+            ("PARTICIPANTS", str(len(report.participants))),
+        ],
+        report={
+            "kind": "retro",
+            "columns": columns,
+            "participants": list(report.participants),
+            "carried": [{"status": c.status or "pending", "text": c.text} for c in report.carried_action_items],
+            "trend": trend(
+                history,
+                date_key="retro_date",
+                value_key="card_count",
+                title="Card volume trend",
+                label="Card volume",
+                cutoff_date=report.date,
+                current=(report.date, len(report.cards)),
+            ),
+        },
+        footer=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+        markdown_name=f"{_stem(report)}.md",
     )
 
 
@@ -226,7 +185,7 @@ def export_retro(report: RetroReport, *, project_name: str = "", history: Sequen
 
     key = _slug(project_name or report.project_name or report.session_id)
     out_dir = get_retro_export_dir(key)
-    stem = f"retro-{report.date or 'latest'}"
+    stem = _stem(report)
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     md_path.write_text(build_retro_markdown(report), encoding="utf-8")

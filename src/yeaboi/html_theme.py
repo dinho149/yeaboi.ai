@@ -405,6 +405,39 @@ def sparkline_card(
     return f"<div class='card'><div class='card-title' style='margin-bottom:.3rem'>{_e(title)}</div>{svg}</div>"
 
 
+def trend(
+    rows: Sequence[Mapping],
+    *,
+    date_key: str,
+    value_key: str,
+    title: str,
+    label: str,
+    cutoff_date: str = "",
+    current: tuple[str, float] | None = None,
+) -> dict | None:
+    """Return the export bundle's trend-card payload, or ``None`` for no chart.
+
+    The React counterpart of :func:`sparkline_card`: same normalization (via
+    :func:`history_series`), no markup. ``None`` under two points, because one
+    run is not a trend — and ``None`` rather than an omitted key, so the bundle
+    can tell "the server decided there is no chart" from "the field is missing".
+    """
+    points = history_series(
+        rows,
+        date_key=date_key,
+        value_key=value_key,
+        cutoff_date=cutoff_date,
+        current=current,
+    )
+    if len(points) < 2:
+        return None
+    return {
+        "title": title,
+        "label": f"{label} — last {len(points)} runs",
+        "points": [[day, value] for day, value in points],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Page shell
 # ---------------------------------------------------------------------------

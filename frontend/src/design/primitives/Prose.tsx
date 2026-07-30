@@ -51,13 +51,20 @@ export function proseBullets(text: string): string[] {
   return out;
 }
 
-/** A block of untrusted plain text. Line breaks preserved, markup impossible. */
-export function Prose({ text, className }: { text: string; className?: string }) {
+/**
+ * A block of untrusted plain text. Line breaks preserved, markup impossible.
+ *
+ * `className?: string | undefined` rather than `className?: string`, here and
+ * below, for the reason spelled out on `AvatarProps`: `exactOptionalPropertyTypes`
+ * separates "absent" from "present and undefined", and every caller passes
+ * `styles['x']`, which a CSS-module index signature types as possibly undefined.
+ */
+export function Prose({ text, className }: { text: string; className?: string | undefined }) {
   return <div className={cx(styles['prose'], styles['proseText'], className)}>{text}</div>;
 }
 
 /** An untrusted paragraph split into scannable bullets. */
-export function ProseBullets({ text, className }: { text: string; className?: string }) {
+export function ProseBullets({ text, className }: { text: string; className?: string | undefined }) {
   const bullets = proseBullets(text);
   if (!bullets.length) return null;
   return (
