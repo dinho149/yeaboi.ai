@@ -25,6 +25,8 @@ from __future__ import annotations
 import html
 import re
 
+from yeaboi.html_theme import safe_url
+
 # Notion caps a single rich_text element's content at 2 000 characters.
 _NOTION_TEXT_LIMIT = 2_000
 
@@ -364,7 +366,13 @@ def _inline_to_xhtml(text: str) -> str:
     for kind, content in _iter_segments(text):
         if kind == "link":
             label, url = content
-            parts.append(f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>')
+            # Confluence renders this storage XHTML as a live anchor, so the
+            # scheme is allowlisted here too — escaping alone leaves
+            # `javascript:` intact. Unsafe links degrade to plain text.
+            safe = safe_url(url)
+            parts.append(
+                f'<a href="{html.escape(safe, quote=True)}">{html.escape(label)}</a>' if safe else html.escape(label)
+            )
             continue
         escaped = html.escape(content)
         if kind == "bold":

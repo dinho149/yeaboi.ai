@@ -479,6 +479,20 @@ let PEEK_FETCHING = "";                // "index:rev" in flight — dedupes refe
 // HTML attributes (title="…", href="…"), where an unescaped quote would let a
 // participant-chosen name break out of the attribute and run script.
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
+// Ticket URLs come from the tracker, so they are attacker-influenced. esc()
+// stops attribute breakout but does NOT neutralise a `javascript:` scheme —
+// it contains none of the characters esc() rewrites, so it reaches href intact
+// and runs on click. Allowlist the scheme; unsafe URLs render unlinked.
+// Mirrors yeaboi.html_theme.safe_url on the Python side.
+function safeUrl(u) {
+  // Browsers remove TAB/LF/CR from anywhere in a URL before parsing it, so
+  // `java&#9;script:` would otherwise slip past the scheme check below.
+  const s = String(u == null ? "" : u).trim().replace(/[\t\n\r]/g, "");
+  if (!s || s.slice(0, 2) === "//") return "";
+  const m = /^([A-Za-z][A-Za-z0-9+.\-]*):/.exec(s);
+  if (!m) return s;                                     // relative — inert
+  return ["http", "https", "mailto"].indexOf(m[1].toLowerCase()) >= 0 ? s : "";
+}
 function api(path) { return path + (path.indexOf("?") < 0 ? "?" : "&") + "token=" + encodeURIComponent(TOKEN); }
 function postJSON(path, body) {
   // `admin` is sent on every POST but only checked by the server on /api/admin/*
@@ -570,7 +584,8 @@ function ticketBodyHtml(t, tag) {
   // Shared key/summary/chips/description/AC markup for the live AND peeked
   // ticket — one source of truth for how a ticket body looks.
   if (t.key !== lastTicketKey) { lastTicketKey = t.key; DESC_OPEN = false; ACC_OPEN = false; }
-  const key = t.url ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener">' + esc(t.key) + " ↗</a>" : esc(t.key);
+  const safeTicketUrl = safeUrl(t.url);
+  const key = safeTicketUrl ? '<a href="' + esc(safeTicketUrl) + '" target="_blank" rel="noopener">' + esc(t.key) + " ↗</a>" : esc(t.key);
   const chips =
     (t.type ? '<span class="chipi">' + esc(t.type) + "</span>" : "") +
     (t.state ? '<span class="chipi">status <b>' + esc(t.state) + "</b></span>" : "") +

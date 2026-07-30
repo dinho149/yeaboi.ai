@@ -23,6 +23,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import PokerReport, PokerTicketResult
 from yeaboi.html_theme import escape as _e
+from yeaboi.html_theme import safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,9 @@ def build_poker_markdown(report: PokerReport) -> str:
         "|--------|---------|--------|-------|-------|",
     ]
     for t in report.tickets:
-        key = f"[{t.key}]({t.url})" if t.url else t.key
+        # safe_url: tracker URLs are attacker-influenced, and a Markdown link
+        # becomes an <a href> downstream (Notion/Confluence/GitHub).
+        key = f"[{t.key}]({safe})" if (safe := safe_url(t.url)) else t.key
         final = _pts(t.final_points) if t.estimated else "_skipped_"
         votes = _votes_str(t) or "—"
         lines.append(f"| {key} | {_cell(t.summary)} | {_pts(t.initial_points)} | {final} | {_cell(votes)} |")
@@ -179,10 +182,12 @@ def build_poker_html(report: PokerReport, *, history: Sequence[dict] = ()) -> st
         "<tr><th>Ticket</th><th>Summary</th><th>Before</th><th>Final</th><th>Votes</th></tr></thead><tbody>"
     ]
     for t in report.tickets:
-        if t.url:
-            key = f"<a class='badge' href='{_e(t.url, quote=True)}' target='_blank' rel='noopener'>{_e(t.key)}</a>"
+        # _e() escapes markup but does NOT neutralise a `javascript:` scheme, so
+        # the URL is allowlisted first; an unsafe one degrades to a plain badge.
+        if safe := safe_url(t.url):
+            key = f"<a class='badge' href='{_e(safe, quote=True)}' target='_blank' rel='noopener'>{_e(t.key)}</a>"
         else:
-            key = _e(t.key)
+            key = f"<span class='badge'>{_e(t.key)}</span>"
         final = _e(_pts(t.final_points)) if t.estimated else "<em style='color:var(--muted)'>skipped</em>"
         rows.append(
             f"<tr><td>{key}</td><td>{_e(t.summary)}</td>"

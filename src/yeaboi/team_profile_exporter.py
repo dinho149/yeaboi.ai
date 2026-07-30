@@ -20,6 +20,7 @@ from pathlib import Path
 
 from yeaboi.analysis.ai_usage import _source_label
 from yeaboi.html_theme import escape as _e
+from yeaboi.html_theme import safe_url
 from yeaboi.team_profile import TeamProfile
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY, INSIGHT_CATEGORIES
 
@@ -172,12 +173,24 @@ def _kv_table(rows: list[tuple[str, str]]) -> str:
     return f'<div class="card" style="padding:0;overflow:hidden;"><table class="data-table">{trs}</table></div>'
 
 
+def _link_html(url: str, inner: str) -> str:
+    """Wrap already-rendered ``inner`` HTML in an anchor, but only for a safe URL.
+
+    Every URL here arrives from a tracker payload (Jira/Azure DevOps/GitHub issue
+    and document links), so it is attacker-influenced. ``_e()`` escapes markup but
+    leaves a ``javascript:`` scheme intact, so :func:`safe_url` gates it; an unsafe
+    URL degrades to unlinked text rather than a live click-to-execute anchor.
+    """
+    safe = safe_url(url)
+    return f'<a href="{_e(safe)}">{inner}</a>' if safe else inner
+
+
 def _insight_html(it: dict) -> str:
     """Render one coaching insight as an <li>, linking the cited example when present."""
     body = f"<strong>{_e(str(it.get('title', '')))}</strong> &mdash; {_e(str(it.get('detail', '')))}"
     if it.get("evidence"):
         body += f" <em>({_e(str(it['evidence']))})</em>"
-    link = str(it.get("link", "") or "").strip()
+    link = safe_url(str(it.get("link", "") or "").strip())
     if link:
         body += f' <a href="{_e(link)}">↳ example</a>'
     return f"<li>{body}</li>"
@@ -198,7 +211,7 @@ def _action_html(action: dict) -> str:
     scope = ", ".join(str(value) for value in action.get("affected_scope", []))
     link = str(action.get("link", "") or "")
     title = _e(str(action.get("title", "")))
-    title_html = f'<a href="{_e(link)}">{title}</a>' if link else title
+    title_html = _link_html(link, title)
     return (
         f"<li><strong>{_e(str(action.get('priority', '')).upper())}: {title_html}</strong>"
         f" — {_e(str(action.get('detail', '')))}"
@@ -245,7 +258,7 @@ def _ai_example_html(s: dict) -> str:
     tool = "unlabelled AI" if s.get("tool") == "other_ai" else str(s.get("tool", ""))
     title = _e(str(s.get("title", "")))
     label = f"[{_e(tool)}] {title}"
-    url = str(s.get("url", "") or "")
+    url = safe_url(str(s.get("url", "") or ""))
     if url:
         return f'<li>{label} — <a href="{_e(url)}">{_e(_source_label(str(s.get("source", ""))))}</a></li>'
     key = str(s.get("key", "") or "")
@@ -260,8 +273,7 @@ def _doc_example_html(s: dict) -> str:
         f"{_e(str(s.get('platform', '')))} · clarity {s.get('clarity', 0):.0f} "
         f"· usefulness {s.get('usefulness', 0):.0f}"
     )
-    url = str(s.get("url", "") or "")
-    head = f'<a href="{_e(url)}">{title}</a>' if url else title
+    head = _link_html(str(s.get("url", "") or ""), title)
     return f"<li>{head} <span style='color:var(--text-muted);'>({meta})</span></li>"
 
 
@@ -954,7 +966,7 @@ def build_team_profile_html(
             title = _e(sh.get("title", ""))
             from_sp = _e(sh.get("from_sprint", ""))
             to_sp = _e(sh.get("to_sprint", ""))
-            key_html = f'<a href="{_e(url)}"><code>{ek}</code></a>' if url else f"<code>{ek}</code>"
+            key_html = _link_html(url, f"<code>{ek}</code>")
             shadow_html += (
                 f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
                 f"{key_html} {title}"
@@ -1041,7 +1053,7 @@ def build_team_profile_html(
                 url = ce.get("issue_url", "")
                 sm = _e(ce.get("summary", ""))
                 detail = _e(ce.get("detail", ""))
-                key_html = f'<a href="{_e(url)}"><code>{ek}</code></a>' if url else f"<code>{ek}</code>"
+                key_html = _link_html(url, f"<code>{ek}</code>")
                 cal_rows_html.append(
                     f'<tr><td colspan="6" style="font-size:0.8rem;padding-left:2rem;">'
                     f'{key_html} <span style="color:var(--text-muted);">{sm}</span>'
@@ -1164,7 +1176,7 @@ def build_team_profile_html(
                     ek = _e(e0.get("issue_key", ""))
                     eu = e0.get("issue_url", "")
                     sm = _e(e0.get("summary", "")[:30])
-                    key_h = f'<a href="{_e(eu)}"><code>{ek}</code></a>' if eu else f"<code>{ek}</code>"
+                    key_h = _link_html(eu, f"<code>{ek}</code>")
                     ex_html = f'{key_h} <span style="color:var(--text-muted);">{sm}</span>'
             dod_rows_html += (
                 f"<tr><td>{_e(label)}</td><td>{_pct_bar_html(pct)}</td>"
@@ -1422,7 +1434,7 @@ def build_team_profile_html(
                         _ek = _e(_ex_d["issue_key"])
                         _eu = _ex_d.get("issue_url", "")
                         _sm = _e(_ex_d.get("summary", "")[:30])
-                        _lk = f'<a href="{_e(_eu)}"><code>{_ek}</code></a>' if _eu else f"<code>{_ek}</code>"
+                        _lk = _link_html(_eu, f"<code>{_ek}</code>")
                         _ex_h = f' {_lk} <span style="color:var(--text-muted);">{_sm}</span>'
                     _tp.append(f"<strong>{_e(t)}</strong> {_e(p)}%{_ex_h}")
                 ac_rows.append(("Topics", "<br>".join(_tp)))

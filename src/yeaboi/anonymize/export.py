@@ -22,6 +22,7 @@ from pathlib import Path
 
 from yeaboi.agent.state import AnonymizedOutput
 from yeaboi.html_theme import escape as _e
+from yeaboi.html_theme import safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,17 @@ def _inline(text: str) -> str:
     text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", text)
-    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+    # Links need a callable, not a template: the URL is already HTML-escaped (so
+    # it cannot break out of the attribute) but escaping does NOT neutralise a
+    # `javascript:` scheme, which would survive into href and run on click.
+    # safe_url() allowlists the scheme; an unsafe link degrades to its label.
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", _link_sub, text)
     return text
+
+
+def _link_sub(match: re.Match[str]) -> str:
+    label, url = match.group(1), safe_url(match.group(2))
+    return f'<a href="{url}">{label}</a>' if url else label
 
 
 def _md_to_html(md: str) -> str:

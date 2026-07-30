@@ -14,8 +14,11 @@ no external requests, ever.
 from __future__ import annotations
 
 import html
+import logging
 import re
 from collections.abc import Mapping, Sequence
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Stylesheet
@@ -399,6 +402,58 @@ def escape(text: str, quote: bool = True) -> str:
 
 
 _e = escape
+
+
+# Schemes allowed to reach an ``href``. Deliberately tiny: exports only ever
+# link to a tracker (http/https) or a person (mailto).
+_SAFE_URL_SCHEMES = frozenset({"http", "https", "mailto"})
+
+# A scheme per RFC 3986: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"
+_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*):")
+
+# Per the URL spec browsers remove TAB / LF / CR from *anywhere* in a URL before
+# parsing it, so ``java&#9;script:alert(1)`` reaches the parser as
+# ``javascript:alert(1)``. Strip exactly those here, or the allowlist below is
+# trivially bypassed. Interior spaces are deliberately NOT stripped — browsers
+# keep them, so they cannot be used to smuggle a scheme past this check.
+_URL_STRIP_RE = re.compile(r"[\t\n\r]")
+
+
+def safe_url(url: str) -> str:
+    """Return ``url`` if it is safe to place in an ``href``, else ``""``.
+
+    Tracker URLs reach the exports from Jira / Azure DevOps / GitHub payloads and
+    from a user-configured base URL, so they are attacker-influenced. **HTML
+    escaping does not help here**: ``javascript:alert(1)`` contains no character
+    ``html.escape`` touches, so it survives into the attribute intact and runs on
+    click. This is why ``tests/unit/test_export_xss.py`` never caught it — its
+    probe is markup-shaped, not scheme-shaped.
+
+    A value with no scheme at all (``example.com/browse/KEY``, ``/browse/KEY``) is
+    returned unchanged: with no scheme the browser resolves it relative to the
+    document and it cannot execute. Protocol-relative ``//host`` is rejected —
+    under ``file://`` it resolves to a bogus origin and it is never what an
+    exporter meant.
+
+    # See docs: "Guardrails" — output validation / escaping
+    """
+    if not url:
+        return ""  # guard first: str(None) would yield the literal "None"
+    # strip() removes the leading/trailing whitespace and C0 controls browsers
+    # also ignore; the regex then removes TAB/LF/CR from the interior.
+    cleaned = _URL_STRIP_RE.sub("", str(url).strip(" \t\n\r\v\f\x00\x7f"))
+    if not cleaned:
+        return ""
+    if cleaned.startswith("//"):  # protocol-relative
+        logger.warning("Dropped protocol-relative URL from export: %r", url)
+        return ""
+    match = _SCHEME_RE.match(cleaned)
+    if match is None:
+        return cleaned  # relative reference — inert
+    if match.group(1).lower() in _SAFE_URL_SCHEMES:
+        return cleaned
+    logger.warning("Dropped unsafe URL scheme %r from export", match.group(1))
+    return ""
 
 
 # ---------------------------------------------------------------------------

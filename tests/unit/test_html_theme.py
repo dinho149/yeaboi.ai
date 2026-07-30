@@ -1,5 +1,7 @@
 """Tests for the shared export design system (html_theme)."""
 
+import pytest
+
 from yeaboi.html_theme import (
     EXPORT_CSS,
     avatar,
@@ -7,6 +9,7 @@ from yeaboi.html_theme import (
     html_page,
     legend,
     notice_block,
+    safe_url,
     section,
     segment_bar,
     sparkline_svg,
@@ -384,3 +387,63 @@ class TestSparklineCard:
 
         html = sparkline_card([("a", 1.0), ("b", 2.0)], title="<b>t</b>")
         assert "<b>t</b>" not in html
+
+
+class TestSafeUrl:
+    """safe_url() is the scheme allowlist for every exported href.
+
+    HTML escaping does not neutralise a scheme — `javascript:alert(1)` contains
+    no character html.escape() rewrites — so this is the only thing standing
+    between an attacker-influenced tracker URL and a click-to-execute link.
+    """
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://jira.example.com/browse/ABC-1",
+            "http://localhost:8080/x",
+            "HTTPS://JIRA.EXAMPLE.COM/browse/ABC-1",  # scheme match is case-insensitive
+            "mailto:someone@example.com",
+        ],
+    )
+    def test_allows_safe_schemes(self, url):
+        assert safe_url(url) == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "javascript:alert(1)",
+            "JaVaScRiPt:alert(1)",
+            "  javascript:alert(1)  ",  # leading/trailing whitespace is stripped first
+            "java\tscript:alert(1)",  # browsers remove TAB from URLs before parsing
+            "java\nscript:alert(1)",
+            "java\rscript:alert(1)",
+            "\x00javascript:alert(1)",
+            "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+            "vbscript:msgbox(1)",
+            "file:///etc/passwd",
+        ],
+    )
+    def test_rejects_dangerous_schemes(self, url):
+        assert safe_url(url) == ""
+
+    def test_rejects_protocol_relative(self):
+        # Under file:// a protocol-relative URL resolves to a bogus origin, and
+        # it is never what an exporter meant to emit.
+        assert safe_url("//evil.example.com/x") == ""
+
+    @pytest.mark.parametrize("url", ["example.com/browse/ABC-1", "/browse/ABC-1", "browse/ABC-1"])
+    def test_allows_schemeless_relative(self, url):
+        # No scheme means the browser resolves relative to the document — inert.
+        # Kept so a Jira base URL configured without https:// still links.
+        assert safe_url(url) == url
+
+    @pytest.mark.parametrize("url", ["", "   ", None, "\t\n"])
+    def test_empty_and_none(self, url):
+        assert safe_url(url) == ""
+
+    def test_interior_spaces_are_preserved(self):
+        # Browsers do not strip interior spaces, so they cannot smuggle a scheme
+        # past the check — and stripping them would corrupt legitimate URLs.
+        assert safe_url("https://x.example/a b") == "https://x.example/a b"
+        assert safe_url("java script:alert(1)") == "java script:alert(1)"  # no scheme → inert

@@ -27,6 +27,7 @@ from pathlib import Path
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.html_theme import escape as _e
 from yeaboi.html_theme import prose_bullets as _summary_bullets
+from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
 
 logger = logging.getLogger(__name__)
@@ -158,14 +159,28 @@ def _ticket_key_map(report: StandupReport) -> dict[str, str]:
 
 
 def _anchor(label: str, url: str) -> str:
-    return f"<a href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
+    # safe_url first: tracker URLs are attacker-influenced and _e() does NOT
+    # neutralise a `javascript:` scheme. An unsafe URL degrades to plain text
+    # rather than a live link.
+    safe = safe_url(url)
+    if not safe:
+        return _e(label or url)
+    return f"<a href='{_e(safe, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
+
+
+def _anchor_chip(label: str, url: str) -> str:
+    """Badge-styled anchor for a leftover link; degrades to a plain badge if unsafe."""
+    safe = safe_url(url)
+    if not safe:
+        return f"<span class='badge'>{_e(label or url)}</span>"
+    return f"<a class='badge' href='{_e(safe, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
 
 
 def _linkify_escaped(escaped: str, key_map: dict[str, str]) -> str:
     """Substitute mapped ticket keys in *already HTML-escaped* text with anchors."""
 
     def repl(match: re.Match[str]) -> str:
-        url = key_map.get(match.group(0))
+        url = safe_url(key_map.get(match.group(0)) or "")
         if not url:
             return match.group(0)
         return f"<a href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{match.group(0)}</a>"
@@ -188,7 +203,9 @@ def _linkify_md(text: str, key_map: dict[str, str]) -> str:
     """Markdown flavor: mapped ticket keys become ``[KEY](url)``."""
 
     def repl(match: re.Match[str]) -> str:
-        url = key_map.get(match.group(0))
+        # Markdown renderers (Notion, Confluence, GitHub) emit an <a href> from
+        # this, so the same scheme allowlist applies as on the HTML path.
+        url = safe_url(key_map.get(match.group(0)) or "")
         return f"[{match.group(0)}]({url})" if url else match.group(0)
 
     return _TICKET_KEY_RE.sub(repl, text)
@@ -321,7 +338,11 @@ def build_standup_markdown(report: StandupReport) -> str:
                 lines.append(f"- **Since last standup:** {_linkify_md(m.progress_note, key_map)}")
 
             def _refs(pairs: Sequence[tuple[str, str]]) -> str:
-                return " · ".join(f"[{label or url}]({url})" for label, url in pairs)
+                # Unsafe schemes degrade to bare label text — a Markdown link
+                # renders as <a href> downstream, so it needs the same allowlist.
+                return " · ".join(
+                    f"[{label or url}]({safe})" if (safe := safe_url(url)) else (label or url) for label, url in pairs
+                )
 
             bullets: list[str] = []
             for label, text, links in (
@@ -471,14 +492,7 @@ def _category_block(title: str, summary: str, links: Sequence[tuple[str, str]], 
     leftovers = _leftover_links(summary, links)
     chips = ""
     if leftovers:
-        chips = (
-            "<div class='chip-row'>"
-            + "".join(
-                f"<a class='badge' href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
-                for label, url in leftovers
-            )
-            + "</div>"
-        )
+        chips = "<div class='chip-row'>" + "".join(_anchor_chip(label, url) for label, url in leftovers) + "</div>"
     if not items and not chips:
         return ""
     return f"<div class='analysis-section'><h3>{_e(title)}</h3><ul>{''.join(items)}</ul>{chips}</div>"
