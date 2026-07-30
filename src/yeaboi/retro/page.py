@@ -25,63 +25,9 @@ from __future__ import annotations
 import logging
 
 from yeaboi.music import CHANNELS
+from yeaboi.names import ADJECTIVES, NOUNS
 
 logger = logging.getLogger(__name__)
-
-# Fun random-name word lists (cosmetic, client-only). Kept tasteful-but-silly.
-_ADJECTIVES = [
-    "Sexy",
-    "Ghost",
-    "Cosmic",
-    "Sneaky",
-    "Turbo",
-    "Feral",
-    "Velvet",
-    "Rogue",
-    "Disco",
-    "Thunder",
-    "Silent",
-    "Funky",
-    "Midnight",
-    "Wild",
-    "Neon",
-    "Grumpy",
-    "Cyber",
-    "Lonesome",
-    "Radical",
-    "Mystic",
-    "Spicy",
-    "Chrome",
-    "Groovy",
-    "Danger",
-]
-_NOUNS = [
-    "Cowboy",
-    "Dude",
-    "Llama",
-    "Wizard",
-    "Raccoon",
-    "Pirate",
-    "Ninja",
-    "Yeti",
-    "Goblin",
-    "Falcon",
-    "Panda",
-    "Viking",
-    "Phantom",
-    "Otter",
-    "Bandit",
-    "Comet",
-    "Walrus",
-    "Samurai",
-    "Gecko",
-    "Nomad",
-    "Badger",
-    "Wombat",
-    "Sphinx",
-    "Hologram",
-]
-
 
 
 def board_config(sprint_name: str = "") -> dict[str, object]:
@@ -104,8 +50,8 @@ def board_config(sprint_name: str = "") -> dict[str, object]:
     return {
         "title": "Sprint Retro",
         "sprint": sprint_name,
-        "adjectives": list(_ADJECTIVES),
-        "nouns": list(_NOUNS),
+        "adjectives": list(ADJECTIVES),
+        "nouns": list(NOUNS),
         # The same internet-radio library the TUI plays (yeaboi.music.CHANNELS).
         "musicChannels": [{"name": c["name"], "url": c["url"]} for c in CHANNELS],
     }

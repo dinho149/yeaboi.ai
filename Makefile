@@ -118,7 +118,7 @@ dev-board: ## Seeded retro board on :5173 for front-end development (prints the 
 	$(UV) run python scripts/dev_board.py
 
 dev-poker: ## Seeded planning-poker board on :5273 for front-end development
-	POKER_UI=react $(UV) run python scripts/dev_poker.py
+	$(UV) run python scripts/dev_poker.py
 
 build: ## Build sdist + wheel into dist/
 	$(UV) build

@@ -1,131 +1,172 @@
-"""Tests for the poker browser page builder (poker/page.py)."""
+"""Contract tests for the planning-poker page.
 
-from yeaboi.poker.board import POKER_DECK
-from yeaboi.poker.page import build_poker_html
+The seam only — everything Python is responsible for. The board's behaviour is
+tested in ``frontend/src/poker/*.test.tsx``, and the wire shape the bundle is
+coded against is pinned by ``test_web_wire_shapes.py``.
+
+Absorbed the old ``test_poker_page.py`` when the hand-written page was deleted:
+with one page there is one test file, per the one-file-per-module rule.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+from yeaboi.poker.board import POKER_DECK, PokerBoard
+from yeaboi.poker.page import board_config, build_poker_html
+from yeaboi.poker.server import PokerServer
 from yeaboi.retro.board import AVATARS, RETRO_THEMES
 
 
-class TestBuildPokerHtml:
-    def test_placeholders_all_injected(self):
-        html = build_poker_html()
-        assert "__DECK__" not in html
-        assert "__AVATARS__" not in html
-        assert "__THEMES__" not in html
-        assert "__ADJS__" not in html
-        assert "__NOUNS__" not in html
-        assert "__MUSIC_CHANNELS__" not in html
+@pytest.fixture
+def page() -> str:
+    return build_poker_html("yeaboi", "Sprint 42")
 
-    def test_deck_and_enums_present(self):
-        html = build_poker_html()
-        for card in POKER_DECK:
-            assert f'"{card}"' in html
-        assert AVATARS[0] in html
-        for theme in RETRO_THEMES:
-            assert f'[data-theme="{theme}"]' in html
 
-    def test_shell_and_poker_markup(self):
-        html = build_poker_html()
-        assert "<title>Planning Poker</title>" in html
-        # Shared shell: join gate, profile modal, invite QR, music, timer, themes.
-        assert 'id="code-modal"' in html
-        assert 'id="modal"' in html
-        assert 'id="invite-modal"' in html
-        assert 'id="music-pop"' in html
-        assert 'id="timer-pop"' in html
-        assert 'id="swatches"' in html
-        # Poker UI: ticket panel, rail, table (voters + deck), results, console, edit modal.
-        assert 'id="ticket"' in html
-        assert 'id="rail-list"' in html
-        assert 'id="deck"' in html
-        assert 'id="vrow"' in html
-        assert 'id="ainote"' in html
-        assert 'id="reveal-btn"' in html
-        assert 'id="final-pts"' in html
-        assert 'id="edit-modal"' in html
-        assert 'id="results"' in html
-        assert 'id="deck-status"' in html
-        assert 'id="console"' in html
-        assert 'id="console-median"' in html
-        assert 'id="console-sug"' in html
-        assert 'id="console-notice"' in html
-        assert 'id="console-toggle"' in html
-        assert 'id="rail-backdrop"' in html
+def _island(html: str) -> dict:
+    match = re.search(r'<script type="application/json" id="yeaboi-data">(.*?)</script>', html, re.S)
+    assert match is not None, "no boot island in the page"
+    return json.loads(match.group(1))
 
-    def test_redesign_markers(self):
-        # The redesign's load-bearing pieces: design tokens, the mono numbers
-        # voice, reduced-motion support, and the acceptance-criteria section.
-        html = build_poker_html()
-        assert "--font-mono" in html
-        assert "prefers-reduced-motion" in html
-        assert 'id="acc"' in html
-        assert "Acceptance criteria" in html
-        assert "acceptance_text" in html
-        # The old floating dock is gone; the host console replaced it.
-        assert 'class="dock' not in html
-        assert "paintConsole" in html
 
-    def test_ai_confidence_and_evidence_markup(self):
-        # The AI card renders a confidence pill + cited-evidence bullets.
-        html = build_poker_html()
-        assert 'class="conf c-' in html
-        assert 'class="ev"' in html
-        assert ".ainote .conf" in html
-        assert ".ainote .ev" in html
-        assert "confidence</span>" in html
+class TestSelfContained:
+    def test_is_one_document_with_inline_assets(self, page: str):
+        assert page.startswith("<!DOCTYPE html>")
+        assert "<style>" in page and "<script>" in page
 
-    def test_duel_markup_and_mic_capture(self):
-        html = build_poker_html()
-        # Duel panel + admin controls.
-        assert 'id="duel"' in html
-        assert 'id="duel-btn"' in html
-        assert 'id="duel-next-btn"' in html
-        assert 'id="duel-close-btn"' in html
-        assert 'id="duel-pop"' in html
-        assert 'data-dsecs="90"' in html
-        # Browser mic capture is secure-context gated (plain-HTTP LAN can't record).
-        assert "isSecureContext" in html
-        assert "getUserMedia" in html
-        assert "MediaRecorder" in html
-        assert "/api/duel/audio" in html
-        # The recording state is never invisible to participants.
-        assert "rec-dot" in html
-        assert "RECORDING" in html
-        # CSS hooks for the spotlight + transcript.
-        assert ".duel .duelist.speaking" in html
-        assert ".duel-tx" in html
+    def test_no_external_resources(self, page: str):
+        assert "<link" not in page
+        assert 'src="http' not in page and 'href="http' not in page
+        assert "cdn" not in page.lower()
 
-    def test_peek_markup(self):
-        # Read-only ticket peek: every participant can click a rail item to
-        # read any ticket without touching the shared round.
-        html = build_poker_html()
-        assert "/api/ticket" in html
-        assert "peekTicket" in html
-        assert "peek-banner" in html
-        assert "peek-live-btn" in html
-        assert "peek-goto-btn" in html
-        assert "Back to live" in html
-        assert "Vote on this ticket" in html
-        # Rail items are real buttons (keyboard-accessible) with live-item ARIA.
-        assert 'aria-current="true"' in html
-        assert ".rail-item.peeking" in html
-        assert ".phase-tag.peek" in html
+    def test_bundle_is_not_a_module_script(self, page: str):
+        assert '<script type="module"' not in page
 
-    def test_esc_escapes_attribute_breakers(self):
-        # esc()'d values land inside double-quoted HTML attributes (title=…,
-        # href=…): quotes must be escaped or a participant-chosen name could
-        # break out of the attribute and run script in every viewer's browser.
-        html = build_poker_html()
-        assert '"&quot;"' in html
-        assert '"&#39;"' in html
+    def test_mounts_into_root_with_a_noscript_fallback(self, page: str):
+        assert '<div id="root">' in page
+        assert "<noscript>" in page
+        assert "export" in page[page.index("<noscript>") : page.index("</noscript>")]
 
-    def test_no_secrets_in_page(self):
-        # The page is served token-free; it must never embed a token placeholder.
-        html = build_poker_html()
-        assert "?token=" not in html.replace('"token=" +', "")  # JS builds it at runtime only
-        assert "admin_token" not in html
+    def test_declares_the_poker_mode_accent(self, page: str):
+        """`data-mode="poker"` is what makes the board gold rather than teal.
 
-    def test_self_contained(self):
-        html = build_poker_html()
-        assert "https://cdn" not in html
-        assert "<script src=" not in html
-        assert '<link rel="stylesheet"' not in html
+        The accent is not decoration here: it is how someone with two tunnel
+        tabs open tells a retro from a poker session at a glance.
+        """
+        assert 'data-mode="poker"' in page
+
+
+class TestBootIsland:
+    def test_carries_the_titles_word_lists_and_stations(self, page: str):
+        boot = _island(page)
+        assert boot["title"] == "yeaboi"
+        assert boot["scope"] == "Sprint 42"
+        assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
+        assert any(channel["name"] == "Lofi" for channel in boot["musicChannels"])
+
+    def test_omits_what_the_generated_enums_already_pin(self):
+        """The deck, the avatars and the palettes must NOT be in the island.
+
+        All three are server-validated tuples that ``scripts/gen_web_types.py``
+        emits into ``types/enums.ts`` from these same constants. Shipping them
+        here as well would let a stale bundle offer a card the board refuses,
+        because the island would win at runtime.
+        """
+        assert set(board_config()) == {"title", "scope", "adjectives", "nouns", "musicChannels"}
+
+    def test_deck_and_avatars_are_not_duplicated_into_the_payload(self, page: str):
+        boot = _island(page)
+        flat = json.dumps(boot, ensure_ascii=False)
+        assert "deck" not in boot and "avatars" not in boot and "themes" not in boot
+        assert "☕" not in flat  # the deck's most distinctive member
+        # Guards the reasoning rather than the payload: a failure here means the
+        # generated enums drifted from the board's own tuples.
+        assert POKER_DECK[-1] == "☕"
+        assert list(RETRO_THEMES) == ["midnight", "light", "solarized", "synthwave", "forest"]
+        assert AVATARS[0] == "🤠"
+
+    def test_island_is_script_safe(self):
+        """A project name cannot close the `<script>` it is embedded in."""
+        html = build_poker_html("</script><img src=x onerror=alert(1)>")
+        assert "</script><img" not in html
+        assert "\\u003c/script" in html
+        assert _island(html)["title"] == "</script><img src=x onerror=alert(1)>"
+
+    def test_island_has_no_secrets(self, page: str):
+        boot = _island(page)
+        flat = json.dumps(boot).lower()
+        for forbidden in ("token", "admin", "secret", "password", "code"):
+            assert forbidden not in flat
+
+
+class TestNoHandWrittenPageSurvives:
+    """The old page is gone, not merely unreachable.
+
+    Its load-bearing markers: the inline bootstrap that read the token straight
+    out of ``location.search``, and ``paintConsole``, which repainted the host
+    dock by id on every poll. If either reappears in the served document,
+    something has re-imported the old renderer rather than the bundle.
+    """
+
+    def test_the_inline_bootstrap_is_gone(self, page: str):
+        assert "let TOKEN = new URLSearchParams" not in page
+        assert "paintConsole" not in page
+
+    def test_the_page_no_longer_reaches_into_another_mode(self):
+        """The word lists come from a shared leaf module, not retro's renderer.
+
+        ``poker/page.py`` used to import ``_ADJECTIVES`` — a private name — out
+        of ``retro/page.py``, which was the last cross-mode page coupling. It
+        only existed because that file happened to be where the lists lived.
+        """
+        source = (Path(__file__).resolve().parents[2] / "src" / "yeaboi" / "poker" / "page.py").read_text()
+        # Imports, not the word: the docstring is free to *mention* retro, and
+        # asserting on the raw string would forbid explaining the history.
+        imports = [line for line in source.splitlines() if line.startswith(("import ", "from "))]
+        assert not [line for line in imports if "retro" in line], imports
+        assert any("from yeaboi.names import" in line for line in imports)
+
+
+class TestServedPageIsTokenFree:
+    """``GET /`` is unauthenticated, so a baked token would hand out access."""
+
+    def test_served_page_never_contains_the_token(self):
+        import urllib.request
+
+        board = PokerBoard("t", project_name="yeaboi", scope_label="Sprint 42", tickets=[{"key": "YB-1"}])
+        server = PokerServer(board, port=5499)
+        server.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/", timeout=5) as response:
+                body = response.read().decode()
+        finally:
+            server.stop()
+
+        assert server.token not in body
+        assert server.admin_token not in body
+        assert server.join_code not in body
+
+    def test_served_page_carries_the_board_titles(self):
+        """The server has to hand the board's own names to the builder.
+
+        Easy to get wrong invisibly: ``build_poker_html()`` still has defaults
+        for both, so forgetting to pass them renders a board with a blank
+        subtitle rather than raising anything.
+        """
+        import urllib.request
+
+        board = PokerBoard("t", project_name="yeaboi", scope_label="Sprint 42", tickets=[{"key": "YB-1"}])
+        server = PokerServer(board, port=5499)
+        server.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/", timeout=5) as response:
+                boot = _island(response.read().decode())
+        finally:
+            server.stop()
+
+        assert boot["title"] == "yeaboi"
+        assert boot["scope"] == "Sprint 42"

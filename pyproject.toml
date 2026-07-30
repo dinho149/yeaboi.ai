@@ -151,12 +151,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# poker/page.py is an embedded front-end asset (inline HTML/CSS/JS in string
-# constants); line length carries no meaning there, so exempt it from E501 only.
-# S608 fires on a JS string that merely resembles SQL — there is no database here.
-# retro/page.py used to be listed too; it is now just the React shell, and holding
-# it to the normal rules is what stops a hand-written page growing back.
-"src/yeaboi/poker/page.py" = ["E501", "S608"]
+# Both board pages used to be listed here as embedded front-end assets. They are
+# React shells now, and holding them to the normal rules is what stops a
+# hand-written page growing back.
 # presentation.py is an embedded slide-deck asset (inline HTML/CSS/JS string constants).
 "src/yeaboi/reporting/presentation.py" = ["E501"]
 # Tests deliberately use asserts, toy secrets, temp paths, and localhost URLs —

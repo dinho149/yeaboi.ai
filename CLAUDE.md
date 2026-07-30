@@ -26,6 +26,7 @@ make web                  # Build the front-end bundles (commit src/yeaboi/web/s
 make web-check            # What CI runs: typecheck + rebuild + fail if the committed bundles are stale
 make web-dev              # Vite dev server on :5399 with HMR, proxying /api to a dev board
 make dev-board            # Seeded retro board on :5173 for front-end development
+make dev-poker            # Seeded planning-poker board on :5273
 make graph                # Generate agent graph visualisation PNG
 make build                # Build sdist + wheel into dist/
 make publish              # Publish to PyPI
@@ -90,9 +91,16 @@ and never builds anything.
   **Never also ship them in a boot payload** — the island would win at runtime, so a stale bundle
   would render a board that disagrees with what the server accepts. Payloads carry only what a
   codegen cannot pin.
-- **Retro is fully React** (`frontend/src/retro`); `retro/page.py` is now only the shell and the
-  boot island. `make dev-board` runs a seeded board against the real Python API. Poker is the one
-  mode still served from a hand-written page (`poker/page.py`).
+- **Both live boards are React** (`frontend/src/retro`, `frontend/src/poker`); their `page.py`
+  files are now just the shell and the boot island. `make dev-board` / `make dev-poker` run seeded
+  boards against the real Python API — restart them after `make web`, since `read_asset` is cached.
+- **Two guards sit on the Python/TS boundary**, one per direction. `test_web_wire_shapes.py` drives
+  real boards through a real round, writes the snapshots to `frontend/src/test/fixtures/`, and
+  `wire.ts` asserts each one `satisfies` its interface in `types/board.ts` — so a dropped response
+  field fails `npm run typecheck`. `test_web_request_keys.py` parses the request bodies out of each
+  `actions.ts` and requires every key to be one the handler reads — that direction fails *silently*
+  (`payload.get(key, default)` just returns the default), which is how a 60-second duel turn
+  became 90 with nothing reported.
 
 ## Code Style
 
