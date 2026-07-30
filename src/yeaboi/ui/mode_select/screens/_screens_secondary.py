@@ -4926,6 +4926,53 @@ def settings_tab_action(active_tab: int) -> str:
     return "setup"
 
 
+def settings_focus_move(
+    key: str,
+    box_grid: list[list[int]],
+    box_fields: list[list[tuple[str, str, bool]]],
+    sel_box: int,
+    sel_field: int,
+) -> tuple[int, int]:
+    """Resolve an arrow key against the settings screen's three focus levels.
+
+    Kept out of the TUI loop (and pure) so the state machine is testable: it takes
+    the navigation map the last render published — ``box_grid`` (visual rows of
+    section indices) and ``box_fields`` (each section's editable rows) — plus the
+    current ``(sel_box, sel_field)``, and returns the next one.
+
+    ``(-1, -1)`` is the tab bar: only Down enters the grid from there (Left/Right
+    belong to the tabs and never reach this). ``(b, -1)`` walks the boxes, and Up
+    off the top row hands focus back to the tab bar. ``(b, f)`` walks the values
+    inside box *b*, where Left/Right do nothing — the box is the unit you left.
+    """
+    if not box_grid:
+        return -1, -1
+    if sel_box < 0:
+        return (box_grid[0][0], -1) if key == "down" else (sel_box, sel_field)
+
+    row = next((i for i, r in enumerate(box_grid) if sel_box in r), -1)
+    if row < 0:  # stale index — the tab's sections changed under us
+        return box_grid[0][0], -1
+
+    if sel_field >= 0:
+        fields = box_fields[sel_box] if 0 <= sel_box < len(box_fields) else []
+        if key in ("up", "down") and fields:
+            step = 1 if key == "down" else -1
+            return sel_box, max(0, min(len(fields) - 1, sel_field + step))
+        return sel_box, sel_field
+
+    col = box_grid[row].index(sel_box)
+    if key in ("left", "right"):
+        step = 1 if key == "right" else -1
+        return box_grid[row][max(0, min(len(box_grid[row]) - 1, col + step))], -1
+    nrow = row + (1 if key == "down" else -1)
+    if nrow < 0:
+        return -1, -1  # back up to the tab bar
+    if nrow >= len(box_grid):
+        return sel_box, -1
+    return box_grid[nrow][min(col, len(box_grid[nrow]) - 1)], -1
+
+
 def _settings_tab_bar(
     labels: list[str], active: int, theme, width: int, *, pos: float | None = None
 ) -> tuple[list, list]:
@@ -4998,11 +5045,21 @@ def _build_settings_screen(
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
     editing: tuple | None = None,
+    sel_box: int = -1,
+    sel_field: int = -1,
 ) -> Panel:
     """Build the settings dashboard showing current configuration.
 
     Displays all config values grouped by category with secrets masked.
     Uses SETTINGS_THEME (silver) with shared components.
+
+    Keyboard focus has three levels, driven by ``sel_box`` / ``sel_field``:
+    ``-1/-1`` is the tab bar (left/right switch tabs), ``b/-1`` highlights section
+    box *b* (arrows walk the box grid), and ``b/f`` highlights one value inside it
+    (up/down walk the values, Enter edits). The loop owns the level; this builder
+    just draws it and publishes the navigation map (``_box_grid``/``_box_fields``)
+    the loop needs to move around. Selecting off-screen content scrolls it into
+    view — the effective offset comes back through ``scroll_meta["scroll"]``.
     """
     from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
 
@@ -5033,17 +5090,22 @@ def _build_settings_screen(
     col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
     full_w = grid_w - 2  # a wide box takes the whole grid row
 
-    # (title, rows, wide) per section; ``_cur`` is the open section's row list.
+    # (title, rows, wide) per section; ``_cur`` is the open section's row list and
+    # ``_cur_fields`` its editable rows in order — the unit keyboard focus moves over.
     sections: list[tuple[str, list, bool]] = []
+    box_fields: list[list[tuple[str, str, bool]]] = []
     _cur: list = []
-    _cur_w = col_w - 4  # inner text width available to the open section
+    _cur_fields: list[tuple[str, str, bool]] = []
+    _cur_w = col_w - 6  # inner text width available to the open section
 
     def _heading(text: str, *, wide: bool = False) -> None:
         """Open a new section box — its heading is drawn as the box title."""
-        nonlocal _cur, _cur_w
-        _cur = []
-        _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
+        nonlocal _cur, _cur_fields, _cur_w
+        _cur, _cur_fields = [], []
+        # borders (2) + padding (2) + the 2-col selection gutter every row carries.
+        _cur_w = (full_w if wide else col_w) - 6
         sections.append((text, _cur, wide))
+        box_fields.append(_cur_fields)
 
     def _row(label: str, value: str, value_style: str = "", masked: bool = False, env: str = "") -> None:
         # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
@@ -5052,7 +5114,11 @@ def _build_settings_screen(
         # give the box an unpredictable height and break the grid.
         _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
         r = _EditableRow("", **_kw) if env else Text("", **_kw)
-        r.append(f"{label}:  ", style=theme.muted)
+        # Every row carries a 2-column marker gutter — always present, so focusing a
+        # box doesn't shift its text sideways. Read-only rows keep it blank.
+        _focused = bool(env) and len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
+        r.append("\u25b8 " if _focused else "  ", style=theme.accent_bright if _focused else theme.dim)
+        r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
         if editing is not None and env and editing[0] == env:
             # This row is being edited in place: show the buffer with a block cursor.
             # The buffer is windowed to what is left of the box so the cursor stays
@@ -5074,6 +5140,7 @@ def _build_settings_screen(
             r.append("not set", style=theme.dim)
         if env:
             r.env, r.label, r.masked = env, label, masked
+            _cur_fields.append((env, label, masked))
         _cur.append(r)
 
     # Token help sub-lines: where to create the token + the minimum scope it needs.
@@ -5092,11 +5159,11 @@ def _build_settings_screen(
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
         _cur.append(link)
-        scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
+        scope = Text("      ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
         _cur.append(scope)
@@ -5217,14 +5284,19 @@ def _build_settings_screen(
     # The boxed grid is flattened to one Text per rendered row by _render_to_lines,
     # which keeps the "one body line == one rendered row" assumption the viewport
     # and scrollbar math below rely on.
-    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int) -> Panel:
-        head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
+    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int, *, focused: bool = False) -> Panel:
+        head = Text(
+            sec_title,
+            style=f"bold {theme.accent_bright}" if focused else f"bold {theme.accent}",
+            no_wrap=True,
+            overflow="ellipsis",
+        )
         return Panel(
             Group(*(rows or [Text("")])),
             title=head,
             title_align="left",
             box=rich.box.ROUNDED,
-            border_style=theme.sep,
+            border_style=theme.accent if focused else theme.sep,
             padding=(0, 1),
             width=box_w,
             height=box_h,
@@ -5237,15 +5309,26 @@ def _build_settings_screen(
     _line_meta: dict[int, list[tuple[int, int, str, str, bool]]] = {}
     _abs_x = _TAB_COL_OFFSET + len(_grid_indent)  # grid column 0 in absolute terminal columns
 
-    def _mark(line_idx: int, x0: int, x1: int, rows: list) -> None:
+    # Navigation map, published for the loop: one entry per visual row of boxes,
+    # each listing the section indices on it left to right. Arrow keys walk this.
+    box_grid: list[list[int]] = []
+    box_span: dict[int, tuple[int, int]] = {}  # section index → (first, last) body line
+    field_line: dict[tuple[int, int], int] = {}  # (section, field) → body line
+
+    def _mark(line_idx: int, x0: int, x1: int, box_idx: int, rows: list, box_h: int) -> None:
+        box_span[box_idx] = (line_idx, line_idx + box_h - 1)
+        _fi = 0
         for _k, _ln in enumerate(rows):
             if isinstance(_ln, _EditableRow):
                 _line_meta.setdefault(line_idx + 1 + _k, []).append(
                     (_abs_x + x0, _abs_x + x1, _ln.env, _ln.label, bool(_ln.masked))
                 )
+                field_line[(box_idx, _fi)] = line_idx + 1 + _k
+                _fi += 1
 
-    _narrow = [s for s in sections if not s[2]]
-    _wide = [s for s in sections if s[2]]
+    _numbered = [(_i, _t, _r, _w) for _i, (_t, _r, _w) in enumerate(sections)]
+    _narrow = [s for s in _numbered if not s[3]]
+    _wide = [s for s in _numbered if s[3]]
 
     if _narrow:
         _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
@@ -5259,21 +5342,24 @@ def _build_settings_screen(
                 _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
                 _off += 1
             # Boxes in the same row share a height so their bottom borders line up.
-            _box_h = max(len(_r) for _, _r, _ in _chunk) + 2
-            _cells: list = [_section_box(_t, _r, _box_h, col_w) for _t, _r, _ in _chunk]
+            _box_h = max(len(_r) for _, _, _r, _ in _chunk) + 2
+            _cells: list = [_section_box(_t, _r, _box_h, col_w, focused=(_bi == sel_box)) for _bi, _t, _r, _ in _chunk]
             _cells += [Text("")] * (n_cols - len(_chunk))
             _grid.add_row(*_cells)
-            for _j, (_t, _r, _) in enumerate(_chunk):
+            box_grid.append([_bi for _bi, _, _, _ in _chunk])
+            for _j, (_bi, _t, _r, _) in enumerate(_chunk):
                 _cs = _j * (col_w + 2)  # padding=(0,1) both sides → a 2-col gutter
-                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _r)
+                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _bi, _r, _box_h)
             _off += _box_h
         body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
 
-    for _t, _r, _ in _wide:
+    for _bi, _t, _r, _ in _wide:
         body_lines.append(Text(""))
         _base = len(body_lines)
-        body_lines.extend(_render_to_lines(_section_box(_t, _r, len(_r) + 2, full_w), grid_w, _grid_indent))
-        _mark(_base, 1, full_w - 2, _r)
+        _box = _section_box(_t, _r, len(_r) + 2, full_w, focused=(_bi == sel_box))
+        body_lines.extend(_render_to_lines(_box, grid_w, _grid_indent))
+        box_grid.append([_bi])
+        _mark(_base, 1, full_w - 2, _bi, _r, len(_r) + 2)
 
     # ── Layout: tab bar → active section (scrollable) → context hint ──────
     tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width, pos=tab_pos)
@@ -5284,7 +5370,20 @@ def _build_settings_screen(
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
+    # Keyboard focus drags the viewport with it: land the selected field (or the
+    # whole selected box) inside the window, preferring its top when it can't fit.
+    if sel_box >= 0:
+        _t0, _t1 = box_span.get(sel_box, (0, 0))
+        if sel_field >= 0 and (sel_box, sel_field) in field_line:
+            _t0 = _t1 = field_line[(sel_box, sel_field)]
+        if _t1 >= actual_scroll + viewport_h:
+            actual_scroll = _t1 - viewport_h + 1
+        if _t0 < actual_scroll:
+            actual_scroll = _t0
+        actual_scroll = max(0, min(actual_scroll, max_scroll))
     publish_geometry(scroll_meta, max_scroll, viewport_h)
+    if scroll_meta is not None:
+        scroll_meta["scroll"] = actual_scroll  # hand the auto-scrolled offset back
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
     # Editable-row click regions: each visible env-backed row maps to its absolute
@@ -5333,11 +5432,25 @@ def _build_settings_screen(
         hint.append("  save  ·  ", style=theme.muted)
         hint.append("Esc", style=theme.accent)
         hint.append("  cancel  ·  '-' clears", style=theme.muted)
+    elif sel_field >= 0:
+        hint.append("↑/↓", style=theme.accent)
+        hint.append("  pick value  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  edit  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  back to sections", style=theme.muted)
+    elif sel_box >= 0:
+        hint.append("arrows", style=theme.accent)
+        hint.append("  pick section  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  open  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  back to tabs", style=theme.muted)
     else:
         hint.append("←/→", style=theme.accent)
         hint.append("  switch tab  ·  ", style=theme.muted)
-        hint.append("click a row", style=theme.accent)
-        hint.append("  edit  ·  ", style=theme.muted)
+        hint.append("↓", style=theme.accent)
+        hint.append("  sections  ·  ", style=theme.muted)
         hint.append("Enter", style=theme.accent)
         hint.append(f"  {_enter_label}", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
@@ -5365,4 +5478,6 @@ def _build_settings_screen(
         (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
     ]
     panel._row_regions = row_regions  # (abs_row, x0, x1, env, label, masked) per visible editable row
+    panel._box_grid = box_grid  # visual rows of section indices — the arrow-key map
+    panel._box_fields = box_fields  # per section, its editable (env, label, masked) in order
     return panel

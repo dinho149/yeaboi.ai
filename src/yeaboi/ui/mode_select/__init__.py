@@ -10179,6 +10179,7 @@ def select_mode(
                 from yeaboi.ui.mode_select.screens._screens_secondary import (
                     _SETTINGS_TABS,
                     _build_settings_screen,
+                    settings_focus_move,
                     settings_tab_action,
                 )
 
@@ -10189,9 +10190,12 @@ def select_mode(
                 _s_edit: dict | None = None  # in-place row editor: {env, label, masked, buf, cur}
                 _s_anim_start = time.monotonic()  # shimmer title + typewriter subtitle
                 _tab_pos = float(_s_tab)  # eased fractional tab index → the sliding underline
+                # Keyboard focus level: (-1, -1) = the tab bar, (b, -1) = section box b,
+                # (b, f) = value f inside it. See _build_settings_screen's docstring.
+                _s_box, _s_field = -1, -1
 
                 def _render_settings(tick: float) -> object:
-                    nonlocal _tab_pos
+                    nonlocal _tab_pos, _s_scroll
                     w, h = console.size
                     _tab_pos += (_s_tab - _tab_pos) * 0.28  # ease the underline toward the active tab
                     _editing = (_s_edit["env"], _s_edit["buf"], _s_edit["cur"]) if _s_edit else None
@@ -10206,9 +10210,35 @@ def select_mode(
                         shimmer_tick=tick,
                         sub_reveal=tick * _HEADER_SUB_SPEED,
                         editing=_editing,
+                        sel_box=_s_box,
+                        sel_field=_s_field,
                     )
+                    # The builder scrolls the focused box/value into view; adopt the
+                    # offset it settled on so the next manual scroll starts from there.
+                    _s_scroll = _s_scroll_meta.get("scroll", _s_scroll)
                     live.update(panel)
                     return panel
+
+                def _s_fields_of(b: int) -> list:
+                    """The editable (env, label, masked) rows of section ``b``, per the
+                    last render — empty when the index is stale (the data can change)."""
+                    _bf = getattr(_s_panel, "_box_fields", []) or []
+                    return _bf[b] if 0 <= b < len(_bf) else []
+
+                def _s_begin_edit(env: str, label: str, masked: bool) -> None:
+                    """Open the in-place editor for a field (or the data-dir flow)."""
+                    nonlocal _s_edit, _settings_data
+                    if env == "YEABOI_HOME":  # special: move-aware data-dir flow
+                        _msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _settings_data = _collect_settings_data()
+                        if _msg:
+                            _settings_data["_message"] = _msg
+                        return
+                    # Hidden fields start blank (type a new value); others start at the
+                    # current value so you edit in place.
+                    _start = "" if masked else (_settings_data.get(env, "") or "")
+                    _s_edit = {"env": env, "label": label, "masked": masked, "buf": _start, "cur": len(_start)}
+                    logger.info("Settings: editing %s", env)
 
                 _s_panel = _render_settings(0.0)
                 while True:
@@ -10245,7 +10275,9 @@ def select_mode(
                                 _settings_data = _collect_settings_data()
                                 _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
                                 logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
-                        elif sk in ("esc", "q"):
+                        elif sk == "esc":
+                            # Esc alone cancels: 'q' is a character you have to be able
+                            # to type (an Ollama model name starts with one).
                             _s_edit = None  # cancel — discard the buffer
                         else:
                             _settings_edit_keypress(sk, _s_edit)  # mutate buffer/cursor
@@ -10261,6 +10293,7 @@ def select_mode(
                             if _cy in (_lr, _ur) and _sc <= _cx <= _ec:
                                 if _i != _s_tab:
                                     _s_tab, _s_scroll = _i, 0
+                                    _s_box, _s_field = -1, -1
                                 _hit_tab = True
                                 break
                         # Otherwise, click an editable config row → edit it in place.
@@ -10270,25 +10303,26 @@ def select_mode(
                             for _rr, _rx0, _rx1, _env, _label, _masked in getattr(_s_panel, "_row_regions", []):
                                 if _cy != _rr or not (_rx0 <= _cx <= _rx1):
                                     continue
-                                if _env == "YEABOI_HOME":  # special: move-aware data-dir flow
-                                    _msg = _settings_data_dir_flow(
-                                        console, live, read_key, _FRAME_TIME, _supports_timeout
-                                    )
-                                    _settings_data = _collect_settings_data()
-                                    if _msg:
-                                        _settings_data["_message"] = _msg
-                                else:
-                                    # Hidden fields start blank (type a new value); others
-                                    # start at the current value so you edit in place.
-                                    _start = "" if _masked else (_settings_data.get(_env, "") or "")
-                                    _s_edit = {
-                                        "env": _env,
-                                        "label": _label,
-                                        "masked": _masked,
-                                        "buf": _start,
-                                        "cur": len(_start),
-                                    }
+                                # Move keyboard focus onto whatever was clicked, so Esc
+                                # lands back on that section rather than the tab bar.
+                                for _bi, _fields in enumerate(getattr(_s_panel, "_box_fields", [])):
+                                    _hit = [_fi for _fi, _f in enumerate(_fields) if _f[0] == _env]
+                                    if _hit:
+                                        _s_box, _s_field = _bi, _hit[0]
+                                        break
+                                _s_begin_edit(_env, _label, _masked)
                                 break
+                    elif sk in ("up", "down", "left", "right") and (_s_box >= 0 or sk == "down"):
+                        # Arrows drive focus: between values inside an opened section,
+                        # otherwise between the section boxes themselves. Left/Right at
+                        # the tab-bar level fall through to the tab switch below.
+                        _s_box, _s_field = settings_focus_move(
+                            sk,
+                            getattr(_s_panel, "_box_grid", []) or [],
+                            getattr(_s_panel, "_box_fields", []) or [],
+                            _s_box,
+                            _s_field,
+                        )
                     elif sk in SCROLL_KEYS:
                         _ns = coalesce_scroll(_s_scroll, sk, _s_scroll_meta, read_key)
                         if _ns == _s_scroll:
@@ -10297,7 +10331,24 @@ def select_mode(
                     elif sk == "left":
                         _s_tab, _s_scroll = (_s_tab - 1) % _n_tabs, 0
                     elif sk in ("right", "tab"):
-                        _s_tab, _s_scroll = (_s_tab + 1) % _n_tabs, 0
+                        _s_tab, _s_scroll, _s_box, _s_field = (_s_tab + 1) % _n_tabs, 0, -1, -1
+                    elif sk in ("enter", " ") and _s_box >= 0:
+                        _fields = _s_fields_of(_s_box)
+                        if 0 <= _s_field < len(_fields):
+                            _env, _label, _masked = _fields[_s_field]
+                            _s_begin_edit(_env, _label, _masked)
+                        elif _fields:
+                            _s_field = 0  # open the section — arrows now walk its values
+                    elif sk == "esc" and _s_box >= 0:
+                        # Pops one focus level instead of leaving, so the app-wide back
+                        # tab (already armed by the Esc chokepoint) must stay put.
+                        from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                        cancel_back_retract()
+                        if _s_field >= 0:
+                            _s_field = -1
+                        else:
+                            _s_box = -1
                     elif sk in ("enter", " "):
                         _act = settings_tab_action(_s_tab)
                         if _act == "datadir":
@@ -10322,6 +10373,7 @@ def select_mode(
                             logger.info("Settings: launching setup wizard (%s)", _SETTINGS_TABS[_s_tab])
                             _launch_setup_wizard(console, live)
                             _settings_data = _collect_settings_data()
+                        _s_box, _s_field = -1, -1  # the flow may have changed the data
                     elif sk in ("esc", "q"):
                         logger.info("Settings: user pressed Esc")
                         break

@@ -246,6 +246,14 @@ def retract_back_tab() -> None:
     _back_retract_at = time.monotonic() + _BACK_RETRACT_DELAY
 
 
+def cancel_back_retract() -> None:
+    """Un-arm the fold — for screens where Esc pops an internal focus level instead
+    of leaving. The chokepoint in ``_input._esc`` arms the retract before the screen
+    gets to decide, so a screen that keeps the key calls this to keep the tab up."""
+    global _back_retracting
+    _back_retracting = False
+
+
 def build_back_text(theme: Theme = PLANNING_THEME) -> Text:
     """The compact 'go back' line for the left pocket, styled like the music bar."""
     line = Text(justify="left")

@@ -546,6 +546,46 @@ class TestSettingsScreen:
         # One box per row — a column would fall below _SETTINGS_MIN_BOX_W otherwise.
         assert not any("Daily Standup" in ln and "Voice Input" in ln for ln in out.splitlines())
 
+    def test_focused_section_and_value_are_marked(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=3, sel_field=1)
+        out = self._text(panel, width=130, height=44)
+        marked = [ln for ln in out.splitlines() if "▸" in ln]
+        assert len(marked) == 1  # exactly one value carries the marker
+        assert "Session Prune Days" in marked[0]
+
+    def test_navigation_map_is_published(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
+        # Four sections in two rows of two, and every editable env is reachable.
+        assert panel._box_grid == [[0, 1], [2, 3]]
+        envs = [f[0] for box in panel._box_fields for f in box]
+        assert "LOG_LEVEL" in envs and "AWS_REGION" in envs
+        assert "_config_path" not in envs  # read-only rows aren't navigable
+
+    def test_wide_sections_get_a_row_of_their_own(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
+        # LLM Provider in the grid, then Jira/Azure/GitHub/Notion full width below.
+        assert panel._box_grid == [[0], [1], [2], [3], [4]]
+
+    def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        meta: dict = {}
+        # A short page can't show the last section, so focusing it must scroll.
+        panel = _build_settings_screen(
+            {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=4, sel_field=0
+        )
+        assert meta["scroll"] > 0
+        # Notion is the last section; its focused row (marker and all) is on screen.
+        out = self._text(panel, width=130, height=22)
+        assert "╭─ Notion" in out
+        assert any("▸" in ln and "Token" in ln for ln in out.splitlines())
+
     def test_editing_a_long_value_keeps_the_cursor_visible(self):
         # The buffer is windowed to the box width, so typing past the right edge
         # scrolls the value instead of ellipsizing over the cursor.
@@ -810,3 +850,63 @@ class TestNextLogLevel:
 
         assert _next_log_level("CRITICAL") == "ERROR"
         assert _next_log_level("garbage") == "ERROR"
+
+
+class TestSettingsFocusMove:
+    """The settings screen's three-level focus model (tab bar → box → value).
+
+    ``settings_focus_move`` is the whole state machine, kept pure and out of the
+    TUI loop so these can drive it directly. Grid below: two rows of two boxes,
+    then a full-width one — the shape the Credentials/System tabs produce.
+    """
+
+    GRID = [[0, 1], [2, 3], [4]]
+    FIELDS = [
+        [("A", "a", False), ("B", "b", False)],
+        [],  # a section with nothing editable
+        [("C", "c", False)],
+        [("D", "d", False)],
+        [("E", "e", False)],
+    ]
+
+    def _move(self, key, box, field):
+        from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
+
+        return settings_focus_move(key, self.GRID, self.FIELDS, box, field)
+
+    def test_down_enters_the_grid_from_the_tab_bar(self):
+        assert self._move("down", -1, -1) == (0, -1)
+
+    def test_left_right_at_the_tab_bar_are_left_alone(self):
+        # They belong to the tab switch — the loop never routes them here, and if
+        # it did they must not steal focus.
+        assert self._move("left", -1, -1) == (-1, -1)
+
+    def test_arrows_walk_the_box_grid(self):
+        assert self._move("right", 0, -1) == (1, -1)
+        assert self._move("down", 0, -1) == (2, -1)
+        assert self._move("right", 1, -1) == (1, -1)  # clamped at the row end
+        assert self._move("down", 4, -1) == (4, -1)  # clamped at the last row
+
+    def test_a_narrow_column_falls_back_onto_a_wide_row(self):
+        # Box 3 is the right-hand box of row 1; the row below holds only box 4.
+        assert self._move("down", 3, -1) == (4, -1)
+
+    def test_up_off_the_top_row_returns_to_the_tab_bar(self):
+        assert self._move("up", 1, -1) == (-1, -1)
+
+    def test_arrows_walk_values_once_a_box_is_open(self):
+        assert self._move("down", 0, 0) == (0, 1)
+        assert self._move("down", 0, 1) == (0, 1)  # clamped at the last value
+        assert self._move("up", 0, 0) == (0, 0)  # clamped at the first
+        assert self._move("left", 0, 1) == (0, 1)  # left/right don't leave the box
+
+    def test_a_stale_box_index_restarts_at_the_first_box(self):
+        # The visible sections change with the tab (and with the provider), so a
+        # carried-over index has to degrade instead of raising.
+        assert self._move("down", 99, 0) == (0, -1)
+
+    def test_an_empty_grid_clears_the_focus(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
+
+        assert settings_focus_move("down", [], [], 2, 1) == (-1, -1)
