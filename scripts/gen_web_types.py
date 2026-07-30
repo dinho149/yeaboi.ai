@@ -31,7 +31,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from yeaboi.poker.board import POKER_DECK
+from yeaboi.poker.board import DUEL_STATUSES, POKER_DECK, POKER_PHASES
 from yeaboi.retro.board import (
     AVATARS,
     CARRIED_STATUS_LABELS,
@@ -147,6 +147,12 @@ def render() -> str:
         _tuple_const("REACTION_EMOJIS", REACTION_EMOJIS, "The only emoji a card reaction may use."),
         _tuple_const("AVATARS", AVATARS, "Avatars a participant may choose."),
         _tuple_const("POKER_DECK", POKER_DECK, "Planning-poker card values, in deck order."),
+        _tuple_const("POKER_PHASES", POKER_PHASES, "Where a ticket's round is: voting \u2192 revealed, optionally via a duel."),
+        _tuple_const(
+            "DUEL_STATUSES",
+            DUEL_STATUSES,
+            "The open floor's lifecycle. The browser renders a different panel for each.",
+        ),
         _block_glyphs(),
         _wordmark_samples(),
     ]

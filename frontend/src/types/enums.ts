@@ -55,6 +55,14 @@ export type Avatars = (typeof AVATARS)[number];
 export const POKER_DECK = ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"] as const;
 export type PokerDeck = (typeof POKER_DECK)[number];
 
+/** Where a ticket's round is: voting → revealed, optionally via a duel. */
+export const POKER_PHASES = ["voting", "revealed", "duel"] as const;
+export type PokerPhases = (typeof POKER_PHASES)[number];
+
+/** The open floor's lifecycle. The browser renders a different panel for each. */
+export const DUEL_STATUSES = ["live", "transcribing", "done", "failed"] as const;
+export type DuelStatuses = (typeof DUEL_STATUSES)[number];
+
 /**
  * The two-line block font, one entry per character: `[top, bottom]`.
  *

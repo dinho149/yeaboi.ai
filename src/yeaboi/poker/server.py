@@ -819,7 +819,9 @@ class PokerServer:
 
     def start(self) -> None:
         """Bind ``0.0.0.0`` (walking ports on conflict) and serve on a daemon thread."""
-        page_html = build_poker_html()
+        # Built once, here: the page is a constant for the life of the server,
+        # and everything that changes reaches the browser through /api/state.
+        page_html = build_poker_html(self.board.project_name, self.board.scope_label)
         httpd: ThreadingHTTPServer | None = None
         for candidate in range(self.port, self.port + _PORT_WALK):
             try:

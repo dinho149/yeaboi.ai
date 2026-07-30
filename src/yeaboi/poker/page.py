@@ -1324,7 +1324,71 @@ else { document.getElementById("code-modal").classList.remove("hidden"); documen
 """
 
 
-def build_poker_html() -> str:
+def board_config(project_name: str = "", scope_label: str = "") -> dict[str, object]:
+    """Return the boot payload the React board reads from its JSON island.
+
+    Deliberately small, for the same reason retro's is: the deck, the avatars
+    and the theme names are server-validated tuples that
+    ``scripts/gen_web_types.py`` already emits into ``frontend/src/types/enums.ts``
+    with a ``--check`` in CI. Shipping them here as well would give one tuple two
+    sources of truth, and the island wins at runtime — so a stale bundle would
+    offer a card value the board is going to refuse.
+
+    Never put a secret in here. ``GET /`` is unauthenticated, so a LAN peer with
+    no token can read every byte of it.
+    """
+    return {
+        "title": project_name,
+        "scope": scope_label,
+        "adjectives": list(_ADJECTIVES),
+        "nouns": list(_NOUNS),
+        # The same internet-radio library the TUI plays (yeaboi.music.CHANNELS).
+        "musicChannels": [{"name": c["name"], "url": c["url"]} for c in CHANNELS],
+    }
+
+
+# Shown before the bundle mounts, and to anyone with JavaScript disabled. A
+# planning-poker session is a live surface with no static rendering, so this
+# points somewhere real rather than just apologising.
+_NOSCRIPT = (
+    "<noscript>This planning-poker board needs JavaScript. Ask the host to "
+    "export the session instead — the exported summary is a plain document.</noscript>"
+)
+
+
+def build_react_poker_html(project_name: str = "", scope_label: str = "") -> str:
+    """Return the React poker board: one self-contained, token-free document."""
+    from yeaboi.web.assets import render_page  # noqa: PLC0415 - avoids an import cycle via html_theme
+
+    html = render_page(
+        bundle="poker",
+        title="Planning Poker",
+        data=board_config(project_name, scope_label),
+        # Layers poker's gold accent over whichever palette the visitor chose.
+        html_attrs='data-mode="poker"',
+        body=_NOSCRIPT,
+    )
+    logger.debug("poker: react page built (%d bytes)", len(html.encode("utf-8")))
+    return html
+
+
+def build_poker_html(project_name: str = "", scope_label: str = "") -> str:
+    """Return the poker board page (token-free), honouring ``POKER_UI``.
+
+    Two implementations during the migration: the hand-written page below, and
+    the React build. ``POKER_UI=react`` selects the latter so both can be driven
+    against the same live session before the old one is deleted (see
+    :func:`yeaboi.config.get_poker_ui`). Retro made the same crossing one commit
+    earlier and its flag is already gone.
+    """
+    from yeaboi.config import get_poker_ui  # noqa: PLC0415 - config imports widely; keep this leaf light
+
+    if get_poker_ui() == "react":
+        return build_react_poker_html(project_name, scope_label)
+    return build_legacy_poker_html()
+
+
+def build_legacy_poker_html() -> str:
     """Return the complete self-contained poker page (token-free)."""
 
     def _lit(v: object) -> str:

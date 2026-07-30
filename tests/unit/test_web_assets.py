@@ -21,7 +21,7 @@ from yeaboi.web.assets import STATIC_DIR, json_island, read_asset, render_page
 
 # Every Vite entry that exists today. Grows one row per phase of the React
 # migration; the parametrized guards below then cover the new bundle for free.
-BUNDLES = ("export", "gate", "retro")
+BUNDLES = ("export", "gate", "poker", "retro")
 
 
 class TestReadAsset:

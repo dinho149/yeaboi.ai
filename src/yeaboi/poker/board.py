@@ -70,6 +70,21 @@ PHASE_VOTING = "voting"
 PHASE_REVEALED = "revealed"
 PHASE_DUEL = "duel"  # the open floor: low vs high voter argue their estimates
 
+# Emitted into types/enums.ts by scripts/gen_web_types.py, so the browser's
+# phase union cannot drift from this one. Order is the state machine's own:
+# a ticket goes voting -> revealed, and optionally -> duel and back.
+POKER_PHASES: tuple[str, ...] = (PHASE_VOTING, PHASE_REVEALED, PHASE_DUEL)
+
+# The duel's own lifecycle, likewise generated. Named here rather than written
+# inline at each assignment because the browser renders a different panel for
+# each one, and a client that spells a status differently silently falls through
+# to its error branch — which is what "failed" vs "error" cost once already.
+DUEL_LIVE = "live"
+DUEL_TRANSCRIBING = "transcribing"
+DUEL_DONE = "done"
+DUEL_FAILED = "failed"
+DUEL_STATUSES: tuple[str, ...] = (DUEL_LIVE, DUEL_TRANSCRIBING, DUEL_DONE, DUEL_FAILED)
+
 # Input caps — bound memory and blunt abuse from a LAN peer.
 _MAX_TEXT = 4000  # ticket descriptions can be long, but not unbounded
 _MAX_SUMMARY = 200
@@ -294,7 +309,7 @@ class PokerBoard:
             ticket["ai_note"] = note
             # A finished duel becomes part of the ticket's record — the debate
             # that produced the estimate travels with it (export/history/MCP).
-            if self._duel is not None and self._duel["status"] == "done" and self._duel["transcript"]:
+            if self._duel is not None and self._duel["status"] == DUEL_DONE and self._duel["transcript"]:
                 ticket["duel_transcript"] = self._duel["transcript"]
                 ticket["duel_low"] = f"{self._duel['low']['name']} ({self._duel['low']['value']})"
                 ticket["duel_high"] = f"{self._duel['high']['name']} ({self._duel['high']['value']})"
@@ -401,7 +416,7 @@ class PokerBoard:
         with self._lock:
             if self._locked or self._phase != PHASE_REVEALED or not self._tickets:
                 return False, "reveal the votes first"
-            if self._duel is not None and self._duel["status"] in ("live", "transcribing"):
+            if self._duel is not None and self._duel["status"] in (DUEL_LIVE, DUEL_TRANSCRIBING):
                 return False, "a duel is already running"
             numeric = {pid: float(v) for pid, v in self._votes.items() if v not in ("?", "☕")}
             if len(set(numeric.values())) < 2:
@@ -418,7 +433,7 @@ class PokerBoard:
                 "turn": "low",
                 "turn_no": 1,
                 "turn_seconds": turn_seconds,
-                "status": "live",
+                "status": DUEL_LIVE,
                 "recording": {"host": False, "low": False, "high": False},
                 "transcript": "",
                 "error": "",
@@ -465,7 +480,7 @@ class PokerBoard:
             if self._phase != PHASE_DUEL or self._duel is None:
                 return None
             self._phase = PHASE_REVEALED
-            self._duel["status"] = "transcribing"
+            self._duel["status"] = DUEL_TRANSCRIBING
             self._duel["recording"] = {"host": False, "low": False, "high": False}
             self._timer = {"running": False, "end_epoch": None, "duration": 0}
             self._revision += 1
@@ -498,7 +513,7 @@ class PokerBoard:
                 return
             self._duel["transcript"] = clean
             self._duel["error"] = (error or "").strip()[:_MAX_NOTE]
-            self._duel["status"] = "done" if clean else "failed"
+            self._duel["status"] = DUEL_DONE if clean else DUEL_FAILED
             self._revision += 1
         # Content is participant speech — log the size only (never-log rule).
         logger.info("poker board: duel transcript %s — %d chars", "landed" if clean else "FAILED", len(clean))
@@ -512,7 +527,7 @@ class PokerBoard:
         if source not in ("host", "low", "high"):
             return False
         with self._lock:
-            if self._duel is None or self._duel["status"] != "live":
+            if self._duel is None or self._duel["status"] != DUEL_LIVE:
                 return False
             self._duel["recording"][source] = bool(flag)
             self._revision += 1
@@ -537,7 +552,7 @@ class PokerBoard:
     def current_duel_transcript(self) -> str:
         """The finished transcript for the current round ("" unless status done)."""
         with self._lock:
-            if self._duel is None or self._duel["status"] != "done":
+            if self._duel is None or self._duel["status"] != DUEL_DONE:
                 return ""
             return self._duel["transcript"]
 

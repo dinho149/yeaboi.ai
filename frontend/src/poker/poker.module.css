@@ -1,0 +1,1267 @@
+/*
+ * The poker board.
+ *
+ * Three regions on the shared breakpoints: the ticket rail, the main column
+ * (ticket → results → duel → table → deck), and the host console. Wide is all
+ * three side by side; under --bp-m the console becomes a bottom sheet; under
+ * --bp-s the rail becomes a drawer.
+ *
+ * ## Two things that only break on a phone
+ *
+ * `100dvh`, never `100vh`. On iOS Safari `100vh` is the viewport *without* the
+ * URL bar, so a full-height rail or console overflows by exactly the bar's
+ * height and its last control sits under the browser chrome, permanently
+ * unreachable. `dvh` tracks the bar as it collapses.
+ *
+ * `env(safe-area-inset-*)` on everything pinned to an edge. In landscape on a
+ * notched phone the deck's outer cards land under the notch and the console's
+ * bar under the home indicator.
+ *
+ * ## Layering
+ *
+ * Every z-index here is a token from tokens.css (--z-rail < --z-deck <
+ * --z-console < --z-popover < --z-banner < --z-modal). The page this replaces
+ * used bare numbers, which is how the rail drawer ended up above the theme
+ * popover and below the invite modal with no way to reason about either.
+ */
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────── */
+
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
+  gap: var(--s4);
+  padding: var(--s4);
+  padding-left: max(var(--s4), env(safe-area-inset-left));
+  padding-right: max(var(--s4), env(safe-area-inset-right));
+  align-items: start;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+    /* Room for the console, which is a fixed bottom sheet at this width. */
+    padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 699px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--s3);
+    padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── Rail ────────────────────────────────────────────────────────────── */
+
+.rail {
+  position: sticky;
+  top: var(--s3);
+  /* dvh, not vh — see the header note. */
+  max-height: calc(100dvh - var(--s6) * 2);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3);
+}
+
+.railHead {
+  margin-bottom: var(--s2);
+}
+
+.railList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.railItem {
+  width: 100%;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2);
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.railItem:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.railDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.railCurrent {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+
+.railCurrent .railDot {
+  background: var(--accent);
+}
+
+.railPeeking {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: -1px;
+}
+
+.railDone .railDot {
+  background: var(--ok);
+}
+
+.railDone .railText {
+  text-decoration: line-through;
+  text-decoration-color: var(--dim);
+}
+
+.railText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railKey {
+  font-family: var(--font-mono);
+  color: var(--dim);
+  margin-right: var(--s1);
+}
+
+.railPts {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+}
+
+.railToggle {
+  display: none;
+}
+
+.railBackdrop {
+  display: none;
+}
+
+@media (max-width: 699px) {
+  .rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: var(--z-rail);
+    width: min(80vw, 320px);
+    max-height: 100dvh;
+    border-radius: 0;
+    padding-top: max(var(--s3), env(safe-area-inset-top));
+    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+    padding-left: max(var(--s3), env(safe-area-inset-left));
+    transform: translateX(-100%);
+    transition: transform var(--dur-base) var(--ease);
+  }
+
+  .railOpen {
+    transform: translateX(0);
+  }
+
+  .railToggle {
+    display: inline-flex;
+  }
+
+  .railBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-rail) - 1);
+    background: rgb(0 0 0 / 45%);
+  }
+}
+
+/* ── Ticket ──────────────────────────────────────────────────────────── */
+
+.ticket {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s4);
+}
+
+.ticketPeek {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.tkrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+}
+
+.key a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.key a:hover {
+  text-decoration: underline;
+}
+
+.phaseTag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 2px var(--s2);
+}
+
+.phaseTagOn {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.phaseTagPeek {
+  color: var(--accent2);
+  border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
+}
+
+.tkSummary {
+  margin: var(--s2) 0 var(--s3);
+  font-size: var(--fs-xl);
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.bodyLabel {
+  display: block;
+  margin: var(--s3) 0 var(--s1);
+}
+
+.desc {
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.descClipped {
+  max-height: 9em;
+  overflow: hidden;
+  /* Fades rather than cuts, so it is visibly clipped and not just ended.
+     A mask reads alpha only, so the colour is irrelevant — any opaque token
+     does, and using one keeps this out of the literal-colour guard's way. */
+  mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
+}
+
+.descToggle {
+  margin-top: var(--s2);
+  min-height: var(--tap-min);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.descEmpty {
+  color: var(--dim);
+  font-size: var(--fs-s);
+  font-style: italic;
+}
+
+.peekBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin: calc(var(--s4) * -1) calc(var(--s4) * -1) var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-m) var(--r-m) 0 0;
+  background: color-mix(in srgb, var(--accent2) 14%, var(--panel));
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.peekActions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.pkbtn {
+  min-height: var(--tap-min);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+
+.pkbtnGo {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+}
+
+/* ── Results ─────────────────────────────────────────────────────────── */
+
+.results {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.resultsHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.resultsSum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-s);
+  color: var(--muted);
+}
+
+.resultsSum b {
+  color: var(--accent);
+}
+
+.dist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.drow {
+  display: grid;
+  grid-template-columns: 2.5em 1fr 2em;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.dval {
+  text-align: right;
+  color: var(--text);
+}
+
+.dtrack {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.dbar {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+  transition: width var(--dur-base) var(--ease);
+}
+
+.drowTop .dbar {
+  background: var(--accent);
+}
+
+.drowTop .dval {
+  color: var(--accent);
+}
+
+.dcount {
+  text-align: right;
+}
+
+/* ── AI note ─────────────────────────────────────────────────────────── */
+
+.ainote {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent2);
+  border-radius: var(--r-s);
+  padding: var(--s3);
+  background: var(--panel-2);
+}
+
+.aiHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.aiBody {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.conf {
+  font-size: var(--fs-2xs);
+  border-radius: var(--r-pill);
+  padding: 1px var(--s2);
+  border: 1px solid currentcolor;
+}
+
+.conf-high {
+  color: var(--ok);
+}
+
+.conf-medium {
+  color: var(--warn);
+}
+
+.conf-low {
+  color: var(--danger);
+}
+
+.ev {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s4);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.sug {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.sug b {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+/* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
+   different from a finished one. Steps, not a fade — it reads as a cursor. */
+.ainotePending .aiBody::after {
+  content: '…';
+  animation: dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ── Duel ────────────────────────────────────────────────────────────── */
+
+.duel {
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
+  border-radius: var(--r-m);
+  padding: var(--s4);
+}
+
+.duelHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+}
+
+.duelBody {
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.duelTranscript {
+  margin: var(--s3) 0 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+  max-height: 18em;
+  overflow-y: auto;
+}
+
+.recind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--danger);
+}
+
+.recDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: recpulse 1.4s ease-in-out infinite;
+}
+
+@keyframes recpulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.norec {
+  color: var(--warn);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.dualrow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.duelist {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  text-align: center;
+}
+
+.duelistSpeaking {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.duelFace {
+  font-size: var(--fs-xl);
+}
+
+.duelName {
+  font-weight: 600;
+  font-size: var(--fs-s);
+}
+
+.duelValue {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.duelValue b {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.duelFloor {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--accent);
+}
+
+.duelMic {
+  font-size: var(--fs-2xs);
+  color: var(--danger);
+}
+
+.vs {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-eyebrow);
+  color: var(--dim);
+}
+
+.youup {
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-s);
+}
+
+.micRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+}
+
+.micBtn {
+  min-height: var(--tap);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.hint {
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+}
+
+/* ── The table ───────────────────────────────────────────────────────── */
+
+.table {
+  background: var(--felt);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s4);
+}
+
+.tableHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+
+.tableWait {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+}
+
+.vempty {
+  color: var(--dim);
+  font-size: var(--fs-s);
+}
+
+.vrow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+.voter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s1);
+  width: 68px;
+}
+
+.face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: var(--fs-l);
+}
+
+.tick {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--ink);
+  font-size: var(--fs-2xs);
+}
+
+/*
+ * The reveal.
+ *
+ * `--i` is the seat index, so each card turns 40ms after the one before it and
+ * the reveal sweeps the table. Animates *from* the face-down state with the
+ * face-up one as the plain CSS default, per the rule in motion/motion.module.css
+ * — the global reduced-motion override flattens duration to 0.01ms, and an
+ * animation written the other way round would freeze mid-flip.
+ */
+.vcard {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 62px;
+  border-radius: var(--r-s);
+  background: var(--card);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  font-weight: 700;
+  animation: flip 320ms var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+@keyframes flip {
+  from {
+    transform: rotateY(90deg);
+    opacity: 0;
+  }
+}
+
+.nm {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+
+/* ── The deck ────────────────────────────────────────────────────────── */
+
+.deckZone {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-deck);
+  background: var(--bg);
+  padding: var(--s3) 0 max(var(--s3), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * Clear the console sheet.
+ *
+ * Below --bp-m the console is `position: fixed` at the bottom with a higher
+ * z-index, and the deck is sticky at `bottom: 0` — so on a phone the deck's
+ * last row (the ☕, once ten cards wrap to two lines) sits *behind* the host's
+ * bar and cannot be tapped. Padding on .layout does not help: the deck is
+ * sticky, so it parks against the viewport rather than against the content box.
+ *
+ * Only for the host, because only the host has a console. `data-host` is set by
+ * App from the same flag that renders it, so the two cannot disagree.
+ */
+@media (max-width: 1100px) {
+  .app[data-host='true'] .deckZone {
+    bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+  }
+}
+
+.deckStatus {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+  text-align: center;
+}
+
+.deckMine {
+  color: var(--accent);
+}
+
+.deck {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s2);
+}
+
+.pcard {
+  position: relative;
+  width: 52px;
+  height: 74px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--text);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.pcard:hover:not(:disabled) {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+}
+
+.pcard:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pcardSel {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--card));
+  color: var(--accent);
+  transform: translateY(-6px);
+}
+
+/* Your tap is committed locally before the server confirms it. The dash says
+   "not yet acknowledged" without moving anything, so a slow tunnel does not
+   make the card twitch. */
+.pcardWait {
+  border-style: dashed;
+}
+
+.ci {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  font-size: var(--fs-2xs);
+  opacity: 0.75;
+}
+
+.ciFlip {
+  top: auto;
+  left: auto;
+  right: 5px;
+  bottom: 4px;
+  transform: rotate(180deg);
+}
+
+.cv {
+  font-size: var(--fs-l);
+  font-weight: 700;
+}
+
+/* ── Host console ────────────────────────────────────────────────────── */
+
+.console {
+  position: sticky;
+  top: var(--s3);
+  max-height: calc(100dvh - var(--s6) * 2);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.cbar {
+  display: none;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.cphase {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--accent);
+}
+
+.cbody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.cgroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.cbtn {
+  min-height: var(--tap);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.cbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cbtnPrimary:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Everyone present has voted. The one moment the console asks for attention. */
+.cbtnPulse:not(:disabled) {
+  animation: cpulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cpulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+
+.crow,
+.navrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.duelSlot {
+  min-height: var(--tap);
+}
+
+.duelInline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+}
+
+.seg {
+  display: flex;
+  gap: var(--s1);
+}
+
+.preset {
+  flex: 1;
+  min-height: var(--tap-min);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+
+.clabel,
+.finlab {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.chint,
+.cnotice {
+  margin: 0;
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.cnotice {
+  color: var(--warn);
+}
+
+.readout {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.readout b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.finrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.finInput {
+  width: 5em;
+  min-height: var(--tap);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+}
+
+.finSrc {
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+}
+
+.cpos {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+@media (max-width: 1100px) {
+  .console {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--z-console);
+    max-height: 70dvh;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    border-bottom: 0;
+    padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
+  }
+
+  .cbar {
+    display: flex;
+  }
+
+  /* Collapsed by default: the bar carries the one action that matters, and the
+     rest is one tap away. A host on a phone is holding the phone. */
+  .cbody {
+    display: none;
+  }
+
+  .consoleOpen .cbody {
+    display: flex;
+  }
+}
+
+/* ── Toolbar bits ────────────────────────────────────────────────────── */
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.meChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: var(--tap);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.meName {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pen {
+  color: var(--dim);
+}
+
+.roomCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.offline {
+  color: var(--warn);
+}
+
+.castBtn {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.popNote {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.lockBanner,
+.musicBanner {
+  margin: 0;
+  padding: var(--s2) var(--s4);
+  text-align: center;
+  font-size: var(--fs-xs);
+  border-bottom: 1px solid var(--line);
+}
+
+.lockBanner {
+  background: color-mix(in srgb, var(--warn) 16%, var(--panel));
+  color: var(--warn);
+}
+
+.musicBanner {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+/* ── Edit modal ──────────────────────────────────────────────────────── */
+
+.flabel {
+  display: block;
+  margin: var(--s3) 0 var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--muted);
+}
+
+.field {
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-s);
+}
+
+textarea.field {
+  min-height: 8em;
+  resize: vertical;
+}
+
+.editWarn {
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--warn);
+}
+
+.editNote {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+}
+
+.editSave {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--s4);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-s);
+  background: var(--accent);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Utility ─────────────────────────────────────────────────────────── */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

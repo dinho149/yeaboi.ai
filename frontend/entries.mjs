@@ -7,10 +7,11 @@
 // imported by BOTH that script and vite.config.ts so the two can never
 // disagree about which modes exist.
 //
-// Grows one row per phase: poker, deck.
+// Grows one row per phase: deck.
 export const ENTRIES = {
   export: 'src/export/main.ts',
   gate: 'src/gate/main.tsx',
+  poker: 'src/poker/main.tsx',
   retro: 'src/retro/main.tsx',
 };
 
