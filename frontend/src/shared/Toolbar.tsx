@@ -1,0 +1,52 @@
+/**
+ * The app bar both boards wear.
+ *
+ * A layout shell, not a feature: brand on the left, presence next to it, then
+ * whatever the mode needs, then the tool cluster on the right. Retro and poker
+ * had visually similar headers built from two independent piles of CSS, which
+ * is why they drifted — different heights, different gaps, different breakpoint
+ * behaviour on the same phone.
+ *
+ * It is a `<header>` with `role="banner"` semantics by placement, and the tool
+ * cluster is a real `role="toolbar"`, so a screen reader user can jump to it
+ * instead of tabbing through the board to reach the timer.
+ */
+
+import type { ReactNode } from 'react';
+
+import { cx } from '../runtime/cx';
+import { PopoverGroup } from './Popover';
+import styles from './shared.module.css';
+
+export interface ToolbarProps {
+  /** Product/mode name. */
+  brand: ReactNode;
+  /** Small muted line beside the brand — a card count, a ticket position. */
+  subtitle?: ReactNode;
+  /** Presence row, focus controls — anything mode-specific and left-aligned. */
+  children?: ReactNode;
+  /** The right-hand cluster. Popovers inside it are mutually exclusive. */
+  tools?: ReactNode;
+  className?: string | undefined;
+}
+
+export function Toolbar({ brand, subtitle, children, tools, className }: ToolbarProps) {
+  return (
+    <header className={cx(styles['appbar'], className)}>
+      <div className={styles['brand']}>
+        <span className={styles['brandTitle']}>{brand}</span>
+        {subtitle ? <span className={styles['brandSub']}>{subtitle}</span> : null}
+      </div>
+
+      {children}
+
+      <div className={styles['spacer']} />
+
+      {tools ? (
+        <div className={styles['tools']} role="toolbar" aria-label="Board tools">
+          <PopoverGroup>{tools}</PopoverGroup>
+        </div>
+      ) : null}
+    </header>
+  );
+}

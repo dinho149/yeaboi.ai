@@ -1,0 +1,205 @@
+/*
+ * Styling for the shared primitives.
+ *
+ * One module for the whole set rather than twelve files: they are a single
+ * cohesive vocabulary, they are all small, and keeping them together makes the
+ * spacing and radius choices comparable at a glance instead of scattered.
+ *
+ * Every value here is a token. If you find yourself typing a hex colour or a
+ * pixel gap, it belongs in tokens.css first.
+ */
+
+/* ── Chip ─────────────────────────────────────────────────────── */
+.chip {
+  display: inline-block;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+/* Tone-specific colours come from an inline style built by toneMix(), because
+   the set of tones is a TypeScript union rather than a set of class names —
+   one source of truth, and adding a tone needs no CSS change. */
+.chipLink { text-decoration: none; }
+.chipLink:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Stat tile ────────────────────────────────────────────────── */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+.statValue {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent);
+  /* Tabular figures: a value that ticks (a count, a countdown) must not make
+     the tile jitter as digit widths change. */
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.statLabel {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+.statHint { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+
+/* ── Bars ─────────────────────────────────────────────────────── */
+.bar {
+  height: 6px;
+  background: var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.barFill { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+
+.segTrack {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  min-width: 2px;
+}
+.segTrack > i { display: block; height: 100%; }
+
+/* ── Legend ───────────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+.legend > span { display: inline-flex; align-items: center; gap: var(--s1); }
+.legendSwatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.legendCount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+.sparkWrap { margin: var(--s1) 0 var(--s3); }
+.sparkWrap svg { display: block; width: 100%; height: 48px; }
+.sparkLabels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Avatar ───────────────────────────────────────────────────── */
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  flex: none;
+  user-select: none;
+}
+
+/* ── Notice ───────────────────────────────────────────────────── */
+.notice {
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+.noticeTitle {
+  font-weight: 600;
+  font-size: var(--fs-s);
+  color: var(--warn);
+  margin-bottom: var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.notice ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+
+/* ── Card / Section ───────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.cardHover:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+.cardTitle { font-weight: 600; font-size: var(--fs-s); }
+
+.section { margin-bottom: var(--s6); }
+.sectionTitle {
+  font-size: var(--fs-l);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--s1);
+  margin-bottom: var(--s4);
+}
+
+/* ── Data table ───────────────────────────────────────────────── */
+/* The wrapper, not the table, scrolls. A table wide enough to overflow must
+   never make the *page* scroll sideways — on a phone that breaks every
+   vertical swipe on the board behind it. */
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+.table th {
+  background: var(--card);
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  font-weight: 600;
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.table td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+.table tr:last-child td { border-bottom: none; }
+.numeric { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Prose ────────────────────────────────────────────────────── */
+.prose { font-size: var(--fs-s); line-height: 1.6; }
+/* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
+   (tickets.py already strips their HTML) and must never be re-parsed as
+   markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
+.proseText { white-space: pre-wrap; overflow-wrap: anywhere; }
+.proseList { list-style: none; padding-left: 0; margin: 0; }
+.proseList > li {
+  position: relative;
+  padding: var(--s1) 0 var(--s1) var(--s4);
+  line-height: 1.55;
+}
+.proseList > li::before {
+  content: "•";
+  color: var(--accent);
+  position: absolute;
+  left: var(--s1);
+}
