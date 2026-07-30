@@ -1429,38 +1429,21 @@ def _settings_edit_keypress(sk: str, edit: dict) -> None:
         edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
 
 
-def _settings_data_dir_flow(console: Console, live, read_key, frame_time, supports_timeout) -> str:
-    """Settings editor for the data directory (YEABOI_HOME, persisted to ~/.yeaboi/.env).
+def _settings_save_data_dir(console: Console, live, read_key, frame_time, supports_timeout, value: str) -> str:
+    """Persist an edited data directory (YEABOI_HOME), offering to move the tree.
 
-    One prompt for the path (Enter keeps the current value, ``-`` clears back
-    to ~/.yeaboi, Esc aborts). When the location actually changes, a Move/Leave
-    popup offers to relocate the existing tree. Returns a status message for
-    the Settings page ('' when nothing changed).
+    The path itself is typed on the Settings page like every other value — this is
+    only the save half: a Move/Leave popup (the one thing that can't be an in-place
+    edit, since relocating sessions/exports/logs needs a decision), then the write.
+    ``value`` is the already-typed override, '' meaning back to ~/.yeaboi. Returns
+    the status message for the duck.
+
+    The write goes through ``set_data_dir``, NOT the generic ``apply_config_value``:
+    YEABOI_HOME lives in the pinned bootstrap ~/.yeaboi/.env, because a config file
+    that can relocate the tree can't live inside the tree it relocates.
     """
-    from yeaboi.config import get_data_dir, set_data_dir
+    from yeaboi.config import set_data_dir
     from yeaboi.paths import move_data_tree
-    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
-
-    logger.info("Settings: opening Data Dir editor")
-    current = get_data_dir()
-    value = _standup_read_line(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        prompt="Data directory (blank = ~/.yeaboi) — holds exports, logs, sessions",
-        step="Data Dir  ·  '-' clears",
-        default=current,
-        theme=SETTINGS_THEME,
-        title=settings_title(),
-    )
-    if value is None:
-        logger.info("Settings: Data Dir editor cancelled")
-        return ""
-    value = "" if value.strip() == "-" else value.strip()
-    if value == current:
-        return ""
 
     message = "Data directory saved — restart yeaboi to fully apply"
     new_root = Path(value).expanduser() if value else Path.home() / ".yeaboi"
@@ -10226,14 +10209,13 @@ def select_mode(
                     return _bf[b] if 0 <= b < len(_bf) else []
 
                 def _s_begin_edit(env: str, label: str, masked: bool) -> None:
-                    """Open the in-place editor for a field (or the data-dir flow)."""
-                    nonlocal _s_edit, _settings_data
-                    if env == "YEABOI_HOME":  # special: move-aware data-dir flow
-                        _msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _settings_data = _collect_settings_data()
-                        if _msg:
-                            _settings_data["_message"] = _msg
-                        return
+                    """Open the in-place editor for a field.
+
+                    Every value is typed on the page itself, the data directory
+                    included — its move-or-leave decision happens on save (see
+                    _settings_save_data_dir), not on a screen of its own.
+                    """
+                    nonlocal _s_edit
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.
                     _start = "" if masked else (_settings_data.get(env, "") or "")
@@ -10258,7 +10240,16 @@ def select_mode(
                                 _save = False  # empty on a hidden field = keep the value
                             if _save and not _masked and _val == (_cur_val or ""):
                                 _save = False  # unchanged
-                            if _save:
+                            if _save and _env == "YEABOI_HOME":
+                                # Relocating the tree needs a move-or-leave answer and
+                                # a write to the pinned bootstrap .env, so it saves
+                                # through its own helper rather than the generic path.
+                                _dd_msg = _settings_save_data_dir(
+                                    console, live, read_key, _FRAME_TIME, _supports_timeout, _val
+                                )
+                                _settings_data = _collect_settings_data()
+                                _settings_data["_message"] = _dd_msg
+                            elif _save:
                                 from yeaboi.config import apply_config_value
 
                                 # apply_ (not set_) so the edit lands in os.environ
@@ -10277,7 +10268,12 @@ def select_mode(
                                 logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
                         elif sk == "esc":
                             # Esc alone cancels: 'q' is a character you have to be able
-                            # to type (an Ollama model name starts with one).
+                            # to type (an Ollama model name starts with one). The edit
+                            # eats the key, so the back tab must not fold away — the
+                            # Esc chokepoint armed its retract before we got a say.
+                            from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                            cancel_back_retract()
                             _s_edit = None  # cancel — discard the buffer
                         else:
                             _settings_edit_keypress(sk, _s_edit)  # mutate buffer/cursor
@@ -10318,7 +10314,8 @@ def select_mode(
                         # the tab-bar level fall through to the tab switch below.
                         _s_box, _s_field = settings_focus_move(
                             sk,
-                            getattr(_s_panel, "_box_grid", []) or [],
+                            getattr(_s_panel, "_box_cols", []) or [],
+                            getattr(_s_panel, "_box_tail", []) or [],
                             getattr(_s_panel, "_box_fields", []) or [],
                             _s_box,
                             _s_field,
@@ -10351,14 +10348,10 @@ def select_mode(
                             _s_box = -1
                     elif sk in ("enter", " "):
                         _act = settings_tab_action(_s_tab)
-                        if _act == "datadir":
-                            # Storage tab → edit YEABOI_HOME (+ optional move).
-                            logger.info("Settings: Data Dir editor opened")
-                            _dd_msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                            _settings_data = _collect_settings_data()
-                            if _dd_msg:
-                                _settings_data["_message"] = _dd_msg
-                        elif _act == "loglevel":
+                        # 'datadir' is gone as a tab action: Storage folded into System,
+                        # and YEABOI_HOME is opened as a row like every other value
+                        # (see _s_begin_edit, which still routes it to the move flow).
+                        if _act == "loglevel":
                             # Advanced tab → cycle log level, persist to .env, apply live.
                             from yeaboi.config import get_log_level, set_log_level
                             from yeaboi.logging_setup import apply_level

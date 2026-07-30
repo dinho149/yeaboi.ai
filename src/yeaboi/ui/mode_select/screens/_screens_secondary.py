@@ -4882,13 +4882,13 @@ class _EditableRow(Text):
 
 # Settings is a tabbed view. A few broad tabs group the config; this order drives
 # both the tab bar and the loop's Enter action (see settings_tab_action).
-_SETTINGS_TABS: list[str] = ["Credentials", "Storage", "System"]
+_SETTINGS_TABS: list[str] = ["Credentials", "System"]
 
-# The heading sections each tab renders, in order.
+# The heading sections each tab renders, in order. Storage is one row, so it
+# lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
     "Credentials": ["provider", "jira", "azure", "github", "notion"],
-    "Storage": ["storage"],
-    "System": ["standup", "voice", "bedrock", "advanced"],
+    "System": ["storage", "standup", "voice", "bedrock", "advanced"],
 }
 
 # Sections whose box spans the full grid width instead of taking a column slot.
@@ -4916,11 +4916,10 @@ _TAB_GAP = 3  # spaces between tab labels
 
 
 def settings_tab_action(active_tab: int) -> str:
-    """Return what Enter does on a settings tab: 'datadir' (Storage),
-    'loglevel' (System → cycles the log level), or 'setup' (Credentials → wizard)."""
+    """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
+    level) or 'setup' (Credentials → wizard). The data directory is no longer a tab
+    action — it's the Storage box's row, opened like any other value."""
     label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
-    if label == "Storage":
-        return "datadir"
     if label == "System":
         return "loglevel"
     return "setup"
@@ -4928,31 +4927,34 @@ def settings_tab_action(active_tab: int) -> str:
 
 def settings_focus_move(
     key: str,
-    box_grid: list[list[int]],
+    box_cols: list[list[int]],
+    box_tail: list[int],
     box_fields: list[list[tuple[str, str, bool]]],
     sel_box: int,
     sel_field: int,
 ) -> tuple[int, int]:
     """Resolve an arrow key against the settings screen's three focus levels.
 
-    Kept out of the TUI loop (and pure) so the state machine is testable: it takes
-    the navigation map the last render published — ``box_grid`` (visual rows of
-    section indices) and ``box_fields`` (each section's editable rows) — plus the
-    current ``(sel_box, sel_field)``, and returns the next one.
+    Kept out of the TUI loop (and pure) so the state machine is testable. It takes
+    the navigation map the last render published — ``box_cols`` (the balanced
+    columns of section boxes, each listed top to bottom) and ``box_tail`` (the
+    full-width boxes stacked underneath them), plus ``box_fields`` (each section's
+    editable rows) — and the current ``(sel_box, sel_field)``, and returns the next.
 
     ``(-1, -1)`` is the tab bar: only Down enters the grid from there (Left/Right
-    belong to the tabs and never reach this). ``(b, -1)`` walks the boxes, and Up
-    off the top row hands focus back to the tab bar. ``(b, f)`` walks the values
-    inside box *b*, where Left/Right do nothing — the box is the unit you left.
+    belong to the tabs and never reach this). ``(b, -1)`` walks the boxes — Up/Down
+    within a column, Left/Right across columns, Down off the last box into the
+    full-width tail — and Up off the top hands focus back to the tab bar. ``(b, f)``
+    walks the values inside box *b*, where Left/Right do nothing: the box is the
+    unit you stepped into.
     """
-    if not box_grid:
+    first = box_cols[0][0] if box_cols and box_cols[0] else (box_tail[0] if box_tail else -1)
+    if first < 0:
         return -1, -1
     if sel_box < 0:
-        return (box_grid[0][0], -1) if key == "down" else (sel_box, sel_field)
-
-    row = next((i for i, r in enumerate(box_grid) if sel_box in r), -1)
-    if row < 0:  # stale index — the tab's sections changed under us
-        return box_grid[0][0], -1
+        return (first, -1) if key == "down" else (sel_box, sel_field)
+    if not any(sel_box in c for c in box_cols) and sel_box not in box_tail:
+        return first, -1  # stale index — the tab's sections changed under us
 
     if sel_field >= 0:
         fields = box_fields[sel_box] if 0 <= sel_box < len(box_fields) else []
@@ -4961,16 +4963,30 @@ def settings_focus_move(
             return sel_box, max(0, min(len(fields) - 1, sel_field + step))
         return sel_box, sel_field
 
-    col = box_grid[row].index(sel_box)
-    if key in ("left", "right"):
-        step = 1 if key == "right" else -1
-        return box_grid[row][max(0, min(len(box_grid[row]) - 1, col + step))], -1
-    nrow = row + (1 if key == "down" else -1)
-    if nrow < 0:
-        return -1, -1  # back up to the tab bar
-    if nrow >= len(box_grid):
-        return sel_box, -1
-    return box_grid[nrow][min(col, len(box_grid[nrow]) - 1)], -1
+    col = next((c for c, boxes in enumerate(box_cols) if sel_box in boxes), -1)
+    if col >= 0:
+        idx = box_cols[col].index(sel_box)
+        if key in ("left", "right"):
+            ncol = max(0, min(len(box_cols) - 1, col + (1 if key == "right" else -1)))
+            target = box_cols[ncol] or box_cols[col]
+            return target[min(idx, len(target) - 1)], -1
+        if key == "down":
+            if idx + 1 < len(box_cols[col]):
+                return box_cols[col][idx + 1], -1
+            return (box_tail[0], -1) if box_tail else (sel_box, -1)
+        return (box_cols[col][idx - 1], -1) if idx else (-1, -1)  # up off the top → tabs
+
+    if sel_box in box_tail:  # one of the full-width boxes below the columns
+        t = box_tail.index(sel_box)
+        if key in ("left", "right"):
+            return sel_box, -1
+        if key == "down":
+            return (box_tail[t + 1] if t + 1 < len(box_tail) else sel_box), -1
+        if t:
+            return box_tail[t - 1], -1
+        return (box_cols[0][-1], -1) if box_cols and box_cols[0] else (-1, -1)
+
+    return sel_box, -1
 
 
 def _settings_tab_bar(
@@ -5309,9 +5325,10 @@ def _build_settings_screen(
     _line_meta: dict[int, list[tuple[int, int, str, str, bool]]] = {}
     _abs_x = _TAB_COL_OFFSET + len(_grid_indent)  # grid column 0 in absolute terminal columns
 
-    # Navigation map, published for the loop: one entry per visual row of boxes,
-    # each listing the section indices on it left to right. Arrow keys walk this.
-    box_grid: list[list[int]] = []
+    # Navigation map, published for the loop: the balanced columns (each top to
+    # bottom) and the full-width boxes stacked under them. Arrow keys walk this.
+    box_cols: list[list[int]] = []
+    box_tail: list[int] = []
     box_span: dict[int, tuple[int, int]] = {}  # section index → (first, last) body line
     field_line: dict[tuple[int, int], int] = {}  # (section, field) → body line
 
@@ -5331,26 +5348,38 @@ def _build_settings_screen(
     _wide = [s for s in _numbered if s[3]]
 
     if _narrow:
+        # Columns, not rows: each box is exactly as tall as its own content and the
+        # sections are dealt into the shortest column so far. A row-based grid had to
+        # pad every box in a row up to the tallest one, which left a two-row section
+        # sitting in a six-row box next to a full one.
+        _cols: list[list] = [[] for _ in range(n_cols)]
+        _col_h = [0] * n_cols
+        for _sec in _narrow:
+            _j = _col_h.index(min(_col_h))
+            _col_h[_j] += (1 if _cols[_j] else 0) + len(_sec[2]) + 2  # blank + border + rows + border
+            _cols[_j].append(_sec)
+        _cols = [c for c in _cols if c]  # a column can stay empty when sections < n_cols
+
         _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
-        for _ in range(n_cols):
+        for _ in _cols:
             _grid.add_column(width=col_w, overflow="crop")
         _base = len(body_lines)
-        _off = 0  # line offset within the flattened grid block
-        for _i in range(0, len(_narrow), n_cols):
-            _chunk = _narrow[_i : _i + n_cols]
-            if _i:
-                _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
-                _off += 1
-            # Boxes in the same row share a height so their bottom borders line up.
-            _box_h = max(len(_r) for _, _, _r, _ in _chunk) + 2
-            _cells: list = [_section_box(_t, _r, _box_h, col_w, focused=(_bi == sel_box)) for _bi, _t, _r, _ in _chunk]
-            _cells += [Text("")] * (n_cols - len(_chunk))
-            _grid.add_row(*_cells)
-            box_grid.append([_bi for _bi, _, _, _ in _chunk])
-            for _j, (_bi, _t, _r, _) in enumerate(_chunk):
-                _cs = _j * (col_w + 2)  # padding=(0,1) both sides → a 2-col gutter
-                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _bi, _r, _box_h)
-            _off += _box_h
+        _cells: list = []
+        for _j, _col in enumerate(_cols):
+            _stack: list = []
+            _off = 0  # line offset within this column (every column starts at _base)
+            _cs = _j * (col_w + 2)  # padding=(0,1) both sides → a 2-col gutter
+            for _bi, _t, _r, _ in _col:
+                if _stack:
+                    _stack.append(Text(""))  # one blank line between stacked boxes
+                    _off += 1
+                _h = len(_r) + 2
+                _stack.append(_section_box(_t, _r, _h, col_w, focused=(_bi == sel_box)))
+                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _bi, _r, _h)
+                _off += _h
+            box_cols.append([_bi for _bi, _, _, _ in _col])
+            _cells.append(Group(*_stack))
+        _grid.add_row(*_cells)
         body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
 
     for _bi, _t, _r, _ in _wide:
@@ -5358,7 +5387,7 @@ def _build_settings_screen(
         _base = len(body_lines)
         _box = _section_box(_t, _r, len(_r) + 2, full_w, focused=(_bi == sel_box))
         body_lines.extend(_render_to_lines(_box, grid_w, _grid_indent))
-        box_grid.append([_bi])
+        box_tail.append(_bi)
         _mark(_base, 1, full_w - 2, _bi, _r, len(_r) + 2)
 
     # ── Layout: tab bar → active section (scrollable) → context hint ──────
@@ -5420,9 +5449,7 @@ def _build_settings_screen(
         viewport_renderable = Group(*padded_lines)
 
     # Context hint replaces the old button row: the tab bar is the navigation now.
-    _enter_label = {"datadir": "change data dir", "loglevel": "cycle log level"}.get(
-        settings_tab_action(active_tab), "configure"
-    )
+    _enter_label = {"loglevel": "cycle log level"}.get(settings_tab_action(active_tab), "configure")
     hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
     if editing is not None:
         # In-place edit mode: keys go to the field being edited.
@@ -5478,6 +5505,7 @@ def _build_settings_screen(
         (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
     ]
     panel._row_regions = row_regions  # (abs_row, x0, x1, env, label, masked) per visible editable row
-    panel._box_grid = box_grid  # visual rows of section indices — the arrow-key map
+    panel._box_cols = box_cols  # balanced columns of section indices — the arrow-key map
+    panel._box_tail = box_tail  # the full-width boxes stacked under the columns
     panel._box_fields = box_fields  # per section, its editable (env, label, masked) in order
     return panel

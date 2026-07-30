@@ -453,7 +453,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         output = self._render({}, height=40)
-        for tab in ("Credentials", "Storage", "System"):
+        for tab in ("Credentials", "System"):
             assert tab in output
         assert "switch" not in output  # not in the body any more
 
@@ -475,18 +475,17 @@ class TestSettingsScreen:
         creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=0)
         assert "Anthropic Key" in creds
         assert "org.atlassian.net" in creds  # Jira grouped under Credentials
-        system = self._render({}, height=40, active_tab=2)
+        system = self._render({}, height=40, active_tab=1)
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
     def test_system_tab_hint_mentions_log_level(self):
-        output = self._render({}, height=40, active_tab=2)  # System tab (Advanced → log level)
+        output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
 
     def test_settings_tab_action_mapping(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, settings_tab_action
 
-        assert settings_tab_action(_SETTINGS_TABS.index("Storage")) == "datadir"
         assert settings_tab_action(_SETTINGS_TABS.index("System")) == "loglevel"
         assert settings_tab_action(_SETTINGS_TABS.index("Credentials")) == "setup"
 
@@ -521,7 +520,7 @@ class TestSettingsScreen:
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         # The System tab's "Config File" and "Dictation" rows are read-only.
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=2)
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=1)
         labels = {label for _, _, _, _, label, _ in panel._row_regions}
         assert "Config File" not in labels
         assert "Log Level" in labels  # but editable rows on the same tab do have regions
@@ -532,24 +531,25 @@ class TestSettingsScreen:
         # narrow sections share a row.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)  # System
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)  # System
         out = self._text(panel, width=130, height=44)
-        assert "╭─ Daily Standup" in out and "╭─ Voice Input" in out
-        # Side by side: both titles land on the same rendered row.
-        assert any("Daily Standup" in ln and "Voice Input" in ln for ln in out.splitlines())
+        assert "╭─ Storage" in out and "╭─ Daily Standup" in out
+        # Side by side: the first box of each column lands on the same rendered row.
+        assert any("Storage" in ln and "Daily Standup" in ln for ln in out.splitlines())
 
     def test_narrow_terminal_falls_back_to_one_column(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=70, height=44, active_tab=2)
+        panel = _build_settings_screen({}, width=70, height=44, active_tab=1)
         out = self._text(panel, width=70, height=44)
-        # One box per row — a column would fall below _SETTINGS_MIN_BOX_W otherwise.
-        assert not any("Daily Standup" in ln and "Voice Input" in ln for ln in out.splitlines())
+        # One column — a second would fall below _SETTINGS_MIN_BOX_W.
+        assert len(panel._box_cols) == 1
+        assert not any("Storage" in ln and "Daily Standup" in ln for ln in out.splitlines())
 
     def test_focused_section_and_value_are_marked(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2, sel_box=3, sel_field=1)
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=4, sel_field=1)
         out = self._text(panel, width=130, height=44)
         marked = [ln for ln in out.splitlines() if "▸" in ln]
         assert len(marked) == 1  # exactly one value carries the marker
@@ -558,19 +558,34 @@ class TestSettingsScreen:
     def test_navigation_map_is_published(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({}, width=130, height=44, active_tab=2)
-        # Four sections in two rows of two, and every editable env is reachable.
-        assert panel._box_grid == [[0, 1], [2, 3]]
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        # Five sections dealt into two balanced columns, nothing in the wide tail.
+        assert sorted(b for col in panel._box_cols for b in col) == [0, 1, 2, 3, 4]
+        assert len(panel._box_cols) == 2 and not panel._box_tail
         envs = [f[0] for box in panel._box_fields for f in box]
         assert "LOG_LEVEL" in envs and "AWS_REGION" in envs
         assert "_config_path" not in envs  # read-only rows aren't navigable
 
-    def test_wide_sections_get_a_row_of_their_own(self):
+    def test_boxes_are_not_padded_to_a_shared_height(self):
+        # The columns stack naturally-sized boxes rather than padding every box in a
+        # row up to the tallest: a one-row section closes on the very next line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        lines = self._text(panel, width=130, height=44).splitlines()
+        i = next(n for n, ln in enumerate(lines) if "Data Directory" in ln)
+        # Storage holds exactly one row, so its bottom border is the next line —
+        # even though Daily Standup, beside it, runs six rows deep.
+        assert "╰" in lines[i + 1][:60]
+        assert "Daily Standup" in lines[i - 1]  # they really are side by side
+
+    def test_wide_sections_stack_below_the_columns(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
-        # LLM Provider in the grid, then Jira/Azure/GitHub/Notion full width below.
-        assert panel._box_grid == [[0], [1], [2], [3], [4]]
+        # LLM Provider is the only column box; the token-help sections go full width.
+        assert panel._box_cols == [[0]]
+        assert panel._box_tail == [1, 2, 3, 4]
 
     def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -645,19 +660,22 @@ class TestSettingsScreen:
         return buf.getvalue()
 
     def test_storage_section_rendered(self):
-        # Storage is tab index 1 — render that tab to see its rows.
+        # Storage is one row, so it folded into System (tab index 1) rather than
+        # keeping a tab to itself; the data dir is edited like any other value.
         output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=1)
         assert "Data Directory" in output
         assert "/data/yeaboi" in output
 
     def test_data_dir_default_label_when_unset(self):
-        output = self._render({}, height=40, active_tab=1)  # Storage tab
+        output = self._render({}, height=40, active_tab=1)  # System tab
         assert "~/.yeaboi (default)" in output
 
-    def test_storage_tab_hint_mentions_data_dir(self):
-        # Storage tab's Enter action edits the data directory — the hint says so.
-        output = self._render({}, height=40, active_tab=1)  # Storage tab
-        assert "data dir" in output.lower()
+    def test_data_dir_is_an_editable_row(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        envs = [f[0] for box in panel._box_fields for f in box]
+        assert "YEABOI_HOME" in envs  # reachable by keyboard and click
 
     def test_status_message_spoken_by_the_duck(self):
         # The transient status no longer takes a body row: it's handed to the
@@ -860,19 +878,22 @@ class TestSettingsFocusMove:
     then a full-width one — the shape the Credentials/System tabs produce.
     """
 
-    GRID = [[0, 1], [2, 3], [4]]
+    COLS = [[0, 2, 3], [1, 4]]  # a taller left column and a shorter right one
+    TAIL = [5, 6]  # full-width boxes stacked underneath
     FIELDS = [
         [("A", "a", False), ("B", "b", False)],
         [],  # a section with nothing editable
         [("C", "c", False)],
         [("D", "d", False)],
         [("E", "e", False)],
+        [("F", "f", False)],
+        [("G", "g", False)],
     ]
 
-    def _move(self, key, box, field):
+    def _move(self, key, box, field, *, tail=None):
         from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
 
-        return settings_focus_move(key, self.GRID, self.FIELDS, box, field)
+        return settings_focus_move(key, self.COLS, self.TAIL if tail is None else tail, self.FIELDS, box, field)
 
     def test_down_enters_the_grid_from_the_tab_bar(self):
         assert self._move("down", -1, -1) == (0, -1)
@@ -882,17 +903,31 @@ class TestSettingsFocusMove:
         # it did they must not steal focus.
         assert self._move("left", -1, -1) == (-1, -1)
 
-    def test_arrows_walk_the_box_grid(self):
-        assert self._move("right", 0, -1) == (1, -1)
+    def test_up_down_walk_a_column(self):
         assert self._move("down", 0, -1) == (2, -1)
-        assert self._move("right", 1, -1) == (1, -1)  # clamped at the row end
-        assert self._move("down", 4, -1) == (4, -1)  # clamped at the last row
+        assert self._move("down", 2, -1) == (3, -1)
+        assert self._move("up", 3, -1) == (2, -1)
 
-    def test_a_narrow_column_falls_back_onto_a_wide_row(self):
-        # Box 3 is the right-hand box of row 1; the row below holds only box 4.
-        assert self._move("down", 3, -1) == (4, -1)
+    def test_left_right_cross_columns_keeping_the_depth(self):
+        assert self._move("right", 0, -1) == (1, -1)
+        assert self._move("left", 4, -1) == (2, -1)  # same depth in the left column
+        assert self._move("right", 3, -1) == (4, -1)  # clamped to the shorter column
+        assert self._move("left", 0, -1) == (0, -1)  # already leftmost
 
-    def test_up_off_the_top_row_returns_to_the_tab_bar(self):
+    def test_down_off_the_last_box_enters_the_wide_tail(self):
+        assert self._move("down", 3, -1) == (5, -1)
+        assert self._move("down", 5, -1) == (6, -1)
+        assert self._move("down", 6, -1) == (6, -1)  # clamped at the bottom
+
+    def test_the_tail_hands_focus_back_up_to_the_columns(self):
+        assert self._move("up", 5, -1) == (3, -1)  # bottom of the first column
+        assert self._move("up", 6, -1) == (5, -1)
+        assert self._move("left", 6, -1) == (6, -1)  # a wide box has no neighbours
+
+    def test_without_a_tail_the_last_box_holds(self):
+        assert self._move("down", 3, -1, tail=[]) == (3, -1)
+
+    def test_up_off_the_top_returns_to_the_tab_bar(self):
         assert self._move("up", 1, -1) == (-1, -1)
 
     def test_arrows_walk_values_once_a_box_is_open(self):
@@ -909,4 +944,44 @@ class TestSettingsFocusMove:
     def test_an_empty_grid_clears_the_focus(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
 
-        assert settings_focus_move("down", [], [], 2, 1) == (-1, -1)
+        assert settings_focus_move("down", [], [], [], 2, 1) == (-1, -1)
+
+
+class TestSettingsSaveDataDir:
+    """The data directory is typed on the Settings page like every other value.
+
+    Only the *save* still needs a screen of its own — a move-or-leave answer — so
+    ``_settings_save_data_dir`` takes the already-typed path and handles the rest.
+    """
+
+    def _save(self, monkeypatch, tmp_path, value, *, move: bool):
+        import yeaboi.ui.mode_select as ms
+
+        written: list[str] = []
+        moved: list = []
+        monkeypatch.setattr(ms, "_confirm_move_data", lambda *a, **k: move)
+        monkeypatch.setattr("yeaboi.config.set_data_dir", lambda v: written.append(v))
+        monkeypatch.setattr(
+            "yeaboi.paths.move_data_tree", lambda root: (moved.append(root), (True, "Moved 3 item(s)"))[1]
+        )
+        msg = ms._settings_save_data_dir(None, None, None, 0.0, True, value)
+        return msg, written, moved
+
+    def test_leave_persists_without_moving(self, monkeypatch, tmp_path):
+        msg, written, moved = self._save(monkeypatch, tmp_path, str(tmp_path / "d"), move=False)
+        assert written == [str(tmp_path / "d")]
+        assert not moved
+        assert "restart" in msg.lower()
+
+    def test_move_relocates_the_tree_and_reports_it(self, monkeypatch, tmp_path):
+        msg, written, moved = self._save(monkeypatch, tmp_path, str(tmp_path / "d"), move=True)
+        assert moved == [tmp_path / "d"]
+        assert written == [str(tmp_path / "d")]
+        assert "Moved 3 item(s)" in msg
+
+    def test_clearing_targets_the_default_home(self, monkeypatch, tmp_path):
+        from pathlib import Path
+
+        _msg, written, moved = self._save(monkeypatch, tmp_path, "", move=True)
+        assert moved == [Path.home() / ".yeaboi"]
+        assert written == [""]  # '' clears the override back to ~/.yeaboi
