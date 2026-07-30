@@ -535,10 +535,7 @@ def _build_mode_screen(
     # one line so the layout height stays predictable.
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
     inner_w = width - 6  # borders (2) + horizontal padding (4)
-    # Composing widens the right-hand lane (a feedback box you can read what you
-    # typed in); the mode list keeps whatever is left.
-    lane_cols = _compose_lane_cols(inner_w) if compose is not None else _COMPANION_COLS
-    left_w = inner_w - lane_cols if show_companion else inner_w
+    left_w = inner_w - _COMPANION_COLS if show_companion else inner_w
     desc_width = max(10, left_w - len(_PAD) - 2)
 
     # Mode rows
@@ -591,7 +588,7 @@ def _build_mode_screen(
     # exists and there's room for the companion lane — it's more pressing than a
     # tip. When it shows, the bottom-left version row drops its inline advisory so
     # the same news isn't in two places.
-    update_box = _build_update_box(cols=lane_cols) if show_companion else None
+    update_box = _build_update_box(cols=_COMPANION_COLS) if show_companion else None
 
     # Bottom-left version hint (+ upgrade advisory when a newer release exists and
     # the update box isn't already carrying it), opposite the music bar below it.
@@ -623,7 +620,7 @@ def _build_mode_screen(
         # width, the duck + speech bubble get a reserved right-hand lane.
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
-        grid.add_column(width=lane_cols)
+        grid.add_column(width=_COMPANION_COLS)
         grid.add_row(
             left_col,
             _build_companion(
@@ -635,7 +632,6 @@ def _build_mode_screen(
                 companion_intro=companion_intro,
                 extras_reveal=extras_reveal,
                 compose=compose,
-                lane_cols=lane_cols,
                 lane_h=grid_h,
             ),
         )
@@ -771,12 +767,12 @@ def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
     return duck_top - 1 <= row <= duck_bottom + 2  # margin: crown above, caption below
 
 
-# The duck's compose bubble: how tall the typing area may grow before it starts
-# scrolling with the cursor. The lane is bottom-anchored, so a taller bubble eats
-# upward into the update box's space rather than pushing the duck off-screen.
-_COMPOSE_COLS = 62
-_COMPOSE_MIN_LEFT = 46  # columns the mode list still needs beside a wide composer
-_COMPOSE_MAX_ROWS = 10  # typing rows before the box scrolls with the cursor
+# The duck's compose bubble shares the tip bubble's lane width — it must NOT widen
+# it. The split feeds the mode list's own width, so a wider lane reflows every
+# description (growing the left column, which pushes the bottom-anchored duck
+# down) and truncates the bottom-left hint row, both the moment you press `f`.
+# Room is bought vertically instead, which costs the left column nothing.
+_COMPOSE_MAX_ROWS = 12  # typing rows before the box scrolls with the cursor
 _COMPOSE_MIN_ROWS = 2
 # Rows the bubble costs besides its message: two borders, the Type and Area rows
 # and the blank under them. Plus the tail below it and the duck's own height —
@@ -784,13 +780,6 @@ _COMPOSE_MIN_ROWS = 2
 _COMPOSE_CHROME_ROWS = 5
 _COMPOSE_TAIL_ROWS = 1
 _COMPANION_HEAD_H = 7  # rows the head renders at _COMPANION_HEAD_W
-
-
-def _compose_lane_cols(inner_w: int) -> int:
-    """Width of the right-hand lane while composing (the tip lane when too narrow)."""
-    if inner_w - _COMPOSE_COLS >= _COMPOSE_MIN_LEFT:
-        return _COMPOSE_COLS
-    return _COMPANION_COLS
 
 
 def _wrap_with_offsets(text: str, width: int) -> list[tuple[str, int]]:
@@ -828,14 +817,11 @@ def _wrap_with_offsets(text: str, width: int) -> list[tuple[str, int]]:
     return out
 
 
-_COMPOSE_DIM = "rgb(110,110,125)"
 # A thick block down the left of the message area, on the rows that carry text —
 # it reads as a quote gutter, so the typed message is visibly a block of writing
 # rather than loose lines under the two selectors.
 _COMPOSE_GUTTER = "▌ "
 _COMPOSE_GUTTER_STYLE = "rgb(96,112,128)"
-_COMPOSE_TEXT = "rgb(198,198,208)"
-_COMPOSE_ACCENT = "rgb(150,170,200)"
 
 
 def _compose_window(values: tuple[str, ...], idx: int, width: int) -> tuple[int, int]:
@@ -976,11 +962,13 @@ def _build_compose_bubble(compose: dict, *, cols: int, max_rows: int = _COMPOSE_
         # row until the next keypress clears it.
         hint.append(f" {notice} ", style=accent_style)
     else:
+        # Single-space separators: the lane is only 44 wide, and the wider spacing
+        # used to run the last word under the border.
         for i, (key, what) in enumerate((("\u2191/\u2193", "field"), ("Enter", "send"), ("Esc", "cancel"))):
-            hint.append("  \u00b7  " if i else " ", style=_COMPOSE_DIM)
-            hint.append(key, style=_COMPOSE_ACCENT)
-            hint.append(f" {what}", style=_COMPOSE_DIM)
-        hint.append(" ", style=_COMPOSE_DIM)
+            hint.append(" \u00b7 " if i else " ", style=dim_style)
+            hint.append(key, style=accent_style)
+            hint.append(f" {what}", style=dim_style)
+        hint.append(" ", style=dim_style)
     bubble = Panel(
         Group(*rows),
         title=Text(" Tell the duck ", style=text_style),
@@ -1005,7 +993,6 @@ def _build_companion(
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
     compose: dict | None = None,
-    lane_cols: int = _COMPANION_COLS,
     lane_h: int = 40,
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
@@ -1041,19 +1028,16 @@ def _build_companion(
     # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
     # old Align.center(head) exactly). Extras only appear once he's ~settled.
     intro = min(1.0, max(0.0, companion_intro))
-    # Right-anchored on the TIP lane's geometry, so widening the lane for the
-    # composer grows it leftward and the duck never shifts out of his corner.
-    rest_right = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) - (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
-    center_pad = max(0, lane_cols - _COMPANION_HEAD_W - rest_right)
+    center_pad = max(0, (_COMPANION_COLS - _COMPANION_HEAD_W) // 2)
     # Constant-speed (linear) glide: the duck reaches its resting column exactly at
     # intro 1.0, so the last few characters glide in rather than snapping — the
     # ease-out variants reached the spot early (~85%) then sat, which read as the
     # duck jumping the final stretch.
-    left_pad = int(center_pad + (lane_cols - center_pad) * (1.0 - intro))
+    left_pad = int(center_pad + (_COMPANION_COLS - center_pad) * (1.0 - intro))
     # Pad on BOTH sides to the full lane width so the duck's column never shifts when
     # the tip bubble/controls above him appear or disappear (otherwise the group
     # narrows and Align.center re-centres the lone duck).
-    right_pad = max(0, lane_cols - _COMPANION_HEAD_W - left_pad)  # rest_right at intro 1.0
+    right_pad = max(0, _COMPANION_COLS - _COMPANION_HEAD_W - left_pad)
     duck = Padding(head, (0, right_pad, 0, left_pad))
     # Tip/update-box opacity. Normally derived from the duck's entrance (they appear
     # once he's ~settled); ``extras_reveal`` overrides it so the exit transition can
@@ -1070,7 +1054,7 @@ def _build_companion(
         # Composing takes the lane: no tip, no update box competing for height.
         presence = min(1.0, max(0.0, compose.get("presence", 1.0)))
         tail = Align.center(Text("▾", style=lerp_color(presence, BLACK_RGB, (120, 135, 150))))
-        bubble = _build_compose_bubble(compose, cols=lane_cols, max_rows=_compose_message_rows(lane_h))
+        bubble = _build_compose_bubble(compose, cols=_COMPANION_COLS, max_rows=_compose_message_rows(lane_h))
         return Align.center(Group(bubble, tail, duck), vertical="bottom")
     if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the

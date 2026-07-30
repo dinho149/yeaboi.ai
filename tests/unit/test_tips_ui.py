@@ -332,14 +332,37 @@ class TestFeedbackComposeBubble:
         assert "sending…" in out
         assert "Esc cancel" not in out  # the keys don't apply mid-flight
 
-    def test_composer_takes_a_wider_lane_than_the_tip(self):
-        from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _COMPOSE_COLS, _compose_lane_cols
+    def test_the_composer_leaves_the_mode_list_untouched(self):
+        # The lane width feeds the mode list's own width, so widening it for the
+        # composer reflowed every description (pushing the bottom-anchored duck
+        # down) and truncated the bottom-left hint row. Room is bought vertically.
+        import io
 
-        assert _COMPOSE_COLS > _COMPANION_COLS
-        assert _compose_lane_cols(140) == _COMPOSE_COLS
-        # Too narrow to spare the columns → fall back to the tip lane rather than
-        # squeezing the mode list.
-        assert _compose_lane_cols(60) == _COMPANION_COLS
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _build_mode_screen
+
+        def frame(compose):
+            buf = io.StringIO()
+            Console(file=buf, width=140, height=44, legacy_windows=False).print(
+                _build_mode_screen(2, width=140, height=44, shimmer_tick=1.0, desc_reveal=999, compose=compose)
+            )
+            return buf.getvalue().splitlines()
+
+        plain = frame(None)
+        composing = frame(self._state(buf="a message long enough to wrap over several lines in the box"))
+        left = 140 - _COMPANION_COLS - 3  # panel border + padding
+        assert [ln[:left] for ln in plain] == [ln[:left] for ln in composing]
+        # …including the duck, who is bottom-anchored in that same grid row.
+        assert next(i for i, ln in enumerate(plain) if "▄▀▀▀▀▄" in ln) == next(
+            i for i, ln in enumerate(composing) if "▄▀▀▀▀▄" in ln
+        )
+
+    def test_the_hint_fits_inside_the_bubble(self):
+        # The subtitle sits on the bottom border of a 44-column lane; too long and
+        # its last word is cropped by the corner.
+        out = self._render(self._state())
+        assert "Esc cancel" in out
 
 
 class TestComposeWrap:
@@ -448,9 +471,7 @@ class TestComposeSelectorWindow:
         from yeaboi.ui.mode_select.screens._screens import _compose_chips
 
         # The styles are passed in because the whole bubble fades on entry/exit.
-        return _compose_chips(
-            self.AREAS, idx, True, width, dim="dim", text="white", accent="cyan"
-        ).plain
+        return _compose_chips(self.AREAS, idx, True, width, dim="dim", text="white", accent="cyan").plain
 
     def test_everything_fits_when_there_is_room(self):
         from yeaboi.ui.mode_select.screens._screens import _compose_window
