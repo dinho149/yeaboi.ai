@@ -70,13 +70,22 @@ def lerp_color(t: float, from_rgb: tuple[int, int, int], to_rgb: tuple[int, int,
 def shimmer_style(base_color: str, char_index: int, total_chars: int, tick: float) -> str:
     """Return a per-character style that produces a traveling highlight shimmer.
 
-    A bright white 'hotspot' sweeps across the text. Characters far from the
-    hotspot use the base colour; those near it blend towards white.
+    A bright white 'hotspot' sweeps across the text once, then the title rests at
+    its base colour for a beat before the next wave — a slow, punctuated cadence
+    rather than a continuous scroll. Characters far from the hotspot use the base
+    colour; those near it blend towards white.
     """
-    speed = 0.6  # full sweeps per second
-    hotspot = (tick * speed) % 1.0
+    period = 3.1  # seconds per cycle: one sweep (~2.0s) + a shorter rest (~1.1s)
+    sweep_frac = 0.64  # fraction of the cycle the hotspot is travelling
+    phase = (tick % period) / period
     pos = char_index / max(total_chars - 1, 1)
-    dist = min(abs(pos - hotspot), 1.0 - abs(pos - hotspot))
+    if phase < sweep_frac:
+        # Travel from just before the first glyph to just past the last, so the
+        # wave fully enters and fully exits (no wrap-around seam).
+        hotspot = -0.15 + (phase / sweep_frac) * 1.3
+        dist = abs(pos - hotspot)  # linear (non-wrapping) distance
+    else:
+        dist = 1.0  # resting beat: hotspot parked off-text, title at base colour
     intensity = math.exp(-(dist * dist) / 0.005)
     r, g, b = COLOR_RGB.get(base_color, (180, 180, 180))
     r2 = int(r + (255 - r) * intensity)

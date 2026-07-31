@@ -57,9 +57,14 @@ class TestTheme:
 
         assert Theme().bg == NEUTRAL_BG
 
-    def test_mode_themes_carry_dark_tints(self):
-        assert ANALYSIS_THEME.bg == "rgb(9,23,19)"
-        assert PLANNING_THEME.bg == "rgb(13,17,30)"
+    def test_mode_themes_share_neutral_background(self):
+        # Per-mode background tints were dropped for one consistent backdrop; every
+        # mode now shares the neutral base (accents stay per-mode).
+        from yeaboi.ui.shared._components import NEUTRAL_BG
+
+        assert ANALYSIS_THEME.bg == NEUTRAL_BG
+        assert PLANNING_THEME.bg == NEUTRAL_BG
+        assert ANALYSIS_THEME.accent != PLANNING_THEME.accent
 
 
 class TestBuildPagePanel:
@@ -249,17 +254,26 @@ class TestUsageScreen:
         assert isinstance(r1, Panel)
         assert isinstance(r2, Panel)
 
-    def test_back_button(self):
+    def test_back_and_copy_moved_to_chrome_tabs(self):
+        """Both affordances now live in the bottom-left chrome (the back tab plus a
+        sibling 'c copy' tab), so the page body carries no inline hint — it only
+        flags _copy_tab for the chrome to pick up."""
         from io import StringIO
 
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
 
-        result = _build_usage_screen({}, width=100, height=40)
+        result = _build_usage_screen({}, width=100, height=40, actions=["Copy", "Back"])
+        assert result._copy_tab is True  # chrome draws the copy tab
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
-        assert "Back" in buf.getvalue()
+        out = buf.getvalue()
+        assert "back" not in out.lower()  # back tab covers it
+        assert "copy" not in out.lower()  # copy tab covers it
+
+        # Without a Copy action there's no copy tab.
+        assert _build_usage_screen({}, width=100, height=40, actions=["Back"])._copy_tab is False
 
     def test_uses_amber_theme(self):
         """Usage screen should use the amber USAGE_THEME, not green or blue."""
@@ -431,19 +445,21 @@ class TestSettingsScreen:
         # Should show partial mask
         assert "\u2022" in output  # bullet mask chars
 
-    def test_configure_and_back_buttons(self):
-        from io import StringIO
-
-        from rich.console import Console
-
+    def test_tab_bar_rendered_and_hint_moved_to_chrome(self):
+        # The old action-button row was replaced by a tab bar (grouped sections).
+        # The context hint no longer takes a body row — it's handed to the bottom
+        # pocket as a chrome tab via _hint_tab ('Esc back' dropped earlier, since
+        # the app-wide back tab covers going back).
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen({}, width=100, height=40)
-        buf = StringIO()
-        Console(file=buf, width=100, force_terminal=False).print(result)
-        output = buf.getvalue()
-        assert "Configure" in output
-        assert "Back" in output
+        output = self._render({}, height=40)
+        for tab in ("Credentials", "System"):
+            assert tab in output
+        assert "switch" not in output  # not in the body any more
+
+        panel = _build_settings_screen({}, width=100, height=40)
+        assert "switch tab" in panel._hint_tab.plain
+        assert "configure" in panel._hint_tab.plain
 
     def test_scrollable(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -453,69 +469,302 @@ class TestSettingsScreen:
         assert isinstance(r1, Panel)
         assert isinstance(r2, Panel)
 
-    @staticmethod
-    def _render(data: dict, *, height: int = 60) -> str:
+    def test_only_active_tab_section_renders(self):
+        # Credentials groups LLM + integrations (Anthropic key AND Jira); the System
+        # tab shows Advanced (Log Level) and none of the credential rows.
+        creds = self._render({"JIRA_BASE_URL": "https://org.atlassian.net"}, height=80, active_tab=0)
+        assert "Anthropic Key" in creds
+        assert "org.atlassian.net" in creds  # Jira grouped under Credentials
+        system = self._render({}, height=40, active_tab=1)
+        assert "Log Level" in system  # Advanced section
+        assert "Anthropic Key" not in system  # credentials are on another tab
+
+    def test_system_tab_hint_mentions_log_level(self):
+        output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
+        assert "log level" in output.lower()
+
+    def test_settings_tab_action_mapping(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, settings_tab_action
+
+        assert settings_tab_action(_SETTINGS_TABS.index("System")) == "loglevel"
+        assert settings_tab_action(_SETTINGS_TABS.index("Credentials")) == "setup"
+
+    def test_editable_row_regions_map_to_their_env_rows(self):
         from io import StringIO
 
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen(data, width=100, height=height)
+        con = Console(width=120, height=44, file=StringIO())
+        panel = _build_settings_screen({}, width=120, height=44, active_tab=0)  # Credentials
+        assert panel._row_regions  # editable rows attached
+        lines = con.render_lines(panel, con.options, pad=True)
+        envs = {env for _, _, _, env, _, _ in panel._row_regions}
+        assert "LLM_PROVIDER" in envs and "ANTHROPIC_API_KEY" in envs
+        # Sections are boxed and can sit side by side, so a region carries a column
+        # range too — the label must fall inside that exact rect, not just the row.
+        for abs_row, x0, x1, _env, label, _masked in panel._row_regions:
+            row_text = "".join(s.text for s in lines[abs_row - 1])
+            assert label in row_text[x0 - 1 : x1]
+
+    def test_editing_renders_buffer_in_row(self):
+        # When a row is being edited in place, its value is replaced by the live
+        # buffer (not the stored value or "not set").
+        out = self._render(
+            {"ANTHROPIC_API_KEY": ""}, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", "sk-typed", 8)
+        )
+        assert "Anthropic Key: sk-typed" in " ".join(out.split())
+
+    def test_readonly_rows_have_no_region(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        # The System tab's "Config File" and "Dictation" rows are read-only.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=120, height=60, active_tab=1)
+        labels = {label for _, _, _, _, label, _ in panel._row_regions}
+        assert "Config File" not in labels
+        assert "Log Level" in labels  # but editable rows on the same tab do have regions
+
+    def test_sections_render_as_boxes_in_a_grid(self):
+        # Each heading section is its own rounded box (the Usage dashboard's
+        # treatment): the heading becomes the box title, and on a wide terminal two
+        # narrow sections share a row.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)  # System
+        out = self._text(panel, width=130, height=44)
+        assert "╭─ Storage" in out and "╭─ Daily Standup" in out
+        # Side by side: the first box of each column lands on the same rendered row.
+        assert any("Storage" in ln and "Daily Standup" in ln for ln in out.splitlines())
+
+    def test_narrow_terminal_falls_back_to_one_column(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=70, height=44, active_tab=1)
+        out = self._text(panel, width=70, height=44)
+        # One column — a second would fall below _SETTINGS_MIN_BOX_W.
+        assert len(panel._box_cols) == 1
+        assert not any("Storage" in ln and "Daily Standup" in ln for ln in out.splitlines())
+
+    def test_focused_value_gets_a_full_width_bar(self):
+        # Focus is a background stripe, not a leading glyph — a marker would need a
+        # gutter on every row, which reads as a stray indent inside the box.
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _SETTINGS_FOCUS_BG,
+            _build_settings_screen,
+        )
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1, sel_box=4, sel_field=1)
+        rows = self._segments(panel, width=130, height=44)
+        barred = [r for r in rows if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)]
+        assert len(barred) == 1  # exactly one value is highlighted
+        line = "".join(s.text for s in barred[0])
+        assert "Session Prune Days" in line
+        # The stripe runs the whole inner width, so it reads as a bar not a smear.
+        lit = sum(s.cell_length for s in barred[0] if _SETTINGS_FOCUS_BG in str(s.style))
+        assert lit > 30
+
+    def test_rows_sit_flush_against_the_box_padding(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        line = next(ln for ln in self._text(panel, width=130, height=44).splitlines() if "Data Directory" in ln)
+        # One space between the box border and the label — no marker gutter.
+        assert "│ Data Directory" in line
+
+    def test_navigation_map_is_published(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        # Five sections dealt into two balanced columns, nothing in the wide tail.
+        assert sorted(b for col in panel._box_cols for b in col) == [0, 1, 2, 3, 4]
+        assert len(panel._box_cols) == 2 and not panel._box_tail
+        envs = [f[0] for box in panel._box_fields for f in box]
+        assert "LOG_LEVEL" in envs and "AWS_REGION" in envs
+        assert "_config_path" not in envs  # read-only rows aren't navigable
+
+    def test_boxes_keep_their_own_height_and_the_columns_end_level(self):
+        # Boxes are sized to their content (a one-row section is not padded up to
+        # its six-row neighbour), but a short column shares the shortfall between
+        # its boxes so both columns finish on the same line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import (
+            _SETTINGS_MAX_STRETCH,
+            _build_settings_screen,
+        )
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        lines = self._text(panel, width=130, height=44).splitlines()
+        i = next(n for n, ln in enumerate(lines) if "Data Directory" in ln)
+        assert "Daily Standup" in lines[i - 1]  # side by side
+        # Storage holds one row, so it closes within the stretch allowance of it.
+        closes = next(n for n, ln in enumerate(lines[i:], i) if "╰" in ln[:60])
+        assert closes - i <= 1 + _SETTINGS_MAX_STRETCH
+
+        # Both columns' last bottom border lands on the same rendered row. Column 0
+        # is the page frame's own border, so box borders start past it.
+        def _closes(ln, lo, hi):
+            return any(ch == "╰" and lo <= i < hi for i, ch in enumerate(ln))
+
+        last_left = max(n for n, ln in enumerate(lines) if _closes(ln, 3, 60))
+        last_right = max(n for n, ln in enumerate(lines) if _closes(ln, 60, len(ln)))
+        assert last_left == last_right
+
+    def test_wide_sections_stack_below_the_columns(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
+        # LLM Provider is the only column box; the token-help sections go full width.
+        assert panel._box_cols == [[0]]
+        assert panel._box_tail == [1, 2, 3, 4]
+
+    def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        meta: dict = {}
+        # A short page can't show the last section, so focusing it must scroll.
+        panel = _build_settings_screen(
+            {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=4, sel_field=0
+        )
+        assert meta["scroll"] > 0
+        # Notion is the last section; its focused row (highlight and all) is on screen.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_FOCUS_BG
+
+        assert "╭─ Notion" in self._text(panel, width=130, height=22)
+        barred = [
+            r for r in self._segments(panel, width=130, height=22) if any(_SETTINGS_FOCUS_BG in str(s.style) for s in r)
+        ]
+        assert barred and "Token" in "".join(s.text for s in barred[0])
+
+    def test_editing_a_long_value_keeps_the_cursor_visible(self):
+        # The buffer is windowed to the box width, so typing past the right edge
+        # scrolls the value instead of ellipsizing over the cursor.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        buf = "sk-ant-" + "x" * 200
+        panel = _build_settings_screen(
+            {}, width=100, height=40, active_tab=0, editing=("ANTHROPIC_API_KEY", buf, len(buf))
+        )
+        row = next(ln for ln in self._text(panel, width=100, height=40).splitlines() if "Anthropic Key" in ln)
+        assert "…" not in row  # cropped from the left, not ellipsized on the right
+
+    def test_tab_click_regions_map_to_each_tab(self):
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _SETTINGS_TABS, _build_settings_screen
+
+        con = Console(width=120, height=40, file=StringIO())
+        panel = _build_settings_screen({}, width=120, height=40, active_tab=0)
+        # The builder attaches one region per tab: (labels_row, underline_row, sc, ec).
+        assert len(panel._tab_regions) == len(_SETTINGS_TABS)
+        lines = con.render_lines(panel, con.options, pad=True)
+        for i, (lr, ur, sc, ec) in enumerate(panel._tab_regions):
+            # The label's centre column on the labels row falls inside the region.
+            row_text = "".join(s.text for s in lines[lr - 1])
+            cx = (sc + ec) // 2
+            assert row_text[cx - 1] != " "  # a non-blank label cell
+            assert sc <= cx <= ec
+            # Clicks on both the labels row and the underline row belong to the tab.
+            assert lr != ur
+
+    @staticmethod
+    def _render(data: dict, *, height: int = 60, active_tab: int = 0, editing=None) -> str:
+        from io import StringIO
+
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        result = _build_settings_screen(data, width=100, height=height, active_tab=active_tab, editing=editing)
         buf = StringIO()
         Console(file=buf, width=100, force_terminal=False).print(result)
         return buf.getvalue()
 
+    @staticmethod
+    def _segments(panel, *, width: int, height: int) -> list:
+        """Render to styled segment rows — the focus bar is a background colour,
+        so it can only be asserted on styles, never on the plain text."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        con = Console(file=StringIO(), width=width, height=height, force_terminal=True, color_system="truecolor")
+        return con.render_lines(panel, con.options, pad=True)
+
+    @staticmethod
+    def _text(panel, *, width: int, height: int) -> str:
+        """Render an already-built panel at a given size (the boxed-grid layout is
+        width-sensitive, so these tests pick their own width rather than _render's)."""
+        from io import StringIO
+
+        from rich.console import Console
+
+        buf = StringIO()
+        Console(file=buf, width=width, height=height, force_terminal=False).print(panel)
+        return buf.getvalue()
+
     def test_storage_section_rendered(self):
-        # Storage sits below the token sections (each of which now carries a
-        # create-link + scope sub-line), so render tall enough to bring it into
-        # the viewport rather than requiring a scroll.
-        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=80)
-        assert "Storage" in output
+        # Storage is one row, so it folded into System (tab index 1) rather than
+        # keeping a tab to itself; the data dir is edited like any other value.
+        output = self._render({"YEABOI_HOME": "/data/yeaboi"}, height=40, active_tab=1)
+        assert "Data Directory" in output
         assert "/data/yeaboi" in output
 
     def test_data_dir_default_label_when_unset(self):
-        output = self._render({}, height=80)
+        output = self._render({}, height=40, active_tab=1)  # System tab
         assert "~/.yeaboi (default)" in output
 
-    def test_data_dir_button_rendered(self):
-        output = self._render({}, height=40)
-        assert "Data Dir" in output
+    def test_data_dir_is_an_editable_row(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen({}, width=130, height=44, active_tab=1)
+        envs = [f[0] for box in panel._box_fields for f in box]
+        assert "YEABOI_HOME" in envs  # reachable by keyboard and click
 
     def test_allowed_paths_row_rendered(self):
-        output = self._render({"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, height=80)
+        # The fs-sandbox whitelist lives in Storage, which folded into System (tab 1).
+        # Rendered wide: at _render's 100 columns the boxed value would ellipsize.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        panel = _build_settings_screen(
+            {"YEABOI_ALLOWED_PATHS": "/repos/team,/tmp/exports"}, width=160, height=44, active_tab=1
+        )
+        output = self._text(panel, width=160, height=44)
         assert "Allowed Paths" in output
         assert "/repos/team,/tmp/exports" in output
 
     def test_allowed_paths_empty_shows_sandbox_note(self):
-        output = self._render({}, height=80)
-        assert "none — sandboxed to data dir" in output
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-    def test_paths_button_rendered(self):
-        # height=40 keeps the Storage section out of the viewport, so "Paths"
-        # can only come from the action-button row.
-        output = self._render({}, height=40)
-        assert "Paths" in output
+        panel = _build_settings_screen({}, width=160, height=44, active_tab=1)
+        assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
-    def test_status_message_rendered(self):
-        output = self._render({"_message": "Data directory saved — restart yeaboi to fully apply"})
-        assert "restart yeaboi" in output
+    def test_status_message_spoken_by_the_duck(self):
+        # The transient status no longer takes a body row: it's handed to the
+        # companion duck, who says it in a speech bubble (see _duck_say).
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+
+        msg = "Data directory saved — restart yeaboi to fully apply"
+        panel = _build_settings_screen({"_message": msg}, width=100, height=60)
+        assert panel._duck_say == msg
+        assert "restart yeaboi" not in self._render({"_message": msg})  # not in the body
 
     def test_notion_token_masked(self):
-        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"})
+        # Notion lives under the Credentials tab (index 0) now.
+        output = self._render({"NOTION_TOKEN": "ntn_verysecretvalue12345"}, height=80, active_tab=0)
         assert "verysecretvalue12345" not in output
 
     def test_token_help_link_and_scope_rendered(self):
         # Each token row carries a "create: <url> · scope: <...>" sub-line so a
-        # user knows where to make the token and what access to grant it.
-        output = self._render(
-            {"GITHUB_TOKEN": "ghp_x", "AZURE_DEVOPS_TOKEN": "az", "JIRA_API_TOKEN": "jt", "NOTION_TOKEN": "nt"},
-            height=80,
-        )
-        assert "create:" in output
-        assert "scope:" in output
-        assert "github.com/settings/tokens" in output  # creation link
-        assert "Work Items" in output  # Azure scope text
+        # user knows where to make the token and what access to grant it. GitHub +
+        # Azure both live under the Credentials tab; render it tall enough to reach
+        # them, then confirm both help lines appear.
+        out = self._render({"GITHUB_TOKEN": "ghp_x", "AZURE_DEVOPS_TOKEN": "az"}, height=80, active_tab=0)
+        assert "create:" in out
+        assert "scope:" in out
+        assert "github.com/settings/tokens" in out  # GitHub creation link
+        assert "Work Items" in out  # Azure scope text
 
     def test_token_help_url_is_clickable(self):
         # The creation URL is an OSC-8 hyperlink in the read-only dashboard too.
@@ -525,7 +774,7 @@ class TestSettingsScreen:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80)
+        result = _build_settings_screen({"GITHUB_TOKEN": "ghp_x"}, width=120, height=80, active_tab=0)
         buf = StringIO()
         Console(file=buf, width=120, force_terminal=True).print(result)
         assert "https://github.com/settings/tokens" in buf.getvalue()
@@ -565,45 +814,35 @@ class TestCollectSettingsData:
         assert data["YEABOI_ALLOWED_PATHS"] == "/a,/b"
 
 
-class TestAllowedPathsFlow:
-    """_settings_allowed_paths_flow — single-line editor of YEABOI_ALLOWED_PATHS."""
+class TestSettingsSaveAllowedPaths:
+    """_settings_save_allowed_paths — the save half of the sandbox whitelist row.
 
-    class _Console:
-        size = (100, 36)
+    The list is typed on the page like every other value, so only the persist
+    step is separate: it needs set_allowed_paths (dedup + the pinned bootstrap
+    .env) rather than the generic apply_config_value, since the whitelist has to
+    survive relocating the very data tree it guards.
+    """
 
-    class _Live:
-        def update(self, _renderable):
-            pass
-
-    def _run(self, monkeypatch, *, current: tuple = (), typed):
+    def _save(self, monkeypatch, typed):
         from yeaboi.ui import mode_select
 
         calls: list = []
-        monkeypatch.setattr("yeaboi.config.get_allowed_paths", lambda: current)
         monkeypatch.setattr("yeaboi.config.set_allowed_paths", calls.append)
-        monkeypatch.setattr(mode_select, "_standup_read_line", lambda *a, **k: typed)
-        msg = mode_select._settings_allowed_paths_flow(self._Console(), self._Live(), lambda **k: "", 0.001, True)
-        return calls, msg
+        return calls, mode_select._settings_save_allowed_paths(typed)
 
     def test_saves_parsed_comma_list(self, monkeypatch):
-        calls, msg = self._run(monkeypatch, typed=" /repos/one , /repos/two ")
+        calls, msg = self._save(monkeypatch, " /repos/one , /repos/two ")
         assert calls == [["/repos/one", "/repos/two"]]
         assert "2 path" in msg
 
-    def test_dash_clears_whitelist(self, monkeypatch):
-        calls, msg = self._run(monkeypatch, current=("/old",), typed="-")
+    def test_blank_clears_the_whitelist(self, monkeypatch):
+        calls, msg = self._save(monkeypatch, "")
         assert calls == [[]]
         assert "sandboxed" in msg
 
-    def test_esc_aborts_without_saving(self, monkeypatch):
-        calls, msg = self._run(monkeypatch, current=("/old",), typed=None)
-        assert calls == []
-        assert msg == ""
-
-    def test_unchanged_value_is_a_noop(self, monkeypatch):
-        calls, msg = self._run(monkeypatch, current=("/old",), typed="/old")
-        assert calls == []
-        assert msg == ""
+    def test_stray_separators_are_dropped(self, monkeypatch):
+        calls, _ = self._save(monkeypatch, "/a,,  ,/b,")
+        assert calls == [["/a", "/b"]]
 
 
 class TestSettingsTitle:
@@ -646,26 +885,72 @@ class TestLogLevelButton:
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=90)
+        # Log Level lives on the System tab now (Advanced row + Enter action), not a button.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=100, height=40, active_tab=2)
         assert isinstance(panel, Panel)
         console = Console(width=120)
         with console.capture() as cap:
             console.print(panel)
         out = cap.get()
-        assert "Log Level" in out
-        assert "Configure" in out
-        assert "Back" in out
+        assert "Log Level" in out  # the Advanced section's row
+        assert "log level" in out.lower()  # the Enter-action hint
 
-    def test_three_buttons_fit_at_width_80(self):
+    def test_tab_bar_fits_at_width_80(self):
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
-        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, action_sel=1)
+        # The tab bar fits a narrow terminal; all tabs still appear.
+        panel = _build_settings_screen({"_config_path": "/tmp/.env"}, width=80, height=40, active_tab=2)
         console = Console(width=80)
         with console.capture() as cap:
             console.print(panel)
-        assert "Log Level" in cap.get()
+        out = cap.get()
+        assert "Credentials" in out and "System" in out
+
+
+class TestSettingsEditKeypress:
+    def _edit(self, buf="", cur=0):
+        return {"env": "X", "label": "X", "masked": False, "buf": buf, "cur": cur}
+
+    def test_insert_printable_at_cursor(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("ac", 1)
+        _settings_edit_keypress("b", e)
+        assert e["buf"] == "abc" and e["cur"] == 2
+
+    def test_backspace_deletes_before_cursor(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("abc", 2)
+        _settings_edit_keypress("backspace", e)
+        assert e["buf"] == "ac" and e["cur"] == 1
+
+    def test_cursor_movement_clamps(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("abc", 0)
+        _settings_edit_keypress("left", e)
+        assert e["cur"] == 0  # clamped at 0
+        _settings_edit_keypress("end", e)
+        assert e["cur"] == 3
+        _settings_edit_keypress("right", e)
+        assert e["cur"] == 3  # clamped at len
+
+    def test_paste_inserts_text(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("", 0)
+        _settings_edit_keypress("paste:hello", e)
+        assert e["buf"] == "hello" and e["cur"] == 5
+
+    def test_unknown_key_ignored(self):
+        from yeaboi.ui.mode_select import _settings_edit_keypress
+
+        e = self._edit("ab", 1)
+        _settings_edit_keypress("tab", e)  # multi-char special key → ignored
+        assert e["buf"] == "ab" and e["cur"] == 1
 
 
 class TestNextLogLevel:
@@ -687,3 +972,175 @@ class TestNextLogLevel:
 
         assert _next_log_level("CRITICAL") == "ERROR"
         assert _next_log_level("garbage") == "ERROR"
+
+
+class TestSettingsFocusMove:
+    """The settings screen's three-level focus model (tab bar → box → value).
+
+    ``settings_focus_move`` is the whole state machine, kept pure and out of the
+    TUI loop so these can drive it directly. Grid below: two rows of two boxes,
+    then a full-width one — the shape the Credentials/System tabs produce.
+    """
+
+    COLS = [[0, 2, 3], [1, 4]]  # a taller left column and a shorter right one
+    TAIL = [5, 6]  # full-width boxes stacked underneath
+    FIELDS = [
+        [("A", "a", False), ("B", "b", False)],
+        [],  # a section with nothing editable
+        [("C", "c", False)],
+        [("D", "d", False)],
+        [("E", "e", False)],
+        [("F", "f", False)],
+        [("G", "g", False)],
+    ]
+
+    def _move(self, key, box, field, *, tail=None):
+        from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
+
+        return settings_focus_move(key, self.COLS, self.TAIL if tail is None else tail, self.FIELDS, box, field)
+
+    def test_down_enters_the_grid_from_the_tab_bar(self):
+        assert self._move("down", -1, -1) == (0, -1)
+
+    def test_left_right_at_the_tab_bar_are_left_alone(self):
+        # They belong to the tab switch — the loop never routes them here, and if
+        # it did they must not steal focus.
+        assert self._move("left", -1, -1) == (-1, -1)
+
+    def test_up_down_walk_a_column(self):
+        assert self._move("down", 0, -1) == (2, -1)
+        assert self._move("down", 2, -1) == (3, -1)
+        assert self._move("up", 3, -1) == (2, -1)
+
+    def test_left_right_cross_columns_keeping_the_depth(self):
+        assert self._move("right", 0, -1) == (1, -1)
+        assert self._move("left", 4, -1) == (2, -1)  # same depth in the left column
+        assert self._move("right", 3, -1) == (4, -1)  # clamped to the shorter column
+        assert self._move("left", 0, -1) == (0, -1)  # already leftmost
+
+    def test_down_off_the_last_box_enters_the_wide_tail(self):
+        assert self._move("down", 3, -1) == (5, -1)
+        assert self._move("down", 5, -1) == (6, -1)
+        assert self._move("down", 6, -1) == (6, -1)  # clamped at the bottom
+
+    def test_the_tail_hands_focus_back_up_to_the_columns(self):
+        assert self._move("up", 5, -1) == (3, -1)  # bottom of the first column
+        assert self._move("up", 6, -1) == (5, -1)
+        assert self._move("left", 6, -1) == (6, -1)  # a wide box has no neighbours
+
+    def test_without_a_tail_the_last_box_holds(self):
+        assert self._move("down", 3, -1, tail=[]) == (3, -1)
+
+    def test_up_off_the_top_returns_to_the_tab_bar(self):
+        assert self._move("up", 1, -1) == (-1, -1)
+
+    def test_arrows_walk_values_once_a_box_is_open(self):
+        assert self._move("down", 0, 0) == (0, 1)
+        assert self._move("down", 0, 1) == (0, 1)  # clamped at the last value
+        assert self._move("up", 0, 0) == (0, 0)  # clamped at the first
+        assert self._move("left", 0, 1) == (0, 1)  # left/right don't leave the box
+
+    def test_a_stale_box_index_restarts_at_the_first_box(self):
+        # The visible sections change with the tab (and with the provider), so a
+        # carried-over index has to degrade instead of raising.
+        assert self._move("down", 99, 0) == (0, -1)
+
+    def test_an_empty_grid_clears_the_focus(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import settings_focus_move
+
+        assert settings_focus_move("down", [], [], [], 2, 1) == (-1, -1)
+
+
+class TestSettingsSaveDataDir:
+    """The data directory is typed on the Settings page like every other value.
+
+    Only the *save* still needs a screen of its own — a move-or-leave answer — so
+    ``_settings_save_data_dir`` takes the already-typed path and handles the rest.
+    """
+
+    def _save(self, monkeypatch, tmp_path, value, *, move: bool):
+        import yeaboi.ui.mode_select as ms
+
+        written: list[str] = []
+        moved: list = []
+        monkeypatch.setattr(ms, "_confirm_move_data", lambda *a, **k: move)
+        monkeypatch.setattr("yeaboi.config.set_data_dir", lambda v: written.append(v))
+        monkeypatch.setattr(
+            "yeaboi.paths.move_data_tree", lambda root: (moved.append(root), (True, "Moved 3 item(s)"))[1]
+        )
+        msg = ms._settings_save_data_dir(None, None, None, 0.0, True, value)
+        return msg, written, moved
+
+    def test_leave_persists_without_moving(self, monkeypatch, tmp_path):
+        msg, written, moved = self._save(monkeypatch, tmp_path, str(tmp_path / "d"), move=False)
+        assert written == [str(tmp_path / "d")]
+        assert not moved
+        assert "restart" in msg.lower()
+
+    def test_move_relocates_the_tree_and_reports_it(self, monkeypatch, tmp_path):
+        msg, written, moved = self._save(monkeypatch, tmp_path, str(tmp_path / "d"), move=True)
+        assert moved == [tmp_path / "d"]
+        assert written == [str(tmp_path / "d")]
+        assert "Moved 3 item(s)" in msg
+
+    def test_clearing_targets_the_default_home(self, monkeypatch, tmp_path):
+        from pathlib import Path
+
+        _msg, written, moved = self._save(monkeypatch, tmp_path, "", move=True)
+        assert moved == [Path.home() / ".yeaboi"]
+        assert written == [""]  # '' clears the override back to ~/.yeaboi
+
+
+class TestSettingsWrapValue:
+    """Long read-only statuses flow onto continuation lines instead of cropping.
+
+    The voice hint carries an install command, so ellipsizing it mid-command makes
+    the row useless. Wrapping happens at build time (not at render), so one body
+    line stays one rendered row and the box height still adds up.
+    """
+
+    def _wrap(self, value, width=46, head=13):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _wrap_value
+
+        return _wrap_value(value, width, head)
+
+    def test_short_value_stays_on_one_line(self):
+        assert self._wrap("available — faster-whisper") == ["available — faster-whisper"]
+
+    def test_first_line_leaves_room_for_the_label(self):
+        out = self._wrap("unavailable — Install voice extra: uv sync --extra voice")
+        assert len(out) > 1
+        assert len(out[0]) <= 46 - 13  # shares the row with "Dictation:  "
+        assert " ".join(out) == "unavailable — Install voice extra: uv sync --extra voice"
+
+    def test_continuation_lines_get_the_wider_budget(self):
+        # Later lines only lose the 2-column indent, not the label's width.
+        out = self._wrap("unavailable — Install voice extra: uv sync --extra voice")
+        assert all(len(line) <= 46 - 2 for line in out[1:])
+
+    def test_an_overlong_word_keeps_its_line(self):
+        # Breaking before a word wider than the budget would emit an empty line.
+        out = self._wrap("supercalifragilisticexpialidocious", width=20, head=13)
+        assert out[0] == "supercalifragilisticexpialidocious"
+
+
+class TestBackTabVersusEscKey:
+    """A click on the back tab and the Esc key both arrive as "esc".
+
+    Settings uses Esc to pop one focus level at a time, so without a way to tell
+    the two apart the back BUTTON needed three clicks to leave. The input layer
+    records which it was.
+    """
+
+    def test_the_tab_click_is_flagged(self):
+        from yeaboi.ui.shared._input import _esc, esc_came_from_back_tab
+
+        assert _esc(from_tab=True) == "esc"
+        assert esc_came_from_back_tab() is True
+
+    def test_the_key_is_not(self):
+        from yeaboi.ui.shared._input import _esc, esc_came_from_back_tab
+
+        _esc(from_tab=True)  # leave the flag set, so this proves it resets
+        assert _esc() == "esc"
+        assert esc_came_from_back_tab() is False

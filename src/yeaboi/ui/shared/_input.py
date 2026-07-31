@@ -21,11 +21,63 @@ _pushback: list[str] = []
 # Set by _read_key_impl so the public wrapper can distinguish a real terminal
 # event that decoded to "" (for example a consumed mouse click) from a timeout.
 _last_read_had_input = False
+# Set while a field is being typed into, so the app-wide single-letter shortcuts
+# (currently 'c' for the controls drawer) don't steal characters from the buffer.
+_text_entry = False
+
+
+def set_text_entry(active: bool) -> None:
+    """Suppress/restore bare-letter global shortcuts around an in-place text edit.
+
+    Screens that type into a field WHILE showing app-wide chrome (Settings is the
+    first) bracket the edit with this, so pressing 'c' types a 'c'.
+    """
+    global _text_entry
+    _text_entry = active
 
 
 def push_back_key(key: str) -> None:
     """Return a key to the front of the input stream (LIFO with the buffer)."""
     _pushback.append(key)
+
+
+# True when the most recent "esc" event came from clicking the back tab rather
+# than from the Esc key. Screens where Esc pops an internal focus level use this
+# to keep the two apart: the key steps back one level, the tab leaves outright.
+_esc_from_back_tab = False
+
+
+def esc_came_from_back_tab() -> bool:
+    """Whether the last ``"esc"`` was a click on the back tab, not the Esc key."""
+    return _esc_from_back_tab
+
+
+def _esc(*, from_tab: bool = False) -> str:
+    """Return the ``"esc"`` key event, starting the back tab's fold-away first.
+
+    Esc (and a click on the tab itself) is the app-wide go-back gesture, so the
+    tab must begin retracting on the PRESS rather than when the destination screen
+    finally renders — otherwise the fold trails into the next screen's entrance.
+    Latching here covers every screen at once, since all input flows through here.
+
+    ``from_tab`` records which of the two it was, for the screens that care (see
+    esc_came_from_back_tab).
+    """
+    global _esc_from_back_tab
+    _esc_from_back_tab = from_tab
+    try:
+        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar, retract_back_tab
+
+        # An open controls drawer swallows the Esc: it closes the drawer instead of
+        # navigating back, so Esc always means "dismiss what's on top".
+        if controls_open():
+            close_controls()
+            nudge_music_bar()
+            return ""
+        retract_back_tab()
+    except Exception:  # noqa: BLE001 - never let chrome bookkeeping break input
+        pass
+    return "esc"
 
 
 def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
@@ -40,6 +92,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
     Returns standardised key names:
       - "up", "down", "left", "right" — arrow keys
       - "scroll_up", "scroll_down" — mouse wheel events
+      - "click:<x>:<y>" — left-button click at 1-based cell (x, y)
       - "enter", "tab", "esc", "backspace", "clear" — special keys
       - "paste:<content>" — bracketed paste payload
       - single character — printable input
@@ -73,9 +126,12 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
         #   - IEXTEN — extended input, so Ctrl+O (\x0f, VDISCARD on macOS/BSD)
         #     is delivered as a keypress (used for the music channel-switch chord)
         #     rather than swallowed as "discard output".
+        #   - ISIG — signal generation, so every control char arrives as a keypress
+        #     rather than a signal; read_key turns Ctrl+C back into KeyboardInterrupt
+        #     itself, so quitting behaves exactly as it looks.
         new_settings = termios.tcgetattr(fd)
         new_settings[0] &= ~termios.IXON  # input flags (c_iflag)
-        new_settings[3] &= ~termios.IEXTEN  # local flags (c_lflag)
+        new_settings[3] &= ~(termios.IEXTEN | termios.ISIG)  # local flags (c_lflag)
         termios.tcsetattr(fd, termios.TCSANOW, new_settings)
         if timeout is not None:
             try:
@@ -106,7 +162,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             # within microseconds). 100ms is imperceptible to a human
             # but safe for slow terminals / SSH connections.
             if not _select.select([fd], [], [], 0.1)[0]:
-                return "esc"
+                return _esc()
             ch2 = _read1()
             if ch2 == "\x7f":
                 # Alt+Backspace → delete word backward
@@ -212,15 +268,54 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                     parts = sgr_buf.split(";")
                     # Only act on press events — release events ('m') for
                     # scroll wheel would double-count each tick, causing jumps.
-                    if is_press and len(parts) >= 1:
+                    if is_press and len(parts) >= 3:
                         try:
                             button = int(parts[0])
+                            cx = int(parts[1])
+                            cy = int(parts[2])
                         except ValueError:
                             return ""
                         if button == 64:
                             return "scroll_up"
                         if button == 65:
                             return "scroll_down"
+                        # Plain left-button press (button 0, no motion/modifier
+                        # flag bits set) → a click. Return the 1-based cell the
+                        # pointer is over so a screen can hit-test it against its
+                        # own layout (e.g. click-to-select a menu item). Middle/
+                        # right clicks and modified clicks are still swallowed.
+                        if button == 0:
+                            # A click on the app-wide "go back" tab (bottom-left)
+                            # is Esc, so the tab works on every screen without
+                            # per-loop wiring. Lazy import avoids an import cycle.
+                            from yeaboi.ui.shared._music_bar import back_region, chrome_tab_regions
+
+                            _br = back_region()
+                            if _br is not None and _br[0] <= cx <= _br[2] and _br[1] <= cy <= _br[3]:
+                                # Clicking the tab IS Esc (and folds it away) — flagged
+                                # so a screen can tell the button from the key.
+                                return _esc(from_tab=True)
+                            for _x0, _y0, _x1, _y1, _key in chrome_tab_regions():
+                                if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
+                                    return _key  # e.g. the 'c copy' tab presses 'c'
+                            # The persistent controls tab toggles its drawer.
+                            from yeaboi.ui.shared._music_bar import controls_region, toggle_controls
+
+                            _cr = controls_region()
+                            if _cr is not None and _cr[0] <= cx <= _cr[2] and _cr[1] <= cy <= _cr[3]:
+                                toggle_controls()
+                                return ""
+                            # Poke the companion duck → the double-shades gag, the
+                            # same reward the welcome screen gives, on every page
+                            # he rides along on.
+                            from yeaboi.ui.shared._music_bar import duck_region, nudge_music_bar, poke_duck
+
+                            _dr = duck_region()
+                            if _dr is not None and _dr[0] <= cx <= _dr[2] and _dr[1] <= cy <= _dr[3]:
+                                poke_duck()
+                                nudge_music_bar()
+                                return ""
+                            return f"click:{cx}:{cy}"
                     return ""  # consume releases & other mouse events silently
                 # Legacy mouse: \x1b[M followed by 3 raw bytes (button, x, y).
                 # Button byte 96 = scroll up (64+32), 97 = scroll down (65+32).
@@ -266,7 +361,7 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                 # Unknown CSI sequence — drain and ignore
                 _read_available()
                 return ""
-            return "esc"
+            return _esc()
         if ch in ("\r", "\n"):
             return "enter"
         if ch == "\t":
@@ -321,8 +416,21 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     if _last_read_had_input and handle_input_event():
         return ""
 
+    # ISIG is off (see enter_raw_mode), so Ctrl+C arrives here as a keypress —
+    # turn it back into the interrupt it looks like.
     if key == "ctrl+c":
         raise KeyboardInterrupt
+
+    # 'c' toggles the app-wide controls drawer, but ONLY where its tab is showing
+    # and nothing is being typed into — a bare letter must not shadow a page's own
+    # 'c' (copy on Usage, changelog on the welcome screen) or eat a character.
+    if key == "c" and not _text_entry:
+        from yeaboi.ui.shared._music_bar import controls_tab_visible, nudge_music_bar, toggle_controls
+
+        if controls_tab_visible():
+            toggle_controls()
+            nudge_music_bar()  # redraw immediately so it opens on the keypress
+            return ""
 
     # Hidden app-wide preview shortcut: Y for Yeaboi. It deliberately has no
     # on-screen hint, but uses the same rendering/wake path as genuine idleness.
@@ -365,10 +473,11 @@ def enter_raw_mode(stdin=None) -> None:
         fd = (stdin or sys.stdin).fileno()
         _saved_term_settings = termios.tcgetattr(fd)
         tty.setcbreak(fd)  # disables ICANON + ECHO
-        # Mirror read_key: drop IXON/IEXTEN so Ctrl+S / Ctrl+O reach the app.
+        # Mirror read_key: drop IXON/IEXTEN/ISIG so Ctrl+S / Ctrl+O / Ctrl+C reach
+        # the app rather than the line discipline (read_key re-raises Ctrl+C).
         m = termios.tcgetattr(fd)
         m[0] &= ~termios.IXON
-        m[3] &= ~termios.IEXTEN
+        m[3] &= ~(termios.IEXTEN | termios.ISIG)
         termios.tcsetattr(fd, termios.TCSANOW, m)
     except Exception:  # noqa: BLE001 - not a tty (pipe, redirect, CI); leave as-is
         _saved_term_settings = None

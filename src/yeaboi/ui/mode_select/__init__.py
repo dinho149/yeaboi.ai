@@ -45,10 +45,20 @@ from yeaboi.ui.mode_select.screens._project_list_screen import (  # noqa: F401
 # Re-exports for backwards compatibility and test imports.
 from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     _INTAKE_CARDS,
+    _MIN_HEIGHT,
+    _MIN_WIDTH,
     _MODE_CARDS,
     _OFFLINE_CARDS,
+    _SWEEP_ROW_WEIGHT,
     _build_mode_screen,
     _build_slide_frame,
+    _build_too_small_screen,
+    _build_update_screen,
+    duck_hit,
+    mode_at_row,
+    mode_title_widths,
+    selected_title_offset,
+    welcome_shows_companion,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
     _build_export_success_screen,
@@ -60,15 +70,16 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
 )
 from yeaboi.ui.shared._animations import (
     COLOR_RGB,
-    FADE_IN_LEVELS,
     FADE_OUT_LEVELS,
     FRAME_TIME_60FPS,
     ease_out_cubic,
 )
+from yeaboi.ui.shared._click import button_click, parse_click
+from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
 from yeaboi.ui.shared._music_bar import make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
-from yeaboi.ui.splash import play_wordmark_intro
+from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +91,16 @@ logger = logging.getLogger(__name__)
 _DESC_SCROLL_SPEED = 200  # characters per second for typewriter reveal
 _HEADER_SUB_SPEED = 45  # characters per second for the page subtitle typewriter reveal
 _FRAME_TIME = FRAME_TIME_60FPS
+# Menu intro sweep speed, in diagonal-front units per second (see _SWEEP_ROW_WEIGHT
+# and _build_mode_row). Higher = faster wipe-in of the whole menu.
+_MENU_SWEEP_SPEED = 150.0
+# Companion entrance: after the menu wipes in, the duck glides in from the right
+# over this many seconds, then the tip bubble + update box fade in above him.
+_COMPANION_INTRO_SECONDS = 0.55
+# Returning from a sub-page, the entrance starts this far along so the duck's first
+# column lines up with his sub-page corner and he slides back from there into the
+# menu spot (rather than re-entering from off-screen).
+_COMPANION_RETURN_START = 0.28
 
 
 def _run_output_share_flow(
@@ -190,17 +211,25 @@ def _confirm_ticket_generation(
 
     logger.info("Analysis: showing ticket-generation confirmation")
     sel = 0  # 0 = Generate tickets, 1 = Not now
+    _labels = ["Generate tickets", "Not now"]
     while True:
         w, h = console.size
-        live.update(
-            _build_generate_confirm_screen(
-                width=w,
-                height=h,
-                action_sel=sel,
-                subtitle=subtitle,
-            )
+        _panel = _build_generate_confirm_screen(
+            width=w,
+            height=h,
+            action_sel=sel,
+            subtitle=subtitle,
         )
+        live.update(_panel)
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
+            else:
+                continue  # click missed the buttons — ignore it
         if k == "left":
             sel = max(0, sel - 1)
         elif k == "right":
@@ -606,8 +635,19 @@ def _run_preview_flow(
     logger.info("Preview: entering Instructions page")
     if last_page not in ("epic", "stories", "tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -661,16 +701,15 @@ def _run_preview_flow(
                 _save_ana({"instructions": _instr, "last_page": "instructions"}, "instructions")
                 return
             w, h = console.size
-            live.update(
-                _build_instructions_review_screen(
-                    _instr,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                )
+            _panel = _build_instructions_review_screen(
+                _instr,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
             )
+            live.update(_panel)
 
     # ── Page 2: Epic ──────────────────────────────────────────────
     logger.info("Preview: entering Epic page")
@@ -699,8 +738,19 @@ def _run_preview_flow(
 
     if last_page not in ("stories", "tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -735,17 +785,16 @@ def _run_preview_flow(
                 _save_ana({"instructions": _instr, "sample_epic": _epic, "last_page": "epic"}, "epic")
                 return
             w, h = console.size
-            live.update(
-                _build_sample_epic_screen(
-                    _epic,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    examples=ta_examples,
-                )
+            _panel = _build_sample_epic_screen(
+                _epic,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                examples=ta_examples,
             )
+            live.update(_panel)
 
     # ── Page 3: Stories ───────────────────────────────────────────
     logger.info("Preview: entering Stories page")
@@ -780,8 +829,19 @@ def _run_preview_flow(
 
     if last_page not in ("tasks", "sprint"):
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -829,18 +889,17 @@ def _run_preview_flow(
                 )
                 return
             w, h = console.size
-            live.update(
-                _build_sample_stories_screen(
-                    _stories,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    epic_title=_epic.get("title", ""),
-                    examples=ta_examples,
-                )
+            _panel = _build_sample_stories_screen(
+                _stories,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                epic_title=_epic.get("title", ""),
+                examples=ta_examples,
             )
+            live.update(_panel)
 
     # ── Page 4: Tasks ─────────────────────────────────────────────
     logger.info("Preview: entering Tasks page")
@@ -876,8 +935,19 @@ def _run_preview_flow(
 
     if last_page != "sprint":
         scroll, sel = 0, 0
+        _panel = None  # most recently rendered page panel, for click hit-testing
+        _labels = ["Accept", "Edit", "Regenerate", "Export"]
         while True:
             k = _rk()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _panel is None:
+                    continue
+                _idx = button_click(console, _panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, _rk)
                 if _ns == scroll:
@@ -940,17 +1010,16 @@ def _run_preview_flow(
                 )
                 return
             w, h = console.size
-            live.update(
-                _build_sample_tasks_screen(
-                    _tasks,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=h,
-                    action_sel=sel,
-                    stories=_stories,
-                )
+            _panel = _build_sample_tasks_screen(
+                _tasks,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=h,
+                action_sel=sel,
+                stories=_stories,
             )
+            live.update(_panel)
 
     # ── Page 5: Sprint ────────────────────────────────────────────
     logger.info(
@@ -1075,8 +1144,19 @@ def _run_sprint_review(
     scroll = 0
     sel = 0
     _scroll_meta: dict = {}
+    _panel = None  # most recently rendered sprint panel, for click hit-testing
+    _labels = ["Done", "Regenerate", "Export"]
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _panel is None:
+                continue
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
@@ -1102,17 +1182,16 @@ def _run_sprint_review(
         elif k in ("esc", "q"):
             return False  # Quit — keep last_page="sprint" so it stays resumable
         w, h = console.size
-        live.update(
-            _build_sample_sprint_screen(
-                sprint,
-                sample_stories,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-            )
+        _panel = _build_sample_sprint_screen(
+            sprint,
+            sample_stories,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=h,
+            action_sel=sel,
         )
+        live.update(_panel)
 
 
 def _collect_usage_data() -> dict:
@@ -1328,38 +1407,47 @@ def _launch_setup_wizard(console: Console, live) -> None:
         live.start()
 
 
-def _settings_data_dir_flow(console: Console, live, read_key, frame_time, supports_timeout) -> str:
-    """Settings editor for the data directory (YEABOI_HOME, persisted to ~/.yeaboi/.env).
+def _settings_edit_keypress(sk: str, edit: dict) -> None:
+    """Apply one keystroke to an in-place settings edit buffer (mutates ``edit``).
 
-    One prompt for the path (Enter keeps the current value, ``-`` clears back
-    to ~/.yeaboi, Esc aborts). When the location actually changes, a Move/Leave
-    popup offers to relocate the existing tree. Returns a status message for
-    the Settings page ('' when nothing changed).
+    ``edit`` carries ``buf`` (the text) and ``cur`` (cursor index). Handles
+    printable insert, backspace, cursor movement (left/right/home/end) and paste;
+    Enter/Esc are handled by the caller. Unknown keys are ignored.
     """
-    from yeaboi.config import get_data_dir, set_data_dir
-    from yeaboi.paths import move_data_tree
-    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+    buf, cur = edit["buf"], edit["cur"]
+    if sk == "backspace":
+        if cur > 0:
+            edit["buf"], edit["cur"] = buf[: cur - 1] + buf[cur:], cur - 1
+    elif sk == "left":
+        edit["cur"] = max(0, cur - 1)
+    elif sk == "right":
+        edit["cur"] = min(len(buf), cur + 1)
+    elif sk == "home":
+        edit["cur"] = 0
+    elif sk == "end":
+        edit["cur"] = len(buf)
+    elif isinstance(sk, str) and sk.startswith("paste:"):
+        txt = sk[len("paste:") :]
+        edit["buf"], edit["cur"] = buf[:cur] + txt + buf[cur:], cur + len(txt)
+    elif isinstance(sk, str) and len(sk) == 1 and sk.isprintable():
+        edit["buf"], edit["cur"] = buf[:cur] + sk + buf[cur:], cur + 1
 
-    logger.info("Settings: opening Data Dir editor")
-    current = get_data_dir()
-    value = _standup_read_line(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        prompt="Data directory (blank = ~/.yeaboi) — holds exports, logs, sessions",
-        step="Data Dir  ·  '-' clears",
-        default=current,
-        theme=SETTINGS_THEME,
-        title=settings_title(),
-    )
-    if value is None:
-        logger.info("Settings: Data Dir editor cancelled")
-        return ""
-    value = "" if value.strip() == "-" else value.strip()
-    if value == current:
-        return ""
+
+def _settings_save_data_dir(console: Console, live, read_key, frame_time, supports_timeout, value: str) -> str:
+    """Persist an edited data directory (YEABOI_HOME), offering to move the tree.
+
+    The path itself is typed on the Settings page like every other value — this is
+    only the save half: a Move/Leave popup (the one thing that can't be an in-place
+    edit, since relocating sessions/exports/logs needs a decision), then the write.
+    ``value`` is the already-typed override, '' meaning back to ~/.yeaboi. Returns
+    the status message for the duck.
+
+    The write goes through ``set_data_dir``, NOT the generic ``apply_config_value``:
+    YEABOI_HOME lives in the pinned bootstrap ~/.yeaboi/.env, because a config file
+    that can relocate the tree can't live inside the tree it relocates.
+    """
+    from yeaboi.config import set_data_dir
+    from yeaboi.paths import move_data_tree
 
     message = "Data directory saved — restart yeaboi to fully apply"
     new_root = Path(value).expanduser() if value else Path.home() / ".yeaboi"
@@ -1372,37 +1460,176 @@ def _settings_data_dir_flow(console: Console, live, read_key, frame_time, suppor
     return message
 
 
-def _settings_allowed_paths_flow(console: Console, live, read_key, frame_time, supports_timeout) -> str:
-    """Settings editor for the sandbox whitelist (YEABOI_ALLOWED_PATHS, persisted to ~/.yeaboi/.env).
+# How long the duck holds the result in his bubble before it closes itself.
+_COMPOSE_RESULT_SECONDS = 2.6
+# Eased presence (0→1) for the bubble's entrance and exit. Out is faster than in,
+# so dismissing feels immediate while arriving still reads as the duck speaking up.
+_COMPOSE_EASE_IN = 0.30
+_COMPOSE_EASE_OUT = 0.42
 
-    One prompt for the comma-separated path list (Enter keeps the current
-    value, blank or ``-`` clears the whitelist back to sandbox-only, Esc
-    aborts). Returns a status message for the Settings page ('' when nothing
-    changed). Mirrors _settings_data_dir_flow.
+
+_COMPOSE_FIELDS = 3  # 0 type, 1 area, 2 message
+
+
+def _feedback_compose_key(
+    key: str, compose: dict, *, console=None, live=None, read_key=None, render=None
+) -> dict | None:
+    """Apply one keystroke to the duck's feedback bubble.
+
+    Three fields: Type, Area and the message. Up/Down move between them, Left/
+    Right change a selector (or move the cursor in the message), Enter sends from
+    anywhere and Esc cancels. Returns the (mutated) state, or None once the bubble
+    should close. Sending runs on a daemon thread so the welcome screen keeps
+    animating behind it; the caller polls it each frame (_feedback_compose_tick).
+
+    ``console``/``live``/``read_key``/``render`` are only needed for the two rich
+    text affordances the full form has and the bubble keeps: Ctrl+V screenshot
+    paste and double-tap-Space dictation, both of which take over the screen while
+    they run. Omit them and those keys are simply ignored.
     """
-    from yeaboi.config import get_allowed_paths, set_allowed_paths
-    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
+    import threading
 
-    logger.info("Settings: opening Allowed Paths editor")
-    current = ", ".join(get_allowed_paths())
-    value = _standup_read_line(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        prompt="Allowed paths (comma-separated) — folders yeaboi may access outside ~/.yeaboi",
-        step="Allowed Paths  ·  '-' clears",
-        default=current,
-        theme=SETTINGS_THEME,
-        title=settings_title(),
-    )
-    if value is None:
-        logger.info("Settings: Allowed Paths editor cancelled")
-        return ""
-    value = "" if value.strip() == "-" else value.strip()
-    if value == current:
-        return ""
+    from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, submit_feedback
+    from yeaboi.ui.shared._attachments import referenced_images
+
+    if compose.get("closing"):
+        return compose  # already on its way out
+    if compose.get("thread") is not None or compose.get("done_at"):
+        return compose  # in flight or showing its result — keys do nothing
+    compose["notice"] = ""  # a one-off notice lasts until the next keypress
+    if key == "esc":
+        # The bubble eats the key, so the app-wide back tab must not fold away:
+        # the Esc chokepoint armed its retract before we got a say.
+        from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+        cancel_back_retract()
+        set_text_entry(False)
+        logger.info("feedback bubble: cancelled (%d chars)", len(compose["buf"]))
+        compose["closing"] = True
+        return compose
+    if key == "enter":
+        text = compose["buf"].strip()
+        if not text:
+            compose["closing"] = True  # nothing typed — Enter just closes it
+            return compose
+        kind = FEEDBACK_TYPES[compose["kind"] % len(FEEDBACK_TYPES)]
+        area = FEEDBACK_AREAS[compose["area"] % len(FEEDBACK_AREAS)]
+        title = text.splitlines()[0][:80]  # opening line, so the issue is scannable
+        out: list = []
+        compose["status"] = "sending…"
+        images = referenced_images(text, compose.get("attachments") or [])
+        compose["thread"] = threading.Thread(
+            target=lambda: out.append(submit_feedback(kind, area, title, text, images)),
+            daemon=True,
+        )
+        compose["out"] = out
+        compose["thread"].start()
+        set_text_entry(False)
+        logger.info("feedback bubble: submitting %s/%s (%d chars, %d image(s))", kind, area, len(text), len(images))
+        return compose
+    if key in ("up", "down"):
+        step = 1 if key == "down" else -1
+        compose["field"] = (compose.get("field", 2) + step) % _COMPOSE_FIELDS
+        return compose
+    field = compose.get("field", 2)
+    if field < 2:  # a selector: Left/Right cycle it, everything else is ignored
+        if key in ("left", "right"):
+            values = FEEDBACK_TYPES if field == 0 else FEEDBACK_AREAS
+            key_name = "kind" if field == 0 else "area"
+            compose[key_name] = (compose[key_name] + (1 if key == "right" else -1)) % len(values)
+        return compose
+    if key == "ctrl+v" and render is not None:
+        # Screenshot paste, exactly as the full form does it: the image is saved
+        # under ~/.yeaboi/attachments/ and an [image #N] chip goes in the text.
+        from yeaboi.ui.shared._attachments import handle_ctrl_v
+
+        compose["status"] = "pasting image…"
+        render()
+        compose["status"] = ""
+        chip = handle_ctrl_v(
+            compose["attachments"], scope_id="feedback", set_notice=lambda m: compose.__setitem__("notice", m)
+        )
+        if chip:
+            buf, cur = compose["buf"], compose["cur"]
+            compose["buf"], compose["cur"] = buf[:cur] + chip + buf[cur:], cur + len(chip)
+            compose["notice"] = f"screenshot attached as {chip}"
+        return compose
+    _before_cursor = compose["buf"][: compose["cur"]]
+    if key == " " and read_key is not None and compose["dts"].is_double(_before_cursor.endswith(" "), time.monotonic()):
+        # Double-tap Space → dictate. The first space is already in the buffer and
+        # stays as the separator; the transcript is appended after it.
+        from yeaboi.ui.shared._voice_input import record_voice_input
+
+        spoken = record_voice_input(
+            live, console, read_key, lambda status, tick: _compose_voice_frame(compose, status, tick, render)
+        )
+        compose["status"] = ""
+        if spoken:
+            buf, cur = compose["buf"], compose["cur"]
+            text = spoken.replace("\n", " ")
+            compose["buf"], compose["cur"] = buf[:cur] + text + buf[cur:], cur + len(text)
+        return compose
+    _settings_edit_keypress(key, compose)  # shares the settings buffer/cursor editor
+    return compose
+
+
+def _compose_voice_frame(compose: dict, status: str, tick: float, render):
+    """Renderable for the recording/transcribing indicator, shown IN the bubble.
+
+    record_voice_input owns the screen while it runs, so it paints through this —
+    keeping the duck and his bubble on screen instead of a centred popup.
+    """
+    from yeaboi.ui.shared._voice_input import voice_indicator
+
+    _border, line = voice_indicator(status, tick)
+    compose["status"] = line.strip()
+    return render(update=False)
+
+
+def _feedback_compose_tick(compose: dict) -> dict | None:
+    """Advance the bubble one frame: its entrance/exit, and any send in flight.
+
+    Returns None once it has finished fading out. Closing is a two-step — the key
+    handler asks for it, the animation finishes it — so Esc doesn't make the
+    bubble vanish between frames.
+    """
+    closing = compose.get("closing", False)
+    target = 0.0 if closing else 1.0
+    ease = _COMPOSE_EASE_OUT if closing else _COMPOSE_EASE_IN
+    compose["presence"] += (target - compose["presence"]) * ease
+    if closing and compose["presence"] < 0.03:
+        return None  # faded out — drop it
+    thread = compose.get("thread")
+    if thread is not None and not thread.is_alive():
+        result = (compose.get("out") or [None])[0]
+        compose["thread"] = None
+        compose["done_at"] = time.monotonic()
+        set_text_entry(False)
+        if result is None:
+            compose["status"] = "couldn't send — try f again"
+        elif result.ok:
+            compose["status"] = "sent — thank you!"
+        else:
+            compose["status"] = result.message or "opened in your browser"
+        logger.info("feedback bubble: %s", compose["status"])
+    done_at = compose.get("done_at")
+    if done_at and time.monotonic() - done_at > _COMPOSE_RESULT_SECONDS:
+        compose["closing"] = True  # start the fade; the next tick finishes it
+    return compose
+
+
+def _settings_save_allowed_paths(value: str) -> str:
+    """Persist an edited sandbox whitelist (YEABOI_ALLOWED_PATHS).
+
+    The path list is typed on the Settings page like every other value; this is
+    the save half. It goes through ``set_allowed_paths`` rather than the generic
+    ``apply_config_value`` because that setter dedups and writes the pinned
+    bootstrap ~/.yeaboi/.env — the whitelist has to survive relocating the data
+    tree it guards. ``value`` is the raw comma-separated text; returns the status
+    message for the duck.
+    """
+    from yeaboi.config import set_allowed_paths
+
     paths = [p.strip() for p in value.split(",") if p.strip()]
     set_allowed_paths(paths)
     logger.info("Settings: allowed paths whitelist edited → %r", paths)
@@ -1444,14 +1671,22 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
             )
         )
         lines.append(Text(""))
-        btn_top, btn_mid, btn_bot = build_action_buttons(["Move", "Leave"], sel)
+        _labels = ["Move", "Leave"]
+        btn_top, btn_mid, btn_bot = build_action_buttons(_labels, sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
+        _panel = build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h)
+        live.update(_panel)
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
             k = read_key()
         if not k:  # idle tick / consumed mouse event
+            continue
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                return _idx == 0
             continue
         if k == "left":
             sel = 0
@@ -1489,14 +1724,22 @@ def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_
             )
         )
         lines.append(Text(""))
-        btn_top, btn_mid, btn_bot = build_action_buttons(["Stop", "Leave"], sel)
+        _labels = ["Stop", "Leave"]
+        btn_top, btn_mid, btn_bot = build_action_buttons(_labels, sel)
         lines += [btn_top, btn_mid, btn_bot]
-        live.update(build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h))
+        _panel = build_page_panel(Group(*lines), theme=SETTINGS_THEME, border_style=SETTINGS_THEME.sep, height=h)
+        live.update(_panel)
         try:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
         except TypeError:
             k = read_key()
         if not k:  # idle tick / consumed mouse event
+            continue
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is not None:
+                return _idx == 0
             continue
         if k == "left":
             sel = 0
@@ -3283,10 +3526,8 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     )
     scroll = 0
     _scroll_meta: dict = {}
-    actions = ["Copy", "Back"]
-    sel = 0
     message = ""
-    anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
+    anim_start = time.monotonic()  # typewriter subtitle clock
 
     def _render() -> None:
         w, h = console.size
@@ -3300,10 +3541,10 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
                 scroll_meta=_scroll_meta,
                 width=w,
                 height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
+                # No shimmer clock: the title's travelling highlight reads as a
+                # loader on a page that has nothing to load, so it stays solid.
+                shimmer_tick=None,
                 sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                actions=actions,
                 message=message,
             )
         )
@@ -3311,24 +3552,15 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        # Read-only page with no buttons of its own — a click has nothing to hit
+        # here (the app-wide chrome tabs are handled by the shared input layer).
+        if parse_click(k) is not None:
+            continue
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k == "left":
-            sel = max(0, sel - 1)
-        elif k == "right":
-            sel = min(len(actions) - 1, sel + 1)
-        elif k in ("enter", " "):
-            if actions[sel] == "Copy":
-                from yeaboi.changelog import build_changelog_text
-                from yeaboi.clipboard import copy_markdown_status
-
-                logger.info("changelog: Copy pressed")
-                message = copy_markdown_status(build_changelog_text(entries))
-            else:  # Back
-                break
         elif k in ("esc", "q"):
             break
         _render()
@@ -3338,19 +3570,16 @@ def _run_changelog_page(console: Console, live, read_key, frame_time: float, sup
 def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the All Tips page (opened with `a` from mode select).
 
-    Read-only gallery of every tip: Up/Down scrolls, "Copy all" copies the whole
-    list to the clipboard, Enter/Esc/q returns to mode select. Mirrors
-    ``_run_changelog_page``; content comes live from ``get_tips()``.
+    Read-only gallery of every tip: Up/Down scrolls, Enter/Esc/q returns to mode
+    select. Mirrors ``_run_changelog_page`` — including having no actions of its
+    own; content comes live from ``get_tips()``.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_all_tips_screen
 
     logger.info("all tips: page opened")
     scroll = 0
     _scroll_meta: dict = {}
-    actions = ["Copy all", "Back"]
-    sel = 0
-    message = ""
-    anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
+    anim_start = time.monotonic()  # typewriter subtitle clock
 
     def _render() -> None:
         w, h = console.size
@@ -3361,35 +3590,24 @@ def _run_all_tips_page(console: Console, live, read_key, frame_time: float, supp
                 scroll_meta=_scroll_meta,
                 width=w,
                 height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
+                # No shimmer clock — the travelling title highlight reads as a
+                # loader on a page that opens instantly (see the changelog).
+                shimmer_tick=None,
                 sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                actions=actions,
-                message=message,
             )
         )
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        # Read-only page with no buttons of its own — a click has nothing to hit.
+        if parse_click(k) is not None:
+            continue
         if k in SCROLL_KEYS:
             _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
             if _ns == scroll:
                 continue
             scroll = _ns
-        elif k == "left":
-            sel = max(0, sel - 1)
-        elif k == "right":
-            sel = min(len(actions) - 1, sel + 1)
-        elif k in ("enter", " "):
-            if actions[sel] == "Copy all":
-                from yeaboi.clipboard import copy_markdown_status
-                from yeaboi.ui.shared._tips import build_tips_text
-
-                logger.info("all tips: Copy all pressed")
-                message = copy_markdown_status(build_tips_text())
-            else:  # Back
-                break
         elif k in ("esc", "q"):
             break
         _render()
@@ -3427,34 +3645,37 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
         scroll = 0
         _scroll_meta: dict = {}
         anim_start = time.monotonic()
+        _last_panel = None  # most recently rendered feedback panel, for click hit-testing
 
         def _render(*, border_style: str = "") -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
-            live.update(
-                _build_feedback_screen(
-                    view,
-                    kind_idx=kind_idx,
-                    area_idx=area_idx,
-                    title_text=title_text,
-                    description=description,
-                    attachments_count=len(referenced_images(description, attachments)),
-                    field_sel=field_sel,
-                    focus=focus,
-                    action_sel=action_sel,
-                    polished=polished,
-                    result_url=result.url if result else "",
-                    show_open_browser=bool(result and not result.ok and result.url),
-                    status=status,
-                    scroll_offset=scroll,
-                    scroll_meta=_scroll_meta,
-                    width=w,
-                    height=max(10, h - 1),
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                    border_style=border_style,
-                )
+            _last_panel = _build_feedback_screen(
+                view,
+                kind_idx=kind_idx,
+                area_idx=area_idx,
+                title_text=title_text,
+                description=description,
+                attachments_count=len(referenced_images(description, attachments)),
+                field_sel=field_sel,
+                focus=focus,
+                action_sel=action_sel,
+                polished=polished,
+                result_url=result.url if result else "",
+                show_open_browser=bool(result and not result.ok and result.url),
+                status=status,
+                scroll_offset=scroll,
+                scroll_meta=_scroll_meta,
+                width=w,
+                height=max(10, h - 1),
+                # No shimmer clock — the travelling title highlight reads as a
+                # loader, and this page is a form, not a wait (see the changelog).
+                shimmer_tick=None,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
+                border_style=border_style,
             )
+            live.update(_last_panel)
 
         def _run_busy(target, busy_label: str) -> list:
             """Run ``target`` on a daemon thread with a pulsing border; keys are swallowed."""
@@ -3575,6 +3796,25 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             if not k:
                 _render()
                 continue
+
+            # ── Mouse: click an action button (works across every view) ──
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if view == "form":
+                    _labels = ["Submit", "AI Polish", "Back"]
+                elif view == "polish_preview":
+                    _labels = ["Accept", "Keep Original"]
+                elif view == "result":
+                    _labels = ["Done", "Open Browser"] if bool(result and not result.ok and result.url) else ["Done"]
+                else:
+                    _labels = []
+                _idx = button_click(console, _last_panel, *_clicked, _labels) if (_labels and _last_panel) else None
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                if view == "form":
+                    focus = "buttons"  # route the synthesized Enter to the button action
+                k = "enter"  # fall through to the existing Enter handling
 
             if view == "form":
                 status = "" if k in ("enter", " ") else status
@@ -3733,6 +3973,7 @@ def _run_mode_hub(
     returned message. Modes that pass neither are byte-identical to before.
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
+    from yeaboi.ui.shared._click import parse_click
 
     runs = load_runs()
     extra_text = extra_label() if extra_label is not None else ""
@@ -3741,6 +3982,7 @@ def _run_mode_hub(
     message = ""
     confirm = False  # delete-confirmation popup showing
     anim_start = time.monotonic()
+    _last_panel = None  # most recently rendered hub panel, for click hit-testing
     logger.info("%s hub: opened (%d saved run(s))", mode, len(runs))
 
     def _n_items() -> int:
@@ -3756,33 +3998,33 @@ def _run_mode_hub(
         message = msg
 
     def _render_list() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
         on_run = selected < len(runs)
-        live.update(
-            _build_run_hub_screen(
-                runs,
-                selected,
-                title_fn=title_fn,
-                theme=share_theme,
-                subtitle=subtitle,
-                message=message,
-                width=w,
-                height=max(10, h - 1),
-                focus=focus if on_run else 0,
-                del_fade=1.0 if (on_run and focus == 1) else 0.0,
-                exp_fade=1.0 if (on_run and focus == 2) else 0.0,
-                card_fade=1.0,
-                action_btns_visible=2.0 if on_run else 0.0,
-                delete_popup_name=(runs[selected].title if (confirm and on_run) else ""),
-                delete_popup_t=1.0 if confirm else 0.0,
-                new_label=new_label,
-                empty_title=empty_title,
-                empty_subtitle=empty_subtitle,
-                shimmer_tick=tick,
-                extra_label=extra_text,
-            )
+        _last_panel = _build_run_hub_screen(
+            runs,
+            selected,
+            title_fn=title_fn,
+            theme=share_theme,
+            subtitle=subtitle,
+            message=message,
+            width=w,
+            height=max(10, h - 1),
+            focus=focus if on_run else 0,
+            del_fade=1.0 if (on_run and focus == 1) else 0.0,
+            exp_fade=1.0 if (on_run and focus == 2) else 0.0,
+            card_fade=1.0,
+            action_btns_visible=2.0 if on_run else 0.0,
+            delete_popup_name=(runs[selected].title if (confirm and on_run) else ""),
+            delete_popup_t=1.0 if confirm else 0.0,
+            new_label=new_label,
+            empty_title=empty_title,
+            empty_subtitle=empty_subtitle,
+            shimmer_tick=tick,
+            extra_label=extra_text,
         )
+        live.update(_last_panel)
 
     def _run_action(run, act: str) -> tuple[bool, str | None]:
         """Perform a snapshot action button. Returns (leave_snapshot, message).
@@ -3855,8 +4097,10 @@ def _run_mode_hub(
         s_anim = time.monotonic()
         logger.info("%s hub: opened run id=%s", mode, run.run_id)
 
+        _snap_panel = None  # most recently rendered snapshot panel, for click hit-testing
+
         def _render_snap() -> None:
-            nonlocal scroll
+            nonlocal scroll, _snap_panel
             w, h = console.size
             scroll_meta: dict = {}
             panel = render(
@@ -3872,11 +4116,23 @@ def _run_mode_hub(
             # The builder reports its max scroll only after laying the body out — clamp
             # here so held Down keys don't run the offset past the end.
             scroll = max(0, min(scroll, scroll_meta.get("max_scroll", scroll)))
-            live.update(panel)
+            _snap_panel = panel
+            live.update(_snap_panel)
 
         _render_snap()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _snap_panel is not None:
+                    _idx = button_click(console, _snap_panel, *_clicked, actions)
+                    if _idx is not None:
+                        sel = _idx
+                        k = "enter"  # fall through to the existing Enter handling
+                    else:
+                        continue  # click missed the buttons — ignore it
+                else:
+                    continue
             if k in SCROLL_KEYS:
                 step = 1 if k in ("down", "scroll_down", "pagedown") else -1
                 scroll = max(0, scroll + step)
@@ -3900,6 +4156,43 @@ def _run_mode_hub(
         n_items = _n_items()
         on_run = selected < len(runs)
         on_extra = extra_text and selected == len(runs) + 1
+
+        # ── Mouse: click a card to open it, or the "+ New" card to start a run ──
+        _pos = parse_click(k)
+        if _pos is not None and not confirm:
+            _cx, _cy = _pos
+            # Delete/Export buttons sit to the RIGHT of the selected run card and
+            # share its rows, so they must be tested (with x) BEFORE the y-only card
+            # regions — otherwise a button click would land on the card. The buttons
+            # belong to the currently-selected card, so a hit acts on ``selected``:
+            # set the matching focus and reuse the existing Enter code paths below.
+            _btn = next(
+                (
+                    label
+                    for x0, y0, x1, y1, label in getattr(_last_panel, "_btn_regions", []) or []
+                    if x0 <= _cx <= x1 and y0 <= _cy <= y1
+                ),
+                None,
+            )
+            if _btn is not None:
+                focus = 1 if _btn == "delete" else 2
+                k = "enter"  # fall through to the existing focus==1/2 Enter handling
+            else:
+                _hit = next(
+                    (idx for y0, y1, idx in getattr(_last_panel, "_card_regions", []) or [] if y0 <= _cy <= y1),
+                    None,
+                )
+                if _hit is not None:
+                    selected, focus = _hit, 0
+                    if _hit >= len(runs):  # the "+ New" card
+                        if new_breaks_out:
+                            break  # Performance: hand control back to the roster
+                        run_new()
+                        _reload("New run recorded.")
+                    else:
+                        _open_snapshot(runs[_hit])
+                _render_list()
+                continue
         if confirm:
             # Delete-confirmation popup is modal: Enter confirms, Esc cancels.
             if k in ("enter", " "):
@@ -4016,10 +4309,11 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         focus = "sections"  # overview focus zone: "sections" | "buttons"
         card_idx, scroll, sel = 0, 0, 0
         s_anim = time.monotonic()
+        _last_panel = None  # most recently rendered snapshot panel, for click hit-testing
         logger.info("standup hub: opened run id=%s", run.run_id)
 
         def _render() -> None:
-            nonlocal scroll
+            nonlocal scroll, _last_panel
             w, h = console.size
             scroll_meta: dict = {}
             panel = _build_standup_screen(
@@ -4035,11 +4329,24 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
                 actions=(actions if view == "overview" else ["← Overview"]),
             )
             scroll = max(0, min(scroll, scroll_meta.get("max_scroll", scroll)))
-            live.update(panel)
+            _last_panel = panel
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                # Hit-test against whichever button row is actually on screen this frame.
+                _labels = actions if view == "overview" else ["← Overview"]
+                _idx = button_click(console, _last_panel, *_clicked, _labels)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                if view == "overview":
+                    focus, sel = "buttons", _idx
+                k = "enter"  # fall through to the existing Enter handling
             if view != "overview":
                 # Drilled into a section: Up/Down scroll it; any exit key returns to overview.
                 if k in SCROLL_KEYS:
@@ -4642,7 +4949,10 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
         data["team_expanded"] = team_expanded
         card_idx = min(card_idx, max(0, len(standup_card_order(data)) - 1))
 
+    _last_panel = None  # most recently rendered standup panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # When anonymized, mask the report in place so the SAME cards re-render with
@@ -4654,27 +4964,36 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
             render_data = {**data, "report": mask_artifact(data["report"], anon.replacements)}
         # Leave a one-row safety margin: a Live renderable exactly equal to the
         # terminal height loses its last row (the action buttons) to the cursor.
-        live.update(
-            _build_standup_screen(
-                render_data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                # No button is highlighted while the section list has focus.
-                action_sel=-1 if (view == "overview" and focus == "sections") else sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                view=view,
-                selected_card=card_idx,
-                actions=_actions(),
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_standup_screen(
+            render_data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            # No button is highlighted while the section list has focus.
+            action_sel=-1 if (view == "overview" and focus == "sections") else sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            view=view,
+            selected_card=card_idx,
+            actions=_actions(),
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            focus = "buttons"  # route the synthesized Enter to the button action
+            k = "enter"  # fall through to the existing Enter handling
         if view == "overview" and k in SCROLL_KEYS:
             # On the overview, Up/Down focuses the section list and moves the
             # selection (the screen auto-scrolls the selected row into view).
@@ -5484,23 +5803,30 @@ def _run_analysis_setup_review(
     )
 
     selected = 0
+    _labels = ["Run Analysis", "Back"]
     while True:
         w, h = console.size
-        live.update(
-            _build_analysis_setup_review_screen(
-                features=features,
-                components=components,
-                members=members,
-                analysis_scope=analysis_scope,
-                depth=depth,
-                window_days=window_days,
-                model=model,
-                action_sel=selected,
-                width=w,
-                height=h,
-            )
+        _panel = _build_analysis_setup_review_screen(
+            features=features,
+            components=components,
+            members=members,
+            analysis_scope=analysis_scope,
+            depth=depth,
+            window_days=window_days,
+            model=model,
+            action_sel=selected,
+            width=w,
+            height=h,
         )
+        live.update(_panel)
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(key)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            selected = _idx
+            key = "enter"  # fall through to the existing Enter handling
         if key in ("left", "up", "scroll_up"):
             selected = 0
         elif key in ("right", "down", "scroll_down"):
@@ -6104,36 +6430,42 @@ def _run_team_analysis_results(
             render_examples = mask_obj(examples, anon.replacements)
 
         w, h = console.size
-        live.update(
-            _build_team_analysis_screen(
-                render_profile,
-                scroll_offset=scroll,
-                scroll_meta=scroll_meta,
-                width=w,
-                height=h,
-                export_sel=sel,
-                examples=render_examples,
-                sprint_names=sprint_names,
-                team_name=team_name,
-                view=view,
-                selected_card=card_idx,
-                actions=actions,
-                shimmer_tick=time.monotonic() - anim0,
-                anon_note=_anon_note(anon),
-                source_toggle=delivery_order or None,
-                active_source=(delivery_order[src_idx] if delivery_order else ""),
-                comparison=comparison if view == "overview" else None,
-                source=cur_source,
-                project_key=cur_project,
-                code_signal=code_signal,
-                code_examples=code_examples,
-                doc_signal=doc_signal,
-                doc_examples=doc_examples,
-                analysis_features=analysis_features,
-            )
+        _panel = _build_team_analysis_screen(
+            render_profile,
+            scroll_offset=scroll,
+            scroll_meta=scroll_meta,
+            width=w,
+            height=h,
+            export_sel=sel,
+            examples=render_examples,
+            sprint_names=sprint_names,
+            team_name=team_name,
+            view=view,
+            selected_card=card_idx,
+            actions=actions,
+            shimmer_tick=time.monotonic() - anim0,
+            anon_note=_anon_note(anon),
+            source_toggle=delivery_order or None,
+            active_source=(delivery_order[src_idx] if delivery_order else ""),
+            comparison=comparison if view == "overview" else None,
+            source=cur_source,
+            project_key=cur_project,
+            code_signal=code_signal,
+            code_examples=code_examples,
+            doc_signal=doc_signal,
+            doc_examples=doc_examples,
+            analysis_features=analysis_features,
         )
+        live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(kk)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            kk = "enter"  # fall through to the existing Enter handling
         if delivery_order and len(delivery_order) > 1 and kk == "tab":
             # Switch delivery tracker: reset the view/scroll and drop any mask (the
             # replacements were computed for the other profile).
@@ -6405,20 +6737,26 @@ def _run_team_insights(
 
     while True:
         w, h = console.size
-        live.update(
-            _build_team_insights_screen(
-                profile,
-                examples=examples,
-                scroll_offset=scroll,
-                scroll_meta=scroll_meta,
-                width=w,
-                height=h,
-                action_sel=sel,
-                subtitle=subtitle,
-            )
+        _panel = _build_team_insights_screen(
+            profile,
+            examples=examples,
+            scroll_offset=scroll,
+            scroll_meta=scroll_meta,
+            width=w,
+            height=h,
+            action_sel=sel,
+            subtitle=subtitle,
         )
+        live.update(_panel)
 
         kk = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(kk)
+        if _clicked is not None:
+            _idx = button_click(console, _panel, *_clicked, actions)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            sel = _idx
+            kk = "enter"  # fall through to the existing Enter handling
         if kk in SCROLL_KEYS:
             scroll = coalesce_scroll(scroll, kk, scroll_meta, read_key)
         elif kk == "left":
@@ -6551,8 +6889,8 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         "detail_lines": [],
         "detail_title": "",
     }
-    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export", "Back"]
-    detail_actions = ["Export", "Share Online", "Anonymize", "Back"]
+    roster_actions = ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "History", "Export"]  # back tab covers Back
+    detail_actions = ["Export", "Share Online", "Anonymize"]  # back tab covers Back
     # Anonymize state: None = real artifact; an AnonymizedOutput = mask the detail lines.
     anon = None
     anon_instruction = ""
@@ -6591,7 +6929,10 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     anim_start = time.monotonic()
     state["select_time"] = anim_start
 
+    _last_panel = None  # most recently rendered performance panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         now = time.monotonic()
         tick = now - anim_start  # title shimmer (+ roster-word shimmer) — runs in both views
@@ -6599,20 +6940,19 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
         # The per-engineer description only reveals in the roster view, and restarts
         # whenever the selection changes (select_time), like the intake picker.
         reveal = (now - state["select_time"]) * _DESC_SCROLL_SPEED if state["view"] == "roster" else 0.0
-        live.update(
-            _build_performance_screen(
-                _data(),
-                scroll_offset=state["scroll"],
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                desc_reveal=reveal,
-                sub_reveal=sub_reveal,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_performance_screen(
+            _data(),
+            scroll_offset=state["scroll"],
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            desc_reveal=reveal,
+            sub_reveal=sub_reveal,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _show_detail(lines: list[str], title: str, message: str) -> None:
         state["view"] = "detail"
@@ -6680,6 +7020,16 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _labels = roster_actions if state["view"] == "roster" else _detail_actions()
+            _idx = button_click(console, _last_panel, *_clicked, _labels)
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "roster":
             if k in ("up", "scroll_up"):
                 if roster:
@@ -7047,22 +7397,24 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
 
     anim_start = time.monotonic()
 
+    _last_panel = None  # most recently rendered reporting panel, for click hit-testing
+
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
-        live.update(
-            _build_reporting_screen(
-                _data(),
-                scroll_offset=state["scroll"],
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                sub_reveal=tick * _HEADER_SUB_SPEED,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_reporting_screen(
+            _data(),
+            scroll_offset=state["scroll"],
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            sub_reveal=tick * _HEADER_SUB_SPEED,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _show_report(report, msg: str) -> None:
         state["report"] = report
@@ -7634,6 +7986,15 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "picker":
             if k in ("up", "scroll_up"):
                 state["selected"] = (state["selected"] - 1) % len(periods)
@@ -7870,9 +8231,16 @@ def _pick_analysis_profile(
         _pp_sel = 0
         _pp_n = len(_pp_profiles) + 1  # profiles + Skip
         w, h = console.size
-        live.update(_build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h))
+        _pp_panel = _build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h)
+        live.update(_pp_panel)
         while True:
             pk = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(pk)
+            if _clicked is not None:
+                # The only button is "Select" — a hit confirms the highlighted list row.
+                if button_click(console, _pp_panel, *_clicked, ["Select"]) is None:
+                    continue  # click missed the button — ignore it
+                pk = "enter"  # fall through to the existing Enter handling
             if pk in ("up", "scroll_up"):
                 _pp_sel = (_pp_sel - 1) % _pp_n
             elif pk in ("down", "scroll_down"):
@@ -7887,7 +8255,8 @@ def _pick_analysis_profile(
             elif pk in ("esc", "q"):
                 break
             w, h = console.size
-            live.update(_build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h))
+            _pp_panel = _build_profile_picker_screen(_pp_profiles, _pp_sel, width=w, height=h)
+            live.update(_pp_panel)
     except Exception:
         logger.debug("Profile picker failed", exc_info=True)
     return selected_profile_id
@@ -8040,22 +8409,23 @@ def _run_roadmap_page(
         }
 
     anim_start = time.monotonic()
+    _last_panel = None  # most recently rendered roadmap panel, for click hit-testing
 
     def _render() -> None:
+        nonlocal _last_panel
         w, h = console.size
         tick = time.monotonic() - anim_start
-        live.update(
-            _build_roadmap_screen(
-                _data(),
-                scroll_meta=state["scroll_meta"],
-                width=w,
-                height=max(10, h - 1),
-                action_sel=state["sel"],
-                shimmer_tick=tick,
-                sub_reveal=tick * _HEADER_SUB_SPEED,
-                anon_note=_anon_note(anon),
-            )
+        _last_panel = _build_roadmap_screen(
+            _data(),
+            scroll_meta=state["scroll_meta"],
+            width=w,
+            height=max(10, h - 1),
+            action_sel=state["sel"],
+            shimmer_tick=tick,
+            sub_reveal=tick * _HEADER_SUB_SPEED,
+            anon_note=_anon_note(anon),
         )
+        live.update(_last_panel)
 
     def _roadmap_document() -> tuple[str, str] | str:
         analysis = state["analysis"]
@@ -8234,6 +8604,15 @@ def _run_roadmap_page(
     _render()
     while True:
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        _clicked = parse_click(k)
+        if _clicked is not None:
+            if _last_panel is None:
+                continue
+            _idx = button_click(console, _last_panel, *_clicked, _actions())
+            if _idx is None:
+                continue  # click missed the buttons — ignore it
+            state["sel"] = _idx
+            k = "enter"  # fall through to the existing Enter handling
         if state["view"] == "source":
             n_sources = len(_sources())
             if k in ("up", "scroll_up"):
@@ -8436,24 +8815,25 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     anim_start = time.monotonic()  # shimmer title + typewriter subtitle clock
     _scroll_meta: dict = {}  # scroll geometry published by _build_retro_screen
+    _last_panel = None  # most recently rendered retro panel, for click hit-testing
 
     def _render(data: dict, scroll: int, sel: int) -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
         # Leave a one-row safety margin (same reason as the standup page).
-        live.update(
-            _build_retro_screen(
-                data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                anon_note=data.get("anon_note", ""),
-            )
+        _last_panel = _build_retro_screen(
+            data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
+            anon_note=data.get("anon_note", ""),
         )
+        live.update(_last_panel)
 
     session_id, session_name, project_name, sprint_name = _resolve_retro_session()
     if not session_id:
@@ -8468,6 +8848,16 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 2)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the default button row is the only action — any hit exits.
+                if (
+                    _last_panel is not None
+                    and button_click(console, _last_panel, *_clicked, ["Generate Action Items", "Export", "Close"])
+                    is not None
+                ):
+                    break
+                continue
             if k in ("enter", " ", "esc", "q"):
                 break
             _render(data, 0, 2)
@@ -8503,6 +8893,16 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 2)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the default button row is the only action — any hit exits.
+                if (
+                    _last_panel is not None
+                    and button_click(console, _last_panel, *_clicked, ["Generate Action Items", "Export", "Close"])
+                    is not None
+                ):
+                    break
+                continue
             if k in ("enter", " ", "esc", "q"):
                 break
             _render(data, 0, 2)
@@ -8635,6 +9035,15 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         _render(_data(), scroll, sel)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, _actions())
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
                 if _ns == scroll:
@@ -8787,6 +9196,79 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         logger.info("retro: page closed for session=%s", session_id)
 
 
+def _play_duck_shades(console, live, selected, *, tip_offset, start_time, select_time) -> None:
+    """Play the click-the-duck gag: his sunglasses lift to reveal a second pair
+    underneath, then drop back. Re-renders the whole welcome screen per lift stage
+    (the rest of it keeps its current animation state) so only the duck changes."""
+    from yeaboi.ui.shared._mascot import SHADES_LIFT_SEQUENCE
+
+    for lift in SHADES_LIFT_SEQUENCE:
+        w, h = console.size
+        tick = time.monotonic() - start_time
+        reveal = (time.monotonic() - select_time) * _DESC_SCROLL_SPEED
+        live.update(
+            _build_mode_screen(
+                selected,
+                width=w,
+                height=h,
+                shimmer_tick=tick,
+                desc_reveal=reveal,
+                tip_offset=tip_offset,
+                duck_lift=lift,
+            )
+        )
+        time.sleep(_FRAME_TIME * 3)  # ~20fps — a readable lift/drop over ~0.5s
+
+
+def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> None:
+    """Run the in-app upgrade (the ctrl+U shortcut): show a spinner while the
+    detected ``uv/pipx upgrade`` command runs on a worker thread, then a success or
+    failure result the user dismisses with any key.
+
+    Only invoked when an update is available (the caller gates on it). The upgrade
+    runs in a subprocess; the freshly-installed code takes effect on the next
+    launch, so the success screen tells the user to restart.
+    """
+    import threading
+
+    from yeaboi import update_check
+    from yeaboi.ui.shared._screensaver import suppress_screensaver
+
+    status = update_check.get_update_status()
+    latest = status.get("latest", "")
+    command = status.get("upgrade_command", "")
+    logger.info("update: ctrl+U upgrade to v%s via '%s'", latest, command)
+
+    result: dict = {}
+
+    def _worker() -> None:
+        result["ok"], result["detail"] = update_check.run_upgrade()
+
+    spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    thread = threading.Thread(target=_worker, daemon=True)
+    # Exclude the (potentially slow) network upgrade from idle tracking so the
+    # screensaver doesn't take over mid-update.
+    with suppress_screensaver():
+        thread.start()
+        i = 0
+        while thread.is_alive():
+            w, h = console.size
+            live.update(_build_update_screen(w, h, latest=latest, command=command, spinner=spin[i % len(spin)]))
+            i += 1
+            time.sleep(max(0.05, frame_time * 4))
+        thread.join(timeout=0.1)
+
+    ok = bool(result.get("ok"))
+    detail = result.get("detail", "") or ""
+    logger.info("update: upgrade %s", "succeeded" if ok else "failed")
+    while True:
+        w, h = console.size
+        live.update(_build_update_screen(w, h, latest=latest, command=command, done=True, ok=ok, detail=detail))
+        k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if k:
+            return
+
+
 def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
     """Poker setup wizard: source → scope → sprint → ticket types → fetch.
 
@@ -8806,28 +9288,38 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         sel = max(0, min(preselect, len(options) - 1))
         action_sel = 0
         actions = ["Select", "Back"]
+        _last_panel = None  # most recently rendered picker panel, for click hit-testing
 
         def _render() -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
-            live.update(
-                _build_poker_screen(
-                    {
-                        "subtitle": "Set up a poker session",
-                        "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
-                        "actions": actions,
-                    },
-                    width=w,
-                    height=max(10, h - 1),
-                    action_sel=action_sel,
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                )
+            _last_panel = _build_poker_screen(
+                {
+                    "subtitle": "Set up a poker session",
+                    "pick": {"title": title, "hint": hint, "options": options, "sel": sel},
+                    "actions": actions,
+                },
+                width=w,
+                height=max(10, h - 1),
+                action_sel=action_sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
             )
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, actions)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k == "up":
                 sel = max(0, sel - 1)
             elif k == "down":
@@ -8855,29 +9347,39 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         action_sel = 0
         actions = ["Continue", "Back"]
         warn = ""
+        _last_panel = None  # most recently rendered toggle panel, for click hit-testing
 
         def _render() -> None:
+            nonlocal _last_panel
             w, h = console.size
             elapsed = time.monotonic() - anim_start
             opts = [(("[✓] " if i in checked else "[ ] ") + label, sub) for i, (label, sub) in enumerate(options)]
-            live.update(
-                _build_poker_screen(
-                    {
-                        "subtitle": "Set up a poker session",
-                        "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
-                        "actions": actions,
-                    },
-                    width=w,
-                    height=max(10, h - 1),
-                    action_sel=action_sel,
-                    shimmer_tick=elapsed,
-                    sub_reveal=elapsed * _HEADER_SUB_SPEED,
-                )
+            _last_panel = _build_poker_screen(
+                {
+                    "subtitle": "Set up a poker session",
+                    "pick": {"title": title, "hint": warn or hint, "options": opts, "sel": sel},
+                    "actions": actions,
+                },
+                width=w,
+                height=max(10, h - 1),
+                action_sel=action_sel,
+                shimmer_tick=elapsed,
+                sub_reveal=elapsed * _HEADER_SUB_SPEED,
             )
+            live.update(_last_panel)
 
         _render()
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, actions)
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                action_sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k == "up":
                 sel = max(0, sel - 1)
             elif k == "down":
@@ -9045,22 +9547,23 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
 
     anim_start = time.monotonic()
     _scroll_meta: dict = {}
+    _last_panel = None  # most recently rendered poker panel, for click hit-testing
 
     def _render(data: dict, scroll: int, sel: int) -> None:
+        nonlocal _last_panel
         w, h = console.size
         elapsed = time.monotonic() - anim_start
-        live.update(
-            _build_poker_screen(
-                data,
-                scroll_offset=scroll,
-                scroll_meta=_scroll_meta,
-                width=w,
-                height=max(10, h - 1),
-                action_sel=sel,
-                shimmer_tick=elapsed,
-                sub_reveal=elapsed * _HEADER_SUB_SPEED,
-            )
+        _last_panel = _build_poker_screen(
+            data,
+            scroll_offset=scroll,
+            scroll_meta=_scroll_meta,
+            width=w,
+            height=max(10, h - 1),
+            action_sel=sel,
+            shimmer_tick=elapsed,
+            sub_reveal=elapsed * _HEADER_SUB_SPEED,
         )
+        live.update(_last_panel)
 
     # A poker session doesn't need a planning session to exist — fall back to a
     # stable quick-session id so history still records and groups sensibly.
@@ -9095,6 +9598,12 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         _render(data, 0, 0)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                # Notice screen: the only button is "Close" — any hit exits.
+                if _last_panel is not None and button_click(console, _last_panel, *_clicked, ["Close"]) is not None:
+                    return
+                continue
             if k in ("enter", " ", "esc", "q"):
                 return
             _render(data, 0, 0)
@@ -9183,6 +9692,15 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         _render(_data(), scroll, sel)
         while True:
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            _clicked = parse_click(k)
+            if _clicked is not None:
+                if _last_panel is None:
+                    continue
+                _idx = button_click(console, _last_panel, *_clicked, _actions())
+                if _idx is None:
+                    continue  # click missed the buttons — ignore it
+                sel = _idx
+                k = "enter"  # fall through to the existing Enter handling
             if k in SCROLL_KEYS:
                 _ns = coalesce_scroll(scroll, k, _scroll_meta, read_key)
                 if _ns == scroll:
@@ -9357,6 +9875,95 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
     )
 
 
+def _sweep_menu_in(
+    console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None, companion_from: float | None = None
+) -> None:
+    """Play the diagonal intro wipe that reveals the mode titles top-left →
+    bottom-right, then land on the fully-revealed frame.
+
+    Shared by the fresh-load intro and the return transitions. ``sweep_skip``
+    leaves that one title fully shown throughout (used after the return slide, when
+    the mode you came from is already home and only the rest scroll in). A no-op
+    wipe (straight to the final frame) when the terminal is too small.
+    """
+    _iw, _ih = console.size
+    if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
+        _widths = mode_title_widths()
+        # Front value at which the last-revealed cell of each title is covered;
+        # the sweep runs until the largest of these.
+        _front_max = 0.0
+        _rb = 0
+        for _i in range(n):
+            _front_max = max(_front_max, (_rb + 1) * _SWEEP_ROW_WEIGHT + _widths[_i])
+            _rb += (2 + (3 if _i == selected else 0)) + (1 if _i < n - 1 else 0)
+        _front_max += 2
+        _intro_start = time.monotonic()
+        while True:
+            _front = (time.monotonic() - _intro_start) * _MENU_SWEEP_SPEED
+            w, h = console.size
+            # On a return (companion_from set) the duck slides back IN as the wipe
+            # runs — from where it sat in the sub-page corner to its menu spot — so
+            # it never clears; on a fresh load it waits off-screen until the wipe ends.
+            if companion_from is not None:
+                _ci = companion_from + (1.0 - companion_from) * min(1.0, _front / _front_max)
+            else:
+                _ci = 0.0
+            live.update(
+                _build_mode_screen(
+                    selected,
+                    width=w,
+                    height=h,
+                    shimmer_tick=0.0,
+                    desc_reveal=0,
+                    sweep_front=_front,
+                    sweep_skip=sweep_skip,
+                    companion_intro=_ci,
+                )
+            )
+            if _front >= _front_max:
+                break
+            time.sleep(_FRAME_TIME)
+    # Final frame with normal styling (fully revealed). The duck is home on a
+    # return (companion slid in during the wipe), still off-screen on a fresh load.
+    w, h = console.size
+    _ci_final = 1.0 if companion_from is not None else 0.0
+    live.update(
+        _build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=_ci_final)
+    )
+
+
+def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
+    """Return-to-menu transition: the mode you came from slides back FIRST, then the
+    rest scroll in around it exactly like the fresh-load intro.
+
+    Phase 1 is the inverse of the select→page lift — the selected title drops from
+    the top row (where that lift left it) down to its resting position, alone.
+    Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
+    so every OTHER title reveals top-left → bottom-right while the one you picked
+    stays put. A no-op (straight to the final frame) when the terminal is too small.
+    """
+    w, h = console.size
+    if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
+        chosen = _MODE_CARDS[selected]
+        base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
+        base_style = f"bold rgb({base_r},{base_g},{base_b})"
+        start_offset = 1  # the top row the select→page lift left the title on
+        target_offset = selected_title_offset(selected, width=w, height=h)
+        # Phase 1: the selected title slides home, on its own.
+        slide_frames = 14
+        for frame in range(slide_frames + 1):
+            t = frame / slide_frames
+            eased = ease_out_cubic(t)
+            current_offset = int(start_offset + (target_offset - start_offset) * eased)
+            w, h = console.size
+            live.update(_build_slide_frame(chosen, top_offset=current_offset, width=w, height=h, style=base_style))
+            time.sleep(_FRAME_TIME)
+    # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
+    # the selected title (already home) is held fully shown. The companion slides
+    # back in during the wipe (from its sub-page corner) so it never clears.
+    _sweep_menu_in(console, live, selected, n, sweep_skip=selected, companion_from=_COMPANION_RETURN_START)
+
+
 def select_mode(
     console: Console | None = None, *, dry_run: bool = False, _read_key_fn=None
 ) -> tuple[str, str | None, str | None] | None:
@@ -9402,64 +10009,118 @@ def select_mode(
 
     _supports_timeout = "timeout" in inspect.signature(read_key).parameters
 
-    all_mode_indices = list(range(n))
-
-    # If alt-screen is already active (from splash), use screen=False so
-    # Live doesn't toggle it (which causes a visible flicker).  If not
-    # active, let Live manage it normally with screen=True.
-    _screen_managed_by_live = not console.is_alt_screen
-
+    # Render into the alternate-screen buffer (screen=True) so Rich double-buffers
+    # each frame. The welcome screen animates continuously (the selected title's
+    # shimmer, the cross-fading tip, the idle duck, the music equalizer), so in
+    # inline mode Rich rewrites scattered lines across the full height every frame
+    # — the visible "reprint"/flicker. Alt-screen swaps composite frames cleanly.
+    # A single, brief flash at the splash→menu boundary is the accepted trade for
+    # a flicker-free steady state. 60fps keeps the shimmer/duck/tip motion smooth
+    # (the input loop already polls at _FRAME_TIME = 1/60, so the Live refresh cap
+    # was the bottleneck); alt-screen double-buffering means the higher rate costs
+    # redraw work but never flickers.
     with make_live(
+        # Seed the first frame with NOTHING revealed (sweep front at 0) so the
+        # diagonal intro wipes titles in from an empty screen — otherwise every
+        # item flashes in for one frame before animating.
         _build_mode_screen(
             selected,
             width=w,
             height=h,
             shimmer_tick=0.0,
             desc_reveal=0,
-            fade_style=FADE_IN_LEVELS[0],
-            fade_indices=all_mode_indices,
+            sweep_front=0.0,
+            companion_intro=0.0,  # duck stays off-screen until it slides in post-wipe
         ),
         console=console,
         refresh_per_second=60,
-        screen=_screen_managed_by_live,
+        screen=True,
     ) as live:
         # Outer loop: returns here when user presses Esc from project list
         # to go back to mode selection (instead of recursive select_mode call).
         _restart_mode_select = True
         _skip_fade_in = False
+        # A reverse transition (the project-list Esc) already slides the menu back
+        # in on its own; every other return snaps in cold. This flag marks the
+        # former so the sweep below runs on a fresh load AND on a cold return —
+        # animating the menu items back in — but doesn't double up on the slide.
+        _reverse_animated = False
         while _restart_mode_select:
             _restart_mode_select = False
 
-            if _skip_fade_in:
-                # Esc transition already rendered all items — no fade needed.
-                # Description typewriter starts fresh from now.
-                _skip_fade_in = False
+            # _skip_fade_in signals a return from a sub-page (drives the companion's
+            # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
+            _returning = _skip_fade_in
+            _skip_fade_in = False
+            if _reverse_animated:
+                # The reverse transition already revealed every item — don't re-run.
+                _reverse_animated = False
+            elif _returning:
+                # Cold return from a sub-page: the mode you came from slides home,
+                # then the rest load in around it (the inverse of the select lift).
+                _slide_menu_in(console, live, selected, n)
             else:
-                # Fade in all three mode items from near-black to full colour
-                for grey in FADE_IN_LEVELS:
-                    w, h = console.size
-                    live.update(
-                        _build_mode_screen(
-                            selected,
-                            width=w,
-                            height=h,
-                            shimmer_tick=0.0,
-                            desc_reveal=0,
-                            fade_style=grey,
-                            fade_indices=all_mode_indices,
-                        )
-                    )
-                    time.sleep(_FRAME_TIME)
-                # Final frame with normal styling (no fade override)
-                w, h = console.size
-                live.update(_build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0))
+                # Fresh load: one diagonal wipe reveals every title top-left →
+                # bottom-right (the inverse of the splash crumble).
+                _sweep_menu_in(console, live, selected, n)
             select_time = time.monotonic()
+            # Companion entrance. Fresh load: full slide-in from off-screen right,
+            # starting once the wipe has landed. On a RETURN the duck already slid
+            # back from its sub-page corner during the wipe (see _sweep_menu_in's
+            # companion_from), so start the entrance already finished — otherwise it
+            # would clear and re-slide, the "duck disappears then comes back" glitch.
+            _companion_intro_start = time.monotonic() - (_COMPANION_INTRO_SECONDS if _returning else 0.0)
 
             # ── Phase 1: Mode selection ───────────────────────────────────────
+            _compose: dict | None = None  # the duck's feedback bubble, when open
             while True:
+                # Terminal-size guard: below the minimum the welcome screen can't
+                # show every mode + description + hints without clipping, so the
+                # duck asks the user to size up. Poll for a resize (or quit)
+                # instead of rendering a broken menu.
+                _w, _h = console.size
+                if _w < _MIN_WIDTH or _h < _MIN_HEIGHT:
+                    live.update(_build_too_small_screen(_w, _h))
+                    _k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+                    if _k in ("q", "esc"):
+                        return None
+                    continue
+
                 key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
 
-                if key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
+                if _compose is not None:
+                    # The duck's feedback bubble owns every key while it's open —
+                    # including 'q', which is a character you may want to type.
+                    if key and not _compose.get("closing"):
+
+                        def _compose_render(update: bool = True):
+                            _w, _h = console.size
+                            _panel = _build_mode_screen(
+                                selected,
+                                width=_w,
+                                height=_h,
+                                shimmer_tick=time.monotonic() - start_time,
+                                desc_reveal=999,
+                                tip_offset=tip_offset,
+                                compose=_compose,
+                            )
+                            if update:
+                                live.update(_panel)
+                            return _panel
+
+                        _compose = _feedback_compose_key(
+                            key,
+                            _compose,
+                            console=console,
+                            live=live,
+                            read_key=read_key,
+                            render=_compose_render,
+                        )
+                    if _compose is not None:
+                        _compose = _feedback_compose_tick(_compose)
+                    if _compose is None:
+                        select_time = time.monotonic()  # restart the description reveal
+                elif key in ("up", "left", "scroll_up", "down", "right", "scroll_down"):
                     # Coalesce a fast wheel/held-key burst into one net move + one
                     # repaint, so the animated mode carousel doesn't stutter.
                     _delta = coalesce_steps(
@@ -9520,30 +10181,108 @@ def select_mode(
                     # Open the Changelog page (bottom-left hint). Handled inline
                     # like `t` — no break, so returning falls straight back into
                     # this loop and the frame update below repaints mode select.
+                    # No wordmark intro: its shine sweep reads as a loader, and these
+                    # two open instantly (bundled JSON / an empty form). The All Tips
+                    # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
-                    play_wordmark_intro(console, live, "Changelog", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
-                    # Open the Feedback form (bottom-left hint) — same inline
-                    # pattern as the Changelog page above.
+                    # Quick feedback comes out of the duck: his tip bubble becomes a
+                    # composer in place, so the welcome screen never leaves. The full
+                    # form (type/area/AI polish/attachments) is Tab from inside it.
+                    # The bubble is drawn over the duck's lane, so without one there
+                    # is nothing to draw on — fall back to the full form rather than
+                    # swallowing keys into an invisible composer.
+                    _fw, _fh = console.size
+                    if not welcome_shows_companion(_fw, _fh):
+                        logger.info("feedback: terminal too small for the bubble, opening the form")
+                        _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _slide_menu_in(console, live, selected, n)
+                        select_time = time.monotonic()
+                        continue
+                    logger.info("feedback bubble opened from mode select")
+                    # set_text_entry so 'c' types a 'c' instead of opening the
+                    # controls drawer while the message is being written.
+                    set_text_entry(True)
+                    _compose = {
+                        "field": 2,  # land in the message; the selectors are up from there
+                        "kind": 0,
+                        "area": 0,
+                        "buf": "",
+                        "cur": 0,
+                        "status": "",
+                        "notice": "",
+                        "presence": 0.0,  # eased in on the first frames
+                        "closing": False,
+                        "attachments": [],  # Ctrl+V screenshots, as [image #N] chips
+                        "dts": DoubleTapSpace(),  # double-tap Space → dictation
+                        "thread": None,
+                        "done_at": 0.0,
+                    }
+                elif key == "F":
+                    # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
-                    play_wordmark_intro(console, live, "Feedback", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
                     # pattern as the Changelog/Feedback pages above.
+                    # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
-                    play_wordmark_intro(console, live, "All Tips", "rgb(160,160,180)", frame_time=_FRAME_TIME)
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
+                elif key == "clear":
+                    # Ctrl+U — the update shortcut advertised by the bottom-right
+                    # update box. Only acts when a newer release exists; Ctrl+U is
+                    # otherwise the text "kill line" key, unused on this menu.
+                    from yeaboi.update_check import get_update_status
+
+                    if get_update_status()["update_available"]:
+                        _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        select_time = time.monotonic()
+                elif isinstance(key, str) and key.startswith("click:"):
+                    # Click-to-select: a click on a mode's block highlights it
+                    # (revealing its description); a click on the already-selected
+                    # mode activates it, exactly like Enter. Clicks off the list
+                    # (tips, version row, the duck lane) resolve to None → ignored.
+                    try:
+                        _cx, _cy = (int(p) for p in key.split(":")[1:3])
+                    except ValueError:
+                        _cx = _cy = -1
+                    _w, _h = console.size
+                    if duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the duck → his shades lift to reveal a second pair.
+                        logger.info("duck clicked — double-shades gag")
+                        _play_duck_shades(
+                            console,
+                            live,
+                            selected,
+                            tip_offset=tip_offset,
+                            start_time=start_time,
+                            select_time=select_time,
+                        )
+                        continue
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx)
+                    if _hit is not None:
+                        if _hit == selected:
+                            if _MODE_CARDS[selected]["available"]:
+                                logger.info("mode click-activate: %s", _MODE_CARDS[selected]["key"])
+                                break
+                        else:
+                            logger.info("mode click-select: %s", _MODE_CARDS[_hit]["key"])
+                            selected = _hit
+                            select_time = time.monotonic()
 
                 elapsed = time.monotonic() - select_time
                 reveal = elapsed * _DESC_SCROLL_SPEED  # float for sub-char fade
 
                 w, h = console.size
                 tick = time.monotonic() - start_time
+                companion_intro = min(1.0, (time.monotonic() - _companion_intro_start) / _COMPANION_INTRO_SECONDS)
                 live.update(
                     _build_mode_screen(
                         selected,
@@ -9552,6 +10291,8 @@ def select_mode(
                         shimmer_tick=tick,
                         desc_reveal=reveal,
                         tip_offset=tip_offset,
+                        companion_intro=companion_intro,
+                        compose=_compose,
                     )
                 )
 
@@ -9583,8 +10324,11 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
-            # 2b: Fade out unselected modes
-            for grey in FADE_OUT_LEVELS:
+            # 2b: Fade out unselected modes — and, in step, fade the tip bubble +
+            # update box out (the duck stays put so the sub-page overlay can continue
+            # him into his corner). The mirror of the fade-in on arrival.
+            _nfade = max(1, len(FADE_OUT_LEVELS) - 1)
+            for _i, grey in enumerate(FADE_OUT_LEVELS):
                 w, h = console.size
                 live.update(
                     _build_mode_screen(
@@ -9595,16 +10339,16 @@ def select_mode(
                         fade_style=grey,
                         fade_indices=others,
                         selected_style=base_style,
+                        extras_reveal=1.0 - (_i / _nfade),
                     )
                 )
                 time.sleep(_FRAME_TIME)
 
-            # 2c: Slide Planning title + description from center to top.
-            # Description fades out as the title slides up.
+            # 2c: Slide the chosen title up to the top. It starts from the item's
+            # ACTUAL resting row (so a mid-list pick lifts from where it sits, not
+            # from a fixed centre) and rises to one line below the top border.
             w, h = console.size
-            inner_h = h - 4
-            block_h = 2  # title(6) only — description disappears on selection
-            start_offset = max(0, (inner_h - block_h) // 2)
+            start_offset = selected_title_offset(selected, width=w, height=h)
             end_offset = 1  # one blank line above title to match project list layout
 
             slide_frames = 15
@@ -9631,7 +10375,6 @@ def select_mode(
                 # analysis flow runs. The branch is too large for a `with`
                 # block, so it detaches explicitly at both `continue` exits.
                 attach_mode_handler("analysis")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 from yeaboi.azdevops_sync import is_azdevops_board_configured as _azdevops_check
                 from yeaboi.jira_sync import is_jira_configured as _jira_check
 
@@ -9654,7 +10397,7 @@ def select_mode(
                                 width=w,
                                 height=h,
                                 subtitle="Board required",
-                                hint="Press any key to go back.",
+                                hint="",  # the back tab now shows the go-back affordance
                                 mode="analysis",
                                 shimmer_tick=time.monotonic() - _br_anim0,
                             )
@@ -9798,11 +10541,36 @@ def select_mode(
                     _ana_del_pending = False
                     _ana_prev = time.monotonic()
                     _ana_anim0 = _ana_prev  # shimmer title clock
+                    _ana_last_panel = None  # most recent list panel, for click hit-testing
 
                     while True:
                         key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
                         _is_profile = _ana_selected < len(_profiles_for_analysis)
                         _is_analysis_btn = _ana_selected >= len(_profiles_for_analysis)
+
+                        # ── Mouse: click a card to select + activate it ──
+                        # Mirrors _build_run_hub_screen's _card_regions hit-test: map the
+                        # click-y onto a card's flat index, then synthesise the same Enter
+                        # activation. Ignored while the delete popup is modal.
+                        _ana_click = parse_click(key)
+                        if _ana_click is not None:
+                            if _ana_del_popup_open:
+                                continue
+                            _ana_hit = next(
+                                (
+                                    idx
+                                    for y0, y1, idx in getattr(_ana_last_panel, "_card_regions", []) or []
+                                    if y0 <= _ana_click[1] <= y1
+                                ),
+                                None,
+                            )
+                            if _ana_hit is None:
+                                continue
+                            _ana_selected = _ana_hit
+                            _ana_focus = 0
+                            _is_profile = _ana_selected < len(_profiles_for_analysis)
+                            _is_analysis_btn = _ana_selected >= len(_profiles_for_analysis)
+                            key = "enter"  # fall through to Enter-on-card handling
 
                         # ── Delete confirmation popup ─────────────────
                         if _ana_del_popup_open and key:
@@ -10029,34 +10797,33 @@ def select_mode(
                                 _ana_del_popup_target = 0.0
 
                         w, h = console.size
-                        live.update(
-                            _build_project_list_screen(
-                                [],
-                                _ana_selected,
-                                width=w,
-                                height=h,
-                                jira_enabled=_jira_ok,
-                                azdevops_enabled=_azdevops_ok,
-                                profiles=_profiles_for_analysis,
-                                new_analysis_labels=_ana_labels,
-                                profile_focus=_ana_focus,
-                                profile_del_fade=_ana_del_fade,
-                                profile_card_fade=1.0,
-                                profile_action_btns_visible=_ana_action_btns,
-                                profile_exp_fade=_ana_exp_fade,
-                                profile_export_submenu=_ana_export_submenu,
-                                profile_submenu_sel=_ana_sub_sel,
-                                profile_submenu_html_fade=_ana_sub_html_fade,
-                                profile_submenu_md_fade=_ana_sub_md_fade,
-                                profile_submenu_visible=_ana_sub_visible,
-                                delete_popup_name=_ana_del_popup_name,
-                                delete_popup_t=_ana_del_popup_t,
-                                delete_popup_pulse=_ana_del_popup_pulse,
-                                delete_popup_flash=_ana_del_popup_flash,
-                                mode="analysis",
-                                shimmer_tick=_now - _ana_anim0,
-                            )
+                        _ana_last_panel = _build_project_list_screen(
+                            [],
+                            _ana_selected,
+                            width=w,
+                            height=h,
+                            jira_enabled=_jira_ok,
+                            azdevops_enabled=_azdevops_ok,
+                            profiles=_profiles_for_analysis,
+                            new_analysis_labels=_ana_labels,
+                            profile_focus=_ana_focus,
+                            profile_del_fade=_ana_del_fade,
+                            profile_card_fade=1.0,
+                            profile_action_btns_visible=_ana_action_btns,
+                            profile_exp_fade=_ana_exp_fade,
+                            profile_export_submenu=_ana_export_submenu,
+                            profile_submenu_sel=_ana_sub_sel,
+                            profile_submenu_html_fade=_ana_sub_html_fade,
+                            profile_submenu_md_fade=_ana_sub_md_fade,
+                            profile_submenu_visible=_ana_sub_visible,
+                            delete_popup_name=_ana_del_popup_name,
+                            delete_popup_t=_ana_del_popup_t,
+                            delete_popup_pulse=_ana_del_popup_pulse,
+                            delete_popup_flash=_ana_del_popup_flash,
+                            mode="analysis",
+                            shimmer_tick=_now - _ana_anim0,
                         )
+                        live.update(_ana_last_panel)
 
                     if _restart_mode_select:
                         break  # break out of _ana_restart loop → back to mode select
@@ -10485,7 +11252,6 @@ def select_mode(
             # ── Route: Daily Standup mode → dashboard + actions ──────────
             if chosen["key"] == "daily-standup":
                 logger.info("Daily Standup mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 # Route all records to logs/standup/standup.log while the page runs.
                 with mode_log("standup"):
                     _run_standup_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
@@ -10496,7 +11262,6 @@ def select_mode(
             # ── Route: Retro mode → collaborative board page ─────────────
             if chosen["key"] == "retro":
                 logger.info("Retro mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("retro"):
                     _run_retro_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -10506,7 +11271,6 @@ def select_mode(
             # ── Route: Poker mode → collaborative estimation page ────────
             if chosen["key"] == "poker":
                 logger.info("Poker mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("poker"):
                     _run_poker_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -10516,7 +11280,6 @@ def select_mode(
             # ── Route: Performance mode → per-engineer dashboard ─────────
             if chosen["key"] == "performance":
                 logger.info("Performance mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("performance"):
                     _run_performance_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -10526,7 +11289,6 @@ def select_mode(
             # ── Route: Reporting mode → delivery-report page ─────────────
             if chosen["key"] == "reporting":
                 logger.info("Reporting mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 with mode_log("reporting"):
                     _run_reporting_hub(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
@@ -10536,7 +11298,6 @@ def select_mode(
             # ── Route: Usage mode → single-page dashboard ────────────────
             if chosen["key"] == "usage":
                 logger.info("Usage mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
                 from yeaboi.ui.mode_select.screens._screens_secondary import _build_usage_screen
 
                 _usage_data = _collect_usage_data()
@@ -10568,19 +11329,12 @@ def select_mode(
                         if _ns == _u_scroll:
                             continue
                         _u_scroll = _ns
-                    elif k == "left":
-                        _u_sel = max(0, _u_sel - 1)
-                    elif k == "right":
-                        _u_sel = min(len(_u_actions) - 1, _u_sel + 1)
-                    elif k in ("enter", " "):
-                        if _u_actions[_u_sel] == "Copy":
-                            from yeaboi.clipboard import copy_markdown_status
-                            from yeaboi.usage_export import build_usage_text
+                    elif k in ("c", "C"):  # copy the usage report to the clipboard
+                        from yeaboi.clipboard import copy_markdown_status
+                        from yeaboi.usage_export import build_usage_text
 
-                            logger.info("Usage: Copy pressed")
-                            _u_message = copy_markdown_status(build_usage_text(_usage_data))
-                        else:  # Back
-                            break
+                        logger.info("Usage: Copy pressed")
+                        _u_message = copy_markdown_status(build_usage_text(_usage_data))
                     elif k in ("esc", "q"):
                         break
                     w, h = console.size
@@ -10607,45 +11361,244 @@ def select_mode(
             # ── Route: Settings mode → config viewer + setup wizard ────────
             if chosen["key"] == "settings":
                 logger.info("Settings mode selected")
-                play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
-                from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
+                from yeaboi.ui.mode_select.screens._screens_secondary import (
+                    _SETTINGS_TABS,
+                    _build_settings_screen,
+                    settings_focus_move,
+                    settings_tab_action,
+                )
 
                 _settings_data = _collect_settings_data()
-                _s_scroll, _s_sel = 0, 0
+                _s_scroll, _s_tab = 0, 0
+                _n_tabs = len(_SETTINGS_TABS)
                 _s_scroll_meta: dict = {}
+                _s_edit: dict | None = None  # in-place row editor: {env, label, masked, buf, cur}
                 _s_anim_start = time.monotonic()  # shimmer title + typewriter subtitle
-                w, h = console.size
-                live.update(
-                    _build_settings_screen(
+                _tab_pos = float(_s_tab)  # eased fractional tab index → the sliding underline
+                # Keyboard focus level: (-1, -1) = the tab bar, (b, -1) = section box b,
+                # (b, f) = value f inside it. See _build_settings_screen's docstring.
+                _s_box, _s_field = -1, -1
+
+                def _render_settings(tick: float) -> object:
+                    nonlocal _tab_pos, _s_scroll
+                    w, h = console.size
+                    _tab_pos += (_s_tab - _tab_pos) * 0.28  # ease the underline toward the active tab
+                    _editing = (_s_edit["env"], _s_edit["buf"], _s_edit["cur"]) if _s_edit else None
+                    panel = _build_settings_screen(
                         _settings_data,
                         scroll_offset=_s_scroll,
                         scroll_meta=_s_scroll_meta,
                         width=w,
                         height=h,
-                        action_sel=_s_sel,
-                        shimmer_tick=0.0,
-                        sub_reveal=0.0,
+                        active_tab=_s_tab,
+                        tab_pos=_tab_pos,
+                        shimmer_tick=tick,
+                        sub_reveal=tick * _HEADER_SUB_SPEED,
+                        editing=_editing,
+                        sel_box=_s_box,
+                        sel_field=_s_field,
                     )
-                )
+                    # The builder scrolls the focused box/value into view; adopt the
+                    # offset it settled on so the next manual scroll starts from there.
+                    _s_scroll = _s_scroll_meta.get("scroll", _s_scroll)
+                    live.update(panel)
+                    return panel
+
+                def _s_fields_of(b: int) -> list:
+                    """The editable (env, label, masked) rows of section ``b``, per the
+                    last render — empty when the index is stale (the data can change)."""
+                    _bf = getattr(_s_panel, "_box_fields", []) or []
+                    return _bf[b] if 0 <= b < len(_bf) else []
+
+                def _s_begin_edit(env: str, label: str, masked: bool) -> None:
+                    """Open the in-place editor for a field.
+
+                    Every value is typed on the page itself, the data directory
+                    included — its move-or-leave decision happens on save (see
+                    _settings_save_data_dir), not on a screen of its own.
+                    """
+                    nonlocal _s_edit
+                    # Hidden fields start blank (type a new value); others start at the
+                    # current value so you edit in place.
+                    _start = "" if masked else (_settings_data.get(env, "") or "")
+                    _s_edit = {"env": env, "label": label, "masked": masked, "buf": _start, "cur": len(_start)}
+                    set_text_entry(True)  # 'c' types a 'c' now, not the controls drawer
+                    logger.info("Settings: editing %s", env)
+
+                def _s_commit_edit() -> None:
+                    """Save the open in-place edit — the Enter path, also used when a
+                    click moves straight to another row (clicking away commits, the
+                    way a form field blurs). No-op when nothing is being edited."""
+                    nonlocal _s_edit, _settings_data
+                    if _s_edit is None:
+                        return
+                    set_text_entry(False)
+                    _env, _label, _masked = _s_edit["env"], _s_edit["label"], _s_edit["masked"]
+                    _val = _s_edit["buf"].strip()
+                    _cur_val = _settings_data.get(_env, "")
+                    _s_edit = None
+                    _save = True
+                    if _val == "-":
+                        _val = ""  # explicit clear
+                    elif _masked and _val == "":
+                        _save = False  # empty on a hidden field = keep the value
+                    if _save and not _masked and _val == (_cur_val or ""):
+                        _save = False  # unchanged
+                    if _save and _env == "YEABOI_ALLOWED_PATHS":
+                        # The whitelist has its own setter (dedup + pinned .env).
+                        _ap_msg = _settings_save_allowed_paths(_val)
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = _ap_msg
+                    elif _save and _env == "YEABOI_HOME":
+                        # Relocating the tree needs a move-or-leave answer and a write
+                        # to the pinned bootstrap .env, so it saves through its own
+                        # helper rather than the generic path.
+                        _dd_msg = _settings_save_data_dir(console, live, read_key, _FRAME_TIME, _supports_timeout, _val)
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = _dd_msg
+                    elif _save:
+                        from yeaboi.config import apply_config_value
+
+                        # apply_ (not set_) so the edit lands in os.environ too — the
+                        # page re-reads the environment, so a file-only write wouldn't
+                        # show until a restart.
+                        apply_config_value(_env, _val)
+                        if _env == "LOG_LEVEL" and _val:
+                            from yeaboi.logging_setup import apply_level
+
+                            try:
+                                apply_level(_val)
+                            except Exception:  # noqa: BLE001 - a bad level shouldn't crash settings
+                                logger.debug("apply_level failed for %r", _val, exc_info=True)
+                        _settings_data = _collect_settings_data()
+                        _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                        logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
+
+                _s_panel = _render_settings(0.0)
                 while True:
                     sk = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
-                    if sk in SCROLL_KEYS:
+
+                    # ── In-place edit mode: keystrokes go to the field being edited ──
+                    if _s_edit is not None:
+                        _edit_click = parse_click(sk)
+                        if _edit_click is not None:
+                            # Clicking straight onto another row (or a tab) commits what
+                            # was typed and routes normally below — no Esc round trip.
+                            # A click on empty space leaves the edit alone rather than
+                            # committing a half-typed value by accident.
+                            _ecx, _ecy = _edit_click
+                            _lands = any(
+                                _ecy == _rr and _rx0 <= _ecx <= _rx1
+                                for _rr, _rx0, _rx1, *_rest in getattr(_s_panel, "_row_regions", [])
+                            ) or any(
+                                _ecy in (_lr, _ur) and _sc <= _ecx <= _ec
+                                for _lr, _ur, _sc, _ec in getattr(_s_panel, "_tab_regions", [])
+                            )
+                            if not _lands:
+                                continue
+                            _s_commit_edit()
+                        elif sk == "enter":
+                            _s_commit_edit()
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
+                        elif sk == "esc" and esc_came_from_back_tab():
+                            # The back BUTTON means leave, not "unwind one level at a
+                            # time" — clicking it three times to get out is not a
+                            # back button. Commit like any other click away, then go.
+                            _s_commit_edit()
+                            _s_box, _s_field = -1, -1
+                            logger.info("Settings: back tab clicked")
+                            break
+                        elif sk == "esc":
+                            # Esc alone cancels: 'q' is a character you have to be able
+                            # to type (an Ollama model name starts with one). The edit
+                            # eats the key, so the back tab must not fold away — the
+                            # Esc chokepoint armed its retract before we got a say.
+                            from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                            cancel_back_retract()
+                            set_text_entry(False)
+                            _s_edit = None  # cancel — discard the buffer
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
+                        else:
+                            _settings_edit_keypress(sk, _s_edit)  # mutate buffer/cursor
+                            _s_panel = _render_settings(time.monotonic() - _s_anim_start)
+                            continue
+
+                    _s_click = parse_click(sk)
+                    if _s_click is not None:
+                        _cx, _cy = _s_click
+                        # Click a tab (its label or the underline) → switch to it.
+                        _hit_tab = False
+                        for _i, (_lr, _ur, _sc, _ec) in enumerate(getattr(_s_panel, "_tab_regions", [])):
+                            if _cy in (_lr, _ur) and _sc <= _cx <= _ec:
+                                if _i != _s_tab:
+                                    _s_tab, _s_scroll = _i, 0
+                                    _s_box, _s_field = -1, -1
+                                _hit_tab = True
+                                break
+                        # Otherwise, click an editable config row → edit it in place.
+                        if not _hit_tab:
+                            # Sections are boxed side by side now, so two editable rows
+                            # can share a terminal row — the column range disambiguates.
+                            for _rr, _rx0, _rx1, _env, _label, _masked in getattr(_s_panel, "_row_regions", []):
+                                if _cy != _rr or not (_rx0 <= _cx <= _rx1):
+                                    continue
+                                # Move keyboard focus onto whatever was clicked, so Esc
+                                # lands back on that section rather than the tab bar.
+                                for _bi, _fields in enumerate(getattr(_s_panel, "_box_fields", [])):
+                                    _hit = [_fi for _fi, _f in enumerate(_fields) if _f[0] == _env]
+                                    if _hit:
+                                        _s_box, _s_field = _bi, _hit[0]
+                                        break
+                                _s_begin_edit(_env, _label, _masked)
+                                break
+                    elif sk in ("up", "down", "left", "right") and (_s_box >= 0 or sk == "down"):
+                        # Arrows drive focus: between values inside an opened section,
+                        # otherwise between the section boxes themselves. Left/Right at
+                        # the tab-bar level fall through to the tab switch below.
+                        _s_box, _s_field = settings_focus_move(
+                            sk,
+                            getattr(_s_panel, "_box_cols", []) or [],
+                            getattr(_s_panel, "_box_tail", []) or [],
+                            getattr(_s_panel, "_box_fields", []) or [],
+                            _s_box,
+                            _s_field,
+                        )
+                    elif sk in SCROLL_KEYS:
                         _ns = coalesce_scroll(_s_scroll, sk, _s_scroll_meta, read_key)
                         if _ns == _s_scroll:
                             continue
                         _s_scroll = _ns
                     elif sk == "left":
-                        _s_sel = max(0, _s_sel - 1)
-                    elif sk == "right":
-                        _s_sel = min(4, _s_sel + 1)
+                        _s_tab, _s_scroll = (_s_tab - 1) % _n_tabs, 0
+                    elif sk in ("right", "tab"):
+                        _s_tab, _s_scroll, _s_box, _s_field = (_s_tab + 1) % _n_tabs, 0, -1, -1
+                    elif sk in ("enter", " ") and _s_box >= 0:
+                        _fields = _s_fields_of(_s_box)
+                        if 0 <= _s_field < len(_fields):
+                            _env, _label, _masked = _fields[_s_field]
+                            _s_begin_edit(_env, _label, _masked)
+                        elif _fields:
+                            _s_field = 0  # open the section — arrows now walk its values
+                    elif sk == "esc" and _s_box >= 0 and not esc_came_from_back_tab():
+                        # Pops one focus level instead of leaving, so the app-wide back
+                        # tab (already armed by the Esc chokepoint) must stay put.
+                        from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                        cancel_back_retract()
+                        if _s_field >= 0:
+                            _s_field = -1
+                        else:
+                            _s_box = -1
                     elif sk in ("enter", " "):
-                        if _s_sel == 0:
-                            # Configure — launch setup wizard
-                            logger.info("Settings: launching setup wizard")
-                            _launch_setup_wizard(console, live)
-                            _settings_data = _collect_settings_data()
-                        elif _s_sel == 1:
-                            # Log Level — cycle, persist to .env, apply live
+                        _act = settings_tab_action(_s_tab)
+                        # 'datadir' is gone as a tab action: Storage folded into System,
+                        # and YEABOI_HOME is opened as a row like every other value
+                        # (see _s_begin_edit, which still routes it to the move flow).
+                        if _act == "loglevel":
+                            # Advanced tab → cycle log level, persist to .env, apply live.
                             from yeaboi.config import get_log_level, set_log_level
                             from yeaboi.logging_setup import apply_level
 
@@ -10654,42 +11607,17 @@ def select_mode(
                             apply_level(_new_level)
                             _settings_data = _collect_settings_data()
                             logger.info("Settings: log level cycled to %s", _new_level)
-                        elif _s_sel == 2:
-                            # Data Dir — one prompt for YEABOI_HOME (+ optional move)
-                            logger.info("Settings: Data Dir editor opened")
-                            _dd_msg = _settings_data_dir_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                            _settings_data = _collect_settings_data()
-                            if _dd_msg:
-                                _settings_data["_message"] = _dd_msg
-                        elif _s_sel == 3:
-                            # Paths — edit the sandbox whitelist (YEABOI_ALLOWED_PATHS)
-                            logger.info("Settings: Allowed Paths editor opened")
-                            _ap_msg = _settings_allowed_paths_flow(
-                                console, live, read_key, _FRAME_TIME, _supports_timeout
-                            )
-                            _settings_data = _collect_settings_data()
-                            if _ap_msg:
-                                _settings_data["_message"] = _ap_msg
                         else:
-                            logger.info("Settings: user pressed Back")
-                            break
+                            # Every other tab → the setup wizard configures it.
+                            logger.info("Settings: launching setup wizard (%s)", _SETTINGS_TABS[_s_tab])
+                            _launch_setup_wizard(console, live)
+                            _settings_data = _collect_settings_data()
+                        _s_box, _s_field = -1, -1  # the flow may have changed the data
                     elif sk in ("esc", "q"):
                         logger.info("Settings: user pressed Esc")
+                        set_text_entry(False)  # belt and braces — never leave it latched
                         break
-                    w, h = console.size
-                    _s_elapsed = time.monotonic() - _s_anim_start
-                    live.update(
-                        _build_settings_screen(
-                            _settings_data,
-                            scroll_offset=_s_scroll,
-                            scroll_meta=_s_scroll_meta,
-                            width=w,
-                            height=h,
-                            action_sel=_s_sel,
-                            shimmer_tick=_s_elapsed,
-                            sub_reveal=_s_elapsed * _HEADER_SUB_SPEED,
-                        )
-                    )
+                    _s_panel = _render_settings(time.monotonic() - _s_anim_start)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue
@@ -10698,7 +11626,6 @@ def select_mode(
             # Reached only when none of the mode branches above matched, i.e.
             # chosen["key"] == "project-planning". Runs once, before the project
             # list loop, so the intro plays a single time per Planning entry.
-            play_wordmark_intro(console, live, chosen["title"], chosen["color"], frame_time=_FRAME_TIME)
 
             # Staggered vertical reveal — cards pop in one by one, fast.
             _reveal_target = float(proj_n)
@@ -10795,9 +11722,37 @@ def select_mode(
 
                 prev_tick = time.monotonic()
                 _list_anim0 = prev_tick  # shimmer title clock
+                _list_last_panel = None  # most recent list panel, for click hit-testing
 
                 while True:
                     key = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
+
+                    # ── Mouse: click a card to select + open it ──────────────
+                    # Mirrors _build_run_hub_screen's _card_regions hit-test: map the
+                    # click-y onto a card's flat index, then synthesise Enter-on-card.
+                    # Only the card body activates (focus 0); edge Delete/Export buttons
+                    # are not click-targets here. Ignored while a popup is modal.
+                    _list_click = parse_click(key)
+                    if _list_click is not None:
+                        if team_popup_open or delete_popup_open:
+                            continue
+                        _list_hit = next(
+                            (
+                                idx
+                                for y0, y1, idx in getattr(_list_last_panel, "_card_regions", []) or []
+                                if y0 <= _list_click[1] <= y1
+                            ),
+                            None,
+                        )
+                        if _list_hit is None:
+                            continue
+                        proj_selected = _list_hit
+                        focus = 0
+                        del_fade_target = 0.0
+                        exp_fade_target = 0.0
+                        action_btns_visible = 0.0
+                        action_btns_visible_target = 2.0 if _is_project_row() else 0.0
+                        key = "enter"  # fall through to Enter-on-card handling
 
                     # ── Team analysis popup mode ──────────────────────────────
                     # Button selector: Left/Right navigates, Enter confirms.
@@ -11228,10 +12183,12 @@ def select_mode(
                                 )
                             time.sleep(_FRAME_TIME)
 
-                        # Step 3: Restart mode selection, skip the fade-in.
-                        # Description typewriter starts fresh from select_time.
+                        # Step 3: Restart mode selection. This branch already slid the
+                        # menu back in, so mark it so the outer loop doesn't re-sweep;
+                        # _skip_fade_in still gives the companion its return entrance.
                         _restart_mode_select = True
                         _skip_fade_in = True
+                        _reverse_animated = True
                         break  # break Phase 3 loop → restart Phase 1
 
                     # Animate button fade — smoothly move current values toward targets
@@ -11375,38 +12332,37 @@ def select_mode(
                         card_fade_target = 1.0
 
                     w, h = console.size
-                    live.update(
-                        _build_project_list_screen(
-                            projects,
-                            proj_selected,
-                            width=w,
-                            height=h,
-                            focus=focus,
-                            del_fade=del_fade,
-                            exp_fade=exp_fade,
-                            card_fade=card_fade,
-                            pulse=pulse,
-                            action_btns_visible=action_btns_visible,
-                            show_export_submenu=export_submenu_open or submenu_visible > 0,
-                            submenu_sel=submenu_sel,
-                            submenu_html_fade=submenu_html_fade,
-                            submenu_md_fade=submenu_md_fade,
-                            submenu_jira_fade=submenu_jira_fade,
-                            submenu_azdevops_fade=submenu_azdevops_fade,
-                            submenu_visible=submenu_visible,
-                            delete_popup_name=delete_popup_name,
-                            delete_popup_t=delete_popup_t,
-                            delete_popup_pulse=delete_popup_pulse,
-                            delete_popup_flash=delete_popup_flash,
-                            team_popup_t=team_popup_t,
-                            team_popup_sel=team_popup_sel,
-                            team_popup_pulse=team_popup_pulse,
-                            team_popup_message=_team_popup_msg,
-                            jira_enabled=_jira_ok,
-                            azdevops_enabled=_azdevops_ok,
-                            shimmer_tick=now - _list_anim0,
-                        )
+                    _list_last_panel = _build_project_list_screen(
+                        projects,
+                        proj_selected,
+                        width=w,
+                        height=h,
+                        focus=focus,
+                        del_fade=del_fade,
+                        exp_fade=exp_fade,
+                        card_fade=card_fade,
+                        pulse=pulse,
+                        action_btns_visible=action_btns_visible,
+                        show_export_submenu=export_submenu_open or submenu_visible > 0,
+                        submenu_sel=submenu_sel,
+                        submenu_html_fade=submenu_html_fade,
+                        submenu_md_fade=submenu_md_fade,
+                        submenu_jira_fade=submenu_jira_fade,
+                        submenu_azdevops_fade=submenu_azdevops_fade,
+                        submenu_visible=submenu_visible,
+                        delete_popup_name=delete_popup_name,
+                        delete_popup_t=delete_popup_t,
+                        delete_popup_pulse=delete_popup_pulse,
+                        delete_popup_flash=delete_popup_flash,
+                        team_popup_t=team_popup_t,
+                        team_popup_sel=team_popup_sel,
+                        team_popup_pulse=team_popup_pulse,
+                        team_popup_message=_team_popup_msg,
+                        jira_enabled=_jira_ok,
+                        azdevops_enabled=_azdevops_ok,
+                        shimmer_tick=now - _list_anim0,
                     )
+                    live.update(_list_last_panel)
 
                 # Guard: Esc from project list sets _restart_mode_select → skip to outer loop
                 if _restart_mode_select:

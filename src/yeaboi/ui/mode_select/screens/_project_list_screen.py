@@ -332,9 +332,20 @@ def _build_project_list_screen(
     # Left pad matches _PAD (4 chars) so cards align with the ASCII title
     _card_pad = (0, 0, 0, len(_PAD))
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
+
+    # Click hit-testing: record each clickable card's absolute 1-based row span
+    # so the consuming loops can map a mouse click onto an item's flat index.
+    # The first body element sits at: panel border (1) + top pad (1) + header
+    # content (header_h rows) + 1 (1-based) = header_h + 3. Verified against a
+    # real render. Non-clickable rows (peeks, section headers, spacers) still
+    # advance the cursor. body_h uses _CARD_H for every card, but the cursor must
+    # track ACTUAL rendered heights (3 for the "+ New" cards, 5 for rows), so it
+    # is advanced separately — mirrors _build_run_hub_screen's _card_regions.
+    card_regions: list[tuple[int, int, int]] = []  # (y_top, y_bot, flat_index)
+    _row_cursor = header_h + 3
 
     _profiles = profiles or []
     _analysis_labels = new_analysis_labels or []
@@ -351,15 +362,20 @@ def _build_project_list_screen(
 
     if not _use_viewport and not projects:
         # No scrolling needed for empty state (only 2 items + team section)
+        # Both the empty-state card (index 0) and the "+ New Project" card
+        # (index 1) start the new-project flow, so both are clickable.
         body.append(
             Padding(
                 _build_empty_state_card(selected=(selected == 0), box_w=box_w, opacity=card_opacity),
                 _card_pad,
             )
         )
+        card_regions.append((_row_cursor, _row_cursor + 6 - 1, 0))
+        _row_cursor += 6
         body_h += 6  # empty state card: border(2) + padding(2) + content(2)
         body.append(Text(""))
         body_h += 1
+        _row_cursor += 1
         body.append(
             Padding(
                 _build_new_project_card(
@@ -370,6 +386,8 @@ def _build_project_list_screen(
                 _card_pad,
             )
         )
+        card_regions.append((_row_cursor, _row_cursor + 3 - 1, 1))
+        _row_cursor += 3
         body_h += 3
 
         # Team Analysis section (after "+ New Project")
@@ -381,6 +399,7 @@ def _build_project_list_screen(
             body_h += 1
             body.append(Text(""))
             body_h += 1
+            _row_cursor += 3  # blank + header + blank
 
             _team_start_idx = 2  # after empty_state + new_project
             for pi, prof in enumerate(_profiles):
@@ -404,10 +423,13 @@ def _build_project_list_screen(
                     submenu_visible=profile_submenu_visible if is_sel else 0.0,
                 )
                 body.append(Padding(row, _card_pad))
+                card_regions.append((_row_cursor, _row_cursor + _CARD_H - 1, idx))
+                _row_cursor += _CARD_H
                 body_h += _CARD_H
                 if pi < len(_profiles) - 1 or _analysis_labels:
                     body.append(Text(""))
                     body_h += _CARD_SPACING
+                    _row_cursor += _CARD_SPACING
 
             for ai, al in enumerate(_analysis_labels):
                 idx = _team_start_idx + len(_profiles) + ai
@@ -418,10 +440,13 @@ def _build_project_list_screen(
                     opacity=card_opacity,
                 )
                 body.append(Padding(card, _card_pad))
+                card_regions.append((_row_cursor, _row_cursor + 3 - 1, idx))
+                _row_cursor += 3
                 body_h += 3
                 if ai < len(_analysis_labels) - 1:
                     body.append(Text(""))
                     body_h += _CARD_SPACING
+                    _row_cursor += _CARD_SPACING
     if _use_viewport:
         # Viewport scrolling — show only cards that fit on screen with peek
         # stubs at the edges hinting at off-screen cards.
@@ -461,6 +486,7 @@ def _build_project_list_screen(
                 )
             )
             body_h += _PEEK_H
+            _row_cursor += _PEEK_H
 
         # Full cards in viewport — staggered reveal via cards_visible.
         for vi, i in enumerate(range(start, end)):
@@ -478,6 +504,13 @@ def _build_project_list_screen(
                 body_h += 1
                 body.append(Text(""))
                 body_h += 1
+                _row_cursor += 3  # blank + header + blank
+
+            # Actual rendered height: rows are 5 tall; the "+ New" cards are 3.
+            _is_new_card = (mode != "analysis" and i == _proj_boundary) or i >= _profile_end
+            _card_h = 3 if _is_new_card else _CARD_H
+            card_regions.append((_row_cursor, _row_cursor + _card_h - 1, i))
+            _row_cursor += _card_h + (_CARD_SPACING if i < end - 1 else 0)
 
             if mode != "analysis" and i < _proj_boundary:
                 # Project row: card + Delete + Export buttons
@@ -766,8 +799,10 @@ def _build_project_list_screen(
         *popup_after,
     )
 
-    return build_page_panel(
+    panel = build_page_panel(
         content,
         theme=ANALYSIS_THEME if mode == "analysis" else PLANNING_THEME,
         height=height,
     )
+    panel._card_regions = card_regions  # (y_top, y_bot, flat_index) per clickable card
+    return panel

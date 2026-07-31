@@ -16,12 +16,11 @@ from rich.text import Text
 
 from yeaboi.ui.shared._animations import COLOR_RGB
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._wordmarks import get_shadow_wordmark
 
-# Every pinned header reserves this many rows so the viewport math stays stable
-# regardless of whether the tall ANSI-Shadow wordmark or the compact fallback is
-# used. ANSI-Shadow art is exactly this tall; the compact font is padded to it.
-TITLE_ROWS = 6
+# Height of a page's title art. Titles now use the compact two-line font (the
+# same one the main-menu rows and the select→page slide use), so headers are two
+# rows tall — the viewport `header_h` values are sized to match.
+TITLE_ROWS = 2
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -56,23 +55,25 @@ class Theme:
     sep: str = "rgb(50,60,80)"
     id: str = "cyan"
     desc: str = "rgb(160,160,160)"
-    # Page background: a dark tint of the mode's accent hue, applied by
-    # build_page_panel as "on {bg}" so the whole terminal shows the mode's
-    # colour instead of the user's terminal background.
+    # Page background: one neutral dark base shared by every screen, applied by
+    # build_page_panel as "on {bg}" so the whole terminal shows a single
+    # consistent colour rather than the user's terminal background. Modes keep
+    # their distinct accent hues (titles, separators) but share this backdrop —
+    # per-mode background tints were dropped for a uniform look across screens.
     bg: str = NEUTRAL_BG
 
 
-ANALYSIS_THEME = Theme(bg="rgb(9,23,19)")
-PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", bg="rgb(13,17,30)")
-USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)", bg="rgb(29,21,9)")
+ANALYSIS_THEME = Theme()
+PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)")
+USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
-STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)", bg="rgb(26,13,23)")
-RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)", bg="rgb(10,25,25)")
+STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
+RETRO_THEME = Theme(accent="rgb(80,190,190)", accent_bright="rgb(120,230,230)")
 # Gold, not table-felt green — analysis owns green, and the two cards sat side
 # by side looking like twins. Gold keeps the casino identity (chips) instead.
-POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)", bg="rgb(27,24,10)")
-PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)", bg="rgb(29,15,12)")
-REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)", bg="rgb(19,16,30)")
+POKER_THEME = Theme(accent="rgb(230,200,70)", accent_bright="rgb(255,235,110)")
+PERFORMANCE_THEME = Theme(accent="rgb(220,110,90)", accent_bright="rgb(255,150,120)")
+REPORTING_THEME = Theme(accent="rgb(140,120,230)", accent_bright="rgb(180,160,255)")
 # Silver chrome on purpose — the changelog page's per-feature area tags carry the
 # colour (each tag uses its mode's accent), so the page frame stays neutral.
 CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
@@ -224,38 +225,33 @@ def center_label(label: str, width: int) -> str:
 
 
 def _title_rows(word: str, available_width: int) -> list[str]:
-    """Return exactly ``TITLE_ROWS`` equal-width rows for *word*'s header art.
+    """Return equal-width rows for *word*'s header art in the compact two-line font.
 
-    Uses the tall ANSI-Shadow wordmark when it fits ``available_width`` (all the
-    mode names except the very wide "Performance" fit a standard terminal); else
-    falls back to the compact two-line font, padded with blank rows so the header
-    block is always ``TITLE_ROWS`` tall and the viewport math stays stable.
+    This is the SAME font the main-menu mode rows and the select→page slide use
+    (:func:`render_ascii_text`), so the title the menu slides up to the top reads
+    as one continuous element when the page takes over — rather than jumping to a
+    header twice its size. ``available_width`` is accepted for call-site
+    compatibility but no longer switches fonts (the tall ANSI-Shadow wordmark is
+    retired here).
     """
-    shadow = get_shadow_wordmark(word)
-    if shadow is not None and len(shadow[0]) + len(PAD) <= available_width:
-        return shadow
-
     lines = render_ascii_text(word)
     block_w = max((len(line) for line in lines), default=0)
-    lines = [line.ljust(block_w) for line in lines]
-    # Centre the short compact art within the taller reserved block.
-    pad_total = TITLE_ROWS - len(lines)
-    top = pad_total // 2
-    return [" " * block_w] * top + lines + [" " * block_w] * (pad_total - top)
+    return [line.ljust(block_w) for line in lines]
 
 
 def build_ascii_title(word: str, color: str, *, shimmer_tick: float | None = None, width: int | None = None) -> Text:
-    """Return an ANSI-Shadow ASCII-art title for ``word`` in ``color``.
+    """Return a compact two-line ASCII-art title for ``word`` in ``color``.
 
-    Always ``TITLE_ROWS`` rows tall (see ``_title_rows``) so every screen's
-    header occupies a fixed height. When ``shimmer_tick`` is None the title is a
-    solid bold colour (the static look); when a float is passed, a travelling
-    white highlight sweeps across the glyphs, so a page's header can animate by
-    feeding it a monotonic clock each frame.
+    ``TITLE_ROWS`` rows tall (see ``_title_rows``) — the same compact font the
+    main-menu rows and the select→page slide use, so the slid menu title reads as
+    the page title rather than jumping to a header twice its size. When
+    ``shimmer_tick`` is None the title is a solid bold colour (the static look);
+    when a float is passed, a travelling white highlight sweeps across the glyphs,
+    so a page's header can animate by feeding it a monotonic clock each frame.
 
     ``color`` is an ``"rgb(r,g,b)"`` key present in COLOR_RGB (the shimmer needs
-    it registered). ``width`` is the usable panel width — used to decide whether
-    the tall wordmark fits; defaults to a standard 80-col terminal's inner width.
+    it registered). ``width`` is accepted for call-site compatibility (the font no
+    longer varies with width); defaults to a standard 80-col terminal's inner width.
     This is the single implementation the per-page ``*_title()`` helpers delegate
     to — keeping every header visually identical.
     """
@@ -523,7 +519,7 @@ def build_meter(
     return meter
 
 
-def calc_viewport(height: int, *, header_h: int = 11, action_h: int = 4) -> int:
+def calc_viewport(height: int, *, header_h: int = 7, action_h: int = 4) -> int:
     """Calculate viewport height from terminal height.
 
     Accounts for panel border (2) + padding (2) = 4 rows overhead,

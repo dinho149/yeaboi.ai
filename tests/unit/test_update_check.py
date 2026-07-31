@@ -199,3 +199,47 @@ class TestGetUpdateStatus:
         status = update_check.get_update_status()
         assert status["is_dev"] is True
         assert status["update_available"] is False
+
+
+class TestRunUpgrade:
+    """The ctrl+U in-app upgrade runner — never raises, reports (ok, message)."""
+
+    def test_success_returns_ok_and_stdout(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(update_check, "detect_upgrade_command", lambda: "uv tool upgrade yeaboi")
+
+        def _fake_run(args, **kwargs):
+            assert args == ["uv", "tool", "upgrade", "yeaboi"]
+            return subprocess.CompletedProcess(args, 0, stdout="Updated yeaboi", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        ok, msg = update_check.run_upgrade()
+        assert ok is True
+        assert "Updated yeaboi" in msg
+
+    def test_nonzero_exit_returns_failure_with_stderr(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(update_check, "detect_upgrade_command", lambda: "pipx upgrade yeaboi")
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda args, **kw: subprocess.CompletedProcess(args, 1, stdout="", stderr="no network"),
+        )
+        ok, msg = update_check.run_upgrade()
+        assert ok is False
+        assert "no network" in msg
+
+    def test_launch_exception_is_swallowed(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(update_check, "detect_upgrade_command", lambda: "uv tool upgrade yeaboi")
+
+        def _boom(*a, **k):
+            raise FileNotFoundError("uv not found")
+
+        monkeypatch.setattr(subprocess, "run", _boom)
+        ok, msg = update_check.run_upgrade()
+        assert ok is False
+        assert "uv not found" in msg

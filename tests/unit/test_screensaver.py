@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.text import Text
 
 from yeaboi.ui.shared import _input, _screensaver
@@ -121,7 +122,8 @@ def test_live_swaps_saver_without_losing_underlying_renderable(monkeypatch):
     controller, clock = _controller(seconds=1)
     monkeypatch.setattr(_screensaver, "idle_controller", controller)
     underlying = Text("underlying")
-    live = make_live(underlying, console=Console(width=80, height=24))
+    # Above the min-size floor so the app-wide too-small guard doesn't intercept.
+    live = make_live(underlying, console=Console(width=100, height=45))
 
     controller.begin_input_wait()
     clock.advance(1)
@@ -141,3 +143,46 @@ def test_full_compact_and_tiny_layouts_fit_the_terminal():
         )
         assert len(lines) <= height
         assert all(sum(segment.cell_length for segment in line) <= width for line in lines)
+
+
+def test_screensaver_large_uses_full_duck():
+    saver = build_screensaver(width=60, height=22, elapsed=0.0)
+    assert isinstance(saver, Panel)  # framed so the border stays put on idle
+
+
+def test_screensaver_compact_tier_renders():
+    saver = build_screensaver(width=30, height=15, elapsed=0.0)
+    assert isinstance(saver, Panel)
+
+
+def test_screensaver_tiny_tier_renders():
+    saver = build_screensaver(width=10, height=4, elapsed=0.0)
+    assert isinstance(saver, Panel)
+
+
+def test_screensaver_is_framed_with_a_border():
+    # The saver must keep the app's rounded border when it takes over the screen.
+    con = Console(width=60, height=24, record=True, file=open("/dev/null", "w"))
+    con.print(build_screensaver(width=60, height=24, elapsed=0.0))
+    text = con.export_text()
+    assert "╭" in text and "╰" in text  # rounded box corners present
+
+
+def test_screensaver_animates_between_frames():
+    def rendered(elapsed):
+        con = Console(width=60, height=22, record=True, file=open("/dev/null", "w"))
+        con.print(build_screensaver(width=60, height=22, elapsed=elapsed))
+        return con.export_text()
+
+    assert rendered(0.0) != rendered(0.375)  # frame 0 vs frame 3 (wing lifted)
+
+
+def test_screensaver_has_no_caption_or_hint():
+    # The "chilling" caption and "press any key" hint were removed — the saver is
+    # just the duck. Check the standing full tier (22) and the walking tier (28).
+    for h in (22, 28):
+        con = Console(width=60, height=h, record=True, file=open("/dev/null", "w"))
+        con.print(build_screensaver(width=60, height=h, elapsed=0.0))
+        text = con.export_text()
+        assert "chilling" not in text and "press any key" not in text
+        assert any(ch in text for ch in "▀▄█")  # the duck art still renders

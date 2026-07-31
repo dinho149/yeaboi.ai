@@ -94,11 +94,9 @@ def _build_run_hub_screen(
     title = title_fn(shimmer_tick)
 
     sub_color = lerp_color(card_opacity, BLACK_RGB, (100, 100, 100))
-    if message:
-        # A transient toast (export/delete/run-again result) takes the subtitle row so
-        # list-level actions give feedback without disturbing the fixed header height.
-        sub = Text(_PAD + message, style="rgb(120,200,140)", justify="left")
-    elif show_subtitle:
+    # Transient toasts (export/delete/run-again results) are spoken by the duck now
+    # (see _duck_say below), so the subtitle row keeps its own label.
+    if show_subtitle:
         sub = Text(_PAD + subtitle, style=sub_color, justify="left")
     else:
         sub = Text("")
@@ -110,14 +108,33 @@ def _build_run_hub_screen(
     body_h = 0
     _card_pad = (0, 0, 0, len(_PAD))
 
+    # One blank line above the title — the exact offset the select→page slide
+    # eases to (its ``end_offset = 1``) and the same layout the planning/analysis
+    # project list uses. Anything larger (e.g. the menu's own top-row offset) makes
+    # the title drop a couple of rows the instant the slide hands off to the hub.
+    title_offset = 1
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = title_offset + 5  # title_offset blanks + title(2) + blank + subtitle + blank
 
     n_items = len(runs) + 1 + (1 if extra_label else 0)  # runs + "+ New run" (+ extra card)
     _new_idx = len(runs)
 
     available_h = inner_h - header_h
     start, end, show_above, show_below = _compute_viewport(n_items, selected, available_h)
+
+    # Click hit-testing: record each visible card's 1-based row span so the hub loop
+    # can map a mouse click onto an item. Rows are absolute (panel border + top pad
+    # + header, then the body). The "+ New" card renders 3 rows tall; run cards 5.
+    card_regions: list[tuple[int, int, int]] = []  # (y_top, y_bot, item_index)
+    # Delete/Export button rects for the selected run card (empty when the "+ New"
+    # card is focused or the buttons are hidden). Column geometry mirrors
+    # _build_project_row's Table.grid: panel border(1) + panel L-pad(2) + card
+    # L-pad(len PAD) precede the card; then a 1-col grid gap, Delete (_BTN_W wide),
+    # a 1-col gap, and Export (_BTN_W wide). Verified against a real render.
+    btn_regions: list[tuple[int, int, int, int, str]] = []  # (x0, y0, x1, y1, label)
+    _card_x0 = 3 + len(_PAD) + 1  # 1-based first column of the card box
+    _new_card_h = 3
+    _row_cursor = title_offset + 8
 
     def _item_title(idx: int) -> str:
         if idx < len(runs):
@@ -131,10 +148,28 @@ def _build_run_hub_screen(
             Padding(_build_peek_above(box_w=box_w, opacity=card_opacity, title=_item_title(start - 1)), _card_pad)
         )
         body_h += _PEEK_H
+        _row_cursor += _PEEK_H
 
     for vi, i in enumerate(range(start, end)):
         if vi >= cards_visible:
             break
+        _card_h = _CARD_H if i < len(runs) else _new_card_h
+        card_regions.append((_row_cursor, _row_cursor + _card_h - 1, i))
+        # Record the Delete/Export button rects when this run card is the selected
+        # one and its action buttons are revealed. The buttons occupy the same rows
+        # as the card. Delete shows once action_btns_visible > 0, Export once > 1.0
+        # (mirrors _build_project_row's del_opacity / exp_opacity gating).
+        if i == selected and i < len(runs):
+            _y0, _y1 = _row_cursor, _row_cursor + _card_h - 1
+            _del_op = min(1.0, max(0.0, action_btns_visible))
+            _exp_op = min(1.0, max(0.0, action_btns_visible - 1.0))
+            _del_x0 = _card_x0 + box_w + 1  # 1-col grid gap after the card
+            if _del_op > 0:
+                btn_regions.append((_del_x0, _y0, _del_x0 + _BTN_W - 1, _y1, "delete"))
+            if _exp_op > 0:
+                _exp_x0 = _del_x0 + _BTN_W + 1  # 1-col gap after Delete
+                btn_regions.append((_exp_x0, _y0, _exp_x0 + _BTN_W - 1, _y1, "export"))
+        _row_cursor += _card_h + (_CARD_SPACING if i < end - 1 else 0)
         if i < len(runs):
             is_sel = i == selected
             row = _build_project_row(
@@ -207,6 +242,9 @@ def _build_run_hub_screen(
                 _card_pad,
             )
         )
+        # The empty-state hint card (6 rows) + spacer (1) sit above the clickable
+        # "+ New" card (the only item here, index 0).
+        card_regions = [(title_offset + 8 + 7, title_offset + 8 + 7 + _new_card_h - 1, 0)]
         body_h += 3
         if extra_label:
             body.append(Text(""))
@@ -223,87 +261,32 @@ def _build_run_hub_screen(
 
     remaining = max(0, inner_h - header_h - body_h)
 
-    # Delete confirmation popup — red-bordered overlay sliding up from the bottom.
-    # Ported from _build_project_list_screen so the confirm UX matches exactly.
-    popup_before: list = []
-    popup_mid: list = []
-    popup_after: list = []
-    if delete_popup_name and delete_popup_t > 0:
-        import math as _math
-
-        popup_msg = f'Delete "{delete_popup_name}"?  Enter to confirm'
-        panel_inner_w = width - 6
-        popup_w = min(panel_inner_w, max(40, len(popup_msg) + 8))
-
-        dark_red = (140, 30, 30)
-        bright_red = (255, 90, 90)
-        t = (_math.cos(delete_popup_pulse * 3) + 1) / 2
-        br = int(dark_red[0] + (bright_red[0] - dark_red[0]) * t)
-        bg = int(dark_red[1] + (bright_red[1] - dark_red[1]) * t)
-        bb = int(dark_red[2] + (bright_red[2] - dark_red[2]) * t)
-        if delete_popup_flash > 0:
-            br = int(br + (255 - br) * delete_popup_flash)
-            bg = int(bg + (255 - bg) * delete_popup_flash)
-            bb = int(bb + (255 - bb) * delete_popup_flash)
-        border_style = f"rgb({br},{bg},{bb})"
-        inner_w = popup_w - 2
-
-        msg_pad_l = max(0, (inner_w - len(popup_msg)) // 2)
-        msg_pad_r = max(0, inner_w - len(popup_msg) - msg_pad_l)
-        centered_msg = " " * msg_pad_l + popup_msg + " " * msg_pad_r
-        h_pad = " " * max(0, (panel_inner_w - popup_w) // 2)
-
-        line_top = Text(h_pad, justify="left")
-        line_top.append("╭" + "─" * inner_w + "╮", style=border_style)
-        line_blank1 = Text(h_pad, justify="left")
-        line_blank1.append("│" + " " * inner_w + "│", style=border_style)
-        line_msg = Text(h_pad, justify="left")
-        line_msg.append("│", style=border_style)
-        line_msg.append(centered_msg, style="bold white")
-        line_msg.append("│", style=border_style)
-        line_blank2 = Text(h_pad, justify="left")
-        line_blank2.append("│" + " " * inner_w + "│", style=border_style)
-        line_bot = Text(h_pad, justify="left")
-        line_bot.append("╰" + "─" * inner_w + "╯", style=border_style)
-
-        popup_lines = [line_top, line_blank1, line_msg, line_blank2, line_bot]
-        popup_h = len(popup_lines)
-
-        overflow = popup_h - remaining
-        while overflow > 0 and body and body_h > 0:
-            last = body[-1]
-            if isinstance(last, Text) and not last.plain.strip():
-                item_h = _CARD_SPACING
-            elif isinstance(last, Padding) and isinstance(last.renderable, Group):
-                item_h = _PEEK_H
-            else:
-                item_h = _CARD_H
-            body.pop()
-            body_h -= item_h
-            overflow -= item_h
-        remaining = max(0, inner_h - header_h - body_h)
-
-        resting_above = max(0, remaining - popup_h)
-        start_above = remaining
-        current_above = int(start_above + (resting_above - start_above) * delete_popup_t)
-        current_below = max(0, remaining - current_above - popup_h)
-
-        popup_before = [Text("") for _ in range(current_above)]
-        popup_mid = popup_lines
-        popup_after = [Text("") for _ in range(current_below)]
-    else:
-        popup_before = [Text("") for _ in range(remaining)]
+    # The delete confirmation comes from the DUCK now (see _duck_say below) rather
+    # than a red overlay in the middle of the page, so it reads as him asking.
+    popup_before = [Text("") for _ in range(remaining)]
 
     content = Group(
-        Text(""),
+        *[Text("") for _ in range(title_offset)],
         title,
         Text(""),
         sub,
         Text(""),
         *body,
         *popup_before,
-        *popup_mid,
-        *popup_after,
     )
 
-    return build_page_panel(content, theme=theme, height=height, padding=(0, 2))
+    # Top padding of 1 (matching every other page and this builder's own
+    # `inner_h = height - 4`) so the title lands one line below the top border —
+    # level with where the menu's select→page slide leaves it, not a row higher.
+    # Routed through build_page_panel (main #104) so the mode's bg tint applies.
+    panel = build_page_panel(content, theme=theme, height=height, padding=(1, 2))
+    panel._card_regions = card_regions  # (y_top, y_bot, item_index) per clickable card
+    panel._btn_regions = btn_regions  # (x0, y0, x1, y1, label) for the selected card's buttons
+    # The duck carries both delete messages: the confirmation (sticky — it must wait
+    # for an answer rather than fading) and the "deleted" toast that follows.
+    if delete_popup_name and delete_popup_t > 0:
+        panel._duck_say = f'Delete "{delete_popup_name}"?  Enter to confirm'
+        panel._duck_say_sticky = True
+    elif message:
+        panel._duck_say = message
+    return panel

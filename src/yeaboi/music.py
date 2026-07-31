@@ -156,7 +156,7 @@ def _reconcile_status() -> None:
         _state.daemon = None
         _state.status = "stopped"
         _state._paused_for_voice = False
-        _state.last_error = "music stopped — stream unavailable, ^P to retry"
+        _state.last_error = "music stopped — stream unavailable, ctrl+P to retry"
         logger.warning("Music player exited on its own (rc=%s); reverting to stopped", rc)
 
 

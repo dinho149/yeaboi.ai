@@ -39,6 +39,7 @@ from yeaboi.config import (
     get_notion_token,
 )
 from yeaboi.export_targets import CONFLUENCE_PATH_HINT, NOTION_PATH_HINT
+from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
@@ -236,19 +237,18 @@ def pick_export_destination(
             key = keys[sel] if sel < len(keys) else "back"
             subtitle = _dest_description(key, labels[sel], mode)
         w, h = console.size
-        live.update(
-            _build_export_picker_screen(
-                mode=mode,
-                labels=labels,
-                selected=sel,
-                warning=warning,
-                warning_actions=["Open Setup", "Back"] if warning and open_setup is not None else None,
-                warning_sel=wsel,
-                subtitle=subtitle,
-                width=w,
-                height=h,
-            )
+        panel = _build_export_picker_screen(
+            mode=mode,
+            labels=labels,
+            selected=sel,
+            warning=warning,
+            warning_actions=["Open Setup", "Back"] if warning and open_setup is not None else None,
+            warning_sel=wsel,
+            subtitle=subtitle,
+            width=w,
+            height=h,
         )
+        live.update(panel)
         # Session phases pass a _key(timeout=...) that may not accept the kwarg —
         # same TypeError fallback the phase loops themselves use.
         try:
@@ -260,6 +260,19 @@ def pick_export_destination(
         # be dismissed by the very next frame tick.
         if not k:
             continue
+        # Click a button → select it and act, exactly like arrow-to + Enter.
+        clicked = parse_click(k)
+        if clicked is not None:
+            _cx, _cy = clicked
+            row_labels = ["Open Setup", "Back"] if (warning and open_setup is not None) else labels
+            idx = button_click(console, panel, _cx, _cy, row_labels)
+            if idx is None:
+                continue  # clicked off the button row — ignore
+            if warning and open_setup is not None:
+                wsel = idx
+            else:
+                sel = idx
+            k = "enter"
         if warning:
             if open_setup is None:
                 # Any real key acknowledges the warning and returns to the picker.

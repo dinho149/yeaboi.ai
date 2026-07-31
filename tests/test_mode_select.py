@@ -15,6 +15,13 @@ from yeaboi.ui.mode_select import (
     _build_project_row,
     _compute_viewport,
 )
+from yeaboi.ui.mode_select.screens._screens import (
+    _MODE_CARDS,
+    _build_mode_screen,
+    duck_hit,
+    mode_at_row,
+    selected_title_offset,
+)
 
 
 def _render(renderable, width: int = 80) -> str:
@@ -337,3 +344,215 @@ class TestExportSuccessScreen:
         screen = _build_project_export_success_screen("/tmp/test.json")
         rendered = _render(screen)
         assert "exported" in rendered.lower()
+
+
+def _text_of(panel, width, height):
+    con = Console(width=width, height=height, record=True, file=open("/dev/null", "w"))
+    con.print(panel)
+    return con.export_text()
+
+
+class TestModeScreenCompanion:
+    """Test the head-companion mascot rendered beside the welcome-screen menu."""
+
+    def test_companion_present_when_wide(self):
+        # Companion layout: the tip controls sit ON the speech-bubble border, so the
+        # "prev/next" line carries the bubble's rounded corners.
+        panel = _build_mode_screen(0, width=110, height=39, shimmer_tick=0.0, desc_reveal=999)
+        line = next(ln for ln in _text_of(panel, 110, 39).splitlines() if "prev" in ln and "next" in ln)
+        assert "╰" in line and "╯" in line
+
+    def test_companion_absent_when_narrow(self):
+        # Narrow: the controls are a plain centred bottom row — no bubble border.
+        panel = _build_mode_screen(0, width=80, height=34, shimmer_tick=0.0, desc_reveal=999)
+        line = next(ln for ln in _text_of(panel, 80, 34).splitlines() if "prev" in ln and "next" in ln)
+        assert "╰" not in line and "╯" not in line
+
+    def test_mode_screen_exact_height_with_companion(self):
+        panel = _build_mode_screen(0, width=110, height=39, shimmer_tick=0.0)
+        text = _text_of(panel, 110, 39)
+        assert len(text.splitlines()) == 39
+
+    def test_tip_controls_live_on_the_bubble_border(self):
+        # The tip controls sit ON the speech-bubble's bottom border (subtitle),
+        # not as a separate row — the control line also carries the bubble's
+        # rounded corners.
+        panel = _build_mode_screen(0, width=120, height=40, desc_reveal=999, shimmer_tick=1.0)
+        lines = _text_of(panel, 120, 40).splitlines()
+        control_line = next(ln for ln in lines if "prev" in ln and "next" in ln)
+        assert "╰" in control_line and "╯" in control_line  # it's the bubble's border row
+
+    def test_no_chilling_caption(self):
+        # The "chilling" caption was removed entirely.
+        panel = _build_mode_screen(0, width=120, height=40, desc_reveal=999, shimmer_tick=1.0)
+        assert "chilling" not in _text_of(panel, 120, 40)
+
+
+class TestModeAtRow:
+    """Click hit-testing: map a terminal (row, col) to a mode card (click-to-select)."""
+
+    def _title_rows(self, selected, width, height):
+        """1-based rows that carry block-font *title* glyphs, from the real render.
+
+        Only the left menu region is scanned — the companion duck also uses block
+        glyphs but lives in the reserved right-hand lane, so it must be excluded.
+        """
+        panel = _build_mode_screen(selected, width=width, height=height, desc_reveal=999)
+        lines = _text_of(panel, width, height).splitlines()
+        left_w = width - 40  # comfortably left of the _COMPANION_COLS (36) duck lane
+        return [i for i, ln in enumerate(lines, 1) if any(g in ln[:left_w] for g in "█▀▄")]
+
+    def test_every_title_row_resolves_to_a_mode(self):
+        # Every rendered block-glyph row must hit *some* mode — no dead titles.
+        w, h = 120, 40
+        for selected in (0, 3, 7):
+            for row in self._title_rows(selected, w, h):
+                assert mode_at_row(selected, width=w, height=h, row=row, col=10) is not None
+
+    def test_rows_are_contiguous_and_ordered(self):
+        # Walking rows top→bottom yields modes 0,1,2,… in order with no gaps.
+        w, h = 120, 40
+        hit_order = []
+        for row in range(1, h + 1):
+            idx = mode_at_row(3, width=w, height=h, row=row, col=10)
+            if idx is not None and (not hit_order or hit_order[-1] != idx):
+                hit_order.append(idx)
+        assert hit_order == list(range(len(_MODE_CARDS)))
+
+    def test_selected_mode_spans_more_rows_than_unselected(self):
+        # The selected card also shows its description, so it owns extra rows.
+        w, h = 120, 40
+        rows = {i: 0 for i in range(len(_MODE_CARDS))}
+        for row in range(1, h + 1):
+            idx = mode_at_row(2, width=w, height=h, row=row, col=10)
+            if idx is not None:
+                rows[idx] += 1
+        assert rows[2] > rows[0]
+
+    def test_click_in_duck_lane_returns_none(self):
+        # A click in the reserved right-hand companion lane isn't a menu click.
+        w, h = 120, 40
+        # A row that maps to a mode in the left column…
+        left = mode_at_row(0, width=w, height=h, row=self._title_rows(0, w, h)[0], col=10)
+        assert left is not None
+        # …resolves to None at the same row but in the duck lane.
+        assert mode_at_row(0, width=w, height=h, row=self._title_rows(0, w, h)[0], col=w - 5) is None
+
+    def test_click_off_the_list_returns_none(self):
+        # The top border and the very bottom (version row) aren't modes.
+        w, h = 120, 40
+        assert mode_at_row(0, width=w, height=h, row=1, col=10) is None
+        assert mode_at_row(0, width=w, height=h, row=h, col=10) is None
+
+    def test_narrow_layout_without_companion_still_hits(self):
+        # Below the companion width the menu is full-width; hit-testing still works
+        # and there is no duck lane to exclude.
+        w, h = 90, 40
+        assert mode_at_row(0, width=w, height=h, row=self._title_rows(0, w, h)[0], col=w - 5) is not None
+
+
+class TestSelectedTitleOffset:
+    """The select→top slide starts from the item's actual resting row."""
+
+    def _title_rows(self, selected, width, height):
+        panel = _build_mode_screen(selected, width=width, height=height, desc_reveal=999)
+        lines = _text_of(panel, width, height).splitlines()
+        left_w = width - 40  # exclude the right-hand duck lane
+        return [i for i, ln in enumerate(lines, 1) if any(g in ln[:left_w] for g in "█▀▄")]
+
+    def test_offset_matches_rendered_title_row(self):
+        # Content begins at 1-based terminal row 3 (top border + top pad); the
+        # offset counts blank rows above the title, so title_row == offset + 3.
+        w, h = 120, 40
+        for selected in (0, 3, 7):
+            rows = self._title_rows(selected, w, h)
+            first_title_row = rows[2 * selected]  # each title is 2 glyph rows
+            assert selected_title_offset(selected, width=w, height=h) + 3 == first_title_row
+
+    def test_later_items_rest_lower_than_earlier_ones(self):
+        # A mid-list pick must start its slide below a top-of-list pick.
+        w, h = 120, 40
+        assert selected_title_offset(7, width=w, height=h) > selected_title_offset(0, width=w, height=h)
+
+    def test_narrow_layout_offset_matches_render(self):
+        # Same invariant holds below the companion width (no duck lane).
+        w, h = 90, 40
+        rows = self._title_rows(2, w, h)
+        assert selected_title_offset(2, width=w, height=h) + 3 == rows[4]
+
+
+class TestDuckHit:
+    """Click-the-duck hit-testing (triggers the double-shades gag)."""
+
+    def test_false_when_no_companion(self):
+        # Below the companion size there's no duck in a lane to click.
+        assert duck_hit(90, 40, row=35, col=80) is False
+
+    def test_true_on_duck_region_in_lane(self):
+        w, h = 120, 40
+        # The resting head spans rows [h-11 .. h-5]; a mid-duck row in the right lane.
+        assert duck_hit(w, h, row=h - 8, col=w - 15) is True
+
+    def test_false_outside_the_lane(self):
+        w, h = 120, 40
+        # Same row but in the left (menu) column — not the duck.
+        assert duck_hit(w, h, row=h - 8, col=10) is False
+
+    def test_false_well_above_the_duck(self):
+        w, h = 120, 40
+        assert duck_hit(w, h, row=6, col=w - 15) is False
+
+
+class TestCompanionEntrance:
+    """On welcome load the duck slides in from the right, then the tip fades in."""
+
+    def _lane_glyphs(self, txt: str) -> int:
+        # Count block-font glyphs in the right-hand companion lane (col ≥ 85); the
+        # mode titles live well to the left of it, so this is the duck.
+        return sum(ln[85:].count("█") for ln in txt.splitlines())
+
+    def test_duck_offscreen_at_start_present_when_settled(self):
+        early = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=0.0), 120, 40)
+        settled = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=1.0), 120, 40)
+        assert self._lane_glyphs(early) == 0  # duck still off-screen during the slide
+        assert self._lane_glyphs(settled) > 0  # duck arrived in its corner
+
+    def test_tip_bubble_hidden_until_the_duck_settles(self):
+        early = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=0.0), 120, 40)
+        settled = _text_of(_build_mode_screen(0, width=120, height=40, companion_intro=1.0), 120, 40)
+        assert "▾" not in early  # no speech-bubble tail while the duck is sliding in
+        assert "▾" in settled  # bubble (and its tail) appear once he's in
+
+
+class TestMusicPocket:
+    """The welcome screen boxes the music bar in a bottom-right pocket."""
+
+    def test_pocket_renders_with_music_and_border(self):
+        panel = _build_mode_screen(0, width=120, height=40, shimmer_tick=1.0)
+        text = _text_of(panel, 120, 40)
+        assert "channel" in text  # the music controls are present…
+        assert "╭" in text and "╰" in text  # …inside a rounded box (roof + floor)
+
+    def test_pocket_frame_is_not_a_panel_so_musiclive_skips_it(self):
+        # The welcome screen returns a frame (not a bare Panel), so MusicLive won't
+        # ALSO stamp the flat subtitle bar onto it (see MusicLive._stamp).
+        from rich.panel import Panel
+
+        result = _build_mode_screen(0, width=120, height=40, shimmer_tick=1.0)
+        assert not isinstance(result, Panel)
+
+    def test_narrow_keeps_flat_bar_panel(self):
+        # Narrow (no companion) keeps the flat subtitle bar — returns a plain Panel.
+        from rich.panel import Panel
+
+        result = _build_mode_screen(0, width=90, height=40, shimmer_tick=1.0)
+        assert isinstance(result, Panel)
+
+    def test_border_reroutes_up_over_the_music(self):
+        # The bottom border rises at the pocket (╯ … ╰ with a gap) rather than a
+        # flat line under the music — verify the rerouted glyphs are on the last row.
+        panel = _build_mode_screen(0, width=120, height=40, shimmer_tick=1.0)
+        lines = [ln for ln in _text_of(panel, 120, 40).splitlines() if ln.strip()]
+        border = next(ln for ln in reversed(lines) if ln.strip().startswith("╰"))
+        assert border.count("╯") == 2 and border.count("╰") == 2  # rose (╯) then dropped (╰)
+        assert border.strip().endswith("╯")  # panel bottom-right corner intact

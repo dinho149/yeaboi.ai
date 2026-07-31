@@ -51,12 +51,23 @@ class TestHubList:
         out = _text(panel)
         assert "Delete" in out and "Export" in out
 
-    def test_delete_popup_renders(self):
+    def test_delete_confirmation_comes_from_the_duck(self):
+        # The red centred overlay was replaced by the companion duck asking: the
+        # panel hands the line to the chrome via _duck_say, sticky so it waits for
+        # an answer instead of fading out like a transient toast.
         panel = _build_run_hub_screen(
             _runs(), 2, title_fn=standup_title, delete_popup_name="Standup — 2026-07-03", delete_popup_t=1.0
         )
-        out = _text(panel)
-        assert "Delete" in out and "Enter to confirm" in out
+        assert panel._duck_say == 'Delete "Standup — 2026-07-03"?  Enter to confirm'
+        assert panel._duck_say_sticky is True
+        assert "Enter to confirm" not in _text(panel)  # no longer in the page body
+
+    def test_delete_result_message_comes_from_the_duck(self):
+        # The follow-up toast ("Deleted.") rides the same channel, non-sticky so it
+        # fades itself out.
+        panel = _build_run_hub_screen(_runs(), 0, title_fn=standup_title, message="Deleted.")
+        assert panel._duck_say == "Deleted."
+        assert getattr(panel, "_duck_say_sticky", False) is False
 
     def test_small_terminal_does_not_crash(self):
         # Just needs to render without raising at a cramped size.
@@ -106,8 +117,10 @@ class TestHubExtraCard:
             delete_popup_t=1.0,
             extra_label="⏰ Set up a schedule",
         )
-        out = _text(panel, height=20)
-        assert "Enter to confirm" in out
+        _text(panel, height=20)  # must render at a cramped height without raising
+        # The confirmation is spoken by the companion duck, not drawn in the body
+        # (see TestHubList.test_delete_confirmation_comes_from_the_duck).
+        assert "Enter to confirm" in panel._duck_say
 
     def test_small_terminal_with_extra_card_does_not_crash(self):
         _text(
@@ -399,10 +412,9 @@ class TestHubScheduleCardLoop:
 
         ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
         assert calls == ["s1"]  # wizard invoked with the latest session
-        # The wizard's message surfaces as the hub toast on the reload render.
-        console = Console(file=io.StringIO(), width=120, height=40, legacy_windows=False)
-        console.print(rendered[-1])
-        assert "Schedule saved." in console.file.getvalue()
+        # The wizard's message surfaces as the hub toast on the reload render —
+        # handed to the companion duck rather than taking a body row.
+        assert rendered[-1]._duck_say == "Schedule saved."
 
     def test_no_session_shows_hint_instead_of_wizard(self, tmp_path, monkeypatch):
         import yeaboi.ui.mode_select as ms
@@ -434,9 +446,7 @@ class TestHubScheduleCardLoop:
             return next(keys, "q")
 
         ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
-        console = Console(file=io.StringIO(), width=120, height=40, legacy_windows=False)
-        console.print(rendered[-1])
-        assert "No session yet" in console.file.getvalue()
+        assert "No session yet" in rendered[-1]._duck_say  # the duck says it
 
 
 class TestHubSchedulePrefersEnabledSession:

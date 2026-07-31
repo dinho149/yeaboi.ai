@@ -70,7 +70,7 @@ def _build_analysis_review_screen(
     sub = Text(_PAD + subtitle, style="dim", justify="left")
 
     # ── Viewport (height-aware for line wrapping)
-    viewport_h = calc_viewport(height, header_h=11, action_h=4)
+    viewport_h = calc_viewport(height, header_h=7, action_h=4)
 
     # Measure actual terminal height. Most pages pass Text, while the redesigned
     # Team Insights page also passes Rich panels and tables.
@@ -150,7 +150,13 @@ def _build_analysis_review_screen(
     return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
-_PAD = PAD  # alias for backward compatibility within this module
+# 2-space content indent for every secondary screen: headings then land at the
+# title's column and value rows one level in, matching the Settings screen. This
+# is the single knob — all these screens indent via _PAD (and size via len(_PAD)).
+# This module's own tighter page pad. Distinct from the shared four-space PAD
+# (imported above), which the reporting/analysis setup screens use — do not
+# collapse the two: several layouts are measured against one or the other.
+_PAD = "  "
 
 
 def _build_generate_confirm_screen(
@@ -240,9 +246,9 @@ def _build_team_insights_screen(
     """
     body_lines: list = [
         Text(""),
-        Text(PAD + "How to improve this team", style="bold white", justify="left"),
+        Text(_PAD + "How to improve this team", style="bold white", justify="left"),
         Text(
-            PAD + "Coaching insights grounded in the analysed sprints.",
+            _PAD + "Coaching insights grounded in the analysed sprints.",
             style="rgb(120,120,140)",
             justify="left",
         ),
@@ -407,7 +413,7 @@ def _build_team_analysis_screen(
         crumb_text = anon_note
     crumb = Text(_PAD + crumb_text, style="rgb(120,120,140)", justify="left")
     # The 'both'-mode toggle line adds one header row; shrink the viewport to match.
-    body_h = calc_viewport(height, header_h=12 if toggle_line is not None else 11, action_h=4)
+    body_h = calc_viewport(height, header_h=8 if toggle_line is not None else 7, action_h=4)
 
     # Scroll by renderable rather than pretending every item is one terminal row.
     # Dashboard tiles/tables/cards are atomic Rich renderables with measured heights.
@@ -1821,9 +1827,9 @@ def _build_intake_screen(
             body.append(Text(""))
             body_h += 1
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1879,9 +1885,9 @@ def _build_offline_screen(
             body.append(Text(""))
             body_h += 1
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -1928,9 +1934,9 @@ def _build_export_success_screen(
     body.append(Text(_PAD + "Press any key to exit.", style="dim", justify="left"))
     body_h = 7
 
-    # Layout: blank + title(6) + blank + [body]
+    # Layout: blank + title(2) + blank + [body]
     inner_h = height - 4
-    header_h = 8  # blank + title(6) + blank
+    header_h = 4  # blank + title(2) + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -2015,9 +2021,9 @@ def _build_import_screen(
     ]
     body_h = 8  # input_box(5) + error(1) + blank + hint(1)
 
-    # Layout: blank + title(6) + blank + subtitle + blank + [body]
+    # Layout: blank + title(2) + blank + subtitle + blank + [body]
     inner_h = height - 4
-    header_h = 10  # blank + title(6) + blank + subtitle + blank
+    header_h = 6  # blank + title(2) + blank + subtitle + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -2208,8 +2214,10 @@ def _build_project_export_success_screen(
     else:
         title = planning_title(shimmer_tick)
 
+    # Subtitle, message body and hint all align on the same column (_PAD + 2)
+    # as the heading — the body is not extra-indented.
     body: list = [
-        Text(_PAD + subtitle, style="bold bright_green", justify="left"),
+        Text(_PAD + "  " + subtitle, style="bold bright_green", justify="left"),
         Text(""),
     ]
     for line in file_path.splitlines():
@@ -2218,13 +2226,13 @@ def _build_project_export_success_screen(
         body.extend(
             [
                 Text(""),
-                Text(_PAD + hint, style="dim", justify="left"),
+                Text(_PAD + "  " + hint, style="dim", justify="left"),
             ]
         )
     body_h = 3 + len(file_path.splitlines()) + 2
 
     inner_h = height - 4
-    header_h = 8
+    header_h = 4  # blank + title(2) + blank
     remaining = max(0, inner_h - header_h - body_h)
 
     content = Group(
@@ -2241,6 +2249,35 @@ def _build_project_export_success_screen(
 # ---------------------------------------------------------------------------
 # Usage screen
 # ---------------------------------------------------------------------------
+
+
+# Usage section boxes: the narrowest a box may get before the grid drops a column,
+# and the most columns it will ever use (three reads well at 200 columns; four
+# leaves the label/value rows too cramped).
+_USAGE_MIN_BOX_W = 34
+_USAGE_MAX_COLS = 3
+
+
+def _render_to_lines(renderable, render_w: int, left_pad: str) -> list:
+    """Flatten any renderable to a list of ``Text`` lines.
+
+    Multi-row renderables (a grid of boxed panels, a four-column table) break the
+    "one body line == one rendered row" assumption that the flat-list viewport
+    math relies on. Rendering them off-screen at a known width and re-emitting the
+    result as one ``Text`` per rendered row restores it, so the block scrolls
+    line-by-line with everything else. Each line is prefixed with ``left_pad`` so
+    the block lines up with the rest of the page content.
+    """
+    from rich.console import Console as _Console
+
+    _c = _Console(width=render_w, height=400)
+    out: list = []
+    for seg_line in _c.render_lines(renderable, _c.options.update_width(render_w), pad=True):
+        t = Text(left_pad, justify="left")
+        for seg in seg_line:
+            t.append(seg.text, style=seg.style)
+        out.append(t)
+    return out
 
 
 def _build_usage_screen(
@@ -2266,25 +2303,38 @@ def _build_usage_screen(
 
     theme = USAGE_THEME
     title = usage_title(shimmer_tick)
-    sub = build_reveal_subtitle("API usage and session history", sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle("API usage and session history", sub_reveal, pad=_PAD + "  ")
 
+    # The transient status ("Copied to clipboard") is spoken by the companion duck
+    # (see _duck_say on the returned panel) rather than taking a body row.
     body_lines: list = []
-    if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        body_lines.append(Text(""))
 
-    def _heading(text: str) -> None:
-        body_lines.append(Text(""))
-        h = Text(_PAD + "  ", justify="left")
-        h.append(text, style=f"bold {theme.accent}")
-        body_lines.append(h)
-        body_lines.append(Text(_PAD + "  " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
+    # Rows are collected per section rather than into one flat list: each section
+    # becomes its own bordered box below, and the boxes are laid out in a grid
+    # whose column count follows the terminal width.
+    # ``wide`` sections get a full-width box of their own below the grid — their
+    # values (timestamps, DB paths) don't fit a third-width column without
+    # ellipsizing, which is what made them read as cut off.
+    sections: list[tuple[str, list, bool]] = []
+    _cur: list = []
+
+    def _heading(text: str, *, wide: bool = False) -> None:
+        """Open a new section box. Its title is drawn as the box title; ``wide``
+        gives it a full-width row instead of a slot in the column grid."""
+        nonlocal _cur
+        _cur = []
+        sections.append((text, _cur, wide))
 
     def _row(label: str, value: str, value_style: str = "") -> None:
-        r = Text(_PAD + "    ", justify="left")
+        # no_wrap + ellipsis: long model names / DB paths crop instead of wrapping,
+        # which would give the box an unpredictable height and break the grid.
+        r = Text(justify="left", no_wrap=True, overflow="ellipsis")
         r.append(f"{label}:  ", style=theme.muted)
         r.append(str(value), style=value_style or theme.value)
-        body_lines.append(r)
+        _cur.append(r)
+
+    def _note(text: str, style: str) -> None:
+        _cur.append(Text(text, style=style, justify="left", no_wrap=True, overflow="ellipsis"))
 
     # ── Provider Info ──────────────────────────────────────────────
     _heading("LLM Provider")
@@ -2322,16 +2372,10 @@ def _build_usage_screen(
         elif usage_data.get("provider") == "ollama":
             _row("Session cost", "$0.00 — local model", theme.good)
     else:
-        body_lines.append(Text(_PAD + "    No calls in this session yet.", style=theme.muted, justify="left"))
+        _note("No calls in this session yet.", theme.muted)
 
     if not lifetime and not tokens:
-        body_lines.append(
-            Text(
-                _PAD + "    Token tracking starts when you run analysis or planning.",
-                style=theme.dim,
-                justify="left",
-            )
-        )
+        _note("Token tracking starts when you run analysis or planning.", theme.dim)
 
     # ── Local Model Performance ───────────────────────────────────
     # Only present once a local (Ollama) call has recorded timing — hidden
@@ -2349,7 +2393,7 @@ def _build_usage_screen(
             _row("Last call", f"{last_call.get('model', '?')} · {last_call.get('tps', 0):.1f} tok/s")
 
     # ── Session History ───────────────────────────────────────────
-    _heading("Session History")
+    _heading("Session History", wide=True)  # timestamps need the full width
     sessions = usage_data.get("sessions", {})
     _row("Total sessions", str(sessions.get("total", 0)))
     _row("Planning sessions", str(sessions.get("planning", 0)))
@@ -2359,7 +2403,7 @@ def _build_usage_screen(
         _row("Last session", last)
 
     # ── Environment ───────────────────────────────────────────────
-    _heading("Environment")
+    _heading("Environment", wide=True)  # the session DB path needs the full width
     _row("Version", usage_data.get("version", "?"))
     _row("Python", usage_data.get("python_version", "?"))
     langsmith = usage_data.get("langsmith", "disabled")
@@ -2372,28 +2416,88 @@ def _build_usage_screen(
     if profiles:
         _heading("Team Profiles")
         for p in profiles:
-            r = Text(_PAD + "    ", justify="left")
+            r = Text(justify="left", no_wrap=True, overflow="ellipsis")
             r.append(p.get("name", "?"), style=theme.value)
             r.append(f"  {p.get('source', '')} \u00b7 {p.get('sprints', 0)} sprints", style=theme.muted)
             age = p.get("age", "")
             if age:
                 r.append(f"  \u00b7 {age}", style=theme.dim)
-            body_lines.append(r)
+            _cur.append(r)
+
+    # ── Section boxes, laid out in an adaptive-width grid ─────────
+    # Each section gets its own rounded box, and the boxes sit side by side in a
+    # table whose column count comes from the available width (1 when narrow, up
+    # to _USAGE_MAX_COLS when wide). Fewer columns beats squashed boxes, so the
+    # count drops as soon as a column would fall below _USAGE_MIN_BOX_W.
+    _grid_indent = _PAD + "  "
+    grid_w = max(24, width - 4 - len(_grid_indent) - 2)  # panel border/pad + indent + scrollbar gutter
+    _narrow = [s for s in sections if not s[2]]
+    _wide = [s for s in sections if s[2]]
+    n_cols = max(1, min(_USAGE_MAX_COLS, grid_w // _USAGE_MIN_BOX_W, len(_narrow) or 1))
+    # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only.
+    # Two columns of slack keep the table clear of the render width (sitting
+    # exactly on it wraps the last column).
+    col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
+    # A wide box spans TWO columns (plus the gutter between them) rather than the
+    # whole grid — enough for timestamps and DB paths without dwarfing the row of
+    # narrow boxes above it. Capped so it still fits when there are fewer columns.
+    full_w = min(grid_w - 2, col_w * 2 + 2)
+
+    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int) -> Panel:
+        head = Text(sec_title, style=f"bold {theme.accent}", no_wrap=True, overflow="ellipsis")
+        return Panel(
+            Group(*(rows or [Text("")])),
+            title=head,
+            title_align="left",
+            box=rich.box.ROUNDED,
+            border_style=theme.sep,
+            padding=(0, 1),
+            width=box_w,
+            height=box_h,
+        )
+
+    _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+    for _ in range(n_cols):
+        _grid.add_column(width=col_w, overflow="crop")
+    _rows_added = 0
+    for _i in range(0, len(_narrow), n_cols):
+        _chunk = _narrow[_i : _i + n_cols]
+        if _rows_added:
+            _grid.add_row(*[Text("")] * n_cols)  # one blank line between grid rows
+        # Boxes in the same row share a height so their bottom borders line up.
+        _box_h = max(len(_r) for _, _r, _ in _chunk) + 2
+        _cells: list = [_section_box(_t, _r, _box_h, col_w) for _t, _r, _ in _chunk]
+        _cells += [Text("")] * (n_cols - len(_chunk))
+        _grid.add_row(*_cells)
+        _rows_added += 1
+
+    body_lines.append(Text(""))  # the blank the old first heading used to supply
+    body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
+    # Wide sections stack below the grid, each spanning the full width so long
+    # values (timestamps, DB paths) show in full instead of ellipsizing.
+    for _t, _r, _ in _wide:
+        body_lines.append(Text(""))
+        body_lines.extend(_render_to_lines(_section_box(_t, _r, len(_r) + 2, full_w), grid_w, _grid_indent))
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    # header = blank + title(2) + blank + sub (the grid block leads with its own
+    # blank, so no extra blank after sub); action_h = blank + hint + pocket blank.
+    # body_lines now holds *rendered* lines (the boxed grid flattened by
+    # _render_to_lines), so the one-line-per-entry viewport math below still holds
+    # and build_scrollbar gets an accurate total / max_scroll.
+    viewport_h = calc_viewport(height, header_h=5, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
     publish_geometry(scroll_meta, max_scroll, viewport_h)
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
 
-    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
+    # Only show the scrollbar when the boxes actually overflow — the grid usually
+    # fits, and an always-on track just leaves a stray rail down the right edge.
+    _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2413,20 +2517,23 @@ def _build_usage_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    # No button row and no inline hint — the bottom-left chrome carries both
+    # affordances now: the back tab, plus a 'c copy' tab beside it (see _copy_tab).
     content = Group(
         Text(""),
         title,
         Text(""),
         sub,
-        Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        Text(""),  # keeps the content above the music pocket band
+        Text(""),
     )
 
-    return build_page_panel(content, theme=USAGE_THEME, height=height)
+    panel = build_page_panel(content, theme=USAGE_THEME, height=height)
+    panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
+    panel._duck_say = message  # the companion speaks the transient status
+    return panel
 
 
 def _build_standup_screen(
@@ -2482,7 +2589,7 @@ def _build_standup_screen(
         sub_text = f"Overview › {standup_card_title(view, standup_data)}"
     if anon_note:  # anonymized: the subtitle becomes the "N masked — review" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
     sub.no_wrap = True  # the header row budget counts the subtitle as one row
     sub.overflow = "ellipsis"
 
@@ -2543,15 +2650,15 @@ def _build_standup_screen(
 
     # ── Layout using shared components ────────────────────────────
     # header_h must match the Group rows above the viewport exactly (blank +
-    # 6-row title + blank + sub + blank + strip + optional banner + blank),
+    # title(2) + blanks + sub + strip + optional banner),
     # else the button bottom border falls off the fixed-height panel.
-    header_h = 12 + (1 if banner is not None else 0)
+    header_h = 8 + (1 if banner is not None else 0)
     if (height - 4) - header_h - 4 < 3:
         # Terminal too short for the strip — drop it rather than push the
         # buttons off the panel (same floor as before the strip existed).
         strip = None
         banner = None
-        header_h = 10
+        header_h = 6
     viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
@@ -2661,7 +2768,7 @@ def _build_standup_team_source_screen(
         if active:
             row.append(" ›", style=theme.accent_bright)
         rows.append(row)
-    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    viewport_h = calc_viewport(height, header_h=6, action_h=2)
     rows.extend(Text("") for _ in range(max(0, viewport_h - len(rows))))
     content = Group(
         Text(""),
@@ -2712,7 +2819,7 @@ def _build_standup_team_member_screen(
     if not roster:
         rows.append(Text(_PAD + empty_message, style=theme.muted))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=2)
+    viewport_h = calc_viewport(height, header_h=6, action_h=2)
     total = len(rows)
     max_scroll = max(0, total - viewport_h)
     start = min(max(0, cursor - viewport_h // 2 + 2), max_scroll) if roster else 0
@@ -2826,7 +2933,6 @@ def _build_changelog_screen(
     action_sel: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
-    actions: list[str] | None = None,
     message: str = "",
 ) -> Panel:
     """Build the Changelog page: per-version AI-written notes with area tags.
@@ -2844,42 +2950,42 @@ def _build_changelog_screen(
 
     theme = CHANGELOG_THEME
     title = changelog_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle("What's new in yeaboi", sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
-    wrap_w = max(24, width - len(PAD) - 12)
+    wrap_w = max(24, width - len(_PAD) - 12)
 
     def _wrapped(text: str, style: str, *, indent: str = "    ") -> None:
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
-            body_lines.append(Text(PAD + indent + chunk, style=style, justify="left"))
+            body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
     # ── Upgrade banner — newer release known from the background PyPI check ──
     status = update_status or {}
     if status.get("update_available"):
-        banner = Text(PAD + "  ", justify="left")
+        banner = Text(_PAD + "  ", justify="left")
         banner.append("⬆ ", style=theme.warn)
         banner.append(f"v{status.get('latest', '')} is available", style=f"bold {theme.warn}")
         banner.append("  —  run: ", style=theme.muted)
         banner.append(status.get("upgrade_command", ""), style=theme.warn)
         body_lines.append(banner)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
 
     if not entries:
         body_lines.append(Text(""))
-        body_lines.append(Text(PAD + "    No changelog data available.", style=theme.muted, justify="left"))
+        body_lines.append(Text(_PAD + "    No changelog data available.", style=theme.muted, justify="left"))
 
     for entry in entries:
         body_lines.append(Text(""))
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(f"v{entry.version}", style=f"bold {theme.accent_bright}")
         if entry.date:
             heading.append("  ·  ", style=theme.sep)
             heading.append(entry.date, style=theme.muted)
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
         if entry.summary:
             _wrapped(entry.summary, theme.desc)
         for hl in entry.highlights:
@@ -2887,8 +2993,9 @@ def _build_changelog_screen(
             tags_len = sum(len(a) + 2 for a in hl.areas)
             chunks = textwrap.wrap(hl.text, width=max(24, wrap_w - 3)) or [""]
             for i, chunk in enumerate(chunks):
-                prefix = "    •  " if i == 0 else "       "
-                line = Text(PAD + prefix + chunk, style=theme.value, justify="left")
+                # Flush with the version heading above it (see the tips gallery).
+                prefix = "  •  " if i == 0 else "     "
+                line = Text(_PAD + prefix + chunk, style=theme.value, justify="left")
                 if i == len(chunks) - 1 and len(prefix) + len(chunk) + tags_len <= wrap_w + 8:
                     for area in hl.areas:
                         line.append("  ")
@@ -2896,7 +3003,7 @@ def _build_changelog_screen(
                     body_lines.append(line)
                 elif i == len(chunks) - 1:
                     body_lines.append(line)
-                    tag_line = Text(PAD + "       ", justify="left")
+                    tag_line = Text(_PAD + "       ", justify="left")
                     for area in hl.areas:
                         tag_line.append(area, style=f"bold {AREA_COLORS.get(area, theme.muted)}")
                         tag_line.append("  ")
@@ -2905,7 +3012,11 @@ def _build_changelog_screen(
                     body_lines.append(line)
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    # No button row — a keyboard hint replaces it (aligned with the headings),
+    # matching the Usage page. action_h = blank + hint + pocket blank. The no_wrap
+    # pinning below keeps the viewport at exactly viewport_h rows so the hint can't
+    # be shoved off the bottom.
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -2917,7 +3028,13 @@ def _build_changelog_screen(
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
+    # header_h/viewport_h count every body line as ONE row. A long entry (its
+    # inline area tags in particular) can otherwise wrap inside the scrollbar cell,
+    # render two rows, and shove the keyboard hint off the bottom where the crop and
+    # the music pocket swallow it. Pin each line to a single row (crop the overflow).
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2945,9 +3062,8 @@ def _build_changelog_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        Text(""),  # the copy hint used to sit here; kept blank to hold the layout
+        Text(""),  # keeps the content above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
@@ -2962,7 +3078,6 @@ def _build_all_tips_screen(
     action_sel: int = 0,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
-    actions: list[str] | None = None,
     message: str = "",
 ) -> Panel:
     """Build the All Tips gallery page: every discoverability tip in one scroll.
@@ -2971,8 +3086,7 @@ def _build_all_tips_screen(
     the live ``get_tips()`` list, grouped into modes, workflows, and setup so the
     gallery scans like the other sectioned pages. Freshly-shipped features get a
     gold ``NEW`` badge and tips that map to a home card note the mode they open.
-    The ``Copy all`` action copies the whole list to the clipboard (see the run
-    loop in mode_select/__init__.py).
+    Read-only, with no actions of its own — going back is the app-wide back tab.
     """
     import textwrap
 
@@ -2982,13 +3096,13 @@ def _build_all_tips_screen(
 
     theme = CHANGELOG_THEME
     title = tips_title(shimmer_tick, width=width)
-    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD + "  ")
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
 
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
 
     # Account explicitly for the frame, horizontal panel padding, scrollbar,
@@ -2996,10 +3110,13 @@ def _build_all_tips_screen(
     # wide glyphs or metadata from visually colliding with the right frame.
     panel_inner_w = max(20, width - 2 - 4)
     viewport_body_w = max(18, panel_inner_w - 3)
-    bullet_prefix = PAD + "    •  "
-    continuation_prefix = PAD + "       "
+    # The bullet lines up with the START of the section heading (which sits at
+    # _PAD + 2), rather than being indented under it — the list reads as the
+    # section's content, not as a sub-level of it.
+    bullet_prefix = _PAD + "  " + "•  "
+    continuation_prefix = _PAD + "  " + "   "
     tip_wrap_w = max(16, viewport_body_w - len(bullet_prefix) - 1)
-    separator_w = max(8, min(viewport_body_w - len(PAD) - 2, 40))
+    separator_w = max(8, min(viewport_body_w - len(_PAD) - 2, 40))
 
     tips = get_tips()
     grouped_tips = (
@@ -3025,10 +3142,10 @@ def _build_all_tips_screen(
         if rendered_section:
             body_lines.append(Text(""))
         rendered_section = True
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(section, style=f"bold {theme.accent_bright}")
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * separator_w, style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * separator_w, style=theme.sep, justify="left"))
 
         for tip in section_tips:
             # Emoji variation selectors are not measured consistently across
@@ -3061,7 +3178,8 @@ def _build_all_tips_screen(
             body_lines.append(Text(""))
 
     # ── Layout using shared components (identical to the changelog page) ──
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    # No button row — a keyboard hint replaces it. action_h = blank + hint + blank.
+    viewport_h = calc_viewport(height, header_h=6, action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -3073,7 +3191,11 @@ def _build_all_tips_screen(
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
 
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions or ["Back"], action_sel)
+    # Pin each line to one row (see the changelog page) so a wrapped tip can't grow
+    # the viewport and push the keyboard hint off the bottom.
+    for _ln in padded_lines:
+        _ln.no_wrap = True
+        _ln.overflow = "crop"
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -3103,9 +3225,9 @@ def _build_all_tips_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        Text(""),  # the copy-all hint used to sit here; kept blank to hold the layout
+        Text(""),
+        Text(""),  # keeps the content above the music pocket band
     )
 
     return build_page_panel(content, theme=CHANGELOG_THEME, height=height)
@@ -3158,15 +3280,15 @@ def _build_feedback_screen(
         "polish_preview": "AI-polished draft — accept it or keep your original",
         "result": "Submission result",
     }
-    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(subtitles.get(view, ""), sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
-    wrap_w = max(24, width - len(PAD) - 12)
+    wrap_w = max(24, width - len(_PAD) - 12)
 
     def _wrapped(text: str, style: str, *, indent: str = "    ") -> None:
         for seg in text.split("\n"):
             for chunk in textwrap.wrap(seg, width=wrap_w) or [""]:
-                body_lines.append(Text(PAD + indent + chunk, style=style, justify="left"))
+                body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
     kind = FEEDBACK_TYPES[kind_idx % len(FEEDBACK_TYPES)]
     area = FEEDBACK_AREAS[area_idx % len(FEEDBACK_AREAS)]
@@ -3177,7 +3299,7 @@ def _build_feedback_screen(
 
         def _row(idx: int, label: str, render_value) -> None:
             is_sel = fields_focused and field_sel == idx
-            line = Text(PAD + ("  ❯ " if is_sel else "    "), justify="left")
+            line = Text(_PAD + ("  ❯ " if is_sel else "    "), justify="left")
             line.stylize(f"bold {theme.accent_bright}" if is_sel else theme.dim)
             line.append(f"{label:<13}", style=f"bold {theme.accent_bright}" if is_sel else theme.muted)
             render_value(line, is_sel)
@@ -3232,14 +3354,14 @@ def _build_feedback_screen(
             body_lines.pop()
             # Rows consumed above the continuation block: top blank + 4 field
             # rows + 3 blanks between them, plus one trailing status/spacer row.
-            desc_budget = max(1, calc_viewport(height, header_h=10, action_h=4) - 10)
+            desc_budget = max(1, calc_viewport(height, header_h=6, action_h=4) - 10)
             for cont in continuations[:desc_budget]:
-                body_lines.append(Text(PAD + _val_indent + cont, style=theme.value, justify="left"))
+                body_lines.append(Text(_PAD + _val_indent + cont, style=theme.value, justify="left"))
             hidden = len(continuations) - desc_budget
             if hidden > 0:
                 body_lines.append(
                     Text(
-                        PAD + _val_indent + f"(+{hidden} more line{'s' if hidden > 1 else ''})",
+                        _PAD + _val_indent + f"(+{hidden} more line{'s' if hidden > 1 else ''})",
                         style=theme.dim,
                         justify="left",
                     )
@@ -3249,10 +3371,10 @@ def _build_feedback_screen(
     elif view == "polish_preview" and polished is not None:
         p_title, p_desc = polished
         body_lines.append(Text(""))
-        heading = Text(PAD + "  ", justify="left")
+        heading = Text(_PAD + "  ", justify="left")
         heading.append(f"[{kind}] {p_title}", style=f"bold {theme.accent_bright}")
         body_lines.append(heading)
-        body_lines.append(Text(PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
+        body_lines.append(Text(_PAD + "  " + "─" * min(wrap_w, 40), style=theme.sep, justify="left"))
         _wrapped(p_desc, theme.value)
 
     elif view == "result":
@@ -3267,7 +3389,7 @@ def _build_feedback_screen(
         _wrapped(status, theme.warn, indent="  ")
 
     # ── Layout using shared components (same skeleton as the changelog page) ──
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     if view == "form" and focus == "fields":
@@ -3395,7 +3517,7 @@ def _build_performance_screen(
         sub_text = f"Team performance — {session_name}" if session_name else "Team performance"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     message = performance_data.get("message", "")
 
@@ -3411,7 +3533,7 @@ def _build_performance_screen(
             style = theme.desc
         elif stripped.endswith(":") or line == line.lstrip():
             style = f"bold {theme.accent}"
-        return Text(PAD + "  " + line, style=style, justify="left")
+        return Text(_PAD + "  " + line, style=style, justify="left")
 
     actions = performance_data.get("actions") or ["1:1 Prep", "1:1 Complete", "6mo Review", "Notes", "Export", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
@@ -3424,21 +3546,21 @@ def _build_performance_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
 
         if not roster:
-            body.append(Text(PAD + "No engineers found.", style=theme.muted, justify="left"))
+            body.append(Text(_PAD + "  No engineers found.", style=theme.muted, justify="left"))
             body.append(Text(""))
-            body.append(Text(PAD + "Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
-            body.append(Text(PAD + "built from the people assigned work on your board.", style=theme.muted))
+            body.append(Text(_PAD + "  Connect Jira or Azure DevOps (see Settings) — the roster is", style=theme.muted))
+            body.append(Text(_PAD + "  built from the people assigned work on your board.", style=theme.muted))
         else:
             # Window the engineers that fit vertically, centred on the selection —
             # big ASCII rows are tall, so only a few show at once (▲/▼ mark the rest).
             budget = max(6, height - 16 - (2 if message else 0))
             start, end = _performance_roster_window(selected_idx, len(roster), budget)
             if start > 0:
-                body.append(Text(PAD + f"▲ {start} more", style=theme.dim, justify="left"))
+                body.append(Text(_PAD + f"▲ {start} more", style=theme.dim, justify="left"))
                 body.append(Text(""))
             for idx in range(start, end):
                 name = roster[idx]
@@ -3457,7 +3579,7 @@ def _build_performance_screen(
                     body.append(Text(""))
             if end < len(roster):
                 body.append(Text(""))
-                body.append(Text(PAD + f"▼ {len(roster) - end} more", style=theme.dim, justify="left"))
+                body.append(Text(_PAD + f"▼ {len(roster) - end} more", style=theme.dim, justify="left"))
 
         content = Group(
             Text(""),
@@ -3476,12 +3598,12 @@ def _build_performance_screen(
     # ── Detail view — the produced artifact, scrollable ──────────────────────────
     body_lines: list = []
     if message:
-        body_lines.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body_lines.append(Text(""))
     for line in performance_data.get("detail_lines", []) or ["(nothing to show)"]:
         body_lines.append(_styled(line))
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -3897,7 +4019,7 @@ def _build_reporting_screen(
         sub_text = f"Report delivered work — {session_name}" if session_name else "Report delivered work"
     if anon_note:  # anonymized detail view: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     actions = reporting_data.get("actions") or ["Generate Report", "Theme", "Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
@@ -3910,7 +4032,7 @@ def _build_reporting_screen(
 
         rows: list = []
         if message:
-            rows.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+            rows.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
             rows.append(Text(""))
         for idx, sp in enumerate(sprints):
             rng = f"{sp.start_date} → {sp.end_date}" if sp.start_date else "no dates"
@@ -3921,7 +4043,7 @@ def _build_reporting_screen(
                 )
             )
         if not sprints:
-            rows.append(Text(PAD + "  No sprints found.", style=theme.muted, justify="left"))
+            rows.append(Text(_PAD + "  No sprints found.", style=theme.muted, justify="left"))
 
         header = _analysis_setup_header(
             "Sprints",
@@ -3974,7 +4096,7 @@ def _build_reporting_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
         body.extend(
             _analysis_setup_header(
@@ -4135,12 +4257,12 @@ def _build_roadmap_screen(
         sub_text = "Where does your quarterly roadmap live?"
     if anon_note and not busy:  # anonymized results: the subtitle carries the "N masked" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     # ── Busy overlay — while the analysis worker runs, show only the spinner so
     # the source options / buttons underneath don't confuse the user. ─────────────
     if busy:
-        spinner = Text(PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
+        spinner = Text(_PAD + message, style=theme.accent_bright, justify="left") if message else Text("")
         return build_page_panel(
             Group(Text(""), title, Text(""), sub, Text(""), Text(""), spinner),
             theme=PLANNING_THEME,
@@ -4154,19 +4276,19 @@ def _build_roadmap_screen(
 
         body: list = []
         if message:
-            body.append(Text(PAD + message, style=theme.accent_bright, justify="left"))
+            body.append(Text(_PAD + message, style=theme.accent_bright, justify="left"))
             body.append(Text(""))
-        body.append(Text(PAD + "Choose a roadmap source:", style=f"bold {theme.accent}", justify="left"))
+        body.append(Text(_PAD + "Choose a roadmap source:", style=f"bold {theme.accent}", justify="left"))
         body.append(Text(""))
         for idx, (_key, label, hint) in enumerate(sources):
             is_sel = idx == selected_idx
             marker = "▸ " if is_sel else "  "
             row = Text(justify="left")
-            row.append(PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
+            row.append(_PAD + marker, style=theme.accent_bright if is_sel else theme.dim)
             row.append(label, style=theme.value if is_sel else theme.desc)
             body.append(row)
             if hint:
-                body.append(Text(PAD + "    " + hint, style=theme.muted, justify="left"))
+                body.append(Text(_PAD + "    " + hint, style=theme.muted, justify="left"))
             body.append(Text(""))
 
         content = Group(
@@ -4210,16 +4332,16 @@ def _build_roadmap_screen(
     summary = getattr(analysis, "summary", "") if analysis is not None else ""
     warnings = tuple(getattr(analysis, "warnings", ()) or ()) if analysis is not None else ()
 
-    box_w = min(72, max(32, width - len(PAD) - 4))
+    box_w = min(72, max(32, width - len(_PAD) - 4))
     inner_w = max(16, box_w - 6)  # border(2) + padding(4)
-    card_pad = (0, 0, 0, len(PAD))
+    card_pad = (0, 0, 0, len(_PAD))
 
     body: list = []
     if message:
-        body.append(Text(PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        body.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
         body.append(Text(""))
     if summary:
-        body.append(Text(PAD + "  " + summary, style=theme.desc, justify="left"))
+        body.append(Text(_PAD + "  " + summary, style=theme.desc, justify="left"))
         body.append(Text(""))
 
     if not projects:
@@ -4237,7 +4359,7 @@ def _build_roadmap_screen(
         # The zero-project fallback is exactly where the warnings carry the
         # failure reason (LLM/auth/ingest errors) — always show them here.
         if warnings:
-            base = calc_viewport(height, header_h=10, action_h=4) - len(body)
+            base = calc_viewport(height, header_h=6, action_h=4) - len(body)
             if base >= 2 + 2 + len(warnings):  # blank + borders + title + bullets
                 body.append(Text(""))
                 body.append(_Padding(_build_roadmap_notices_card(warnings, box_w=box_w), card_pad))
@@ -4245,21 +4367,21 @@ def _build_roadmap_screen(
                 plural = "s" if len(warnings) != 1 else ""
                 body.append(
                     Text(
-                        PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view",
+                        _PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view",
                         style=theme.muted,
                         justify="left",
                     )
                 )
     else:
         # Key hint (like the list view's) then the card viewport.
-        body.append(Text(PAD + "↑/↓ choose a project · Plan This to plan it", style=theme.muted, justify="left"))
+        body.append(Text(_PAD + "↑/↓ choose a project · Plan This to plan it", style=theme.muted, justify="left"))
         body.append(Text(""))
 
         # Budget: the shared viewport line count, minus the fixed lines already
         # placed above the cards, minus room reserved for the notices block (so
         # the cards never push the bottom buttons off-panel). Peek-stub space is
         # accounted for inside _window_project_cards, not reserved here.
-        base = calc_viewport(height, header_h=10, action_h=4) - len(body)
+        base = calc_viewport(height, header_h=6, action_h=4) - len(body)
         notices_full = (1 + 2 + len(warnings)) if warnings else 0  # blank + border + title + bullets
         notices_mode = "card" if warnings else "none"
         available_h = base - notices_full
@@ -4319,7 +4441,7 @@ def _build_roadmap_screen(
             body.append(_Padding(_build_roadmap_notices_card(warnings, box_w=box_w), card_pad))
         elif notices_mode == "hint":
             plural = "s" if len(warnings) != 1 else ""
-            body.append(Text(PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view", style=theme.warn))
+            body.append(Text(_PAD + f"⚠ {len(warnings)} Notice{plural} — enlarge the window to view", style=theme.warn))
 
     # No scrollbar geometry to publish — the card viewport uses peek stubs, like
     # the list view (publish an empty geometry so stale scroll state clears).
@@ -4377,12 +4499,17 @@ def _build_retro_screen(
     sub_text = f"Sprint retro for {session_name}" if session_name else "Sprint retro"
     if anon_note:  # anonymized: the subtitle carries the "N masked — review" indicator
         sub_text = anon_note
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
 
     def _heading(text: str) -> None:
-        body_lines.append(Text(""))
+        # The first heading needs no leading blank: the subtitle's trailing blank
+        # already spaces it. Emitting one here on top of that gave a doubled blank
+        # under the subtitle. A message (when present) is the first body line, so
+        # this still separates the message from the section that follows it.
+        if body_lines:
+            body_lines.append(Text(""))
         h = Text(_PAD + "  ", justify="left")
         h.append(text, style=f"bold {theme.accent}")
         body_lines.append(h)
@@ -4404,28 +4531,89 @@ def _build_retro_screen(
         for chunk in textwrap.wrap(text, width=wrap_w) or [""]:
             body_lines.append(Text(_PAD + indent + chunk, style=style, justify="left"))
 
-    # ── Transient status message (e.g. after Generate / Export) ───
-    message = retro_data.get("message", "")
-    if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+    # The four-column grid below is flattened with the module-level
+    # _render_to_lines helper so it scrolls line-by-line with everything else.
 
-    # ── Join info ─────────────────────────────────────────────────
+    # ── Join info, at the top ─────────────────────────────────────
     # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
-    # hub passes snapshot=True to suppress this whole block (the report replays
-    # the grids + carried actions, not a resumable board).
+    # hub passes snapshot=True to suppress this whole block (the report replays the
+    # grids + carried actions, not a resumable board). Content is unindented —
+    # aligned with the heading — and the server-ready/status note sits right under
+    # the "Join this retro" heading.
+    message = retro_data.get("message", "")
+
+    def _jrow(label: str, value: str, value_style: str = "") -> None:
+        r = Text(_PAD + "  ", justify="left")
+        r.append(f"{label}:  ", style=theme.muted)
+        r.append(str(value), style=value_style or theme.value)
+        body_lines.append(r)
+
+    def _jline(text: str, style: str = "") -> None:
+        body_lines.append(Text(_PAD + "  " + text, style=style or theme.value, justify="left"))
+
     if not retro_data.get("snapshot"):
         _heading("Join this retro")
-        _row("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
-        _row("LAN URL", retro_data.get("url", "—"), theme.value)
-        _line("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
+        if message:
+            body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        _jrow("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
+        _jrow("LAN URL", retro_data.get("url", "—"), theme.value)
+        _jline("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
         public_url = retro_data.get("public_url", "")
         if public_url:
-            _row("Remote URL", public_url, f"bold {theme.accent_bright}")
-            _line("Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted)
+            _jrow("Remote URL", public_url, f"bold {theme.accent_bright}")
+            _jline("Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted)
         host_url = retro_data.get("host_url", "")
         if host_url:
-            _row("Host link (private)", host_url, theme.muted)
-            _line("For you only — this link skips the code. Don't share it.", theme.muted)
+            _jrow("Host link (private)", host_url, theme.muted)
+            _jline("For you only — this link skips the code. Don't share it.", theme.muted)
+        body_lines.append(Text(""))
+    elif message:
+        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+
+    # ── The four grids, as a four-column table ────────────────────
+    from rich.table import Table as _GridTable
+
+    grids = retro_data.get("grids") or {}
+    _grid_indent = _PAD + "  "
+    grid_w = max(40, width - 4 - len(_grid_indent) - 2)  # panel/pad + left indent + scrollbar gutter
+    # Four columns with a 2-space gap between each (padding (0,1), no edge pad):
+    # total ≈ 4·col_w + 3·2. Leave a couple columns of slack so the table never sits
+    # exactly at the render width (which wraps the last column) and never overflows.
+    col_w = max(12, (grid_w - 8) // 4)
+
+    def _grid_column(key: str):
+        import textwrap
+
+        cards = grids.get(key, [])
+        col: list = []
+        head = Text(no_wrap=True, overflow="crop")
+        head.append(RETRO_GRID_LABELS[key], style=f"bold {theme.accent}")
+        head.append(f"  ({len(cards)})", style=theme.muted)
+        col.append(head)
+        col.append(Text("─" * col_w, style=theme.sep, no_wrap=True, overflow="crop"))
+        if not cards:
+            col.append(Text("No cards yet.", style=theme.muted, no_wrap=True, overflow="crop"))
+        for c in cards:
+            origin = getattr(c, "origin", "web")
+            if origin == "ai":
+                who, card_style = "🤖 AI", theme.accent
+            elif origin == "carryover":
+                who, card_style = "↩ carried", theme.accent
+            else:
+                who, card_style = (getattr(c, "author", "") or "anon"), theme.value
+            for i, chunk in enumerate(textwrap.wrap(c.text, width=max(6, col_w - 2)) or [""]):
+                line = Text(no_wrap=True, overflow="crop")
+                line.append(("• " if i == 0 else "  "), style=card_style)
+                line.append(chunk, style=card_style)
+                col.append(line)
+            col.append(Text(f"  — {who}", style=theme.dim, no_wrap=True, overflow="crop"))
+        return Group(*col)
+
+    _table = _GridTable(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+    for _ in range(len(RETRO_GRIDS)):
+        _table.add_column(width=col_w, overflow="crop")
+    _table.add_row(*[_grid_column(key) for key in RETRO_GRIDS])
+    body_lines.extend(_render_to_lines(_table, grid_w, _grid_indent))
 
     # ── Last sprint's actions (progress review) ───────────────────
     # Set from teammates' browsers (the review column); the host view is read-only,
@@ -4441,32 +4629,8 @@ def _build_retro_screen(
             _wrapped(c.text, theme.value, indent="    • ")
             body_lines.append(Text(_PAD + "        " + f"[{badge}]", style=theme.dim, justify="left"))
 
-    # ── The four grids ────────────────────────────────────────────
-    grids = retro_data.get("grids") or {}
-    total_cards = 0
-    for key in RETRO_GRIDS:
-        cards = grids.get(key, [])
-        total_cards += len(cards)
-        _heading(f"{RETRO_GRID_LABELS[key]}  ({len(cards)})")
-        if cards:
-            for c in cards:
-                origin = getattr(c, "origin", "web")
-                if origin == "ai":
-                    who = "🤖 AI"
-                    card_style = theme.accent
-                elif origin == "carryover":
-                    who = "↩ carried over"
-                    card_style = theme.accent
-                else:
-                    who = getattr(c, "author", "") or "anon"
-                    card_style = theme.value
-                _wrapped(c.text, card_style, indent="    • ")
-                body_lines.append(Text(_PAD + "        " + f"— {who}", style=theme.dim, justify="left"))
-        else:
-            _line("No cards yet.", theme.muted)
-
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4575,12 +4739,17 @@ def _build_poker_screen(
     sub_text = poker_data.get("subtitle") or (
         f"Planning poker for {session_name}" if session_name else "Planning poker"
     )
-    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD)
+    sub = build_reveal_subtitle(sub_text, sub_reveal, pad=_PAD + "  ")
 
     body_lines: list = []
 
     def _heading(text: str) -> None:
-        body_lines.append(Text(""))
+        # The first heading needs no leading blank: the subtitle's trailing blank
+        # already spaces it. Emitting one here on top of that gave a doubled blank
+        # under the subtitle. A message (when present) is the first body line, so
+        # this still separates the message from the section that follows it.
+        if body_lines:
+            body_lines.append(Text(""))
         h = Text(_PAD + "  ", justify="left")
         h.append(text, style=f"bold {theme.accent}")
         body_lines.append(h)
@@ -4949,7 +5118,7 @@ def _build_standup_input_screen(
         # Large text box: wide, several rows, the value wraps across them.
         # Clamp the row count so the box + hint always fit the terminal
         # (label + 2 blanks + hint = 4 rows, box borders = 2 rows).
-        rows = max(2, min(box_rows, calc_viewport(height, header_h=10, action_h=1) - 6))
+        rows = max(2, min(box_rows, calc_viewport(height, header_h=6, action_h=1) - 6))
         inner_w = max(46, min(width - len(_PAD) - 12, 110))
         text_w = inner_w - 2  # one space of padding each side
         raw = value + "█"
@@ -4984,7 +5153,7 @@ def _build_standup_input_screen(
 
     # Vertically pad the middle so the field sits in the upper-third like the dashboard.
     body: list = [label, Text(""), *box_lines, Text(""), hint_line]
-    pad_rows = max(0, calc_viewport(height, header_h=10, action_h=1) - len(body))
+    pad_rows = max(0, calc_viewport(height, header_h=6, action_h=1) - len(body))
     body.extend(Text("") for _ in range(pad_rows))
 
     content = Group(Text(""), title, Text(""), sub, Text(""), *body)
@@ -5115,7 +5284,7 @@ def _build_profile_picker_screen(
     body_lines.append(Text(_PAD + "  \u2570" + "\u2500" * card_w + "\u256f", style=skip_border, justify="left"))
 
     # Layout
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    viewport_h = calc_viewport(height, header_h=6, action_h=4)
     visible = body_lines[:viewport_h]
 
     padded_lines: list = list(visible)
@@ -5145,6 +5314,214 @@ def _build_profile_picker_screen(
 # ---------------------------------------------------------------------------
 
 
+class _EditableRow(Text):
+    """A settings config row that remembers the env var it edits.
+
+    Rich's :class:`Text` defines ``__slots__``; subclassing without slots gives
+    instances a ``__dict__`` so the builder can tag the row with ``env``/``label``/
+    ``masked`` for click-to-edit (see the settings loop's ``_row_regions``).
+    """
+
+
+# Settings is a tabbed view. A few broad tabs group the config; this order drives
+# both the tab bar and the loop's Enter action (see settings_tab_action).
+_SETTINGS_TABS: list[str] = ["Credentials", "System"]
+
+# The heading sections each tab renders, in order. Storage is one row, so it
+# lives under System rather than owning a tab of its own.
+_SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
+    "Credentials": ["provider", "jira", "azure", "github", "notion"],
+    "System": ["storage", "standup", "voice", "bedrock", "advanced"],
+}
+
+# Sections whose box spans the full grid width instead of taking a column slot.
+# These carry token-help sub-lines (a creation URL + a scope sentence) that a
+# half-width column would ellipsize away — same reasoning as the Usage dashboard's
+# ``wide`` sections (see _build_usage_screen).
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion"}
+
+# Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
+# The header above it is fixed height: top border + top pad + blank + title (2
+# rows) + blank → the labels row is the 7th terminal row.
+_TAB_LABELS_ROW = 7
+_TAB_UNDERLINE_ROW = 8
+_TAB_COL_OFFSET = 4  # panel border (1) + left padding (2) → first content column is 4
+
+# Settings section boxes, mirroring the Usage dashboard's grid (see _build_usage_screen):
+# the narrowest a box may get before the grid drops a column, and the most columns it
+# will ever use. Two reads better than three here — settings rows are "label:  value"
+# pairs whose values (URLs, model names) are longer than Usage's counters.
+_SETTINGS_MIN_BOX_W = 38
+_SETTINGS_MAX_COLS = 2
+# The focused value is marked by a full-width bar behind the row rather than a
+# leading glyph: a marker needs a gutter on EVERY row to avoid text jumping when
+# focus lands, and that gutter reads as a stray indent inside an already-indented
+# box. A background stripe costs no columns.
+_SETTINGS_FOCUS_BG = "rgb(44,52,68)"
+# Rows a short column may gain so its bottom border lines up with the tall one.
+# Beyond this the stretch reads as padding rather than alignment, so the leftover
+# is simply left as space below the column. The balancing pass keeps the shortfall
+# small, so this is enough to land level in practice — it exists to stop a lone
+# one-row box being blown up to match a column of six-row ones.
+_SETTINGS_MAX_STRETCH = 3
+
+_TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
+_TAB_GAP = 3  # spaces between tab labels
+
+
+def settings_tab_action(active_tab: int) -> str:
+    """Return what Enter does on a settings tab: 'loglevel' (System → cycles the log
+    level) or 'setup' (Credentials → wizard). The data directory is no longer a tab
+    action — it's the Storage box's row, opened like any other value."""
+    label = _SETTINGS_TABS[active_tab] if 0 <= active_tab < len(_SETTINGS_TABS) else ""
+    if label == "System":
+        return "loglevel"
+    return "setup"
+
+
+def settings_focus_move(
+    key: str,
+    box_cols: list[list[int]],
+    box_tail: list[int],
+    box_fields: list[list[tuple[str, str, bool]]],
+    sel_box: int,
+    sel_field: int,
+) -> tuple[int, int]:
+    """Resolve an arrow key against the settings screen's three focus levels.
+
+    Kept out of the TUI loop (and pure) so the state machine is testable. It takes
+    the navigation map the last render published — ``box_cols`` (the balanced
+    columns of section boxes, each listed top to bottom) and ``box_tail`` (the
+    full-width boxes stacked underneath them), plus ``box_fields`` (each section's
+    editable rows) — and the current ``(sel_box, sel_field)``, and returns the next.
+
+    ``(-1, -1)`` is the tab bar: only Down enters the grid from there (Left/Right
+    belong to the tabs and never reach this). ``(b, -1)`` walks the boxes — Up/Down
+    within a column, Left/Right across columns, Down off the last box into the
+    full-width tail — and Up off the top hands focus back to the tab bar. ``(b, f)``
+    walks the values inside box *b*, where Left/Right do nothing: the box is the
+    unit you stepped into.
+    """
+    first = box_cols[0][0] if box_cols and box_cols[0] else (box_tail[0] if box_tail else -1)
+    if first < 0:
+        return -1, -1
+    if sel_box < 0:
+        return (first, -1) if key == "down" else (sel_box, sel_field)
+    if not any(sel_box in c for c in box_cols) and sel_box not in box_tail:
+        return first, -1  # stale index — the tab's sections changed under us
+
+    if sel_field >= 0:
+        fields = box_fields[sel_box] if 0 <= sel_box < len(box_fields) else []
+        if key in ("up", "down") and fields:
+            step = 1 if key == "down" else -1
+            return sel_box, max(0, min(len(fields) - 1, sel_field + step))
+        return sel_box, sel_field
+
+    col = next((c for c, boxes in enumerate(box_cols) if sel_box in boxes), -1)
+    if col >= 0:
+        idx = box_cols[col].index(sel_box)
+        if key in ("left", "right"):
+            ncol = max(0, min(len(box_cols) - 1, col + (1 if key == "right" else -1)))
+            target = box_cols[ncol] or box_cols[col]
+            return target[min(idx, len(target) - 1)], -1
+        if key == "down":
+            if idx + 1 < len(box_cols[col]):
+                return box_cols[col][idx + 1], -1
+            return (box_tail[0], -1) if box_tail else (sel_box, -1)
+        return (box_cols[col][idx - 1], -1) if idx else (-1, -1)  # up off the top → tabs
+
+    if sel_box in box_tail:  # one of the full-width boxes below the columns
+        t = box_tail.index(sel_box)
+        if key in ("left", "right"):
+            return sel_box, -1
+        if key == "down":
+            return (box_tail[t + 1] if t + 1 < len(box_tail) else sel_box), -1
+        if t:
+            return box_tail[t - 1], -1
+        return (box_cols[0][-1], -1) if box_cols and box_cols[0] else (-1, -1)
+
+    return sel_box, -1
+
+
+def _settings_tab_bar(
+    labels: list[str], active: int, theme, width: int, *, pos: float | None = None
+) -> tuple[list, list]:
+    """Render the underline-style tab bar: a row of labels over one continuous
+    horizontal rule. Under the active tab the rule is accent-bright, tapering in
+    three steps: the last char on either end steps down to the mid accent, the two
+    chars flanking it are dimmer still, and the rest is the neutral separator
+    colour — so the bright bar fades out instead of ending on a hard edge. No
+    vertical dividers.
+
+    Returns ``(lines, spans)`` where ``spans[i]`` is the 0-based ``(start, end)``
+    column range (within the content) of label *i* — used to hit-test tab clicks.
+    """
+    labels_line = Text(" " * _TAB_INDENT, justify="left")
+    spans: list = []
+    col = _TAB_INDENT
+    for i, label in enumerate(labels):
+        if i > 0:
+            labels_line.append(" " * _TAB_GAP)
+            col += _TAB_GAP
+        start = col
+        labels_line.append(label, style=f"bold {theme.accent_bright}" if i == active else theme.muted)
+        col += len(label)
+        spans.append((start, col))  # [start, end)
+
+    # The rule spans the tab strip plus a 2-char margin each side, so the dimmer
+    # "shoulder" chars beside the active tab stay visible even when the first or
+    # last tab is selected — but it still stops well short of the full width.
+    rule_start = max(0, (spans[0][0] if spans else _TAB_INDENT) - 2)
+    rule_end = (spans[-1][1] if spans else _TAB_INDENT) + 2
+    if pos is not None and spans:
+        # Animated: slide the bright underline between adjacent tab spans by the
+        # fractional position (the loop eases `pos` toward the active tab index).
+        import math as _m
+
+        _p = max(0.0, min(len(spans) - 1, pos))
+        _lo = int(_m.floor(_p))
+        _hi = min(len(spans) - 1, _lo + 1)
+        _f = _p - _lo
+        _s0, _e0 = spans[_lo]
+        _s1, _e1 = spans[_hi]
+        a_start = int(round(_s0 + (_s1 - _s0) * _f))
+        a_end = int(round(_e0 + (_e1 - _e0) * _f))
+    else:
+        a_start, a_end = spans[active] if 0 <= active < len(spans) else (0, 0)
+    underline = Text(" " * rule_start, justify="left")  # blank left margin up to the first tab
+    for c in range(rule_start, rule_end):
+        if a_start <= c < a_end:
+            if c == a_start or c == a_end - 1:
+                style = theme.accent  # taper: the last char on either end steps down
+            else:
+                style = f"bold {theme.accent_bright}"  # full brightness across the middle
+        elif a_start - 2 <= c < a_start or a_end <= c < a_end + 2:
+            style = theme.dim  # slightly dimmer just to either side
+        else:
+            style = theme.sep  # the neutral continuous rule
+        underline.append("─", style=style)
+    return [labels_line, underline], spans
+
+
+def _wrap_value(value: str, width: int, head: int, indent: int = 2) -> list[str]:
+    """Greedily wrap ``value`` for a settings row: the first line shares the row
+    with a ``head``-wide label, later lines are indented under it."""
+    out: list[str] = []
+    budget = max(8, width - head)
+    line = ""
+    for word in value.split():
+        candidate = f"{line} {word}" if line else word
+        # A word longer than the whole budget still takes the line it starts (it
+        # ellipsizes there) — breaking before it would emit an empty line.
+        if not line or len(candidate) <= budget:
+            line = candidate
+            continue
+        out.append(line)
+        line, budget = word, max(8, width - indent)
+    out.append(line)
+    return out
+
+
 def _build_settings_screen(
     config_data: dict,
     *,
@@ -5152,185 +5529,424 @@ def _build_settings_screen(
     scroll_meta: dict | None = None,
     width: int = 80,
     height: int = 24,
-    action_sel: int = 0,
+    active_tab: int = 0,
+    tab_pos: float | None = None,
     shimmer_tick: float | None = None,
     sub_reveal: float | None = None,
+    editing: tuple | None = None,
+    sel_box: int = -1,
+    sel_field: int = -1,
 ) -> Panel:
     """Build the settings dashboard showing current configuration.
 
     Displays all config values grouped by category with secrets masked.
     Uses SETTINGS_THEME (silver) with shared components.
+
+    Keyboard focus has three levels, driven by ``sel_box`` / ``sel_field``:
+    ``-1/-1`` is the tab bar (left/right switch tabs), ``b/-1`` highlights section
+    box *b* (arrows walk the box grid), and ``b/f`` highlights one value inside it
+    (up/down walk the values, Enter edits). The loop owns the level; this builder
+    just draws it and publishes the navigation map (``_box_grid``/``_box_fields``)
+    the loop needs to move around. Selecting off-screen content scrolls it into
+    view — the effective offset comes back through ``scroll_meta["scroll"]``.
     """
-    from yeaboi.ui.shared._components import SETTINGS_THEME, build_reveal_subtitle, settings_title
+    from yeaboi.ui.shared._components import SETTINGS_THEME, settings_title
 
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
-    sub = build_reveal_subtitle("Current configuration", sub_reveal, pad=_PAD)
 
-    body_lines: list = []
-
-    # ── Transient status message (e.g. after a Data Dir change) ───
+    # ── Transient status message (e.g. "Anthropic Key updated") ───
+    # The companion duck speaks it (see _duck_say on the returned panel) rather
+    # than it taking a body row.
     message = config_data.get("_message", "")
-    if message:
-        body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
 
-    def _heading(text: str) -> None:
-        body_lines.append(Text(""))
-        h = Text(_PAD + "  ", justify="left")
-        h.append(text, style=f"bold {theme.accent}")
-        body_lines.append(h)
-        body_lines.append(Text(_PAD + "  " + "\u2500" * min(len(text), 40), style=theme.sep, justify="left"))
+    # ── Box geometry, resolved BEFORE the rows are built ──────────
+    # Each section becomes its own bordered box laid out in an adaptive-width grid
+    # (the Usage dashboard's treatment — see _build_usage_screen). The widths have
+    # to be known up front because an in-place edit windows its buffer to the box
+    # it will end up sitting in.
+    # A box's left border lands on the tab-bar rule, which puts the rows INSIDE it
+    # (border + 1 pad) at the same column the unboxed rows used and the tab labels
+    # start at — so boxing the sections doesn't shift any text sideways.
+    _grid_indent = _PAD
+    # panel chrome (border + 2 pad, both sides) + the indent + the scrollbar gutter.
+    grid_w = max(24, width - 6 - len(_grid_indent) - 1)
+    _tab_name = _SETTINGS_TABS[max(0, min(active_tab, len(_SETTINGS_TABS) - 1))]
+    _n_narrow = sum(1 for _s in _SETTINGS_TAB_SECTIONS[_tab_name] if _s not in _WIDE_SETTINGS_SECTIONS)
+    n_cols = max(1, min(_SETTINGS_MAX_COLS, grid_w // _SETTINGS_MIN_BOX_W, _n_narrow or 1))
+    # padding=(0,1) with pad_edge=False → a 2-column gutter between boxes only; two
+    # columns of slack keep the table clear of the render width.
+    col_w = max(20, (grid_w - 2 - 2 * (n_cols - 1)) // n_cols)
+    full_w = grid_w - 2  # a wide box takes the whole grid row
 
-    def _row(label: str, value: str, value_style: str = "", masked: bool = False) -> None:
-        r = Text(_PAD + "    ", justify="left")
-        r.append(f"{label}:  ", style=theme.muted)
-        if masked and value:
+    # (title, rows, wide) per section; ``_cur`` is the open section's row list and
+    # ``_cur_fields`` its editable rows in order — the unit keyboard focus moves over.
+    sections: list[tuple[str, list, bool]] = []
+    box_fields: list[list[tuple[str, str, bool]]] = []
+    _cur: list = []
+    _cur_fields: list[tuple[str, str, bool]] = []
+    _cur_w = col_w - 4  # inner text width available to the open section
+
+    def _heading(text: str, *, wide: bool = False) -> None:
+        """Open a new section box — its heading is drawn as the box title."""
+        nonlocal _cur, _cur_fields, _cur_w
+        _cur, _cur_fields = [], []
+        _cur_w = (full_w if wide else col_w) - 4  # borders (2) + padding (2)
+        sections.append((text, _cur, wide))
+        box_fields.append(_cur_fields)
+
+    def _row(
+        label: str, value: str, value_style: str = "", masked: bool = False, env: str = "", wrap: bool = False
+    ) -> None:
+        # Editable rows use _EditableRow (a Text subclass with a __dict__) so a
+        # click can recover the env var; plain rows stay Text.
+        # no_wrap + ellipsis: a long value crops instead of wrapping, which would
+        # give the box an unpredictable height and break the grid.
+        _kw = {"justify": "left", "no_wrap": True, "overflow": "ellipsis"}
+        r = _EditableRow("", **_kw) if env else Text("", **_kw)
+        _focused = bool(env) and len(sections) - 1 == sel_box and len(_cur_fields) == sel_field
+        r.append(f"{label}:  ", style=f"bold {theme.accent_bright}" if _focused else theme.muted)
+        if wrap and not env and value:
+            # A read-only status whose text can't fit a column (the voice hint
+            # carries an install command) flows onto continuation lines. Wrapping
+            # HERE rather than at render time keeps one body line per rendered row,
+            # so the box height and the click regions still add up.
+            _pre = _wrap_value(str(value), _cur_w, len(label) + 3)
+            r.append(_pre[0], style=value_style or theme.value)
+            _cur.append(r)
+            for _more in _pre[1:]:
+                _c = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
+                _c.append(_more, style=value_style or theme.value)
+                _cur.append(_c)
+            return
+        if editing is not None and env and editing[0] == env:
+            # This row is being edited in place: show the buffer with a block cursor.
+            # The buffer is windowed to what is left of the box so the cursor stays
+            # visible — otherwise a long key would ellipsize exactly where you type.
+            _buf, _pos = editing[1], editing[2]
+            _pos = max(0, min(_pos, len(_buf)))
+            _avail = max(8, _cur_w - len(label) - 3)
+            _lo = max(0, _pos - _avail + 1)
+            _win, _wc = _buf[_lo : _lo + _avail], _pos - _lo
+            r.append(_win[:_wc], style=theme.value)
+            r.append(_win[_wc : _wc + 1] or " ", style="reverse bold")  # cursor cell
+            r.append(_win[_wc + 1 :], style=theme.value)
+        elif masked and value:
             display = value[:4] + "\u2022" * min(12, len(value) - 4) if len(value) > 4 else "\u2022" * len(value)
             r.append(display, style=value_style or theme.dim)
         elif value:
             r.append(str(value), style=value_style or theme.value)
         else:
             r.append("not set", style=theme.dim)
-        body_lines.append(r)
+        if _focused:
+            # Pad out to the box's inner width so the stripe runs the full row —
+            # the span styles only set colours, so this base style shows through.
+            r.append(" " * max(0, _cur_w - r.cell_len))
+            r.style = f"on {_SETTINGS_FOCUS_BG}"
+        if env:
+            r.env, r.label, r.masked = env, label, masked
+            _cur_fields.append((env, label, masked))
+        _cur.append(r)
 
     # Token help sub-lines: where to create the token + the minimum scope it needs.
     # Sourced from the shared TOKEN_HELP registry (same one the setup wizard uses)
     # so both token surfaces stay consistent. The creation URL is a clickable
     # OSC-8 hyperlink; both lines are dim so they read as a secondary hint.
     #
-    # Each line MUST render as exactly one visual row — the viewport height math
-    # below (visible = body_lines[scroll : scroll + viewport_h]) assumes one row
-    # per body line, so a wrapped line would overflow the fixed-height panel. We
+    # Each line MUST render as exactly one visual row — its section's box is built
+    # at a fixed height (rows + 2), so a wrapped line would overflow the border. We
     # force single-row with no_wrap + ellipsis; the full scope is always visible in
-    # the setup wizard, and wide terminals show it in full here too.
+    # the setup wizard, and these sections get a full-width box so wide terminals
+    # show it in full here too.
     from yeaboi.ui.provider_select._constants import TOKEN_HELP
 
     def _token_help(env_var: str) -> None:
         entry = TOKEN_HELP.get(env_var)
         if not entry:
             return
-        link = Text(_PAD + "      ", justify="left", no_wrap=True, overflow="ellipsis")
+        link = Text("  ", justify="left", no_wrap=True, overflow="ellipsis")
         link.append("↳ create: ", style=theme.muted)
         link.append(entry["url"], style=f"{theme.dim} underline link {entry['url']}")
-        body_lines.append(link)
-        scope = Text(_PAD + "        ", justify="left", no_wrap=True, overflow="ellipsis")
+        _cur.append(link)
+        scope = Text("    ", justify="left", no_wrap=True, overflow="ellipsis")
         scope.append("scope: ", style=theme.muted)
         scope.append(entry["scope"], style=theme.dim)
-        body_lines.append(scope)
+        _cur.append(scope)
 
-    # ── LLM Provider ──────────────────────────────────────────────
-    _heading("LLM Provider")
-    _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"))
-    _row("Model", config_data.get("LLM_MODEL", "(default)"))
-    _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True)
-    _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True)
-    _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True)
-    # Ollama is keyless — its server URL/context rows only appear when the user
-    # runs local mode (or has customised the vars), keeping the page uncluttered.
-    if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
-        _row("Ollama URL", config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)")
-        _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)")
+    # ── Section builders (one per tab) — only the active one is rendered ──
+    def _sec_provider() -> None:
+        _heading("LLM Provider")
+        _row("Provider", config_data.get("LLM_PROVIDER", "anthropic"), env="LLM_PROVIDER")
+        _row("Model", config_data.get("LLM_MODEL", "(default)"), env="LLM_MODEL")
+        _row("Anthropic Key", config_data.get("ANTHROPIC_API_KEY", ""), masked=True, env="ANTHROPIC_API_KEY")
+        _row("OpenAI Key", config_data.get("OPENAI_API_KEY", ""), masked=True, env="OPENAI_API_KEY")
+        _row("Google Key", config_data.get("GOOGLE_API_KEY", ""), masked=True, env="GOOGLE_API_KEY")
+        # Ollama is keyless — its server URL/context rows only appear when the user
+        # runs local mode (or has customised the vars), keeping the page uncluttered.
+        if config_data.get("LLM_PROVIDER", "") == "ollama" or config_data.get("OLLAMA_BASE_URL", ""):
+            _row(
+                "Ollama URL",
+                config_data.get("OLLAMA_BASE_URL", "") or "http://localhost:11434 (default)",
+                env="OLLAMA_BASE_URL",
+            )
+            _row("Ollama Context", config_data.get("OLLAMA_NUM_CTX", "") or "16384 (default)", env="OLLAMA_NUM_CTX")
 
-    # ── Jira ──────────────────────────────────────────────────────
-    _heading("Jira")
-    _row("Base URL", config_data.get("JIRA_BASE_URL", ""))
-    _row("Email", config_data.get("JIRA_EMAIL", ""))
-    _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True)
-    _token_help("JIRA_API_TOKEN")
-    _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""))
-    _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""))
+    def _sec_jira() -> None:
+        _heading("Jira", wide=True)
+        _row("Base URL", config_data.get("JIRA_BASE_URL", ""), env="JIRA_BASE_URL")
+        _row("Email", config_data.get("JIRA_EMAIL", ""), env="JIRA_EMAIL")
+        _row("API Token", config_data.get("JIRA_API_TOKEN", ""), masked=True, env="JIRA_API_TOKEN")
+        _token_help("JIRA_API_TOKEN")
+        _row("Project Key", config_data.get("JIRA_PROJECT_KEY", ""), env="JIRA_PROJECT_KEY")
+        _row("Confluence Space", config_data.get("CONFLUENCE_SPACE_KEY", ""), env="CONFLUENCE_SPACE_KEY")
 
-    # ── Azure DevOps ──────────────────────────────────────────────
-    _heading("Azure DevOps")
-    _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""))
-    _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""))
-    _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True)
-    _token_help("AZURE_DEVOPS_TOKEN")
-    _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""))
+    def _sec_azure() -> None:
+        _heading("Azure DevOps", wide=True)
+        _row("Org URL", config_data.get("AZURE_DEVOPS_ORG_URL", ""), env="AZURE_DEVOPS_ORG_URL")
+        _row("Project", config_data.get("AZURE_DEVOPS_PROJECT", ""), env="AZURE_DEVOPS_PROJECT")
+        _row("PAT", config_data.get("AZURE_DEVOPS_TOKEN", ""), masked=True, env="AZURE_DEVOPS_TOKEN")
+        _token_help("AZURE_DEVOPS_TOKEN")
+        _row("Team", config_data.get("AZURE_DEVOPS_TEAM", ""), env="AZURE_DEVOPS_TEAM")
 
-    # ── GitHub ────────────────────────────────────────────────────
-    _heading("GitHub")
-    _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True)
-    _token_help("GITHUB_TOKEN")
+    def _sec_github() -> None:
+        _heading("GitHub", wide=True)
+        _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
+        _token_help("GITHUB_TOKEN")
 
-    # ── Notion ────────────────────────────────────────────────────
-    # Independent doc tool (its own integration token, unlike Confluence).
-    _heading("Notion")
-    _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True)
-    _token_help("NOTION_TOKEN")
-    _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""))
+    def _sec_notion() -> None:
+        # Independent doc tool (its own integration token, unlike Confluence).
+        _heading("Notion", wide=True)
+        _row("Token", config_data.get("NOTION_TOKEN", ""), masked=True, env="NOTION_TOKEN")
+        _token_help("NOTION_TOKEN")
+        _row("Root Page/DB", config_data.get("NOTION_ROOT_PAGE_ID", ""), env="NOTION_ROOT_PAGE_ID")
 
-    # ── Storage ───────────────────────────────────────────────────
-    # One YEABOI_HOME override relocates the whole data tree (exports, logs,
-    # sessions DB…). Edited via the Data Dir action button.
-    _heading("Storage")
-    _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)")
-    # Filesystem-sandbox whitelist (fs_policy.py) — edited via the Paths button.
-    _allowed_paths = config_data.get("YEABOI_ALLOWED_PATHS", "")
-    _row(
-        "Allowed Paths",
-        _allowed_paths or "none — sandboxed to data dir",
-        value_style="" if _allowed_paths else theme.dim,
-    )
+    def _sec_storage() -> None:
+        # One YEABOI_HOME override relocates the whole data tree (exports, logs,
+        # sessions DB…). Clicking it opens the data-dir editor (with the move offer).
+        _heading("Storage")
+        _row("Data Directory", config_data.get("YEABOI_HOME", "") or "~/.yeaboi (default)", env="YEABOI_HOME")
+        # Filesystem-sandbox whitelist (fs_policy.py): the folders yeaboi may touch
+        # outside its data home. Comma-separated, edited in place like any other row.
+        _allowed = config_data.get("YEABOI_ALLOWED_PATHS", "")
+        _row(
+            "Allowed Paths",
+            _allowed or "none — sandboxed to data dir",
+            value_style="" if _allowed else theme.dim,
+            env="YEABOI_ALLOWED_PATHS",
+        )
 
-    # ── Daily Standup delivery ────────────────────────────────────
-    # Secrets (Slack webhook, SMTP password) are masked like every other credential.
-    _heading("Daily Standup")
-    _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""))
-    _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True)
-    _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""))
-    _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""))
-    _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True)
-    _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""))
+    def _sec_standup() -> None:
+        # Secrets (Slack webhook, SMTP password) are masked like every other credential.
+        _heading("Daily Standup")
+        _row("GitHub Repo", config_data.get("STANDUP_GITHUB_REPO", ""), env="STANDUP_GITHUB_REPO")
+        _row("Slack Webhook", config_data.get("SLACK_WEBHOOK_URL", ""), masked=True, env="SLACK_WEBHOOK_URL")
+        _row("SMTP Host", config_data.get("STANDUP_SMTP_HOST", ""), env="STANDUP_SMTP_HOST")
+        _row("SMTP User", config_data.get("STANDUP_SMTP_USER", ""), env="STANDUP_SMTP_USER")
+        _row("SMTP Password", config_data.get("STANDUP_SMTP_PASSWORD", ""), masked=True, env="STANDUP_SMTP_PASSWORD")
+        _row("Email Recipients", config_data.get("STANDUP_EMAIL_RECIPIENTS", ""), env="STANDUP_EMAIL_RECIPIENTS")
 
-    # ── Voice Input ───────────────────────────────────────────────
-    # Local, offline dictation (double-tap Space in any text field) — works with every
-    # LLM provider, no API key. See docs: "Voice Input".
-    _heading("Voice Input")
-    from yeaboi.voice import backend_label, is_voice_available
+    def _sec_voice() -> None:
+        # Local, offline dictation (double-tap Space in any text field) — works with every
+        # LLM provider, no API key. See docs: "Voice Input".
+        _heading("Voice Input")
+        from yeaboi.voice import backend_label, is_voice_available
 
-    _voice_ok, _voice_reason = is_voice_available()
-    if _voice_ok:
-        _row("Dictation", f"available — {backend_label()}", value_style=theme.good)
-    else:
-        _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn)
-    _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)")
+        _voice_ok, _voice_reason = is_voice_available()
+        # Read-only status; the unavailable text carries an install command, so it
+        # wraps onto continuation lines rather than cropping mid-command.
+        if _voice_ok:
+            _row("Dictation", f"available — {backend_label()}", value_style=theme.good, wrap=True)
+        else:
+            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn, wrap=True)
+        _row("Model Size", config_data.get("VOICE_MODEL", "") or "base (default)", env="VOICE_MODEL")
 
-    # ── AWS Bedrock ───────────────────────────────────────────────
-    aws_region = config_data.get("AWS_REGION", "")
-    aws_profile = config_data.get("AWS_PROFILE", "")
-    if aws_region or aws_profile:
+    def _sec_bedrock() -> None:
         _heading("AWS Bedrock")
-        _row("Region", aws_region)
-        _row("Profile", aws_profile)
+        _row("Region", config_data.get("AWS_REGION", ""), env="AWS_REGION")
+        _row("Profile", config_data.get("AWS_PROFILE", ""), env="AWS_PROFILE")
 
-    # ── Advanced ──────────────────────────────────────────────────
-    _heading("Advanced")
-    _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"))
-    _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"))
-    # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
-    _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
-    _row("Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted)
-    langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
-    _row("LangSmith", langsmith)
-    _row("Config File", config_data.get("_config_path", ""))
+    def _sec_advanced() -> None:
+        _heading("Advanced")
+        _row("Log Level", config_data.get("LOG_LEVEL", "WARNING"), env="LOG_LEVEL")
+        _row("Session Prune Days", config_data.get("SESSION_PRUNE_DAYS", "30"), env="SESSION_PRUNE_DAYS")
+        # Tips default on; only the literal "false" disables them (matches is_tips_enabled).
+        _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
+        _row(
+            "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
+        )
+        langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
+        _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
+        _row("Config File", config_data.get("_config_path", ""))  # read-only path
 
-    # ── Layout ────────────────────────────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    _builders = {
+        "provider": _sec_provider,
+        "jira": _sec_jira,
+        "azure": _sec_azure,
+        "github": _sec_github,
+        "notion": _sec_notion,
+        "storage": _sec_storage,
+        "standup": _sec_standup,
+        "voice": _sec_voice,
+        "bedrock": _sec_bedrock,
+        "advanced": _sec_advanced,
+    }
+    active_tab = max(0, min(active_tab, len(_SETTINGS_TABS) - 1))
+    # Render every heading section grouped under the active tab.
+    for _section in _SETTINGS_TAB_SECTIONS[_SETTINGS_TABS[active_tab]]:
+        _builders[_section]()
+
+    # ── Section boxes, laid out in an adaptive-width grid ─────────
+    # Narrow sections fill a column grid; wide ones stack below it at full width.
+    # The boxed grid is flattened to one Text per rendered row by _render_to_lines,
+    # which keeps the "one body line == one rendered row" assumption the viewport
+    # and scrollbar math below rely on.
+    def _section_box(sec_title: str, rows: list, box_h: int, box_w: int, *, focused: bool = False) -> Panel:
+        head = Text(
+            sec_title,
+            style=f"bold {theme.accent_bright}" if focused else f"bold {theme.accent}",
+            no_wrap=True,
+            overflow="ellipsis",
+        )
+        return Panel(
+            Group(*(rows or [Text("")])),
+            title=head,
+            title_align="left",
+            box=rich.box.ROUNDED,
+            border_style=theme.accent if focused else theme.sep,
+            padding=(0, 1),
+            width=box_w,
+            height=box_h,
+        )
+
+    body_lines: list = [Text("")]  # the blank the first heading used to supply
+    # body-line index → [(x0, x1, env, label, masked)] for every editable row on it.
+    # Side-by-side boxes put two editable rows on the SAME line, so a click needs the
+    # column range as well as the row (see _row_regions / the settings loop).
+    _line_meta: dict[int, list[tuple[int, int, str, str, bool]]] = {}
+    _abs_x = _TAB_COL_OFFSET + len(_grid_indent)  # grid column 0 in absolute terminal columns
+
+    # Navigation map, published for the loop: the balanced columns (each top to
+    # bottom) and the full-width boxes stacked under them. Arrow keys walk this.
+    box_cols: list[list[int]] = []
+    box_tail: list[int] = []
+    box_span: dict[int, tuple[int, int]] = {}  # section index → (first, last) body line
+    field_line: dict[tuple[int, int], int] = {}  # (section, field) → body line
+
+    def _mark(line_idx: int, x0: int, x1: int, box_idx: int, rows: list, box_h: int) -> None:
+        box_span[box_idx] = (line_idx, line_idx + box_h - 1)
+        _fi = 0
+        for _k, _ln in enumerate(rows):
+            if isinstance(_ln, _EditableRow):
+                _line_meta.setdefault(line_idx + 1 + _k, []).append(
+                    (_abs_x + x0, _abs_x + x1, _ln.env, _ln.label, bool(_ln.masked))
+                )
+                field_line[(box_idx, _fi)] = line_idx + 1 + _k
+                _fi += 1
+
+    _numbered = [(_i, _t, _r, _w) for _i, (_t, _r, _w) in enumerate(sections)]
+    _narrow = [s for s in _numbered if not s[3]]
+    _wide = [s for s in _numbered if s[3]]
+
+    if _narrow:
+        # Columns, not rows: each box is exactly as tall as its own content and the
+        # sections are dealt into the shortest column so far. A row-based grid had to
+        # pad every box in a row up to the tallest one, which left a two-row section
+        # sitting in a six-row box next to a full one.
+        _cols: list[list] = [[] for _ in range(n_cols)]
+        _col_h = [0] * n_cols
+        for _sec in _narrow:
+            _j = _col_h.index(min(_col_h))
+            _col_h[_j] += (1 if _cols[_j] else 0) + len(_sec[2]) + 2  # blank + border + rows + border
+            _cols[_j].append(_sec)
+        _cols = [c for c in _cols if c]  # a column can stay empty when sections < n_cols
+
+        # Even the columns out: a short column shares the shortfall between its
+        # boxes (up to _SETTINGS_MAX_STRETCH rows each) so the block reads as one
+        # tidy rectangle instead of ragged stacks ending at different depths.
+        _natural = [sum(len(_r) + 2 for _, _, _r, _ in c) + len(c) - 1 for c in _cols]
+        _target = max(_natural)
+        _stretch: list[dict[int, int]] = []
+        for _c, _nat in zip(_cols, _natural, strict=True):
+            _gain: dict[int, int] = {}
+            _left = min(_target - _nat, _SETTINGS_MAX_STRETCH * len(_c))
+            _i = 0
+            while _left > 0:  # round-robin, so no single box absorbs the whole gap
+                _bi = _c[_i % len(_c)][0]
+                if _gain.get(_bi, 0) < _SETTINGS_MAX_STRETCH:
+                    _gain[_bi] = _gain.get(_bi, 0) + 1
+                    _left -= 1
+                _i += 1
+            _stretch.append(_gain)
+
+        _grid = Table(show_header=False, show_edge=False, box=None, padding=(0, 1), pad_edge=False)
+        for _ in _cols:
+            _grid.add_column(width=col_w, overflow="crop")
+        _base = len(body_lines)
+        _cells: list = []
+        for _j, _col in enumerate(_cols):
+            _stack: list = []
+            _off = 0  # line offset within this column (every column starts at _base)
+            _cs = _j * (col_w + 2)  # padding=(0,1) both sides → a 2-col gutter
+            for _bi, _t, _r, _ in _col:
+                if _stack:
+                    _stack.append(Text(""))  # one blank line between stacked boxes
+                    _off += 1
+                _h = len(_r) + 2 + _stretch[_j].get(_bi, 0)
+                _stack.append(_section_box(_t, _r, _h, col_w, focused=(_bi == sel_box)))
+                _mark(_base + _off, _cs + 1, _cs + col_w - 2, _bi, _r, _h)
+                _off += _h
+            box_cols.append([_bi for _bi, _, _, _ in _col])
+            _cells.append(Group(*_stack))
+        _grid.add_row(*_cells)
+        body_lines.extend(_render_to_lines(_grid, grid_w, _grid_indent))
+
+    for _bi, _t, _r, _ in _wide:
+        body_lines.append(Text(""))
+        _base = len(body_lines)
+        _box = _section_box(_t, _r, len(_r) + 2, full_w, focused=(_bi == sel_box))
+        body_lines.extend(_render_to_lines(_box, grid_w, _grid_indent))
+        box_tail.append(_bi)
+        _mark(_base, 1, full_w - 2, _bi, _r, len(_r) + 2)
+
+    # ── Layout: tab bar → active section (scrollable) → context hint ──────
+    tab_lines, tab_spans = _settings_tab_bar(_SETTINGS_TABS, active_tab, theme, width, pos=tab_pos)
+    # header = blank + title(2) + blank + tab bar; action_h reserves blank + hint +
+    # a trailing blank so the hint sits ABOVE the app-wide music pocket, which
+    # overwrites the bottom-most content row.
+    viewport_h = calc_viewport(height, header_h=4 + len(tab_lines), action_h=3)
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
+    # Keyboard focus drags the viewport with it: land the selected field (or the
+    # whole selected box) inside the window, preferring its top when it can't fit.
+    if sel_box >= 0:
+        _t0, _t1 = box_span.get(sel_box, (0, 0))
+        if sel_field >= 0 and (sel_box, sel_field) in field_line:
+            _t0 = _t1 = field_line[(sel_box, sel_field)]
+        if _t1 >= actual_scroll + viewport_h:
+            actual_scroll = _t1 - viewport_h + 1
+        if _t0 < actual_scroll:
+            actual_scroll = _t0
+        actual_scroll = max(0, min(actual_scroll, max_scroll))
     publish_geometry(scroll_meta, max_scroll, viewport_h)
+    if scroll_meta is not None:
+        scroll_meta["scroll"] = actual_scroll  # hand the auto-scrolled offset back
     visible = body_lines[actual_scroll : actual_scroll + viewport_h]
+
+    # Editable-row click regions: each visible env-backed row maps to its absolute
+    # terminal row plus the column range of the box it sits in. The viewport starts
+    # just below the tab bar (labels + underline).
+    _viewport_top = _TAB_LABELS_ROW + len(tab_lines)
+    row_regions = [
+        (_viewport_top + _j, _x0, _x1, _env, _label, _masked)
+        for _j, _idx in enumerate(range(actual_scroll, actual_scroll + len(visible)))
+        for (_x0, _x1, _env, _label, _masked) in _line_meta.get(_idx, [])
+    ]
 
     _sb_text = build_scrollbar(viewport_h, total_lines, actual_scroll, max_scroll, always_show=True)
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    btn_top, btn_mid, btn_bot = build_action_buttons(
-        ["Configure", "Log Level", "Data Dir", "Paths", "Back"], action_sel
-    )
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -5350,17 +5966,64 @@ def _build_settings_screen(
     else:
         viewport_renderable = Group(*padded_lines)
 
+    # Context hint replaces the old button row: the tab bar is the navigation now.
+    _enter_label = {"loglevel": "cycle log level"}.get(settings_tab_action(active_tab), "configure")
+    hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
+    if editing is not None:
+        # In-place edit mode: keys go to the field being edited.
+        hint.append("type to edit", style=theme.accent)
+        hint.append("  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  save  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  cancel  ·  '-' clears", style=theme.muted)
+    elif sel_field >= 0:
+        hint.append("↑/↓", style=theme.accent)
+        hint.append("  pick value  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  edit  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  back to sections", style=theme.muted)
+    elif sel_box >= 0:
+        hint.append("arrows", style=theme.accent)
+        hint.append("  pick section  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  open  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  back to tabs", style=theme.muted)
+    else:
+        hint.append("←/→", style=theme.accent)
+        hint.append("  switch tab  ·  ", style=theme.muted)
+        hint.append("↓", style=theme.accent)
+        hint.append("  sections  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append(f"  {_enter_label}", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
+
     content = Group(
         Text(""),
         title,
         Text(""),
-        sub,
-        Text(""),
+        *tab_lines,
+        # No blank here: each section's heading already leads with one blank, so a
+        # blank after the tab bar would double up before the first heading.
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        Text(""),  # the hint moved into the bottom pocket (see _hint_tab)
+        Text(""),  # keeps the content above the music pocket band
     )
 
-    return build_page_panel(content, theme=SETTINGS_THEME, height=height)
+    panel = build_page_panel(content, theme=SETTINGS_THEME, height=height)
+    # The controls ride in the bottom-left pocket as one more tab beside "back",
+    # instead of taking a body row of their own.
+    panel._hint_tab = hint
+    panel._duck_say = message  # the companion speaks the transient status
+    # Attach the tab click regions (labels + underline rows, absolute cols) so the
+    # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
+    panel._tab_regions = [
+        (_TAB_LABELS_ROW, _TAB_UNDERLINE_ROW, _TAB_COL_OFFSET + s, _TAB_COL_OFFSET + e - 1) for (s, e) in tab_spans
+    ]
+    panel._row_regions = row_regions  # (abs_row, x0, x1, env, label, masked) per visible editable row
+    panel._box_cols = box_cols  # balanced columns of section indices — the arrow-key map
+    panel._box_tail = box_tail  # the full-width boxes stacked under the columns
+    panel._box_fields = box_fields  # per section, its editable (env, label, masked) in order
+    return panel
