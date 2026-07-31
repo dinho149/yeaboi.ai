@@ -72,3 +72,4 @@ try:
     __version__ = _pkg_version("yeaboi")
 except PackageNotFoundError:  # running from a raw source tree without an install
     __version__ = "0.0.0+dev"
+# diag: force auto-version guard to reach the Claude step (revert me)

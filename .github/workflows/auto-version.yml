@@ -152,6 +152,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # TEMPORARY (diag/claude-ci-error): surface the SDK error the action hides.
+          show_full_output: true
           # Semver classification is mechanical (labels always win; the bump is a
           # script; the changelog paragraph is short) — routed to Haiku for cost.
           # If wrong-level bumps appear, promote to claude-sonnet-5 (one line).
