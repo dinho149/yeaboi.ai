@@ -131,11 +131,13 @@ export function Duel({ duel, mic }: DuelProps) {
           ) : (
             <span className={styles['hint']}>
               {/* Not a failure to work around: getUserMedia needs a secure
-                  context, so a plain-HTTP LAN address genuinely cannot record.
-                  Worded as "this connection" rather than naming the scheme —
-                  the person reading it opened a link someone sent them and has
-                  no idea which one they got, and the bundle guard forbids a
-                  literal scheme anywhere in the JS regardless. */}
+                  context. Every way of reaching this board now is one — the
+                  host is on localhost, everyone else on the HTTPS tunnel — so
+                  this branch is a browser that refused rather than a connection
+                  that can't. Worded as "this connection" rather than naming the
+                  scheme, because the person reading it opened a link someone
+                  sent them, and the bundle guard forbids a literal scheme
+                  anywhere in the JS regardless. */}
               Your browser can&rsquo;t record on this connection — the room mic covers you.
             </span>
           )}

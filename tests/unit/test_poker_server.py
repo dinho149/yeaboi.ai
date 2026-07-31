@@ -132,6 +132,14 @@ class TestServerRouting:
         )
         assert json.load(urllib.request.urlopen(req, timeout=5))["shareUrl"] == "https://abc-def.trycloudflare.com/"
 
+    def test_invite_prefers_the_public_url_over_the_requesters_host(self, running_server):
+        # The host reaches a loopback-bound board at 127.0.0.1; the invite must
+        # not hand that back. See the retro suite for the full note.
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["shareUrl"] == "https://abc-def.trycloudflare.com/"
+
     def test_unknown_path_404(self, running_server):
         srv, _ = running_server
         with pytest.raises(urllib.error.HTTPError) as exc:
@@ -628,8 +636,29 @@ class TestUrls:
         srv = PokerServer(PokerBoard("s"), port=5388)
         assert f"token={srv.token}" in srv.url
         assert f"admin={srv.admin_token}" in srv.url
-        assert srv.share_url == f"http://{srv.ip}:{srv.port}/"
+
+    def test_host_url_is_loopback_until_the_tunnel_is_up(self):
+        srv = PokerServer(PokerBoard("s"), port=5388)
+        assert srv.url.startswith("http://127.0.0.1:5388/?token=")
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        assert srv.url.startswith("https://abc-def.trycloudflare.com/?token=")
+
+    def test_share_url_is_the_tunnel_or_nothing(self):
+        # No LAN fallback: the board binds loopback, so until the tunnel lands
+        # there is no address a teammate could use.
+        srv = PokerServer(PokerBoard("s"), port=5388)
+        assert srv.share_url == ""
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        assert srv.share_url == "https://abc-def.trycloudflare.com/"
         assert "token" not in srv.share_url
+
+    def test_binds_loopback_only(self):
+        srv = PokerServer(PokerBoard("s"), port=5393)
+        srv.start()
+        try:
+            assert srv._httpd.server_address[0] == "127.0.0.1"
+        finally:
+            srv.stop()
 
     def test_lifecycle_start_stop(self):
         srv = PokerServer(PokerBoard("s", tickets=_tickets(1)), port=5311)

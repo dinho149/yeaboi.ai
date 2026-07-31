@@ -160,6 +160,10 @@ def _build_analysis_review_screen(
 # collapse the two: several layouts are measured against one or the other.
 _PAD = "  "
 
+# The two columns a Panel's left and right borders take. Anything measured
+# against the panel's usable interior has to come off the console width first.
+_PANEL_BORDER_W = 2
+
 
 def _link_lines(
     label: str, url: str, *, width: int, label_style: str, url_style: str, indent: str = "    "
@@ -4532,10 +4536,12 @@ def _build_retro_screen(
     lives in the browser; here the grids stack vertically so narrow terminals and
     the shared scrollbar behave like every other page.
 
-    retro_data keys: session_name, display_code, url (token-free LAN share URL),
+    retro_data keys: session_name, display_code, public_url (the Cloudflare tunnel
+    URL — the only participant link there is, and empty until it comes up),
+    link_failed (the tunnel gave up; empty public_url means "waiting" without it),
     host_url (optional private token'd host link), message (transient status),
-    grids (dict[grid_key -> list[RetroCard]]), public_url (optional remote tunnel
-    URL), actions (optional button-label list).
+    grids (dict[grid_key -> list[RetroCard]]), actions (optional button-label
+    list).
 
     # See docs: "Retro" — TUI page
     """
@@ -4584,8 +4590,8 @@ def _build_retro_screen(
     # _render_to_lines helper so it scrolls line-by-line with everything else.
 
     # ── Join info, at the top ─────────────────────────────────────
-    # Live-board only: a saved-run snapshot has no share code / LAN URL, so the
-    # hub passes snapshot=True to suppress this whole block (the report replays the
+    # Live-board only: a saved-run snapshot has no share code or link, so the hub
+    # passes snapshot=True to suppress this whole block (the report replays the
     # grids + carried actions, not a resumable board). Content is unindented —
     # aligned with the heading — and the server-ready/status note sits right under
     # the heading.
@@ -4628,20 +4634,30 @@ def _build_retro_screen(
         _heading("Send this to your team")
         if message:
             body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
+        # The tunnel URL is the only participant link there is — the board itself
+        # binds loopback. Until it lands there is nothing to show, so the row says
+        # so rather than printing an address (an earlier LAN link here worked only
+        # for the same Wi-Fi, and reliably got pasted to someone remote).
+        # Labels stay short so the URL fits beside them at 80 columns; the reach
+        # note goes in the muted line below, where it costs nothing when it wraps.
         public_url = retro_data.get("public_url", "")
-        # Labels stay short so the URL fits beside them at 80 columns; the
-        # reach ("works anywhere" vs "same Wi-Fi") goes in the muted line below,
-        # where it costs nothing when it wraps.
-        _jlink(
-            "Participant link",
-            public_url or retro_data.get("url", "—"),
-            f"bold {theme.accent_bright}",
-        )
+        link_failed = bool(retro_data.get("link_failed"))
+        if public_url:
+            _jlink("Participant link", public_url, f"bold {theme.accent_bright}")
+        else:
+            _jrow("Participant link", "unavailable" if link_failed else "preparing…", theme.muted)
         _jrow("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
+        # One line, whichever state: this block sits above the grids on every
+        # frame, so a taller variant would push cards off the viewport. The
+        # failed case needs its own line — left on "a few seconds" it would keep
+        # promising a link that is never coming, directly under a status saying
+        # the opposite.
         if public_url:
             _jline("Works anywhere. They open the link, then type the code.", theme.muted)
+        elif link_failed:
+            _jline("The secure link didn't start — press Retry Link to try again.", theme.warn)
         else:
-            _jline("Same Wi-Fi only — Share Remotely adds a public link.", theme.muted)
+            _jline("Setting up the secure link — a few seconds. The code is already live.", theme.muted)
 
         host_url = retro_data.get("host_url", "")
         if host_url:
@@ -4715,10 +4731,18 @@ def _build_retro_screen(
     # The bar wraps, so its height is measured rather than assumed — seven
     # buttons do not fit an 80-column terminal on one line, and a hardcoded
     # action_h would push the second row off the bottom of the panel.
+    #
+    # `width - _PANEL_BORDER_W`, because _wrap_actions budgets against the panel's
+    # INNER width and `width` is the console's. Passing the outer width let a row
+    # pack to exactly the border: at 80 columns the bar came to 80 and the panel
+    # interior is 78, so each row soft-wrapped and shoved the second bank of
+    # buttons off the bottom — selectable, invisible, the very bug the wrapping
+    # was added to fix.
     actions = retro_data.get("actions") or ["Generate Action Items", "Export", "Close"]
-    action_lines = build_action_rows(actions, action_sel, width=width)
+    inner_w = width - _PANEL_BORDER_W
+    action_lines = build_action_rows(actions, action_sel, width=inner_w)
 
-    viewport_h = calc_viewport(height, header_h=6, action_h=action_rows_height(actions, width))
+    viewport_h = calc_viewport(height, header_h=6, action_h=action_rows_height(actions, inner_w))
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4808,9 +4832,11 @@ def _build_poker_screen(
                        this view is for monitoring, like retro's.
       * ``snapshot`` — a saved run replayed from its PokerReport (the hub).
 
-    poker_data keys: message, actions, session_name, display_code, url, host_url,
-    public_url, pick {title, hint, options[(label, sub)], sel}, state (a
-    ``PokerBoard.state_snapshot()`` dict), report (a PokerReport for snapshots).
+    poker_data keys: message, actions, session_name, display_code, host_url,
+    public_url (the Cloudflare tunnel URL — the only participant link there is,
+    and empty until it comes up), link_failed (the tunnel gave up), pick {title,
+    hint, options[(label, sub)], sel}, state (a ``PokerBoard.state_snapshot()``
+    dict), report (a PokerReport for snapshots).
 
     # See docs: "Poker" — TUI page
     """
@@ -4898,17 +4924,21 @@ def _build_poker_screen(
         # including why this block stays about as short as the one it replaced.
         if not poker_data.get("snapshot"):
             _heading("Send this to your team")
+            # The tunnel URL is the only participant link there is — see the retro
+            # board for the full note.
             public_url = poker_data.get("public_url", "")
-            _link(
-                "Participant link",
-                public_url or poker_data.get("url", "—"),
-                f"bold {theme.accent_bright}",
-            )
+            link_failed = bool(poker_data.get("link_failed"))
+            if public_url:
+                _link("Participant link", public_url, f"bold {theme.accent_bright}")
+            else:
+                _row("Participant link", "unavailable" if link_failed else "preparing…", theme.muted)
             _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
             if public_url:
                 _line("Works anywhere. They open the link, then type the code.", theme.muted)
+            elif link_failed:
+                _line("The secure link didn't start — press Retry Link to try again.", theme.warn)
             else:
-                _line("Same Wi-Fi only — Share Remotely adds a public link.", theme.muted)
+                _line("Setting up the secure link — a few seconds. The code is already live.", theme.muted)
 
             host_url = poker_data.get("host_url", "")
             if host_url:
@@ -5049,9 +5079,10 @@ def _build_poker_screen(
     # Measured, not assumed: the bar wraps once the copy buttons are on it, and
     # a hardcoded action_h would push the second row off the panel.
     actions = poker_data.get("actions") or ["Close"]
-    action_lines = build_action_rows(actions, action_sel, width=width)
+    inner_w = width - _PANEL_BORDER_W  # see the retro screen for why the borders come off
+    action_lines = build_action_rows(actions, action_sel, width=inner_w)
 
-    viewport_h = calc_viewport(height, header_h=10, action_h=action_rows_height(actions, width))
+    viewport_h = calc_viewport(height, header_h=10, action_h=action_rows_height(actions, inner_w))
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)

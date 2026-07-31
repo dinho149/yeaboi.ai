@@ -7,6 +7,10 @@
  * worked. And the fetch must repeat on every open, because the host can start a
  * tunnel mid-session and the link a remote teammate needs changes underneath a
  * board that is already running.
+ *
+ * And a board whose tunnel has not come up yet answers with an empty `shareUrl`
+ * — deliberately, rather than the loopback address the host is looking at. The
+ * panel must not auto-copy a code with no link to go with it.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/preact';
@@ -49,6 +53,18 @@ describe('useInvite', () => {
     renderHook(() => useInvite(SESSION, true));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('token=tok');
+  });
+
+  it('copies nothing when the link is not ready yet', async () => {
+    // An empty shareUrl means the board is loopback-only for now. Copying the
+    // code alone would hand a reader a password and no door, and the toast
+    // would claim an invite that cannot be acted on.
+    answerWith({ shareUrl: '', joinCode: 'K3P9-2QXA' });
+    const { result } = renderHook(() => useInvite(SESSION, true));
+
+    await waitFor(() => expect(result.current.invite).toEqual({ shareUrl: '', joinCode: 'K3P9-2QXA' }));
+    expect(mockCopy).not.toHaveBeenCalled();
+    expect(result.current.notice).toBeNull();
   });
 
   it('copies the link and code together, and says so', async () => {

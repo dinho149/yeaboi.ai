@@ -45,7 +45,6 @@ def _data(board):
     return {
         "session_name": "demo-2026-07-10",
         "display_code": "A3F9-1B2C",
-        "url": "http://192.168.1.24:5173/?token=x",
         "message": "Server ready",
         "grids": board.cards_by_grid(),
     }
@@ -61,7 +60,7 @@ class TestBuildRetroScreen:
 
     def test_handles_empty_grids(self):
         panel = _build_retro_screen(
-            {"session_name": "", "display_code": "—", "url": "—", "message": "", "grids": {}},
+            {"session_name": "", "display_code": "—", "message": "", "grids": {}},
             width=80,
             height=24,
         )
@@ -77,15 +76,15 @@ class TestBuildRetroScreen:
     def test_remote_url_and_custom_actions(self):
         b = RetroBoard("s")
         data = _data(b)
-        data["public_url"] = "https://calm-tree-1234.trycloudflare.com/?token=x"
-        data["actions"] = ["Generate Action Items", "Stop Sharing", "Export", "Close"]
+        data["public_url"] = "https://calm-tree-1234.trycloudflare.com/"
+        data["actions"] = ["Copy Invite", "Retry Link", "Export", "Close"]
         panel = _build_retro_screen(data, width=100, height=30, action_sel=1)
         assert isinstance(panel, Panel)
 
     def test_missing_optional_keys_default(self):
         # public_url / actions absent — must not raise (backward-compatible builder).
         panel = _build_retro_screen(
-            {"session_name": "x", "display_code": "A-B", "url": "u", "message": "", "grids": {}},
+            {"session_name": "x", "display_code": "A-B", "message": "", "grids": {}},
             width=80,
             height=24,
         )
@@ -161,21 +160,39 @@ class TestJoinBlock:
         assert "Participant link" in out
         assert "Share code" in out
 
-    def test_labels_a_lan_only_link_as_such(self):
-        # Without a tunnel the link works on the local network only, and a host
-        # who sends it to a remote teammate gets a silent nothing.
-        assert "Same Wi-Fi only" in self._lines()
+    def test_says_the_link_is_coming_rather_than_showing_a_local_one(self):
+        # Before the tunnel lands the board is loopback-only, so there is no
+        # address that would work for a teammate. Saying "preparing" is the honest
+        # answer; the LAN URL that used to sit here worked for the same room only
+        # and got pasted to remote people anyway.
+        out = self._lines()
+        assert "preparing" in out
+        assert "Setting up the secure link" in out
+        assert "127.0.0.1" not in out
+        assert "192.168" not in out
+
+    def test_never_calls_the_board_wifi_only(self):
+        # The reach caveat is gone with the LAN link it described.
+        assert "Same Wi-Fi only" not in self._lines()
+        assert "Same Wi-Fi only" not in self._lines(public_url="https://calm-tree-1234.trycloudflare.com/")
 
     def test_promotes_the_tunnel_link_once_there_is_one(self):
-        # The public link replaces the LAN one rather than sitting under it:
-        # once both exist there is exactly one right answer to "which do I send".
         out = self._lines(public_url="https://calm-tree-1234.trycloudflare.com/")
         assert "Works anywhere" in out
         assert "calm-tree-1234" in out
-        assert "Same Wi-Fi only" not in out
+        assert "preparing" not in out
+
+    def test_stops_promising_a_link_once_the_tunnel_has_given_up(self):
+        # Left on the waiting copy, this block would keep saying "a few seconds"
+        # forever, directly under a status line saying the opposite.
+        out = self._lines(link_failed=True)
+        assert "unavailable" in out
+        assert "Retry Link" in out
+        assert "preparing" not in out
+        assert "a few seconds" not in out
 
     def test_marks_the_host_link_as_not_for_sharing(self):
-        out = self._lines(host_url="http://192.168.1.24:5173/?token=x&admin=a")
+        out = self._lines(host_url="https://calm-tree-1234.trycloudflare.com/?token=x&admin=a")
         assert "yours only" in out.lower()
         assert "never send it" in out
 
@@ -193,18 +210,27 @@ class TestActionBarFits:
         # last was drawn past the panel edge — selectable and invisible.
         b = RetroBoard("s")
         data = _data(b)
+        # The widest the row ever gets: every standing button plus the Retry
+        # Link that appears when the tunnel fails.
         data["actions"] = [
             "Copy Invite",
             "Copy Host Link",
             "Generate Action Items",
-            "Share Remotely",
             "Export",
             "Anonymize",
             "Close",
+            "Retry Link",
         ]
         out = _render(_build_retro_screen(data, width=80, height=40), width=80)
         assert "Copy Invite" in out
         assert "Close" in out
+        assert "Retry Link" in out
+        # The bar is budgeted against the panel INTERIOR, not the console. Packed
+        # to the console width a row comes to exactly 80, the interior is 78, and
+        # every row soft-wraps — which silently pushes the last bank of buttons
+        # off the bottom. Assert no rendered row touches the border.
+        for line in out.splitlines():
+            assert len(line) <= 80, (len(line), line)
         for line in out.splitlines():
             assert len(line) <= 80
 

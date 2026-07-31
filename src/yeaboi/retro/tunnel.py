@@ -1,21 +1,22 @@
 """Optional public tunnel for the Retro board — off-network joining, zero setup.
 
-The LAN server (retro/server.py) only reaches teammates on the same network. To
-let a remote teammate join, the host can start a **Cloudflare quick tunnel**,
-which exposes ``http://localhost:<port>`` at a random ``https://…trycloudflare.com``
-URL. Crucially this needs **no Cloudflare account, no token, no signup** — so the
+The board's server (retro/server.py) binds loopback, so on its own it reaches
+nobody. This is what lets anyone in: a **Cloudflare quick tunnel**, started
+automatically when a board opens, exposing ``http://localhost:<port>`` at a
+random ``https://…trycloudflare.com`` URL. Crucially this needs **no Cloudflare account, no token, no signup** — so the
 app can own the whole flow: it downloads the ``cloudflared`` binary on first use
 (cached under ``~/.scrum-agent/bin/``) and runs it. (ngrok, by contrast, forces a
 per-user authtoken, so it can't be truly zero-setup.)
 
 The tunnel forwards to our existing token-gated server, so ``/api/*`` stays
-protected; the public URL simply carries the same ``?token=`` the LAN URL does,
-now over HTTPS. This turns the retro into "anyone with the link can join" — fine
-for a retrospective, but it is internet-reachable while the tunnel is up.
+protected, and it upgrades the hop to HTTPS. This makes the retro "anyone with
+the link *and* the join code can join" — fine for a retrospective, but it is
+internet-reachable while the tunnel is up.
 
 Everything here is best-effort and never raises into the TUI: a failed download
-or tunnel start returns ``None`` / a status string, and the retro keeps working
-on the LAN.
+or tunnel start returns ``None`` / a status string. The board keeps working for
+the host on ``127.0.0.1``, but with nothing to share until a tunnel comes up —
+the TUI shows the failure and offers a retry.
 
 # See docs: "Retro" — remote joining via Cloudflare tunnel
 """

@@ -1,20 +1,14 @@
-"""Unit tests for the Retro LAN server: share codes, token auth, lifecycle."""
+"""Unit tests for the Retro server: join codes, token auth, loopback bind, lifecycle."""
 
 import json
+import socket
 import urllib.error
 import urllib.request
 
 import pytest
 
 from yeaboi.retro.board import RetroBoard
-from yeaboi.retro.server import (
-    JoinLimiter,
-    RetroServer,
-    decode_share_code,
-    encode_share_code,
-    get_lan_ip,
-    make_token,
-)
+from yeaboi.retro.server import JoinLimiter, RetroServer, make_token
 
 
 class TestJoinLimiter:
@@ -62,28 +56,40 @@ class TestJoinLimiter:
         assert lim.blocked("9.9.9.9") is False
 
 
-class TestShareCode:
-    def test_roundtrip(self):
-        ip, port, tok = "192.168.1.24", 5173, make_token()
-        code = encode_share_code(ip, port, tok)
-        assert decode_share_code(code) == (ip, port, tok)
-
-    def test_roundtrip_tolerates_spacing_and_case(self):
-        ip, port, tok = "10.0.0.5", 5199, "abc-DEF_123"
-        code = encode_share_code(ip, port, tok)
-        assert decode_share_code(code.lower().replace("-", " ")) == (ip, port, tok)
-
+class TestToken:
     def test_token_is_unguessable_length(self):
         assert len(make_token()) >= 16
         assert make_token() != make_token()
 
 
 class TestShareVsHostUrl:
-    def test_share_url_is_token_free(self):
-        # The shareable URL must NOT carry the token — recipients type the code.
+    """The two links, and the rule that only one of them is shareable."""
+
+    def test_share_url_is_empty_until_the_tunnel_is_up(self):
+        # There is no LAN fallback any more: the server binds loopback, so before
+        # the tunnel lands there is genuinely no address to hand a teammate. The
+        # screen must render a waiting state rather than a link.
         srv = RetroServer(RetroBoard("s"), port=5288)
+        assert srv.share_url == ""
+
+    def test_share_url_is_the_tunnel_url_and_stays_token_free(self):
+        # Recipients type the join code; the token never rides a shared link.
+        srv = RetroServer(RetroBoard("s"), port=5288)
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        assert srv.share_url == "https://abc-def.trycloudflare.com/"
         assert "token" not in srv.share_url
-        assert srv.share_url == f"http://{srv.ip}:{srv.port}/"
+
+    def test_host_url_is_loopback_before_the_tunnel(self):
+        # Usable immediately, by the host only — nothing else can reach it.
+        srv = RetroServer(RetroBoard("s"), port=5289)
+        assert srv.url.startswith("http://127.0.0.1:5289/?token=")
+
+    def test_host_url_follows_the_tunnel_once_there_is_one(self):
+        # So the host can drive their own board from a second device, with the
+        # admin secret under HTTPS rather than in the clear.
+        srv = RetroServer(RetroBoard("s"), port=5289)
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        assert srv.url == f"https://abc-def.trycloudflare.com/?token={srv.token}&admin={srv.admin_token}"
 
     def test_host_url_still_carries_token(self):
         # The host's private direct link keeps the token for one-click access.
@@ -91,11 +97,37 @@ class TestShareVsHostUrl:
         assert f"?token={srv.token}" in srv.url
 
 
-class TestLanIp:
-    def test_returns_ipv4_string(self):
-        ip = get_lan_ip()
-        assert isinstance(ip, str)
-        assert ip.count(".") == 3
+class TestLoopbackBind:
+    """The board must not be reachable from the network it sits on."""
+
+    def test_binds_loopback_only(self):
+        srv = RetroServer(RetroBoard("s"), port=5291)
+        srv.start()
+        try:
+            assert srv._httpd.server_address[0] == "127.0.0.1"
+        finally:
+            srv.stop()
+
+    def test_is_not_reachable_on_this_machines_other_addresses(self):
+        # The regression this whole change exists to prevent: a board answering on
+        # the Wi-Fi IP is a board anyone in the building can knock on.
+        srv = RetroServer(RetroBoard("s"), port=5292)
+        srv.start()
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.connect(("8.8.8.8", 80))  # sends nothing; picks the outbound interface
+                outbound = probe.getsockname()[0]
+            except OSError:
+                pytest.skip("no routable interface to probe")
+            finally:
+                probe.close()
+            if outbound.startswith("127."):
+                pytest.skip("host has no non-loopback address")
+            with pytest.raises(OSError):
+                socket.create_connection((outbound, srv.port), timeout=2).close()
+        finally:
+            srv.stop()
 
 
 @pytest.fixture
@@ -323,6 +355,7 @@ class TestQrEndpoint:
 
     def test_returns_svg(self, running_server):
         srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")  # nothing to encode without it
         body = _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}").read()
         assert b"<svg" in body  # segno inline SVG
 
@@ -338,6 +371,7 @@ class TestInviteEndpoint:
 
     def test_returns_the_join_code_and_a_token_free_url(self, running_server):
         srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")  # empty shareUrl without it
         body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
         assert body["joinCode"] == srv.join_code
         assert body["shareUrl"].endswith("/")
@@ -353,9 +387,8 @@ class TestInviteEndpoint:
         assert srv.token not in raw
 
     def test_url_follows_the_host_header_so_a_tunnel_link_is_the_tunnel_link(self, running_server):
-        # The server answers on a LAN IP and on a trycloudflare hostname at once;
-        # only the request knows which one this visitor arrived on. Copying the
-        # LAN URL to a remote teammate is the bug this prevents.
+        # A visitor who came in *through* the tunnel gets the tunnel back, derived
+        # from their own request — no server state involved.
         srv, _ = running_server
         req = urllib.request.Request(
             f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}",
@@ -368,10 +401,47 @@ class TestInviteEndpoint:
         srv, _ = running_server
         req = urllib.request.Request(
             f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}",
-            headers={"Host": "192.168.1.20:8712"},
+            headers={"Host": "somewhere.example:8712"},
         )
         body = json.load(urllib.request.urlopen(req, timeout=5))
-        assert body["shareUrl"] == "http://192.168.1.20:8712/"
+        assert body["shareUrl"] == "http://somewhere.example:8712/"
+
+    def test_sends_no_link_at_all_rather_than_the_hosts_own_loopback(self, running_server):
+        # The host opens their board while the tunnel comes up, and the invite
+        # panel copies whatever this returns the instant it opens. Handing back
+        # 127.0.0.1 would put an address on their clipboard that resolves to the
+        # *reader's* machine — the exact failure the LAN link used to cause.
+        srv, _ = running_server
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["shareUrl"] == ""
+        assert body["joinCode"] == srv.join_code  # the code is live regardless
+
+    def test_the_qr_refuses_to_encode_a_link_that_is_not_ready(self, running_server):
+        # A QR of the loopback address scans, which is worse than not scanning —
+        # it takes the phone to itself.
+        srv, _ = running_server
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}")
+        assert exc.value.code == 503
+
+    def test_the_public_url_beats_the_host_the_host_arrived_on(self, running_server):
+        # The host's own browser reaches a loopback-bound board at 127.0.0.1, so
+        # deriving the invite from their request would put an address on the
+        # clipboard that resolves to the reader's own machine. Once the tunnel is
+        # up, its URL is the one answer true for everybody.
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["shareUrl"] == "https://abc-def.trycloudflare.com/"
+
+    def test_the_qr_encodes_the_public_url_too(self, running_server):
+        # A phone scanning the QR is by definition not the host's machine, so a
+        # loopback QR would point the scanner at itself.
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        body = _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}").read()
+        assert b"<svg" in body
+        assert b"127.0.0.1" not in body
 
 
 class TestCardMutations:

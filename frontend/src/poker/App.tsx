@@ -124,8 +124,8 @@ export function App({ boot }: { boot: PokerBoot }) {
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.poker) ?? 'midnight');
   const [inviteOpen, setInviteOpen] = useState(false);
   // Fetched on open rather than read from the boot payload: the page is
-  // served unauthenticated, so a join code in the island would be readable
-  // by any LAN peer without a token. Also puts it on the clipboard.
+  // served unauthenticated, so a join code in the island would be readable by
+  // anyone who reaches the board, token or not. Also puts it on the clipboard.
   const invite = useInvite(session, inviteOpen);
   const [railOpen, setRailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);

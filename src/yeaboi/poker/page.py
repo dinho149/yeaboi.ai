@@ -7,9 +7,10 @@ a teammate on a phone has no second round-trip available, so everything the
 board needs arrives in one document.
 
 The page is **token-free**: ``GET /`` is unauthenticated, so baking the access
-token into the HTML would leak it to any LAN peer. The client reads the token
-from its own URL (``?token=``) or by typing the short **join code** into the
-gate (``POST /api/join``).
+token into the HTML would hand it to anyone who reaches the board — which, over a
+public tunnel, is anyone with the link. The client reads the token from its own
+URL (``?token=``) or by typing the short **join code** into the gate
+(``POST /api/join``).
 
 Vote secrecy is server-enforced (``PokerBoard.state_snapshot``): while the round
 is open the payload carries no vote values at all, so there is nothing here for
@@ -42,8 +43,8 @@ def board_config(project_name: str = "", scope_label: str = "") -> dict[str, obj
     sources of truth, and the island wins at runtime — so a stale bundle would
     offer a card value the board is going to refuse.
 
-    Never put a secret in here. ``GET /`` is unauthenticated, so a LAN peer with
-    no token can read every byte of it.
+    Never put a secret in here. ``GET /`` is unauthenticated, so anyone who
+    reaches the board can read every byte of it, token or not.
     """
     return {
         "title": project_name,

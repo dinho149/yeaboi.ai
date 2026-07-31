@@ -1,10 +1,10 @@
-"""LAN collaboration server for the Poker board — stdlib ``http.server`` only.
+"""Collaboration server for the Poker board — stdlib ``http.server`` only.
 
 Planning poker needs the whole team, but the app runs locally in a terminal. So
-the host starts a session and this module spins up a tiny HTTP server on the
-LAN; teammates open the printed URL in any browser (no install) and vote live.
-Standard-library ``http.server`` — NOT FastAPI/Flask — to match the codebase's
-stdlib-only networking ethos (same as retro/server.py, which this mirrors).
+the host starts a session and this module spins up a tiny HTTP server; teammates
+open the board in any browser (no install) and vote live. Standard-library
+``http.server`` — NOT FastAPI/Flask — to match the codebase's stdlib-only
+networking ethos (same as retro/server.py, which this mirrors).
 
 Design (identical to the retro blueprint):
   * ``ThreadingHTTPServer`` on a background daemon thread; each request gets its
@@ -14,8 +14,9 @@ Design (identical to the retro blueprint):
     checked with ``secrets.compare_digest`` (constant-time). ``GET /`` serves
     the harmless page; every ``/api/*`` call requires the token. Admin routes
     additionally require the admin secret that only rides in the host's link.
-  * The server binds ``0.0.0.0`` so LAN peers can reach it. LAN-trust model —
-    no TLS. Do NOT port-forward it to the public internet.
+  * The server binds **loopback only**; teammates reach it exclusively through
+    the Cloudflare quick tunnel the TUI starts with the board, which fronts it
+    with HTTPS. See :mod:`yeaboi.retro.server` for why the LAN address went.
 
 Poker-specific threading rule: **tracker writes run synchronously in the
 per-request handler thread** (finalize/edit — the admin must know the write
@@ -46,9 +47,6 @@ from urllib.parse import parse_qs, urlparse
 from yeaboi.poker import tickets as tickets_mod
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.page import build_poker_html
-
-# Reuse retro's LAN/share-code primitives verbatim — one implementation, two modes.
-from yeaboi.retro.server import encode_share_code, get_lan_ip
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
@@ -284,7 +282,8 @@ class _PokerHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             # Token-FREE page: GET / is unauthenticated, so baking the token into
-            # the HTML would leak it to any LAN peer (see retro/server.py).
+            # the HTML would leak it to anyone who reaches the board — over a
+            # public tunnel, anyone with the link (see retro/server.py).
             self._send(200, self.server.page_html.encode(), "text/html; charset=utf-8")  # type: ignore[attr-defined]
             return
         if path == "/api/state":  # the browser's unified live poll
@@ -326,7 +325,15 @@ class _PokerHandler(BaseHTTPRequestHandler):
         it carries the admin secret.
         """
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        self._send_json(200, invite_payload(self.headers, fallback, self._join_code))
+        self._send_json(
+            200,
+            invite_payload(
+                self.headers,
+                fallback,
+                self._join_code,
+                self.server.public_url,  # type: ignore[attr-defined]
+            ),
+        )
 
     def _serve_state(self) -> None:
         """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
@@ -346,11 +353,14 @@ class _PokerHandler(BaseHTTPRequestHandler):
     def _send_qr(self) -> None:
         """Render a QR of the token-free join URL as inline SVG (see retro/server.py).
 
-        The Host header keeps it correct over both LAN and the Cloudflare tunnel;
-        the QR is token-free so scanning it lands on the code gate.
+        The tunnel URL when there is one, the request's own host otherwise; the QR
+        is token-free so scanning it lands on the code gate.
         """
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = participant_url(self.headers, fallback)
+        url = participant_url(self.headers, fallback, self.server.public_url)  # type: ignore[attr-defined]
+        if not url:  # no tunnel yet — see retro/server.py
+            self._send_json(503, {"error": "link not ready"})
+            return
         try:
             import io
 
@@ -786,14 +796,15 @@ class PokerServer:
         # A second, stronger secret that ONLY rides in the host's private link
         # (:attr:`url`). Whoever opens that link becomes the session's admin
         # (reveal / finalize / edit / AI / music / theme / timer / lock). It is
-        # never in the shared join flow, the share code, or the tunnel URL — so
-        # a join-code teammate is never an admin.
+        # never in the shared join flow or the participant link — so a join-code
+        # teammate is never an admin.
         self.admin_token = make_token()
         self.join_code = make_join_code()
         self.join_limiter = JoinLimiter()
         self.duel_capture = _DuelCapture()
-        self.ip = get_lan_ip()
         self.port = port
+        # The Cloudflare tunnel URL, once the TUI has one — see retro/server.py.
+        self.public_url = ""
         # Live-update plumbing. Built here rather than in start() so stop() is
         # safe on a server that was never started.
         self.event_hub = EventHub()
@@ -814,20 +825,35 @@ class PokerServer:
         # comparing the bound method silently blinds the watcher.
         return (self.board.revision(), self.board.presence_list())
 
+    def set_public_url(self, url: str) -> None:
+        """Record the tunnel URL and push it to the running server object.
+
+        Two writes, for the reason spelled out in ``retro/server.py``: the handler
+        reaches shared state through the ``ThreadingHTTPServer``, never through
+        ``self``.
+        """
+        self.public_url = url
+        if self._httpd is not None:
+            self._httpd.public_url = url  # type: ignore[attr-defined]
+
     @property
     def url(self) -> str:
-        """The host's private direct link (token + admin secret — do not share)."""
-        return f"http://{self.ip}:{self.port}/?token={self.token}&admin={self.admin_token}"
+        """The host's private direct link (token + admin secret — do not share).
+
+        Over the tunnel once there is one, loopback before that — see
+        ``retro/server.py`` for why.
+        """
+        base = self.public_url.rstrip("/") if self.public_url else f"http://127.0.0.1:{self.port}"
+        return f"{base}/?token={self.token}&admin={self.admin_token}"
 
     @property
     def share_url(self) -> str:
-        """The token-free URL to hand out — recipients must type the join code."""
-        return f"http://{self.ip}:{self.port}/"
+        """The token-free URL to hand out — empty until the tunnel is up.
 
-    @property
-    def share_code(self) -> str:
-        """The full ip+port+token share code (decodable by retro's decode_share_code)."""
-        return encode_share_code(self.ip, self.port, self.token)
+        The server binds loopback, so the tunnel's is the only address that means
+        anything to a teammate. Callers render the waiting state, not a link.
+        """
+        return self.public_url
 
     @property
     def display_code(self) -> str:
@@ -835,15 +861,16 @@ class PokerServer:
         return self.join_code
 
     def start(self) -> None:
-        """Bind ``0.0.0.0`` (walking ports on conflict) and serve on a daemon thread."""
+        """Bind loopback (walking ports on conflict) and serve on a daemon thread."""
         # Built once, here: the page is a constant for the life of the server,
         # and everything that changes reaches the browser through /api/state.
         page_html = build_poker_html(self.board.project_name, self.board.scope_label)
         httpd: ThreadingHTTPServer | None = None
         for candidate in range(self.port, self.port + _PORT_WALK):
             try:
-                # Bind all interfaces so LAN teammates can reach the board (see module docstring).
-                httpd = ThreadingHTTPServer(("0.0.0.0", candidate), _PokerHandler)  # noqa: S104
+                # Loopback only — cloudflared forwards from this same machine
+                # (see module docstring).
+                httpd = ThreadingHTTPServer(("127.0.0.1", candidate), _PokerHandler)
                 self.port = candidate
                 break
             except OSError:
@@ -861,6 +888,8 @@ class PokerServer:
         httpd.duel_capture = self.duel_capture  # type: ignore[attr-defined]
         httpd.page_html = page_html  # type: ignore[attr-defined]
         httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
+        # Always present so the invite/QR handlers can read it unconditionally.
+        httpd.public_url = self.public_url  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="poker-http", daemon=True)
         self._thread.start()

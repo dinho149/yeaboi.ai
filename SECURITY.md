@@ -28,13 +28,18 @@ version; please upgrade (`uv tool install --upgrade yeaboi` /
 yeaboi is a local terminal tool. A few features have deliberate trust boundaries
 worth understanding:
 
-- **Retro mode runs a LAN web server with no TLS.** It binds all interfaces so
-  teammates on your network can join with a short code. Access to `/api/*` is
-  gated by a 128-bit token, and the join endpoint is rate-limited, but this is a
-  **LAN-trust** model — do not port-forward it to the public internet.
-- **"Share Remotely" opens a public Cloudflare tunnel.** While active, the
-  token-gated board is reachable from the internet (over HTTPS). Anyone with the
-  link + join code can participate. Stop sharing when the retro ends.
+- **The live boards (Retro and Poker) bind loopback only.** Nothing on your
+  network can reach them directly — not the office Wi-Fi, not the coffee shop.
+  Earlier versions bound all interfaces and advertised a LAN URL; that is gone.
+- **They are shared through a public Cloudflare tunnel, which starts with the
+  board.** While the board is open it is reachable from the internet over HTTPS.
+  Access to `/api/*` is gated by a 128-bit token, the board page itself is behind
+  a short join code, and the join endpoint is rate-limited — but anyone with the
+  link *and* the code can participate. Close the board when the ceremony ends.
+  The host's own link additionally carries an admin secret (reveal, save, edit,
+  timer, lock); never paste it anywhere you would paste the invite.
+- **"Share Online" opens the same kind of tunnel for a single static output**,
+  behind the same access-code gate, for as long as the sharing screen is open.
 - **`cloudflared` is auto-downloaded** from a pinned Cloudflare release and
   verified against a bundled SHA-256 before it is made executable or run.
 - **Credentials are stored in `~/.yeaboi/.env`** (plaintext, `0600`, in a `0700`

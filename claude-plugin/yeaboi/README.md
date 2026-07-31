@@ -52,5 +52,5 @@ claude mcp add yeaboi-dev -- uv run --project /path/to/repo --extra mcp yeaboi-m
 - Plans generated here are saved as yeaboi sessions — resumable in the yeaboi
   TUI (`uvx yeaboi`) and shared with the standup/reporting/performance tools.
 - Past retrospectives are readable via `retro_history`; the live retro board
-  itself stays in the yeaboi TUI (it's a real-time LAN browser page).
+  itself stays in the yeaboi TUI (it's a real-time browser page).
 - Server logs: `~/.yeaboi/logs/mcp/mcp.log`.
