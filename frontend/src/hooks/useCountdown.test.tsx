@@ -47,6 +47,40 @@ describe('useCountdown', () => {
     expect(remaining()).toBe('85');
   });
 
+  it('keeps ticking while the snapshot sits still', () => {
+    // The bug this pins: the clock offset was re-derived on every render. Since
+    // `now_epoch` is excluded from the state ETag it does not change while the
+    // board is quiet, so each re-render measured the same stale reading against
+    // a later `Date.now()` and pushed the offset forward by the elapsed time —
+    // and the readout oscillated between two seconds for the whole timebox.
+    //
+    // Advancing one second at a time is what exposes it: each `act` flushes the
+    // re-render the previous tick queued, which is what a browser does between
+    // ticks and what a single 5-second advance does not.
+    render(<Probe timer={{ running: true, end_epoch: NOW / 1000 + 90, now_epoch: NOW / 1000 }} />);
+    expect(remaining()).toBe('90');
+
+    for (let second = 1; second <= 5; second += 1) {
+      act(() => void vi.advanceTimersByTime(1000));
+      expect(remaining()).toBe(String(90 - second));
+    }
+  });
+
+  it('re-syncs the offset when a fresh snapshot arrives', () => {
+    // The other half of the same rule: a new reading *must* move the offset, or
+    // a browser clock that drifts during a long session never gets corrected.
+    const { rerender } = render(
+      <Probe timer={{ running: true, end_epoch: NOW / 1000 + 90, now_epoch: NOW / 1000 }} />
+    );
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(remaining()).toBe('80');
+
+    // The server says only 30 s are left — the browser's clock was 50 s slow.
+    rerender(<Probe timer={{ running: true, end_epoch: NOW / 1000 + 90, now_epoch: NOW / 1000 + 60 }} />);
+    act(() => void vi.advanceTimersByTime(250));
+    expect(remaining()).toBe('30');
+  });
+
   it('uses the server clock, not the browser clock', () => {
     // A laptop two minutes fast must still show the same remaining time as
     // everyone else's — that is the whole point of a shared ceremony timer.

@@ -38,6 +38,7 @@ export interface Countdown {
 
 export function useCountdown(timer: TimerState | null | undefined, onFinish?: () => void): Countdown {
   const offset = useRef(0);
+  const syncedTo = useRef<number | null>(null);
   const firedFor = useRef<number | null>(null);
   const onFinishRef = useRef(onFinish);
   onFinishRef.current = onFinish;
@@ -46,7 +47,19 @@ export function useCountdown(timer: TimerState | null | undefined, onFinish?: ()
   const endEpoch = timer?.end_epoch ?? 0;
   const nowEpoch = timer?.now_epoch ?? 0;
 
-  if (nowEpoch) offset.current = nowEpoch - Date.now() / 1000;
+  // Re-sync only when a snapshot brings a *new* `now_epoch`, never on every
+  // render. The offset is the difference between two clocks, so it is only
+  // meaningful measured at the instant the reading arrived — and `now_epoch` is
+  // excluded from the state ETag on purpose (see the note above), so it does
+  // not move while the board is quiet. Recomputing it each render therefore
+  // subtracts a *later* `Date.now()` from the same stale reading, sliding the
+  // offset forward by exactly as much as real time advanced. Each tick would
+  // then cancel out the last one and the readout would sit on the same second
+  // for the whole timebox.
+  if (nowEpoch && nowEpoch !== syncedTo.current) {
+    syncedTo.current = nowEpoch;
+    offset.current = nowEpoch - Date.now() / 1000;
+  }
 
   const compute = (): number | null =>
     running ? Math.max(0, Math.round(endEpoch - (Date.now() / 1000 + offset.current))) : null;
