@@ -342,8 +342,15 @@ class TestFeedbackComposeBubble:
         from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+        from yeaboi.ui.shared import _music_bar
 
         def frame(compose):
+            # The back/controls tabs ease their presence ON EVERY RENDER (they're
+            # retracting on the welcome screen), so two successive frames differ in
+            # the pocket rows for reasons that have nothing to do with the bubble.
+            # Pin both to rest so the only variable left is `compose`.
+            _music_bar._back_presence = 0.0
+            _music_bar._controls_tab_presence = 0.0
             buf = io.StringIO()
             Console(file=buf, width=140, height=44, legacy_windows=False).print(
                 _build_mode_screen(2, width=140, height=44, shimmer_tick=1.0, desc_reveal=999, compose=compose)
