@@ -33,6 +33,7 @@ import { useConfetti } from '../hooks/useConfetti';
 import { useCountdown } from '../hooks/useCountdown';
 import { useHeartbeat } from '../hooks/useHeartbeat';
 import { useHostBroadcast } from '../hooks/useHostBroadcast';
+import { useInvite } from '../hooks/useInvite';
 import { useMusic } from '../hooks/useMusic';
 import { usePendingOverlay } from '../hooks/usePendingOverlay';
 import { apiUrl, loadSession, pollState, stripCredentialsFromUrl, type Session } from '../runtime/api';
@@ -52,6 +53,7 @@ import {
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
+  Toast,
   Toolbar,
   Visualizer,
 } from '../shared';
@@ -121,6 +123,10 @@ export function App({ boot }: { boot: PokerBoot }) {
   // ── Local UI state ─────────────────────────────────────────────────────
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.poker) ?? 'midnight');
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Fetched on open rather than read from the boot payload: the page is
+  // served unauthenticated, so a join code in the island would be readable
+  // by any LAN peer without a token. Also puts it on the clipboard.
+  const invite = useInvite(session, inviteOpen);
   const [railOpen, setRailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [musicBlocked, setMusicBlocked] = useState(false);
@@ -548,9 +554,15 @@ export function App({ boot }: { boot: PokerBoot }) {
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
         <p className={styles['popNote']}>
-          Scan to open the session, then enter the share code from the host&rsquo;s screen.
+          Scan the code, or send the link below — either way they land on the gate and enter the
+          share code.
         </p>
-        <InviteQR qrSrc={apiUrl(session, '/api/qr')} />
+        <Toast message={invite.notice} onDismiss={invite.dismiss} />
+        <InviteQR
+          qrSrc={apiUrl(session, '/api/qr')}
+          shareUrl={invite.invite?.shareUrl}
+          joinCode={invite.invite?.joinCode}
+        />
       </Modal>
     </div>
   );

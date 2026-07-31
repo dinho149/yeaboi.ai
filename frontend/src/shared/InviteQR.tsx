@@ -15,16 +15,36 @@
 
 import { safeImageSrc } from '../runtime/url';
 import { cx } from '../runtime/cx';
+import { CopyField } from './CopyField';
 import styles from './shared.module.css';
 
 export interface InviteQRProps {
   /** Same-origin QR endpoint, token already attached (see `runtime/api.apiUrl`). */
   qrSrc: string;
-  /** The code teammates type on the gate, e.g. "K3P9-2QXA". */
-  joinCode?: string;
-  /** The URL to share. Shown as text so it can be read aloud or copied. */
-  shareUrl?: string;
+  /**
+   * The code teammates type on the gate, e.g. "K3P9-2QXA".
+   *
+   * `undefined` is the normal state for the first frame — it arrives from
+   * `GET /api/invite` after the panel opens, not from the boot payload.
+   */
+  joinCode?: string | undefined;
+  /** The URL to share. Shown as text so it can be read aloud as well as copied. */
+  shareUrl?: string | undefined;
   className?: string | undefined;
+}
+
+/**
+ * The one-line invite: link then code, in the order they are used.
+ *
+ * Exported because the panel is not the only place this text is wanted — the
+ * auto-copy on open sends exactly this, so both go through one function and the
+ * clipboard cannot say something different from the screen.
+ */
+export function inviteText(shareUrl: string, joinCode: string): string {
+  const lines = [];
+  if (shareUrl) lines.push(shareUrl);
+  if (joinCode) lines.push(`Access code: ${joinCode}`);
+  return lines.join('\n');
 }
 
 export function InviteQR({ qrSrc, joinCode, shareUrl, className }: InviteQRProps) {
@@ -42,16 +62,12 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, className }: InviteQRProps
         />
       ) : null}
 
-      {joinCode ? (
-        <p className={styles['inviteCode']}>
-          <span className={styles['fieldLabel']}>Code</span>
-          {/* A join code is read aloud and typed by hand, so it renders in the
-              mono voice with wide tracking — 0/O and 1/I are the whole problem. */}
-          <strong className={styles['codeValue']}>{joinCode}</strong>
-        </p>
-      ) : null}
-
-      {shareUrl ? <p className={styles['inviteUrl']}>{shareUrl}</p> : null}
+      {/* Both fields render only once the values are in. They arrive from
+          `GET /api/invite` rather than the boot payload, because the page is
+          served unauthenticated and the code would be readable by any LAN peer
+          without a token — see `retro/page.py`. */}
+      {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
+      {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>
   );
 }
