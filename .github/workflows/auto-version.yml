@@ -93,9 +93,20 @@ jobs:
           set -euo pipefail
           ver() { sed -nE 's/^version = "([^"]+)".*/\1/p' | head -1; }
           git fetch --no-tags origin "$BASE_REF"
-          BASE_V=$(git show "FETCH_HEAD:pyproject.toml" | ver)
+          # Compare against the MERGE-BASE, not the base tip. This guard asks
+          # "did *this PR* change the version?", and only the merge-base answers
+          # that. Against the tip, any branch that simply hasn't been rebased
+          # since main's last release reads as HEAD_V != BASE_V and falls into
+          # the "already bumped" skip below — shipping with no bump and no
+          # changelog entry, silently. Because auto-version bumps main on every
+          # release-worthy merge, that is the common case, not an edge case:
+          # PR #120 hit it within hours (base 2.44.0 vs an un-rebased 2.43.0).
+          # Same silent-skip class as the diff-range bug fixed in #114, which
+          # moved the *file list* to a merge-base diff but left this on the tip.
+          MERGE_BASE=$(git merge-base FETCH_HEAD HEAD)
+          BASE_V=$(git show "$MERGE_BASE:pyproject.toml" | ver)
           HEAD_V=$(ver < pyproject.toml)
-          echo "base=$BASE_V head=$HEAD_V labels=[$LABELS]"
+          echo "base=$BASE_V head=$HEAD_V merge_base=$MERGE_BASE labels=[$LABELS]"
 
           # 1) Already bumped in this PR (manual, or a prior auto run)?
           #    If the changelog already has an entry for the new version too ->
