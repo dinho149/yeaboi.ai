@@ -5556,6 +5556,238 @@ def _run_component_select(
             return "cancel"
 
 
+def _board_field_click(console: Console, panel, x: int, y: int, fields: list[dict]) -> int | None:
+    """Map a click at 1-based ``(x, y)`` to a board-setup field index, or None.
+
+    Render-based like :func:`button_click` rather than arithmetic over the
+    layout: the rows are found by their own text, so the hit test survives the
+    header, blurb or hint changing height (an unset tracker shows a different
+    status line than a ready one).
+    """
+    try:
+        lines = console.render_lines(panel, console.options, pad=True)
+    except Exception:  # noqa: BLE001 - a render hiccup must never break input handling
+        return None
+    for r, line in enumerate(lines):
+        text = "".join(seg.text for seg in line)
+        if r + 1 != y:
+            continue
+        for i, field in enumerate(fields):
+            marker = f"● {field['label']}"
+            if marker in text or f"○ {field['label']}" in text:
+                start = text.find(marker[0:1] + " " + field["label"])
+                if start == -1 or x >= start:  # anywhere from the marker rightwards
+                    return i
+    return None
+
+
+def _board_tab_click(console: Console, panel, x: int, y: int) -> int | None:
+    """Map a click at 1-based ``(x, y)`` to a tracker index on the switch row.
+
+    Render-based for the same reason as :func:`_board_field_click` — the row's
+    position depends on how tall the header above it wrapped.
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import _BOARD_TRACKERS
+
+    try:
+        lines = console.render_lines(panel, console.options, pad=True)
+    except Exception:  # noqa: BLE001 - a render hiccup must never break input handling
+        return None
+    for r, line in enumerate(lines):
+        if r + 1 != y:
+            continue
+        text = "".join(seg.text for seg in line)
+        if not all(name in text for name in _BOARD_TRACKERS):
+            continue  # not the switch row
+        for i, name in enumerate(_BOARD_TRACKERS):
+            start = text.find(name)
+            # Widen by the "[ ]" the selected option wears, so clicking a bracket
+            # counts as clicking its option.
+            if start - 2 <= x - 1 <= start + len(name) + 1:
+                return i
+        return None
+    return None
+
+
+def _run_analysis_board_setup(
+    live,
+    console: Console,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+) -> str:
+    """Analysis's entry gate when no tracker is configured — fill the fields here.
+
+    This replaces a dead end: the old screen printed "set JIRA_BASE_URL … in your
+    .env file" and returned to the menu on any key, so the one thing you needed to
+    do was the one thing you couldn't do from it. Values save through
+    ``apply_config_value`` (file + ``os.environ``), so the analysis flow that runs
+    straight after picks them up without a restart.
+
+    Returns ``"connected"`` once the chosen tracker's board check passes, or
+    ``"cancel"`` on Esc / Back.
+    """
+    import os
+
+    from yeaboi.config import apply_config_value
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _BOARD_TRACKERS,
+        _build_analysis_board_setup_screen,
+        board_setup_fields,
+    )
+    from yeaboi.ui.shared._click import button_click, parse_click
+    from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
+    from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+    tracker, selected, action_sel = 0, 0, 0
+    zone = "fields"  # "fields" (arrow through the list) or "actions" (the button row)
+    edit: dict | None = None
+    message = ""
+    anim0 = time.monotonic()
+    logger.info("analysis board setup: opened (no tracker configured)")
+
+    def _values() -> dict[str, str]:
+        # Read the environment fresh each frame: apply_config_value mirrors saves
+        # into os.environ, so this is what makes a just-typed value show up.
+        return {f["env_var"]: os.environ.get(f["env_var"], "") or "" for t in (0, 1) for f in board_setup_fields(t)}
+
+    def _render():
+        w, h = console.size
+        panel = _build_analysis_board_setup_screen(
+            _values(),
+            tracker=tracker,
+            selected=selected if zone == "fields" else -1,
+            editing=(edit["env"], edit["buf"], edit["cur"]) if edit else None,
+            action_sel=action_sel,
+            message=message,
+            width=w,
+            height=h,
+            shimmer_tick=time.monotonic() - anim0,
+        )
+        live.update(panel)
+        return panel
+
+    def _begin_edit(idx: int) -> None:
+        nonlocal edit, selected, zone
+        field = board_setup_fields(tracker)[idx]
+        env, masked = field["env_var"], field.get("masked", False)
+        # Masked fields start blank (type a new one); the rest start at the current
+        # value so you can correct a typo instead of retyping the whole URL.
+        start = "" if masked else (os.environ.get(env, "") or "")
+        edit = {"env": env, "masked": masked, "buf": start, "cur": len(start)}
+        selected, zone = idx, "fields"
+        set_text_entry(True)  # so 'c' types a 'c' rather than opening the controls drawer
+        logger.info("analysis board setup: editing %s", env)
+
+    def _commit_edit() -> None:
+        nonlocal edit, message
+        if edit is None:
+            return
+        set_text_entry(False)
+        env, masked, val = edit["env"], edit["masked"], edit["buf"].strip()
+        edit = None
+        if val == "-":
+            val = ""  # explicit clear, same convention as the settings page
+        elif masked and val == "":
+            return  # empty on a hidden field means "keep what's there"
+        apply_config_value(env, val)
+        message = ""
+        logger.info("analysis board setup: saved %s", env)
+
+    while True:
+        panel = _render()
+        fields = board_setup_fields(tracker)
+        actions = getattr(panel, "_board_actions", ["Back"])
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if not key:
+            continue
+
+        if edit is not None:
+            click = parse_click(key)
+            if click is not None:
+                # Clicking away commits, the way a form field blurs — no Esc first.
+                cx, cy = click
+                hit = _board_field_click(console, panel, cx, cy, fields)
+                if hit is None and button_click(console, panel, cx, cy, actions) is None:
+                    continue  # a click on empty space leaves the edit alone
+                _commit_edit()
+            elif key == "enter":
+                _commit_edit()
+                continue
+            elif key == "esc" and esc_came_from_back_tab():
+                _commit_edit()
+                logger.info("analysis board setup: back tab clicked")
+                return "cancel"
+            elif key == "esc":
+                # Cancel the edit only. The Esc chokepoint armed the back tab's
+                # retract before we got a say, so stand it back up.
+                cancel_back_retract()
+                set_text_entry(False)
+                edit = None
+                continue
+            else:
+                _settings_edit_keypress(key, edit)
+                continue
+
+        click = parse_click(key)
+        if click is not None:
+            cx, cy = click
+            tab_hit = _board_tab_click(console, panel, cx, cy)
+            if tab_hit is not None:
+                if tab_hit != tracker:
+                    tracker, selected, message = tab_hit, 0, ""
+                continue
+            hit = _board_field_click(console, panel, cx, cy, fields)
+            if hit is not None:
+                _begin_edit(hit)
+                continue
+            btn = button_click(console, panel, cx, cy, actions)
+            if btn is not None:
+                zone, action_sel = "actions", btn
+                key = "enter"
+            else:
+                continue
+
+        if key in ("tab", "shift_tab"):
+            tracker = (tracker + 1) % len(_BOARD_TRACKERS)
+            selected, message = 0, ""
+        elif key in ("down", "scroll_down"):
+            if zone == "fields" and selected + 1 < len(fields):
+                selected += 1
+            else:
+                zone, action_sel = "actions", 0
+        elif key in ("up", "scroll_up"):
+            if zone == "actions":
+                zone, selected = "fields", len(fields) - 1
+            else:
+                selected = max(0, selected - 1)
+        elif key in ("left", "right") and zone == "actions":
+            step = 1 if key == "right" else -1
+            action_sel = (action_sel + step) % len(actions)
+        elif key == "enter":
+            if zone == "fields":
+                _begin_edit(selected)
+                continue
+            label = actions[action_sel]
+            if label == "Back":
+                logger.info("analysis board setup: cancelled")
+                return "cancel"
+            # "Continue" — re-check with the real board predicates rather than
+            # trusting the required-fields tally, so a value that looks filled but
+            # doesn't satisfy the checker says so here instead of failing later.
+            from yeaboi.azdevops_sync import is_azdevops_board_configured
+            from yeaboi.jira_sync import is_jira_configured
+
+            if (tracker == 0 and is_jira_configured()) or (tracker == 1 and is_azdevops_board_configured()):
+                logger.info("analysis board setup: connected via %s", _BOARD_TRACKERS[tracker])
+                return "connected"
+            message = "That doesn't look complete yet — check the values above."
+            logger.warning("analysis board setup: continue pressed but the board check still fails")
+        elif key in ("esc", "q"):
+            logger.info("analysis board setup: cancelled")
+            return "cancel"
+
+
 def _run_analysis_depth_select(
     live,
     console: Console,
@@ -10383,28 +10615,18 @@ def select_mode(
                 _board_configured = _jira_ok or _azdevops_ok
 
                 if not _board_configured:
-                    # No board configured — show message and return to mode select.
-                    # Re-render each frame so the ANALYSIS title keeps shimmering.
-                    _br_anim0 = time.monotonic()  # shimmer title clock
-                    while True:
-                        w, h = console.size
-                        live.update(
-                            _build_project_export_success_screen(
-                                "No board configured.\n\n"
-                                "Set JIRA_BASE_URL + JIRA_API_TOKEN\n"
-                                "or AZURE_DEVOPS_ORG_URL + AZURE_DEVOPS_TOKEN\n"
-                                "in your .env file.",
-                                width=w,
-                                height=h,
-                                subtitle="Board required",
-                                hint="",  # the back tab now shows the go-back affordance
-                                mode="analysis",
-                                shimmer_tick=time.monotonic() - _br_anim0,
-                            )
-                        )
-                        k = read_key(timeout=_FRAME_TIME) if _supports_timeout else read_key()
-                        if k:
-                            break
+                    # No board yet — offer the fields instead of a dead end. This used
+                    # to print "set these in your .env" and bounce back to the menu on
+                    # any key, which named the fix without letting you make it.
+                    _bs = _run_analysis_board_setup(live, console, read_key, _FRAME_TIME, _supports_timeout)
+                    if _bs == "connected":
+                        # Saved values land in os.environ too, so re-asking the same
+                        # predicates is enough to carry straight on into the flow.
+                        _jira_ok = _jira_check()
+                        _azdevops_ok = _azdevops_check()
+                        _board_configured = _jira_ok or _azdevops_ok
+
+                if not _board_configured:
                     _restart_mode_select = True
                     _skip_fade_in = True
                     detach_mode_handler("analysis")

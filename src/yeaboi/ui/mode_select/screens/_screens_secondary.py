@@ -777,6 +777,198 @@ def _build_component_select_screen(
     return build_page_panel(content, theme=theme, height=height)
 
 
+# ── Board setup (the "no tracker configured" entry gate) ────────────────────
+# Analysis reads sprints and stories from a tracker, so it can't start without
+# one. This screen replaces what used to be a dead end — a static "set these in
+# your .env" message that bounced you back to the menu on any key — with the
+# fields themselves, editable in place. Same trade the settings page makes:
+# tell the user what's missing AND let them fix it where they are.
+
+_BOARD_TRACKERS = ("Jira", "Azure DevOps")
+
+
+def board_setup_fields(tracker: int) -> list[dict]:
+    """The credential fields for tracker index ``tracker`` (0=Jira, 1=Azure DevOps).
+
+    Reuses the setup wizard's field definitions rather than restating them, so
+    labels, placeholders, masking and the where-to-get-it hints stay in one place.
+    """
+    from yeaboi.ui.provider_select._constants import _AZDEVOPS_TRACKING_FIELDS, _ISSUE_TRACKING_FIELDS
+
+    return _ISSUE_TRACKING_FIELDS if tracker == 0 else _AZDEVOPS_TRACKING_FIELDS
+
+
+def board_setup_ready(tracker: int, values: dict[str, str]) -> bool:
+    """Whether every ``required`` field of this tracker has a value.
+
+    Drives the Connect button's enabled state. Deliberately stricter than
+    ``is_jira_configured()`` (which only checks the token): a token with no base
+    URL passes that check and then fails on the first request.
+    """
+    return all(str(values.get(f["env_var"], "")).strip() for f in board_setup_fields(tracker) if f.get("required"))
+
+
+def _board_value_cell(
+    field: dict,
+    value: str,
+    *,
+    editing: tuple[str, str, int] | None,
+    theme,
+    avail: int,
+) -> Text:
+    """Render one field's value cell: the live edit buffer, a mask, or 'not set'."""
+    cell = Text(justify="left")
+    env, masked = field["env_var"], field.get("masked", False)
+    if editing is not None and editing[0] == env:
+        # Window the buffer to what's left of the row so the cursor stays on
+        # screen — otherwise a long token scrolls out exactly where you're typing.
+        buf, pos = editing[1], max(0, min(editing[2], len(editing[1])))
+        lo = max(0, pos - avail + 1)
+        win, wc = buf[lo : lo + avail], pos - lo
+        cell.append(win[:wc], style=theme.value)
+        cell.append(win[wc : wc + 1] or " ", style="reverse bold")  # block cursor
+        cell.append(win[wc + 1 :], style=theme.value)
+    elif masked and value:
+        shown = value[:4] + "•" * min(12, len(value) - 4) if len(value) > 4 else "•" * len(value)
+        cell.append(shown, style=theme.dim)
+    elif value:
+        cell.append(value, style=theme.value)
+    elif field.get("required"):
+        cell.append("required", style=theme.muted)
+    else:
+        cell.append("optional", style=theme.dim)
+    return cell
+
+
+def _build_analysis_board_setup_screen(
+    values: dict[str, str],
+    *,
+    tracker: int = 0,
+    selected: int = 0,
+    editing: tuple[str, str, int] | None = None,
+    action_sel: int = 0,
+    message: str = "",
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+) -> Panel:
+    """Build the Analysis board-setup gate: pick a tracker, fill in its credentials.
+
+    ``values`` maps env var -> current value; ``editing`` is the open in-place
+    edit as ``(env_var, buffer, cursor)``. Publishes ``_row_regions`` (one per
+    field row) and ``_tab_regions`` (the tracker switch) so the loop can
+    hit-test clicks, matching the settings page's click-to-edit.
+    """
+    from yeaboi.ui.shared._components import analysis_title
+
+    theme = ANALYSIS_THEME
+    fields = board_setup_fields(tracker)
+    ready = board_setup_ready(tracker, values)
+
+    title = analysis_title(shimmer_tick)
+    subtitle = Text(PAD + "Connect a board", style=f"bold {theme.accent}")
+    blurb = Text(
+        PAD + "Analysis reads sprints and stories from your tracker. Fill these in to continue —",
+        style=theme.muted,
+    )
+    blurb2 = Text(PAD + "they're saved to your .env, so this is a one-off.", style=theme.muted)
+
+    # Tracker switch. Rendered as one row so the two options read as alternatives
+    # rather than a list you scroll — you only ever need one of them configured.
+    tabs = Text(PAD, justify="left")
+    tab_regions: list[tuple[int, int, int]] = []
+    for i, name in enumerate(_BOARD_TRACKERS):
+        if i:
+            tabs.append("   ")
+        label = f"[ {name} ]" if i == tracker else f"  {name}  "
+        x0 = tabs.cell_len
+        tabs.append(label, style=f"bold {theme.accent}" if i == tracker else theme.dim)
+        tab_regions.append((x0, tabs.cell_len - 1, i))
+
+    label_w = max(len(f["label"]) for f in fields) + 2
+    body: list[Text] = []
+    row_regions: list[tuple[int, str, str, bool]] = []
+    for i, field in enumerate(fields):
+        focused = i == selected and editing is None
+        env = field["env_var"]
+        row = Text(PAD + "  ", justify="left", no_wrap=True, overflow="ellipsis")
+        marker_style = theme.accent if str(values.get(env, "")).strip() else theme.muted
+        row.append("● " if str(values.get(env, "")).strip() else "○ ", style=marker_style)
+        row.append(field["label"].ljust(label_w), style=theme.value if focused else theme.muted)
+        row.append(
+            _board_value_cell(
+                field,
+                str(values.get(env, "")),
+                editing=editing,
+                theme=theme,
+                avail=max(8, width - len(PAD) - label_w - 12),
+            )
+        )
+        if focused or (editing is not None and editing[0] == env):
+            row.append(" " * max(0, width - 8 - row.cell_len))
+            row.style = f"on {_SETTINGS_FOCUS_BG}"
+        row_regions.append((len(body), env, field["label"], field.get("masked", False)))
+        body.append(row)
+
+    # Where-to-get-it hint for the focused field only — the full stack of hints
+    # would bury the fields themselves.
+    hint_rows: list[Text] = []
+    if 0 <= selected < len(fields):
+        hint = fields[selected].get("hint", "")
+        if hint:
+            h = Text(PAD + "  ", justify="left", no_wrap=True, overflow="ellipsis")
+            h.append("↳ ", style=theme.muted)
+            h.append(hint, style=theme.dim)
+            hint_rows.append(h)
+
+    status = Text(PAD, justify="left")
+    if message:
+        status.append(message, style=theme.accent)
+    elif ready:
+        status.append("All set — press Continue to start.", style=theme.accent)
+    else:
+        missing = [f["label"] for f in fields if f.get("required") and not str(values.get(f["env_var"], "")).strip()]
+        status.append(f"Still needed: {', '.join(missing)}", style=theme.muted)
+
+    # "Continue" rather than a new "Connect" label — it is already in the
+    # shared button palette, so the row keeps the app's green proceed verb.
+    actions = ["Continue", "Back"] if ready else ["Back"]
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+    keys = Text(
+        PAD + "↑↓ field  ·  ⇥ switch tracker  ·  enter edit  ·  esc back",
+        style=theme.dim,
+    )
+
+    content = Group(
+        Text(""),
+        title,
+        Text(""),
+        subtitle,
+        Text(""),
+        blurb,
+        blurb2,
+        Text(""),
+        tabs,
+        Text(""),
+        *body,
+        Text(""),
+        *hint_rows,
+        Text(""),
+        status,
+        Text(""),
+        keys,
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+    panel = build_page_panel(content, theme=theme, height=height)
+    panel._board_actions = actions
+    panel._row_regions = row_regions  # (body_index, env, label, masked) per field row
+    panel._tab_regions = tab_regions  # (x0, x1, tracker_index) on the switch row
+    return panel
+
+
 def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: int = 24) -> Panel:
     """Choose Quick (zero LLM calls) or Deep (cached AI enrichment)."""
     options = (
