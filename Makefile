@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker site-seo site-check site-og site-serve
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -113,6 +113,30 @@ web-check: ## What CI runs: typecheck, test, rebuild, fail if the committed bund
 
 web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev board
 	cd frontend && npm run dev
+
+# --- Docs site (docs/ → yeaboi.ai via GitHub Pages) --------------------------
+#
+# NOT the same thing as the web-* targets above: those build the app's React
+# bundles into src/yeaboi/web/static. These manage the marketing/docs website in
+# docs/, which is hand-written flat HTML with no build step, published straight
+# off main by GitHub Pages. The SEO head block, the crawlable footer, the ?v=
+# cache-bust, sitemap.xml and robots.txt are generated into it — 18 pages x a
+# dozen meta tags is exactly what rots by hand. The staleness check lives in
+# tests/unit/test_site_seo.py (so it runs in make test-fast and every CI lane);
+# site-check is the same assertion for humans.
+
+site-seo: ## Regenerate the SEO block, crawlable footer, ?v=, sitemap.xml and robots.txt in docs/
+	$(UV) run python scripts/gen_site_seo.py
+
+site-check: ## Fail if any generated part of docs/ is stale (also asserted by make test-fast)
+	$(UV) run python scripts/gen_site_seo.py --check
+
+site-og: ## Re-render the 1200x630 Open Graph card (needs the charts extra for Pillow)
+	$(UV) run --extra charts python scripts/gen_og_card.py
+
+site-serve: ## Serve docs/ on :8899 exactly as GitHub Pages would, to preview before merging
+	@echo "→ http://localhost:8899  (Ctrl-C to stop)"
+	$(UV) run python -m http.server 8899 -d docs
 
 dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
 	$(UV) run python scripts/dev_board.py
