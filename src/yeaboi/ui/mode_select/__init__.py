@@ -2056,8 +2056,16 @@ def _team_profile_export_flow(
     if dest == "files":
         from yeaboi.team_profile_exporter import export_team_profile_html, export_team_profile_md
 
-        html_path = export_team_profile_html(profile, examples=examples, sprint_names=sprint_names, ceremony=ceremony)
+        # Markdown first, so the HTML page can name it: the page is drawn in the
+        # browser, and the Markdown is what someone with scripting off gets.
         md_path = export_team_profile_md(profile, examples=examples, sprint_names=sprint_names, ceremony=ceremony)
+        html_path = export_team_profile_html(
+            profile,
+            examples=examples,
+            sprint_names=sprint_names,
+            ceremony=ceremony,
+            markdown_name=md_path.name,
+        )
         body = f"HTML  {html_path}\nMD    {md_path}"
         subtitle = "Team profile exported (HTML + MD)"
     elif dest == "copy":

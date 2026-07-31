@@ -377,6 +377,7 @@ def _export_snapshots() -> dict[str, dict]:
         "export.anonymize": island(build_anonymized_html(masked, title="Retro")),
         "export.standup": island(build_standup_html(standup, history=standup_history)),
         "export.plan": island(build_export_html(_plan_state())),
+        "export.profile": island(_team_profile_page()),
     }
 
 
@@ -576,3 +577,333 @@ def _plan_state() -> dict:
         ),
         "sprints": (Sprint(id="SP-1", name="Sprint 1", goal="SSO end to end", capacity_points=30, story_ids=("S-1",)),),
     }
+
+
+def _team_profile_page() -> str:
+    """A team profile exercising every block kind the exporter can emit.
+
+    The other exports pin one shape each; this one pins a *vocabulary*. Its
+    sections are generated, so what has to stay true is that every `Block`
+    member `boot.ts` declares still has a producer and still looks the way the
+    renderer's switch expects — a block kind that quietly stops being emitted
+    is a section that renders as nothing.
+
+    Nine of the ten kinds are here. `image` is the exception: it is a rendered
+    velocity chart, so its bytes depend on whether the optional charts extra is
+    installed and on the matplotlib version — a fixture of it would either skip
+    or churn. Its two fields are pinned by `Profile.test.tsx` instead.
+    """
+    from yeaboi.team_profile import (
+        AiAdoptionSignal,
+        DailyScopeSnapshot,
+        DoDSignal,
+        ScopeChangeEvent,
+        SprintScopeTimeline,
+        StoryPointCalibration,
+        TeamProfile,
+    )
+    from yeaboi.team_profile_exporter import build_team_profile_html
+
+    profile = TeamProfile(
+        team_id="jira-ACME",
+        source="jira",
+        project_key="ACME",
+        sample_sprints=4,
+        sample_stories=37,
+        velocity_avg=28.0,
+        velocity_stddev=6.0,
+        sprint_completion_rate=76.0,
+        ai_adoption=AiAdoptionSignal(
+            scanned_commits=120,
+            ai_commits=31,
+            scanned_prs=40,
+            ai_prs=12,
+            footprint_pct=26.9,
+            per_tool=(("claude-code", 18), ("copilot", 13)),
+            per_activity=(("commit", 31), ("pull request", 12)),
+            per_author=(("Ada Okonjo", 19), ("Bo Chen", 12)),
+            sources_scanned=("github",),
+            repos_scanned=("acme/api", "acme/web"),
+        ),
+        dod_signal=DoDSignal(
+            stories_with_testing_mention_pct=64.0,
+            stories_with_pr_link_pct=88.0,
+            common_checklist_items=("tests pass", "reviewed"),
+        ),
+        point_calibrations=(
+            StoryPointCalibration(
+                point_value=5,
+                avg_cycle_time_days=4.0,
+                sample_count=12,
+                common_patterns=("one endpoint, one screen",),
+                typical_task_count=3.0,
+                overshoot_pct=18.0,
+            ),
+        ),
+    )
+
+    timeline = SprintScopeTimeline(
+        sprint_name="Sprint 4",
+        committed_pts=30.0,
+        final_pts=36.0,
+        delivered_pts=27.0,
+        scope_change_total=6.0,
+        daily_snapshots=(
+            DailyScopeSnapshot(date="2026-07-06", total_scope_pts=30.0, stories_in_sprint=(("ACME-1", 30.0),)),
+            DailyScopeSnapshot(date="2026-07-09", total_scope_pts=36.0, stories_in_sprint=(("ACME-1", 36.0),)),
+        ),
+        change_events=(
+            ScopeChangeEvent(
+                issue_key="ACME-9",
+                change_type="added",
+                delta_pts=6.0,
+                summary="Audit log export",
+            ),
+        ),
+    )
+
+    examples = {
+        "analysis_depth": "deep",
+        # prose + bullets
+        "narrative": {
+            "executive_summary": "Delivery is steady; scope discipline is the gap.",
+            "sections": {"velocity": "Holding at 28 points.", "workflow": "DoD is emerging."},
+        },
+        # cards
+        "insights": {
+            "start": [
+                {
+                    "title": "Lock scope after planning",
+                    "detail": "Six points arrived mid-sprint.",
+                    "evidence": "Sprint 4",
+                    "link": "https://jira.example.com/browse/ACME-9",
+                }
+            ]
+        },
+        "ai_adoption": {
+            "activity_coverage": {"status": "partial", "completed": 118, "eligible": 120},
+            "selected_users": ["Ada Okonjo", "Bo Chen"],
+            "matched_identities": {"Ada Okonjo": "ada"},
+            "coverage": ["Two archived repositories were not scanned."],
+            "samples": [
+                {
+                    "tool": "claude-code",
+                    "title": "Add audit log export",
+                    "url": "https://github.com/acme/api/commit/abc123",
+                    "source": "github",
+                },
+                {"tool": "other_ai", "title": "Refactor the seat store", "key": "def456"},
+            ],
+            "member_practices": {
+                "min_sample": 5,
+                "file_data": {"with_file_data": 96, "total": 120},
+                "members": [
+                    {
+                        "member": "Ada Okonjo",
+                        "commits": 71,
+                        "prs": 24,
+                        "tests_num": 40,
+                        "tests_den": 60,
+                        "tests_rate": 66.7,
+                        "docs_num": 9,
+                        "docs_den": 60,
+                        "docs_rate": 15.0,
+                        "ticket_num": 20,
+                        "ticket_den": 24,
+                        "ticket_rate": 83.3,
+                        "desc_num": 2,
+                        "desc_den": 3,
+                    }
+                ],
+                "team": {"member": "Team", "commits": 120, "prs": 40},
+            },
+        },
+        # bar + kv + callout (the bottleneck)
+        "task_decomposition": {
+            "stories_with_tasks": 22,
+            "total_stories": 37,
+            "total_tasks": 88,
+            "avg_tasks_per_story": 4.0,
+            "task_completion_rate": 71.0,
+            "type_distribution": {"backend": 55.0, "frontend": 30.0, "qa": 15.0},
+            "bottlenecks": [("qa", 42, 12)],
+            "common_tasks": [("Add integration test", 9)],
+            "task_assignees": {"Ada Okonjo": 40},
+        },
+        # table with person cells and toned readings
+        "contributor_stats": [
+            {
+                "name": "Ada Okonjo",
+                "delivery_pts": 62,
+                "stories_completed": 18,
+                "spill_rate": 6,
+                "avg_cycle_time": 3.5,
+                "sprints_active": 4,
+                "top_discipline": "backend",
+                "top_work_type": "feature/api",
+                "per_sprint": 15.5,
+            },
+            {
+                "name": "Bo Chen",
+                "delivery_pts": 30,
+                "stories_completed": 11,
+                "spill_rate": 28,
+                "avg_cycle_time": 9.0,
+                "sprints_active": 4,
+                "top_discipline": "frontend",
+                "per_sprint": 7.5,
+            },
+            {"name": "Kit Ferrer", "delivery_pts": 20, "stories_completed": 8, "per_sprint": 5.0},
+        ],
+        # table + cards (incomplete) + trend (the scope timeline)
+        "sprint_details": [
+            {"name": "Sprint 3", "points": 26, "planned": 12, "completed": 11, "rate": 92, "done": True},
+            {
+                "name": "Sprint 4",
+                "points": 30,
+                "planned": 14,
+                "completed": 9,
+                "rate": 64,
+                "done": False,
+                "has_shadow": True,
+                "incomplete": [
+                    {"issue_key": "ACME-12", "summary": "Tenant switcher", "points": 5},
+                    {"issue_key": "ACME-13", "summary": "Audit filters", "shadow": True},
+                ],
+            },
+        ],
+        "scope_changes": {
+            "totals": {
+                "added_mid_sprint": 6,
+                "re_estimated": 3,
+                "total_stories": 37,
+                "avg_committed_velocity": 30.0,
+                "avg_delivered_velocity": 27.0,
+            },
+            "timelines": [timeline],
+            "carry_over_chains": [{"issue_key": "ACME-2", "sprints": ["Sprint 1", "Sprint 2", "Sprint 3"]}],
+            "per_sprint": [{"name": "Sprint 4", "scope_churn": 0.4}, {"name": "Sprint 3", "scope_churn": 0.35}],
+        },
+        # callout list (shadow) with linked runs
+        "shadow_spillover": [
+            {
+                "issue_key": "ACME-13",
+                "issue_url": "https://jira.example.com/browse/ACME-13",
+                "title": "Audit filters",
+                "from_sprint": "Sprint 3",
+                "to_sprint": "Sprint 4",
+            },
+            {"issue_key": "ACME-14", "title": "Rate limiter", "from_sprint": "Sprint 3", "to_sprint": "Sprint 4"},
+        ],
+        # bullets under the calibration table, with a linked example
+        "confidence_levels": {5: "high"},
+        "calibration_5pt": [
+            {
+                "issue_key": "ACME-7",
+                "issue_url": "https://jira.example.com/browse/ACME-7",
+                "summary": "Add the ACS endpoint",
+                "detail": "four days, three tasks",
+            }
+        ],
+        # table with a linked, annotated example cell
+        "dod_testing": [
+            {
+                "issue_key": "ACME-5",
+                "issue_url": "https://jira.example.com/browse/ACME-5",
+                "summary": "Session expiry",
+            }
+        ],
+        # table with toned status cells, plus its notes
+        "proposed_dod": {
+            "summary": "A definition of done is emerging, not established.",
+            "health": "moderate",
+            "items": [
+                {
+                    "practice": "Tests",
+                    "status": "established",
+                    "signals": "64% of stories",
+                    "recommendation": "Keep it.",
+                },
+                {
+                    "practice": "Deploy note",
+                    "status": "missing",
+                    "signals": "no evidence",
+                    "recommendation": "Add a deploy step.",
+                },
+            ],
+            "ordering": ["review", "test", "deploy"],
+            "custom_steps": [{"title": "Demo to support", "pct": 40}],
+        },
+        # bar + table + bullets
+        "repositories": {
+            "top_repos": [
+                {"repo": "acme/api", "stories": 21, "pct": 57.0},
+                {"repo": "acme/web", "stories": 16, "pct": 43.0},
+            ],
+            "repo_avg_cycle_time": {"acme/api": 4.0, "acme/web": 18.0},
+            "spillover_repos": [{"repo": "acme/web", "spill_rate": 44, "spills": 7}],
+            "by_pts": {"5": ["acme/api"], "8": ["acme/web"]},
+        },
+        # kv rows carrying a toned trend cell
+        "velocity_trend": {"trend": "improving", "slope": 1.8, "first_velocity": 24, "last_velocity": 30},
+        "recurring_count": 9,
+        "delivery_count": 28,
+        "recurring": [{"issue_key": "ACME-99", "summary": "Weekly data refresh"}],
+        "team_size": 3,
+        "team_members": ["Ada Okonjo", "Bo Chen", "Kit Ferrer"],
+        "spillover_correlation": {"by_size": {"5": 12.0, "8": 34.0}, "by_discipline": {"frontend": 28.0}},
+        # bullets under a kv, with a linked topic example
+        "ac_patterns": {
+            "stories_with_ac_pct": 72,
+            "median_ac": 3,
+            "specificity": {"label": "mixed", "precise_pct": 55},
+            "themes": {"permissions": 40},
+            "theme_examples": {
+                "permissions": {
+                    "issue_key": "ACME-3",
+                    "issue_url": "https://jira.example.com/browse/ACME-3",
+                    "summary": "Role gates on the audit view",
+                }
+            },
+            "by_discipline": {"backend": {"avg_ac": 3.0}, "frontend": {"avg_ac": 2.0}},
+        },
+        "seasonal": {},
+        "additional_patterns": {
+            "estimation_bias": {
+                "sample_size": 20,
+                "accurate_pct": 55.0,
+                "underestimated_pct": 30.0,
+                "overestimated_pct": 15.0,
+                "worst_overestimate_sizes": [8],
+            },
+            "seasonal": {"monthly_avg": {"June": 30.0}, "low_months": {"August": 18.0}, "high_months": {}},
+        },
+        "workflow_style": {"workflow": ["To Do", "In Progress", "Done"], "style": "minimal", "dod_columns": {}},
+        "naming_conventions": {
+            "title_prefixes": [("feat", 40)],
+            "label_distribution": [("api", 30)],
+            "stories_with_labels_pct": 62,
+            "epic_naming_style": "noun phrase",
+            "epic_examples": ["Tenant self-service"],
+            "template_sections": [("Context", 1), ("Acceptance", 1)],
+        },
+        "story_structure": {
+            "subtask_ordering": ["design", "build", "test"],
+            "skipped_types": [{"type": "spike", "present_pct": 4}],
+            "avg_epic_completion": 68,
+            "lingering_epics": [{"epic_title": "Reporting", "completed": 3, "total": 9, "rate": 33}],
+            "epic_sprint_spread": [{"epic": "Reporting", "stories": 9, "sprints": 4}],
+        },
+        "point_descriptions": {"5": "One endpoint and the screen that calls it."},
+        "discipline_calibration": {
+            "backend": [{"points": 5, "avg_cycle_days": 4.0, "variance": 1.0, "samples": 9, "spill_pct": 8.0}],
+            "frontend": [{"points": 5, "avg_cycle_days": 7.0, "variance": 3.0, "samples": 6, "spill_pct": 30.0}],
+        },
+    }
+
+    return build_team_profile_html(
+        profile,
+        examples=examples,
+        sprint_names=["Sprint 3", "Sprint 4"],
+        markdown_name="team-profile-20260731-090000.md",
+    )

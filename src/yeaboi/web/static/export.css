@@ -1,13 +1,4 @@
 /*
- * Markup styling for the ten static exported reports (planning, standup, retro,
- * poker, performance, reporting, roadmap, analysis, anonymize, team profile).
- *
- * Split out of tokens.css: these class names are a contract with the Python
- * exporters in html_theme.py, which still write the markup as strings. The
- * foundation below them is shared with the live boards; this file is not.
- * When phase 9 moves the exporters to TSX, this file goes with them.
- */
-/*
  * The shared design foundation: palettes, then everything derived from them.
  *
  * Every yeaboi surface imports this one file — the live boards, the join gate,
@@ -339,292 +330,6 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     --critical: #cf222e; --high: #bc4c00; --medium: #0969da; --low: #57606a;
   }
   [data-print-hide] { display: none !important; }
-}
-
-/* Compat aliases — pre-existing exporter markup references the old token
-   names inline (var(--surface) etc.); alias them so it all keeps working. */
-:root, [data-theme] {
-  --surface: var(--panel);
-  --border: var(--line);
-  --text-muted: var(--muted);
-  --tag-bg: var(--card);
-  --accent-dark: var(--accent);
-}
-
-/* ── Header ─────────────────────────────────────────── */
-.site-header {
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  padding: 1.6rem 3rem 1.4rem;
-}
-.site-header h1 {
-  font-size: 1.45rem;
-  margin: 0;
-  color: var(--accent);
-  letter-spacing: 0.01em;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.site-header .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.3rem; }
-.site-header .meta {
-  margin-top: 0.5rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  display: flex;
-  gap: 1.25rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.site-header .badge { font-size: 0.75rem; }
-.theme-btn {
-  margin-left: auto;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 0.2rem 0.7rem;
-  cursor: pointer;
-}
-.theme-btn:hover { border-color: var(--accent); color: var(--text); }
-
-/* ── Nav ─────────────────────────────────────────────── */
-.toc {
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  padding: 0.55rem 3rem;
-  display: flex;
-  gap: 1.4rem;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-.toc a { color: var(--muted); font-weight: 500; }
-.toc a:hover { color: var(--accent); text-decoration: none; }
-
-/* ── Layout ──────────────────────────────────────────── */
-.container { max-width: 1100px; margin: 0 auto; padding: 2rem 3rem; }
-section { margin-bottom: 3rem; }
-section h2 {
-  font-size: 1.15rem;
-  color: var(--accent);
-  letter-spacing: 0.02em;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 0.45rem;
-  margin-bottom: 1.25rem;
-}
-
-/* ── Cards ───────────────────────────────────────────── */
-.card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1.1rem 1.35rem;
-  margin-bottom: 1rem;
-  transition: border-color 0.15s ease;
-}
-.card:hover { border-color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-.card-title { font-weight: 600; font-size: 0.95rem; }
-.card-id { font-size: 0.75rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; margin-right: 0.5rem; }
-.card-desc { font-size: 0.875rem; color: var(--muted); margin-top: 0.3rem; }
-.card-meta { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
-.quote { border-left: 3px solid var(--line); padding-left: 0.75rem; color: var(--muted);
-         font-style: italic; font-size: 0.875rem; margin-top: 0.5rem; }
-
-/* ── Badges / chips ──────────────────────────────────── */
-.badge {
-  display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px;
-  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.04em; white-space: nowrap;
-  background: var(--card); color: var(--muted); border: 1px solid var(--line);
-}
-.badge-critical { color: var(--critical); background: color-mix(in srgb, var(--critical) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
-.badge-high     { color: var(--high); background: color-mix(in srgb, var(--high) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--high) 40%, transparent); }
-.badge-medium   { color: var(--medium); background: color-mix(in srgb, var(--medium) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--medium) 40%, transparent); }
-.badge-low      { color: var(--low); background: color-mix(in srgb, var(--low) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--low) 40%, transparent); }
-.badge-tag      { background: var(--card); color: var(--muted); border: 1px solid var(--line); }
-.badge-pts      { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent);
-                  border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-.badge-ok       { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-.badge-warn     { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
-.badge-danger   { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
-.badge-info     { color: var(--info); background: color-mix(in srgb, var(--info) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--info) 40%, transparent); }
-.badge-accent   { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
-                  border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-
-/* ── Discipline colours (hues readable on dark and light) ── */
-.disc-fullstack { color: var(--accent2); border-color: transparent;
-                  background: color-mix(in srgb, var(--accent2) 15%, transparent); }
-.disc-frontend  { color: var(--info); border-color: transparent;
-                  background: color-mix(in srgb, var(--info) 15%, transparent); }
-.disc-backend   { color: var(--ok); border-color: transparent;
-                  background: color-mix(in srgb, var(--ok) 15%, transparent); }
-.disc-qa        { color: var(--warn); border-color: transparent;
-                  background: color-mix(in srgb, var(--warn) 15%, transparent); }
-.disc-devops    { color: var(--high); border-color: transparent;
-                  background: color-mix(in srgb, var(--high) 15%, transparent); }
-.disc-design    { color: var(--accent); border-color: transparent;
-                  background: color-mix(in srgb, var(--accent) 15%, transparent); }
-
-/* ── Tables ──────────────────────────────────────────── */
-.data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.data-table th {
-  background: var(--card);
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  font-weight: 600;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-}
-.data-table td {
-  padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-}
-.data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.data-table .mono { font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; color: var(--muted); }
-
-/* ── Story cards ─────────────────────────────────────── */
-.story-card { border-left: 3px solid var(--accent); }
-.story-card.critical { border-left-color: var(--critical); }
-.story-card.high     { border-left-color: var(--high); }
-.story-card.medium   { border-left-color: var(--medium); }
-.story-card.low      { border-left-color: var(--low); }
-
-/* ── Acceptance criteria ─────────────────────────────── */
-.ac-list { list-style: none; margin-top: 0.6rem; padding-left: 0; }
-.ac-list li { font-size: 0.82rem; padding: 0.2rem 0; color: var(--muted); }
-.ac-list li + li { border-top: 1px dotted var(--line); padding-top: 0.3rem; }
-.ac-given { color: var(--ok); font-weight: 600; }
-.ac-when  { color: var(--warn); font-weight: 600; }
-.ac-then  { color: var(--accent2); font-weight: 600; }
-
-/* ── Sprint cards ────────────────────────────────────── */
-.sprint-card { border-top: 3px solid var(--accent); }
-.sprint-header { display: flex; justify-content: space-between; align-items: center; }
-.sprint-goal { font-size: 0.875rem; color: var(--muted); margin: 0.5rem 0; }
-.capacity-bar { height: 6px; background: var(--line); border-radius: 999px;
-                margin: 0.5rem 0 0.75rem; overflow: hidden; }
-.capacity-fill { height: 100%; background: var(--accent); border-radius: 999px; max-width: 100%; }
-.sprint-stories { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-
-/* ── Stat tiles (metric summaries) ───────────────────── */
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-             gap: 0.75rem; margin-bottom: 1rem; }
-.stat {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
-}
-.stat .num { font-size: 1.35rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
-.stat .lbl { font-size: 0.75rem; color: var(--muted); text-transform: uppercase;
-             letter-spacing: 0.05em; margin-top: 0.15rem; }
-
-/* ── Charts (inline SVG + CSS bars — theme-aware via var(--*)) ── */
-.spark-wrap { margin: 0.25rem 0 1rem; }
-.spark-wrap svg { display: block; width: 100%; height: 48px; }
-.spark-labels { display: flex; justify-content: space-between; font-size: 0.72rem;
-                color: var(--muted); margin-top: 0.2rem; }
-.seg-track { display: flex; gap: 2px; height: 10px; border-radius: 999px; overflow: hidden; min-width: 2px; }
-.seg-track i { display: block; height: 100%; }
-.legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.75rem; color: var(--muted);
-          margin: 0.35rem 0 0.6rem; }
-.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 0.3rem; }
-.bar-row { display: grid; grid-template-columns: minmax(80px, 150px) 1fr 2.5rem; gap: 0.6rem;
-           align-items: center; font-size: 0.8rem; margin-bottom: 0.4rem; }
-.bar-row .bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-row .bar-total { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 0.35rem; }
-.avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center;
-          justify-content: center; font-size: 0.7rem; font-weight: 700; flex: none; }
-
-/* ── Notices ─────────────────────────────────────────── */
-.notice {
-  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
-  border-radius: 10px;
-  padding: 0.9rem 1.1rem;
-  margin-bottom: 1rem;
-}
-.notice .notice-title { font-weight: 600; font-size: 0.85rem; color: var(--warn); margin-bottom: 0.4rem; }
-.notice ul { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; color: var(--muted); }
-
-/* ── Analysis grid ───────────────────────────────────── */
-.analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
-.analysis-section h3 {
-  font-size: 0.78rem; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;
-}
-.analysis-section ul { list-style: none; padding-left: 0; }
-/* Hanging indent: the bullet sits in the padding gutter so wrapped lines align
-   with the text, and each item gets enough vertical air to scan. */
-.analysis-section ul li { font-size: 0.875rem; padding: 0.3rem 0 0.3rem 1.05rem;
-                          position: relative; line-height: 1.55; }
-.analysis-section ul li::before { content: "\\2022 "; color: var(--accent); position: absolute; left: 0.15rem; }
-.assumption-item::before { content: "\\26A0 " !important; color: var(--warn) !important; }
-/* Standup member cards: wider columns + roomier gutters than the shared grid. */
-.member-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.1rem 1.75rem; }
-.chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
-a.badge { text-decoration: none; }
-a.badge:hover { border-color: var(--accent); color: var(--accent); }
-.card-footnote { color: var(--muted); font-size: 0.82rem; margin: 0.55rem 0 0; }
-
-/* ── Questionnaire ───────────────────────────────────── */
-.q-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.q-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-.q-table td:first-child { width: 2.5rem; font-weight: 600; color: var(--accent);
-                          font-family: ui-monospace, Menlo, monospace; }
-.q-table td:nth-child(2) { width: 40%; color: var(--muted); }
-.q-table td:nth-child(3) { font-weight: 500; }
-.q-table tr:last-child td { border-bottom: none; }
-
-/* ── Footer ──────────────────────────────────────────── */
-.site-footer {
-  text-align: center;
-  font-size: 0.78rem;
-  color: var(--muted);
-  padding: 2rem;
-  border-top: 1px solid var(--line);
-  margin-top: 2rem;
-}
-
-/* ── Responsive ──────────────────────────────────────── */
-@media (max-width: 640px) {
-  .site-header, .toc, .container { padding-left: 1rem; padding-right: 1rem; }
-  .analysis-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Print ───────────────────────────────────────────────
-   The palette override lives in tokens.css (every surface prints); only the
-   export page's own chrome is hidden here. */
-@media print {
-  .theme-btn { display: none; }
-  .toc { position: static; }
 }
 /*
  * Styling for the shared primitives.
@@ -1133,7 +838,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_1cvxe_15 {
+._h2_1bjsw_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -1145,21 +850,21 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_1cvxe_27 {
+._bullets_1bjsw_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_1cvxe_27 li + li {
+._bullets_1bjsw_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_1cvxe_27 li::marker {
+._bullets_1bjsw_27 li::marker {
   color: var(--accent);
 }
 
-._lede_1cvxe_41 {
+._lede_1bjsw_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -1172,12 +877,12 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   line-height: 1.6;
 }
 
-._empty_1cvxe_54 {
+._empty_1bjsw_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_1cvxe_59 {
+._footnote_1bjsw_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1187,20 +892,20 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_1cvxe_69 {
+._split_1bjsw_69 {
   margin: var(--s4) 0;
 }
-._split_1cvxe_69 > * + * {
+._split_1bjsw_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_1cvxe_76 {
+._trend_1bjsw_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_1cvxe_82 {
+._people_1bjsw_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1208,7 +913,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_1cvxe_90 {
+._person_1bjsw_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -1217,7 +922,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_1cvxe_99 {
+._identity_1bjsw_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -1230,33 +935,33 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_1cvxe_112 {
+._mixes_1bjsw_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_1cvxe_112 > * + * {
+._mix_1bjsw_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_1cvxe_122 {
+._projects_1bjsw_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_1cvxe_122 {
+._project_1bjsw_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_1cvxe_131 {
+._projectIndex_1bjsw_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_1cvxe_138 {
+._chips_1bjsw_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
@@ -1267,13 +972,13 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_1cvxe_138 {
+  ._chips_1bjsw_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_1cvxe_155 {
+._why_1bjsw_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1285,12 +990,12 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_1cvxe_167 {
+._votes_1bjsw_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_1cvxe_167 {
+._vote_1bjsw_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -1301,18 +1006,18 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_1cvxe_183 {
+._skipped_1bjsw_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_1cvxe_188 {
+._notes_1bjsw_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_1cvxe_194 {
+._transcript_1bjsw_194 {
   font-size: var(--fs-s);
 }
 
@@ -1321,7 +1026,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_1cvxe_203 {
+._columns_1bjsw_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -1330,14 +1035,14 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_1cvxe_203 {
+._column_1bjsw_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_1cvxe_219 {
+._columnTitle_1bjsw_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1349,75 +1054,75 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_1cvxe_231 {
+._count_1bjsw_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_1cvxe_203 ._bullets_1cvxe_27 li::marker {
+._column_1bjsw_203 ._bullets_1bjsw_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_1cvxe_239 {
+._byline_1bjsw_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_1cvxe_246 {
+._reactions_1bjsw_246 {
   margin-left: var(--s1);
 }
-._status_1cvxe_249 {
+._status_1bjsw_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_1cvxe_256 {
+._confidence_1bjsw_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_1cvxe_263 {
+._rationale_1bjsw_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_1cvxe_270 {
+._activity_1bjsw_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_1cvxe_270 > * + * {
+._activity_1bjsw_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_1cvxe_280 {
+._activityRow_1bjsw_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_1cvxe_286 {
+._activityName_1bjsw_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_1cvxe_292 {
+._activityTotal_1bjsw_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_1cvxe_299 {
+._member_1bjsw_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -1426,10 +1131,10 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_1cvxe_308 {
+._blocked_1bjsw_308 {
   border-left-color: var(--danger);
 }
-._memberHead_1cvxe_311 {
+._memberHead_1bjsw_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1437,12 +1142,12 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_1cvxe_319 {
+._memberSummary_1bjsw_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._since_1cvxe_324 {
+._since_1bjsw_324 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1450,23 +1155,23 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* `auto-fit`, so two active categories share the width instead of leaving a
    third of the card empty to preserve a three-column shape. */
-._categories_1cvxe_332 {
+._categories_1bjsw_332 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--s3);
   margin-top: var(--s3);
 }
-._category_1cvxe_338 > * + * {
+._category_1bjsw_338 > * + * {
   margin-top: var(--s2);
 }
 
-._chipRow_1cvxe_342 {
+._chipRow_1bjsw_342 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
-._note_1cvxe_188 {
+._note_1bjsw_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1476,7 +1181,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   line-height: 1.6;
 }
 
-._quote_1cvxe_358 {
+._quote_1bjsw_358 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -1489,7 +1194,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   white-space: pre-wrap;
 }
 
-._screenshot_1cvxe_371 {
+._screenshot_1bjsw_371 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -1497,26 +1202,26 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   border-radius: var(--r-m);
 }
 
-._details_1cvxe_379 {
+._details_1bjsw_379 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_1cvxe_386 {
+._coverage_1bjsw_386 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_1cvxe_393 {
+._dot_1bjsw_393 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_1cvxe_398 {
+._dim_1bjsw_398 {
   color: var(--dim);
 }
 
@@ -1524,14 +1229,14 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_1cvxe_406 {
+._headingEmoji_1bjsw_406 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_1cvxe_413 {
+._cardId_1bjsw_413 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1542,57 +1247,57 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   white-space: nowrap;
 }
 
-._feature_1cvxe_424,
-._story_1cvxe_425,
-._sprint_1cvxe_426 {
+._feature_1bjsw_424,
+._story_1bjsw_425,
+._sprint_1bjsw_426 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_1cvxe_425 {
+._story_1bjsw_425 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_1cvxe_433 {
+._storyText_1bjsw_433 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_1cvxe_440 {
+._storyGroup_1bjsw_440 {
   margin-bottom: var(--s5);
 }
-._storyGroup_1cvxe_440 > .eyebrow {
+._storyGroup_1bjsw_440 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_1cvxe_450 {
+._criteria_1bjsw_450 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_1cvxe_450 li {
+._criteria_1bjsw_450 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_1cvxe_450 li + li {
+._criteria_1bjsw_450 li + li {
   margin-top: var(--s1);
 }
-._criteria_1cvxe_450 b {
+._criteria_1bjsw_450 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_1cvxe_471 {
+._dod_1bjsw_471 {
   margin-top: var(--s3);
 }
-._dod_1cvxe_471 ul {
+._dod_1bjsw_471 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -1600,22 +1305,22 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_1cvxe_482 {
+._exempt_1bjsw_482 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_1cvxe_487 {
+._fields_1bjsw_487 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_1cvxe_487 > * + * {
+._field_1bjsw_487 > * + * {
   margin-top: var(--s2);
 }
 
-._target_1cvxe_497 {
+._target_1bjsw_497 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1624,36 +1329,36 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   line-height: 1.6;
 }
 
-._capacity_1cvxe_506 {
+._capacity_1bjsw_506 {
   margin-top: var(--s4);
 }
-._capacity_1cvxe_506 > * + * {
+._capacity_1bjsw_506 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_1cvxe_513 {
+._sprintGoal_1bjsw_513 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_1cvxe_519 {
+._reduced_1bjsw_519 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_1cvxe_522 {
+._reducedNote_1bjsw_522 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_1cvxe_528 {
+._taskGroup_1bjsw_528 {
   margin-bottom: var(--s5);
 }
-._taskGroup_1cvxe_528 > .eyebrow {
+._taskGroup_1bjsw_528 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_1cvxe_535 {
+._groupSubject_1bjsw_535 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1661,7 +1366,7 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_1cvxe_543 {
+._taskNote_1bjsw_543 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1671,44 +1376,44 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_1cvxe_553 {
+._document_1bjsw_553 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_1cvxe_553 > * + * {
+._document_1bjsw_553 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_1cvxe_553 h2,
-._document_1cvxe_553 h3,
-._document_1cvxe_553 h4,
-._document_1cvxe_553 h5,
-._document_1cvxe_553 h6 {
+._document_1bjsw_553 h2,
+._document_1bjsw_553 h3,
+._document_1bjsw_553 h4,
+._document_1bjsw_553 h5,
+._document_1bjsw_553 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_1cvxe_553 h2 { font-size: var(--fs-m); }
-._document_1cvxe_553 h3 { font-size: var(--fs-s); }
-._document_1cvxe_553 h4,
-._document_1cvxe_553 h5,
-._document_1cvxe_553 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_1cvxe_553 ul,
-._document_1cvxe_553 ol {
+._document_1bjsw_553 h2 { font-size: var(--fs-m); }
+._document_1bjsw_553 h3 { font-size: var(--fs-s); }
+._document_1bjsw_553 h4,
+._document_1bjsw_553 h5,
+._document_1bjsw_553 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1bjsw_553 ul,
+._document_1bjsw_553 ol {
   padding-left: 1.2rem;
 }
-._document_1cvxe_553 li + li {
+._document_1bjsw_553 li + li {
   margin-top: var(--s1);
 }
-._document_1cvxe_553 li::marker {
+._document_1bjsw_553 li::marker {
   color: var(--accent);
 }
-._document_1cvxe_553 code {
+._document_1bjsw_553 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1716,18 +1421,18 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
   background: var(--card);
   color: var(--accent2);
 }
-._document_1cvxe_553 a {
+._document_1bjsw_553 a {
   color: var(--accent);
 }
 
-._quote_1cvxe_358 {
+._quote_1bjsw_358 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_1cvxe_609 {
+._code_1bjsw_609 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1740,16 +1445,134 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_1cvxe_609 code {
+._code_1bjsw_609 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_1cvxe_628 {
+._rule_1bjsw_628 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
+}
+
+/* ── Team profile: generated blocks ───────────────────────────── */
+
+._blocks_1bjsw_636 > * + * {
+  margin-top: var(--s4);
+}
+
+/* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
+   accent — it groups within a section rather than announcing a new one. */
+._h3_1bjsw_642 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 0 0 var(--s2);
+}
+._kvWrap_1bjsw_651 > * + * {
+  margin-top: var(--s2);
+}
+
+/* Label and value on one baseline. A `<dl>` rather than a table: these are
+   facts about one thing, not rows that compare with each other. */
+._kv_1bjsw_651 {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  font-size: var(--fs-s);
+}
+._kv_1bjsw_651 > div {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) 1fr;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+._kv_1bjsw_651 > div:last-child {
+  border-bottom: none;
+}
+._kv_1bjsw_651 dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+._kv_1bjsw_651 dd {
+  margin: 0;
+  line-height: 1.6;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  ._kv_1bjsw_651 > div {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+._cell_1bjsw_692 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Bounded rather than fluid: a proportion bar is only comparable down a column
+   if every row draws the same track. */
+._cellBar_1bjsw_701 {
+  width: 90px;
+  flex: none;
+}
+._cellNote_1bjsw_705 {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+._cellPerson_1bjsw_709 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+._profileCards_1bjsw_715 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+._profileProse_1bjsw_720 {
+  font-size: var(--fs-s);
+}
+
+/* A caveat reads as a qualification of the section, not as one of its
+   findings. */
+._note_1bjsw_188 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: 1.6;
+}
+
+/* A finding worth stopping on. The rule and the wash are both derived from the
+   tone the payload sent, so a recommendation and a bottleneck read alike. */
+._callout_1bjsw_736 {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  font-size: var(--fs-s);
+}
+._callout_1bjsw_736 > * + * {
+  margin-top: var(--s2);
+}
+._callout_1bjsw_736 p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 /* ── Print ────────────────────────────────────────────────────── */
@@ -1757,12 +1580,16 @@ a.badge:hover { border-color: var(--accent); color: var(--accent); }
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_1cvxe_122,
-  ._column_1cvxe_203,
-  ._lede_1cvxe_41 {
+  ._project_1bjsw_122,
+  ._column_1bjsw_203,
+  ._lede_1bjsw_41,
+  ._callout_1bjsw_736 {
     break-inside: avoid;
   }
-  ._h2_1cvxe_15 {
+  ._h3_1bjsw_642 {
+    break-after: avoid;
+  }
+  ._h2_1bjsw_15 {
     break-after: avoid;
   }
 }

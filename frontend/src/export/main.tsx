@@ -8,20 +8,16 @@
  * once. It is also what makes the shell, the primitives and the Markdown
  * reader genuinely shared rather than shared-by-convention.
  *
- * ## The mixed state during the migration
- *
- * Exports move to React in three commits, so for two of them this same bundle
- * is loaded by two kinds of page: the new ones, which carry a boot payload and
- * a `#root`, and the ones `html_theme.html_page` still writes as markup
- * strings, which carry neither. The legacy pages need exactly one thing from
- * this file — the theme button their header wires to `__yeaboiCycleTheme()` —
- * so the fallback branch below is that, and it deletes with `html_page`.
+ * Every export is a payload page now, so this mounts unconditionally. The
+ * branch that used to sit here existed for the string-templated pages
+ * `html_theme.html_page` wrote, which carried no `#root` and needed only the
+ * theme button; it went when the last exporter did.
  */
 
 import { createRoot } from 'react-dom/client';
 
-import '../design/export.css';
-import { applyStoredTheme, installThemeSwitcher } from '../runtime/theme';
+import '../design/tokens.css';
+import { applyStoredTheme } from '../runtime/theme';
 import { readExportBoot } from './boot';
 import { Report } from './Report';
 import { Shell } from './Shell';
@@ -43,6 +39,4 @@ if (root) {
       <Report report={boot.report} />
     </Shell>
   );
-} else {
-  installThemeSwitcher();
 }

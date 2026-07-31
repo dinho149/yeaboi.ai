@@ -20,8 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.analysis.ai_usage import _source_label
-from yeaboi.html_theme import escape as _e
-from yeaboi.html_theme import safe_url
+from yeaboi.html_theme import export_page, safe_url
 from yeaboi.team_profile import TeamProfile
 from yeaboi.tools.team_learning import ANALYSIS_GLOSSARY, INSIGHT_CATEGORIES
 
@@ -63,20 +62,6 @@ def _project_export_dir(project_key: str, base_dir: Path | None = None) -> Path:
 def _format_pct(val: float) -> str:
     """Format a percentage, dropping the decimal if it's .0."""
     return f"{val:.0f}%" if val == int(val) else f"{val:.1f}%"
-
-
-def _pct_bar_html(pct: float, width_px: int = 120) -> str:
-    """Render a thin percentage bar as inline HTML."""
-    fill = min(int(pct), 100)
-    color = "var(--ok)" if pct >= 80 else ("var(--warn)" if pct >= 50 else "var(--danger)")
-    return (
-        f'<span style="display:inline-flex;align-items:center;gap:6px;">'
-        f'<span style="display:inline-block;width:{width_px}px;height:6px;'
-        f'background:var(--line);border-radius:3px;overflow:hidden;">'
-        f'<span style="display:block;width:{fill}%;height:100%;background:{color};'
-        f'border-radius:3px;"></span></span>'
-        f'<span style="font-size:0.8rem;color:var(--text-muted);">{_format_pct(pct)}</span></span>'
-    )
 
 
 def _small_pct(value: float) -> str:
@@ -156,40 +141,203 @@ def _coverage_errors(report: dict) -> list[str]:
     ]
 
 
-def _section(id_: str, title: str, content: str) -> str:
-    """Wrap content in a <section> with id and h2."""
-    return f'\n<section id="{id_}"><h2>{_e(title)}</h2>{content}</section>'
+# ---------------------------------------------------------------------------
+# Blocks — the payload vocabulary
+#
+# This report is not one shape. It is twenty-odd *generated* sections whose
+# composition depends on which analyses were enabled and which sources
+# answered, so it travels as a list of blocks and the bundle draws them. See
+# the note on ``Block`` in ``frontend/src/export/boot.ts`` for why that is a
+# better contract here than twenty named interfaces would be.
+#
+# Nothing below escapes anything, because nothing below builds markup.
+# ---------------------------------------------------------------------------
 
 
-def _kv_table(rows: list[tuple[str, str]]) -> str:
-    """Render label/value pairs as a two-column card table.
+def _tone_up(value: float, ok: float, warn: float) -> str:
+    """Reading for a metric where higher is better — completion, accuracy."""
+    return "ok" if value >= ok else ("warn" if value >= warn else "danger")
 
-    Labels are escaped here; values are trusted pre-built HTML — every caller
-    must escape interpolated user/LLM strings (enforced by test_export_xss.py).
+
+def _tone_down(value: float, ok: float, warn: float) -> str:
+    """Reading for a metric where lower is better — spillover, cycle time."""
+    return "ok" if value < ok else ("warn" if value < warn else "danger")
+
+
+def _cell(
+    text: str,
+    *,
+    tone: str = "",
+    pct: float | None = None,
+    href: str = "",
+    note: str = "",
+    person: bool = False,
+) -> str | dict:
+    """One table cell or key/value value — a bare string unless it carries more.
+
+    ``tone`` is the *reading* of the number (ok / warn / danger), never a
+    colour. It has to be decided here rather than in the bundle because the
+    thresholds are domain facts that differ per column and per direction: 80%
+    completion is good, 80% spillover is not.
+
+    ``href`` runs through :func:`safe_url`, so a tracker URL of
+    ``javascript:alert(1)`` arrives as plain text rather than a live link.
     """
-    trs = "".join(
-        f"<tr><td style='width:40%;color:var(--text-muted);'>{_e(lbl)}</td><td style='font-weight:500;'>{v}</td></tr>"
-        for lbl, v in rows
-    )
-    return f'<div class="card" style="padding:0;overflow:hidden;"><table class="data-table">{trs}</table></div>'
+    out: dict = {"t": text}
+    if tone:
+        out["tone"] = tone
+    if pct is not None:
+        out["pct"] = round(min(max(pct, 0.0), 100.0), 1)
+    if url := safe_url(href):
+        out["href"] = url
+    if note:
+        out["note"] = note
+    if person:
+        out["person"] = True
+    return out if len(out) > 1 else text
 
 
-def _link_html(url: str, inner: str) -> str:
-    """Wrap already-rendered ``inner`` HTML in an anchor, but only for a safe URL.
+def _pct_cell(pct: float, *, ok: float = 80, warn: float = 50) -> str | dict:
+    """A coverage percentage — a number with a direction, so it carries a reading."""
+    return _cell(_format_pct(pct), pct=pct, tone=_tone_up(pct, ok, warn))
 
-    Every URL here arrives from a tracker payload (Jira/Azure DevOps/GitHub issue
-    and document links), so it is attacker-influenced. ``_e()`` escapes markup but
-    leaves a ``javascript:`` scheme intact, so :func:`safe_url` gates it; an unsafe
-    URL degrades to unlinked text rather than a live click-to-execute anchor.
+
+def _share_cell(pct: float) -> str | dict:
+    """A share of a mix — a bar, and deliberately no reading.
+
+    A distribution has no good direction: 15% of tasks being QA is not a
+    failure, and 55% being backend is not a warning. Both used to draw through
+    the same threshold ramp as a completion rate, so the task-type table
+    rendered its own composition in amber and red.
     """
-    safe = safe_url(url)
-    return f'<a href="{_e(safe)}">{inner}</a>' if safe else inner
+    return _cell(_format_pct(pct), pct=pct)
+
+
+def _kv(rows: Sequence[tuple[str, str | dict]], *, title: str = "") -> dict | None:
+    """Label/value facts about one thing. ``None`` when there are no facts.
+
+    Empty rather than blank, for the same reason ``NoticeBlock`` renders nothing
+    for an empty list: a titled block with no rows under it reads as "we looked
+    and found nothing", which is a stronger claim than any caller makes.
+    ``_add`` drops the ``None``.
+    """
+    if not rows:
+        return None
+    block: dict = {"kind": "kv", "rows": [[label, value] for label, value in rows]}
+    if title:
+        block["title"] = title
+    return block
+
+
+def _table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str | dict]],
+    *,
+    numeric: Sequence[int] = (),
+    title: str = "",
+) -> dict | None:
+    """Rows that compare with each other. ``numeric`` columns right-align in mono.
+
+    ``None`` for no rows — see :func:`_kv`.
+    """
+    if not rows:
+        return None
+    block: dict = {"kind": "table", "headers": list(headers), "rows": [list(row) for row in rows]}
+    if numeric:
+        block["numeric"] = list(numeric)
+    if title:
+        block["title"] = title
+    return block
+
+
+def _runs(runs: Sequence[Mapping]) -> list[dict]:
+    """Normalise a ``Run[]``: hoist edge whitespace out of emphasised runs.
+
+    ``**text **`` and ``_ text_`` are not emphasis in Markdown — a space against
+    the delimiter cancels it outright — and :func:`_md_runs` renders the same
+    lists these blocks carry. It is invisible until someone reads the ``.md``,
+    and it recurs: the separator between a title and its detail is a natural
+    thing to tack onto the emphasised half.
+
+    So rather than asking every producer to remember, the three block builders
+    that accept runs do it, once.
+    """
+    out: list[dict] = []
+    for run in runs:
+        text = str(run.get("s", ""))
+        if not (run.get("strong") or run.get("em")) or text == text.strip():
+            out.append(dict(run))
+            continue
+        if not text.strip():
+            # Emphasising whitespace emphasises nothing; keep it as a plain gap
+            # rather than splitting it into a lead and a trail of itself.
+            out.append({"s": text})
+            continue
+        lead = text[: len(text) - len(text.lstrip())]
+        trail = text[len(text.rstrip()) :]
+        if lead:
+            out.append({"s": lead})
+        out.append({**run, "s": text.strip()})
+        if trail:
+            out.append({"s": trail})
+    return out
+
+
+def _bullets(items: Sequence[Sequence[Mapping]], *, title: str = "", ordered: bool = False) -> dict | None:
+    """A list of rich-text lines, each a ``Run[]``. ``None`` for no lines."""
+    if not items:
+        return None
+    block: dict = {"kind": "bullets", "items": [_runs(runs) for runs in items]}
+    if title:
+        block["title"] = title
+    if ordered:
+        block["ordered"] = True
+    return block
+
+
+def _cards(cards: Sequence[Mapping], *, title: str = "") -> dict | None:
+    """Titled groups of rich-text lines. ``None`` for no cards."""
+    if not cards:
+        return None
+    block: dict = {
+        "kind": "cards",
+        "cards": [{**card, "items": [_runs(runs) for runs in card.get("items", ())]} for card in cards],
+    }
+    if title:
+        block["title"] = title
+    return block
+
+
+def _note(text: str) -> dict:
+    """A caveat about what the numbers can and cannot show."""
+    return {"kind": "note", "text": text}
+
+
+def _prose(text: str) -> dict:
+    """Free text somebody — or some model — wrote."""
+    return {"kind": "prose", "text": text}
+
+
+def _callout(tone: str, title: str, text: str = "", items: Sequence[Sequence[Mapping]] = ()) -> dict:
+    """A finding worth stopping on — a bottleneck, a recommendation, a warning."""
+    block: dict = {"kind": "callout", "tone": tone, "title": title}
+    if text:
+        block["text"] = text
+    if items:
+        block["items"] = [_runs(runs) for runs in items]
+    return block
+
+
+def _bar(label: str, counts: Sequence[tuple[str, float]]) -> dict | None:
+    """A counted breakdown. ``None`` when nothing positive is left to draw."""
+    kept = [[str(name), n] for name, n in counts if n > 0]
+    return {"kind": "bar", "label": label, "counts": kept} if kept else None
 
 
 def _md_runs(runs: Sequence[Mapping]) -> str:
     """Render a ``Run[]`` as Markdown — the other consumer of the same structure."""
     out: list[str] = []
-    for run in runs:
+    for run in _runs(runs):
         text = str(run.get("s", ""))
         if run.get("href"):
             text = f"[{text}]({run['href']})"
@@ -251,24 +399,39 @@ def _action_runs(action: dict) -> list[dict]:
     ]
 
 
-def _html_runs(runs: Sequence[Mapping]) -> str:
-    """Render a ``Run[]`` as HTML — the third consumer, until this page is React.
+def _ai_example_runs(s: dict) -> list[dict]:
+    """One AI-adoption sample as ``Run[]``.
 
-    Interim: the team profile is the last export still assembling markup, so it
-    still needs an HTML renderer for the runs. It goes with the rest of this
-    file's markup when the page moves to a payload; what stays is the producers.
+    **The last of the twins, and it had drifted the furthest.** The Markdown
+    renderer linked the sample's *title*; the HTML one linked the source label
+    and left the title dead. Same sample, two artifacts, and only one of them
+    let you click through to the commit. This keeps the Markdown behaviour,
+    which is the useful one.
     """
-    out: list[str] = []
-    for run in runs:
-        text = _e(str(run.get("s", "")))
-        if run.get("em"):
-            text = f"<em>{text}</em>"
-        if run.get("strong"):
-            text = f"<strong>{text}</strong>"
-        if url := safe_url(str(run.get("href", "") or "")):
-            text = f'<a href="{_e(url, quote=True)}">{text}</a>'
-        out.append(text)
-    return "".join(out)
+    tool = "unlabelled AI" if s.get("tool") == "other_ai" else str(s.get("tool", ""))
+    # The separating space is its own run, outside the emphasis — same rule as
+    # `_insight_runs`. A space inside the delimiters cancels the emphasis in
+    # Markdown, and it is invisible until someone reads the .md.
+    runs: list[dict] = [{"s": f"[{tool}]", "strong": True}, {"s": " "}]
+    title = str(s.get("title", ""))
+    if url := safe_url(str(s.get("url", "") or "")):
+        runs.append({"s": title, "href": url})
+        runs.append({"s": f" — {_source_label(str(s.get('source', '')))}"})
+    else:
+        runs.append({"s": title})
+        if key := str(s.get("key", "") or ""):
+            runs.append({"s": f" — commit {key}"})
+    return runs
+
+
+def _doc_example_runs(s: dict) -> list[dict]:
+    """One documentation sample as ``Run[]`` — linked page title plus its scores."""
+    title = str(s.get("title", "Untitled"))
+    meta = f"{s.get('platform', '')} · clarity {s.get('clarity', 0):.0f} · usefulness {s.get('usefulness', 0):.0f}"
+    head: dict = {"s": title}
+    if url := safe_url(str(s.get("url", "") or "")):
+        head["href"] = url
+    return [head, {"s": " "}, {"s": f"({meta})", "em": True}]
 
 
 def _insight_md(it: dict) -> str:
@@ -276,63 +439,37 @@ def _insight_md(it: dict) -> str:
     return f"- {_md_runs(_insight_runs(it))}"
 
 
-def _insight_html(it: dict) -> str:
-    """Render one coaching insight as an ``<li>``."""
-    return f"<li>{_html_runs(_insight_runs(it))}</li>"
-
-
 def _action_md(action: dict) -> str:
     """Render one prioritised action as a Markdown bullet."""
     return f"- {_md_runs(_action_runs(action))}"
 
 
-def _action_html(action: dict) -> str:
-    """Render one prioritised action as an ``<li>``."""
-    return f"<li>{_html_runs(_action_runs(action))}</li>"
-
-
 def _ai_example_md(s: dict) -> str:
-    """Render one AI-adoption sample as a Markdown bullet (link when available, else SHA)."""
-    tool = "unlabelled AI" if s.get("tool") == "other_ai" else str(s.get("tool", ""))
-    title = str(s.get("title", ""))
-    url = str(s.get("url", "") or "")
-    if url:
-        return f"- [{tool}] [{title}]({url}) — {_source_label(str(s.get('source', '')))}"
-    key = str(s.get("key", "") or "")
-    return f"- [{tool}] {title}" + (f" — commit `{key}`" if key else "")
+    """Render one AI-adoption sample as a Markdown bullet."""
+    return f"- {_md_runs(_ai_example_runs(s))}"
 
 
 def _doc_example_md(s: dict) -> str:
-    """Render one documentation sample as a Markdown bullet (linked page + scores)."""
-    title = str(s.get("title", "Untitled"))
-    url = str(s.get("url", "") or "")
-    head = f"[{title}]({url})" if url else title
-    meta = f"{s.get('platform', '')} · clarity {s.get('clarity', 0):.0f} · usefulness {s.get('usefulness', 0):.0f}"
-    return f"- {head} ({meta})"
+    """Render one documentation sample as a Markdown bullet."""
+    return f"- {_md_runs(_doc_example_runs(s))}"
 
 
-def _ai_example_html(s: dict) -> str:
-    """Render one AI-adoption sample as an <li> (link when available, else SHA/key)."""
-    tool = "unlabelled AI" if s.get("tool") == "other_ai" else str(s.get("tool", ""))
-    title = _e(str(s.get("title", "")))
-    label = f"[{_e(tool)}] {title}"
-    url = safe_url(str(s.get("url", "") or ""))
-    if url:
-        return f'<li>{label} — <a href="{_e(url)}">{_e(_source_label(str(s.get("source", ""))))}</a></li>'
-    key = str(s.get("key", "") or "")
-    ref = f" — commit {_e(key)}" if key else ""
-    return f"<li>{label}{ref}</li>"
+def _insight_cards(blob: Mapping, *, title: str = "") -> dict | None:
+    """The coaching-insight cards for one analysis blob, or ``None`` for none.
 
-
-def _doc_example_html(s: dict) -> str:
-    """Render one documentation sample as an <li> (linked page title + scores)."""
-    title = _e(str(s.get("title", "Untitled")))
-    meta = (
-        f"{_e(str(s.get('platform', '')))} · clarity {s.get('clarity', 0):.0f} "
-        f"· usefulness {s.get('usefulness', 0):.0f}"
-    )
-    head = _link_html(str(s.get("url", "") or ""), title)
-    return f"<li>{head} <span style='color:var(--text-muted);'>({meta})</span></li>"
+    Three sections built this same list, and the top-level Team Insights one
+    dropped the cited example — so an insight linked to its evidence in the AI
+    and Documentation sections and not in the one that led the report.
+    """
+    cards: list[dict] = []
+    for key, label in INSIGHT_CATEGORIES:
+        items = blob.get(key)
+        if not isinstance(items, list) or not items:
+            continue
+        runs = [_insight_runs(it) for it in items if isinstance(it, dict) and it.get("title")]
+        if runs:
+            cards.append({"title": label, "items": runs})
+    return _cards(cards, title=title) if cards else None
 
 
 def _ceremony_rows(ceremony) -> list[tuple[str, str]]:
@@ -349,19 +486,16 @@ def _ceremony_rows(ceremony) -> list[tuple[str, str]]:
     return rows
 
 
-def _ceremony_html(ceremony) -> str:
-    """Render the 'Ceremony Cadence & Trends' section content (HTML)."""
-    parts = [_kv_table(_ceremony_rows(ceremony))]
+def _ceremony_blocks(ceremony) -> list[dict]:
+    """The 'Ceremony Cadence & Trends' section as blocks."""
+    blocks: list[dict] = [_kv(_ceremony_rows(ceremony))]
     for title, themes in (
         ("What's been working", ceremony.went_well_themes),
         ("Recurring pain points", ceremony.didnt_go_well_themes),
     ):
         if themes:
-            items = "".join(
-                f"<li>{_e(t)} <span style='color:var(--text-muted);'>({_e(n)}×)</span></li>" for t, n in themes
-            )
-            parts.append(f'<div class="card"><strong>{_e(title)}</strong><ul>{items}</ul></div>')
-    return "".join(parts)
+            blocks.append(_bullets([[{"s": str(t)}, {"s": f" ({n}×)", "em": True}] for t, n in themes], title=title))
+    return blocks
 
 
 def _ceremony_md(ceremony) -> list[str]:
@@ -386,62 +520,65 @@ def build_team_profile_html(
     sprint_names: list[str] | None = None,
     ceremony=None,
     charts_dir: Path | None = None,
+    markdown_name: str = "",
 ) -> str:
-    """Build a self-contained HTML report matching the TUI results screen.
+    """Build a self-contained team-profile report as a React page.
+
+    Returns the page; the content itself travels as a ``profile`` payload of
+    generated :ref:`blocks <Block>` and is drawn in the browser. Nothing here
+    builds markup, which is why this function lost roughly a thousand lines and
+    all of its escaping.
 
     ``ceremony`` is an optional CeremonyContext (agent/ceremony_history.py). When
     present and non-empty, a "Ceremony Cadence & Trends" section is added.
     """
-    from yeaboi.html_theme import html_page
-
     ex = examples or {}
-    sections: list[str] = []
+    sections: list[dict] = []
     nav_links: list[tuple[str, str]] = []
-    depth = str(ex.get("analysis_depth", "")).strip().lower()
-    if depth in ("quick", "deep"):
-        _depth_html = f"<p><strong>Analysis depth:</strong> {_e(depth.capitalize())}</p>"
-    else:
-        _depth_html = ""
 
-    def _nav(id_: str, label: str) -> None:
-        nav_links.append((id_, label))
+    def _add(id_: str, title: str, blocks: Sequence[dict | None], *, nav: str = "") -> None:
+        """Append a section, dropping blocks that decided they had nothing to draw."""
+        kept = [block for block in blocks if block]
+        if not kept:
+            return
+        sections.append({"id": id_, "title": title, "blocks": kept})
+        if nav:
+            nav_links.append((id_, nav))
+
+    # What the analysis could not read, hoisted out of the three sections that
+    # each used to carry their own "Collection errors" list. A reader had to
+    # visit all three to learn what was missing from the numbers above; now it
+    # is one list, before them, with the analysis named on every line.
+    coverage: list[str] = []
+
+    def _collect_coverage(label: str, report: Mapping) -> None:
+        if str(report.get("status", "complete")) in {"failed", "no_data", "partial"}:
+            coverage.append(f"{label} — {_coverage_message(report)}")
+        coverage.extend(f"{label} — {error}" for error in _coverage_errors(report))
 
     # ── Executive Summary (AI narrative, generated at analysis time) ─
     narrative = ex.get("narrative", {})
     if isinstance(narrative, dict) and narrative.get("executive_summary"):
-        n_html = _depth_html + f"<p>{_e(str(narrative['executive_summary']))}</p>"
+        blocks: list[dict | None] = []
+        depth = str(ex.get("analysis_depth", "")).strip().lower()
+        if depth in ("quick", "deep"):
+            blocks.append(_kv([("Analysis depth", depth.capitalize())]))
+        blocks.append(_prose(str(narrative["executive_summary"])))
         n_sections = narrative.get("sections", {})
         if isinstance(n_sections, dict):
-            n_items = "".join(
-                f"<li><strong>{_e(title)}:</strong> <em>{_e(str(n_sections[nk]))}</em></li>"
-                for nk, title in _NARRATIVE_TITLES
-                if n_sections.get(nk)
-            )
-            if n_items:
-                n_html += f"<ul>{n_items}</ul>"
-        _nav("summary", "Summary")
-        sections.append(_section("summary", "Executive Summary", n_html))
+            items = [
+                [{"s": f"{title}: ", "strong": True}, {"s": str(n_sections[key]), "em": True}]
+                for key, title in _NARRATIVE_TITLES
+                if n_sections.get(key)
+            ]
+            if items:
+                blocks.append(_bullets(items))
+        _add("summary", "Executive Summary", blocks, nav="Summary")
 
     # ── Team Insights (AI coaching, generated at analysis time) ─────
     insights = ex.get("insights", {})
-    if isinstance(insights, dict) and any(insights.get(k) for k, _ in INSIGHT_CATEGORIES):
-        i_parts: list[str] = []
-        for ik, ilabel in INSIGHT_CATEGORIES:
-            i_items = insights.get(ik)
-            if not isinstance(i_items, list) or not i_items:
-                continue
-            i_lis = "".join(
-                f"<li><strong>{_e(str(it.get('title', '')))}</strong> &mdash; {_e(str(it.get('detail', '')))}"
-                + (f" <em>({_e(str(it['evidence']))})</em>" if it.get("evidence") else "")
-                + "</li>"
-                for it in i_items
-                if isinstance(it, dict) and it.get("title")
-            )
-            if i_lis:
-                i_parts.append(f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>')
-        if i_parts:
-            _nav("insights", "Insights")
-            sections.append(_section("insights", "Team Insights", "".join(i_parts)))
+    if isinstance(insights, dict):
+        _add("insights", "Team Insights", [_insight_cards(insights)], nav="Insights")
 
     # ── AI Adoption (detectable AI-tool footprint — lower bound) ─────
     ai_sig = getattr(profile, "ai_adoption", None)
@@ -449,203 +586,194 @@ def build_team_profile_html(
     code_features = set(ai_blob.get("enabled_features") or ("ai_footprint", "code_health"))
     ai_scanned = (getattr(ai_sig, "scanned_commits", 0) + getattr(ai_sig, "scanned_prs", 0)) if ai_sig else 0
     if "ai_footprint" in code_features and ai_sig and ai_scanned:
-        disclaimer = (
-            '<p class="muted"><em>Lower bound — only AI tools that leave a marker in commit '
-            "messages or PR descriptions are counted. Inline IDE assist (Copilot ghost-text, "
-            "Cursor Tab) leaves no trace, so real usage is at least this.</em></p>"
-        )
         activity_coverage = ai_blob.get("activity_coverage", {}) if isinstance(ai_blob, dict) else {}
-        a_rows = [
-            ("Coverage", _e(_coverage_message(activity_coverage))),
-            ("Detectable footprint", _e(_footprint_value(ai_sig))),
+        _collect_coverage("AI usage", activity_coverage)
+        a_rows: list[tuple[str, str | dict]] = [
+            ("Coverage", _coverage_message(activity_coverage)),
+            ("Detectable footprint", _footprint_value(ai_sig)),
             ("Commits with AI marker", f"{ai_sig.ai_commits} of {ai_sig.scanned_commits}"),
         ]
         if ai_sig.scanned_prs:
             a_rows.append(("PRs with AI marker", f"{ai_sig.ai_prs} of {ai_sig.scanned_prs}"))
         if ai_sig.sources_scanned:
-            a_rows.append(("Sources scanned", ", ".join(_e(_source_label(s)) for s in ai_sig.sources_scanned)))
+            a_rows.append(("Sources scanned", ", ".join(_source_label(s) for s in ai_sig.sources_scanned)))
         if isinstance(ai_blob, dict) and ai_blob.get("selected_users"):
-            a_rows.append(("Selected users", ", ".join(_e(u) for u in ai_blob["selected_users"])))
-            a_rows.append(
-                (
-                    "Matched identities",
-                    f"{len(ai_blob.get('matched_identities') or {})} of {len(ai_blob['selected_users'])}",
-                )
-            )
+            selected = [str(u) for u in ai_blob["selected_users"]]
+            a_rows.append(("Selected users", ", ".join(selected)))
+            a_rows.append(("Matched identities", f"{len(ai_blob.get('matched_identities') or {})} of {len(selected)}"))
         if getattr(ai_sig, "repos_scanned", ()):
             a_rows.append(("Repositories scanned", str(len(ai_sig.repos_scanned))))
-            repo_preview = ", ".join(ai_sig.repos_scanned[:5])
+            preview = ", ".join(ai_sig.repos_scanned[:5])
             if len(ai_sig.repos_scanned) > 5:
-                repo_preview += f" (+{len(ai_sig.repos_scanned) - 5} more)"
-            a_rows.append(("Repository scope", _e(repo_preview)))
-        a_html = disclaimer + _kv_table(a_rows)
+                preview += f" (+{len(ai_sig.repos_scanned) - 5} more)"
+            a_rows.append(("Repository scope", preview))
+
+        blocks = [
+            _note(
+                "Lower bound — only AI tools that leave a marker in commit messages or PR "
+                "descriptions are counted. Inline IDE assist (Copilot ghost-text, Cursor Tab) "
+                "leaves no trace, so real usage is at least this."
+            ),
+            _kv(a_rows),
+        ]
+
         p_members, p_team, p_min, p_file_data = _practice_rows(ai_blob)
         if p_members:
-            headers = ("Member", "Commits", "PRs", "Tests", "Docs", "Tickets", "Descriptions")
-            head = "".join(
-                f"<th style='text-align:{'left' if i == 0 else 'right'};'>{h}</th>" for i, h in enumerate(headers)
+            blocks.append(
+                _table(
+                    ["Member", "Commits", "PRs", "Tests", "Docs", "Tickets", "Descriptions"],
+                    [
+                        [
+                            _cell(str(row.get("member", "")), person=True),
+                            str(row.get("commits", 0)),
+                            str(row.get("prs", 0)),
+                            _practice_cell_text(row, "tests", p_min),
+                            _practice_cell_text(row, "docs", p_min),
+                            _practice_cell_text(row, "ticket", p_min),
+                            _practice_cell_text(row, "desc", p_min),
+                        ]
+                        for row in p_members + ([p_team] if p_team else [])
+                    ],
+                    numeric=(1, 2, 3, 4, 5, 6),
+                    title="Engineering practices by member",
+                )
             )
-            body = ""
-            for row in p_members + ([p_team] if p_team else []):
-                cells = (
-                    _e(str(row.get("member", ""))),
-                    str(row.get("commits", 0)),
-                    str(row.get("prs", 0)),
-                    _practice_cell_text(row, "tests", p_min),
-                    _practice_cell_text(row, "docs", p_min),
-                    _practice_cell_text(row, "ticket", p_min),
-                    _practice_cell_text(row, "desc", p_min),
-                )
-                body += (
-                    "<tr>"
-                    + "".join(
-                        f"<td style='text-align:{'left' if i == 0 else 'right'};'>{c}</td>" for i, c in enumerate(cells)
-                    )
-                    + "</tr>"
-                )
-            a_html += f"<h4>Engineering practices by member</h4><table><tr>{head}</tr>{body}</table>"
             if p_file_data.get("total") and p_file_data.get("with_file_data", 0) < p_file_data["total"]:
-                a_html += (
-                    f'<p class="muted"><em>File-based columns (Tests, Docs) cover '
-                    f"{p_file_data.get('with_file_data', 0)} of {p_file_data['total']} items "
-                    f"with change metadata.</em></p>"
+                blocks.append(
+                    _note(
+                        f"File-based columns (Tests, Docs) cover {p_file_data.get('with_file_data', 0)} "
+                        f"of {p_file_data['total']} items with change metadata."
+                    )
                 )
-        if ai_sig.per_tool:
-            tool_lis = "".join(
-                f"<li>{_e('unlabelled AI' if t == 'other_ai' else t)}: {n}</li>" for t, n in ai_sig.per_tool
-            )
-            a_html += f"<h4>By tool</h4><ul>{tool_lis}</ul>"
-        if getattr(ai_sig, "per_source", ()):
-            src_lis = "".join(f"<li>{_e(_source_label(s))}: {n}</li>" for s, n in ai_sig.per_source)
-            a_html += f"<h4>By source</h4><ul>{src_lis}</ul>"
-        if ai_sig.per_activity:
-            act_lis = "".join(f"<li>{_e(a)}: {n}</li>" for a, n in ai_sig.per_activity)
-            a_html += f"<h4>By activity</h4><ul>{act_lis}</ul>"
-        if ai_sig.per_author:
-            from yeaboi.html_theme import avatar as _avatar
 
-            auth_lis = "".join(
-                f"<li><span style='display:inline-flex;align-items:center;gap:.4rem'>"
-                f"{_avatar(a)}{_e(a)}: {n}</span></li>"
-                for a, n in ai_sig.per_author[:8]
+        if ai_sig.per_tool:
+            blocks.append(
+                _bar("By tool", [("unlabelled AI" if t == "other_ai" else str(t), n) for t, n in ai_sig.per_tool])
             )
-            a_html += f"<h4>By contributor</h4><ul>{auth_lis}</ul>"
+        if getattr(ai_sig, "per_source", ()):
+            blocks.append(_bar("By source", [(_source_label(s), n) for s, n in ai_sig.per_source]))
+        if ai_sig.per_activity:
+            blocks.append(_bar("By activity", [(str(a), n) for a, n in ai_sig.per_activity]))
+        if ai_sig.per_author:
+            blocks.append(
+                _table(
+                    ["Contributor", "AI-marked"],
+                    [[_cell(str(a), person=True), str(n)] for a, n in ai_sig.per_author[:8]],
+                    numeric=(1,),
+                    title="By contributor",
+                )
+            )
         ai_coverage = ai_blob.get("coverage") if isinstance(ai_blob, dict) else None
         if ai_coverage:
-            gap_lis = "".join(f"<li>{_e(g)}</li>" for g in ai_coverage)
-            a_html += f"<h4>Not scanned</h4><ul>{gap_lis}</ul>"
+            blocks.append(_bullets([[{"s": str(gap)}] for gap in ai_coverage], title="Not scanned"))
         ai_samples = ai_blob.get("samples") if isinstance(ai_blob, dict) else None
         if ai_samples:
-            ex_lis = "".join(_ai_example_html(s) for s in ai_samples)
-            a_html += f"<h4>Examples</h4><ul>{ex_lis}</ul>"
+            blocks.append(_bullets([_ai_example_runs(s) for s in ai_samples], title="Examples"))
         ai_insights = ai_blob.get("insights", {}) if isinstance(ai_blob, dict) else {}
-        if isinstance(ai_insights, dict) and any(ai_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
-            for ik, ilabel in INSIGHT_CATEGORIES:
-                i_items = ai_insights.get(ik)
-                if not isinstance(i_items, list) or not i_items:
-                    continue
-                i_lis = "".join(_insight_html(it) for it in i_items if isinstance(it, dict) and it.get("title"))
-                if i_lis:
-                    a_html += f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>'
-        _nav("ai-adoption", "AI Usage")
-        sections.append(_section("ai-adoption", "AI Usage", a_html))
+        if isinstance(ai_insights, dict):
+            blocks.append(_insight_cards(ai_insights))
+        _add("ai-adoption", "AI Usage", blocks, nav="AI Usage")
 
+    # ── Code Health (findings in files the selected users touched) ───
     file_health = ai_blob.get("repository_health", {}) if isinstance(ai_blob, dict) else {}
     if "code_health" in code_features and file_health:
         health_coverage = ai_blob.get("coverage_report", {})
         health_failed = health_coverage.get("status") in {"failed", "no_data"}
-        h_rows = [("Coverage", _e(_coverage_message(health_coverage)))]
+        _collect_coverage("Code health", health_coverage)
+        h_rows: list[tuple[str, str | dict]] = [("Coverage", _coverage_message(health_coverage))]
         if not health_failed:
-            h_rows.extend(
-                [
-                    ("Changed files analysed", str(file_health.get("files_analysed", 0))),
-                    ("Repositories touched", str(file_health.get("repositories_touched", 0))),
-                    ("Findings", str(file_health.get("findings", 0))),
-                ]
-            )
-        h_html = (
-            '<p class="muted"><em>Scoped to files attributable to the selected users. '
-            "Untouched repositories and unrelated contributors are not analysed.</em></p>" + _kv_table(h_rows)
-        )
-        errors = _coverage_errors(health_coverage)
-        if errors:
-            h_html += "<h4>Collection errors</h4><ul>" + "".join(f"<li>{_e(error)}</li>" for error in errors) + "</ul>"
+            h_rows += [
+                ("Changed files analysed", str(file_health.get("files_analysed", 0))),
+                ("Repositories touched", str(file_health.get("repositories_touched", 0))),
+                ("Findings", str(file_health.get("findings", 0))),
+            ]
+        blocks = [
+            _note(
+                "Scoped to files attributable to the selected users. Untouched repositories "
+                "and unrelated contributors are not analysed."
+            ),
+            _kv(h_rows),
+        ]
         health_actions = ai_blob.get("action_plan", []) if isinstance(ai_blob, dict) else []
         if health_actions and not health_failed:
-            h_html += (
-                "<h4>Prioritized action plan</h4><ol>"
-                + "".join(_action_html(action) for action in health_actions)
-                + "</ol>"
+            blocks.append(
+                _bullets(
+                    [_action_runs(action) for action in health_actions],
+                    title="Prioritized action plan",
+                    ordered=True,
+                )
             )
-        _nav("code-health", "Code Health")
-        sections.append(_section("code-health", "Code Health", h_html))
+        _add("code-health", "Code Health", blocks, nav="Code Health")
 
-    # ── Documentation (Notion/Confluence clarity + usefulness) ────────────
+    # ── Documentation (Notion/Confluence clarity + usefulness) ───────
     dq_sig = getattr(profile, "doc_quality", None)
     dq_blob = ex.get("doc_quality", {})
     dq_pages = getattr(dq_sig, "pages_scanned", 0) if dq_sig else 0
     if dq_sig and isinstance(dq_blob, dict):
         doc_coverage = dq_blob.get("coverage_report", {})
         doc_failed = doc_coverage.get("status") in {"failed", "no_data"}
-        dq_disclaimer = (
-            '<p class="muted"><em>Clarity is a readability score. Usefulness measures purpose, '
-            "ownership, structure, and actionability. Explicit AI markers are a lower bound.</em></p>"
-        )
-        d_rows = [("Coverage", _e(_coverage_message(doc_coverage)))]
+        _collect_coverage("Documentation", doc_coverage)
+        d_rows: list[tuple[str, str | dict]] = [("Coverage", _coverage_message(doc_coverage))]
         if not doc_failed:
-            d_split = f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear"
-            d_rows.extend(
-                [
-                    ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
-                    ("Average usefulness", f"{getattr(dq_sig, 'avg_usefulness', 0):.0f}/100"),
-                    ("Pages scanned", _e(_doc_pages_value(dq_sig, dq_pages))),
-                    ("Clarity split", d_split),
-                    (
-                        "Owned / actionable",
-                        f"{getattr(dq_sig, 'owned_pages', 0)} / {getattr(dq_sig, 'actionable_pages', 0)}",
-                    ),
-                    ("Explicit AI markers", f"{dq_sig.ai_marked_pages} page(s) (lower bound)"),
-                ]
-            )
-        d_html = dq_disclaimer + _kv_table(d_rows)
-        doc_errors = _coverage_errors(doc_coverage)
-        if doc_errors:
-            d_html += (
-                "<h4>Collection errors</h4><ul>" + "".join(f"<li>{_e(error)}</li>" for error in doc_errors) + "</ul>"
-            )
+            d_rows += [
+                ("Average clarity", f"{dq_sig.avg_clarity:.0f}/100"),
+                ("Average usefulness", f"{getattr(dq_sig, 'avg_usefulness', 0):.0f}/100"),
+                ("Pages scanned", _doc_pages_value(dq_sig, dq_pages)),
+                (
+                    "Clarity split",
+                    f"{dq_sig.clear_pages} clear / {dq_sig.mixed_pages} mixed / {dq_sig.unclear_pages} unclear",
+                ),
+                (
+                    "Owned / actionable",
+                    f"{getattr(dq_sig, 'owned_pages', 0)} / {getattr(dq_sig, 'actionable_pages', 0)}",
+                ),
+                ("Explicit AI markers", f"{dq_sig.ai_marked_pages} page(s) (lower bound)"),
+            ]
+        blocks = [
+            _note(
+                "Clarity is a readability score. Usefulness measures purpose, ownership, "
+                "structure, and actionability. Explicit AI markers are a lower bound."
+            ),
+            _kv(d_rows),
+        ]
         if dq_sig.flagged_pages and not doc_failed:
-            flag_lis = "".join(f"<li>{_e(title)}: {_e(reason)}</li>" for title, reason in dq_sig.flagged_pages)
-            d_html += f"<h4>Flagged pages</h4><ul>{flag_lis}</ul>"
+            blocks.append(
+                _bullets(
+                    [
+                        [{"s": str(title), "strong": True}, {"s": f" — {reason}"}]
+                        for title, reason in dq_sig.flagged_pages
+                    ],
+                    title="Flagged pages",
+                )
+            )
         dq_samples = dq_blob.get("samples") if isinstance(dq_blob, dict) else None
         if dq_samples and not doc_failed:
-            ex_lis = "".join(_doc_example_html(s) for s in dq_samples)
-            d_html += f"<h4>Examples</h4><ul>{ex_lis}</ul>"
+            blocks.append(_bullets([_doc_example_runs(s) for s in dq_samples], title="Examples"))
         dq_insights = dq_blob.get("insights", {}) if isinstance(dq_blob, dict) else {}
-        if not doc_failed and isinstance(dq_insights, dict) and any(dq_insights.get(k) for k, _ in INSIGHT_CATEGORIES):
-            for ik, ilabel in INSIGHT_CATEGORIES:
-                i_items = dq_insights.get(ik)
-                if not isinstance(i_items, list) or not i_items:
-                    continue
-                i_lis = "".join(_insight_html(it) for it in i_items if isinstance(it, dict) and it.get("title"))
-                if i_lis:
-                    d_html += f'<div class="card"><strong>{_e(ilabel)}</strong><ul>{i_lis}</ul></div>'
+        if not doc_failed and isinstance(dq_insights, dict):
+            blocks.append(_insight_cards(dq_insights))
         dq_actions = dq_blob.get("action_plan", []) if isinstance(dq_blob, dict) else []
         if dq_actions and not doc_failed:
-            d_html += "<h4>Prioritized action plan</h4><ol>" + "".join(_action_html(a) for a in dq_actions) + "</ol>"
-        _nav("documentation", "Documentation")
-        sections.append(_section("documentation", "Documentation", d_html))
+            blocks.append(
+                _bullets(
+                    [_action_runs(action) for action in dq_actions],
+                    title="Prioritized action plan",
+                    ordered=True,
+                )
+            )
+        _add("documentation", "Documentation", blocks, nav="Documentation")
 
     # ── Team & Velocity ─────────────────────────────────────────────
-    vel_rows: list[tuple[str, str]] = []
-    team_sz = ex.get("team_size", 0)
+    vel_rows: list[tuple[str, str | dict]] = []
+    team_size = ex.get("team_size", 0)
     members = ex.get("team_members", [])
     per_dev = ex.get("per_dev_velocity", 0)
 
-    if team_sz and isinstance(team_sz, int):
-        mem_str = f"{team_sz} contributors"
+    if team_size and isinstance(team_size, int):
+        member_note = f"{team_size} contributors"
         if members and isinstance(members, list):
-            mem_str += f" ({', '.join(_e(m) for m in members[:8])})"
-        vel_rows.append(("Team size", mem_str))
+            member_note += f" ({', '.join(str(m) for m in members[:8])})"
+        vel_rows.append(("Team size", member_note))
 
     # Use sprint_details for accurate velocity if available
     sp_details = ex.get("sprint_details", [])
@@ -664,127 +792,121 @@ def build_team_profile_html(
         std = profile.velocity_stddev
 
     vel_rows.append(("Team velocity", f"{vel} pts/sprint"))
-    _html_scope = ex.get("scope_changes", {})
-    if isinstance(_html_scope, dict) and _html_scope.get("totals"):
-        _hcv = _html_scope["totals"].get("avg_committed_velocity", 0.0)
-        _hdv = _html_scope["totals"].get("avg_delivered_velocity", 0.0)
-        if _hcv > 0:
-            _hdp = round(_hdv / _hcv * 100)
-            _hdc = "var(--ok)" if _hdp >= 85 else ("var(--warn)" if _hdp >= 70 else "var(--danger)")
-            vel_rows.append(("Committed avg", f"{_hcv:g} pts/sprint"))
-            vel_rows.append(
-                (
-                    "Delivered avg",
-                    f'{_hdv:g} pts/sprint <span style="color:{_hdc};">({_hdp}% accuracy)</span>',
-                )
-            )
-    _hv_cs = ex.get("contributor_stats", [])
-    if isinstance(_hv_cs, list) and _hv_cs:
-        _hv_vals = [c.get("per_sprint", 0) for c in _hv_cs if c.get("per_sprint", 0) > 0]
-        if _hv_vals:
-            _hv_avg = round(sum(_hv_vals) / len(_hv_vals), 1)
-            vel_rows.append(("Per developer", f"{_hv_avg} pts/sprint"))
+    scope_blob = ex.get("scope_changes", {})
+    if isinstance(scope_blob, dict) and scope_blob.get("totals"):
+        committed = scope_blob["totals"].get("avg_committed_velocity", 0.0)
+        delivered = scope_blob["totals"].get("avg_delivered_velocity", 0.0)
+        if committed > 0:
+            accuracy = round(delivered / committed * 100)
+            vel_rows.append(("Committed avg", f"{committed:g} pts/sprint"))
+            vel_rows.append(("Delivered avg", f"{delivered:g} pts/sprint"))
+            # Its own row rather than a coloured parenthetical inside the last
+            # one: the accuracy is the judged number, the averages are not.
+            vel_rows.append(("Delivery accuracy", _cell(f"{accuracy}%", tone=_tone_up(accuracy, 85, 70))))
+    contributors = ex.get("contributor_stats", [])
+    if isinstance(contributors, list) and contributors:
+        per_sprint = [c.get("per_sprint", 0) for c in contributors if c.get("per_sprint", 0) > 0]
+        if per_sprint:
+            vel_rows.append(("Per developer", f"{round(sum(per_sprint) / len(per_sprint), 1)} pts/sprint"))
     elif per_dev and isinstance(per_dev, (int, float)) and per_dev > 0:
         vel_rows.append(("Per developer", f"{per_dev} pts/sprint"))
     if vel > 0:
-        var_pct = std / vel * 100
-        vel_rows.append(("Variance", f"&pm;{std} ({var_pct:.0f}%)"))
+        vel_rows.append(("Variance", f"±{std} ({std / vel * 100:.0f}%)"))
     if profile.sprint_completion_rate > 0:
-        vel_rows.append(("Completion rate", _pct_bar_html(profile.sprint_completion_rate)))
+        vel_rows.append(("Completion rate", _pct_cell(profile.sprint_completion_rate)))
     if profile.spillover.carried_over_pct > 0:
         vel_rows.append(("Spillover", f"{_format_pct(profile.spillover.carried_over_pct)} carried over"))
 
-    # Velocity trend
-    vt = ex.get("velocity_trend", {})
-    if isinstance(vt, dict) and vt.get("trend") and vt["trend"] != "insufficient_data":
-        trend = vt["trend"]
-        slope = vt.get("slope", 0)
-        first_v = vt.get("first_velocity", 0)
-        last_v = vt.get("last_velocity", 0)
-        icon = {"improving": "&#x2197;", "degrading": "&#x2198;"}.get(trend, "&#x2192;")
-        color = {"improving": "var(--ok)", "degrading": "var(--danger)"}.get(trend, "var(--text-muted)")
+    velocity_trend = ex.get("velocity_trend", {})
+    if isinstance(velocity_trend, dict) and velocity_trend.get("trend") not in (None, "", "insufficient_data"):
+        direction = str(velocity_trend["trend"])
         vel_rows.append(
             (
                 "Trend",
-                f'<span style="color:{color};font-weight:600;">{icon} {_e(trend.capitalize())}</span>'
-                f" ({_e(first_v)} &rarr; {_e(last_v)}, {slope:+.1f}/sprint)",
+                _cell(
+                    f"{ {'improving': '↗', 'degrading': '↘'}.get(direction, '→') } {direction.capitalize()}",
+                    tone={"improving": "ok", "degrading": "danger"}.get(direction, ""),
+                    note=(
+                        f"{velocity_trend.get('first_velocity', 0)} → {velocity_trend.get('last_velocity', 0)}, "
+                        f"{velocity_trend.get('slope', 0):+.1f}/sprint"
+                    ),
+                ),
             )
         )
 
-    _nav("velocity", "Velocity")
-    sections.append(_section("velocity", "Team & Velocity", _kv_table(vel_rows)))
+    _add("velocity", "Team & Velocity", [_kv(vel_rows)], nav="Velocity")
 
     # ── Ceremony cadence & trends (Standup + Retro history) ─────────
     if ceremony is not None and not ceremony.is_empty:
-        _nav("ceremonies", "Ceremonies")
-        sections.append(_section("ceremonies", "Ceremony Cadence & Trends", _ceremony_html(ceremony)))
+        _add("ceremonies", "Ceremony Cadence & Trends", _ceremony_blocks(ceremony), nav="Ceremonies")
 
     # ── Recurring work ──────────────────────────────────────────────
-    rec_count = ex.get("recurring_count", 0)
-    del_count = ex.get("delivery_count", 0)
-    rec_items = ex.get("recurring", [])
-    if rec_count and isinstance(rec_count, int) and rec_count > 0:
-        rec_html = (
-            f'<p style="color:var(--text-muted);margin-bottom:0.5rem;">'
-            f"{rec_count} recurring tickets excluded "
-            f"({del_count} delivery stories analysed)</p>"
-        )
-        if rec_items and isinstance(rec_items, list):
-            rec_lis = "".join(
-                f"<li><code>{_e(r.get('issue_key', ''))}</code> {_e(r.get('summary', ''))}</li>"
-                for r in rec_items[:5]
-                if isinstance(r, dict)
+    recurring_count = ex.get("recurring_count", 0)
+    delivery_count = ex.get("delivery_count", 0)
+    recurring_items = ex.get("recurring", [])
+    if isinstance(recurring_count, int) and recurring_count > 0:
+        blocks = [_note(f"{recurring_count} recurring tickets excluded ({delivery_count} delivery stories analysed)")]
+        if isinstance(recurring_items, list) and recurring_items:
+            blocks.append(
+                _bullets(
+                    [
+                        [{"s": str(r.get("issue_key", "")), "strong": True}, {"s": f" {r.get('summary', '')}"}]
+                        for r in recurring_items[:5]
+                        if isinstance(r, dict)
+                    ]
+                )
             )
-            rec_html += f'<ul style="color:var(--text-muted);font-size:0.85rem;">{rec_lis}</ul>'
-        sections.append(f'\n<div class="card" style="border-left:3px solid var(--medium);">{rec_html}</div>')
+        _add("recurring", "Recurring Work", blocks, nav="Recurring")
 
     # ── Spillover Root Causes ───────────────────────────────────────
     spill_corr = ex.get("spillover_correlation", {})
     if isinstance(spill_corr, dict) and spill_corr:
         by_size = spill_corr.get("by_size", {})
-        by_disc = spill_corr.get("by_discipline", {})
+        by_discipline = spill_corr.get("by_discipline", {})
         by_tasks = spill_corr.get("by_task_count", {})
-        has_spill = any(v > 0 for d in (by_size, by_disc, by_tasks) if isinstance(d, dict) for v in d.values())
-        if has_spill:
-            sc_rows: list[tuple[str, str]] = []
+        buckets = (by_size, by_discipline, by_tasks)
+        if any(v > 0 for d in buckets if isinstance(d, dict) for v in d.values()):
+            sc_rows: list[tuple[str, str | dict]] = []
             if by_size:
-                sorted_sizes = sorted(by_size.items(), key=lambda x: int(x[0]))
-                parts = " &middot; ".join(f"{_e(sz)}pt={pct:.0f}%" for sz, pct in sorted_sizes)
-                sc_rows.append(("By story size", parts))
-            if by_disc:
-                parts = " &middot; ".join(f"{_e(d)}={pct:.0f}%" for d, pct in sorted(by_disc.items()))
-                sc_rows.append(("By discipline", parts))
+                ordered = sorted(by_size.items(), key=lambda pair: int(pair[0]))
+                sc_rows.append(("By story size", " · ".join(f"{size}pt={pct:.0f}%" for size, pct in ordered)))
+            if by_discipline:
+                pairs = sorted(by_discipline.items())
+                sc_rows.append(("By discipline", " · ".join(f"{name}={pct:.0f}%" for name, pct in pairs)))
             if by_tasks:
-                parts = " &middot; ".join(f"{_e(b)}={pct:.0f}%" for b, pct in by_tasks.items())
-                sc_rows.append(("By task count", parts))
-            _nav("spillover", "Spillover")
-            sections.append(_section("spillover", "Spillover Root Causes", _kv_table(sc_rows)))
+                sc_rows.append(("By task count", " · ".join(f"{b}={pct:.0f}%" for b, pct in by_tasks.items())))
+            _add("spillover", "Spillover Root Causes", [_kv(sc_rows)], nav="Spillover")
 
     # ── Sprint Breakdown ────────────────────────────────────────────
-    if sp_details and isinstance(sp_details, list) and len(sp_details) > 0:
-        sp_hdr = "<tr><th>Sprint</th><th>Pts</th><th>Done</th><th>Rate</th><th></th></tr>"
-        sp_rows_html = []
+    if isinstance(sp_details, list) and sp_details:
+        sprint_rows: list[list[str | dict]] = []
         for sd in sp_details:
             if not isinstance(sd, dict):
                 continue
-            name = _e(sd.get("name", "?"))
-            pts = sd.get("points", 0)
-            planned = sd.get("planned", 0)
-            completed = sd.get("completed", 0)
             rate = sd.get("rate", 0)
-            done = sd.get("done", False)
-            has_shadow = sd.get("has_shadow", False)
-            icon = "&#x2713;" if done else ("&#x25cb;" if has_shadow else "&#x2717;")
-            icon_color = "var(--ok)" if done else ("var(--warn)" if has_shadow else "var(--danger)")
-            rate_color = "var(--ok)" if rate >= 80 else ("var(--warn)" if rate >= 50 else "var(--danger)")
-            sp_rows_html.append(
-                f"<tr><td>{name}</td><td>{pts}</td><td>{completed}/{planned}</td>"
-                f'<td style="color:{rate_color};font-weight:600;">{rate}%</td>'
-                f'<td style="color:{icon_color};">{icon}</td></tr>'
+            if sd.get("done", False):
+                status, tone = "Done", "ok"
+            elif sd.get("has_shadow", False):
+                status, tone = "Shadow", "warn"
+            else:
+                status, tone = "Missed", "danger"
+            sprint_rows.append(
+                [
+                    str(sd.get("name", "?")),
+                    str(sd.get("points", 0)),
+                    f"{sd.get('completed', 0)}/{sd.get('planned', 0)}",
+                    _cell(f"{rate}%", tone=_tone_up(rate, 80, 50)),
+                    # A word, not a ✓/○/✗ glyph. The icon column was announced
+                    # to a screen reader as a bare symbol, so the one column
+                    # that said whether the sprint landed said nothing at all.
+                    _cell(status, tone=tone),
+                ]
             )
-        if sp_rows_html:
-            # Velocity chart (optional charts extra) — base64-embedded above
-            # the table so the HTML stays self-contained/offline.
+
+        if sprint_rows:
+            blocks = []
+            # Velocity chart (optional charts extra) — embedded as a data: URI
+            # so the page stays self-contained and works offline.
             from yeaboi.charts import velocity_chart
             from yeaboi.html_theme import image_data_uri
 
@@ -794,19 +916,17 @@ def build_team_profile_html(
                 if isinstance(sd, dict)
             ]
             chart = velocity_chart(chart_rows, charts_dir / "velocity.png") if charts_dir is not None else None
-            chart_uri = image_data_uri(chart) if chart else ""
-            chart_html = (
-                f'<img src="{_e(chart_uri, quote=True)}" alt="Sprint velocity" '
-                'style="max-width:100%;border-radius:8px" />'
-                if chart_uri
-                else ""
-            )
-            sprint_content = chart_html + (
-                f'<div class="card" style="padding:0;overflow:hidden;">'
-                f'<table class="data-table">{sp_hdr}{"".join(sp_rows_html)}</table></div>'
+            if chart and (chart_uri := image_data_uri(chart)):
+                blocks.append({"kind": "image", "src": chart_uri, "alt": "Sprint velocity"})
+
+            blocks.append(
+                _table(
+                    ["Sprint", "Pts", "Done", "Rate", "Status"],
+                    sprint_rows,
+                    numeric=(1, 2, 3),
+                )
             )
 
-            # Incomplete sprint analysis
             incomplete = [
                 sd
                 for sd in sp_details
@@ -815,790 +935,741 @@ def build_team_profile_html(
                 and sd.get("incomplete")
             ]
             if incomplete:
-                sprint_content += (
-                    '<h3 style="font-size:0.9rem;color:var(--text-muted);'
-                    'margin-top:1rem;">Incomplete sprint analysis</h3>'
-                )
+                cards: list[dict] = []
                 for sd in incomplete[:3]:
-                    sname = _e(sd.get("name", "?"))
                     gap = sd.get("planned", 0) - sd.get("completed", 0)
-                    has_sh = sd.get("has_shadow", False)
                     label_parts = []
                     if gap > 0:
                         label_parts.append(f"{gap} stories not completed")
-                    if has_sh:
+                    if sd.get("has_shadow", False):
                         label_parts.append("shadow spillover")
-                    sprint_content += (
-                        f'<div class="card" style="border-left:3px solid var(--warn);margin:0.5rem 0;">'
-                        f'<strong style="color:var(--warn);">{sname}</strong>'
-                        f'<span style="color:var(--text-muted);margin-left:0.5rem;">{" + ".join(label_parts)}</span>'
-                    )
+                    items = []
                     for item in sd.get("incomplete", [])[:3]:
                         if not isinstance(item, dict):
                             continue
-                        ek = _e(item.get("issue_key", ""))
-                        sm = _e(item.get("summary", ""))
-                        shadow = item.get("shadow", False)
-                        pts_v = item.get("points", 0)
-                        detail = " (re-created)" if shadow else (f" ({_e(pts_v)}pts)" if pts_v else "")
-                        sprint_content += (
-                            f'<div style="margin-left:1rem;font-size:0.85rem;color:var(--text-muted);">'
-                            f"<code>{ek}</code> {sm}"
-                            f'<span style="color:var(--warn);">{detail}</span></div>'
+                        points = item.get("points", 0)
+                        detail = " (re-created)" if item.get("shadow", False) else (f" ({points}pts)" if points else "")
+                        items.append(
+                            [
+                                {"s": str(item.get("issue_key", "")), "strong": True},
+                                {"s": f" {item.get('summary', '')}"},
+                                {"s": detail, "em": True},
+                            ]
                         )
-                    sprint_content += "</div>"
+                    title = str(sd.get("name", "?"))
+                    cards.append(
+                        {"title": f"{title} — {' + '.join(label_parts)}" if label_parts else title, "items": items}
+                    )
+                blocks.append(_cards(cards, title="Incomplete sprint analysis"))
 
-            # Append scope tracking into sprint breakdown section
-            _sc_scope = ex.get("scope_changes", {})
-            if isinstance(_sc_scope, dict) and _sc_scope.get("totals"):
-                _sc_t = _sc_scope["totals"]
-                _sc_a = _sc_t.get("added_mid_sprint", 0)
-                _sc_r = _sc_t.get("re_estimated", 0)
-                _sc_n = _sc_t.get("total_stories", 0)
-                _sc_cv = _sc_t.get("avg_committed_velocity", 0.0)
-                _sc_dv = _sc_t.get("avg_delivered_velocity", 0.0)
-                if _sc_a > 0 or _sc_r > 0 or _sc_cv > 0:
-                    sprint_content += '<hr style="border:none;border-top:1px solid var(--border);margin:1rem 0;">'
-                    if _sc_cv > 0:
-                        _dp = round(_sc_dv / _sc_cv * 100)
-                        _dc = "var(--ok)" if _dp >= 85 else ("var(--warn)" if _dp >= 70 else "var(--danger)")
-                        sprint_content += (
-                            f"<p>Committed <strong>{_sc_cv:g}</strong> &rarr; "
-                            f"Delivered <strong>{_sc_dv:g}</strong> pts/sprint avg "
-                            f'<span style="color:{_dc};">({_dp}% accuracy)</span></p>'
-                        )
-                    if _sc_n > 0 and (_sc_a > 0 or _sc_r > 0):
-                        sprint_content += (
-                            f'<p style="font-size:0.85rem;">{_sc_a} added mid-sprint '
-                            f"({_sc_a * 100 // _sc_n}%) &middot; "
-                            f"{_sc_r} re-estimated ({_sc_r * 100 // _sc_n}%)</p>"
-                        )
-                    _sc_tls = _sc_scope.get("timelines", [])
-                    _sc_we = [t for t in _sc_tls if hasattr(t, "change_events") and t.change_events]
-                    for tl in _sc_we[-4:]:
-                        _d = tl.scope_change_total
-                        _p = round(_d / tl.committed_pts * 100) if tl.committed_pts else 0
-                        _ds = f"+{_d:g}" if _d > 0 else f"{_d:g}"
-                        _dcol = "var(--ok)" if _d == 0 else ("var(--warn)" if abs(_d) < 5 else "var(--danger)")
-                        _ns = len(tl.daily_snapshots[0].stories_in_sprint) if tl.daily_snapshots else 0
-                        _nf = len(tl.daily_snapshots[-1].stories_in_sprint) if tl.daily_snapshots else 0
-                        # Day-by-day scope sparkline (points in scope per snapshot day).
-                        _spark = ""
-                        if len(tl.daily_snapshots) >= 2:
-                            from yeaboi.html_theme import sparkline_svg
+            if isinstance(scope_blob, dict) and scope_blob.get("totals"):
+                totals = scope_blob["totals"]
+                added = totals.get("added_mid_sprint", 0)
+                re_estimated = totals.get("re_estimated", 0)
+                total_stories = totals.get("total_stories", 0)
+                committed = totals.get("avg_committed_velocity", 0.0)
+                delivered = totals.get("avg_delivered_velocity", 0.0)
+                if added > 0 or re_estimated > 0 or committed > 0:
+                    scope_rows: list[tuple[str, str | dict]] = []
+                    if committed > 0:
+                        accuracy = round(delivered / committed * 100)
+                        scope_rows.append(("Committed → delivered", f"{committed:g} → {delivered:g} pts/sprint avg"))
+                        scope_rows.append(("Delivery accuracy", _cell(f"{accuracy}%", tone=_tone_up(accuracy, 85, 70))))
+                    if total_stories > 0 and (added > 0 or re_estimated > 0):
+                        scope_rows.append(("Added mid-sprint", f"{added} ({added * 100 // total_stories}%)"))
+                        scope_rows.append(("Re-estimated", f"{re_estimated} ({re_estimated * 100 // total_stories}%)"))
+                    if scope_rows:
+                        blocks.append(_kv(scope_rows, title="Scope tracking"))
 
-                            _vals = [s.total_scope_pts for s in tl.daily_snapshots]
-                            _pad = max((max(_vals) - min(_vals)) * 0.15, 1.0)
-                            _spark = sparkline_svg(
-                                _vals,
-                                vmin=max(0.0, min(_vals) - _pad),
-                                vmax=max(_vals) + _pad,
-                                end_color_var=_dcol[4:-1],
-                                start_label=tl.daily_snapshots[0].date,
-                                end_label=tl.daily_snapshots[-1].date,
-                                title=f"{tl.sprint_name}: scope points per day",
-                            )
-                        sprint_content += (
-                            f'<div style="margin:1rem 0 0.5rem 0;padding:0.5rem;'
-                            f'border-left:3px solid {_dcol};background:rgba(255,255,255,0.02);">'
-                            f"<strong>{_e(tl.sprint_name)}</strong> "
-                            f'<span style="color:{_dcol};">{_ds} scope ({_p:+d}%)</span>'
-                            f'<div style="font-size:0.85rem;color:var(--text-muted);margin:0.25rem 0;">'
-                            f"committed {tl.committed_pts:g} pts ({_ns} stories)</div>"
-                            f"{_spark}"
-                        )
-                        for ev in tl.change_events[:5]:
-                            ct = ev.change_type.replace("re_estimated_", "re-est ").replace("_", " ")
-                            evd = f"+{ev.delta_pts:g}" if ev.delta_pts > 0 else f"{ev.delta_pts:g}"
-                            evc = (
-                                "var(--ok)"
-                                if ev.delta_pts < 0
-                                else ("var(--warn)" if abs(ev.delta_pts) <= 3 else "var(--danger)")
-                            )
-                            sprint_content += (
-                                f'<div style="font-size:0.85rem;margin:0.1rem 0 0 1rem;">'
-                                f'<span style="color:{evc};">{evd} pts</span> '
-                                f"<code>{_e(ev.issue_key)}</code> {_e(ct)}"
-                            )
-                            if ev.summary:
-                                sprint_content += (
-                                    f' <span style="color:var(--text-muted);">{_e(ev.summary[:45])}</span>'
-                                )
-                            sprint_content += "</div>"
-                        if len(tl.change_events) > 5:
-                            sprint_content += (
-                                f'<div style="font-size:0.8rem;margin-left:1rem;color:var(--text-muted);">'
-                                f"... +{len(tl.change_events) - 5} more</div>"
-                            )
-                        sprint_content += (
-                            f'<div style="font-size:0.85rem;color:var(--text-muted);margin:0.25rem 0;">'
-                            f"final {tl.final_pts:g} pts ({_nf} stories) &middot; "
-                            f"delivered {tl.delivered_pts:g} pts</div></div>"
-                        )
-                    _sc_chains = _sc_scope.get("carry_over_chains", [])
-                    if _sc_chains:
-                        sprint_content += (
-                            f'<h3 style="font-size:0.85rem;color:var(--warn);margin-top:0.75rem;">'
-                            f"{len(_sc_chains)} stories bounced across 3+ sprints</h3>"
-                        )
-                        for ch in _sc_chains[:5]:
-                            if isinstance(ch, dict):
-                                ek = _e(ch.get("issue_key", ""))
-                                sps = " &rarr; ".join(_e(str(s)) for s in ch.get("sprints", []))
-                                sprint_content += (
-                                    f'<div style="margin:0.2rem 0 0 1rem;font-size:0.85rem;">'
-                                    f"<code>{ek}</code> {sps}</div>"
-                                )
+                    timelines = [t for t in scope_blob.get("timelines", []) if getattr(t, "change_events", None)]
+                    for timeline in timelines[-4:]:
+                        blocks.extend(_scope_timeline_blocks(timeline))
 
-            _nav("sprints", "Sprints")
-            sprint_content += (
-                '<p style="color:var(--text-muted);font-size:0.85rem;">'
-                + " &middot; ".join(_e(ANALYSIS_GLOSSARY[g]) for g in _SPRINT_GLOSSARY_KEYS)
-                + "</p>"
-            )
-            sections.append(_section("sprints", "Sprint Breakdown", sprint_content))
+                    chains = scope_blob.get("carry_over_chains", [])
+                    if chains:
+                        blocks.append(
+                            _bullets(
+                                [
+                                    [
+                                        {"s": str(chain.get("issue_key", "")), "strong": True},
+                                        {"s": " " + " → ".join(str(s) for s in chain.get("sprints", []))},
+                                    ]
+                                    for chain in chains[:5]
+                                    if isinstance(chain, dict)
+                                ],
+                                title=f"{len(chains)} stories bounced across 3+ sprints",
+                            )
+                        )
+
+            blocks.append(_note(" · ".join(ANALYSIS_GLOSSARY[key] for key in _SPRINT_GLOSSARY_KEYS)))
+            _add("sprints", "Sprint Breakdown", blocks, nav="Sprints")
 
     # ── Team Members ───────────────────────────────────────────────
-    _h_contrib = ex.get("contributor_stats", [])
-    if isinstance(_h_contrib, list) and _h_contrib:
-        # Interrupted work summary
-        _h_total_rec = sum(c.get("recurring_pts", 0) for c in _h_contrib)
-        _h_total_del = sum(c.get("delivery_pts", 0) for c in _h_contrib)
-        tm_content = ""
-        if _h_total_rec > 0:
-            _h_tot = _h_total_rec + _h_total_del
-            _h_rec_pct = round(_h_total_rec / _h_tot * 100) if _h_tot else 0
-            tm_content += (
-                f"<p>Interrupted work: <strong>{_h_total_rec:g} pts</strong> ({_h_rec_pct}% of total effort)</p>"
-            )
-        # Contributor table
-        tm_content += (
-            '<table class="data-table"><tr>'
-            "<th>Name</th><th>Delivered</th><th>Stories</th>"
-            "<th>Spill%</th><th>Cycle</th><th>Sprints</th><th>Focus</th><th>Pts/sprint</th>"
-            "</tr>"
-        )
-        from yeaboi.html_theme import avatar as _avatar
+    if isinstance(contributors, list) and contributors:
+        recurring_pts = sum(c.get("recurring_pts", 0) for c in contributors)
+        delivery_pts = sum(c.get("delivery_pts", 0) for c in contributors)
+        blocks = []
+        if recurring_pts > 0:
+            total = recurring_pts + delivery_pts
+            share = round(recurring_pts / total * 100) if total else 0
+            blocks.append(_kv([("Interrupted work", f"{recurring_pts:g} pts ({share}% of total effort)")]))
 
-        for cs in _h_contrib[:10]:
-            sp_r = cs.get("spill_rate", 0)
-            sp_col = "var(--ok)" if sp_r < 10 else ("var(--warn)" if sp_r < 25 else "var(--danger)")
-            ct_v = cs.get("avg_cycle_time", 0)
-            ct_s = f"{ct_v:.0f}d" if ct_v > 0 else "&mdash;"
-            disc = cs.get("top_discipline", "fullstack")
-            wt = cs.get("top_work_type", "")
-            focus = f"{disc}/{wt.split('/')[0]}" if wt else disc
-            ps = cs.get("per_sprint", 0)
-            ps_col = "var(--ok)" if ps >= 3 else ("var(--warn)" if ps >= 1.5 else "var(--low)")
-            sa = cs.get("sprints_active", 0)
-            tm_content += (
-                f"<tr><td><span style='display:inline-flex;align-items:center;gap:.4rem'>"
-                f"{_avatar(cs.get('name', ''))}{_e(cs.get('name', ''))}</span></td>"
-                f'<td style="text-align:right;">{cs.get("delivery_pts", 0)}</td>'
-                f'<td style="text-align:right;">{cs.get("stories_completed", 0)}</td>'
-                f'<td style="text-align:right;color:{sp_col};">{sp_r}%</td>'
-                f'<td style="text-align:right;">{ct_s}</td>'
-                f'<td style="text-align:right;">{sa}</td>'
-                f"<td>{_e(focus[:18])}</td>"
-                f'<td style="text-align:right;color:{ps_col};">{ps}</td></tr>'
+        member_rows: list[list[str | dict]] = []
+        for cs in contributors[:10]:
+            spill = cs.get("spill_rate", 0)
+            cycle = cs.get("avg_cycle_time", 0)
+            discipline = cs.get("top_discipline", "fullstack")
+            work_type = cs.get("top_work_type", "")
+            per_sprint_pts = cs.get("per_sprint", 0)
+            member_rows.append(
+                [
+                    _cell(str(cs.get("name", "")), person=True),
+                    str(cs.get("delivery_pts", 0)),
+                    str(cs.get("stories_completed", 0)),
+                    _cell(f"{spill}%", tone=_tone_down(spill, 10, 25)),
+                    f"{cycle:.0f}d" if cycle > 0 else "—",
+                    str(cs.get("sprints_active", 0)),
+                    (f"{discipline}/{work_type.split('/')[0]}" if work_type else str(discipline))[:18],
+                    _cell(
+                        str(per_sprint_pts),
+                        tone="ok" if per_sprint_pts >= 3 else ("warn" if per_sprint_pts >= 1.5 else "low"),
+                    ),
+                ]
             )
-        tm_content += "</table>"
-        # Insights
-        if len(_h_contrib) >= 3 and _h_total_del > 0:
-            top = _h_contrib[0]
-            top_pct = round(top["delivery_pts"] / _h_total_del * 100)
-            if top_pct >= 40:
-                tm_content += (
-                    f'<p style="color:var(--warn);">&#x26a0; {_e(top["name"])} carries {top_pct}% of delivery work</p>'
-                )
-        _nav("team-members", "Team")
-        sections.append(_section("team-members", "Team Members", tm_content))
+        blocks.append(
+            _table(
+                ["Name", "Delivered", "Stories", "Spill%", "Cycle", "Sprints", "Focus", "Pts/sprint"],
+                member_rows,
+                numeric=(1, 2, 3, 4, 5, 7),
+            )
+        )
+        if len(contributors) >= 3 and delivery_pts > 0:
+            top = contributors[0]
+            top_share = round(top["delivery_pts"] / delivery_pts * 100)
+            if top_share >= 40:
+                blocks.append(_callout("warn", f"{top['name']} carries {top_share}% of delivery work"))
+        _add("team-members", "Team Members", blocks, nav="Team")
 
     # ── Shadow Spillover ────────────────────────────────────────────
     shadow = ex.get("shadow_spillover", [])
     if isinstance(shadow, list) and shadow:
-        shadow_html = (
-            f'<div class="card" style="border-left:3px solid var(--warn);">'
-            f'<strong style="color:var(--warn);">&#x26a0; {len(shadow)} re-created stories detected</strong>'
-            f'<p style="color:var(--text-muted);">Closed in one sprint but re-created in the next:</p>'
-        )
+        items = []
         for sh in shadow[:5]:
             if not isinstance(sh, dict):
                 continue
-            ek = _e(sh.get("issue_key", ""))
-            url = sh.get("issue_url", "")
-            title = _e(sh.get("title", ""))
-            from_sp = _e(sh.get("from_sprint", ""))
-            to_sp = _e(sh.get("to_sprint", ""))
-            key_html = _link_html(url, f"<code>{ek}</code>")
-            shadow_html += (
-                f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
-                f"{key_html} {title}"
-                f'<span style="color:var(--text-muted);margin-left:0.5rem;">{from_sp} &rarr; {to_sp}</span>'
-                f"</div>"
+            key_run: dict = {"s": str(sh.get("issue_key", "")), "strong": True}
+            if url := safe_url(str(sh.get("issue_url", "") or "")):
+                key_run["href"] = url
+            items.append(
+                [
+                    key_run,
+                    {"s": f" {sh.get('title', '')}"},
+                    {"s": f" {sh.get('from_sprint', '')} → {sh.get('to_sprint', '')}", "em": True},
+                ]
             )
-        shadow_html += "</div>"
-        sections.append(f"\n{shadow_html}")
+        _add(
+            "shadow",
+            "Shadow Spillover",
+            [
+                _callout(
+                    "warn",
+                    f"{len(shadow)} re-created stories detected",
+                    "Closed in one sprint but re-created in the next:",
+                    items,
+                )
+            ],
+            nav="Shadow",
+        )
 
     # ── Discipline-Specific Calibration ─────────────────────────────
     disc_cal = ex.get("discipline_calibration", {})
     if isinstance(disc_cal, dict) and len(disc_cal) > 1:
-        disc_content = ""
-        for disc, entries in sorted(disc_cal.items()):
+        blocks = []
+        for discipline, entries in sorted(disc_cal.items()):
             if not isinstance(entries, list) or not entries:
                 continue
-            disc_hdr = "<tr><th>Points</th><th>Cycle time</th><th>Variance</th><th>Samples</th><th>Spillover</th></tr>"
-            disc_rows = ""
-            for e in entries:
-                if not isinstance(e, dict):
+            rows: list[list[str | dict]] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
                     continue
-                pts = e.get("points", 0)
-                avg_d = e.get("avg_cycle_days", 0)
-                var = e.get("variance", 0)
-                samples = e.get("samples", 0)
-                sp = e.get("spill_pct", 0)
-                var_html = f"&pm;{var:.0f}d" if var > 0 else "&mdash;"
-                sp_color = "var(--ok)" if sp < 10 else ("var(--warn)" if sp < 25 else "var(--danger)")
-                sp_html = f'<span style="color:{sp_color};">{sp:.0f}%</span>' if sp > 0 else "&mdash;"
-                disc_rows += (
-                    f"<tr><td>{pts}pt{'s' if pts != 1 else ''}</td>"
-                    f"<td>{avg_d:.0f}d</td><td>{var_html}</td>"
-                    f"<td>{samples}</td><td>{sp_html}</td></tr>"
+                points = entry.get("points", 0)
+                variance = entry.get("variance", 0)
+                spill = entry.get("spill_pct", 0)
+                rows.append(
+                    [
+                        f"{points}pt{'s' if points != 1 else ''}",
+                        f"{entry.get('avg_cycle_days', 0):.0f}d",
+                        f"±{variance:.0f}d" if variance > 0 else "—",
+                        str(entry.get("samples", 0)),
+                        _cell(f"{spill:.0f}%", tone=_tone_down(spill, 10, 25)) if spill > 0 else "—",
+                    ]
                 )
-            disc_content += (
-                f'<h3 style="font-size:0.9rem;margin-top:1rem;">{_e(disc)}</h3>'
-                f'<div class="card" style="padding:0;overflow:hidden;">'
-                f'<table class="data-table">{disc_hdr}{disc_rows}</table></div>'
-            )
-        _nav("disc-cal", "Discipline Cal.")
-        sections.append(_section("disc-cal", "Calibration by Discipline", disc_content))
+            if rows:
+                blocks.append(
+                    _table(
+                        ["Points", "Cycle time", "Variance", "Samples", "Spillover"],
+                        rows,
+                        numeric=(0, 1, 2, 3, 4),
+                        title=str(discipline),
+                    )
+                )
+        _add("disc-cal", "Calibration by Discipline", blocks, nav="Discipline Cal.")
 
     # ── Point Calibration ───────────────────────────────────────────
     cals = [c for c in profile.point_calibrations if c.sample_count > 0]
-    _raw_conf = ex.get("confidence_levels", {})
-    # JSON round-trip may stringify int keys — normalise to int keys
+    # A JSON round-trip may stringify int keys — normalise back to int.
     conf_levels: dict[int, str] = {}
-    if isinstance(_raw_conf, dict):
-        for k, v in _raw_conf.items():
+    raw_conf = ex.get("confidence_levels", {})
+    if isinstance(raw_conf, dict):
+        for key, value in raw_conf.items():
             try:
-                conf_levels[int(k)] = str(v)
+                conf_levels[int(key)] = str(value)
             except (ValueError, TypeError):
                 pass
     if cals:
-        cal_hdr = (
-            "<tr><th>Points</th><th>Avg cycle time</th><th>Samples</th>"
-            "<th>Tasks</th><th>Slip</th><th>Confidence</th></tr>"
-        )
-        cal_rows_html = []
+        cal_rows: list[list[str | dict]] = []
+        cal_details: list[list[dict]] = []
         for c in cals:
-            conf = conf_levels.get(c.point_value, "")
-            conf_color = {"high": "var(--ok)", "medium": "var(--text-muted)", "low": "var(--warn)"}.get(conf, "")
-            conf_html = f'<span style="color:{conf_color};font-weight:600;">{_e(conf.upper())}</span>' if conf else ""
-            cal_rows_html.append(
-                f"<tr><td><strong>{c.point_value} pt{'s' if c.point_value != 1 else ''}</strong></td>"
-                f"<td>{c.avg_cycle_time_days:.0f} days</td>"
-                f"<td>{c.sample_count}</td>"
-                f"<td>~{c.typical_task_count:.0f}</td>"
-                f"<td>{_format_pct(c.overshoot_pct)}</td>"
-                f"<td>{conf_html}</td></tr>"
+            label = f"{c.point_value} pt{'s' if c.point_value != 1 else ''}"
+            confidence = conf_levels.get(c.point_value, "")
+            cal_rows.append(
+                [
+                    label,
+                    f"{c.avg_cycle_time_days:.0f} days",
+                    str(c.sample_count),
+                    f"~{c.typical_task_count:.0f}",
+                    _format_pct(c.overshoot_pct),
+                    _cell(
+                        confidence.upper(),
+                        tone={"high": "ok", "medium": "muted", "low": "warn"}.get(confidence, ""),
+                    )
+                    if confidence
+                    else "",
+                ]
             )
             if c.common_patterns:
-                pats = ", ".join(_e(p) for p in c.common_patterns)
-                cal_rows_html.append(
-                    f'<tr><td colspan="6" style="color:var(--text-muted);font-size:0.8rem;'
-                    f'padding-left:2rem;">Typical: {pats}</td></tr>'
+                cal_details.append(
+                    [{"s": label, "strong": True}, {"s": f" — typically {', '.join(c.common_patterns)}"}]
                 )
-            # Issue key examples
-            cal_examples = ex.get(f"calibration_{c.point_value}pt", [])
-            for ce in cal_examples[:2]:
-                if not isinstance(ce, dict):
+            # The examples used to ride as `colspan=6` sub-rows under their own
+            # point value, which a table cannot express and a screen reader read
+            # as a stray cell. One list under the table says the same thing.
+            for example in ex.get(f"calibration_{c.point_value}pt", [])[:2]:
+                if not isinstance(example, dict):
                     continue
-                ek = _e(ce.get("issue_key", ""))
-                url = ce.get("issue_url", "")
-                sm = _e(ce.get("summary", ""))
-                detail = _e(ce.get("detail", ""))
-                key_html = _link_html(url, f"<code>{ek}</code>")
-                cal_rows_html.append(
-                    f'<tr><td colspan="6" style="font-size:0.8rem;padding-left:2rem;">'
-                    f'{key_html} <span style="color:var(--text-muted);">{sm}</span>'
-                    f"{f' <em>{detail}</em>' if detail else ''}</td></tr>"
-                )
-        cal_table = (
-            f'<div class="card" style="padding:0;overflow:hidden;">'
-            f'<table class="data-table">{cal_hdr}{"".join(cal_rows_html)}</table></div>'
-        )
-        _nav("calibration", "Calibration")
-        sections.append(_section("calibration", "What Each Point Value Means", cal_table))
+                key_run = {"s": str(example.get("issue_key", ""))}
+                if url := safe_url(str(example.get("issue_url", "") or "")):
+                    key_run["href"] = url
+                runs = [{"s": label, "strong": True}, {"s": " — "}, key_run]
+                runs.append({"s": f" {example.get('summary', '')}"})
+                if detail := str(example.get("detail", "")):
+                    runs.append({"s": f" ({detail})", "em": True})
+                cal_details.append(runs)
+
+        blocks = [
+            _table(
+                ["Points", "Avg cycle time", "Samples", "Tasks", "Slip", "Confidence"],
+                cal_rows,
+                numeric=(0, 1, 2, 3, 4),
+            )
+        ]
+        if cal_details:
+            blocks.append(_bullets(cal_details, title="What these look like"))
+        _add("calibration", "What Each Point Value Means", blocks, nav="Calibration")
 
     # ── Story Shapes ────────────────────────────────────────────────
     shapes = [s for s in profile.story_shapes if s.sample_count > 0]
     if shapes:
-        sh_hdr = "<tr><th>Discipline</th><th>Avg pts</th><th>Avg ACs</th><th>Avg tasks</th><th>Samples</th></tr>"
-        sh_rows = "".join(
-            f"<tr><td><strong>{_e(s.discipline)}</strong></td><td>{s.avg_points}</td>"
-            f"<td>{s.avg_ac_count}</td><td>{s.avg_task_count}</td><td>{s.sample_count}</td></tr>"
-            for s in shapes
+        _add(
+            "shapes",
+            "Story Shape by Discipline",
+            [
+                _table(
+                    ["Discipline", "Avg pts", "Avg ACs", "Avg tasks", "Samples"],
+                    [
+                        [
+                            str(s.discipline),
+                            str(s.avg_points),
+                            str(s.avg_ac_count),
+                            str(s.avg_task_count),
+                            str(s.sample_count),
+                        ]
+                        for s in shapes
+                    ],
+                    numeric=(1, 2, 3, 4),
+                )
+            ],
+            nav="Story Shapes",
         )
-        shape_table = (
-            f'<div class="card" style="padding:0;overflow:hidden;">'
-            f'<table class="data-table">{sh_hdr}{sh_rows}</table></div>'
-        )
-        _nav("shapes", "Story Shapes")
-        sections.append(_section("shapes", "Story Shape by Discipline", shape_table))
 
     # ── Task Decomposition ──────────────────────────────────────────
-    td = ex.get("task_decomposition", {})
-    if isinstance(td, dict) and td.get("total_tasks", 0) > 0:
-        td_rows: list[tuple[str, str]] = [
-            ("Stories with tasks", f"{td['stories_with_tasks']} / {td['total_stories']}"),
-            ("Total tasks", str(td["total_tasks"])),
-            ("Avg tasks/story", str(td["avg_tasks_per_story"])),
-            ("Task completion", _pct_bar_html(td["task_completion_rate"])),
+    task_decomp = ex.get("task_decomposition", {})
+    if isinstance(task_decomp, dict) and task_decomp.get("total_tasks", 0) > 0:
+        blocks = [
+            _kv(
+                [
+                    ("Stories with tasks", f"{task_decomp['stories_with_tasks']} / {task_decomp['total_stories']}"),
+                    ("Total tasks", str(task_decomp["total_tasks"])),
+                    ("Avg tasks/story", str(task_decomp["avg_tasks_per_story"])),
+                    ("Task completion", _pct_cell(task_decomp["task_completion_rate"])),
+                ]
+            )
         ]
-        td_content = _kv_table(td_rows)
-
-        type_dist = td.get("type_distribution", {})
+        type_dist = task_decomp.get("type_distribution", {})
         if type_dist:
-            # One theme-aware stacked bar reads the mix at a glance; the
-            # per-row table keeps the exact numbers below it.
-            from yeaboi.html_theme import counted_segment_bar
-
-            mix = counted_segment_bar(
-                [(cat, int(round(pct))) for cat, pct in type_dist.items()], title="Task type distribution"
+            # The bar reads the mix at a glance; the table below keeps the
+            # exact numbers. Both are built from the same dict.
+            blocks.append(_bar("Task type distribution", [(cat, pct) for cat, pct in type_dist.items()]))
+            blocks.append(
+                _table(
+                    ["Type", "Share"],
+                    [[str(cat), _share_cell(pct)] for cat, pct in type_dist.items()],
+                )
             )
-            if mix:
-                td_content += f"<div style='margin-top:0.5rem'>{mix}</div>"
-            dist_rows = "".join(
-                f"<tr><td>{_e(cat)}</td><td>{_pct_bar_html(pct)}</td></tr>" for cat, pct in type_dist.items()
-            )
-            td_content += (
-                f'<div class="card" style="padding:0;overflow:hidden;margin-top:0.5rem;">'
-                f'<table class="data-table">{dist_rows}</table></div>'
-            )
-
-        # Bottlenecks
-        bottlenecks = td.get("bottlenecks", [])
-        for cat, rate_val, count in bottlenecks:
-            td_content += (
-                f'<div class="card" style="border-left:3px solid var(--warn);margin-top:0.5rem;">'
-                f'<strong style="color:var(--warn);">&#x26a0; {_e(str(cat))} bottleneck</strong>'
-                f'<p style="color:var(--text-muted);">'
-                f"Only {_e(rate_val)}% completion ({_e(count)} tasks)</p></div>"
-            )
-
-        # Common task patterns
-        common_tasks = td.get("common_tasks", [])
+        for category, rate, count in task_decomp.get("bottlenecks", []):
+            blocks.append(_callout("warn", f"{category} bottleneck", f"Only {rate}% completion ({count} tasks)"))
+        common_tasks = task_decomp.get("common_tasks", [])
         if common_tasks:
-            ct_rows = "".join(
-                f"<tr><td>{_e(str(title)[:45])}</td><td>&times;{_e(cnt)}</td></tr>" for title, cnt in common_tasks[:4]
+            blocks.append(
+                _table(
+                    ["Task", "Seen"],
+                    [[str(title)[:45], f"×{count}"] for title, count in common_tasks[:4]],
+                    numeric=(1,),
+                    title="Common task patterns",
+                )
             )
-            td_content += (
-                f'<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">'
-                f"Common task patterns</h3>"
-                f'<div class="card" style="padding:0;overflow:hidden;">'
-                f'<table class="data-table">{ct_rows}</table></div>'
-            )
-
-        # Task assignees
-        assignees = td.get("task_assignees", {})
+        assignees = task_decomp.get("task_assignees", {})
         if assignees:
-            ta_rows = "".join(
-                f"<tr><td>{_e(str(name))}</td><td>{_e(cnt)} tasks</td></tr>"
-                for name, cnt in list(assignees.items())[:5]
+            blocks.append(
+                _table(
+                    ["Assignee", "Tasks"],
+                    [[_cell(str(name), person=True), str(count)] for name, count in list(assignees.items())[:5]],
+                    numeric=(1,),
+                    title="Task assignees",
+                )
             )
-            td_content += (
-                f'<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">'
-                f"Task assignees</h3>"
-                f'<div class="card" style="padding:0;overflow:hidden;">'
-                f'<table class="data-table">{ta_rows}</table></div>'
-            )
-
-        _nav("tasks", "Tasks")
-        sections.append(_section("tasks", "Task Decomposition", td_content))
+        _add("tasks", "Task Decomposition", blocks, nav="Tasks")
 
     # ── DoD Signals ─────────────────────────────────────────────────
     dod = profile.dod_signal
-    dod_items_with_key: list[tuple[str, float, str]] = []
+    dod_practices: list[tuple[str, float, str]] = []
     if dod.stories_with_testing_mention_pct > 0:
-        dod_items_with_key.append(("Testing mentioned", dod.stories_with_testing_mention_pct, "dod_testing"))
+        dod_practices.append(("Testing mentioned", dod.stories_with_testing_mention_pct, "dod_testing"))
     if dod.stories_with_pr_link_pct > 0:
-        dod_items_with_key.append(("PR linked before close", dod.stories_with_pr_link_pct, "dod_pr"))
+        dod_practices.append(("PR linked before close", dod.stories_with_pr_link_pct, "dod_pr"))
     if dod.stories_with_review_mention_pct > 0:
-        dod_items_with_key.append(("Code review mentioned", dod.stories_with_review_mention_pct, "dod_review"))
+        dod_practices.append(("Code review mentioned", dod.stories_with_review_mention_pct, "dod_review"))
     if dod.stories_with_deploy_mention_pct > 0:
-        dod_items_with_key.append(("Deploy mentioned", dod.stories_with_deploy_mention_pct, "dod_deploy"))
+        dod_practices.append(("Deploy mentioned", dod.stories_with_deploy_mention_pct, "dod_deploy"))
 
-    if dod_items_with_key:
-        dod_hdr = "<tr><th>Practice</th><th>Coverage</th><th>Example</th></tr>"
-        dod_rows_html = ""
-        for label, pct, ekey in dod_items_with_key:
-            ex_items = ex.get(ekey, [])
-            ex_html = ""
-            if ex_items and isinstance(ex_items, list) and ex_items:
-                e0 = ex_items[0]
-                if isinstance(e0, dict):
-                    ek = _e(e0.get("issue_key", ""))
-                    eu = e0.get("issue_url", "")
-                    sm = _e(e0.get("summary", "")[:30])
-                    key_h = _link_html(eu, f"<code>{ek}</code>")
-                    ex_html = f'{key_h} <span style="color:var(--text-muted);">{sm}</span>'
-            dod_rows_html += (
-                f"<tr><td>{_e(label)}</td><td>{_pct_bar_html(pct)}</td>"
-                f'<td style="font-size:0.8rem;">{ex_html}</td></tr>'
-            )
+    if dod_practices:
+        dod_rows: list[list[str | dict]] = []
+        for label, pct, example_key in dod_practices:
+            example: str | dict = ""
+            candidates = ex.get(example_key, [])
+            if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
+                first = candidates[0]
+                example = _cell(
+                    str(first.get("issue_key", "")),
+                    href=str(first.get("issue_url", "") or ""),
+                    note=str(first.get("summary", ""))[:30],
+                )
+            dod_rows.append([label, _pct_cell(pct), example])
+        blocks = [_table(["Practice", "Coverage", "Example"], dod_rows)]
         if dod.common_checklist_items:
-            items = ", ".join(_e(i) for i in dod.common_checklist_items[:6])
-            dod_rows_html += (
-                f'<tr><td>Common signals</td><td colspan="2" style="color:var(--text-muted);">{items}</td></tr>'
-            )
-        dod_table = (
-            f'<div class="card" style="padding:0;overflow:hidden;">'
-            f'<table class="data-table">{dod_hdr}{dod_rows_html}</table></div>'
-        )
-        _nav("dod", "DoD")
-        sections.append(_section("dod", "Definition of Done (inferred)", dod_table))
+            blocks.append(_note(f"Common signals: {', '.join(dod.common_checklist_items[:6])}"))
+        _add("dod", "Definition of Done (inferred)", blocks, nav="DoD")
 
     # ── Proposed DoD ───────────────────────────────────────────────
-    pdod = ex.get("proposed_dod", {})
-    if isinstance(pdod, dict) and pdod.get("items"):
-        pdod_summary = pdod.get("summary", "")
-        pdod_health = pdod.get("health", "weak")
-        h_col = (
-            "var(--ok)"
-            if pdod_health == "strong"
-            else ("var(--warn)" if pdod_health == "moderate" else "var(--danger)")
-        )
-        pdod_html = f'<p style="color:{h_col};font-weight:bold;">{_e(pdod_summary)}</p>'
-        pdod_html += (
-            '<table class="data-table"><tr><th>Practice</th><th>Status</th><th>Evidence</th><th>Action</th></tr>'
-        )
-        _pst_icon = {"established": "&#x2713;", "emerging": "&#x25cb;", "missing": "&#x2717;"}
-        _pst_col = {"established": "var(--ok)", "emerging": "var(--warn)", "missing": "var(--danger)"}
-        for item in pdod["items"]:
-            st = item.get("status", "missing")
-            sig = item.get("signals", "no evidence")
-            pdod_html += (
-                f"<tr><td>{_e(item.get('practice', ''))}</td>"
-                f'<td style="color:{_pst_col.get(st, "var(--low)")};">'
-                f"{_pst_icon.get(st, '?')} {_e(st)}</td>"
-                f'<td style="color:var(--text-muted);">{_e(sig)}</td>'
-                f'<td style="color:var(--text-muted);font-size:0.85rem;">'
-                f"{_e(item.get('recommendation', ''))}</td></tr>"
-            )
-        pdod_html += "</table>"
-        dod_ordering = pdod.get("ordering", [])
-        if len(dod_ordering) >= 2:
-            pdod_html += (
-                f'<p style="margin-top:0.5rem;color:var(--text-muted);">'
-                f"Typical order: {' &rarr; '.join(_e(o) for o in dod_ordering)}</p>"
-            )
-        custom_steps = pdod.get("custom_steps", [])
+    proposed = ex.get("proposed_dod", {})
+    if isinstance(proposed, dict) and proposed.get("items"):
+        health = proposed.get("health", "weak")
+        blocks = [
+            _callout(
+                {"strong": "ok", "moderate": "warn"}.get(health, "danger"),
+                str(proposed.get("summary", "")),
+            ),
+            _table(
+                ["Practice", "Status", "Evidence", "Action"],
+                [
+                    [
+                        str(item.get("practice", "")),
+                        _cell(
+                            str(item.get("status", "missing")),
+                            tone={"established": "ok", "emerging": "warn", "missing": "danger"}.get(
+                                str(item.get("status", "missing")), "low"
+                            ),
+                        ),
+                        str(item.get("signals", "no evidence")),
+                        str(item.get("recommendation", "")),
+                    ]
+                    for item in proposed["items"]
+                ],
+            ),
+        ]
+        ordering = proposed.get("ordering", [])
+        if len(ordering) >= 2:
+            blocks.append(_note(f"Typical order: {' → '.join(str(o) for o in ordering)}"))
+        custom_steps = proposed.get("custom_steps", [])
         if custom_steps:
-            parts = ", ".join(f"&ldquo;{_e(cs['title'])}&rdquo; ({_e(cs['pct'])}%)" for cs in custom_steps[:4])
-            pdod_html += f'<p style="color:var(--text-muted);">Team-specific steps: {parts}</p>'
-        _nav("proposed-dod", "Proposed DoD")
-        sections.append(_section("proposed-dod", "Proposed Definition of Done", pdod_html))
+            steps = ", ".join(f"“{step['title']}” ({step['pct']}%)" for step in custom_steps[:4])
+            blocks.append(_note(f"Team-specific steps: {steps}"))
+        _add("proposed-dod", "Proposed Definition of Done", blocks, nav="Proposed DoD")
 
     # ── Writing Patterns ────────────────────────────────────────────
     wp = profile.writing_patterns
-    wp_rows: list[tuple[str, str]] = []
+    wp_rows: list[tuple[str, str | dict]] = []
     if wp.uses_given_when_then:
-        wp_rows.append(("AC format", "Given/When/Then &#x2713;"))
+        wp_rows.append(("AC format", "Given/When/Then ✓"))
     if wp.median_ac_count > 0:
         wp_rows.append(("Median ACs/story", str(wp.median_ac_count)))
     if wp.median_task_count_per_story > 0:
         wp_rows.append(("Median tasks/story", str(wp.median_task_count_per_story)))
     if wp.subtask_label_distribution:
-        parts = " &middot; ".join(f"{_e(lbl)} {int(pct * 100)}%" for lbl, pct in wp.subtask_label_distribution[:5])
+        parts = " · ".join(f"{label} {int(pct * 100)}%" for label, pct in wp.subtask_label_distribution[:5])
         wp_rows.append(("Sub-task types", parts))
     if wp.common_personas:
-        wp_rows.append(("Personas", _e(", ".join(wp.common_personas[:5]))))
+        wp_rows.append(("Personas", ", ".join(wp.common_personas[:5])))
     if wp_rows:
-        _nav("patterns", "Patterns")
-        sections.append(_section("patterns", "Writing Patterns", _kv_table(wp_rows)))
+        _add("patterns", "Writing Patterns", [_kv(wp_rows)], nav="Patterns")
 
     # ── Repository Activity ─────────────────────────────────────────
     repos = ex.get("repositories", {})
     if isinstance(repos, dict) and repos.get("top_repos"):
-        top = repos["top_repos"]
-        avg_cts = repos.get("repo_avg_cycle_time", {})
-        spill_repos_set = {r["repo"] for r in repos.get("spillover_repos", []) if isinstance(r, dict)}
+        top_repos = [r for r in repos["top_repos"][:8] if isinstance(r, dict)]
+        avg_cycles = repos.get("repo_avg_cycle_time", {})
+        spill_prone = {r["repo"] for r in repos.get("spillover_repos", []) if isinstance(r, dict)}
 
-        repo_hdr = "<tr><th>Repository</th><th>Stories</th><th>Share</th><th>Avg cycle</th></tr>"
-        repo_rows_html = ""
-        for r in top[:8]:
-            if not isinstance(r, dict):
-                continue
-            rname = r.get("repo", "")
-            cnt = r.get("stories", 0)
-            pct = r.get("pct", 0)
-            avg_ct = avg_cts.get(rname) if isinstance(avg_cts, dict) else None
-            ct_html = f"{avg_ct:.0f}d" if avg_ct else "&mdash;"
-            ct_color = "var(--warn)" if avg_ct and avg_ct > 15 else "var(--text-muted)"
-            name_style = "color:var(--warn);font-weight:600;" if rname in spill_repos_set else ""
-            repo_rows_html += (
-                f'<tr><td style="{name_style}"><strong>{_e(rname)}</strong></td>'
-                f"<td>{_e(cnt)}</td><td>{_pct_bar_html(pct, 80)}</td>"
-                f'<td style="color:{ct_color};">{ct_html}</td></tr>'
-            )
-
-        # One stacked bar shows where the team's story work concentrates.
-        from yeaboi.html_theme import counted_segment_bar
-
-        repo_mix = counted_segment_bar(
-            [(r.get("repo", ""), int(r.get("stories", 0))) for r in top[:8] if isinstance(r, dict)],
-            title="Stories per repository",
-        )
-        repo_content = (f"<div style='margin-bottom:0.5rem'>{repo_mix}</div>" if repo_mix else "") + (
-            f'<div class="card" style="padding:0;overflow:hidden;">'
-            f'<table class="data-table">{repo_hdr}{repo_rows_html}</table></div>'
-        )
-
-        # Spillover-prone repos
-        spill_repos = repos.get("spillover_repos", [])
-        if spill_repos and isinstance(spill_repos, list):
-            repo_content += (
-                '<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">'
-                "Repos with highest spillover rate</h3>"
-            )
-            for sr in spill_repos[:3]:
-                if not isinstance(sr, dict):
-                    continue
-                repo_content += (
-                    f'<div style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">'
-                    f'<strong style="color:var(--warn);">{_e(sr.get("repo", ""))}</strong>'
-                    f' <span style="color:var(--text-muted);">'
-                    f"{_e(sr.get('spill_rate', 0))}% spillover ({_e(sr.get('spills', 0))} times)</span></div>"
-                )
-
-        # Repos by point value
-        by_pts = repos.get("by_pts", {})
-        if by_pts and isinstance(by_pts, dict):
-            repo_content += (
-                '<h3 style="font-size:0.85rem;color:var(--text-muted);margin-top:0.75rem;">Repos by story size</h3>'
-            )
-            for pts_key in sorted(by_pts.keys(), key=lambda x: int(x)):
-                pt_repos = by_pts[pts_key]
-                if not pt_repos:
-                    continue
-                repo_content += (
-                    f'<div style="margin:0.2rem 0 0 1rem;font-size:0.85rem;">'
-                    f"<strong>{pts_key}pt</strong>"
-                    f' <span style="color:var(--text-muted);">'
-                    f"{', '.join(_e(str(r)) for r in pt_repos[:3])}</span></div>"
-                )
-
-        _nav("repos", "Repos")
-        sections.append(_section("repos", "Repository Activity", repo_content))
-
-    # ── Ticket Naming & Organisation ──────────────────────────────────
-    _h_naming = ex.get("naming_conventions", {})
-    if isinstance(_h_naming, dict) and (
-        _h_naming.get("title_prefixes")
-        or _h_naming.get("label_distribution")
-        or _h_naming.get("epic_examples")
-        or _h_naming.get("template_sections")
-    ):
-        nm_rows: list[tuple[str, str]] = []
-        _nm_prefixes = _h_naming.get("title_prefixes", [])
-        if _nm_prefixes:
-            nm_rows.append(("Title prefixes", " &middot; ".join(f"{_e(p)} {_e(pct)}%" for p, pct in _nm_prefixes[:5])))
-        else:
-            nm_rows.append(("Title prefixes", "none detected"))
-        _nm_lbls = _h_naming.get("label_distribution", [])
-        _nm_lpct = _h_naming.get("stories_with_labels_pct", 0)
-        if _nm_lbls:
-            nm_rows.append(
-                (
-                    "Labels",
-                    f"{_e(_nm_lpct)}% labelled: "
-                    + " &middot; ".join(f"{_e(lbl)} {_e(pct)}%" for lbl, pct in _nm_lbls[:6]),
-                )
-            )
-        _nm_style = _h_naming.get("epic_naming_style", "")
-        _nm_epex = _h_naming.get("epic_examples", [])
-        if _nm_style and _nm_epex:
-            _nm_exs = ", ".join(f"&ldquo;{_e(e[:40])}&rdquo;" for e in _nm_epex[:3])
-            nm_rows.append(("Epic naming", f"{_e(_nm_style)} &mdash; {_nm_exs}"))
-        _nm_secs = _h_naming.get("template_sections", [])
-        if _nm_secs:
-            _nm_ss = " &rarr; ".join(f"&ldquo;{_e(s)}&rdquo;" for s, _ in _nm_secs[:5])
-            nm_rows.append(("Description template", _nm_ss))
-        _nav("naming", "Naming")
-        sections.append(_section("naming", "Ticket Naming & Organisation", _kv_table(nm_rows)))
-
-    # ── Story & Epic Structure ──────────────────────────────────────
-    _h_struct = ex.get("story_structure", {})
-    if isinstance(_h_struct, dict) and (_h_struct.get("subtask_ordering") or _h_struct.get("epic_completion")):
-        st_rows: list[tuple[str, str]] = []
-        _st_ord = _h_struct.get("subtask_ordering", [])
-        if len(_st_ord) >= 2:
-            st_rows.append(("Subtask sequence", " &rarr; ".join(_e(s) for s in _st_ord)))
-        _st_skip = _h_struct.get("skipped_types", [])
-        if _st_skip:
-            st_rows.append(
-                (
-                    "Rarely created",
-                    " &middot; ".join(f"{_e(s['type'])} ({_e(s['present_pct'])}%)" for s in _st_skip),
-                )
-            )
-        _st_avg = _h_struct.get("avg_epic_completion", 0)
-        if _st_avg > 0:
-            st_rows.append(("Epic completion avg", f"{_st_avg}%"))
-        _st_ling = _h_struct.get("lingering_epics", [])
-        if _st_ling:
-            for ep in _st_ling[:3]:
-                st_rows.append(
-                    (
-                        _e(ep.get("epic_title", "?")),
-                        f"{_e(ep['completed'])}/{_e(ep['total'])} done ({_e(ep['rate'])}%)",
-                    )
-                )
-        _st_spread = _h_struct.get("epic_sprint_spread", [])
-        if _st_spread:
-            for ep in _st_spread[:3]:
-                st_rows.append(
-                    (
-                        _e(ep.get("epic", "?")),
-                        f"{_e(ep['stories'])} stories across {_e(ep['sprints'])} sprints",
-                    )
-                )
-        if st_rows:
-            _nav("structure", "Structure")
-            sections.append(_section("structure", "Story & Epic Structure", _kv_table(st_rows)))
-
-    # ── Acceptance Criteria Patterns ──────────────────────────────────
-    ac_pat = ex.get("ac_patterns", {})
-    if isinstance(ac_pat, dict) and ac_pat.get("stories_with_ac_pct") is not None:
-        ac_pct = ac_pat.get("stories_with_ac_pct", 0)
-        ac_rows: list[tuple[str, str]] = [("Stories with ACs", f"{ac_pct}%")]
-        if ac_pct == 0:
-            ac_rows.append(
-                (
-                    "",
-                    "<em>No acceptance criteria detected. ACs help define done and reduce ambiguity.</em>",
-                )
-            )
-        else:
-            spec = ac_pat.get("specificity", {})
-            ac_rows.extend(
+        repo_rows: list[list[str | dict]] = []
+        for r in top_repos:
+            name = str(r.get("repo", ""))
+            cycle = avg_cycles.get(name) if isinstance(avg_cycles, dict) else None
+            repo_rows.append(
                 [
-                    ("Median ACs/story", str(ac_pat.get("median_ac", 0))),
-                    ("Specificity", f"{_e(spec.get('label', '?'))} ({_e(spec.get('precise_pct', 0))}% precise)"),
+                    _cell(name, tone="warn" if name in spill_prone else ""),
+                    str(r.get("stories", 0)),
+                    _share_cell(r.get("pct", 0)),
+                    _cell(f"{cycle:.0f}d", tone="warn")
+                    if cycle and cycle > 15
+                    else (f"{cycle:.0f}d" if cycle else "—"),
                 ]
             )
-            themes = ac_pat.get("themes", {})
-            _tex = ac_pat.get("theme_examples", {})
+        blocks = [
+            _bar("Stories per repository", [(str(r.get("repo", "")), r.get("stories", 0)) for r in top_repos]),
+            _table(["Repository", "Stories", "Share", "Avg cycle"], repo_rows, numeric=(1,)),
+        ]
+
+        spill_repos = repos.get("spillover_repos", [])
+        if isinstance(spill_repos, list) and spill_repos:
+            blocks.append(
+                _bullets(
+                    [
+                        [
+                            {"s": str(sr.get("repo", "")), "strong": True},
+                            {"s": f" {sr.get('spill_rate', 0)}% spillover ({sr.get('spills', 0)} times)", "em": True},
+                        ]
+                        for sr in spill_repos[:3]
+                        if isinstance(sr, dict)
+                    ],
+                    title="Repos with highest spillover rate",
+                )
+            )
+
+        by_points = repos.get("by_pts", {})
+        if isinstance(by_points, dict) and by_points:
+            blocks.append(
+                _bullets(
+                    [
+                        [
+                            {"s": f"{points_key}pt", "strong": True},
+                            {"s": " " + ", ".join(str(r) for r in by_points[points_key][:3])},
+                        ]
+                        for points_key in sorted(by_points, key=lambda k: int(k))
+                        if by_points[points_key]
+                    ],
+                    title="Repos by story size",
+                )
+            )
+
+        _add("repos", "Repository Activity", blocks, nav="Repos")
+
+    # ── Ticket Naming & Organisation ────────────────────────────────
+    naming = ex.get("naming_conventions", {})
+    if isinstance(naming, dict) and (
+        naming.get("title_prefixes")
+        or naming.get("label_distribution")
+        or naming.get("epic_examples")
+        or naming.get("template_sections")
+    ):
+        prefixes = naming.get("title_prefixes", [])
+        nm_rows: list[tuple[str, str | dict]] = [
+            (
+                "Title prefixes",
+                " · ".join(f"{p} {pct}%" for p, pct in prefixes[:5]) if prefixes else "none detected",
+            )
+        ]
+        labels = naming.get("label_distribution", [])
+        if labels:
+            share = naming.get("stories_with_labels_pct", 0)
+            nm_rows.append(("Labels", f"{share}% labelled: " + " · ".join(f"{lbl} {pct}%" for lbl, pct in labels[:6])))
+        style = naming.get("epic_naming_style", "")
+        epic_examples = naming.get("epic_examples", [])
+        if style and epic_examples:
+            samples = ", ".join(f"“{str(e)[:40]}”" for e in epic_examples[:3])
+            nm_rows.append(("Epic naming", f"{style} — {samples}"))
+        template_sections = naming.get("template_sections", [])
+        if template_sections:
+            nm_rows.append(("Description template", " → ".join(f"“{s}”" for s, _ in template_sections[:5])))
+        _add("naming", "Ticket Naming & Organisation", [_kv(nm_rows)], nav="Naming")
+
+    # ── Story & Epic Structure ──────────────────────────────────────
+    structure = ex.get("story_structure", {})
+    if isinstance(structure, dict) and (structure.get("subtask_ordering") or structure.get("epic_completion")):
+        st_rows: list[tuple[str, str | dict]] = []
+        ordering = structure.get("subtask_ordering", [])
+        if len(ordering) >= 2:
+            st_rows.append(("Subtask sequence", " → ".join(str(s) for s in ordering)))
+        skipped = structure.get("skipped_types", [])
+        if skipped:
+            st_rows.append(("Rarely created", " · ".join(f"{s['type']} ({s['present_pct']}%)" for s in skipped)))
+        avg_completion = structure.get("avg_epic_completion", 0)
+        if avg_completion > 0:
+            st_rows.append(("Epic completion avg", f"{avg_completion}%"))
+        for epic in structure.get("lingering_epics", [])[:3]:
+            st_rows.append(
+                (str(epic.get("epic_title", "?")), f"{epic['completed']}/{epic['total']} done ({epic['rate']}%)")
+            )
+        for epic in structure.get("epic_sprint_spread", [])[:3]:
+            st_rows.append((str(epic.get("epic", "?")), f"{epic['stories']} stories across {epic['sprints']} sprints"))
+        if st_rows:
+            _add("structure", "Story & Epic Structure", [_kv(st_rows)], nav="Structure")
+
+    # ── Acceptance Criteria Patterns ────────────────────────────────
+    ac_patterns = ex.get("ac_patterns", {})
+    if isinstance(ac_patterns, dict) and ac_patterns.get("stories_with_ac_pct") is not None:
+        ac_pct = ac_patterns.get("stories_with_ac_pct", 0)
+        ac_rows: list[tuple[str, str | dict]] = [("Stories with ACs", f"{ac_pct}%")]
+        blocks = []
+        if ac_pct == 0:
+            blocks.append(_kv(ac_rows))
+            blocks.append(_note("No acceptance criteria detected. ACs help define done and reduce ambiguity."))
+        else:
+            specificity = ac_patterns.get("specificity", {})
+            ac_rows += [
+                ("Median ACs/story", str(ac_patterns.get("median_ac", 0))),
+                (
+                    "Specificity",
+                    f"{specificity.get('label', '?')} ({specificity.get('precise_pct', 0)}% precise)",
+                ),
+            ]
+            by_discipline = ac_patterns.get("by_discipline", {})
+            if len(by_discipline) >= 2:
+                ac_rows.append(
+                    (
+                        "By discipline",
+                        " · ".join(f"{d} {v['avg_ac']:.0f} avg" for d, v in by_discipline.items()),
+                    )
+                )
+            spill = ac_patterns.get("spillover_correlation", {})
+            low_ac = spill.get("low_ac_spill_pct", 0)
+            high_ac = spill.get("high_ac_spill_pct", 0)
+            if low_ac > high_ac + 5 and spill.get("low_ac_count", 0) >= 5:
+                ac_rows.append(("Spillover impact", f"0-1 ACs: {low_ac}% spill vs 3+ ACs: {high_ac}% spill"))
+            blocks.append(_kv(ac_rows))
+
+            themes = ac_patterns.get("themes", {})
+            theme_examples = ac_patterns.get("theme_examples", {})
             if themes:
-                _tp: list[str] = []
-                for t, p in list(themes.items())[:5]:
-                    _ex_d = _tex.get(t)
-                    _ex_h = ""
-                    if isinstance(_ex_d, dict) and _ex_d.get("issue_key"):
-                        _ek = _e(_ex_d["issue_key"])
-                        _eu = _ex_d.get("issue_url", "")
-                        _sm = _e(_ex_d.get("summary", "")[:30])
-                        _lk = _link_html(_eu, f"<code>{_ek}</code>")
-                        _ex_h = f' {_lk} <span style="color:var(--text-muted);">{_sm}</span>'
-                    _tp.append(f"<strong>{_e(t)}</strong> {_e(p)}%{_ex_h}")
-                ac_rows.append(("Topics", "<br>".join(_tp)))
-            by_disc = ac_pat.get("by_discipline", {})
-            if len(by_disc) >= 2:
-                parts = " &middot; ".join(f"{_e(d)} {v['avg_ac']:.0f} avg" for d, v in by_disc.items())
-                ac_rows.append(("By discipline", parts))
-            spill = ac_pat.get("spillover_correlation", {})
-            low_s = spill.get("low_ac_spill_pct", 0)
-            high_s = spill.get("high_ac_spill_pct", 0)
-            if low_s > high_s + 5 and spill.get("low_ac_count", 0) >= 5:
-                ac_rows.append(("Spillover impact", f"0-1 ACs: {low_s}% spill vs 3+ ACs: {high_s}% spill"))
-        _nav("ac-patterns", "ACs")
-        sections.append(_section("ac-patterns", "Acceptance Criteria Patterns", _kv_table(ac_rows)))
+                # Its own list rather than `<br>`-joined rich text crammed into
+                # one key/value cell — each topic carries a linked example.
+                items = []
+                for theme, pct in list(themes.items())[:5]:
+                    runs: list[dict] = [{"s": str(theme), "strong": True}, {"s": f" {pct}%"}]
+                    example = theme_examples.get(theme)
+                    if isinstance(example, dict) and example.get("issue_key"):
+                        key_run = {"s": str(example["issue_key"])}
+                        if url := safe_url(str(example.get("issue_url", "") or "")):
+                            key_run["href"] = url
+                        runs += [{"s": " "}, key_run, {"s": f" {str(example.get('summary', ''))[:30]}", "em": True}]
+                    items.append(runs)
+                blocks.append(_bullets(items, title="Topics"))
+        _add("ac-patterns", "Acceptance Criteria Patterns", blocks, nav="ACs")
 
     # ── Epic Sizing ─────────────────────────────────────────────────
     epic = profile.epic_pattern
     if epic.sample_count > 0:
-        lo, hi = epic.typical_story_count_range
-        ep_rows: list[tuple[str, str]] = [
+        low, high = epic.typical_story_count_range
+        epic_rows: list[tuple[str, str | dict]] = [
             ("Avg stories/epic", f"{epic.avg_stories_per_epic:.0f}"),
             ("Avg points/epic", f"{epic.avg_points_per_epic:.0f}"),
         ]
-        if lo > 0 or hi > 0:
-            ep_rows.append(("Story count range", f"{lo}&ndash;{hi}"))
-        sections.append(_section("epics", "Epic Sizing", _kv_table(ep_rows)))
+        if low > 0 or high > 0:
+            epic_rows.append(("Story count range", f"{low}–{high}"))
+        _add("epics", "Epic Sizing", [_kv(epic_rows)])
 
     # ── Point Descriptions (LLM-generated) ──────────────────────────
-    pt_descs = ex.get("point_descriptions", {})
-    if isinstance(pt_descs, dict) and pt_descs:
-        pd_rows: list[str] = []
-        for pts_key in sorted(pt_descs.keys(), key=lambda x: int(x) if x.isdigit() else 99):
-            pd_rows.append(f"<tr><td><strong>{pts_key} pt</strong></td><td>{_e(pt_descs[pts_key])}</td></tr>")
-        if pd_rows:
-            pd_table = (
-                f'<div class="card" style="padding:0;overflow:hidden;">'
-                f'<table class="data-table"><tr><th>Points</th><th>What it means for this team</th></tr>'
-                f"{''.join(pd_rows)}</table></div>"
-            )
-            _nav("point-descriptions", "Point Descriptions")
-            sections.append(
-                _section("point-descriptions", "What Each Point Value Means (LLM Interpretation)", pd_table)
-            )
-
-    # ── Estimation Accuracy ───────────────────────────────────────
-    addl = ex.get("additional_patterns", {})
-    est_bias = addl.get("estimation_bias", {}) if isinstance(addl, dict) else {}
-    if isinstance(est_bias, dict) and est_bias.get("sample_size", 0) >= 5:
-        eb_rows = [
-            ("Accurate (at original estimate)", f"{est_bias.get('accurate_pct', 0):.0f}%"),
-            ("Underestimated (points increased)", f"{est_bias.get('underestimated_pct', 0):.0f}%"),
-            ("Overestimated (points decreased)", f"{est_bias.get('overestimated_pct', 0):.0f}%"),
-        ]
-        worst = est_bias.get("worst_overestimate_sizes", [])
-        if worst:
-            eb_rows.append(("Most overestimated sizes", ", ".join(f"{_e(s)}pt" for s in worst)))
-        _nav("estimation", "Estimation")
-        sections.append(_section("estimation", "Estimation Accuracy", _kv_table(eb_rows)))
-
-    # ── Seasonal Patterns ─────────────────────────────────────────
-    seasonal = addl.get("seasonal", {}) if isinstance(addl, dict) else {}
-    if isinstance(seasonal, dict) and seasonal.get("monthly_avg"):
-        monthly = seasonal["monthly_avg"]
-        s_rows = [(m, f"{v:g} pts") for m, v in monthly.items()]
-        low_m = seasonal.get("low_months", {})
-        high_m = seasonal.get("high_months", {})
-        for m, v in low_m.items():
-            s_rows.append((f"\u2193 {m} (low)", f"{v:g} pts"))
-        for m, v in high_m.items():
-            s_rows.append((f"\u2191 {m} (high)", f"{v:g} pts"))
-        _nav("seasonal", "Seasonal")
-        sections.append(_section("seasonal", "Seasonal Patterns", _kv_table(s_rows)))
-
-    # ── Workflow ──────────────────────────────────────────────────
-    wf = ex.get("workflow_style", {})
-    if isinstance(wf, dict) and wf.get("workflow"):
-        wf_seq = " \u2192 ".join(_e(step) for step in wf["workflow"])
-        wf_rows = [("Workflow", wf_seq)]
-        wf_style_label = {"columns-as-dod": "Columns as DoD steps", "minimal": "Minimal workflow"}.get(
-            wf.get("style", "minimal"), wf.get("style", "minimal")
+    point_descriptions = ex.get("point_descriptions", {})
+    if isinstance(point_descriptions, dict) and point_descriptions:
+        _add(
+            "point-descriptions",
+            "What Each Point Value Means (LLM Interpretation)",
+            [
+                _table(
+                    ["Points", "What it means for this team"],
+                    [
+                        [f"{key} pt", str(point_descriptions[key])]
+                        for key in sorted(point_descriptions, key=lambda k: int(k) if k.isdigit() else 99)
+                    ],
+                )
+            ],
+            nav="Point Descriptions",
         )
-        wf_rows.append(("Style", _e(wf_style_label)))
-        for col, rate in wf.get("dod_columns", {}).items():
-            wf_rows.append((f"  {col} pass-through", f"{_e(rate)}%"))
-        _nav("workflow", "Workflow")
-        sections.append(_section("workflow", "Board Workflow", _kv_table(wf_rows)))
+
+    # ── Estimation Accuracy ─────────────────────────────────────────
+    additional = ex.get("additional_patterns", {})
+    estimation_bias = additional.get("estimation_bias", {}) if isinstance(additional, dict) else {}
+    if isinstance(estimation_bias, dict) and estimation_bias.get("sample_size", 0) >= 5:
+        eb_rows: list[tuple[str, str | dict]] = [
+            ("Accurate (at original estimate)", f"{estimation_bias.get('accurate_pct', 0):.0f}%"),
+            ("Underestimated (points increased)", f"{estimation_bias.get('underestimated_pct', 0):.0f}%"),
+            ("Overestimated (points decreased)", f"{estimation_bias.get('overestimated_pct', 0):.0f}%"),
+        ]
+        worst = estimation_bias.get("worst_overestimate_sizes", [])
+        if worst:
+            eb_rows.append(("Most overestimated sizes", ", ".join(f"{s}pt" for s in worst)))
+        _add("estimation", "Estimation Accuracy", [_kv(eb_rows)], nav="Estimation")
+
+    # ── Seasonal Patterns ───────────────────────────────────────────
+    seasonal = additional.get("seasonal", {}) if isinstance(additional, dict) else {}
+    if isinstance(seasonal, dict) and seasonal.get("monthly_avg"):
+        s_rows: list[tuple[str, str | dict]] = [(m, f"{v:g} pts") for m, v in seasonal["monthly_avg"].items()]
+        for month, value in seasonal.get("low_months", {}).items():
+            s_rows.append((f"↓ {month} (low)", _cell(f"{value:g} pts", tone="warn")))
+        for month, value in seasonal.get("high_months", {}).items():
+            s_rows.append((f"↑ {month} (high)", _cell(f"{value:g} pts", tone="ok")))
+        _add("seasonal", "Seasonal Patterns", [_kv(s_rows)], nav="Seasonal")
+
+    # ── Workflow ────────────────────────────────────────────────────
+    workflow = ex.get("workflow_style", {})
+    if isinstance(workflow, dict) and workflow.get("workflow"):
+        wf_rows: list[tuple[str, str | dict]] = [
+            ("Workflow", " → ".join(str(step) for step in workflow["workflow"])),
+            (
+                "Style",
+                {"columns-as-dod": "Columns as DoD steps", "minimal": "Minimal workflow"}.get(
+                    workflow.get("style", "minimal"), str(workflow.get("style", "minimal"))
+                ),
+            ),
+        ]
+        for column, rate in workflow.get("dod_columns", {}).items():
+            wf_rows.append((f"{column} pass-through", f"{rate}%"))
+        _add("workflow", "Board Workflow", [_kv(wf_rows)], nav="Workflow")
 
     # ── Recommendations (all 13 types, matching TUI) ────────────────
-    recs: list[tuple[str, str]] = []
-    if vel > 0:
-        var_pct = std / vel * 100
-        if var_pct > 35:
-            recs.append(
-                (
-                    "High velocity variance",
-                    f"Velocity swings &pm;{var_pct:.0f}% sprint-to-sprint. "
-                    "Consider smaller stories or stricter sprint commitments.",
-                )
+    recommendations = _recommendations(profile, ex, vel=vel, std=std, cals=cals)
+    if recommendations:
+        _add(
+            "recommendations",
+            "Recommendations",
+            [_callout("warn", title, detail) for title, detail in recommendations],
+            nav="Recs",
+        )
+
+    generated = datetime.now()
+    return export_page(
+        mode="analysis",
+        title=f"Team Profile — {profile.project_key}",
+        wordmark="team",
+        subtitle=f"{profile.source}/{profile.project_key}",
+        facts=[
+            ("SPRINTS", str(profile.sample_sprints)),
+            ("STORIES", str(profile.sample_stories)),
+            ("GENERATED", generated.strftime("%Y-%m-%d %H:%M")),
+        ],
+        badges=[", ".join(sprint_names)] if sprint_names else [],
+        nav=nav_links,
+        footer=f"Generated by yeaboi.ai • {generated.strftime('%Y-%m-%d')}",
+        markdown_name=markdown_name,
+        report={"kind": "profile", "coverage": coverage, "sections": sections},
+    )
+
+
+def _scope_timeline_blocks(timeline) -> list[dict]:
+    """One sprint's scope timeline: its totals, its day-by-day series, its events."""
+    delta = timeline.scope_change_total
+    pct = round(delta / timeline.committed_pts * 100) if timeline.committed_pts else 0
+    tone = "ok" if delta == 0 else ("warn" if abs(delta) < 5 else "danger")
+    snapshots = timeline.daily_snapshots
+    first_count = len(snapshots[0].stories_in_sprint) if snapshots else 0
+    last_count = len(snapshots[-1].stories_in_sprint) if snapshots else 0
+
+    blocks: list[dict] = [
+        _kv(
+            [
+                ("Scope change", _cell(f"{delta:+g} pts ({pct:+d}%)", tone=tone)),
+                ("Committed", f"{timeline.committed_pts:g} pts ({first_count} stories)"),
+                ("Final", f"{timeline.final_pts:g} pts ({last_count} stories)"),
+                ("Delivered", f"{timeline.delivered_pts:g} pts"),
+            ],
+            title=str(timeline.sprint_name),
+        )
+    ]
+    if len(snapshots) >= 2:
+        blocks.append(
+            {
+                "kind": "trend",
+                "trend": {
+                    "title": f"{timeline.sprint_name}: scope per day",
+                    "label": f"{timeline.sprint_name}: scope points per day",
+                    "points": [[s.date, s.total_scope_pts] for s in snapshots],
+                },
+            }
+        )
+    if timeline.change_events:
+        blocks.append(
+            _table(
+                ["Δ pts", "Issue", "Change", "Summary"],
+                [
+                    [
+                        _cell(
+                            f"{event.delta_pts:+g}",
+                            tone="ok" if event.delta_pts < 0 else ("warn" if abs(event.delta_pts) <= 3 else "danger"),
+                        ),
+                        str(event.issue_key),
+                        event.change_type.replace("re_estimated_", "re-est ").replace("_", " "),
+                        str(event.summary or "")[:45],
+                    ]
+                    for event in timeline.change_events[:5]
+                ],
+                numeric=(0,),
             )
-    if profile.sprint_completion_rate > 0 and profile.sprint_completion_rate < 60:
+        )
+        if len(timeline.change_events) > 5:
+            blocks.append(
+                _note(f"… and {len(timeline.change_events) - 5} more scope changes in {timeline.sprint_name}.")
+            )
+    return blocks
+
+
+def _recommendations(
+    profile: TeamProfile, ex: Mapping, *, vel: float, std: float, cals: Sequence
+) -> list[tuple[str, str]]:
+    """The 13 recommendation types, as ``(title, detail)`` pairs.
+
+    Lifted out of the page builder because it is the one part of it that is
+    pure analysis rather than presentation — it reads the profile and decides
+    what is worth saying, and it does not care what draws the result.
+    """
+    recs: list[tuple[str, str]] = []
+    if vel > 0 and std / vel * 100 > 35:
+        recs.append(
+            (
+                "High velocity variance",
+                f"Velocity swings ±{std / vel * 100:.0f}% sprint-to-sprint. "
+                "Consider smaller stories or stricter sprint commitments.",
+            )
+        )
+    if 0 < profile.sprint_completion_rate < 60:
         recs.append(
             (
                 "Low sprint completion",
@@ -1641,186 +1712,149 @@ def build_team_profile_html(
                 "Link PRs to tickets for traceability.",
             )
         )
-    rec_count_val = ex.get("recurring_count", 0)
-    del_count_val = ex.get("delivery_count", 0)
-    if isinstance(rec_count_val, int) and isinstance(del_count_val, int):
-        total = rec_count_val + del_count_val
-        if total > 0 and rec_count_val / total > 0.3:
+    recurring_count = ex.get("recurring_count", 0)
+    delivery_count = ex.get("delivery_count", 0)
+    if isinstance(recurring_count, int) and isinstance(delivery_count, int):
+        total = recurring_count + delivery_count
+        if total > 0 and recurring_count / total > 0.3:
             recs.append(
                 (
                     "High recurring overhead",
-                    f"{rec_count_val} of {total} tickets ({rec_count_val / total * 100:.0f}%) "
+                    f"{recurring_count} of {total} tickets ({recurring_count / total * 100:.0f}%) "
                     "are recurring. Consider consolidating or timeboxing.",
                 )
             )
-    _html_cs = ex.get("contributor_stats", [])
-    if isinstance(_html_cs, list) and _html_cs:
-        _hcv = [c.get("per_sprint", 0) for c in _html_cs if c.get("per_sprint", 0) > 0]
-        if _hcv:
-            _hca = round(sum(_hcv) / len(_hcv), 1)
-            if _hca < 3:
+    contributors = ex.get("contributor_stats", [])
+    if isinstance(contributors, list) and contributors:
+        per_sprint = [c.get("per_sprint", 0) for c in contributors if c.get("per_sprint", 0) > 0]
+        if per_sprint:
+            average = round(sum(per_sprint) / len(per_sprint), 1)
+            if average < 3:
                 recs.append(
                     (
                         "Low per-developer output",
-                        f"Contributors average {_hca} pts/sprint. "
+                        f"Contributors average {average} pts/sprint. "
                         "Check for blockers, context-switching, or oversized stories.",
                     )
                 )
-    _repos = ex.get("repositories", {})
-    if isinstance(_repos, dict):
-        for sr in _repos.get("spillover_repos", []):
+    repos = ex.get("repositories", {})
+    if isinstance(repos, dict):
+        for sr in repos.get("spillover_repos", []):
             if isinstance(sr, dict) and sr.get("spill_rate", 0) >= 40:
                 recs.append(
                     (
-                        f"{_e(sr['repo'])} has high spillover",
-                        f"{sr['spill_rate']}% of stories touching {_e(sr['repo'])} don't complete the sprint.",
+                        f"{sr['repo']} has high spillover",
+                        f"{sr['spill_rate']}% of stories touching {sr['repo']} don't complete the sprint.",
                     )
                 )
-    _shadow = ex.get("shadow_spillover", [])
-    if isinstance(_shadow, list) and len(_shadow) >= 2:
+    shadow = ex.get("shadow_spillover", [])
+    if isinstance(shadow, list) and len(shadow) >= 2:
         recs.append(
             (
                 "Shadow spillover",
-                f"{len(_shadow)} stories were closed then re-created in the next sprint. "
+                f"{len(shadow)} stories were closed then re-created in the next sprint. "
                 "Consider keeping the original ticket open instead of cloning.",
             )
         )
-    td = ex.get("task_decomposition", {})
-    if isinstance(td, dict):
-        if td.get("task_completion_rate", 100) < 60:
+    task_decomp = ex.get("task_decomposition", {})
+    if isinstance(task_decomp, dict):
+        if task_decomp.get("task_completion_rate", 100) < 60:
             recs.append(
-                (
-                    "Low task completion",
-                    f"Only {_e(td['task_completion_rate'])}% of sub-tasks are completed.",
-                )
+                ("Low task completion", f"Only {task_decomp['task_completion_rate']}% of sub-tasks are completed.")
             )
-        for cat, rate_val, count in td.get("bottlenecks", []):
-            recs.append(
-                (
-                    f"{_e(str(cat))} bottleneck",
-                    f"{_e(str(cat))} tasks have only {_e(rate_val)}% completion ({_e(count)} tasks).",
-                )
-            )
-        sw = td.get("stories_with_tasks", 0)
-        tot = td.get("total_stories", 0)
-        if tot > 10 and sw > 0 and sw / tot < 0.3:
+        for category, rate, count in task_decomp.get("bottlenecks", []):
+            recs.append((f"{category} bottleneck", f"{category} tasks have only {rate}% completion ({count} tasks)."))
+        with_tasks = task_decomp.get("stories_with_tasks", 0)
+        total_stories = task_decomp.get("total_stories", 0)
+        if total_stories > 10 and with_tasks > 0 and with_tasks / total_stories < 0.3:
             recs.append(
                 (
                     "Low task breakdown",
-                    f"Only {sw} of {tot} stories ({sw / tot * 100:.0f}%) have sub-tasks.",
+                    f"Only {with_tasks} of {total_stories} stories "
+                    f"({with_tasks / total_stories * 100:.0f}%) have sub-tasks.",
                 )
             )
 
-    # Scope change recommendations
-    _sc = ex.get("scope_changes", {})
-    if isinstance(_sc, dict) and _sc.get("totals"):
-        _sct = _sc["totals"]
-        _sct_n = _sct.get("total_stories", 0)
-        _sct_cv = _sct.get("avg_committed_velocity", 0.0)
-        _sct_dv = _sct.get("avg_delivered_velocity", 0.0)
-        if _sct_cv > 0 and _sct_dv / _sct_cv < 0.7:
-            _dp = round(_sct_dv / _sct_cv * 100)
+    scope = ex.get("scope_changes", {})
+    if isinstance(scope, dict) and scope.get("totals"):
+        totals = scope["totals"]
+        total_stories = totals.get("total_stories", 0)
+        committed = totals.get("avg_committed_velocity", 0.0)
+        delivered = totals.get("avg_delivered_velocity", 0.0)
+        if committed > 0 and delivered / committed < 0.7:
             recs.append(
                 (
                     "Low delivery accuracy",
-                    f"Team delivers only {_dp}% of committed scope "
-                    f"({_sct_dv} of {_sct_cv} pts avg). "
+                    f"Team delivers only {round(delivered / committed * 100)}% of committed scope "
+                    f"({delivered} of {committed} pts avg). "
                     "Reduce sprint commitments to match actual capacity.",
                 )
             )
-        if _sct_n > 0:
-            _sct_a = _sct.get("added_mid_sprint", 0)
-            _sct_r = _sct.get("re_estimated", 0)
-            if _sct_a / _sct_n > 0.15:
+        if total_stories > 0:
+            added = totals.get("added_mid_sprint", 0)
+            re_estimated = totals.get("re_estimated", 0)
+            if added / total_stories > 0.15:
                 recs.append(
                     (
                         "High mid-sprint scope additions",
-                        f"{_sct_a} of {_sct_n} stories ({_sct_a / _sct_n * 100:.0f}%) "
+                        f"{added} of {total_stories} stories ({added / total_stories * 100:.0f}%) "
                         "were added after the sprint started. "
                         "Protect sprint commitments by locking scope after planning.",
                     )
                 )
-            if _sct_r / _sct_n > 0.15:
+            if re_estimated / total_stories > 0.15:
                 recs.append(
                     (
                         "Frequent re-estimation",
-                        f"{_sct_r} of {_sct_n} stories ({_sct_r / _sct_n * 100:.0f}%) "
-                        "had their points changed mid-sprint. "
+                        f"{re_estimated} of {total_stories} stories "
+                        f"({re_estimated / total_stories * 100:.0f}%) had their points changed mid-sprint. "
                         "Improve estimation accuracy with team calibration sessions.",
                     )
                 )
-        _sc_sps = _sc.get("per_sprint", [])
-        _hi_churn = [s for s in _sc_sps if s.get("scope_churn", 0) > 0.3]
-        if len(_hi_churn) >= 2:
-            _cn = ", ".join(s.get("name", "?") for s in _hi_churn[:3])
+        churned = [s for s in scope.get("per_sprint", []) if s.get("scope_churn", 0) > 0.3]
+        if len(churned) >= 2:
+            names = ", ".join(s.get("name", "?") for s in churned[:3])
             recs.append(
                 (
                     "High scope churn",
-                    f"{len(_hi_churn)} sprints had &gt;30% scope churn ({_e(_cn)}). "
-                    "Scope is volatile &mdash; enforce a sprint lock after planning.",
+                    f"{len(churned)} sprints had >30% scope churn ({names}). "
+                    "Scope is volatile — enforce a sprint lock after planning.",
                 )
             )
-        _sc_ch = _sc.get("carry_over_chains", [])
-        if len(_sc_ch) >= 3:
+        chains = scope.get("carry_over_chains", [])
+        if len(chains) >= 3:
             recs.append(
                 (
                     "Carry-over chains",
-                    f"{len(_sc_ch)} stories bounced across 3+ sprints. "
-                    "These are zombie stories &mdash; split or kill them.",
+                    f"{len(chains)} stories bounced across 3+ sprints. These are zombie stories — split or kill them.",
                 )
             )
 
-    _html_ac = ex.get("ac_patterns", {})
-    if isinstance(_html_ac, dict) and _html_ac.get("recommendation"):
-        recs.append(("Acceptance criteria gaps", _e(_html_ac["recommendation"])))
+    ac_patterns = ex.get("ac_patterns", {})
+    if isinstance(ac_patterns, dict) and ac_patterns.get("recommendation"):
+        recs.append(("Acceptance criteria gaps", str(ac_patterns["recommendation"])))
 
-    _html_pdod = ex.get("proposed_dod", {})
-    if isinstance(_html_pdod, dict) and _html_pdod.get("health") == "weak":
-        _hm = [i["practice"] for i in _html_pdod.get("items", []) if i.get("status") == "missing"]
+    proposed = ex.get("proposed_dod", {})
+    if isinstance(proposed, dict) and proposed.get("health") == "weak":
+        missing = [i["practice"] for i in proposed.get("items", []) if i.get("status") == "missing"]
         recs.append(
             (
                 "No consistent Definition of Done",
-                f"No consistent DoD found. {_e(', '.join(_hm[:3]))} show no evidence. "
+                f"No consistent DoD found. {', '.join(missing[:3])} show no evidence. "
                 "Create a team DoD checklist to improve quality.",
             )
         )
-    elif isinstance(_html_pdod, dict) and _html_pdod.get("health") == "moderate":
-        _he = [i["practice"] for i in _html_pdod.get("items", []) if i.get("status") == "emerging"]
-        if _he:
+    elif isinstance(proposed, dict) and proposed.get("health") == "moderate":
+        emerging = [i["practice"] for i in proposed.get("items", []) if i.get("status") == "emerging"]
+        if emerging:
             recs.append(
                 (
                     "Create a formal Definition of Done",
-                    f"{_e(', '.join(_he[:3]))} are practiced inconsistently. "
+                    f"{', '.join(emerging[:3])} are practiced inconsistently. "
                     "Write a shared DoD checklist and enforce it on every story.",
                 )
             )
-
-    if recs:
-        rec_html_items = "".join(
-            f'<div class="card" style="border-left:3px solid var(--warn);margin-bottom:0.5rem;">'
-            f'<strong style="color:var(--warn);">&#x26a0; {title}</strong>'
-            f'<p style="color:var(--text-muted);margin-top:0.3rem;">{desc}</p></div>'
-            for title, desc in recs
-        )
-        _nav("recommendations", "Recs")
-        sections.append(_section("recommendations", "Recommendations", rec_html_items))
-
-    # ── Assemble page ───────────────────────────────────────────────
-    gen_ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    return html_page(
-        title=f"Team Profile — {profile.project_key}",
-        heading=f"Team Profile — {profile.source}/{profile.project_key}",
-        meta=[
-            f"{profile.sample_sprints} sprints analysed",
-            f"{profile.sample_stories} stories",
-            f"Generated {gen_ts}",
-        ],
-        badges=[", ".join(sprint_names)] if sprint_names else [],
-        nav=nav_links,
-        body="".join(sections),
-        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
-    )
+    return recs
 
 
 def export_team_profile_html(
@@ -1830,8 +1864,16 @@ def export_team_profile_html(
     examples: dict | None = None,
     sprint_names: list[str] | None = None,
     ceremony=None,
+    markdown_name: str = "",
 ) -> Path:
-    """Write the self-contained team-profile HTML report and return its path."""
+    """Write the self-contained team-profile HTML report and return its path.
+
+    ``markdown_name`` names the sibling Markdown file, which the page points at
+    for anyone who opens it with scripting off. It is a parameter rather than
+    something derived here because the two artifacts are written by separate
+    calls with separate timestamps — guessing the name would produce a link to
+    a file that is one second wrong.
+    """
     out_dir = _project_export_dir(profile.project_key, output_dir)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_path = out_dir / f"team-profile-{ts}.html"
@@ -1841,6 +1883,7 @@ def export_team_profile_html(
         sprint_names=sprint_names,
         ceremony=ceremony,
         charts_dir=out_dir,
+        markdown_name=markdown_name,
     )
     out_path.write_text(page, encoding="utf-8")
     logger.info("Exported team profile HTML to %s", out_path)

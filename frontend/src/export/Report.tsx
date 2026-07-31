@@ -14,6 +14,7 @@ import { Anonymize } from './reports/Anonymize';
 import { Performance } from './reports/Performance';
 import { Plan } from './reports/Plan';
 import { Poker } from './reports/Poker';
+import { Profile } from './reports/Profile';
 import { Reporting } from './reports/Reporting';
 import { Retro } from './reports/Retro';
 import { Roadmap } from './reports/Roadmap';
@@ -93,6 +94,8 @@ export function Report({ report }: { report: ExportReport }) {
           warnings={report.warnings}
         />
       );
+    case 'profile':
+      return <Profile sections={report.sections} coverage={report.coverage} />;
     default: {
       const unreachable: never = report;
       throw new Error(`export: no renderer for ${JSON.stringify(unreachable)}`);

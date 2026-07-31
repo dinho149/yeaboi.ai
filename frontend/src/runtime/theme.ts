@@ -48,13 +48,6 @@ export const THEME_PREVIEW: Record<Theme, { bg: string; accent: string }> = {
   forest: { bg: '#0c1a12', accent: '#4cc38a' },
 };
 
-declare global {
-  interface Window {
-    /** Called by the export header button: `onclick="__yeaboiCycleTheme()"`. */
-    __yeaboiCycleTheme?: () => void;
-  }
-}
-
 export function isTheme(value: unknown): value is Theme {
   return typeof value === 'string' && (THEMES as readonly string[]).includes(value);
 }
@@ -98,19 +91,4 @@ export function applyStoredTheme(key: string = THEME_KEYS.export): Theme {
 /** The next palette in cycle order. */
 export function nextTheme(theme: Theme): Theme {
   return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length] as Theme;
-}
-
-/**
- * Apply the starting palette and wire up the export pages' cycle button.
- *
- * Only the static exports use this: they have no React runtime, just a header
- * button with an inline `onclick`. The live boards use the `<ThemeSwitcher>`
- * component instead, which offers all five at once rather than cycling.
- */
-export function installThemeSwitcher(key: string = THEME_KEYS.export): void {
-  let theme: Theme = applyStoredTheme(key);
-  window.__yeaboiCycleTheme = function cycleTheme(): void {
-    theme = nextTheme(theme);
-    setTheme(theme, key);
-  };
 }

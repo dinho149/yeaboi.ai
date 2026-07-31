@@ -19,6 +19,7 @@
  */
 
 import type { Run } from '../design/primitives';
+import type { Tone } from '../design/tone';
 import { requireBoot } from '../runtime/boot';
 import type { CarriedStatuses, RetroGrids } from '../types/enums';
 
@@ -240,6 +241,66 @@ export interface PlanSprint {
   storyIds: string[];
 }
 
+/**
+ * One cell of a generated table, or one value of a generated key/value row.
+ *
+ * A bare string is plain text. The object form carries a *reading* of the value
+ * alongside it, and each field is a fact rather than a decoration:
+ *
+ * * `tone` is the analysis' own judgement — 80% completion is `ok`, 40% is
+ *   `danger`. **This is the one place a `Tone` crosses the wire**, and it is
+ *   deliberate: the thresholds differ per column *and* per direction (higher
+ *   completion is better, higher spillover is worse), so deriving them here
+ *   would mean a second copy of a domain rule that Python already owns. What
+ *   travels is still the word, never the colour — `toneVar` maps it, here.
+ * * `pct` says the number is a proportion, so it draws its own bar.
+ * * `person` says the text names a human, which is what earns an avatar.
+ * * `note` is subordinate text — a ticket summary beside its key.
+ */
+export type Cell =
+  | string
+  | { t: string; tone?: Tone; pct?: number; href?: string; note?: string; person?: boolean };
+
+/**
+ * A block of generated document content.
+ *
+ * **This is a weaker contract than the interfaces above, on purpose.** Every
+ * other report here has a shape worth naming — a poker session has tickets and
+ * votes, a retro has columns. The team profile does not: it is twenty-odd
+ * *generated sections* whose composition depends on which analyses were enabled
+ * and which sources answered, and counted across them the whole report is 14
+ * key/value tables, 12 data tables, 18 cards, 14 lists and a handful of bars.
+ *
+ * Twenty bespoke interfaces would describe the same data worse — they would
+ * assert a structure the analysis does not have, and every new sub-analysis
+ * would need one more. So the exporter emits blocks, and this side draws them.
+ *
+ * A block still says *what kind of thing it is*, never how it looks: `kv`, not
+ * "two-column grey table". The presentation rule is unchanged.
+ */
+export type Block =
+  | { kind: 'kv'; title?: string; rows: Array<[string, Cell]> }
+  | { kind: 'table'; title?: string; headers: string[]; rows: Cell[][]; numeric?: number[] }
+  | { kind: 'cards'; title?: string; cards: Array<{ title: string; items: Run[][] }> }
+  | { kind: 'bullets'; title?: string; ordered?: boolean; items: Run[][] }
+  | { kind: 'prose'; text: string }
+  /** A caveat about what the numbers can and cannot show. Rendered muted. */
+  | { kind: 'note'; text: string }
+  /** A finding worth stopping on — a bottleneck, a recommendation, a warning. */
+  | { kind: 'callout'; tone: Tone; title: string; text?: string; items?: Run[][] }
+  /** A counted breakdown, `[label, count]`. Drawn as one bar plus its key. */
+  | { kind: 'bar'; label: string; counts: Array<[string, number]> }
+  /** A series over time — sprint scope per day. Drawn by the shared trend card. */
+  | { kind: 'trend'; trend: Trend }
+  /** A chart PNG, embedded as a `data:` URI. Only where a real chart exists. */
+  | { kind: 'image'; src: string; alt: string };
+
+export interface ProfileSection {
+  id: string;
+  title: string;
+  blocks: Block[];
+}
+
 export type ExportReport =
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
   | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
@@ -365,6 +426,12 @@ export type ExportReport =
       /** Gross velocity, for comparing against a sprint's reduced capacity. */
       velocity: number;
       images: string[];
+    }
+  | {
+      kind: 'profile';
+      /** What the analysis could and could not read. Shown before the numbers. */
+      coverage: string[];
+      sections: ProfileSection[];
     };
 
 export interface ExportBoot {

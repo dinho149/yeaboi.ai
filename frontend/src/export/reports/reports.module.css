@@ -631,6 +631,124 @@
   margin: var(--s5) 0;
 }
 
+/* ── Team profile: generated blocks ───────────────────────────── */
+
+.blocks > * + * {
+  margin-top: var(--s4);
+}
+
+/* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
+   accent — it groups within a section rather than announcing a new one. */
+.h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 0 0 var(--s2);
+}
+.kvWrap > * + * {
+  margin-top: var(--s2);
+}
+
+/* Label and value on one baseline. A `<dl>` rather than a table: these are
+   facts about one thing, not rows that compare with each other. */
+.kv {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  font-size: var(--fs-s);
+}
+.kv > div {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) 1fr;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.kv > div:last-child {
+  border-bottom: none;
+}
+.kv dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.kv dd {
+  margin: 0;
+  line-height: 1.6;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .kv > div {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Bounded rather than fluid: a proportion bar is only comparable down a column
+   if every row draws the same track. */
+.cellBar {
+  width: 90px;
+  flex: none;
+}
+.cellNote {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.cellPerson {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.profileCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+.profileProse {
+  font-size: var(--fs-s);
+}
+
+/* A caveat reads as a qualification of the section, not as one of its
+   findings. */
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: 1.6;
+}
+
+/* A finding worth stopping on. The rule and the wash are both derived from the
+   tone the payload sent, so a recommendation and a bottleneck read alike. */
+.callout {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  font-size: var(--fs-s);
+}
+.callout > * + * {
+  margin-top: var(--s2);
+}
+.callout p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
@@ -638,8 +756,12 @@
      two half-finished things. */
   .project,
   .column,
-  .lede {
+  .lede,
+  .callout {
     break-inside: avoid;
+  }
+  .h3 {
+    break-after: avoid;
   }
   .h2 {
     break-after: avoid;

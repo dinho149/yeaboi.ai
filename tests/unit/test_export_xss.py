@@ -724,7 +724,13 @@ def test_injected_strings_never_land_raw(name):
 
 class TestDictKeyRenderedFields:
     """Targeted probes for fields the generic injector cannot reach (dict keys
-    rendered into HTML, e.g. discipline names used as mapping keys)."""
+    rendered into the report, e.g. discipline names used as mapping keys).
+
+    These now assert against the *payload* rather than the document. The team
+    profile is a React export, so the probe travels as JSON-escaped text inside
+    the boot island — reaching the payload is the proof that the field is still
+    rendered at all, and the raw-marker check is what proves it cannot execute.
+    """
 
     def test_team_profile_spillover_discipline_keys_escaped(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -737,7 +743,7 @@ class TestDictKeyRenderedFields:
         )
         for marker in RAW_MARKERS:
             assert marker not in html_out
-        assert ESCAPED_MARKER in html_out
+        assert ISLAND_MARKER in html_out
 
     def test_team_profile_ac_by_discipline_keys_escaped(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -755,7 +761,7 @@ class TestDictKeyRenderedFields:
         )
         for marker in RAW_MARKERS:
             assert marker not in html_out
-        assert ESCAPED_MARKER in html_out
+        assert ISLAND_MARKER in html_out
 
 
 # ---------------------------------------------------------------------------

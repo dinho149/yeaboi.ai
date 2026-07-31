@@ -92,13 +92,19 @@ and never builds anything.
   **Never also ship them in a boot payload** — the island would win at runtime, so a stale bundle
   would render a board that disagrees with what the server accepts. Payloads carry only what a
   codegen cannot pin.
-- **Both live boards and the reporting slide deck are React** (`frontend/src/retro`, `poker`,
-  `deck`); their Python files are now just the shell and the boot island, and no Python *generates*
-  a stylesheet any more — the deck emitted one CSS rule per custom palette, which is why its
-  palettes now travel as data. (The ten static exports still render from `html_theme.py`'s markup
-  helpers and `EXPORT_CSS`; those are the surfaces left.) `make dev-board` / `dev-poker` /
-  `dev-deck` run seeded surfaces against the real Python side; restart them after `make web`,
-  since `read_asset` is cached.
+- **Every browser surface is React now** — both live boards, the reporting slide deck, the share
+  gate, and all ten static exports. Their Python files are the shell plus a boot island, and no
+  Python generates markup or a stylesheet any more: `html_theme` kept `escape`, `safe_url`, the
+  trend-series normalisation, image embedding and `export_page`, and lost `EXPORT_CSS`,
+  `html_page` and the dozen markup primitives. An exporter builds a payload of text and numbers;
+  a component draws it.
+- **Payload rules.** No markup crosses the wire, and no presentation either — the payload sends
+  the word (`"high"`, `"done"`) or the number, never the colour. The one documented exception is
+  the team profile's `Cell.tone`, because its thresholds are per-column *and* directional (80%
+  completion is good, 80% spillover is not); it is still a word, and `Profile.tsx` gates it
+  against `TONES` before it reaches a `var(--…)`.
+- `make dev-board` / `dev-poker` / `dev-deck` run seeded surfaces against the real Python side;
+  restart them after `make web`, since `read_asset` is cached.
 - **Two guards sit on the Python/TS boundary**, one per direction. `test_web_wire_shapes.py` drives
   real boards through a real round, writes the snapshots to `frontend/src/test/fixtures/`, and
   `wire.ts` asserts each one `satisfies` its interface in `types/board.ts` — so a dropped response
