@@ -85,9 +85,9 @@ jobs:
       - name: Deterministic guards
         id: guard
         env:
-          GH_TOKEN: ${{ github.token }}
+          # No GH_TOKEN / PR number: this step is pure git + grep over the
+          # checkout now, and calls no API at all.
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR: ${{ github.event.pull_request.number }}
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
           set -euo pipefail
@@ -125,7 +125,22 @@ jobs:
           # 3) Trivial PR? No shipping code changed -> skip (docs/chore/tests/CI only).
           #    The changelog data file is excluded: an entry-only edit (e.g. a
           #    wording fix) must not trigger a new release by itself.
-          if gh pr diff "$PR" --name-only | grep -E '^src/yeaboi/' | grep -vE '^src/yeaboi/changelog_data\.json$' | grep -q .; then
+          #
+          #    The file list comes from the local checkout, NOT `gh pr diff`. The
+          #    API refuses any diff over 20000 lines with `HTTP 406 ... diff
+          #    exceeded the maximum number of lines`, and because the call sat in
+          #    an `if` condition, `set -e` did not apply: the failure was
+          #    indistinguishable from "no files matched" and fell straight into
+          #    the skip branch. PR #111 (the React migration) rewrote most of
+          #    src/yeaboi/ and shipped with no bump and no release because of it —
+          #    the only trace was a `::notice::no src/yeaboi changes` on a PR that
+          #    changed hundreds of them. `fetch-depth: 0` plus the base fetch above
+          #    make the merge-base diff exact and unbounded, and assigning it to a
+          #    variable first means a git failure aborts the job under `set -e`
+          #    instead of silently reading as "nothing to release".
+          CHANGED=$(git diff --name-only FETCH_HEAD...HEAD)
+          echo "changed files: $(printf '%s' "$CHANGED" | grep -c . || true)"
+          if printf '%s\n' "$CHANGED" | grep -E '^src/yeaboi/' | grep -vE '^src/yeaboi/changelog_data\.json$' | grep -q .; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
