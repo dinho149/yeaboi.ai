@@ -47,6 +47,23 @@ import glassesSrc from '../../assets/duck/glasses.png';
 import wingSrc from '../../assets/duck/wing.png';
 import styles from './duck.module.css';
 
+/** Unprompted mannerisms, played on a timer while nothing else is happening. */
+export type DuckIdle = 'tilt' | 'peek' | 'preen';
+
+/** How long each mannerism lasts, in ms. Matches duck.module.css. */
+const IDLE_MS: Record<DuckIdle, number> = {
+  tilt: 1400,
+  peek: 1200,
+  preen: 1600,
+};
+
+const IDLE_KINDS = Object.keys(IDLE_MS) as DuckIdle[];
+
+/** Gap between mannerisms. Wide, and random inside the range, so the duck never
+ *  reads as a metronome — a fixed interval is what makes a loop look like a GIF. */
+const IDLE_MIN_MS = 6_000;
+const IDLE_MAX_MS = 14_000;
+
 /** States the duck holds until something changes them. */
 export type DuckRest = 'idle' | 'urgent' | 'locked' | 'offline';
 /** One-shot reactions, played once and then dropped back to the resting state. */
@@ -68,19 +85,77 @@ export interface DuckProps {
 }
 
 export function Duck({ state = 'idle', size = 64, className }: DuckProps) {
+  // Only when nothing else is going on. An idle mannerism during a startle or a
+  // reconnect would be two animations arguing over the same layer, and the one
+  // that matters would be the one that lost.
+  const idle = useDuckIdle(state === 'idle');
+
   return (
     <div
       className={cx(styles['duck'], className)}
       data-state={state}
+      data-idle={idle ?? undefined}
       style={{ width: `${size}px` }}
       aria-hidden="true"
     >
-      <img className={styles['base']} src={baseSrc} alt="" draggable={false} />
-      <img className={styles['wing']} src={wingSrc} alt="" draggable={false} />
-      <img className={styles['glasses']} src={glassesSrc} alt="" draggable={false} />
+      {/* The body layer exists so the entrance and the resting bob are not both
+          transforms on the same node. `.duck` owns arrival and the state
+          transforms; everything continuous lives in here. */}
+      <div className={styles['body']}>
+        <img className={styles['base']} src={baseSrc} alt="" draggable={false} />
+        <img className={styles['wing']} src={wingSrc} alt="" draggable={false} />
+        <img className={styles['glasses']} src={glassesSrc} alt="" draggable={false} />
+      </div>
       {state === 'offline' ? <span className={styles['zzz']}>z</span> : null}
     </div>
   );
+}
+
+/**
+ * Play an occasional unprompted mannerism while `enabled`.
+ *
+ * The constant wing-flap says "this page is running". It does not say "there is
+ * someone here" — for that the duck has to do something you did not ask for and
+ * cannot predict, which is why the gap is randomised rather than fixed.
+ *
+ * Owned by {@link Duck} rather than exposed to callers, so the static export
+ * masthead and the join gate get it without wiring anything up.
+ *
+ * Nothing here is gated on `prefers-reduced-motion`: the global guard in
+ * tokens.css flattens the animations to nothing, so the attribute changes and no
+ * motion results. That is the correct outcome, and it keeps this hook from being
+ * a second place where the reduced-motion rule is decided.
+ */
+export function useDuckIdle(enabled: boolean): DuckIdle | null {
+  const [idle, setIdle] = useState<DuckIdle | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setIdle(null);
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const schedule = () => {
+      timer = setTimeout(
+        () => {
+          const kind = IDLE_KINDS[Math.floor(Math.random() * IDLE_KINDS.length)] ?? 'tilt';
+          setIdle(kind);
+          timer = setTimeout(() => {
+            setIdle(null);
+            schedule();
+          }, IDLE_MS[kind]);
+        },
+        IDLE_MIN_MS + Math.random() * (IDLE_MAX_MS - IDLE_MIN_MS)
+      );
+    };
+
+    schedule();
+    return () => clearTimeout(timer);
+  }, [enabled]);
+
+  return idle;
 }
 
 /**

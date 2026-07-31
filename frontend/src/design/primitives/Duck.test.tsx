@@ -17,7 +17,7 @@ import { act, render, renderHook } from '@testing-library/preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import duckCss from './duck.module.css?raw';
-import { Duck, useDuckPulse, type DuckPulse, type DuckRest, type DuckState } from './Duck';
+import { Duck, useDuckIdle, useDuckPulse, type DuckPulse, type DuckRest, type DuckState } from './Duck';
 
 describe('<Duck>', () => {
   it('is hidden from assistive tech', () => {
@@ -50,6 +50,116 @@ describe('<Duck>', () => {
   });
 });
 
+describe('the resting rig', () => {
+  it('keeps the continuous motion off the node that owns arrival', () => {
+    // One element cannot run an entrance and a loop at once — whichever is
+    // declared second silently wins. The body layer is what makes both possible,
+    // so its absence is a real regression and not a markup detail.
+    const { container } = render(<Duck />);
+    const body = container.querySelector('div > div');
+    expect(body, 'the duck lost its body layer').toBeTruthy();
+    expect(body?.querySelectorAll('img')).toHaveLength(3);
+  });
+
+  it('waddles in on every mount, from the base rule', () => {
+    // Driven by CSS rather than JS precisely so an export opened from disk gets
+    // it too, with no hook and no boot payload.
+    const base = /\.duck\s*\{([^}]*)\}/.exec(duckCss)?.[1] ?? '';
+    expect(base).toMatch(/animation\s*:\s*duck-waddle-in/);
+  });
+
+  it.each(['locked', 'offline'])('cancels the entrance for %s', (state) => {
+    // Without this the static transform these states rely on is overridden for
+    // the first 1.4s — the exact window someone opening a dead board is looking.
+    const block = new RegExp(`\\.duck\\[data-state="${state}"\\]\\s*\\{([^}]*)\\}`).exec(duckCss);
+    expect(block?.[1]).toMatch(/animation\s*:\s*none/);
+  });
+
+  it('escalates the urgent flap past the resting one', () => {
+    // Both are wing rotations; if the resting amplitude is raised to meet the
+    // hard one, "ten seconds left" stops being visible as a change.
+    const peakRotation = (name: string): number => {
+      // Slice the block by hand: a keyframes body contains nested braces, so
+      // there is no `[^}]*` that reaches the second percentage stop.
+      const start = duckCss.indexOf(`@keyframes ${name} {`);
+      expect(start, `no @keyframes ${name}`).toBeGreaterThan(-1);
+      const body = duckCss.slice(start, duckCss.indexOf('\n}', start));
+      const degrees = [...body.matchAll(/rotate\((-?[\d.]+)deg\)/g)].map((m) => Math.abs(Number(m[1])));
+      return Math.max(...degrees);
+    };
+    expect(peakRotation('wing-flap-hard')).toBeGreaterThan(peakRotation('wing-flap') * 1.5);
+  });
+});
+
+describe('useDuckIdle', () => {
+  // The gap between mannerisms is randomised on purpose (a fixed one reads as a
+  // GIF loop), which makes every timing here ambiguous unless the randomness is
+  // pinned. With random() at 0 the wait is the 6s floor and the pick is the
+  // first mannerism, so "advance past 6s" means exactly one thing.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('plays a mannerism after a while, then clears it', () => {
+    const { result } = renderHook(() => useDuckIdle(true));
+    expect(result.current).toBeNull();
+
+    act(() => void vi.advanceTimersByTime(6_100));
+    expect(result.current).toBe('tilt');
+
+    act(() => void vi.advanceTimersByTime(1_500));
+    expect(result.current).toBeNull();
+  });
+
+  it('keeps cycling, so a board left open all afternoon stays alive', () => {
+    // The failure this catches is a hook that fires once and then sits still —
+    // which looks correct in the first ten seconds of a manual check.
+    const { result } = renderHook(() => useDuckIdle(true));
+
+    act(() => void vi.advanceTimersByTime(6_100));
+    expect(result.current).toBe('tilt');
+    act(() => void vi.advanceTimersByTime(1_500));
+    expect(result.current).toBeNull();
+
+    act(() => void vi.advanceTimersByTime(6_100));
+    expect(result.current).toBe('tilt');
+  });
+
+  it('does nothing while the duck has something real to report', () => {
+    // The second lock on the same door as the CSS ordering: a mannerism during a
+    // reconnect would be motion that means nothing competing with motion that does.
+    const { result } = renderHook(() => useDuckIdle(false));
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(result.current).toBeNull();
+  });
+
+  it('drops a running mannerism the moment it is disabled', () => {
+    const { result, rerender } = renderHook<DuckIdleResult, { on: boolean }>(({ on }) => useDuckIdle(on), {
+      initialProps: { on: true },
+    });
+    act(() => void vi.advanceTimersByTime(6_100));
+    expect(result.current).toBe('tilt');
+
+    rerender({ on: false });
+    expect(result.current).toBeNull();
+  });
+
+  it('cancels its pending timer on unmount', () => {
+    const clear = vi.spyOn(globalThis, 'clearTimeout');
+    const { unmount } = renderHook(() => useDuckIdle(true));
+    clear.mockClear();
+    unmount();
+    expect(clear).toHaveBeenCalled();
+  });
+});
+
+type DuckIdleResult = ReturnType<typeof useDuckIdle>;
+
 describe('duck.module.css', () => {
   // A regression guard on the rule stated in the module header. It is easy to
   // "tidy" one of these into a keyframe and never notice, because the only
@@ -59,8 +169,12 @@ describe('duck.module.css', () => {
     expect(block, `no rule for data-state="${state}"`).toBeTruthy();
     const body = block?.[1] ?? '';
     expect(body).toMatch(/transform\s*:/);
+    // The lookahead has to swallow the whitespace itself. Written as
+    // `animation\s*:\s*(?!none)` the `\s*` backtracks to zero width, the
+    // lookahead then sees " none", and the guard passes on the very thing it
+    // exists to catch.
     expect(body, `${state} must not rely on a keyframe — the global guard kills it`).not.toMatch(
-      /animation\s*:\s*(?!none)/
+      /animation\s*:(?!\s*none\b)/
     );
   });
 });
