@@ -2,6 +2,65 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.46.0",
+      "date": "2026-07-31",
+      "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look \u2014 different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it \u2014 \u201ca standup\u201d, \u201ca retro\u201d \u2014 so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading \u201cSprint Retro\u201d on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
+      "highlights": [
+        {
+          "text": "Boards, share pages, exported reports and the slide deck all wear the same header, footer and colours",
+          "areas": [
+            "retro",
+            "planning",
+            "reporting",
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "A theme picked on one surface now follows you to the others, and to the next report you export",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "The slide deck gains a light mode and finally prints correctly",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "A share page names what is behind it \u2014 except Performance, which stays anonymous on purpose",
+          "areas": [
+            "performance",
+            "general"
+          ]
+        },
+        {
+          "text": "Live boards are served with the same security headers and content policy as every other page",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "Browser tabs name the session, so three open boards are no longer three identical tabs",
+          "areas": [
+            "retro",
+            "planning",
+            "standup"
+          ]
+        },
+        {
+          "text": "Fixed: the shared countdown timer could stick on one second instead of counting down",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.45.0",
       "date": "2026-07-31",
       "summary": "Performance mode is now clearly marked as beta wherever you meet it. The mode works exactly as before and nothing has been taken away \u2014 but its 1:1 preps, completion summaries and six-month reviews have not yet been checked against a real team's delivery data, and until now nothing on screen said so. That matters more here than elsewhere, because these drafts are about named people. The Performance card on the welcome screen and the page header both carry a BETA tag, and the first time you open the mode you get a short one-time note explaining what is and isn't reliable: the drafts are a starting point rather than an assessment, a board with little on it produces thin and sometimes misleading signals, and nothing is emailed to anyone unless you ask for it. You will only see that note once. The same caveat now appears when you use Performance from the command line or through an AI assistant.",
