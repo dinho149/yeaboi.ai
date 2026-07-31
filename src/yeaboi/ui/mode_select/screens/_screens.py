@@ -779,7 +779,7 @@ def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
 _COMPOSE_MAX_ROWS = 12  # typing rows before the box scrolls with the cursor
 # The overlay is free to be wider than the companion lane — nothing else is laid
 # out against it — so it takes a comfortable writing width, clamped to the frame.
-_COMPOSE_OVERLAY_COLS = 76
+_COMPOSE_OVERLAY_COLS = 64
 _COMPOSE_LEFT_MARGIN = 8  # frame columns kept clear to the bubble's left
 _COMPOSE_TOP_MARGIN = 3  # …and above it
 _COMPOSE_MIN_ROWS = 2
