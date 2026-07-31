@@ -21,13 +21,28 @@ def make_join_code() -> str:
     return f"{raw[:4]}-{raw[4:]}"
 
 
-def participant_url(headers: Mapping[str, str], fallback_host: str) -> str:
+def participant_url(headers: Mapping[str, str], fallback_host: str, public_url: str = "") -> str:
     """Return the token-free URL a participant should open, as *they* would type it.
 
-    Built from the request rather than from the server's own address, because the
-    server has no idea what it is reachable as: the same process answers on a LAN
-    IP and on a ``trycloudflare.com`` hostname, and only the request knows which
-    one this visitor came in on.
+    ``public_url`` — the server's Cloudflare tunnel URL, once it has one — wins
+    outright. Every server here binds loopback and is shared only through the
+    tunnel, so the host's own browser reaches the board at ``127.0.0.1``. Deriving
+    the invite from *that* request would hand the host a link no teammate can
+    open. The tunnel URL is the one address that is true for everyone.
+
+    Without it we fall back to the request, because the server has no idea what
+    it is reachable as: the same process answers on loopback and on a
+    ``trycloudflare.com`` hostname, and only the request knows which one this
+    visitor came in on. That path still runs for a participant who arrived
+    *through* the tunnel.
+
+    **Returns ``""`` when that fallback would be a loopback address.** A caller
+    with no tunnel yet is a host looking at their own board, and ``127.0.0.1`` is
+    the one answer that is actively harmful: the invite panel copies whatever
+    this returns the moment it opens, so handing it back puts an address on the
+    clipboard that resolves to the reader's own machine. Nothing is strictly
+    better than that, and every consumer already renders an empty value as "not
+    ready" rather than as a link.
 
     The scheme comes from ``X-Forwarded-Proto``, which cloudflared sets. Without
     it the tunnel URL would come out as ``http://`` — which does still work, via a
@@ -36,12 +51,48 @@ def participant_url(headers: Mapping[str, str], fallback_host: str) -> str:
     pasted into a chat, where it is read by a human and cached by a link
     unfurler. A forged header can only mislabel a link the caller already has.
     """
+    if public_url:
+        return public_url
     host = headers.get("Host") or fallback_host
+    if _is_loopback(host):
+        return ""
     scheme = "https" if (headers.get("X-Forwarded-Proto") or "").lower() == "https" else "http"
     return f"{scheme}://{host}/"
 
 
-def invite_payload(headers: Mapping[str, str], fallback_host: str, join_code: str) -> dict[str, str]:
+def _is_loopback(host: str) -> bool:
+    """True if ``host`` (optionally ``host:port``) names this machine only.
+
+    Deliberately a name check, not a resolve: the question is whether the string
+    would be meaningless to a reader elsewhere, and ``localhost`` is meaningless
+    to them whatever it resolves to here.
+
+    IPv6 needs the bracket form handled separately — ``[::1]:5173`` has three
+    colons, so the ``host:port`` split that works for names and IPv4 would leave
+    the port glued to the address.
+    """
+    host = host.strip()
+    if host.startswith("["):  # [::1] or [::1]:5173
+        name = host[1:].split("]", 1)[0]
+    elif host.count(":") == 1:  # name:port or 1.2.3.4:port
+        name = host.rsplit(":", 1)[0]
+    else:  # bare name, bare IPv4, or unbracketed IPv6
+        name = host
+    name = name.lower()
+    return (
+        name == "localhost"
+        or name.endswith(".localhost")
+        or name.startswith("127.")
+        or name in ("::1", "0:0:0:0:0:0:0:1")
+    )
+
+
+def invite_payload(
+    headers: Mapping[str, str],
+    fallback_host: str,
+    join_code: str,
+    public_url: str = "",
+) -> dict[str, str]:
     """The body of ``GET /api/invite`` on both live boards.
 
     A function rather than two dict literals in two handlers so the wire fixture
@@ -50,11 +101,11 @@ def invite_payload(headers: Mapping[str, str], fallback_host: str, join_code: st
     keep passing while the endpoint it claims to describe drifts away from it.
 
     Contains no secret: the join code is what the reader typed to get here, and
-    the URL is the one in their address bar. The host link, which is neither, is
-    never returned — see the handlers.
+    the URL is the board's public tunnel address. The host link, which is
+    neither, is never returned — see the handlers.
     """
     return {
-        "shareUrl": participant_url(headers, fallback_host),
+        "shareUrl": participant_url(headers, fallback_host, public_url),
         "joinCode": join_code,
     }
 

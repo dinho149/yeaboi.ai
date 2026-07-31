@@ -2,6 +2,42 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.44.0",
+      "date": "2026-07-31",
+      "summary": "Inviting people to a live retro or planning poker board is now one link that works for everyone, wherever they are. Boards used to offer a link that only worked for teammates on the same Wi-Fi, with a separate \u201cShare Remotely\u201d button to add an internet-reachable one on top \u2014 and it was easy to send the wrong one to someone at home. Every board now sets up a single secure link by itself the moment it opens, and that is the link Copy Invite gives you. The board is also no longer reachable from your local network at all, so it is not exposed to everyone else on an office or caf\u00e9 connection, and your own host link travels encrypted. Two things to know: hosting a board now needs an internet connection, and the invite link takes a few seconds to appear while it is being prepared \u2014 the access code works straight away.",
+      "highlights": [
+        {
+          "text": "One secure link per board, set up automatically \u2014 the separate \u201cShare Remotely\u201d step is gone",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "Copy Invite and Copy Host Link always give the link that works for everyone, never a local-network address",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "Boards are no longer reachable from your local network, so they aren't exposed on shared Wi-Fi",
+          "areas": [
+            "retro",
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Hosting a board now needs an internet connection; the invite link appears a few seconds after the board opens",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.43.0",
       "date": "2026-07-31",
       "summary": "Every page yeaboi opens in a browser — the retro board, planning poker, the join screen and the reporting slide deck — has been rebuilt on one shared design, so they now read as parts of the same app rather than three pages that had quietly drifted apart. Inviting people got easier: both live boards hand you a copyable invite link, and you can copy it from the terminal too instead of only holding up a QR code. The retro board gains a composer at the top of every column and sixteen reactions to vote with, and dragging a card on a phone finally works — touch dragging never fired at all before. Planning poker's reveal is a moment now rather than a flicker, and the timer ends on a bell instead of an alarm. Boards also stay current without the constant one-second refresh, which is gentler on a phone battery and on a shared tunnel. Every exported HTML report is drawn by the same pieces as the live boards, so an export matches what you saw. One fix worth naming: a ticket link in an export could previously carry a script that ran when you clicked it, and can't any more.",

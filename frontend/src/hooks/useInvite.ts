@@ -4,8 +4,8 @@
  * ## Why it is fetched at all
  *
  * The join code is not in the boot payload and must not be. `GET /` is
- * unauthenticated, so everything in the JSON island is readable by any LAN peer
- * without a token — `retro/page.py` says so directly above `board_config`. A
+ * unauthenticated, so everything in the JSON island is readable by anyone who
+ * reaches the board — `retro/page.py` says so directly above `board_config`. A
  * code shipped there would be the gate handing out its own key. So it comes from
  * `GET /api/invite`, which is token-gated.
  *
@@ -22,10 +22,10 @@
  *
  * ## Why it refetches on every open
  *
- * The host can start a Cloudflare tunnel mid-session, at which point the link a
- * teammate needs changes from a LAN address to an HTTPS hostname. The server
- * derives it from the request, so asking again is what keeps a board opened
- * before the tunnel from handing out an address no remote teammate can reach.
+ * The board's Cloudflare tunnel comes up a few seconds after the board itself,
+ * and until it does the server has no address worth handing out — it binds
+ * loopback. A panel opened in that window would cache an answer that is about to
+ * be replaced by the real one, so it asks again every time instead.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -64,6 +64,14 @@ export function useInvite(session: Session, open: boolean): UseInvite {
         if (!live) return;
 
         setInvite(data);
+
+        // No link yet means the tunnel is still coming up, and the server
+        // deliberately sent an empty `shareUrl` rather than the loopback address
+        // the host is sitting on. Copying the code on its own would be a
+        // half-invite — the reader gets a password and no door — so the panel
+        // shows what it has and says nothing about the clipboard.
+        if (!data.shareUrl) return;
+
         const copied = await copyText(inviteText(data.shareUrl, data.joinCode));
         if (!live) return;
         // Only claimed when it actually happened. "Copied" over an empty

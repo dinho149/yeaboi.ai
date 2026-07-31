@@ -1,10 +1,10 @@
-"""LAN collaboration server for the Retro board — stdlib ``http.server`` only.
+"""Collaboration server for the Retro board — stdlib ``http.server`` only.
 
 A retro needs the whole team, but the app runs locally in a terminal. So the host
-starts a retro and this module spins up a tiny HTTP server on the LAN; teammates
-open the printed URL in any browser (no install) and add cards live. We use the
-standard-library ``http.server`` — NOT FastAPI/Flask — to match the codebase's
-stdlib-only networking ethos (``standup/delivery.py`` uses ``smtplib``/``urllib``).
+starts a retro and this module spins up a tiny HTTP server; teammates open the
+board in any browser (no install) and add cards live. We use the standard-library
+``http.server`` — NOT FastAPI/Flask — to match the codebase's stdlib-only
+networking ethos (``standup/delivery.py`` uses ``smtplib``/``urllib``).
 
 Design (see plan "Retro Mode"):
   * ``ThreadingHTTPServer`` runs on a background daemon thread; each request gets
@@ -13,8 +13,13 @@ Design (see plan "Retro Mode"):
   * Access is gated by a per-session random token (``secrets.token_urlsafe``)
     checked with ``secrets.compare_digest`` (constant-time). ``GET /`` serves the
     harmless board page; every ``/api/*`` call requires the token.
-  * The server binds ``0.0.0.0`` so LAN peers can reach it. This is a LAN-trust
-    model — no TLS. Do NOT port-forward it to the public internet.
+  * The server binds **loopback only**. Teammates reach it exclusively through a
+    Cloudflare quick tunnel (:mod:`yeaboi.retro.tunnel`), which the TUI starts
+    automatically when the board opens and which fronts it with HTTPS. There is
+    no LAN address to hand out: a board used to advertise its Wi-Fi IP as well,
+    which only worked for people in the same room, put the host's admin secret on
+    the wire in plaintext, and left the port open to everyone on the network.
+    Same model as :mod:`yeaboi.sharing.server` (Share Online).
 
 Concurrency pitfalls, all handled below:
   * ``daemon_threads = True`` — request threads must not outlive the process.
@@ -29,12 +34,9 @@ Concurrency pitfalls, all handled below:
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import secrets
-import socket
-import struct
 import threading
 import time
 from dataclasses import asdict
@@ -62,47 +64,6 @@ class JoinLimiter(_SharedJoinLimiter):
         # Keep the clock lookup late so existing tests and callers can replace
         # ``retro.server.time.monotonic`` deterministically.
         super().__init__(clock=lambda: time.monotonic())
-
-
-# ---------------------------------------------------------------------------
-# LAN IP + share-code encode/decode
-# ---------------------------------------------------------------------------
-
-
-def get_lan_ip() -> str:
-    """Best-effort primary LAN IPv4.
-
-    Connecting a UDP socket sends no packet — it just makes the OS pick the
-    outbound interface, whose address we then read. Falls back to loopback when
-    offline (a host-only retro still works locally).
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except OSError:
-        logger.debug("retro: LAN IP detection failed — falling back to loopback")
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
-def encode_share_code(ip: str, port: int, token: str) -> str:
-    """Pack ip(4) + port(2, big-endian) + token into a grouped base32 share code."""
-    packed = socket.inet_aton(ip) + struct.pack(">H", port) + token.encode()
-    b32 = base64.b32encode(packed).decode().rstrip("=")
-    return "-".join(b32[i : i + 4] for i in range(0, len(b32), 4))
-
-
-def decode_share_code(code: str) -> tuple[str, int, str]:
-    """Inverse of :func:`encode_share_code` → (ip, port, token)."""
-    raw = code.replace("-", "").replace(" ", "").upper()
-    raw += "=" * (-len(raw) % 8)  # restore base32 padding
-    packed = base64.b32decode(raw)
-    ip = socket.inet_ntoa(packed[:4])
-    port = struct.unpack(">H", packed[4:6])[0]
-    token = packed[6:].decode()
-    return ip, port, token
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +179,15 @@ class _RetroHandler(BaseHTTPRequestHandler):
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
         # RetroServer.display_code is an alias for join_code; the handler only
         # ever sees the ThreadingHTTPServer, which carries the latter.
-        self._send_json(200, invite_payload(self.headers, fallback, self._join_code))
+        self._send_json(
+            200,
+            invite_payload(
+                self.headers,
+                fallback,
+                self._join_code,
+                self.server.public_url,  # type: ignore[attr-defined]
+            ),
+        )
 
     def _serve_state(self) -> None:
         """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
@@ -237,15 +206,25 @@ class _RetroHandler(BaseHTTPRequestHandler):
         )
 
     def _send_qr(self) -> None:
-        """Render a QR of the token-free join URL (``scheme://<Host header>/``) as inline SVG.
+        """Render a QR of the token-free join URL as inline SVG.
 
-        Using the request's Host header makes the QR correct for both LAN and the
-        Cloudflare tunnel automatically. The QR is token-free so scanning it lands
-        on the code gate — a scan alone does not grant access; the visitor still
-        types the join code. Best-effort — 501 if segno is unavailable.
+        Same URL the invite carries — the tunnel address once there is one, the
+        request's own host before that (see :func:`participant_url`). A phone
+        scanning this is by definition not on the host's machine, so encoding the
+        loopback address it would otherwise see would produce a QR that resolves
+        to the scanner's own device.
+
+        The QR is token-free so scanning it lands on the code gate — a scan alone
+        does not grant access; the visitor still types the join code. Best-effort
+        — 501 if segno is unavailable, 503 before there is any URL to encode.
         """
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = participant_url(self.headers, fallback)
+        url = participant_url(self.headers, fallback, self.server.public_url)  # type: ignore[attr-defined]
+        if not url:
+            # No tunnel yet. A QR of nothing is worse than no QR: it scans to
+            # something, and the something would be this machine.
+            self._send_json(503, {"error": "link not ready"})
+            return
         try:
             import io
 
@@ -428,13 +407,16 @@ class RetroServer:
         self.token = make_token()
         # A second, stronger secret that ONLY rides in the host's private link
         # (:attr:`url`). Whoever opens that link becomes the retro's admin (music /
-        # theme / timer / board-lock). It is never in the shared join flow, the
-        # share code, or the tunnel URL — so a join-code teammate is never an admin.
+        # theme / timer / board-lock). It is never in the shared join flow or the
+        # participant link — so a join-code teammate is never an admin.
         self.admin_token = make_token()
         self.join_code = make_join_code()
         self.join_limiter = JoinLimiter()
-        self.ip = get_lan_ip()
         self.port = port
+        # The Cloudflare tunnel URL, once the TUI has one. Empty until then, and
+        # empty forever if the tunnel could not start — which is exactly the state
+        # in which this board has no shareable address at all.
+        self.public_url = ""
         # Live-update plumbing. Built here rather than in start() so stop() is
         # safe on a server that was never started.
         self.event_hub = EventHub()
@@ -456,6 +438,19 @@ class RetroServer:
         # and silently blinds the watcher to every card, timer and lock change.
         return (self.board.revision(), self.board.presence_list(), self.board.typing_list())
 
+    def set_public_url(self, url: str) -> None:
+        """Record the tunnel URL, and push it to the running server object.
+
+        Two writes because the handler never sees ``self``: like ``token`` and
+        ``join_code``, it reaches shared state through the ``ThreadingHTTPServer``
+        instance (see :meth:`start`). Setting only the attribute here would leave
+        ``/api/invite`` still deriving its answer from the request — which, on a
+        loopback bind, is the host's own ``127.0.0.1``.
+        """
+        self.public_url = url
+        if self._httpd is not None:
+            self._httpd.public_url = url  # type: ignore[attr-defined]
+
     @property
     def url(self) -> str:
         """The host's private direct link (carries the token — do not share).
@@ -464,18 +459,24 @@ class RetroServer:
         anyone opening it is let straight in AND granted admin controls (the
         ``admin`` secret). Teammates get :attr:`share_url` instead and must enter
         the join code — they never receive the admin secret.
+
+        Over the tunnel once there is one, so the host can drive their own board
+        from a second device and the admin secret travels under HTTPS rather than
+        in the clear. Loopback before that — usable immediately, by the host only.
         """
-        return f"http://{self.ip}:{self.port}/?token={self.token}&admin={self.admin_token}"
+        base = self.public_url.rstrip("/") if self.public_url else f"http://127.0.0.1:{self.port}"
+        return f"{base}/?token={self.token}&admin={self.admin_token}"
 
     @property
     def share_url(self) -> str:
-        """The token-free URL to hand out — recipients must type the join code."""
-        return f"http://{self.ip}:{self.port}/"
+        """The token-free URL to hand out — recipients must type the join code.
 
-    @property
-    def share_code(self) -> str:
-        """The full ip+port+token share code (decodable by :func:`decode_share_code`)."""
-        return encode_share_code(self.ip, self.port, self.token)
+        Empty until the tunnel is up. There is no second answer to fall back on:
+        the server binds loopback, so the only address that means anything to a
+        teammate is the tunnel's. Callers must render the waiting state rather
+        than a link.
+        """
+        return self.public_url
 
     @property
     def display_code(self) -> str:
@@ -483,16 +484,19 @@ class RetroServer:
         return self.join_code
 
     def start(self) -> None:
-        """Bind ``0.0.0.0`` (walking ports on conflict) and serve on a daemon thread."""
+        """Bind loopback (walking ports on conflict) and serve on a daemon thread."""
         # The served page is token-FREE: GET / is unauthenticated, so baking the
-        # token in would leak it to any LAN peer. The client reads the token from
-        # its own URL (?token=) or obtains it via the join code (/api/join).
+        # token in would leak it to anyone who reaches the board. The client reads
+        # the token from its own URL (?token=) or via the join code (/api/join).
         page_html = build_board_html(self.board.sprint_name)
         httpd: ThreadingHTTPServer | None = None
         for candidate in range(self.port, self.port + _PORT_WALK):
             try:
-                # Bind all interfaces so LAN teammates can reach the board (see module docstring).
-                httpd = ThreadingHTTPServer(("0.0.0.0", candidate), _RetroHandler)  # noqa: S104
+                # Loopback only. cloudflared runs on this same machine and forwards
+                # to http://localhost:<port>, so the tunnel is unaffected — but the
+                # board stops being reachable by anyone else on the network, and the
+                # OS stops asking to accept incoming connections.
+                httpd = ThreadingHTTPServer(("127.0.0.1", candidate), _RetroHandler)
                 self.port = candidate
                 break
             except OSError:
@@ -509,6 +513,9 @@ class RetroServer:
         httpd.join_limiter = self.join_limiter  # type: ignore[attr-defined]
         httpd.page_html = page_html  # type: ignore[attr-defined]
         httpd.event_hub = self.event_hub  # type: ignore[attr-defined]
+        # Always present so the invite/QR handlers can read it unconditionally;
+        # set_public_url() fills it in when the tunnel comes up.
+        httpd.public_url = self.public_url  # type: ignore[attr-defined]
         self._httpd = httpd
         self._thread = threading.Thread(target=httpd.serve_forever, name="retro-http", daemon=True)
         self._thread.start()

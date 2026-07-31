@@ -18,10 +18,10 @@
  *
  * ## Secure context
  *
- * `getUserMedia` needs a secure context, so this works on localhost and over
- * the HTTPS tunnel but not on a plain-HTTP LAN address. That is not a bug to
- * route around — {@link micCapable} reports it so the UI can say the host's
- * room mic covers you, which is true.
+ * `getUserMedia` needs a secure context: localhost for the host, the HTTPS
+ * tunnel for everyone else. Both qualify, so this should now always be capable —
+ * but a browser can still refuse, and {@link micCapable} reports that so the UI
+ * can say the host's room mic covers you, which is true.
  *
  * ## Lifetime
  *

@@ -268,7 +268,7 @@ class TestSnapshotRendering:
             {
                 "state": board.state_snapshot(),
                 "display_code": "ABC123",
-                "actions": ["Share Remotely", "Export", "Close"],
+                "actions": ["Copy Invite", "Copy Host Link", "Export", "Close"],
             },
             action_sel=0,
             width=100,

@@ -1,6 +1,6 @@
 """MCP tools: Retro history (read-only).
 
-The live retro itself stays in the TUI — it is a real-time LAN browser board
+The live retro itself stays in the TUI — it is a real-time browser board
 (collaborative card entry, timers, presence), not something a single tool
 call can host. What agents can usefully read is the *outcome*: past boards
 with their cards, reactions, and action items.

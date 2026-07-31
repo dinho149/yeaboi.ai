@@ -64,8 +64,8 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, className }: InviteQRProps
 
       {/* Both fields render only once the values are in. They arrive from
           `GET /api/invite` rather than the boot payload, because the page is
-          served unauthenticated and the code would be readable by any LAN peer
-          without a token — see `retro/page.py`. */}
+          served unauthenticated and the code would be readable by anyone who
+          reaches the board — see `retro/page.py`. */}
       {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>

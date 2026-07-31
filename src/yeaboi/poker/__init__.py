@@ -1,9 +1,10 @@
-"""Scrum Poker mode — collaborative planning poker over a LAN web page.
+"""Scrum Poker mode — collaborative planning poker over a browser page.
 
 Teammates join from a browser (name + avatar), vote on tickets pulled from
 Jira or Azure DevOps (a sprint or the backlog), the admin reveals votes and
 writes the agreed story points back to the board. Follows the Retro mode
-blueprint: LAN ThreadingHTTPServer + polling browser page + SQLite history.
+blueprint: loopback ThreadingHTTPServer behind a Cloudflare tunnel + polling
+browser page + SQLite history.
 """
 
 from yeaboi.poker.board import POKER_DECK, PokerBoard, board_to_report

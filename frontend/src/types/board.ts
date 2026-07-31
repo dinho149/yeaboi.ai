@@ -193,9 +193,9 @@ export interface TicketView {
  *
  * Shared shape, one endpoint per server. It is a fetch rather than a field in
  * the boot payload for a reason worth keeping written down: `GET /` is
- * unauthenticated, so anything in the JSON island is readable by any LAN peer
- * without a token — putting the join code there would be the gate handing out
- * its own key.
+ * unauthenticated, so anything in the JSON island is readable by anyone who
+ * reaches the board, token or not — putting the join code there would be the
+ * gate handing out its own key.
  *
  * There is no host link here and there must never be one. It carries the admin
  * secret, and every participant can read this response.
@@ -204,11 +204,12 @@ export interface InviteInfo {
   /** The code a teammate types on the gate, e.g. `"K3P9-2QXA"`. */
   joinCode: string;
   /**
-   * The token-free URL to hand out, as *this* visitor reached the board.
+   * The token-free URL to hand out — the board's Cloudflare tunnel address.
    *
-   * Derived from the request, not from the server's own address: the same
-   * process answers on a LAN IP and on a `trycloudflare.com` hostname, and
-   * copying the wrong one to a remote teammate sends them nowhere.
+   * The server binds loopback, so the tunnel is the only address that means
+   * anything to a teammate; the host's own browser reaches the board at
+   * `127.0.0.1`, and handing *that* back would send the reader to their own
+   * machine. Falls back to the requesting host only before the tunnel is up.
    */
   shareUrl: string;
 }

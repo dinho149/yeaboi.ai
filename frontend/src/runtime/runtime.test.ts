@@ -83,9 +83,9 @@ describe('participantId', () => {
   });
 
   it('works without crypto.randomUUID', () => {
-    // randomUUID is only exposed in a secure context, and a LAN board served
-    // over plain http:// is not one — so this fallback is the path most
-    // teammates actually take, not a defensive afterthought.
+    // randomUUID is only exposed in a secure context. Every route to the board
+    // is one now, so this fallback is rare rather than common — but a pid that
+    // throws is a participant who cannot vote.
     vi.stubGlobal('crypto', {});
     const id = participantId();
     expect(id).toMatch(/^p[a-z0-9]+$/);

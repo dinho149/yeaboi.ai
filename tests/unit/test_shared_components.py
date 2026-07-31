@@ -130,7 +130,17 @@ class TestBuildActionRows:
     nothing failed; it was simply clipped.
     """
 
-    RETRO = ["Copy Invite", "Copy Host Link", "Generate Action Items", "Share Remotely", "Export", "Anonymize", "Close"]
+    # The widest row the retro board can produce: every standing button plus the
+    # Retry Link that appears when the tunnel fails.
+    RETRO = [
+        "Copy Invite",
+        "Copy Host Link",
+        "Generate Action Items",
+        "Export",
+        "Anonymize",
+        "Close",
+        "Retry Link",
+    ]
 
     def test_wraps_rather_than_overflowing_eighty_columns(self):
         rows = build_action_rows(self.RETRO, 0, width=80)

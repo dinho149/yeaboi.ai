@@ -8809,15 +8809,18 @@ def _resolve_retro_session() -> tuple[str, str, str, str]:
 def _run_retro_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the collaborative Retro board page.
 
-    Starts a small LAN web server so teammates can add cards from a browser; the
-    board refreshes every frame as cards arrive — the existing frame-timed
-    read_key loop IS the live-update mechanism, so no extra TUI-side thread is
-    needed (the only background thread is the HTTP server itself). Buttons:
-    [Generate Action Items, Export, Close]. Up/Down scroll, Left/Right select,
-    Enter activates. On exit the board is flushed to RetroStore and the server is
-    torn down (in a finally, so Ctrl-C/exception still persists + stops it).
+    Starts a small loopback web server plus the Cloudflare tunnel that is the only
+    way teammates reach it, so they can add cards from a browser; the board
+    refreshes every frame as cards arrive — the existing frame-timed read_key loop
+    IS the live-update mechanism, so no extra TUI-side thread is needed (the
+    background threads are the HTTP server and the one-shot tunnel setup).
+    Buttons: [Copy Invite, Copy Host Link, Generate Action Items, Export,
+    Anonymize, Close], plus Retry Link if the tunnel failed. Up/Down scroll,
+    Left/Right select, Enter activates. On exit the board is flushed to RetroStore
+    and the server + tunnel torn down (in a finally, so Ctrl-C/exception still
+    persists + stops them).
 
-    # See docs: "Retro" — TUI page, LAN collaboration
+    # See docs: "Retro" — TUI page, browser collaboration
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_retro_screen
 
@@ -8849,7 +8852,10 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         data = {
             "session_name": "",
             "display_code": "—",
-            "url": "—",
+            # No server, so no join block: `snapshot` suppresses it and leaves the
+            # message alone on the page. Without it the screen would offer to
+            # share a board that was never started.
+            "snapshot": True,
             "message": "No project session yet — create one in Planning first, then start a retro.",
             "grids": {},
         }
@@ -8894,7 +8900,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         data = {
             "session_name": session_name,
             "display_code": "—",
-            "url": "—",
+            "snapshot": True,  # no server → no join block (see above)
             "message": f"Could not start the retro server: {e}",
             "grids": {},
         }
@@ -8918,66 +8924,86 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("retro: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    message = "Server ready — share the code below so teammates can add cards from their browser."
+    # Empty on purpose: the status slot renders `message or remote["status"]`, so
+    # an empty message lets the tunnel narrate its own progress, and the first
+    # thing the host does takes the slot back.
+    message = ""
 
-    # Remote tunnel state. Setup (binary download + tunnel handshake) is slow, so
-    # it runs on a worker thread; the frame-timed loop shows its progress and the
-    # public URL as soon as it's ready. `active`/`starting` drive the button label.
+    # Tunnel state. The server binds loopback, so the Cloudflare tunnel is the
+    # ONLY way a teammate reaches this board — there is no link to show until it
+    # is up, which is why setup starts by itself below rather than on a button.
+    # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
+    # a worker thread; the frame-timed loop shows its progress and fills in the
+    # participant link the moment it lands.
     import threading as _threading
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "active": False, "starting": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
             try:
                 from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
 
-                remote["status"] = "Setting up remote link — fetching cloudflared (first use, ~40MB)…"
+                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
                 binary = ensure_cloudflared()
                 if binary is None:
-                    logger.warning("retro: remote link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Remote link failed — could not obtain cloudflared (see logs)."
+                    logger.warning("retro: secure link failed — could not obtain cloudflared binary")
+                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
+                    remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
                 tunnel = CloudflareTunnel(server.port, binary=binary)
+                # Published BEFORE start(), which blocks for up to 45 s on the
+                # handshake and the DNS-propagation gate. The page's finally
+                # stops whatever is in this slot; assigning after start() (as
+                # this did) meant closing a board during setup — now a routine
+                # path, since setup is no longer a deliberate button press —
+                # orphaned a cloudflared child still forwarding to that port.
+                remote["tunnel"] = tunnel
                 public = tunnel.start(timeout=45)
                 if not public:
                     tunnel.stop()
-                    logger.warning("retro: remote link failed — tunnel did not start within timeout")
-                    remote["status"] = "Remote link failed — tunnel did not start (see logs)."
+                    remote["tunnel"] = None
+                    logger.warning("retro: secure link failed — tunnel did not start within timeout")
+                    remote["status"] = "Secure link failed — tunnel did not start (see logs)."
+                    remote["failed"] = True
                     return
-                logger.info("retro: remote tunnel ready (port=%s)", server.port)
-                remote["tunnel"] = tunnel
-                # Token-free public URL: off-network teammates must still enter the
-                # join code (the token is never handed out in a shareable link).
+                logger.info("retro: secure link ready (port=%s)", server.port)
+                # Token-free public URL: teammates must still enter the join code
+                # (the token is never handed out in a shareable link).
                 remote["url"] = f"{public}/"
-                remote["active"] = True
-                remote["status"] = "Remote link ready — share the Remote URL with off-network teammates."
+                # Tell the server its own public address, so /api/invite and the QR
+                # hand out the tunnel URL rather than the loopback one the host's
+                # own browser arrived on.
+                server.set_public_url(remote["url"])
+                remote["status"] = "Link ready — send it and the code to your team."
             except Exception as e:  # never let the worker crash anything
-                logger.error("retro: remote tunnel setup failed: %s", e, exc_info=True)
-                remote["status"] = f"Remote link failed — {e}"
+                logger.error("retro: secure link setup failed: %s", e, exc_info=True)
+                remote["status"] = f"Secure link failed — {e}"
+                remote["failed"] = True
             finally:
                 remote["starting"] = False
 
-        logger.info("retro: Share Remotely pressed — starting tunnel setup (session=%s)", session_id)
+        from yeaboi.config import tunnels_disabled
+
+        if tunnels_disabled():
+            # Opt-out for dry runs and offline/locked-down networks. The board
+            # still works for the host on loopback; it just has nothing to share.
+            logger.info("retro: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
+            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
+            remote["starting"] = False
+            remote["failed"] = False
+            return
+
+        logger.info("retro: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
-        remote["status"] = "Setting up remote link…"
+        remote["failed"] = False
+        remote["status"] = "Setting up the secure link…"
         _threading.Thread(target=_worker, name="retro-tunnel-setup", daemon=True).start()
 
-    def _stop_remote() -> None:
-        logger.info("retro: Stop Sharing pressed — stopping remote tunnel (session=%s)", session_id)
-        tunnel = remote.get("tunnel")
-        if tunnel is not None:
-            tunnel.stop()
-        remote.update({"tunnel": None, "url": "", "active": False, "starting": False})
-        remote["status"] = "Remote link stopped — LAN sharing still on."
-
-    def _share_label() -> str:
-        if remote["active"]:
-            return "Stop Sharing"
-        if remote["starting"]:
-            return "Sharing…"
-        return "Share Remotely"
+    # Start it now. The board is open and the join code is already valid; the link
+    # is the one piece that takes a few seconds to exist.
+    _start_remote()
 
     # Anonymize state: None = live board; an AnonymizedOutput = mask card text/authors.
     anon = None
@@ -8989,9 +9015,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         Same two lines the Share Online screen copies. The host link is left out
         deliberately: it skips the join code and carries the admin secret, so
         pasting it into a team chat would make every reader a host.
+
+        Empty while the tunnel is still coming up — the caller must not copy then,
+        because there is no address that would work for the reader.
         """
-        link = remote["url"] or server.share_url
-        return f"{link}\nAccess code: {server.display_code}"
+        if not server.share_url:
+            return ""
+        return f"{server.share_url}\nAccess code: {server.display_code}"
 
     def _actions() -> list[str]:
         # Copy Invite leads, matching the Share Online screen. Copy Host Link is
@@ -9001,7 +9031,6 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
             "Copy Invite",
             "Copy Host Link",
             "Generate Action Items",
-            _share_label(),
             "Export",
             "Anonymize",
             "Close",
@@ -9009,6 +9038,12 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         if anon is not None:  # swap Anonymize → Adjust + Revert while masked
             i = base.index("Anonymize")
             base[i : i + 1] = ["Adjust", "Revert"]
+        # Only offered when there is something to retry, and appended rather than
+        # inserted: a worker thread flips `failed` between a frame being drawn and
+        # a keypress being handled, so a button that appeared mid-row would slide
+        # every later label one place under the user's cursor.
+        if remote["failed"]:
+            base.append("Retry Link")
         return base
 
     def _data() -> dict:
@@ -9042,10 +9077,14 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         return {
             "session_name": session_name,
             "display_code": server.display_code,
-            "url": server.share_url,
             "host_url": server.url,
-            "public_url": remote["url"],
-            "message": remote["status"] or message,
+            "public_url": server.share_url,
+            "link_failed": remote["failed"],
+            # `message` wins. It is only ever set by something the host just did,
+            # and the tunnel status is ambient — it goes non-empty on frame 1 and
+            # stays set for the whole session, so reading it first (as this did)
+            # silently swallowed every action result and error on the page.
+            "message": message or remote["status"],
             "grids": grids,
             "carried": carried,
             "actions": _actions(),
@@ -9062,6 +9101,11 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     try:
         _render(_data(), scroll, sel)
         while True:
+            # The Retry Link button appears and disappears on a worker thread, so
+            # the row can shrink under a cursor parked on its last entry. Clamp
+            # every frame: without it an Enter aimed at a button that just left
+            # would fall through to the out-of-range branch and close the board.
+            sel = min(sel, len(_actions()) - 1)
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
             _clicked = parse_click(k)
             if _clicked is not None:
@@ -9101,34 +9145,32 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     from yeaboi.clipboard import copy_markdown_status
 
                     logger.info("retro: Copy Invite pressed (session=%s)", session_id)
-                    message = copy_markdown_status(_invite_text())
-                    # The status line renders `remote["status"] or message`, and
-                    # a started tunnel leaves its status set for the rest of the
-                    # session — so without clearing it, pressing this once the
-                    # board is shared would show "Remote link ready" and look
-                    # like nothing happened.
-                    remote["status"] = ""
+                    invite = _invite_text()
+                    # Never put a half-invite on the clipboard. Before the tunnel
+                    # lands there is no address that works for the reader, and a
+                    # "Copied" that pasted the code alone would send the host into
+                    # a chat window with nothing to click.
+                    message = (
+                        copy_markdown_status(invite)
+                        if invite
+                        else "The secure link is still starting — try again in a moment."
+                    )
                     scroll = 0
                 elif label == "Copy Host Link":
                     from yeaboi.clipboard import copy_markdown_status
 
                     logger.info("retro: Copy Host Link pressed (session=%s)", session_id)
                     message = copy_markdown_status(server.url)
-                    # The status line renders `remote["status"] or message`, and
-                    # a started tunnel leaves its status set for the rest of the
-                    # session — so without clearing it, pressing this once the
-                    # board is shared would show "Remote link ready" and look
-                    # like nothing happened.
-                    remote["status"] = ""
                     scroll = 0
-                # Matched on the label rather than the index it used to sit at:
-                # the label is one of three (Share Remotely / Sharing… / Stop
-                # Sharing) and _share_label() is the only thing that knows which.
-                elif label == _share_label():  # public Cloudflare tunnel
-                    if remote["active"]:
-                        _stop_remote()
-                    elif not remote["starting"]:
+                elif label == "Retry Link":  # only present after a failed setup
+                    if not remote["starting"]:
+                        logger.info("retro: Retry Link pressed (session=%s)", session_id)
                         _start_remote()
+                    # Hand the status slot back to the tunnel so its progress is
+                    # what the host sees, and step off a button that is about to
+                    # disappear from the end of the row.
+                    message = ""
+                    sel = 0
                     scroll = 0
                 elif label == "Export":  # pick a destination (files / Notion / Confluence)
                     logger.info("retro: Export pressed (session=%s)", session_id)
@@ -9584,15 +9626,17 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
 def _run_poker_page(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> None:
     """Event loop for the collaborative Scrum Poker page.
 
-    Runs the setup wizard (source → sprint/backlog → fetch), then starts the LAN
-    web server so teammates can vote from a browser. Like retro, the TUI is a
-    monitoring view refreshed every frame; the host DRIVES the session (reveal /
-    finalize / edit / AI) from their own browser via the private admin link —
-    duplicating those controls in the terminal would double the admin surface.
-    Buttons: [Share Remotely, Export, Close]. On exit the session is flushed to
-    PokerStore and the server torn down (in a finally, so Ctrl-C still persists).
+    Runs the setup wizard (source → sprint/backlog → fetch), then starts the
+    loopback web server and the Cloudflare tunnel that is the only way teammates
+    reach it. Like retro, the TUI is a monitoring view refreshed every frame; the
+    host DRIVES the session (reveal / finalize / edit / AI) from their own browser
+    via the private admin link — duplicating those controls in the terminal would
+    double the admin surface. Buttons: [Copy Invite, Copy Host Link, Export,
+    Close], plus Retry Link if the tunnel failed. On exit the session is flushed
+    to PokerStore and the server + tunnel torn down (in a finally, so Ctrl-C still
+    persists).
 
-    # See docs: "Poker" — TUI page, LAN collaboration
+    # See docs: "Poker" — TUI page, browser collaboration
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_poker_screen
 
@@ -9648,6 +9692,9 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             "session_name": session_name,
             "message": f"Could not start the poker server: {e}",
             "state": board.state_snapshot(),
+            # No server, so no join block — offering to share a board that never
+            # started would print a code that resolves to nothing.
+            "snapshot": True,
             "actions": ["Close"],
         }
         _render(data, 0, 0)
@@ -9665,84 +9712,105 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
 
     logger.info("poker: page opened for session=%s on %s", session_id, server.url.split("?")[0])
     scroll, sel = 0, 0
-    message = "Server ready — open the Host link in your browser to run the session; share the code with the team."
+    # Empty on purpose — see the retro loop: the status slot renders
+    # `message or remote["status"]`, so the tunnel narrates until the host acts.
+    message = ""
 
+    # Tunnel state — see the retro loop for the full note. The short version: the
+    # server binds loopback, so this tunnel is the only way a teammate reaches the
+    # board, and it therefore starts by itself rather than on a button.
     import threading as _thr
 
-    remote: dict = {"tunnel": None, "url": "", "status": "", "active": False, "starting": False}
+    remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
     def _start_remote() -> None:
         def _worker() -> None:
             try:
                 from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
 
-                remote["status"] = "Setting up remote link — fetching cloudflared (first use, ~40MB)…"
+                remote["status"] = "Setting up the secure link — fetching cloudflared (first use, ~40MB)…"
                 binary = ensure_cloudflared()
                 if binary is None:
-                    logger.warning("poker: remote link failed — could not obtain cloudflared binary")
-                    remote["status"] = "Remote link failed — could not obtain cloudflared (see logs)."
+                    logger.warning("poker: secure link failed — could not obtain cloudflared binary")
+                    remote["status"] = "Secure link failed — could not obtain cloudflared (see logs)."
+                    remote["failed"] = True
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
                 tunnel = CloudflareTunnel(server.port, binary=binary)
+                # Published BEFORE start() so the page's finally can stop it —
+                # see the retro loop for the orphaned-cloudflared note.
+                remote["tunnel"] = tunnel
                 public = tunnel.start(timeout=45)
                 if not public:
                     tunnel.stop()
-                    logger.warning("poker: remote link failed — tunnel did not start within timeout")
-                    remote["status"] = "Remote link failed — tunnel did not start (see logs)."
+                    remote["tunnel"] = None
+                    logger.warning("poker: secure link failed — tunnel did not start within timeout")
+                    remote["status"] = "Secure link failed — tunnel did not start (see logs)."
+                    remote["failed"] = True
                     return
-                logger.info("poker: remote tunnel ready (port=%s)", server.port)
-                remote["tunnel"] = tunnel
+                logger.info("poker: secure link ready (port=%s)", server.port)
                 remote["url"] = f"{public}/"
-                remote["active"] = True
-                remote["status"] = "Remote link ready — share the Remote URL with off-network teammates."
+                # So /api/invite and the QR hand out the tunnel URL rather than the
+                # loopback address the host's own browser arrived on.
+                server.set_public_url(remote["url"])
+                remote["status"] = "Link ready — send it and the code to your team."
             except Exception as e:
-                logger.error("poker: remote tunnel setup failed: %s", e, exc_info=True)
-                remote["status"] = f"Remote link failed — {e}"
+                logger.error("poker: secure link setup failed: %s", e, exc_info=True)
+                remote["status"] = f"Secure link failed — {e}"
+                remote["failed"] = True
             finally:
                 remote["starting"] = False
 
-        logger.info("poker: Share Remotely pressed — starting tunnel setup (session=%s)", session_id)
+        from yeaboi.config import tunnels_disabled
+
+        if tunnels_disabled():
+            # Opt-out for dry runs and offline/locked-down networks. The board
+            # still works for the host on loopback; it just has nothing to share.
+            logger.info("poker: tunnel disabled by YEABOI_NO_TUNNEL — board is host-only")
+            remote["status"] = "Sharing is off (YEABOI_NO_TUNNEL) — this board is yours only."
+            remote["starting"] = False
+            remote["failed"] = False
+            return
+
+        logger.info("poker: starting secure link setup (session=%s)", session_id)
         remote["starting"] = True
-        remote["status"] = "Setting up remote link…"
+        remote["failed"] = False
+        remote["status"] = "Setting up the secure link…"
         _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
 
-    def _stop_remote() -> None:
-        logger.info("poker: Stop Sharing pressed — stopping remote tunnel (session=%s)", session_id)
-        tunnel = remote.get("tunnel")
-        if tunnel is not None:
-            tunnel.stop()
-        remote.update({"tunnel": None, "url": "", "active": False, "starting": False})
-        remote["status"] = "Remote link stopped — LAN sharing still on."
-
-    def _share_label() -> str:
-        if remote["active"]:
-            return "Stop Sharing"
-        if remote["starting"]:
-            return "Sharing…"
-        return "Share Remotely"
+    # Start it now — the board is open and the join code is already valid.
+    _start_remote()
 
     def _invite_text() -> str:
         """The link and code to hand a teammate — never the host link.
 
         The host link holds the admin secret (reveal, save, edit, AI), so it is
         the one thing that must not end up in the invite someone pastes into a
-        team chat. See the retro loop for the same note.
+        team chat. See the retro loop for the same note, and for why this is
+        empty until the tunnel is up.
         """
-        link = remote["url"] or server.share_url
-        return f"{link}\nAccess code: {server.display_code}"
+        if not server.share_url:
+            return ""
+        return f"{server.share_url}\nAccess code: {server.display_code}"
 
     def _actions() -> list[str]:
         # Same leading pair as the retro board and the Share Online screen.
-        return ["Copy Invite", "Copy Host Link", _share_label(), "Export", "Close"]
+        base = ["Copy Invite", "Copy Host Link", "Export", "Close"]
+        # Appended, not inserted — a worker thread flips `failed` between a frame
+        # being drawn and a keypress being handled (see the retro loop).
+        if remote["failed"]:
+            base.append("Retry Link")
+        return base
 
     def _data() -> dict:
         return {
             "session_name": session_name or setup["scope_label"],
             "display_code": server.display_code,
-            "url": server.share_url,
             "host_url": server.url,
-            "public_url": remote["url"],
-            "message": remote["status"] or message,
+            "public_url": server.share_url,
+            "link_failed": remote["failed"],
+            # `message` wins — see the retro loop for why the order matters.
+            "message": message or remote["status"],
             "state": board.state_snapshot(),
             "actions": _actions(),
         }
@@ -9757,6 +9825,11 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     try:
         _render(_data(), scroll, sel)
         while True:
+            # The Retry Link button appears and disappears on a worker thread, so
+            # the row can shrink under a cursor parked on its last entry. Clamp
+            # every frame: without it an Enter aimed at a button that just left
+            # would fall through to the out-of-range branch and close the board.
+            sel = min(sel, len(_actions()) - 1)
             k = read_key(timeout=frame_time) if supports_timeout else read_key()
             _clicked = parse_click(k)
             if _clicked is not None:
@@ -9785,31 +9858,28 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     from yeaboi.clipboard import copy_markdown_status
 
                     logger.info("poker: Copy Invite pressed (session=%s)", session_id)
-                    message = copy_markdown_status(_invite_text())
-                    # The status line renders `remote["status"] or message`, and
-                    # a started tunnel leaves its status set for the rest of the
-                    # session — so without clearing it, pressing this once the
-                    # board is shared would show "Remote link ready" and look
-                    # like nothing happened.
-                    remote["status"] = ""
+                    invite = _invite_text()
+                    # Never put a half-invite on the clipboard — see the retro loop.
+                    message = (
+                        copy_markdown_status(invite)
+                        if invite
+                        else "The secure link is still starting — try again in a moment."
+                    )
                     scroll = 0
                 elif label == "Copy Host Link":
                     from yeaboi.clipboard import copy_markdown_status
 
                     logger.info("poker: Copy Host Link pressed (session=%s)", session_id)
                     message = copy_markdown_status(server.url)
-                    # The status line renders `remote["status"] or message`, and
-                    # a started tunnel leaves its status set for the rest of the
-                    # session — so without clearing it, pressing this once the
-                    # board is shared would show "Remote link ready" and look
-                    # like nothing happened.
-                    remote["status"] = ""
                     scroll = 0
-                elif label in ("Share Remotely", "Stop Sharing", "Sharing…"):
-                    if remote["active"]:
-                        _stop_remote()
-                    elif not remote["starting"]:
+                elif label == "Retry Link":  # only present after a failed setup
+                    if not remote["starting"]:
+                        logger.info("poker: Retry Link pressed (session=%s)", session_id)
                         _start_remote()
+                    # Hand the status slot back to the tunnel, and step off a
+                    # button that is about to leave the end of the row.
+                    message = ""
+                    sel = 0
                     scroll = 0
                 elif label == "Export":
                     logger.info("poker: Export pressed (session=%s)", session_id)

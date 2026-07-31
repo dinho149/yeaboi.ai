@@ -30,12 +30,11 @@ def _live_data(board: PokerBoard) -> dict:
     return {
         "session_name": "Proj",
         "display_code": "AAAA-BBBB",
-        "url": "http://192.168.0.2:5273/",
-        "host_url": "http://192.168.0.2:5273/?token=t&admin=a",
+        "host_url": "http://127.0.0.1:5273/?token=t&admin=a",
         "public_url": "",
         "message": "Server ready",
         "state": board.state_snapshot(),
-        "actions": ["Share Remotely", "Export", "Close"],
+        "actions": ["Copy Invite", "Copy Host Link", "Export", "Close"],
     }
 
 
@@ -78,6 +77,33 @@ class TestLiveView:
         b.set_notice("Jira write failed")
         out = _render(_build_poker_screen(_live_data(b), width=100, height=36))
         assert "Jira write failed" in out
+
+    def test_join_block_waits_for_the_tunnel_rather_than_showing_a_local_url(self):
+        # Mirrors the retro board: the server binds loopback, so until the tunnel
+        # is up there is no address a teammate could open.
+        out = _render(_build_poker_screen(_live_data(_board()), width=100, height=42))
+        assert "Same Wi-Fi only" not in out
+        # The participant row itself must carry no address — the loopback host
+        # link below it is the host's own and is labelled as such.
+        participant = next(line for line in out.splitlines() if "Participant link" in line)
+        assert "preparing" in participant
+        assert "http" not in participant
+
+    def test_join_block_shows_the_tunnel_link_once_there_is_one(self):
+        data = _live_data(_board())
+        data["public_url"] = "https://calm-tree-1234.trycloudflare.com/"
+        out = _render(_build_poker_screen(data, width=100, height=42))
+        assert "calm-tree-1234" in out
+        assert "Works anywhere" in out
+        assert "preparing" not in out
+
+    def test_join_block_stops_promising_a_link_after_a_failure(self):
+        data = _live_data(_board())
+        data["link_failed"] = True
+        out = _render(_build_poker_screen(data, width=100, height=42))
+        assert "unavailable" in out
+        assert "Retry Link" in out
+        assert "a few seconds" not in out
 
     def test_ai_note_shown(self):
         # Taller than the other live-view tests: the AI note sits below the

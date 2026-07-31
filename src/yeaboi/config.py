@@ -593,6 +593,21 @@ def get_poker_server_port() -> int:
         return 5273
 
 
+def tunnels_disabled() -> bool:
+    """True when the live boards must not open a Cloudflare tunnel.
+
+    The boards now start one the moment they open, which is right for a real
+    ceremony and wrong for everything else: ``make run-dry`` advertises "fake
+    delays, no LLM calls", and merely opening the Retro card under it would
+    download a ~40 MB binary and publish a URL to the internet. Someone on a
+    locked-down or offline network wants the same opt-out.
+
+    Set ``YEABOI_NO_TUNNEL=1`` and the board still runs — the host reaches it on
+    ``127.0.0.1`` — it simply has nothing to hand out, and says so.
+    """
+    return os.getenv("YEABOI_NO_TUNNEL", "").strip().lower() in ("1", "true", "yes")
+
+
 def get_slack_webhook_url() -> str:
     """Return the Slack incoming-webhook URL for standup delivery, or '' if unset."""
     return os.getenv("SLACK_WEBHOOK_URL", "") or ""

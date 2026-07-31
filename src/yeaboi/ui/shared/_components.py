@@ -123,7 +123,8 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Team": ("rgb(180,80,160)", "rgb(220,120,200)", "rgb(50,40,50)", "rgb(60,50,60)"),
     "Generate Action Items": ("rgb(50,170,170)", "rgb(90,220,220)", "rgb(40,52,52)", "rgb(50,62,62)"),
     "Close": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
-    "Share Remotely": ("rgb(50,170,170)", "rgb(90,220,220)", "rgb(40,52,52)", "rgb(50,62,62)"),
+    # Live boards: shown only when the board's secure link failed to come up.
+    "Retry Link": ("rgb(50,170,170)", "rgb(90,220,220)", "rgb(40,52,52)", "rgb(50,62,62)"),
     "Share Online": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Copy Invite": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Stop Sharing": ("rgb(180,140,60)", "rgb(220,180,90)", "rgb(50,46,36)", "rgb(60,56,46)"),

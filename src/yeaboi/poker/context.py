@@ -18,7 +18,7 @@ actually done — instead of reasoning from the ticket text alone:
 - **planning** → previously sized similar stories with their points confidence.
 
 Performance mode is deliberately **excluded**: 1:1/review data is person-scoped
-and confidential, and the poker AI note is visible to every voter on the LAN.
+and confidential, and the poker AI note is visible to every voter on the board.
 
 Design mirrors ``gather_ceremony_context``: one graceful I/O entry point that
 **never raises** (a missing DB, an empty table, or a broken store just means

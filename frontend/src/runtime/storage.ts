@@ -84,9 +84,10 @@ export function readEnum<T extends string>(
 export function participantId(key = 'yeaboi_pid'): string {
   const existing = read('local', key);
   if (existing) return existing;
-  // randomUUID needs a secure context. A LAN board on plain http:// is not one,
-  // so the fallback is load-bearing rather than defensive — it is the path most
-  // teammates actually take.
+  // randomUUID needs a secure context. Every route to this board is one now
+  // (localhost for the host, the HTTPS tunnel for everyone else), so the
+  // fallback is the rare path rather than the common one — but a pid that
+  // throws is a participant who cannot vote, so it stays.
   const minted =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()

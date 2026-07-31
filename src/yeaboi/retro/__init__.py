@@ -1,13 +1,13 @@
 """Retro mode — a collaborative sprint retrospective board.
 
 A retro's value is the whole team contributing. The app runs locally, so the host
-starts a retro and this subsystem spins up a small LAN web server (stdlib only);
-teammates open the printed share code / URL in any browser and add sticky cards
-to four grids (What went well / What didn't go well / Action items / Demos) in
-real time. The host can then generate AI action items from the feedback and
-export a Markdown + HTML summary.
+starts a retro and this subsystem spins up a small loopback web server (stdlib
+only) fronted by a Cloudflare tunnel; teammates open the participant link in any
+browser, type the join code, and add sticky cards to four grids (What went well /
+What didn't go well / Action items / Demos) in real time. The host can then
+generate AI action items from the feedback and export a Markdown + HTML summary.
 
-# See docs: "Retro" — board, LAN server, AI action items, export
+# See docs: "Retro" — board, loopback server + tunnel, AI action items, export
 
 Public API is re-exported here so callers can import the common pieces without
 knowing the module layout. The mutable ``RetroBoard`` and the frozen artifacts

@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#0b0c0e" />
 <style>html,body{background:#0b0c0e}</style>
 <title>Retro — yeaboi docs</title>
-<meta name="description" content="yeaboi's Retro mode: a collaborative sprint retrospective board your whole team joins from any browser on the LAN." />
+<meta name="description" content="yeaboi's Retro mode: a collaborative sprint retrospective board your whole team joins from any browser, anywhere." />
 <link rel="icon" type="image/png" href="/assets/duck-favicon.png" />
 <link rel="apple-touch-icon" href="/assets/duck-touch.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -35,7 +35,7 @@
       <p class="lede">A collaborative sprint retrospective, run from the terminal but joined from any browser.</p>
 
       <h2 id="how-it-works">How it works</h2>
-      <p>Retro mode is built around a live board rather than a solo report. The host opens the Retro page in the yeaboi TUI, which starts a small local web server for the session. Teammates then open a URL from any browser on the LAN — no install or account required — and add sticky cards to four grids: <strong>What went well</strong>, <strong>What didn't go well</strong>, <strong>Action items</strong>, and <strong>Demos</strong>.</p>
+      <p>Retro mode is built around a live board rather than a solo report. The host opens the Retro page in the yeaboi TUI, which starts a small local web server for the session and a secure tunnel in front of it. Teammates then open the link from any browser, wherever they are — no install or account required — and add sticky cards to four grids: <strong>What went well</strong>, <strong>What didn't go well</strong>, <strong>Action items</strong>, and <strong>Demos</strong>.</p>
       <p>Because the board is served over the network rather than shared as a static file, everyone sees the same state as it grows: cards added by any participant update live on every other participant's screen, kept in sync by polling the server every 2 seconds.</p>
       <p>Access to a session is protected rather than open to anyone who happens to be on the network. Each retro gets a random access token together with a short, human-friendly join code, so the board can't be discovered or written to by an uninvited device. Card text itself is also treated as untrusted input — it's length-capped and escaped everywhere it gets rendered, so a pasted card can't be used to break the page.</p>
       <p>Beyond the four grids, the live board supports emoji reactions on cards, drag-to-reorder, a shared countdown timer, a theme switcher, and ambient background music — all built with zero extra dependencies, since the server itself is just Python's standard-library HTTP server.</p>
@@ -47,7 +47,7 @@
       <p>Once the retrospective discussion winds down, yeaboi can turn the "didn't go well" cards into a set of suggested action items with a single LLM call. These AI-suggested items are clearly marked as AI-added on the board, so the team can tell at a glance which action items came from the discussion itself and which were synthesized afterward.</p>
 
       <h2 id="remote-sharing">Remote sharing</h2>
-      <p>The board is a LAN server by default, which covers a team in the same office or on the same network. For remote or hybrid teams, a "Share Remotely" button opens a free Cloudflare quick tunnel, making the board reachable from outside the LAN while remaining protected by the same token gate as local access.</p>
+      <p>The board's web server binds loopback only — nothing on your local network can reach it. It is shared through a free Cloudflare quick tunnel that starts automatically with the board, giving one HTTPS link that works for the person in the next chair and the person three time zones away, both protected by the same access code and token gate. The link takes a few seconds to appear while the tunnel comes up; the access code is live immediately.</p>
 
       <h2 id="exports">Exports</h2>
       <p>Every retro auto-exports once it wraps up, saving both a Markdown file and a self-contained HTML report to <code>~/.yeaboi/exports/retro/&lt;project&gt;/</code>, so the outcome of the session is captured as a shareable document rather than something that only lived on the board.</p>

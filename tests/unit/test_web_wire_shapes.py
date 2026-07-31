@@ -386,14 +386,19 @@ def _invite_snapshot() -> dict:
     """What ``GET /api/invite`` answers with, on both boards.
 
     Built by the same :func:`invite_payload` the two handlers call, so this pins
-    the endpoint rather than a re-description of it. Headers stand in for a
-    request that arrived over the tunnel, which is the case that matters — that
-    is where the copied link goes to someone who cannot reach the LAN.
+    the endpoint rather than a re-description of it.
+
+    The headers are the host's own — a loopback-bound board is what their browser
+    reaches — and the ``public_url`` is the tunnel the TUI handed the server. That
+    combination is the case that matters: it is the one where deriving the answer
+    from the request would put ``127.0.0.1`` on a clipboard bound for a chat
+    window.
     """
     return invite_payload(
-        {"Host": "abc-def.trycloudflare.com", "X-Forwarded-Proto": "https"},
+        {"Host": "127.0.0.1:5173"},
         "127.0.0.1:5173",
         "K3P9-2QXA",
+        "https://abc-def.trycloudflare.com/",
     )
 
 

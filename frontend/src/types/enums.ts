@@ -9,9 +9,9 @@
  * because they carry semantics a codegen cannot express — and a confidently
  * wrong generated interface is worse than an honest hand-written one.
  *
- * These are the sets the *server* validates against (a value from a LAN peer is
- * rejected unless it is in one of them), so a literal union that disagreed with
- * one would let the client offer something the board will always refuse.
+ * These are the sets the *server* validates against (a value from a participant
+ * is rejected unless it is in one of them), so a literal union that disagreed
+ * with one would let the client offer something the board will always refuse.
  */
 
 /** The four retro columns, in display order. */

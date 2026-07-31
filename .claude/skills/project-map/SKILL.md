@@ -54,10 +54,10 @@ src/yeaboi/
     render.py           — StandupReport → plaintext (Slack/email) + Rich (terminal/TUI)
     export.py           — StandupReport → Markdown + self-contained HTML (auto-saved every run; Export button)
     store.py            — StandupStore (standup_config/history/updates tables, schema v6)
-  retro/                — Retro mode (collaborative, LAN browser board)
+  retro/                — Retro mode (collaborative browser board, loopback + Cloudflare tunnel)
     __init__.py         — public API (RetroBoard, RetroServer, RetroStore, board_to_report)
     board.py            — RetroBoard (threading.Lock-guarded live cards) + board_to_report()
-    server.py           — RetroServer: stdlib ThreadingHTTPServer, token auth, LAN IP, share-code encode/decode
+    server.py           — RetroServer: stdlib ThreadingHTTPServer, token auth, loopback bind, set_public_url()
     page.py             — build_board_html(): self-contained dark browser page (4 grids, polling, XSS-safe)
     engine.py           — generate_action_items(): one LLM call (parse → fallback) from feedback cards
     tunnel.py           — optional Cloudflare quick tunnel (off-network joining); auto-downloads cloudflared, zero-setup
@@ -223,7 +223,9 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `STANDUP_GITHUB_REPO` — optional, GitHub repo (owner/repo) scanned for Daily Standup code activity
 - `SLACK_WEBHOOK_URL` — optional, Slack incoming-webhook URL for Daily Standup delivery
 - `STANDUP_SMTP_HOST` / `STANDUP_SMTP_PORT` / `STANDUP_SMTP_USER` / `STANDUP_SMTP_PASSWORD` / `STANDUP_SMTP_SENDER` / `STANDUP_EMAIL_RECIPIENTS` — optional, SMTP email delivery for Daily Standup
-- `RETRO_PORT` — optional, base port for the Retro LAN collaboration server (default 5173; walks upward if busy)
+- `RETRO_PORT` — optional, base loopback port for the Retro collaboration server, which the tunnel forwards to (default 5173; walks upward if busy)
+- `POKER_PORT` — same for the Poker board (default 5273; clear of retro's 5173..5193 walk range)
+- `YEABOI_NO_TUNNEL` — optional, `1`/`true`/`yes` stops the live boards opening a Cloudflare tunnel (`config.tunnels_disabled()`). The board still runs for the host on `127.0.0.1` but has nothing to share. Needed because the tunnel now auto-starts: without it `make run-dry` would download ~40 MB and publish a public URL
 - `CLOUDFLARED_PATH` — optional, path to an existing `cloudflared` binary for Retro remote tunnels (else the app auto-downloads one to `~/.yeaboi/bin/`)
 - `PERFORMANCE_FRAMEWORK_PATH` — optional, path to a custom competency framework / review template for Performance mode's 6-month review (else the bundled `performance/references/competency_framework.md` default is used). 1:1 summary emails reuse the standup `STANDUP_SMTP_*` / `STANDUP_EMAIL_RECIPIENTS` settings.
 - `SESSION_PRUNE_DAYS` — auto-prune sessions older than N days (default: 30, 0 = disabled)

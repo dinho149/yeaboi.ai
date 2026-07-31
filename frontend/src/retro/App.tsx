@@ -125,8 +125,8 @@ export function App({ boot }: { boot: RetroBoot }) {
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   // Fetched on open rather than read from the boot payload: the page is
-  // served unauthenticated, so a join code in the island would be readable
-  // by any LAN peer without a token. Also puts it on the clipboard.
+  // served unauthenticated, so a join code in the island would be readable by
+  // anyone who reaches the board, token or not. Also puts it on the clipboard.
   const invite = useInvite(session, inviteOpen);
   const [musicBlocked, setMusicBlocked] = useState(false);
   const [typingGrid, setTypingGrid] = useState('');

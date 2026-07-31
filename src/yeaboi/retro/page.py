@@ -7,9 +7,10 @@ forbids every external origin, and a teammate on a phone over Cloudflare has no
 second round-trip available. Everything the board needs arrives in one document.
 
 The page is **token-free**: ``GET /`` is unauthenticated, so baking the access
-token into the HTML would leak it to any LAN peer. The client reads the token
-from its own URL (``?token=``) or obtains it by typing the short **join code**
-into the gate (``POST /api/join``).
+token into the HTML would hand it to anyone who reaches the board — which, over a
+public tunnel, is anyone with the link. The client reads the token from its own
+URL (``?token=``) or obtains it by typing the short **join code** into the gate
+(``POST /api/join``).
 
 What Python is responsible for is only the *seam* — the shell, and the boot
 island in :func:`board_config`. Everything the board does lives in TypeScript
@@ -45,7 +46,7 @@ def board_config(sprint_name: str = "") -> dict[str, object]:
     lists, the stream library, and this session's titles.
 
     Never put a secret in here. ``GET /`` is unauthenticated, so everything in
-    this dict is readable by any LAN peer without a token.
+    this dict is readable by anyone who reaches the board, token or not.
     """
     return {
         "title": "Sprint Retro",

@@ -1,6 +1,6 @@
 """MCP tools: Poker session history (read-only).
 
-The live poker session itself stays in the TUI — it is a real-time LAN browser
+The live poker session itself stays in the TUI — it is a real-time browser
 board (secret voting, reveals, tracker write-backs) that a single tool call
 cannot host. What agents can usefully read is the *outcome*: past sessions with
 their tickets, votes, final points, and AI notes.
