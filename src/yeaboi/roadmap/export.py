@@ -107,11 +107,14 @@ def build_roadmap_html(analysis: RoadmapAnalysis, *, markdown_name: str = "", do
     run-over-run series has no meaningful cadence.
     """
     from yeaboi.html_theme import export_page
+    from yeaboi.web.brand import accent_mode
 
     return export_page(
         # Planning's accent: a roadmap analysis is the front half of planning,
-        # and roadmap intake has no accent of its own in the TUI either.
-        mode="planning",
+        # and roadmap intake has no accent of its own in the TUI either. Looked
+        # up rather than spelled, so this file is not a second place the
+        # mapping lives — `web.brand._BORROWED_ACCENTS` is the first.
+        mode=accent_mode("roadmap"),
         title=_title(analysis),
         wordmark="roadmap",
         facts=[

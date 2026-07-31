@@ -309,7 +309,9 @@ export function App({ boot }: { boot: PokerBoot }) {
       <JoinGate
         wordmark="poker"
         eyebrow="Planning poker"
-        frameTitle="yeaboi — poker"
+        // From the island — see the note on retro's gate.
+        frameTitle={boot.chrome.frame}
+        footer={boot.chrome.footer}
         heading="Join the session"
         blurb="Enter the share code from the host's screen."
         cta="Join"

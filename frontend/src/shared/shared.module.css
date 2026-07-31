@@ -117,6 +117,16 @@
   opacity: 1;
 }
 
+/* Bare wins over danger on colour by declaration order alone — both are single
+   classes, and `.btnBare` is written later. That silently un-reds the only
+   destructive controls on a board: retro's card ✕ and the ✓ that confirms it,
+   which sat next to a ↩ it had become identical to. Two classes, so it beats
+   `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
+   where it happens to sit in the file. */
+.btnBare.btnDanger { color: var(--danger); }
+.btnBare.btnDanger:hover:not(:disabled),
+.btnBare.btnDanger:focus-visible { color: var(--danger); border-color: transparent; }
+
 .btnActive { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
@@ -128,6 +138,10 @@
   color: var(--text);
   opacity: 1;
 }
+/* The raised rendition of the delete confirmation. Three classes, because
+   `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
+   `--text` at the exact moment it is asking about a destructive action. */
+.btnBare.btnActive.btnDanger { color: var(--danger); }
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */

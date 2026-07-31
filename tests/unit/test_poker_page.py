@@ -17,7 +17,7 @@ import pytest
 
 from tests._pages import assert_self_contained, island
 from yeaboi.poker.board import POKER_DECK, PokerBoard
-from yeaboi.poker.page import board_config, build_poker_html
+from yeaboi.poker.page import _document_title, board_config, build_poker_html
 from yeaboi.poker.server import PokerServer
 from yeaboi.retro.board import AVATARS, RETRO_THEMES
 
@@ -166,3 +166,24 @@ class TestServedPageIsTokenFree:
 
         assert boot["chrome"]["subtitle"] == "yeaboi"
         assert boot["scope"] == "Sprint 42"
+
+
+class TestDocumentTitle:
+    """A host with a board per team had every tab reading "Planning Poker"."""
+
+    def test_names_both_when_both_are_known(self):
+        assert _document_title("yeaboi", "Sprint 42") == "Planning Poker — yeaboi · Sprint 42"
+
+    @pytest.mark.parametrize(
+        ("project", "scope", "expected"),
+        [
+            ("yeaboi", "", "Planning Poker — yeaboi"),
+            ("", "Sprint 42", "Planning Poker — Sprint 42"),
+        ],
+    )
+    def test_names_whichever_it_has(self, project, scope, expected):
+        assert _document_title(project, scope) == expected
+
+    def test_falls_back_to_the_bare_mode_name(self):
+        # A headless or demo board has neither name to offer.
+        assert _document_title("", "") == "Planning Poker"

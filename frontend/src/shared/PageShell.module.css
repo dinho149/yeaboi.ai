@@ -38,7 +38,7 @@
  * be written as a `calc()`, and reaching for a ResizeObserver to publish the
  * numbers as custom properties is a lot of machinery for a layout question.
  *
- * It is not needed. `min-height: 100dvh` on a flex column holding the bar, the
+ * It is not needed. `height: 100dvh` on a flex column holding the bar, the
  * board *and* the credit makes the three of them exactly one viewport, and
  * `flex: 1` hands the board whatever the other two did not take. The arithmetic
  * is the browser's.
@@ -51,8 +51,23 @@
  * Leaving the credit outside would add its height to the scroll, and those last
  * pixels would drag the board's column headings under the sticky bar.
  *
- * `min-height`, not `height`: a phone stacks the columns, and a board that
- * genuinely needs more than a viewport must be allowed to have it.
+ * `height`, not `min-height`, and the distinction is the whole mechanism. A
+ * column flex container with an indefinite height sizes to its content, so
+ * `min-height` only raises the floor and never caps: one column with more cards
+ * than fit made the *region* grow to 2213px against an 827px viewport, which
+ * handed `.cards` its full content height and stopped the inner scrollers from
+ * ever engaging. The board then scrolled as one document — column headings
+ * sliding under the sticky bar, the other three columns stretched into empty
+ * voids, and the page scrolling by 1630px instead of by the masthead's 244.
+ * A definite height is what gives `min-height: 0` on the chain below something
+ * to shrink *against*.
+ *
+ * Neither board wants to grow instead. Retro's phone rendition is a horizontal
+ * snap carousel with `overflow-y: hidden` (retro.module.css, the 699px branch),
+ * not a vertical stack; poker scrolls in `.scroll`, and its sticky card deck
+ * parks against that scrollport's bottom edge — which only exists if the region
+ * is viewport-tall. Both files' comments already say "the shell's region is a
+ * flex column of definite height"; this is the declaration that makes it true.
  *
  * `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
  * the visible viewport, and most people open a tunnel link on a phone.
@@ -66,7 +81,7 @@
 .appRegion {
   display: flex;
   flex-direction: column;
-  min-height: calc(100dvh - var(--app-inset-bottom, 0px));
+  height: calc(100dvh - var(--app-inset-bottom, 0px));
 }
 
 /* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
@@ -227,11 +242,13 @@
     max-width: none;
     padding: 0;
   }
-  /* An app surface printed is just a document — release the viewport floor so
-     the content flows onto as many sheets as it needs instead of one, and let
-     the bar print where it actually sits rather than once per page. */
+  /* An app surface printed is just a document — release the viewport height so
+     the content flows onto as many sheets as it needs instead of being clipped
+     to one, and let the bar print where it actually sits rather than once per
+     page. `auto`, not `0`: the region is a definite height on screen, so a
+     floor of zero would no longer release anything. */
   .appRegion {
-    min-height: 0;
+    height: auto;
     display: block;
   }
   .barSticky {

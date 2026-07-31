@@ -198,6 +198,11 @@ class TestBreakpoints:
     #: `--bp-s/m/l` from tokens.css, each with its `calc(bp − 1px)` partner.
     ALLOWED = {699, 700, 1099, 1100, 1439, 1440}
 
+    #: Heights the same rule applies to. Only one query asks about height —
+    #: PageShell's hero-density switch — and it needs a viewport tall enough to
+    #: give a ~250px masthead *and* a usable board, which no width token can say.
+    ALLOWED_HEIGHTS = {800}
+
     def test_every_media_query_uses_a_scale_value(self):
         pattern = re.compile(r"\((min|max)-width:\s*(\d+)px\)")
         offenders: list[str] = []
@@ -207,6 +212,24 @@ class TestBreakpoints:
                     if int(value) not in self.ALLOWED:
                         offenders.append(f"{_rel(path)}:{lineno}: {value}px")
         assert offenders == [], f"off-scale breakpoints (see --bp-* in tokens.css): {offenders}"
+
+    def test_media_queries_in_typescript_use_the_scale_too(self):
+        """A `matchMedia` string is a media query that no stylesheet scan sees.
+
+        The query that decides whether a board wears the hero masthead or the
+        compact one lives in `PageShell.tsx`, not in a stylesheet — so the
+        convention the sibling test enforces stopped exactly where it mattered
+        most. Widths must be on the scale; heights on the short list above.
+        """
+        pattern = re.compile(r"\((min|max)-(width|height):\s*(\d+)px\)")
+        offenders: list[str] = []
+        for path in _sources(".ts", ".tsx"):
+            for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+                for _, axis, value in pattern.findall(line):
+                    allowed = self.ALLOWED if axis == "width" else self.ALLOWED_HEIGHTS
+                    if int(value) not in allowed:
+                        offenders.append(f"{_rel(path)}:{lineno}: {axis} {value}px")
+        assert offenders == [], f"off-scale breakpoints in TypeScript: {offenders}"
 
     def test_the_scale_is_declared_in_tokens_css(self):
         tokens = (FRONTEND / "design" / "tokens.css").read_text()

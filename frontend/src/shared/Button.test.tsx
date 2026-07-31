@@ -46,6 +46,22 @@ describe('Button', () => {
     expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe(expected);
   });
 
+  it('gives emphasis the pressed look without the pressed claim', () => {
+    // Three call sites need the raised rendition on a control that is not a
+    // toggle — retro's one-shot delete confirmation, the reaction trigger
+    // (which already says aria-expanded), and CopyField's transient ✓. Using
+    // `active` for those announced a state that never existed.
+    const { unmount } = render(<Button emphasis>Confirm</Button>);
+    const emphasised = screen.getByRole('button');
+    expect(emphasised.hasAttribute('aria-pressed')).toBe(false);
+    const raised = emphasised.className;
+    unmount();
+
+    // Same classes as a real toggle — the look is the point, the claim is not.
+    render(<Button active>Lock</Button>);
+    expect(screen.getByRole('button').className).toBe(raised);
+  });
+
   it('forwards its ref to the DOM node, not the component', () => {
     // Retro's reaction tray returns focus to its trigger after you pick an
     // emoji — the only keyboard exit from the tray. Without forwardRef the ref

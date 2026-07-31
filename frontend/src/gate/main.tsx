@@ -43,5 +43,6 @@ createRoot(root).render(
     {...(boot?.heading ? { heading: boot.heading } : {})}
     {...(boot?.eyebrow ? { eyebrow: boot.eyebrow } : {})}
     {...(boot?.cta ? { cta: boot.cta } : {})}
+    {...(boot?.footer ? { footer: boot.footer } : {})}
   />,
 );

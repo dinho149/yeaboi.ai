@@ -328,7 +328,12 @@ export function App({ boot }: { boot: RetroBoot }) {
       <JoinGate
         wordmark="retro"
         eyebrow="Sprint retrospective"
-        frameTitle="yeaboi — retro"
+        // From the island, not spelled again: `web.brand.frame_title` is the
+        // one place this format lives, and a second copy here is how the frame
+        // bar ends up reading differently on the gate than on the board behind
+        // it.
+        frameTitle={boot.chrome.frame}
+        footer={boot.chrome.footer}
         heading="Join the retro"
         blurb="Enter the share code from the host's screen."
         cta="Join"

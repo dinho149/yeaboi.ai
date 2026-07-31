@@ -13,9 +13,9 @@ import json
 import re
 
 from tests._pages import CREDIT_URL, assert_self_contained, island, markup
-from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
+from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, gate_boot, render_gate_page
 from yeaboi.web.assets import read_asset
-from yeaboi.web.brand import MODE_LABELS, MODE_WORDMARKS
+from yeaboi.web.brand import DEFAULT_FOOTER, MODE_LABELS, MODE_WORDMARKS, frame_title
 
 
 def _html_tag(page: str) -> str:
@@ -72,7 +72,7 @@ class TestGateDocument:
         page = render_gate_page("retro")
         assert render_gate_page("retro") == page  # constant per mode, not per share
         boot = island(page)
-        assert set(boot) == {"mode", "wordmark", "frameTitle", "heading", "eyebrow", "cta"}
+        assert set(boot) == {"mode", "wordmark", "frameTitle", "heading", "eyebrow", "cta", "footer"}
         assert boot["wordmark"] == "retro"
         assert boot["mode"] == "retro"
 
@@ -189,3 +189,47 @@ class TestPolicies:
             assert directives["base-uri"] == "'none'"
             assert directives["form-action"] == "'none'"
             assert directives["frame-ancestors"] == "'none'"
+
+
+class TestGateBoot:
+    """The payload on its own, which is what the TS-side guard checks.
+
+    Split out of ``render_gate_page`` so ``test_web_wire_shapes`` can snapshot
+    it and ``frontend/src/test/fixtures/wire.ts`` can assert it ``satisfies``
+    ``GateBoot``. Without that tie, renaming a field on the TypeScript side
+    typechecks and ships the neutral gate to every share, because
+    ``gate/main.tsx`` treats every prop as optional by design.
+    """
+
+    def test_a_branded_mode_carries_its_whole_vocabulary(self):
+        boot = gate_boot("standup")
+        assert boot["mode"] == "standup"
+        assert boot["wordmark"] == "standup"
+        assert boot["frameTitle"] == frame_title("standup")
+        assert "standup" in boot["heading"]
+
+    def test_performance_stays_neutral(self):
+        # The one mode whose name is itself the disclosure — see
+        # GATE_BRANDED_MODES in web/brand.py.
+        boot = gate_boot("performance")
+        assert boot["mode"] == ""
+        assert boot["wordmark"] == "yeaboi"
+        assert boot["frameTitle"] == "yeaboi"
+        assert "performance" not in boot["heading"].lower()
+
+    def test_an_unknown_mode_is_neutral_too(self):
+        assert gate_boot("not-a-mode")["wordmark"] == "yeaboi"
+        assert gate_boot("")["mode"] == ""
+
+    def test_the_byline_comes_from_python(self):
+        """It was the last surface whose credit lived in the TSX.
+
+        Every other one reads it off the island, so a change to the string had
+        to be made in two languages to take effect everywhere.
+        """
+        assert gate_boot("retro")["footer"] == DEFAULT_FOOTER
+
+    def test_the_frame_title_is_not_spelled_twice(self):
+        for mode in MODE_LABELS:
+            boot = gate_boot(mode)
+            assert boot["frameTitle"] == frame_title(boot["mode"])

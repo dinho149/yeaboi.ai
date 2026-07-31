@@ -10,7 +10,7 @@
 
 import { Duck, Wordmark, type DuckState } from '../design/primitives';
 import type { Theme } from '../runtime/theme';
-import { Button, Credit, Popover, ThemeSwitcher } from '../shared';
+import { Button, Credit, Popover, PopoverGroup, ThemeSwitcher } from '../shared';
 import styles from './deck.module.css';
 
 export interface ControlsProps {
@@ -59,17 +59,24 @@ export function Controls({
             the same one this viewer picked on a board or an export, and the
             reason the deck finally has a light mode. The deck palette is the
             accent the report's author chose, which T still cycles. */}
-        <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme" placement="above">
-          <ThemeSwitcher value={siteTheme} onChange={onSiteTheme} />
-          <Button
-            block
-            className={styles['deckThemeBtn']}
-            onClick={onTheme}
-            title={`Cycle deck palette (T) — next: ${nextThemeName}`}
-          >
-            Deck palette: {nextThemeName} →
-          </Button>
-        </Popover>
+        {/* A group of one. `PopoverGroup` owns both global dismissals — Escape
+            and a pointer-down outside the panel — and a solo `Popover` has
+            neither, which on a full-screen deck means the panel can only be
+            closed by finding the ◑ again; there is nowhere else to click.
+            `display: contents`, so wrapping costs no layout. */}
+        <PopoverGroup>
+          <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme" placement="above">
+            <ThemeSwitcher value={siteTheme} onChange={onSiteTheme} />
+            <Button
+              block
+              className={styles['deckThemeBtn']}
+              onClick={onTheme}
+              title={`Cycle deck palette (T) — next: ${nextThemeName}`}
+            >
+              Deck palette: {nextThemeName} →
+            </Button>
+          </Popover>
+        </PopoverGroup>
       </div>
       <p className={styles['hint']}>← / → or Space to navigate · T for theme · F fullscreen</p>
     </div>

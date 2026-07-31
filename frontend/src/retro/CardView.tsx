@@ -213,7 +213,10 @@ export function CardView({
             <Button
               shape="bare"
               tone="danger"
-              active
+              // `emphasis`, not `active`: this is a one-shot answer to a
+              // question, not a toggle that is on, and `aria-pressed` on it
+              // announces a state that never existed.
+              emphasis
               aria-label={`Confirm delete card: ${card.text.slice(0, 40)}`}
               // Focused on appearance, so the keyboard path is ✕, Enter — and
               // so a screen reader is told the row has become a question.

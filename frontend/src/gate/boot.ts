@@ -29,6 +29,8 @@ export interface GateBoot {
   heading: string;
   eyebrow: string;
   cta: string;
+  /** The byline. Server-driven like every other surface's, not a TSX default. */
+  footer: string;
 }
 
 /**

@@ -27,14 +27,17 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
+from html import escape
 
 from yeaboi.web.assets import render_page
 from yeaboi.web.brand import (
+    DEFAULT_FOOTER,
     GATE_BRANDED_MODES,
     MODE_LABELS,
     MODE_SHARE_PHRASES,
     MODE_WORDMARKS,
     accent_mode,
+    frame_title,
 )
 
 # The two policies this module's surfaces run under live in ``web.security``
@@ -57,14 +60,51 @@ def _noscript(heading: str) -> str:
 
     Everything on it is a constant of the mode, never of the share.
     """
+    # Escaped even though every value is a module constant from `web.brand`'s
+    # fixed vocabulary. This is the one f-string-into-markup left in the file
+    # whose entire job is what an untrusted visitor sees, and the cost of the
+    # call is nothing next to the cost of someone later making `heading` carry
+    # something from the share.
     return (
         "<noscript><main>"
-        f"<h1>{heading}</h1>"
+        f"<h1>{escape(heading)}</h1>"
         "<p>Enter the access code shown by the host to view it. "
         "This page needs JavaScript to check the code, and it disappears when the "
         "host stops sharing.</p>"
         "</main></noscript>"
     )
+
+
+def gate_boot(mode: str = "") -> dict[str, str]:
+    """Return the gate's boot island for ``mode``.
+
+    Split out of :func:`render_gate_page` so the payload can be asserted on its
+    own — ``test_web_wire_shapes`` snapshots it and ``frontend/.../wire.ts``
+    checks the snapshot against ``GateBoot``. Without that, a field renamed on
+    the TypeScript side typechecks and ships the neutral gate to every share,
+    because ``gate/main.tsx`` treats every prop as optional by design.
+
+    Flat, and drawn only from ``web.brand``'s fixed vocabulary. Nothing about
+    the *share* reaches it — see this module's docstring for what that excludes
+    and why.
+    """
+    branded = mode in GATE_BRANDED_MODES
+    wordmark = MODE_WORDMARKS.get(mode, "yeaboi") if branded else "yeaboi"
+    accent = accent_mode(mode) if branded else ""
+    phrase = MODE_SHARE_PHRASES.get(mode, "") if branded else ""
+
+    return {
+        "mode": accent,
+        "wordmark": wordmark,
+        "frameTitle": frame_title(accent),
+        "heading": f"Someone shared {phrase} with you" if phrase else _NEUTRAL_HEADING,
+        "eyebrow": "Shared from a terminal",
+        "cta": "Open",
+        # The gate is the last surface whose byline lived in the TSX. Every
+        # other one reads it off the island, so a change to the credit had to be
+        # made in two languages to take effect everywhere.
+        "footer": DEFAULT_FOOTER,
+    }
 
 
 @lru_cache(maxsize=16)
@@ -81,21 +121,11 @@ def render_gate_page(mode: str = "") -> str:
     """
     branded = mode in GATE_BRANDED_MODES
     label = MODE_LABELS.get(mode, "") if branded else ""
-    wordmark = MODE_WORDMARKS.get(mode, "yeaboi") if branded else "yeaboi"
-    accent = accent_mode(mode) if branded else ""
-
-    phrase = MODE_SHARE_PHRASES.get(mode, "") if branded else ""
     title = f"{label} — shared with yeaboi" if label else _NEUTRAL_TITLE
-    heading = f"Someone shared {phrase} with you" if phrase else _NEUTRAL_HEADING
 
-    boot = {
-        "mode": accent,
-        "wordmark": wordmark,
-        "frameTitle": f"yeaboi — {accent}" if accent else "yeaboi",
-        "heading": heading,
-        "eyebrow": "Shared from a terminal",
-        "cta": "Open",
-    }
+    boot = gate_boot(mode)
+    heading = boot["heading"]
+    accent = boot["mode"]
 
     html = render_page(
         bundle="gate",

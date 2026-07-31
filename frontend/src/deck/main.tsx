@@ -25,7 +25,7 @@ const boot = readDeckBoot();
 // still got a dark deck with no way back. Order matters — `applyPalette` reads
 // the resolved `--bg` to decide whether an accent needs darkening to stay
 // legible, so the theme has to be on the document first.
-applyStoredTheme();
+const siteTheme = applyStoredTheme();
 
 const palette = boot.palettes[boot.theme];
 if (palette) applyPalette(boot.theme, palette);
@@ -33,4 +33,8 @@ if (palette) applyPalette(boot.theme, palette);
 const root = document.getElementById('root');
 if (!root) throw new Error('deck: #root is missing from the document');
 
-createRoot(root).render(<App boot={boot} />);
+// The theme that was actually applied, not a second guess at it: with nothing
+// stored, `applyStoredTheme` falls back to the OS preference, so a picker that
+// re-derived its own default would highlight `midnight` on a light-preferring
+// machine while the page rendered `light`.
+createRoot(root).render(<App boot={boot} siteTheme={siteTheme} />);

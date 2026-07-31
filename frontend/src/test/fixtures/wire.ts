@@ -48,12 +48,14 @@
  */
 
 import type { DeckBoot } from '../../deck/boot';
+import type { GateBoot } from '../../gate/boot';
 import type { PokerBoot } from '../../poker/boot';
 import type { RetroBoot } from '../../retro/boot';
 import type { ExportBoot, ExportReport } from '../../export/boot';
 import type { InviteInfo, PokerState, RetroState, TicketView } from '../../types/board';
 
 import deckJson from './deck.json';
+import gateBootJson from './gate.boot.json';
 import inviteJson from './invite.json';
 import exportAnonymizeJson from './export.anonymize.json';
 import exportPerformanceJson from './export.performance.json';
@@ -138,6 +140,7 @@ void (inviteJson satisfies Widened<InviteInfo>);
 void (deckJson satisfies Widened<DeckBoot>);
 void (retroBootJson satisfies Widened<RetroBoot>);
 void (pokerBootJson satisfies Widened<PokerBoot>);
+void (gateBootJson satisfies Widened<GateBoot>);
 void (exportAnonymizeJson satisfies Widened<BootOf<'anonymize'>>);
 void (exportPerformanceJson satisfies Widened<BootOf<'performance'>>);
 void (exportPlanJson satisfies Widened<BootOf<'plan'>>);

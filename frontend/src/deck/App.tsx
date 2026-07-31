@@ -41,14 +41,16 @@ function toggleFullscreen(): void {
   else void document.documentElement.requestFullscreen();
 }
 
-export function App({ boot }: { boot: DeckBoot }) {
+export function App({ boot, siteTheme: applied }: { boot: DeckBoot; siteTheme?: Theme }) {
   const { slides, style } = boot;
   const total = Math.max(slides.length, 1);
   const [index, setIndex] = useState(0);
   const [theme, setTheme] = useState(boot.theme);
   // The site palette, shared with every other yeaboi surface. main.tsx already
-  // applied it before the first paint; this is the state behind the picker.
-  const [siteTheme, setSiteTheme] = useState<Theme>(() => storedTheme() ?? 'midnight');
+  // applied it before the first paint and hands the result down, so the picker
+  // shows the theme the page is actually wearing. Re-deriving it here would
+  // miss the OS-preference fallback and light up the wrong swatch.
+  const [siteTheme, setSiteTheme] = useState<Theme>(() => applied ?? storedTheme() ?? 'midnight');
   const chooseSite = useCallback((next: Theme) => {
     setSiteTheme(next);
     persistTheme(next);
@@ -74,6 +76,14 @@ export function App({ boot }: { boot: DeckBoot }) {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      // Yield to a control that owns these keys itself. The theme picker is a
+      // radiogroup, so ArrowLeft/Right move between its swatches — and with
+      // this handler also listening on `document`, both fired: choosing a
+      // palette with the keyboard advanced the deck at the same time. `T` and
+      // `F` would likewise page the deck while typing into any field.
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, [role="radiogroup"]')) return;
+
       const step = STEP[event.key];
       if (step !== undefined) {
         event.preventDefault();

@@ -25,8 +25,16 @@
  *   `bare` is retro's card actions, which sit on the card with no chrome of
  *   their own until you touch them.
  * * `active` — sets `aria-pressed`, which the raw buttons mostly forgot. A
- *   control that has opened a popover or locked the board is in a state, and
- *   that state was previously visual only.
+ *   control that has locked the board or turned focus mode on is in a state,
+ *   and that state was previously visual only.
+ * * `emphasis` — the *same* raised look with no `aria-pressed`. Not a
+ *   duplicate: `aria-pressed` says "this is a toggle and it is currently on",
+ *   so putting it on a control that is not a toggle is a lie a screen reader
+ *   reads out. Three call sites need the look without the claim — retro's
+ *   one-shot delete confirmation (a question, not a state), the reaction
+ *   trigger (which already says `aria-expanded`, and a control that is both
+ *   pressed *and* expanded announces twice for one fact), and `CopyField`'s ✓
+ *   (transient feedback that clears itself).
  * * `attention` — the poker console's pulse, for the one moment in a round when
  *   everyone has voted and the host is the only thing missing.
  * * `block` — full width, for a button that is the whole row.
@@ -72,6 +80,8 @@ export interface ButtonProps
   shape?: ButtonShape;
   /** Visually and semantically pressed — sets `aria-pressed`. */
   active?: boolean;
+  /** The pressed *look* with no `aria-pressed`, for a control that is not a toggle. */
+  emphasis?: boolean;
   /** Pulse, for the one control the room is waiting on. */
   attention?: boolean;
   /** Fill the available width. */
@@ -100,6 +110,7 @@ export function buttonClass({
   size = 'm',
   shape = 'box',
   active,
+  emphasis,
   attention,
   block,
   className,
@@ -108,6 +119,7 @@ export function buttonClass({
   size?: ButtonSize | undefined;
   shape?: ButtonShape | undefined;
   active?: boolean | undefined;
+  emphasis?: boolean | undefined;
   attention?: boolean | undefined;
   block?: boolean | undefined;
   className?: string | undefined;
@@ -117,7 +129,7 @@ export function buttonClass({
     styles[SIZES[size]],
     styles[TONES[tone]],
     styles[SHAPES[shape]],
-    active && styles['btnActive'],
+    (active || emphasis) && styles['btnActive'],
     attention && styles['btnAttention'],
     block && styles['btnBlock'],
     className
@@ -138,6 +150,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     size,
     shape,
     active,
+    emphasis,
     attention,
     block,
     className,
@@ -155,7 +168,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       aria-pressed={active === undefined ? undefined : active}
-      className={buttonClass({ tone, size, shape, active, attention, block, className })}
+      className={buttonClass({ tone, size, shape, active, emphasis, attention, block, className })}
     >
       {children}
     </button>

@@ -102,7 +102,10 @@ export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }:
   return (
     <Button
       shape="bare"
-      active={open}
+      // `emphasis`, not `active`: `aria-expanded` below already carries the
+      // open state, and a control that is both pressed and expanded announces
+      // the same fact twice.
+      emphasis={open}
       ref={buttonRef}
       disabled={disabled}
       aria-label="Add a reaction"

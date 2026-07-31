@@ -38,8 +38,10 @@ export interface IconButtonProps
   label: string;
   /** Text shown beside the glyph. When present, the button is no longer icon-only. */
   children?: ReactNode;
-  /** Visually mark the button as active (a popover open, the board locked). */
+  /** A real toggle that is currently on (the board locked) — sets `aria-pressed`. */
   active?: boolean;
+  /** The same look with no `aria-pressed`, for a control that is not a toggle. */
+  emphasis?: boolean;
   /** Smaller variant for in-card actions. Still meets the 24px floor. */
   compact?: boolean;
   tone?: 'default' | 'primary' | 'danger';
@@ -48,7 +50,7 @@ export interface IconButtonProps
 
 /** Forwards its ref for the same reason `Button` does — see the note there. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, children, active, compact, tone = 'default', className, type = 'button', ...rest },
+  { icon, label, children, active, emphasis, compact, tone = 'default', className, type = 'button', ...rest },
   ref
 ) {
   return (
@@ -63,6 +65,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         tone,
         size: compact ? 's' : 'm',
         active,
+        emphasis,
         className: cx(compact && styles['btnDim'], className),
       })}
     >

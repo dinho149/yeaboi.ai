@@ -48,13 +48,15 @@ def build_anonymized_html(result: AnonymizedOutput, *, title: str = "", markdown
     is the sibling ``.md`` file, named in the page's ``<noscript>`` note.
     """
     from yeaboi.html_theme import export_page
+    from yeaboi.web.brand import accent_mode
 
     stamp = result.generated_at or datetime.now().strftime("%Y-%m-%d")
     # The default accent rather than a mode-specific one: anonymize is a
     # post-processing step over another mode's output, and wearing that mode's
-    # colour would claim the masked copy is the original.
+    # colour would claim the masked copy is the original. Looked up rather than
+    # spelled — `web.brand._BORROWED_ACCENTS` owns the mapping.
     return export_page(
-        mode="analysis",
+        mode=accent_mode("anonymize"),
         title=title or "Anonymized output",
         wordmark="masked",
         subtitle="Names, tickets and identifiers have been replaced with stable placeholders.",
