@@ -257,6 +257,7 @@ def export_page(
     nav: Sequence[tuple[str, str]] = (),
     footer: str = "",
     markdown_name: str = "",
+    document_title: str = "",
 ) -> str:
     """Render one exported report as a self-contained React page.
 
@@ -286,6 +287,12 @@ def export_page(
         footer: Footer line. Defaults to the standard credit.
         markdown_name: Filename of the sibling Markdown artifact. When given,
             the page carries a ``<noscript>`` note pointing at it — see below.
+        document_title: Overrides the ``<title>`` only, leaving the ``<h1>``
+            alone. The two want different things: the heading says what kind of
+            document this is ("Daily Standup"), while a browser tab has to
+            distinguish it from the four others the reader has open, so it wants
+            the date or the sprint too. Empty means "use ``title`` for both",
+            which is what every file export does.
 
     **On JavaScript.** These pages render client-side, so with scripting off
     they would be blank. That is a real regression from the string-templated
@@ -317,7 +324,7 @@ def export_page(
 
     return render_page(
         bundle="export",
-        title=title,
+        title=document_title or title,
         data={"chrome": chrome, "report": dict(report)},
         body=noscript,
         html_attrs=f'data-mode="{_e(mode)}"',

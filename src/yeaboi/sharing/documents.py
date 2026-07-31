@@ -1,4 +1,12 @@
-"""Mode adapters that turn generated artifacts into immutable share documents."""
+"""Mode adapters that turn generated artifacts into immutable share documents.
+
+Each adapter names the document twice, and the two names are not the same job.
+``ShareDocument.title`` is what the TUI's share screen shows the host; it is
+also, now, what the browser tab says, threaded through as ``document_title``.
+The page's own ``<h1>`` keeps the exporter's heading — "Daily Standup" — because
+a heading says what kind of document this is, while a tab has to tell it apart
+from the four others the reader has open.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +27,9 @@ def planning_document(graph_state: dict, *, stage: str = "complete", anon=None) 
         return _masked_document(anon, title, "planning")
     from yeaboi.html_exporter import build_export_html
 
-    return ShareDocument(title=title, html=build_export_html(graph_state, stage=stage), source_mode="planning")
+    return ShareDocument(
+        title=title, html=build_export_html(graph_state, stage=stage, document_title=title), source_mode="planning"
+    )
 
 
 def analysis_document(
@@ -40,6 +50,7 @@ def analysis_document(
         examples=examples,
         sprint_names=sprint_names,
         ceremony=ceremony,
+        document_title=title,
     )
     return ShareDocument(title=title, html=html, source_mode="analysis")
 
@@ -51,7 +62,9 @@ def standup_document(report, *, anon=None, history=()) -> ShareDocument:
         return _masked_document(anon, title, "standup")
     from yeaboi.standup.export import build_standup_html
 
-    return ShareDocument(title=title, html=build_standup_html(report, history=history), source_mode="standup")
+    return ShareDocument(
+        title=title, html=build_standup_html(report, history=history, document_title=title), source_mode="standup"
+    )
 
 
 def retro_document(report, *, anon=None, history=()) -> ShareDocument:
@@ -61,7 +74,9 @@ def retro_document(report, *, anon=None, history=()) -> ShareDocument:
         return _masked_document(anon, title, "retro")
     from yeaboi.retro.export import build_retro_html
 
-    return ShareDocument(title=title, html=build_retro_html(report, history=history), source_mode="retro")
+    return ShareDocument(
+        title=title, html=build_retro_html(report, history=history, document_title=title), source_mode="retro"
+    )
 
 
 def performance_document(artifact, *, kind: str, anon=None) -> ShareDocument:
@@ -76,7 +91,7 @@ def performance_document(artifact, *, kind: str, anon=None) -> ShareDocument:
         "completion": export.build_completion_html,
         "review": export.build_review_html,
     }
-    return ShareDocument(title=title, html=builders[kind](artifact), source_mode="performance")
+    return ShareDocument(title=title, html=builders[kind](artifact, document_title=title), source_mode="performance")
 
 
 def reporting_document(report, *, anon=None, history=()) -> ShareDocument:
@@ -86,7 +101,9 @@ def reporting_document(report, *, anon=None, history=()) -> ShareDocument:
         return _masked_document(anon, title, "reporting")
     from yeaboi.reporting.export import build_report_html
 
-    return ShareDocument(title=title, html=build_report_html(report, history=history), source_mode="reporting")
+    return ShareDocument(
+        title=title, html=build_report_html(report, history=history, document_title=title), source_mode="reporting"
+    )
 
 
 def roadmap_document(analysis, *, anon=None) -> ShareDocument:
@@ -95,4 +112,4 @@ def roadmap_document(analysis, *, anon=None) -> ShareDocument:
         return _masked_document(anon, title, "roadmap")
     from yeaboi.roadmap.export import build_roadmap_html
 
-    return ShareDocument(title=title, html=build_roadmap_html(analysis), source_mode="roadmap")
+    return ShareDocument(title=title, html=build_roadmap_html(analysis, document_title=title), source_mode="roadmap")

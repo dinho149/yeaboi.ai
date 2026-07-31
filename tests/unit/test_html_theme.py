@@ -284,3 +284,30 @@ class TestSafeUrl:
         # past the check — and stripping them would corrupt legitimate URLs.
         assert safe_url("https://x.example/a b") == "https://x.example/a b"
         assert safe_url("java script:alert(1)") == "java script:alert(1)"  # no scheme → inert
+
+
+class TestDocumentTitle:
+    """The tab and the heading want different strings."""
+
+    def _page(self, **over):
+        from yeaboi.html_theme import export_page
+
+        kwargs = {"mode": "standup", "title": "Daily Standup", "wordmark": "standup", "report": {"kind": "standup"}}
+        kwargs.update(over)
+        return export_page(**kwargs)
+
+    def test_defaults_to_the_heading(self):
+        page = self._page()
+        assert "<title>Daily Standup</title>" in page
+
+    def test_overrides_only_the_tab(self):
+        from tests._pages import island
+
+        page = self._page(document_title="Daily Standup — 2026-07-31")
+        assert "<title>Daily Standup — 2026-07-31</title>" in page
+        # The masthead keeps the heading: a heading says what kind of document
+        # this is, a tab has to tell it apart from four others.
+        assert island(page)["chrome"]["title"] == "Daily Standup"
+
+    def test_empty_is_the_same_as_absent(self):
+        assert self._page(document_title="") == self._page()
