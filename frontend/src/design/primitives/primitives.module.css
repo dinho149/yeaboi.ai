@@ -239,6 +239,42 @@
 }
 .wordmark::-webkit-scrollbar { display: none; }
 
+/* ── Wordmark, ANSI Shadow face ───────────────────────────────────
+   The six-row face, for the two places the wordmark is the hero: the join gate
+   and an export's masthead. Everywhere else keeps the compact face — at the app
+   bar's 10px this would be a 60px header, and at a size that fits it the glyphs
+   stop being legible.
+
+   The wrapper exists only to be a query container. Wordmark.tsx sizes the type
+   from `100cqi` and the word's cell count, which is the only way a fixed grid of
+   60 cells fits a 345px phone; there is no CSS length that does that on its own. */
+.wordmarkFit {
+  display: block;
+  container-type: inline-size;
+  /* Without this the container has no definite inline size to report inside a
+     flex row, and every cqi length resolves to zero. */
+  width: 100%;
+  min-width: 0;
+}
+
+.wordmarkShadow {
+  /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
+     grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
+     4% opens a hairline through every horizontal join and the word stops reading
+     as letterforms and starts reading as hatching. Same rule as the two-row
+     face, and easier to break here because six rows means five seams. */
+  /* The sizing already guarantees a fit, so nothing should scroll; keeping the
+     compact face's overflow here would add a phantom scroll area under the hero. */
+  overflow-x: visible;
+}
+
+/* The drop shadow, held back from the letter bodies. Same hue, less of it — at
+   full accent the strokes weigh as much as the blocks and the word reads as a
+   wire outline instead of as letters standing off the page. */
+.wordmarkStroke {
+  color: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */

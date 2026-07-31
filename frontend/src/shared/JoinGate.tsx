@@ -160,7 +160,7 @@ export function JoinGate({
     <div className={styles.shell}>
       <TerminalFrame title={frameTitle} className={styles.card}>
         <main>
-          <Wordmark text={wordmark} className={styles.wordmark} />
+          <Wordmark text={wordmark} variant="shadow" className={styles.wordmark} />
           <Eyebrow className={styles.eyebrow}>{eyebrow}</Eyebrow>
           <h1 className={styles.heading}>{heading}</h1>
           <p className={styles.blurb}>{blurb}</p>

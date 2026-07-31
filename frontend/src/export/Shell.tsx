@@ -53,7 +53,7 @@ export function Shell({ chrome, theme: initial, children }: ShellProps) {
       <TerminalFrame title={chrome.frame} className={styles['masthead']}>
         <div className={styles['head']}>
           <div className={styles['headMain']}>
-            <Wordmark text={chrome.wordmark} className={styles['wordmark']} />
+            <Wordmark text={chrome.wordmark} variant="shadow" className={styles['wordmark']} />
             <h1 className={styles['title']}>{chrome.title}</h1>
             {chrome.subtitle ? <p className={styles['subtitle']}>{chrome.subtitle}</p> : null}
             {facts.length || badges.length ? (

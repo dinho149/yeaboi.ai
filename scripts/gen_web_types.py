@@ -41,6 +41,7 @@ from yeaboi.retro.board import (
     RETRO_GRIDS,
     RETRO_THEMES,
 )
+from yeaboi.ui.shared._ansi_font import SHADOW_GLYPHS, render_shadow_text
 from yeaboi.ui.shared._ascii_font import BLOCK_GLYPHS, render_ascii_text
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,59 @@ def _wordmark_samples() -> str:
     )
 
 
+def _shadow_glyphs() -> str:
+    """Emit the six-row ANSI Shadow font as a TS lookup table.
+
+    Same reasoning as ``_block_glyphs``, with more at stake: this face is the one
+    a teammate meets on the join gate, and it exists in Python only because
+    ``tests/unit/test_ansi_font.py`` proves the table against 22 independently
+    generated wordmarks. Copying it by hand into TypeScript would put a second,
+    unproven copy on the surface that matters most.
+    """
+    rows = "".join(
+        f"  {json.dumps(ch)}: {json.dumps(lines, ensure_ascii=False)},\n" for ch, lines in SHADOW_GLYPHS.items()
+    )
+    return (
+        "/**\n"
+        " * The six-row ANSI Shadow font, one entry per character.\n"
+        " *\n"
+        " * Mirrors `ui/shared/_ansi_font.py`. Covers A-Z and space only; a word\n"
+        " * containing anything else has no setting in this face and the caller\n"
+        " * falls back to BLOCK_GLYPHS, which is why the renderer returns null\n"
+        " * rather than substituting a gap.\n"
+        " */\n"
+        f"export const SHADOW_GLYPHS: Record<string, readonly string[]> = {{\n{rows}}};\n"
+    )
+
+
+# Chosen to exercise the renderer, not to look nice: the brand (no pair of its
+# letters kerns, so it is the pure-concatenation case), a mode name, the word
+# whose L+Y nest by three columns, a two-word string with the un-kernable space,
+# and a word with a digit — which has no setting at all and must come back null.
+_SHADOW_SAMPLES = ("yeaboi", "retro", "analysis", "team retro", "sprint 42")
+
+
+def _shadow_samples() -> str:
+    """Emit Python's own ``render_shadow_text`` output for a few words.
+
+    The kerning rule is the reason this exists. The glyph table is generated so it
+    cannot drift, but ``_fit()`` is reimplemented in TypeScript, and a fitting bug
+    is close to invisible: it reproduces most words exactly and quietly widens the
+    handful whose letters nest. Pinning Python's output means that shows up in
+    ``Wordmark.test.tsx`` rather than in a screenshot months later.
+    """
+    rows = "".join(
+        f"  {json.dumps(w)}: {json.dumps(render_shadow_text(w), ensure_ascii=False)},\n" for w in _SHADOW_SAMPLES
+    )
+    return (
+        "/**\n"
+        " * `render_shadow_text()` output, straight from Python. `null` means the\n"
+        " * face cannot set that word. Not for runtime use.\n"
+        " */\n"
+        f"export const SHADOW_SAMPLES: Record<string, readonly string[] | null> = {{\n{rows}}};\n"
+    )
+
+
 def render() -> str:
     """Build the full contents of enums.ts."""
     blocks = [
@@ -147,7 +201,9 @@ def render() -> str:
         _tuple_const("REACTION_EMOJIS", REACTION_EMOJIS, "The only emoji a card reaction may use."),
         _tuple_const("AVATARS", AVATARS, "Avatars a participant may choose."),
         _tuple_const("POKER_DECK", POKER_DECK, "Planning-poker card values, in deck order."),
-        _tuple_const("POKER_PHASES", POKER_PHASES, "Where a ticket's round is: voting \u2192 revealed, optionally via a duel."),
+        _tuple_const(
+            "POKER_PHASES", POKER_PHASES, "Where a ticket's round is: voting \u2192 revealed, optionally via a duel."
+        ),
         _tuple_const(
             "DUEL_STATUSES",
             DUEL_STATUSES,
@@ -155,6 +211,8 @@ def render() -> str:
         ),
         _block_glyphs(),
         _wordmark_samples(),
+        _shadow_glyphs(),
+        _shadow_samples(),
     ]
     return "\n".join(blocks)
 

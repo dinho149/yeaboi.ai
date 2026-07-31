@@ -12,8 +12,8 @@
 import { render, screen } from '@testing-library/preact';
 import { describe, expect, it } from 'vitest';
 
-import { BLOCK_GLYPHS, WORDMARK_SAMPLES } from '../../types/enums';
-import { renderWordmark, Wordmark } from './Wordmark';
+import { BLOCK_GLYPHS, SHADOW_GLYPHS, SHADOW_SAMPLES, WORDMARK_SAMPLES } from '../../types/enums';
+import { renderShadowWordmark, renderWordmark, Wordmark } from './Wordmark';
 
 describe('renderWordmark', () => {
   it.each(Object.keys(WORDMARK_SAMPLES))('matches render_ascii_text for %j', (word) => {
@@ -38,6 +38,90 @@ describe('renderWordmark', () => {
     for (const [ch, [top, bottom]] of Object.entries(BLOCK_GLYPHS)) {
       expect(top.length, `glyph ${ch} rows differ in width`).toBe(bottom.length);
     }
+  });
+});
+
+describe('renderShadowWordmark', () => {
+  it.each(Object.keys(SHADOW_SAMPLES))('matches render_shadow_text for %j', (word) => {
+    const want = SHADOW_SAMPLES[word];
+    expect(renderShadowWordmark(word)).toEqual(want === null ? null : [...(want ?? [])]);
+  });
+
+  it('kerns — this is the part a naive port gets wrong', () => {
+    // "analysis" is in the samples for exactly this reason: its L and Y nest by
+    // three columns. Concatenation reproduces every other sample byte-for-byte
+    // and only widens this one, so without an explicit assertion a broken fit()
+    // would look almost entirely correct.
+    const widths = [...'ANALYSIS'].reduce((n, ch) => n + (SHADOW_GLYPHS[ch]?.[0]?.length ?? 0), 0);
+    expect(renderShadowWordmark('analysis')?.[0]?.length).toBe(widths - 3);
+  });
+
+  it('does not kern a space away', () => {
+    // The space glyph is all blanks, so it nests into anything — the gap between
+    // two words would vanish entirely without the guard.
+    const gap =
+      (renderShadowWordmark('a a')?.[0]?.length ?? 0) - (renderShadowWordmark('aa')?.[0]?.length ?? 0);
+    expect(gap).toBe(SHADOW_GLYPHS[' ']?.[0]?.length);
+  });
+
+  it('returns null for a word the face cannot set, rather than a damaged one', () => {
+    expect(renderShadowWordmark('sprint 42')).toBeNull();
+    expect(renderShadowWordmark('n/a')).toBeNull();
+  });
+
+  it('renders every row of a word to the same width', () => {
+    const rows = renderShadowWordmark('roadmap') ?? [];
+    expect(rows).toHaveLength(6);
+    expect(new Set(rows.map((r) => r.length)).size).toBe(1);
+  });
+
+  it('holds six rows of one width for every glyph', () => {
+    for (const [ch, glyph] of Object.entries(SHADOW_GLYPHS)) {
+      expect(glyph.length, `glyph ${ch} is not six rows`).toBe(6);
+      expect(new Set(glyph.map((r) => r.length)).size, `glyph ${ch} rows differ in width`).toBe(1);
+    }
+  });
+});
+
+describe('<Wordmark variant="shadow">', () => {
+  it('sets the word in the tall face', () => {
+    const { container } = render(<Wordmark text="retro" variant="shadow" />);
+    expect(container.querySelector('pre')?.textContent).toBe(
+      (SHADOW_SAMPLES['retro'] as readonly string[]).join('\n'),
+    );
+  });
+
+  it('still announces the word and not the block characters', () => {
+    render(<Wordmark text="retro" variant="shadow" />);
+    expect(screen.getByRole('img', { name: 'retro' })).toBeTruthy();
+  });
+
+  it('falls back to the compact face when the word has no setting', () => {
+    // An export picking a wordmark with a digit in it must degrade to the small
+    // face, not to a blank masthead.
+    const { container } = render(<Wordmark text="sprint 42" variant="shadow" />);
+    const rows = container.querySelector('pre')?.textContent?.split('\n') ?? [];
+    expect(rows).toHaveLength(2);
+  });
+
+  it('wraps itself in a query container so the size can be derived', () => {
+    // The face is a fixed cell grid, so a 60-cell word only fits a phone if the
+    // size comes from the space available; a static font-size would mean a
+    // horizontal scrollbar under the hero on every narrow screen.
+    //
+    // Only the container is asserted here. The size itself is an inline
+    // `min(…, calc(100cqi …))`, and jsdom's CSS parser rejects `cqi` outright and
+    // drops the whole declaration — so the computed value is a browser check
+    // (`make dev-board` at 375px), not one this file can make.
+    const { container } = render(<Wordmark text="standup" variant="shadow" />);
+    const wrapper = container.querySelector('span');
+    expect(wrapper?.className).toBeTruthy();
+    expect(wrapper?.querySelector('pre')).toBeTruthy();
+  });
+
+  it('lets an explicit size win over the derived one', () => {
+    const { container } = render(<Wordmark text="retro" variant="shadow" size="8px" />);
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('8px');
   });
 });
 
