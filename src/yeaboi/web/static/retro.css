@@ -1102,7 +1102,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_11h04_17 {
+._appbar_118bc_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1114,13 +1114,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_11h04_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_11h04_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_118bc_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_118bc_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_11h04_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_11h04_35 {
+._brandTitle_118bc_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_118bc_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1129,76 +1129,119 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_11h04_44 { flex: 1; }
-._tools_11h04_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_118bc_44 { flex: 1; }
+._tools_118bc_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
-._iconBtn_11h04_48 {
+/* One block. Button.tsx records what the five it replaced disagreed about, and
+   which value won where they did. */
+._btn_118bc_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--s2);
-  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and the
-     board's old .act buttons were about 13x20. */
+  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and retro's
+     old .act buttons were about 13x20. */
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-m);
-  line-height: 1;
-}
-._iconBtn_11h04_48:hover { border-color: var(--accent); }
-._iconBtnCompact_11h04_68 {
-  min-height: var(--tap-min);
-  min-width: var(--tap-min);
-  padding: 0 var(--s1);
-  font-size: var(--fs-s);
-  /* Visible at rest, not on hover: a hover-only control does not exist on a
-     touch screen, which is where most of these boards are actually used. */
-  opacity: 0.72;
-}
-._iconBtnCompact_11h04_68:hover, ._iconBtnCompact_11h04_68:focus-visible { opacity: 1; }
-._iconBtnActive_11h04_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-._iconBtnPrimary_11h04_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._iconBtnPrimary_11h04_79:hover { filter: brightness(1.08); }
-._iconBtnDanger_11h04_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._iconGlyph_11h04_82 { font-size: var(--fs-m); line-height: 1; }
-
-._primaryBtn_11h04_84 {
-  min-height: var(--tap);
-  padding: 0 var(--s4);
-  background: var(--accent);
-  color: var(--ink);
-  border: 1px solid transparent;
-  border-radius: var(--r-s);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-._primaryBtn_11h04_84:hover { filter: brightness(1.08); }
-
-._preset_11h04_97 {
-  min-height: var(--tap);
   padding: 0 var(--s3);
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--r-s);
   color: var(--text);
-  font: inherit;
-  font-family: var(--font-mono);
   cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
-._preset_11h04_97:hover { border-color: var(--accent); }
+._btn_118bc_50:hover:not(:disabled) { border-color: var(--accent); }
+/* :disabled, not an .is-disabled class — the attribute is what stops the click,
+   so styling anything else can show an enabled-looking button that does not
+   respond. Every deleted block that handled this at all used 0.4–0.45. */
+._btn_118bc_50:disabled { opacity: 0.45; cursor: default; }
+
+/* Sizes. `m` is the base rule and has no class. */
+._btnS_118bc_79 {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--s2);
+  font-size: var(--fs-2xs);
+}
+._btnL_118bc_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+
+._btnPrimary_118bc_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+/* Hold the transparent border: the base :hover sets --accent, which would draw
+   a ring in the fill's own colour. */
+._btnPrimary_118bc_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_118bc_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_118bc_91:hover:not(:disabled) { border-color: var(--danger); }
+
+/* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
+._btnPill_118bc_95 {
+  padding: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-l);
+}
+._btnPill_118bc_95:hover:not(:disabled) { color: var(--text); }
+
+/* Retro's card actions: on the card, with no chrome of their own. Dimmed but
+   present at rest — a hover-only control does not exist on a touchscreen, which
+   is where most of these boards are actually used. */
+._btnBare_118bc_107 {
+  padding: 0;
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+  opacity: 0.65;
+}
+._btnBare_118bc_107:hover:not(:disabled), ._btnBare_118bc_107:focus-visible {
+  border-color: transparent;
+  color: var(--text);
+  opacity: 1;
+}
+
+._btnActive_118bc_120 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+/* A bare control that has opened something, or is asking a question, is no
+   longer dimmed background furniture — but it has no border to ring, so it
+   takes a fill instead. */
+._btnBare_118bc_107._btnActive_118bc_120 {
+  background: var(--panel-2);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+  opacity: 1;
+}
+
+/* Everyone present has voted. The one moment the poker console asks for
+   attention. Neutralised by the global reduced-motion guard in tokens.css. */
+._btnAttention_118bc_134:not(:disabled) { animation: _btnPulse_118bc_1 1.6s ease-in-out infinite; }
+@keyframes _btnPulse_118bc_1 {
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
+}
+
+._btnBlock_118bc_139 { width: 100%; }
+
+/* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
+   in-card glyphs, which sit on a card rather than in a toolbar. */
+._btnDim_118bc_143 { opacity: 0.72; }
+._btnDim_118bc_143:hover, ._btnDim_118bc_143:focus-visible { opacity: 1; }
+
+._iconGlyph_118bc_146 { font-size: var(--fs-m); line-height: 1; }
+
+/* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
+   face differs, because a number set in the prose face beside another number
+   set in mono reads as two different kinds of quantity. */
+._preset_118bc_151 { font-family: var(--font-mono); }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_11h04_111 { display: contents; }
-._popoverAnchor_11h04_112 { position: relative; display: inline-flex; }
-._tbtn_11h04_113 {
+._popoverGroup_118bc_154 { display: contents; }
+._popoverAnchor_118bc_155 { position: relative; display: inline-flex; }
+._tbtn_118bc_156 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1213,10 +1256,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_11h04_113:hover { border-color: var(--accent); }
-._tbtnOpen_11h04_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_118bc_156:hover { border-color: var(--accent); }
+._tbtnOpen_118bc_172 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_11h04_111 {
+._popover_118bc_154 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1232,21 +1275,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_11h04_147 { right: auto; left: 0; }
+._popoverLeft_118bc_190 { right: auto; left: 0; }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_11h04_150 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_11h04_111[hidden] { display: none; }
+._popoverAbove_118bc_193 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_118bc_154[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_11h04_154 {
+._fieldLabel_118bc_197 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_11h04_161, ._textInput_11h04_161, ._numberInput_11h04_161 {
+._select_118bc_204, ._textInput_118bc_204, ._numberInput_118bc_204 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1256,14 +1299,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_11h04_161 { flex: 1; min-width: 0; }
-._numberInput_11h04_161 { width: 5.5rem; font-family: var(--font-mono); }
-._range_11h04_173 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_118bc_204 { flex: 1; min-width: 0; }
+._numberInput_118bc_204 { width: 5.5rem; font-family: var(--font-mono); }
+._range_118bc_216 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_11h04_176 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_11h04_177 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_11h04_178 {
+._musicPanel_118bc_219 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_118bc_220 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_118bc_221 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1273,13 +1316,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_11h04_188 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_11h04_189 { opacity: 1; }
+._viz_118bc_231 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_118bc_232 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_11h04_192 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_11h04_193 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_11h04_194 {
+._timerPanel_118bc_235 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_118bc_236 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_118bc_237 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1289,9 +1332,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_11h04_204 { color: var(--danger); }
+._timerDone_118bc_247 { color: var(--danger); }
 
-._confetti_11h04_206 {
+._confetti_118bc_249 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1301,9 +1344,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_11h04_216 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_11h04_217 { display: flex; gap: var(--s2); }
-._swatch_11h04_217 {
+._themeSwitcher_118bc_259 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_118bc_260 { display: flex; gap: var(--s2); }
+._swatch_118bc_260 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -1312,8 +1355,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_11h04_227 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_11h04_228 {
+._swatchOn_118bc_270 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_118bc_271 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -1323,22 +1366,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_11h04_238 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_11h04_239 { display: inline-flex; align-items: center; }
-._stacked_11h04_240 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_11h04_240:first-child { margin-left: 0; }
-._presenceMore_11h04_242 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_11h04_243 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_118bc_281 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_118bc_282 { display: inline-flex; align-items: center; }
+._stacked_118bc_283 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_118bc_283:first-child { margin-left: 0; }
+._presenceMore_118bc_285 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_118bc_286 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_11h04_245 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_11h04_246 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_11h04_247 { flex: 1; }
-._rosterYou_11h04_248 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_11h04_249 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_118bc_288 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_118bc_289 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_118bc_290 { flex: 1; }
+._rosterYou_118bc_291 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_118bc_292 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_11h04_252 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_11h04_253 {
+._avatarGrid_118bc_295 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_118bc_296 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1348,23 +1391,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_11h04_263 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_118bc_306 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_11h04_266 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_11h04_267 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
-._inviteCode_11h04_268 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_11h04_269 {
+._invite_118bc_309 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_118bc_310 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_118bc_311 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_118bc_312 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_11h04_276 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_118bc_319 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_11h04_279 {
+._copyField_118bc_322 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1378,7 +1421,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_11h04_293 {
+._copyValue_118bc_336 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1386,10 +1429,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_11h04_301 { flex: none; }
+._copyBtn_118bc_344 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_11h04_304 {
+._toast_118bc_347 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1404,7 +1447,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_11h04_319 {
+._modal_118bc_362 {
   /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
      Only the skin is ours. */
   border: 1px solid var(--line);
@@ -1415,14 +1458,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_11h04_319::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_11h04_331 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_11h04_332 { font-size: var(--fs-l); margin: 0; }
-._modalActions_11h04_333 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_118bc_362::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_118bc_374 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_118bc_375 { font-size: var(--fs-l); margin: 0; }
+._modalActions_118bc_376 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_11h04_337 {
+._srOnly_118bc_380 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1466,7 +1509,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * entire tree) did not, so a teammate following a tunnel link met a card jammed
  * into the top-left corner. One definition, in the component that needs it.
  */
-._shell_10jj9_34 {
+._shell_93zzj_34 {
   /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
      the visible viewport, which pushes a centred card off-screen. Most people
      open a tunnel link on a phone, so this is the common case, not the edge. */
@@ -1484,7 +1527,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
 }
 
-._card_10jj9_52 {
+._card_93zzj_52 {
   width: min(92vw, 430px);
 }
 
@@ -1493,7 +1536,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * it is the one piece of furniture the gate was missing. Centred under the card
  * rather than inside it: the card is a keypad, and a byline is not part of one.
  */
-._foot_10jj9_61 {
+._foot_93zzj_61 {
   margin-top: var(--s4);
   text-align: center;
   color: var(--dim);
@@ -1503,25 +1546,25 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
 }
 
-._wordmark_10jj9_71 {
+._wordmark_93zzj_71 {
   /* No font-size: this is the six-row face, which Wordmark sizes inline from
      its container so a long mode name still fits a 345px phone. The gate is the
      one surface where the wordmark *is* the page, so it keeps the default cap. */
   margin-bottom: var(--s4);
 }
 
-._eyebrow_10jj9_78 {
+._eyebrow_93zzj_78 {
   display: block;
   margin-bottom: var(--s2);
 }
 
-._heading_10jj9_83 {
+._heading_93zzj_83 {
   margin: 0 0 var(--s2);
   font-size: 1.35rem;
   line-height: 1.25;
 }
 
-._blurb_10jj9_89 {
+._blurb_93zzj_89 {
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.55;
@@ -1530,7 +1573,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* The label and the duck share a baseline row, so the bird sits on the field
    rather than floating beside it. */
-._labelRow_10jj9_98 {
+._labelRow_93zzj_98 {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1541,7 +1584,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: visible;
 }
 
-._label_10jj9_98 {
+._label_93zzj_98 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 500;
@@ -1550,14 +1593,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._duck_10jj9_118 {
+._duck_93zzj_118 {
   /* Sits down onto the input's top edge. Negative margin rather than absolute
      positioning so it still participates in the flex row and cannot end up
      overlapping the label on a narrow phone. */
   margin-bottom: -10px;
 }
 
-._code_10jj9_125 {
+._code_93zzj_125 {
   width: 100%;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line-strong);
@@ -1575,20 +1618,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
 }
 
-._code_10jj9_125::placeholder {
+._code_93zzj_125::placeholder {
   color: var(--dim);
   font-weight: 500;
 }
 
-._code_10jj9_125:focus-visible {
+._code_93zzj_125:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-._wrong_10jj9_154 {
+._wrong_93zzj_154 {
   border-color: var(--danger);
-  animation: _shake_10jj9_1 220ms ease-in-out;
+  animation: _shake_93zzj_1 220ms ease-in-out;
 }
 
 /*
@@ -1598,22 +1641,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * and the red never showed: the one state the border exists to signal was the
  * one state it could not reach.
  */
-._wrong_10jj9_154:focus-visible {
+._wrong_93zzj_154:focus-visible {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
-._go_10jj9_171 {
-  width: 100%;
-  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
-     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+/* A `.btn tone="primary" size="l" block`, plus what is genuinely this
+   surface's. The gate is one control on a phone held by someone who has just
+   been handed a link, so it is bigger and rounder than a board button and it
+   says one word in the label register. */
+._go_93zzj_175 {
+  /* 44px floor — the WCAG 2.2 target minimum is 24px; 44 is Apple's and is
+     what a thumb actually wants. */
   min-height: 44px;
   margin-top: var(--s3);
   padding: 0.75rem;
-  border: 0;
   border-radius: var(--r-m);
-  background: var(--accent);
-  color: var(--ink);
   /* Mono, like every other control: in this type system the proportional face
      is reserved for prose a person wrote. */
   font-family: var(--font-mono);
@@ -1621,27 +1664,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
-  cursor: pointer;
-  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 
-._go_10jj9_171:hover:not(:disabled) {
-  filter: brightness(1.08);
-}
-
-._go_10jj9_171:focus-visible {
+._go_93zzj_175:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-._go_10jj9_171:disabled {
+._go_93zzj_175:disabled {
   /* Visibly inert rather than hidden: the button is disabled until eight
      characters are in, which doubles as progress feedback. */
   opacity: 0.45;
   cursor: default;
 }
 
-._status_10jj9_209 {
+._status_93zzj_203 {
   /* Reserved height — the card must not resize when a message appears. */
   min-height: 1.4rem;
   margin: var(--s2) 0 0;
@@ -1650,11 +1687,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-align: center;
 }
 
-._bad_10jj9_218 {
+._bad_93zzj_212 {
   color: var(--danger);
 }
 
-@keyframes _shake_10jj9_1 {
+@keyframes _shake_93zzj_1 {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
@@ -1664,8 +1701,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    colour change; the motion is decoration and must be droppable. The duck's
    own startle is neutralised by the global guard in tokens.css. */
 @media (prefers-reduced-motion: reduce) {
-  ._wrong_10jj9_154 { animation: none; }
-  ._go_10jj9_171 { transition: none; }
+  ._wrong_93zzj_154 { animation: none; }
+  ._go_93zzj_175 { transition: none; }
 }
 /*
  * The shared page shell: masthead, contents, body column, footer.
@@ -1898,7 +1935,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The height and the column now belong to PageShell's `app` variant, which is a
    four-row grid: masthead, toolbar, this board, credit. What is left here is
    the surface it is painted on. */
-._app_1ndo8_23 {
+._app_pdsrq_23 {
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
@@ -1912,19 +1949,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    `min-height: 0` here and on `.board` is the chain that lets the columns
    scroll inside the viewport instead of growing past it — the grid row above
    is `minmax(0, 1fr)` for exactly this reason. */
-._boardRegion_1ndo8_37 {
+._boardRegion_pdsrq_37 {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
 }
 
-._offline_1ndo8_44 { color: var(--warn); font-family: var(--font-sans); }
+._offline_pdsrq_44 { color: var(--warn); font-family: var(--font-sans); }
 
 /* ── Identity cluster ─────────────────────────────────────────────────── */
-._identity_1ndo8_47 { display: flex; align-items: center; gap: var(--s3); }
+._identity_pdsrq_47 { display: flex; align-items: center; gap: var(--s3); }
 
-._meChip_1ndo8_49 {
+._meChip_pdsrq_49 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1938,23 +1975,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._meChip_1ndo8_49:hover { border-color: var(--accent); }
-._meName_1ndo8_64 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-._pen_1ndo8_65 { color: var(--muted); font-size: var(--fs-2xs); }
-._roomCount_1ndo8_66 { font-family: var(--font-mono); font-size: var(--fs-xs); }
+._meChip_pdsrq_49:hover { border-color: var(--accent); }
+._meName_pdsrq_64 { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+._pen_pdsrq_65 { color: var(--muted); font-size: var(--fs-2xs); }
+._roomCount_pdsrq_66 { font-family: var(--font-mono); font-size: var(--fs-xs); }
 
-._viewCtl_1ndo8_68 { display: flex; align-items: center; gap: var(--s2); }
+._viewCtl_pdsrq_68 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Banners ──────────────────────────────────────────────────────────── */
-._lockBanner_1ndo8_71, ._musicBanner_1ndo8_71 {
+._lockBanner_pdsrq_71, ._musicBanner_pdsrq_71 {
   margin: 0;
   padding: var(--s2) var(--s4);
   font-size: var(--fs-s);
   text-align: center;
   border-bottom: 1px solid var(--line);
 }
-._lockBanner_1ndo8_71 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
-._musicBanner_1ndo8_71 {
+._lockBanner_pdsrq_71 { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); }
+._musicBanner_pdsrq_71 {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel));
   color: var(--accent);
   border: 0;
@@ -1965,28 +2002,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._castBtn_1ndo8_90, ._ghostBtn_1ndo8_90, ._saveBtn_1ndo8_90, ._addBtn_1ndo8_90, ._focusExit_1ndo8_90 {
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-s);
-  cursor: pointer;
-}
-._castBtn_1ndo8_90:hover, ._ghostBtn_1ndo8_90:hover, ._focusExit_1ndo8_90:hover { border-color: var(--accent); }
-._saveBtn_1ndo8_90, ._addBtn_1ndo8_90 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._saveBtn_1ndo8_90:hover, ._addBtn_1ndo8_90:hover:not(:disabled) { filter: brightness(1.08); }
-._addBtn_1ndo8_90:disabled { opacity: 0.45; cursor: default; }
-
-._popNote_1ndo8_106 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
+._popNote_pdsrq_90 { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
-._carried_1ndo8_109 { border-bottom: 1px solid var(--line); background: var(--panel); }
-._carriedHead_1ndo8_110 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
-._carriedToggle_1ndo8_111 {
+._carried_pdsrq_93 { border-bottom: 1px solid var(--line); background: var(--panel); }
+._carriedHead_pdsrq_94 { display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4); }
+._carriedToggle_pdsrq_95 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -2000,14 +2021,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-weight: 600;
   cursor: pointer;
 }
-._chevron_1ndo8_125 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
-._chevronOpen_1ndo8_126 { transform: rotate(90deg); }
-._carriedProgress_1ndo8_127 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
-._carriedBody_1ndo8_128 { padding: 0 var(--s4) var(--s3); }
-._carriedBody_1ndo8_128[hidden] { display: none; }
-._carriedHint_1ndo8_130 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
-._carriedList_1ndo8_131 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
-._carriedItem_1ndo8_132 {
+._chevron_pdsrq_109 { display: inline-block; transition: transform var(--dur-fast) var(--ease); color: var(--muted); }
+._chevronOpen_pdsrq_110 { transform: rotate(90deg); }
+._carriedProgress_pdsrq_111 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._carriedBody_pdsrq_112 { padding: 0 var(--s4) var(--s3); }
+._carriedBody_pdsrq_112[hidden] { display: none; }
+._carriedHint_pdsrq_114 { margin: 0 0 var(--s2); color: var(--muted); font-size: var(--fs-xs); }
+._carriedList_pdsrq_115 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); }
+._carriedItem_pdsrq_116 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2021,8 +2042,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-s);
   font-size: var(--fs-s);
 }
-._carriedText_1ndo8_146 { flex: 1; min-width: 0; }
-._carriedSelect_1ndo8_147 {
+._carriedText_pdsrq_130 { flex: 1; min-width: 0; }
+._carriedSelect_pdsrq_131 {
   min-height: var(--tap);
   background: var(--panel-2);
   color: var(--text);
@@ -2031,14 +2052,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-xs);
 }
-._statusPending_1ndo8_156 { border-left-color: var(--line); }
-._statusDone_1ndo8_157 { border-left-color: var(--ok); }
-._statusProgress_1ndo8_158 { border-left-color: var(--info); }
-._statusCarried_1ndo8_159 { border-left-color: var(--warn); }
-._statusMuted_1ndo8_160 { border-left-color: var(--muted); opacity: 0.7; }
+._statusPending_pdsrq_140 { border-left-color: var(--line); }
+._statusDone_pdsrq_141 { border-left-color: var(--ok); }
+._statusProgress_pdsrq_142 { border-left-color: var(--info); }
+._statusCarried_pdsrq_143 { border-left-color: var(--warn); }
+._statusMuted_pdsrq_144 { border-left-color: var(--muted); opacity: 0.7; }
 
 /* ── Walkthrough bar ──────────────────────────────────────────────────── */
-._focusBar_1ndo8_163 {
+._focusBar_pdsrq_147 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2046,7 +2067,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   border-bottom: 1px solid var(--line);
 }
-._focusStep_1ndo8_171 {
+._focusStep_pdsrq_155 {
   width: var(--tap);
   height: var(--tap);
   display: inline-grid;
@@ -2058,13 +2079,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   cursor: pointer;
 }
-._focusStep_1ndo8_171:disabled { opacity: 0.4; cursor: default; }
-._focusWho_1ndo8_184 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
-._focusName_1ndo8_185 { font-size: var(--fs-m); }
-._focusCount_1ndo8_186 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
+._focusStep_pdsrq_155:disabled { opacity: 0.4; cursor: default; }
+._focusWho_pdsrq_168 { display: flex; align-items: center; gap: var(--s2); margin: 0; flex: 1; }
+._focusName_pdsrq_169 { font-size: var(--fs-m); }
+._focusCount_pdsrq_170 { color: var(--muted); font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* ── Board layout ─────────────────────────────────────────────────────── */
-._board_1ndo8_33 {
+._board_pdsrq_33 {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
      so the columns would grow past the viewport instead of scrolling inside it. */
@@ -2087,13 +2108,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 @media (max-width: 1099px) {
   /* Weights are a wide-screen affordance only: in a 2x2 they would make the
      two rows different heights for no reason. */
-  ._board_1ndo8_33 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
+  ._board_pdsrq_33 { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-y: auto; }
 }
 
 @media (max-width: 699px) {
   /* One column per screen. A vertical stack would mean scrolling past a dozen
      cards to reach the next heading; four slivers would be unreadable. */
-  ._board_1ndo8_33 {
+  ._board_pdsrq_33 {
     grid-template-columns: none;
     grid-auto-flow: column;
     /* One column fills the screen; nothing to weigh. */
@@ -2103,14 +2124,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
   }
-  ._board_1ndo8_33::-webkit-scrollbar { display: none; }
-  ._column_1ndo8_229 { scroll-snap-align: center; }
+  ._board_pdsrq_33::-webkit-scrollbar { display: none; }
+  ._column_pdsrq_213 { scroll-snap-align: center; }
 }
 
-._pager_1ndo8_232 { display: none; }
+._pager_pdsrq_216 { display: none; }
 @media (max-width: 699px) {
-  ._pager_1ndo8_232 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
-  ._pagerDot_1ndo8_235 {
+  ._pager_pdsrq_216 { display: flex; justify-content: center; gap: var(--s2); padding: var(--s2); }
+  ._pagerDot_pdsrq_219 {
     /* 8px of ink inside a 24px target: visually a dot, but still hittable. */
     width: var(--tap-min);
     height: var(--tap-min);
@@ -2119,7 +2140,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     background: none;
     cursor: pointer;
   }
-  ._pagerDot_1ndo8_235::after {
+  ._pagerDot_pdsrq_219::after {
     content: "";
     display: block;
     width: 8px;
@@ -2128,7 +2149,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     border-radius: var(--r-pill);
     background: var(--line);
   }
-  ._pagerDotOn_1ndo8_253::after { background: var(--accent); }
+  ._pagerDotOn_pdsrq_237::after { background: var(--accent); }
 }
 
 /* ── Column ───────────────────────────────────────────────────────────── */
@@ -2142,7 +2163,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * map in gridTone.ts. A hairline rule and a barely-there wash, nothing more:
  * four saturated columns would be a traffic jam, and the cards are the content.
  */
-._column_1ndo8_229 {
+._column_pdsrq_213 {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2152,13 +2173,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
 }
-._columnHead_1ndo8_277 {
+._columnHead_pdsrq_261 {
   display: flex;
   align-items: baseline;
   gap: var(--s1);
   padding: var(--s3) var(--s3) var(--s2);
 }
-._columnTitle_1ndo8_283 {
+._columnTitle_pdsrq_267 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -2167,13 +2188,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
   color: var(--col-tone, var(--text));
 }
-._columnDot_1ndo8_292 { color: var(--dim); }
-._columnCount_1ndo8_293 {
+._columnDot_pdsrq_276 { color: var(--dim); }
+._columnCount_pdsrq_277 {
   color: var(--text);
   font-size: var(--fs-2xs);
 }
 
-._cards_1ndo8_298 {
+._cards_pdsrq_282 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2182,11 +2203,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   flex-direction: column;
   gap: var(--s2);
 }
-._cardsOver_1ndo8_307 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
-._columnEmpty_1ndo8_308 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
+._cardsOver_pdsrq_291 { background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: var(--r-s); }
+._columnEmpty_pdsrq_292 { margin: var(--s3) 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; }
 
-._authorGroup_1ndo8_310 { display: flex; flex-direction: column; gap: var(--s2); }
-._authorGroupHead_1ndo8_311 {
+._authorGroup_pdsrq_294 { display: flex; flex-direction: column; gap: var(--s2); }
+._authorGroupHead_pdsrq_295 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-2xs);
@@ -2195,11 +2216,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.06em;
 }
 
-._cardSlot_1ndo8_320 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
-._dropLine_1ndo8_321 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
+._cardSlot_pdsrq_304 { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
+._dropLine_pdsrq_305 { height: 2px; border-radius: var(--r-pill); background: var(--accent); }
 
 /* ── Card ─────────────────────────────────────────────────────────────── */
-._card_1ndo8_298 {
+._card_pdsrq_282 {
   background: var(--card);
   border: 1px solid var(--line);
   /* The column's tone, carried onto the card. --col-tone is set on the section
@@ -2213,9 +2234,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* An AI card is not the column's — it is the agent's, and it should be
    obviously distinguishable from something a colleague wrote. */
-._cardAI_1ndo8_338 { border-left-color: var(--accent2); }
-._cardDragging_1ndo8_339 { opacity: 0.4; }
-._cardText_1ndo8_340 {
+._cardAI_pdsrq_322 { border-left-color: var(--accent2); }
+._cardDragging_pdsrq_323 { opacity: 0.4; }
+._cardText_pdsrq_324 {
   margin: 0;
   /* pre-wrap, not a formatter: the text is a plain-text child, so newlines are
      the only formatting it can carry — and the only one it should. */
@@ -2224,10 +2245,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
 }
 
-._cardMeta_1ndo8_349 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-._metaSpacer_1ndo8_350 { flex: 1; }
-._author_1ndo8_310 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
-._authorName_1ndo8_352 {
+._cardMeta_pdsrq_333 { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+._metaSpacer_pdsrq_334 { flex: 1; }
+._author_pdsrq_294 { display: inline-flex; align-items: center; gap: var(--s1); min-width: 0; }
+._authorName_pdsrq_336 {
   color: var(--muted);
   font-size: var(--fs-2xs);
   max-width: 10ch;
@@ -2235,41 +2256,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._aiBadge_1ndo8_360 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
-._age_1ndo8_361 {
+._aiBadge_pdsrq_344 { color: var(--accent2); font-size: var(--fs-2xs); font-weight: 600; }
+._age_pdsrq_345 {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
 }
 
-._act_1ndo8_14, ._grip_1ndo8_368 {
-  width: var(--tap);
-  height: var(--tap);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-s);
-  /* Dimmed but present. Hover-only controls do not exist on a touchscreen. */
-  opacity: 0.65;
-  cursor: pointer;
-}
-._act_1ndo8_14:hover, ._grip_1ndo8_368:hover, ._act_1ndo8_14:focus-visible, ._grip_1ndo8_368:focus-visible { opacity: 1; color: var(--text); }
-/* A control that has opened something, or is asking a question, is no longer
-   dimmed background furniture. */
-._actOn_1ndo8_387 { opacity: 1; color: var(--text); background: var(--panel-2); }
-._actDanger_1ndo8_388:hover, ._actDanger_1ndo8_388:focus-visible, ._actDanger_1ndo8_388._actOn_1ndo8_387 { color: var(--danger); }
-
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
-._confirmRow_1ndo8_393 { display: inline-flex; align-items: center; gap: var(--s1); }
-._confirmLabel_1ndo8_394 {
+._confirmRow_pdsrq_355 { display: inline-flex; align-items: center; gap: var(--s1); }
+._confirmLabel_pdsrq_356 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -2277,16 +2276,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
 }
 
-._gripWrap_1ndo8_402 { position: relative; display: inline-flex; }
-._grip_1ndo8_368 {
+._gripWrap_pdsrq_364 { position: relative; display: inline-flex; }
+/* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
+   like comes from `.btn shape="bare"`. */
+._grip_pdsrq_364 {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column
      itself still scrolls — see useCardDrag. */
   touch-action: none;
 }
-._grip_1ndo8_368:active { cursor: grabbing; }
+._grip_pdsrq_364:active { cursor: grabbing; }
 
-._moveMenu_1ndo8_411 {
+._moveMenu_pdsrq_375 {
   position: absolute;
   right: 0;
   top: calc(100% + var(--s1));
@@ -2300,7 +2301,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-s);
   box-shadow: var(--shadow-2);
 }
-._moveItem_1ndo8_425 {
+._moveItem_pdsrq_389 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   text-align: left;
@@ -2312,11 +2313,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
   cursor: pointer;
 }
-._moveItem_1ndo8_425:hover { background: var(--panel-2); }
+._moveItem_pdsrq_389:hover { background: var(--panel-2); }
 
 /* ── Inline editor ────────────────────────────────────────────────────── */
-._editor_1ndo8_440 { display: flex; flex-direction: column; gap: var(--s2); }
-._editBox_1ndo8_441 {
+._editor_pdsrq_404 { display: flex; flex-direction: column; gap: var(--s2); }
+._editBox_pdsrq_405 {
   width: 100%;
   resize: vertical;
   padding: var(--s2);
@@ -2327,14 +2328,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._editActions_1ndo8_452 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._editActions_pdsrq_416 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Reactions ────────────────────────────────────────────────────────── */
 /* Only rendered when something has actually been reacted to — see
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
-._reactions_1ndo8_458 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-._rxChip_1ndo8_459, ._rxPick_1ndo8_459 {
+._reactions_pdsrq_422 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
+._rxChip_pdsrq_423, ._rxPick_pdsrq_423 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -2350,10 +2351,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._rxChip_1ndo8_459:hover, ._rxPick_1ndo8_459:hover { border-color: var(--accent); }
-._rxChip_1ndo8_459:disabled { opacity: 0.5; cursor: default; }
-._rxChipMine_1ndo8_477 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
-._rxCount_1ndo8_478 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+._rxChip_pdsrq_423:hover, ._rxPick_pdsrq_423:hover { border-color: var(--accent); }
+._rxChip_pdsrq_423:disabled { opacity: 0.5; cursor: default; }
+._rxChipMine_pdsrq_441 { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+._rxCount_pdsrq_442 { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
 /*
  * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
@@ -2364,7 +2365,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
  * even rows of the same size, not a ragged last line.
  */
-._rxTray_1ndo8_489 {
+._rxTray_pdsrq_453 {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
@@ -2382,7 +2383,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * directly above it. This replaced a bar pinned below the whole board plus a
  * segmented destination picker; see ColumnComposer.tsx for why.
  */
-._columnCompose_1ndo8_507 {
+._columnCompose_pdsrq_471 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -2391,7 +2392,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Dashed and quiet at rest: it is an invitation, and four solid buttons across
    the bottom of the board would compete with the cards. */
-._composeGhost_1ndo8_516 {
+._composeGhost_pdsrq_480 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2406,12 +2407,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-._composeGhost_1ndo8_516:hover, ._composeGhost_1ndo8_516:focus-visible {
+._composeGhost_pdsrq_480:hover, ._composeGhost_pdsrq_480:focus-visible {
   border-style: solid;
   border-color: var(--col-tone, var(--accent));
   color: var(--text);
 }
-._composeBox_1ndo8_536 {
+._composeBox_pdsrq_500 {
   width: 100%;
   min-height: var(--tap);
   max-height: 8rem;
@@ -2426,29 +2427,29 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._composeActions_1ndo8_551 { display: flex; justify-content: flex-end; gap: var(--s2); }
+._composeActions_pdsrq_515 { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
-._floatLayer_1ndo8_554 {
+._floatLayer_pdsrq_518 {
   position: fixed;
   inset: 0;
   z-index: var(--z-banner);
   pointer-events: none;
   overflow: hidden;
 }
-._floater_1ndo8_561 {
+._floater_pdsrq_525 {
   position: absolute;
   bottom: 0;
-  animation: _rise_1ndo8_1 2.6s ease-out forwards;
+  animation: _rise_pdsrq_1 2.6s ease-out forwards;
 }
 
-@keyframes _rise_1ndo8_1 {
+@keyframes _rise_pdsrq_1 {
   from { transform: translateY(0); opacity: 0; }
   15% { opacity: 1; }
   to { transform: translateY(-70vh); opacity: 0; }
 }
 
-._srOnly_1ndo8_573 {
+._srOnly_pdsrq_537 {
   position: absolute;
   width: 1px;
   height: 1px;

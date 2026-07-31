@@ -13,6 +13,7 @@
  */
 
 import { Avatar } from '../design/primitives';
+import { Button } from '../shared';
 import styles from './retro.module.css';
 
 export interface FocusBarProps {
@@ -60,9 +61,9 @@ export function FocusBar({ authors, current, avatars, onStep, onExit }: FocusBar
         <span aria-hidden="true">→</span>
       </button>
 
-      <button type="button" className={styles['focusExit']} onClick={onExit}>
+      <Button onClick={onExit}>
         Show everyone
-      </button>
+      </Button>
     </div>
   );
 }

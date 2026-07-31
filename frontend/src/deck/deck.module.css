@@ -94,24 +94,19 @@
   align-self: center;
 }
 
+/* A `.btn block`, plus a mono face and a left edge. */
 .deckThemeBtn {
-  width: 100%;
-  min-height: var(--tap);
   margin-top: var(--s2);
   padding: var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  background: var(--panel-2);
   color: var(--muted);
-  font: inherit;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
+  justify-content: flex-start;
   /* No uppercase, no tracking: the palette name is variable-length user data,
      and at the label register "Deck palette: aurora" wrapped to three lines in
      a 220px popover. Furniture elsewhere can afford the wide setting because
      its text is fixed and short. */
   text-align: left;
-  cursor: pointer;
 }
 
 .brandCredit {
@@ -404,23 +399,10 @@
   margin-top: var(--s3);
 }
 
-.controls button {
-  width: var(--tap);
-  height: var(--tap);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--fs-l);
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-}
-
+/* The nav arrows are `.btn shape="pill"`; only the hover accent is the deck's,
+   because the report's author chose it. The descendant selector is kept for the
+   accent alone — it must beat `.btn:hover`, which sets the site accent. */
 .controls button:hover:not(:disabled) {
-  color: var(--text);
   border-color: var(--deck-accent, var(--accent));
 }
 

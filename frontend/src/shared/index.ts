@@ -1,5 +1,13 @@
 /** The shared component library. Import from here, not from the files. */
 
+export {
+  Button,
+  buttonClass,
+  type ButtonProps,
+  type ButtonShape,
+  type ButtonSize,
+  type ButtonTone,
+} from './Button';
 export type { PageChrome } from './chrome';
 export { CopyField, type CopyFieldProps } from './CopyField';
 export { IconButton, type IconButtonProps } from './IconButton';

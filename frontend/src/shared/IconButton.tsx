@@ -13,11 +13,18 @@
  * It also enforces the tap target. `.act` on the retro card is about 13×20 px
  * today, well under the WCAG 2.2 minimum of 24×24 and far under what a thumb
  * can hit — which is why moving a card on a phone is a lottery.
+ *
+ * It is a wrapper over `Button` now rather than a sixth button implementation:
+ * everything below the accessible-name pairing is the same `.btn` block. The
+ * props are unchanged — `compact` is kept rather than renamed to `size="s"`
+ * because roughly twenty call sites read better saying what the button *is*
+ * (an in-card action) than what size it happens to be.
  */
 
-import type { ComponentProps, ReactNode } from 'react';
+import { forwardRef, type ComponentProps, type ReactNode } from 'react';
 
 import { cx } from '../runtime/cx';
+import { buttonClass } from './Button';
 import styles from './shared.module.css';
 
 export interface IconButtonProps
@@ -39,32 +46,25 @@ export interface IconButtonProps
   className?: string | undefined;
 }
 
-export function IconButton({
-  icon,
-  label,
-  children,
-  active,
-  compact,
-  tone = 'default',
-  className,
-  type = 'button',
-  ...rest
-}: IconButtonProps) {
+/** Forwards its ref for the same reason `Button` does — see the note there. */
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { icon, label, children, active, compact, tone = 'default', className, type = 'button', ...rest },
+  ref
+) {
   return (
     <button
       {...rest}
+      ref={ref}
       type={type}
       aria-label={label}
       title={label}
       aria-pressed={active === undefined ? undefined : active}
-      className={cx(
-        styles['iconBtn'],
-        compact && styles['iconBtnCompact'],
-        active && styles['iconBtnActive'],
-        tone === 'primary' && styles['iconBtnPrimary'],
-        tone === 'danger' && styles['iconBtnDanger'],
-        className
-      )}
+      className={buttonClass({
+        tone,
+        size: compact ? 's' : 'm',
+        active,
+        className: cx(compact && styles['btnDim'], className),
+      })}
     >
       <span aria-hidden="true" className={styles['iconGlyph']}>
         {icon}
@@ -72,4 +72,4 @@ export function IconButton({
       {children}
     </button>
   );
-}
+});

@@ -352,18 +352,9 @@
   gap: var(--s2);
 }
 
-.pkbtn {
-  min-height: var(--tap-min);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-2xs);
-  cursor: pointer;
-}
-
+/* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
+   go-there control is an accent outline, not a fill — it offers a move rather
+   than confirming one. */
 .pkbtnGo {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
@@ -964,41 +955,6 @@
   gap: var(--s2);
 }
 
-.cbtn {
-  min-height: var(--tap);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.cbtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.cbtnPrimary:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--ink);
-  font-weight: 600;
-}
-
-/* Everyone present has voted. The one moment the console asks for attention. */
-.cbtnPulse:not(:disabled) {
-  animation: cpulse 1.6s ease-in-out infinite;
-}
-
-@keyframes cpulse {
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-}
-
 .crow,
 .navrow {
   display: flex;
@@ -1170,19 +1126,6 @@
 
 .offline {
   color: var(--warn);
-}
-
-.castBtn {
-  width: 100%;
-  min-height: var(--tap);
-  margin-top: var(--s2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
 }
 
 .popNote {

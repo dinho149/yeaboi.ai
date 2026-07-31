@@ -43,6 +43,7 @@ import type { RefObject } from 'react';
 
 import { cx } from '../runtime/cx';
 import { REACTION_EMOJIS } from '../types/enums';
+import { Button } from '../shared';
 import styles from './retro.module.css';
 
 export interface ReactionChipsProps {
@@ -99,10 +100,10 @@ export interface ReactionTriggerProps {
 
 export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }: ReactionTriggerProps) {
   return (
-    <button
+    <Button
+      shape="bare"
+      active={open}
       ref={buttonRef}
-      type="button"
-      className={cx(styles['act'], open && styles['actOn'])}
       disabled={disabled}
       aria-label="Add a reaction"
       aria-haspopup="menu"
@@ -111,7 +112,7 @@ export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }:
       onClick={onToggle}
     >
       <span aria-hidden="true">☺</span>
-    </button>
+    </Button>
   );
 }
 

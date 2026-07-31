@@ -168,17 +168,17 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
+/* A `.btn tone="primary" size="l" block`, plus what is genuinely this
+   surface's. The gate is one control on a phone held by someone who has just
+   been handed a link, so it is bigger and rounder than a board button and it
+   says one word in the label register. */
 .go {
-  width: 100%;
-  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
-     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+  /* 44px floor — the WCAG 2.2 target minimum is 24px; 44 is Apple's and is
+     what a thumb actually wants. */
   min-height: 44px;
   margin-top: var(--s3);
   padding: 0.75rem;
-  border: 0;
   border-radius: var(--r-m);
-  background: var(--accent);
-  color: var(--ink);
   /* Mono, like every other control: in this type system the proportional face
      is reserved for prose a person wrote. */
   font-family: var(--font-mono);
@@ -186,12 +186,6 @@
   font-size: var(--fs-s);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
-  cursor: pointer;
-  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
-}
-
-.go:hover:not(:disabled) {
-  filter: brightness(1.08);
 }
 
 .go:focus-visible {

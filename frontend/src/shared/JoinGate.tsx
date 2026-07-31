@@ -15,6 +15,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 
 import { Duck, Eyebrow, TerminalFrame, useDuckPulse, Wordmark } from '../design/primitives';
 import { cx } from '../runtime/cx';
+import { Button } from './Button';
 import styles from './JoinGate.module.css';
 
 /** Codes are 8 characters from an unambiguous alphabet — see access.py. */
@@ -217,9 +218,16 @@ export function JoinGate({
               readOnly={busy}
               autoFocus
             />
-            <button className={styles.go} type="submit" disabled={!complete || busy}>
+            <Button
+              tone="primary"
+              size="l"
+              block
+              className={styles.go}
+              type="submit"
+              disabled={!complete || busy}
+            >
               {busy ? 'Checking…' : cta}
-            </button>
+            </Button>
             {/* Reserved height so the card does not jump when a message appears. */}
             <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
               {message}

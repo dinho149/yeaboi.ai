@@ -87,22 +87,6 @@
   cursor: pointer;
 }
 
-.castBtn, .ghostBtn, .saveBtn, .addBtn, .focusExit {
-  min-height: var(--tap);
-  padding: 0 var(--s3);
-  border-radius: var(--r-s);
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-s);
-  cursor: pointer;
-}
-.castBtn:hover, .ghostBtn:hover, .focusExit:hover { border-color: var(--accent); }
-.saveBtn, .addBtn { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-.saveBtn:hover, .addBtn:hover:not(:disabled) { filter: brightness(1.08); }
-.addBtn:disabled { opacity: 0.45; cursor: default; }
-
 .popNote { margin: 0; color: var(--muted); font-size: var(--fs-s); }
 
 /* ── Carried-over review strip ────────────────────────────────────────── */
@@ -365,28 +349,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.act, .grip {
-  width: var(--tap);
-  height: var(--tap);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-s);
-  /* Dimmed but present. Hover-only controls do not exist on a touchscreen. */
-  opacity: 0.65;
-  cursor: pointer;
-}
-.act:hover, .grip:hover, .act:focus-visible, .grip:focus-visible { opacity: 1; color: var(--text); }
-/* A control that has opened something, or is asking a question, is no longer
-   dimmed background furniture. */
-.actOn { opacity: 1; color: var(--text); background: var(--panel-2); }
-.actDanger:hover, .actDanger:focus-visible, .actDanger.actOn { color: var(--danger); }
-
 /* ── Delete confirmation ──────────────────────────────────────────────── */
 /* Replaces the control cluster in place rather than opening a dialog: the
    question is about this card, and it is answered where it was asked. */
@@ -400,6 +362,8 @@
 }
 
 .gripWrap { position: relative; display: inline-flex; }
+/* Not styling — the drag mechanics useCardDrag reads. Everything the grip looks
+   like comes from `.btn shape="bare"`. */
 .grip {
   cursor: grab;
   /* Required for a pointer drag on touch. Confined to the grip so the column

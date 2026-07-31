@@ -35,6 +35,7 @@ import { apiUrl, loadSession, stripCredentialsFromUrl, type Session } from '../r
 import { participantId, read, write } from '../runtime/storage';
 import { applyTheme, setTheme, storedTheme, THEME_KEYS, type Theme } from '../runtime/theme';
 import {
+  Button,
   ConfettiCanvas,
   IconButton,
   InviteQR,
@@ -372,13 +373,9 @@ export function App({ boot }: { boot: RetroBoot }) {
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => void actions.castMusic(music.playing, music.channel)}
-                    >
+                    <Button onClick={() => void actions.castMusic(music.playing, music.channel)}>
                       <span aria-hidden="true">📣</span> Play for everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -410,13 +407,9 @@ export function App({ boot }: { boot: RetroBoot }) {
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => void actions.castTheme(theme)}
-                    >
+                    <Button onClick={() => void actions.castTheme(theme)}>
                       <span aria-hidden="true">📣</span> Apply to everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />

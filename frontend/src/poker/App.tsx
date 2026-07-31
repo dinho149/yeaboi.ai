@@ -40,6 +40,7 @@ import { apiUrl, loadSession, pollState, stripCredentialsFromUrl, type Session }
 import { participantId, read, write } from '../runtime/storage';
 import { applyTheme, setTheme, storedTheme, THEME_KEYS, type Theme } from '../runtime/theme';
 import {
+  Button,
   ConfettiCanvas,
   IconButton,
   InviteQR,
@@ -367,13 +368,9 @@ export function App({ boot }: { boot: PokerBoot }) {
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => run(actions.castMusic(music.playing, music.channel))}
-                    >
+                    <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
                       <span aria-hidden="true">📣</span> Play for everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -405,9 +402,9 @@ export function App({ boot }: { boot: PokerBoot }) {
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
-                    <button type="button" className={styles['castBtn']} onClick={() => run(actions.castTheme(theme))}>
+                    <Button onClick={() => run(actions.castTheme(theme))}>
                       <span aria-hidden="true">📣</span> Apply to everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />

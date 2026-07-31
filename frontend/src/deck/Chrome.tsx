@@ -10,7 +10,7 @@
 
 import { Duck, Wordmark, type DuckState } from '../design/primitives';
 import type { Theme } from '../runtime/theme';
-import { Popover, ThemeSwitcher } from '../shared';
+import { Button, Popover, ThemeSwitcher } from '../shared';
 import styles from './deck.module.css';
 
 export interface ControlsProps {
@@ -43,17 +43,17 @@ export function Controls({
         <div className={styles['bar']} style={{ width: `${progress}%` }} />
       </div>
       <div className={styles['controls']}>
-        <button type="button" onClick={onPrev} disabled={index === 0} aria-label="Previous slide">
+        <Button shape="pill" onClick={onPrev} disabled={index === 0} aria-label="Previous slide">
           ‹
-        </button>
+        </Button>
         {/* Not aria-live: the slide itself is announced, and a screen reader
             reading "4 / 11" on top of every slide change is pure noise. */}
         <span className={styles['counter']}>
           {index + 1} / {total}
         </span>
-        <button type="button" onClick={onNext} disabled={index >= total - 1} aria-label="Next slide">
+        <Button shape="pill" onClick={onNext} disabled={index >= total - 1} aria-label="Next slide">
           ›
-        </button>
+        </Button>
         {/* Two pickers, because there are genuinely two choices now and they
             are not the same kind of thing. The site palette is the surface —
             the same one this viewer picked on a board or an export, and the
@@ -61,14 +61,14 @@ export function Controls({
             accent the report's author chose, which T still cycles. */}
         <Popover trigger={<span aria-hidden="true">◑</span>} label="Theme" placement="above">
           <ThemeSwitcher value={siteTheme} onChange={onSiteTheme} />
-          <button
-            type="button"
+          <Button
+            block
             className={styles['deckThemeBtn']}
             onClick={onTheme}
             title={`Cycle deck palette (T) — next: ${nextThemeName}`}
           >
             Deck palette: {nextThemeName} →
-          </button>
+          </Button>
         </Popover>
       </div>
       <p className={styles['hint']}>← / → or Space to navigate · T for theme · F fullscreen</p>
