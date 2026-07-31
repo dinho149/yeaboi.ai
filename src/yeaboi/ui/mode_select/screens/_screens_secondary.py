@@ -935,7 +935,7 @@ def _build_analysis_board_setup_screen(
     actions = ["Continue", "Back"] if ready else ["Back"]
     btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
     keys = Text(
-        PAD + "↑↓ field  ·  ⇥ switch tracker  ·  enter edit  ·  esc back",
+        PAD + "↑↓ field  ·  ←→ switch tracker  ·  enter edit  ·  esc back",
         style=theme.dim,
     )
 

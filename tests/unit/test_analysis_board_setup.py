@@ -259,3 +259,32 @@ def test_every_tracker_renders_at_a_small_size(tracker):
     # terminal that's merely small rather than unusable.
     out = _render(values={}, tracker=tracker)
     assert "Connect a board" in out
+
+
+class TestTrackerSwitchKeys:
+    """left/right flick between trackers while the field list has focus."""
+
+    def _last_frame(self, keys, monkeypatch) -> str:
+        for var in (f["env_var"] for t in (0, 1) for f in board_setup_fields(t)):
+            monkeypatch.delenv(var, raising=False)
+        live = _Live()
+        seq = iter(keys)
+        console = Console(file=io.StringIO(), width=110, height=44, legacy_windows=False)
+        ms._run_analysis_board_setup(live, console, lambda **k: next(seq, "esc"), 0.0, True)
+        buf = io.StringIO()
+        Console(file=buf, width=110, height=44, legacy_windows=False).print(live.panels[-1])
+        return buf.getvalue()
+
+    def test_right_switches_to_azure(self, monkeypatch):
+        assert "Organization URL" in self._last_frame(["right", "esc"], monkeypatch)
+
+    def test_left_switches_too_and_wraps(self, monkeypatch):
+        assert "Organization URL" in self._last_frame(["left", "esc"], monkeypatch)
+
+    def test_right_twice_comes_back_to_jira(self, monkeypatch):
+        assert "Jira Base URL" in self._last_frame(["right", "right", "esc"], monkeypatch)
+
+    def test_left_right_still_move_between_buttons(self, monkeypatch):
+        # With focus on the button row, left/right must NOT change tracker.
+        out = self._last_frame(["down", "down", "down", "down", "right", "esc"], monkeypatch)
+        assert "Jira Base URL" in out

@@ -5764,6 +5764,13 @@ def _run_analysis_board_setup(
         elif key in ("left", "right") and zone == "actions":
             step = 1 if key == "right" else -1
             action_sel = (action_sel + step) % len(actions)
+        elif key in ("left", "right"):
+            # In the field list, left/right flick between the trackers — the switch
+            # is a horizontal row, so that is the direction it reads as. Tab does
+            # the same thing for anyone who reaches for it first.
+            step = 1 if key == "right" else -1
+            tracker = (tracker + step) % len(_BOARD_TRACKERS)
+            selected, message = 0, ""
         elif key == "enter":
             if zone == "fields":
                 _begin_edit(selected)
