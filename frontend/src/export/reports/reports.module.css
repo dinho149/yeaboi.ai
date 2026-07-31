@@ -141,7 +141,7 @@
   gap: var(--s1);
   justify-content: flex-end;
 }
-@media (max-width: 560px) {
+@media (max-width: 699px) {
   /* Own line, under the title. Sharing the row costs the title half its width
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
@@ -682,7 +682,7 @@
   line-height: 1.6;
   min-width: 0;
 }
-@media (max-width: 560px) {
+@media (max-width: 699px) {
   .kv > div {
     grid-template-columns: 1fr;
     gap: var(--s1);

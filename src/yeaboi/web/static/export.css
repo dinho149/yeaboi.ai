@@ -213,10 +213,26 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      Documented as tokens even though @media cannot read a custom property —
      retro and poker picked different breakpoints, which is why the two
      boards behaved differently on the same phone. These are the numbers to
-     write literally into every @media query. */
+     write literally into every @media query.
+
+     The *convention* matters as much as the numbers, and its absence is what
+     let them drift: retro wrote `max-width: 1099px` where poker wrote
+     `max-width: 1100px`, so at exactly 1100px the two boards took different
+     branches. Always:
+
+         @media (min-width: <bp>)              — 700px  / 1100px / 1440px
+         @media (max-width: calc(<bp> − 1px))  — 699px  / 1099px / 1439px
+
+     written literally. `TestBreakpoints` in test_web_frontend_guards.py
+     rejects any other value. */
   --bp-s: 700px;
   --bp-m: 1100px;
   --bp-l: 1440px;
+
+  /* Paper. Not a themed surface: the one thing that has to stay white in
+     every palette is a QR code's quiet zone, because a scanner reads contrast
+     rather than a design system. */
+  --paper: #ffffff;
 
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
@@ -957,7 +973,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_1bjsw_15 {
+._h2_1ews1_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -969,21 +985,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_1bjsw_27 {
+._bullets_1ews1_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_1bjsw_27 li + li {
+._bullets_1ews1_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_1bjsw_27 li::marker {
+._bullets_1ews1_27 li::marker {
   color: var(--accent);
 }
 
-._lede_1bjsw_41 {
+._lede_1ews1_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -996,12 +1012,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._empty_1bjsw_54 {
+._empty_1ews1_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_1bjsw_59 {
+._footnote_1ews1_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1011,20 +1027,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_1bjsw_69 {
+._split_1ews1_69 {
   margin: var(--s4) 0;
 }
-._split_1bjsw_69 > * + * {
+._split_1ews1_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_1bjsw_76 {
+._trend_1ews1_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_1bjsw_82 {
+._people_1ews1_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1032,7 +1048,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_1bjsw_90 {
+._person_1ews1_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -1041,7 +1057,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_1bjsw_99 {
+._identity_1ews1_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -1054,50 +1070,50 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_1bjsw_112 {
+._mixes_1ews1_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_1bjsw_112 > * + * {
+._mix_1ews1_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_1bjsw_122 {
+._projects_1ews1_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_1bjsw_122 {
+._project_1ews1_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_1bjsw_131 {
+._projectIndex_1ews1_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_1bjsw_138 {
+._chips_1ews1_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
   justify-content: flex-end;
 }
-@media (max-width: 560px) {
+@media (max-width: 699px) {
   /* Own line, under the title. Sharing the row costs the title half its width
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_1bjsw_138 {
+  ._chips_1ews1_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_1bjsw_155 {
+._why_1ews1_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1109,12 +1125,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_1bjsw_167 {
+._votes_1ews1_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_1bjsw_167 {
+._vote_1ews1_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -1125,18 +1141,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_1bjsw_183 {
+._skipped_1ews1_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_1bjsw_188 {
+._notes_1ews1_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_1bjsw_194 {
+._transcript_1ews1_194 {
   font-size: var(--fs-s);
 }
 
@@ -1145,7 +1161,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_1bjsw_203 {
+._columns_1ews1_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -1154,14 +1170,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_1bjsw_203 {
+._column_1ews1_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_1bjsw_219 {
+._columnTitle_1ews1_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1173,75 +1189,75 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_1bjsw_231 {
+._count_1ews1_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_1bjsw_203 ._bullets_1bjsw_27 li::marker {
+._column_1ews1_203 ._bullets_1ews1_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_1bjsw_239 {
+._byline_1ews1_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_1bjsw_246 {
+._reactions_1ews1_246 {
   margin-left: var(--s1);
 }
-._status_1bjsw_249 {
+._status_1ews1_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_1bjsw_256 {
+._confidence_1ews1_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_1bjsw_263 {
+._rationale_1ews1_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_1bjsw_270 {
+._activity_1ews1_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_1bjsw_270 > * + * {
+._activity_1ews1_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_1bjsw_280 {
+._activityRow_1ews1_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_1bjsw_286 {
+._activityName_1ews1_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_1bjsw_292 {
+._activityTotal_1ews1_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_1bjsw_299 {
+._member_1ews1_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -1250,10 +1266,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_1bjsw_308 {
+._blocked_1ews1_308 {
   border-left-color: var(--danger);
 }
-._memberHead_1bjsw_311 {
+._memberHead_1ews1_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1261,12 +1277,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_1bjsw_319 {
+._memberSummary_1ews1_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._since_1bjsw_324 {
+._since_1ews1_324 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1274,23 +1290,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `auto-fit`, so two active categories share the width instead of leaving a
    third of the card empty to preserve a three-column shape. */
-._categories_1bjsw_332 {
+._categories_1ews1_332 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--s3);
   margin-top: var(--s3);
 }
-._category_1bjsw_338 > * + * {
+._category_1ews1_338 > * + * {
   margin-top: var(--s2);
 }
 
-._chipRow_1bjsw_342 {
+._chipRow_1ews1_342 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
-._note_1bjsw_188 {
+._note_1ews1_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1300,7 +1316,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._quote_1bjsw_358 {
+._quote_1ews1_358 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -1313,7 +1329,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   white-space: pre-wrap;
 }
 
-._screenshot_1bjsw_371 {
+._screenshot_1ews1_371 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -1321,26 +1337,26 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
 }
 
-._details_1bjsw_379 {
+._details_1ews1_379 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_1bjsw_386 {
+._coverage_1ews1_386 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_1bjsw_393 {
+._dot_1ews1_393 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_1bjsw_398 {
+._dim_1ews1_398 {
   color: var(--dim);
 }
 
@@ -1348,14 +1364,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_1bjsw_406 {
+._headingEmoji_1ews1_406 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_1bjsw_413 {
+._cardId_1ews1_413 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1366,57 +1382,57 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   white-space: nowrap;
 }
 
-._feature_1bjsw_424,
-._story_1bjsw_425,
-._sprint_1bjsw_426 {
+._feature_1ews1_424,
+._story_1ews1_425,
+._sprint_1ews1_426 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_1bjsw_425 {
+._story_1ews1_425 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_1bjsw_433 {
+._storyText_1ews1_433 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_1bjsw_440 {
+._storyGroup_1ews1_440 {
   margin-bottom: var(--s5);
 }
-._storyGroup_1bjsw_440 > .eyebrow {
+._storyGroup_1ews1_440 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_1bjsw_450 {
+._criteria_1ews1_450 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_1bjsw_450 li {
+._criteria_1ews1_450 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_1bjsw_450 li + li {
+._criteria_1ews1_450 li + li {
   margin-top: var(--s1);
 }
-._criteria_1bjsw_450 b {
+._criteria_1ews1_450 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_1bjsw_471 {
+._dod_1ews1_471 {
   margin-top: var(--s3);
 }
-._dod_1bjsw_471 ul {
+._dod_1ews1_471 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -1424,22 +1440,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_1bjsw_482 {
+._exempt_1ews1_482 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_1bjsw_487 {
+._fields_1ews1_487 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_1bjsw_487 > * + * {
+._field_1ews1_487 > * + * {
   margin-top: var(--s2);
 }
 
-._target_1bjsw_497 {
+._target_1ews1_497 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1448,36 +1464,36 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._capacity_1bjsw_506 {
+._capacity_1ews1_506 {
   margin-top: var(--s4);
 }
-._capacity_1bjsw_506 > * + * {
+._capacity_1ews1_506 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_1bjsw_513 {
+._sprintGoal_1ews1_513 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_1bjsw_519 {
+._reduced_1ews1_519 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_1bjsw_522 {
+._reducedNote_1ews1_522 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_1bjsw_528 {
+._taskGroup_1ews1_528 {
   margin-bottom: var(--s5);
 }
-._taskGroup_1bjsw_528 > .eyebrow {
+._taskGroup_1ews1_528 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_1bjsw_535 {
+._groupSubject_1ews1_535 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1485,7 +1501,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_1bjsw_543 {
+._taskNote_1ews1_543 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1495,44 +1511,44 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_1bjsw_553 {
+._document_1ews1_553 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_1bjsw_553 > * + * {
+._document_1ews1_553 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_1bjsw_553 h2,
-._document_1bjsw_553 h3,
-._document_1bjsw_553 h4,
-._document_1bjsw_553 h5,
-._document_1bjsw_553 h6 {
+._document_1ews1_553 h2,
+._document_1ews1_553 h3,
+._document_1ews1_553 h4,
+._document_1ews1_553 h5,
+._document_1ews1_553 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_1bjsw_553 h2 { font-size: var(--fs-m); }
-._document_1bjsw_553 h3 { font-size: var(--fs-s); }
-._document_1bjsw_553 h4,
-._document_1bjsw_553 h5,
-._document_1bjsw_553 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_1bjsw_553 ul,
-._document_1bjsw_553 ol {
+._document_1ews1_553 h2 { font-size: var(--fs-m); }
+._document_1ews1_553 h3 { font-size: var(--fs-s); }
+._document_1ews1_553 h4,
+._document_1ews1_553 h5,
+._document_1ews1_553 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1ews1_553 ul,
+._document_1ews1_553 ol {
   padding-left: 1.2rem;
 }
-._document_1bjsw_553 li + li {
+._document_1ews1_553 li + li {
   margin-top: var(--s1);
 }
-._document_1bjsw_553 li::marker {
+._document_1ews1_553 li::marker {
   color: var(--accent);
 }
-._document_1bjsw_553 code {
+._document_1ews1_553 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1540,18 +1556,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--card);
   color: var(--accent2);
 }
-._document_1bjsw_553 a {
+._document_1ews1_553 a {
   color: var(--accent);
 }
 
-._quote_1bjsw_358 {
+._quote_1ews1_358 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_1bjsw_609 {
+._code_1ews1_609 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1564,13 +1580,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_1bjsw_609 code {
+._code_1ews1_609 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_1bjsw_628 {
+._rule_1ews1_628 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
@@ -1578,13 +1594,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Team profile: generated blocks ───────────────────────────── */
 
-._blocks_1bjsw_636 > * + * {
+._blocks_1ews1_636 > * + * {
   margin-top: var(--s4);
 }
 
 /* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
    accent — it groups within a section rather than announcing a new one. */
-._h3_1bjsw_642 {
+._h3_1ews1_642 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -1593,48 +1609,48 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
   margin: 0 0 var(--s2);
 }
-._kvWrap_1bjsw_651 > * + * {
+._kvWrap_1ews1_651 > * + * {
   margin-top: var(--s2);
 }
 
 /* Label and value on one baseline. A `<dl>` rather than a table: these are
    facts about one thing, not rows that compare with each other. */
-._kv_1bjsw_651 {
+._kv_1ews1_651 {
   display: grid;
   gap: 0;
   margin: 0;
   font-size: var(--fs-s);
 }
-._kv_1bjsw_651 > div {
+._kv_1ews1_651 > div {
   display: grid;
   grid-template-columns: minmax(0, 14rem) 1fr;
   gap: var(--s3);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-._kv_1bjsw_651 > div:last-child {
+._kv_1ews1_651 > div:last-child {
   border-bottom: none;
 }
-._kv_1bjsw_651 dt {
+._kv_1ews1_651 dt {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._kv_1bjsw_651 dd {
+._kv_1ews1_651 dd {
   margin: 0;
   line-height: 1.6;
   min-width: 0;
 }
-@media (max-width: 560px) {
-  ._kv_1bjsw_651 > div {
+@media (max-width: 699px) {
+  ._kv_1ews1_651 > div {
     grid-template-columns: 1fr;
     gap: var(--s1);
   }
 }
 
-._cell_1bjsw_692 {
+._cell_1ews1_692 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1643,32 +1659,32 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Bounded rather than fluid: a proportion bar is only comparable down a column
    if every row draws the same track. */
-._cellBar_1bjsw_701 {
+._cellBar_1ews1_701 {
   width: 90px;
   flex: none;
 }
-._cellNote_1bjsw_705 {
+._cellNote_1ews1_705 {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._cellPerson_1bjsw_709 {
+._cellPerson_1ews1_709 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._profileCards_1bjsw_715 {
+._profileCards_1ews1_715 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
-._profileProse_1bjsw_720 {
+._profileProse_1ews1_720 {
   font-size: var(--fs-s);
 }
 
 /* A caveat reads as a qualification of the section, not as one of its
    findings. */
-._note_1bjsw_188 {
+._note_1ews1_188 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1678,17 +1694,17 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* A finding worth stopping on. The rule and the wash are both derived from the
    tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_1bjsw_736 {
+._callout_1ews1_736 {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
   border-radius: var(--r2);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
-._callout_1bjsw_736 > * + * {
+._callout_1ews1_736 > * + * {
   margin-top: var(--s2);
 }
-._callout_1bjsw_736 p {
+._callout_1ews1_736 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -1699,16 +1715,16 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_1bjsw_122,
-  ._column_1bjsw_203,
-  ._lede_1bjsw_41,
-  ._callout_1bjsw_736 {
+  ._project_1ews1_122,
+  ._column_1ews1_203,
+  ._lede_1ews1_41,
+  ._callout_1ews1_736 {
     break-inside: avoid;
   }
-  ._h3_1bjsw_642 {
+  ._h3_1ews1_642 {
     break-after: avoid;
   }
-  ._h2_1bjsw_15 {
+  ._h2_1ews1_15 {
     break-after: avoid;
   }
 }
@@ -1728,7 +1744,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_bsfnf_17 {
+._appbar_jt86r_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1740,13 +1756,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_bsfnf_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_bsfnf_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_jt86r_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_jt86r_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_bsfnf_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_bsfnf_35 {
+._brandTitle_jt86r_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_jt86r_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1755,11 +1771,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_bsfnf_44 { flex: 1; }
-._tools_bsfnf_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_jt86r_44 { flex: 1; }
+._tools_jt86r_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
-._iconBtn_bsfnf_48 {
+._iconBtn_jt86r_48 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1778,8 +1794,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._iconBtn_bsfnf_48:hover { border-color: var(--accent); }
-._iconBtnCompact_bsfnf_68 {
+._iconBtn_jt86r_48:hover { border-color: var(--accent); }
+._iconBtnCompact_jt86r_68 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s1);
@@ -1788,14 +1804,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      touch screen, which is where most of these boards are actually used. */
   opacity: 0.72;
 }
-._iconBtnCompact_bsfnf_68:hover, ._iconBtnCompact_bsfnf_68:focus-visible { opacity: 1; }
-._iconBtnActive_bsfnf_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-._iconBtnPrimary_bsfnf_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._iconBtnPrimary_bsfnf_79:hover { filter: brightness(1.08); }
-._iconBtnDanger_bsfnf_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._iconGlyph_bsfnf_82 { font-size: var(--fs-m); line-height: 1; }
+._iconBtnCompact_jt86r_68:hover, ._iconBtnCompact_jt86r_68:focus-visible { opacity: 1; }
+._iconBtnActive_jt86r_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._iconBtnPrimary_jt86r_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._iconBtnPrimary_jt86r_79:hover { filter: brightness(1.08); }
+._iconBtnDanger_jt86r_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._iconGlyph_jt86r_82 { font-size: var(--fs-m); line-height: 1; }
 
-._primaryBtn_bsfnf_84 {
+._primaryBtn_jt86r_84 {
   min-height: var(--tap);
   padding: 0 var(--s4);
   background: var(--accent);
@@ -1806,9 +1822,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-weight: 600;
   cursor: pointer;
 }
-._primaryBtn_bsfnf_84:hover { filter: brightness(1.08); }
+._primaryBtn_jt86r_84:hover { filter: brightness(1.08); }
 
-._preset_bsfnf_97 {
+._preset_jt86r_97 {
   min-height: var(--tap);
   padding: 0 var(--s3);
   background: var(--panel-2);
@@ -1819,12 +1835,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-family: var(--font-mono);
   cursor: pointer;
 }
-._preset_bsfnf_97:hover { border-color: var(--accent); }
+._preset_jt86r_97:hover { border-color: var(--accent); }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_bsfnf_111 { display: contents; }
-._popoverAnchor_bsfnf_112 { position: relative; display: inline-flex; }
-._tbtn_bsfnf_113 {
+._popoverGroup_jt86r_111 { display: contents; }
+._popoverAnchor_jt86r_112 { position: relative; display: inline-flex; }
+._tbtn_jt86r_113 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1839,10 +1855,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_bsfnf_113:hover { border-color: var(--accent); }
-._tbtnOpen_bsfnf_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_jt86r_113:hover { border-color: var(--accent); }
+._tbtnOpen_jt86r_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_bsfnf_111 {
+._popover_jt86r_111 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1858,18 +1874,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_bsfnf_147 { right: auto; left: 0; }
-._popover_bsfnf_111[hidden] { display: none; }
+._popoverLeft_jt86r_147 { right: auto; left: 0; }
+._popover_jt86r_111[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_bsfnf_151 {
+._fieldLabel_jt86r_151 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_bsfnf_158, ._textInput_bsfnf_158, ._numberInput_bsfnf_158 {
+._select_jt86r_158, ._textInput_jt86r_158, ._numberInput_jt86r_158 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1879,14 +1895,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_bsfnf_158 { flex: 1; min-width: 0; }
-._numberInput_bsfnf_158 { width: 5.5rem; font-family: var(--font-mono); }
-._range_bsfnf_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_jt86r_158 { flex: 1; min-width: 0; }
+._numberInput_jt86r_158 { width: 5.5rem; font-family: var(--font-mono); }
+._range_jt86r_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_bsfnf_173 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_bsfnf_174 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_bsfnf_175 {
+._musicPanel_jt86r_173 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_jt86r_174 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_jt86r_175 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1896,13 +1912,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_bsfnf_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_bsfnf_186 { opacity: 1; }
+._viz_jt86r_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_jt86r_186 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_bsfnf_189 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_bsfnf_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_bsfnf_191 {
+._timerPanel_jt86r_189 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_jt86r_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_jt86r_191 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1912,9 +1928,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_bsfnf_201 { color: var(--danger); }
+._timerDone_jt86r_201 { color: var(--danger); }
 
-._confetti_bsfnf_203 {
+._confetti_jt86r_203 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1924,9 +1940,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_bsfnf_213 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_bsfnf_214 { display: flex; gap: var(--s2); }
-._swatch_bsfnf_214 {
+._themeSwitcher_jt86r_213 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_jt86r_214 { display: flex; gap: var(--s2); }
+._swatch_jt86r_214 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -1935,8 +1951,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_bsfnf_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_bsfnf_225 {
+._swatchOn_jt86r_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_jt86r_225 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -1946,22 +1962,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_bsfnf_235 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_bsfnf_236 { display: inline-flex; align-items: center; }
-._stacked_bsfnf_237 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_bsfnf_237:first-child { margin-left: 0; }
-._presenceMore_bsfnf_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_bsfnf_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_jt86r_235 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_jt86r_236 { display: inline-flex; align-items: center; }
+._stacked_jt86r_237 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_jt86r_237:first-child { margin-left: 0; }
+._presenceMore_jt86r_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_jt86r_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_bsfnf_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_bsfnf_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_bsfnf_244 { flex: 1; }
-._rosterYou_bsfnf_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_bsfnf_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_jt86r_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_jt86r_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_jt86r_244 { flex: 1; }
+._rosterYou_jt86r_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_jt86r_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_bsfnf_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_bsfnf_250 {
+._avatarGrid_jt86r_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_jt86r_250 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1971,23 +1987,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_bsfnf_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_jt86r_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_bsfnf_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_bsfnf_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
-._inviteCode_bsfnf_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_bsfnf_266 {
+._invite_jt86r_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_jt86r_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_jt86r_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_jt86r_266 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_bsfnf_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_jt86r_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_bsfnf_276 {
+._copyField_jt86r_276 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -2001,7 +2017,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_bsfnf_290 {
+._copyValue_jt86r_290 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -2009,10 +2025,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_bsfnf_298 { flex: none; }
+._copyBtn_jt86r_298 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_bsfnf_301 {
+._toast_jt86r_301 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -2027,7 +2043,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_bsfnf_316 {
+._modal_jt86r_316 {
   /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
      Only the skin is ours. */
   border: 1px solid var(--line);
@@ -2038,14 +2054,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_bsfnf_316::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_bsfnf_328 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_bsfnf_329 { font-size: var(--fs-l); margin: 0; }
-._modalActions_bsfnf_330 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_jt86r_316::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_jt86r_328 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_jt86r_329 { font-size: var(--fs-l); margin: 0; }
+._modalActions_jt86r_330 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_bsfnf_334 {
+._srOnly_jt86r_334 {
   position: absolute;
   width: 1px;
   height: 1px;

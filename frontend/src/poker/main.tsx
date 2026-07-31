@@ -14,7 +14,7 @@ import { readPokerBoot } from './boot';
 
 // Before the first paint, so a reload does not flash midnight at someone who
 // has been sitting in solarized all meeting.
-applyStoredTheme(THEME_KEYS.poker);
+applyStoredTheme(THEME_KEYS.site);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('poker: #root is missing from the document');

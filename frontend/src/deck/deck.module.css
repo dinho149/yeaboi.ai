@@ -411,7 +411,7 @@
 
 /* ── Narrow ─────────────────────────────────────────────────────────────── */
 
-@media (max-width: 700px) {
+@media (max-width: 699px) {
   .hint,
   .rail {
     display: none;

@@ -9,7 +9,7 @@
  * are fixed in palette.css; this keeps them fixed.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 // `?raw` rather than node:fs — the test config inherits the real build config
 // (that is what makes the preact aliases match the shipped bundle), and that
@@ -24,7 +24,16 @@ import {
   parseModeAccents,
   parsePalettes,
 } from '../design/contrast';
-import { isTheme, nextTheme, THEME_PREVIEW, THEMES, type Theme } from './theme';
+import {
+  isTheme,
+  nextTheme,
+  setTheme,
+  storedTheme,
+  THEME_KEYS,
+  THEME_PREVIEW,
+  THEMES,
+  type Theme,
+} from './theme';
 
 const PALETTES = parsePalettes(paletteCss);
 const MODE_ACCENTS = parseModeAccents(tokensCss);
@@ -177,5 +186,42 @@ describe('theme helpers', () => {
     }
     expect(seen).toEqual([...THEMES]);
     expect(nextTheme(theme)).toBe(THEMES[0]);
+  });
+});
+
+describe('one theme key', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('every surface reads and writes the same key', () => {
+    setTheme('forest');
+    expect(localStorage.getItem('yeaboi-export-theme')).toBe('forest');
+    expect(storedTheme()).toBe('forest');
+  });
+
+  it('keeps the literal string the exports on disk already read', () => {
+    // A report written last month carries a bundle that reads this exact key
+    // and nothing else. Renaming the constant is free; renaming the string is
+    // not, and three Python tests grep it out of rendered HTML.
+    expect(THEME_KEYS.site).toBe('yeaboi-export-theme');
+    expect(THEME_KEYS.export).toBe(THEME_KEYS.site);
+  });
+
+  it('adopts a legacy board key once, then writes it forward', () => {
+    // Without this, shipping the collapse would reset the palette of every
+    // board mid-ceremony.
+    localStorage.setItem('retro_theme', 'synthwave');
+    expect(storedTheme()).toBe('synthwave');
+    expect(localStorage.getItem('yeaboi-export-theme')).toBe('synthwave');
+  });
+
+  it('prefers the canonical key over a stale legacy one', () => {
+    localStorage.setItem('retro_theme', 'synthwave');
+    localStorage.setItem('yeaboi-export-theme', 'forest');
+    expect(storedTheme()).toBe('forest');
+  });
+
+  it('ignores a legacy key holding something that is not a theme', () => {
+    localStorage.setItem('poker_theme', 'chartreuse');
+    expect(storedTheme()).toBeNull();
   });
 });

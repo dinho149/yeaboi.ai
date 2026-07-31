@@ -114,10 +114,26 @@
      Documented as tokens even though @media cannot read a custom property —
      retro and poker picked different breakpoints, which is why the two
      boards behaved differently on the same phone. These are the numbers to
-     write literally into every @media query. */
+     write literally into every @media query.
+
+     The *convention* matters as much as the numbers, and its absence is what
+     let them drift: retro wrote `max-width: 1099px` where poker wrote
+     `max-width: 1100px`, so at exactly 1100px the two boards took different
+     branches. Always:
+
+         @media (min-width: <bp>)              — 700px  / 1100px / 1440px
+         @media (max-width: calc(<bp> − 1px))  — 699px  / 1099px / 1439px
+
+     written literally. `TestBreakpoints` in test_web_frontend_guards.py
+     rejects any other value. */
   --bp-s: 700px;
   --bp-m: 1100px;
   --bp-l: 1440px;
+
+  /* Paper. Not a themed surface: the one thing that has to stay white in
+     every palette is a QR code's quiet zone, because a scanner reads contrast
+     rather than a design system. */
+  --paper: #ffffff;
 
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;

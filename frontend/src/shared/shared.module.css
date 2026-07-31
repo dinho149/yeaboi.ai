@@ -261,7 +261,7 @@
 
 /* ── Invite ───────────────────────────────────────────────────── */
 .invite { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-.qr { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
+.qr { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
 .inviteCode { display: flex; align-items: center; gap: var(--s2); margin: 0; }
 .codeValue {
   font-family: var(--font-mono);

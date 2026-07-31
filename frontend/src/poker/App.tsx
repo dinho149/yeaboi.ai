@@ -122,7 +122,7 @@ export function App({ boot }: { boot: PokerBoot }) {
   const ticketCount = snapshot?.ticket_count ?? 0;
 
   // ── Local UI state ─────────────────────────────────────────────────────
-  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.poker) ?? 'midnight');
+  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
   const [inviteOpen, setInviteOpen] = useState(false);
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
@@ -135,7 +135,7 @@ export function App({ boot }: { boot: PokerBoot }) {
 
   const chooseTheme = useCallback((next: Theme) => {
     setLocalTheme(next);
-    setTheme(next, THEME_KEYS.poker);
+    setTheme(next, THEME_KEYS.site);
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
 

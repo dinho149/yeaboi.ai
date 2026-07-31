@@ -213,10 +213,26 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      Documented as tokens even though @media cannot read a custom property —
      retro and poker picked different breakpoints, which is why the two
      boards behaved differently on the same phone. These are the numbers to
-     write literally into every @media query. */
+     write literally into every @media query.
+
+     The *convention* matters as much as the numbers, and its absence is what
+     let them drift: retro wrote `max-width: 1099px` where poker wrote
+     `max-width: 1100px`, so at exactly 1100px the two boards took different
+     branches. Always:
+
+         @media (min-width: <bp>)              — 700px  / 1100px / 1440px
+         @media (max-width: calc(<bp> − 1px))  — 699px  / 1099px / 1439px
+
+     written literally. `TestBreakpoints` in test_web_frontend_guards.py
+     rejects any other value. */
   --bp-s: 700px;
   --bp-m: 1100px;
   --bp-l: 1440px;
+
+  /* Paper. Not a themed surface: the one thing that has to stay white in
+     every palette is a QR code's quiet zone, because a scanner reads contrast
+     rather than a design system. */
+  --paper: #ffffff;
 
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
@@ -959,7 +975,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_bsfnf_17 {
+._appbar_jt86r_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -971,13 +987,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_bsfnf_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_bsfnf_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_jt86r_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_jt86r_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_bsfnf_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_bsfnf_35 {
+._brandTitle_jt86r_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_jt86r_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -986,11 +1002,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_bsfnf_44 { flex: 1; }
-._tools_bsfnf_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_jt86r_44 { flex: 1; }
+._tools_jt86r_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
-._iconBtn_bsfnf_48 {
+._iconBtn_jt86r_48 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1009,8 +1025,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._iconBtn_bsfnf_48:hover { border-color: var(--accent); }
-._iconBtnCompact_bsfnf_68 {
+._iconBtn_jt86r_48:hover { border-color: var(--accent); }
+._iconBtnCompact_jt86r_68 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s1);
@@ -1019,14 +1035,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      touch screen, which is where most of these boards are actually used. */
   opacity: 0.72;
 }
-._iconBtnCompact_bsfnf_68:hover, ._iconBtnCompact_bsfnf_68:focus-visible { opacity: 1; }
-._iconBtnActive_bsfnf_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-._iconBtnPrimary_bsfnf_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._iconBtnPrimary_bsfnf_79:hover { filter: brightness(1.08); }
-._iconBtnDanger_bsfnf_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._iconGlyph_bsfnf_82 { font-size: var(--fs-m); line-height: 1; }
+._iconBtnCompact_jt86r_68:hover, ._iconBtnCompact_jt86r_68:focus-visible { opacity: 1; }
+._iconBtnActive_jt86r_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._iconBtnPrimary_jt86r_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._iconBtnPrimary_jt86r_79:hover { filter: brightness(1.08); }
+._iconBtnDanger_jt86r_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._iconGlyph_jt86r_82 { font-size: var(--fs-m); line-height: 1; }
 
-._primaryBtn_bsfnf_84 {
+._primaryBtn_jt86r_84 {
   min-height: var(--tap);
   padding: 0 var(--s4);
   background: var(--accent);
@@ -1037,9 +1053,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-weight: 600;
   cursor: pointer;
 }
-._primaryBtn_bsfnf_84:hover { filter: brightness(1.08); }
+._primaryBtn_jt86r_84:hover { filter: brightness(1.08); }
 
-._preset_bsfnf_97 {
+._preset_jt86r_97 {
   min-height: var(--tap);
   padding: 0 var(--s3);
   background: var(--panel-2);
@@ -1050,12 +1066,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-family: var(--font-mono);
   cursor: pointer;
 }
-._preset_bsfnf_97:hover { border-color: var(--accent); }
+._preset_jt86r_97:hover { border-color: var(--accent); }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_bsfnf_111 { display: contents; }
-._popoverAnchor_bsfnf_112 { position: relative; display: inline-flex; }
-._tbtn_bsfnf_113 {
+._popoverGroup_jt86r_111 { display: contents; }
+._popoverAnchor_jt86r_112 { position: relative; display: inline-flex; }
+._tbtn_jt86r_113 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1070,10 +1086,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_bsfnf_113:hover { border-color: var(--accent); }
-._tbtnOpen_bsfnf_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_jt86r_113:hover { border-color: var(--accent); }
+._tbtnOpen_jt86r_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_bsfnf_111 {
+._popover_jt86r_111 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1089,18 +1105,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_bsfnf_147 { right: auto; left: 0; }
-._popover_bsfnf_111[hidden] { display: none; }
+._popoverLeft_jt86r_147 { right: auto; left: 0; }
+._popover_jt86r_111[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_bsfnf_151 {
+._fieldLabel_jt86r_151 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_bsfnf_158, ._textInput_bsfnf_158, ._numberInput_bsfnf_158 {
+._select_jt86r_158, ._textInput_jt86r_158, ._numberInput_jt86r_158 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1110,14 +1126,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_bsfnf_158 { flex: 1; min-width: 0; }
-._numberInput_bsfnf_158 { width: 5.5rem; font-family: var(--font-mono); }
-._range_bsfnf_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_jt86r_158 { flex: 1; min-width: 0; }
+._numberInput_jt86r_158 { width: 5.5rem; font-family: var(--font-mono); }
+._range_jt86r_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_bsfnf_173 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_bsfnf_174 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_bsfnf_175 {
+._musicPanel_jt86r_173 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_jt86r_174 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_jt86r_175 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1127,13 +1143,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_bsfnf_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_bsfnf_186 { opacity: 1; }
+._viz_jt86r_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_jt86r_186 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_bsfnf_189 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_bsfnf_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_bsfnf_191 {
+._timerPanel_jt86r_189 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_jt86r_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_jt86r_191 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1143,9 +1159,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_bsfnf_201 { color: var(--danger); }
+._timerDone_jt86r_201 { color: var(--danger); }
 
-._confetti_bsfnf_203 {
+._confetti_jt86r_203 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1155,9 +1171,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_bsfnf_213 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_bsfnf_214 { display: flex; gap: var(--s2); }
-._swatch_bsfnf_214 {
+._themeSwitcher_jt86r_213 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_jt86r_214 { display: flex; gap: var(--s2); }
+._swatch_jt86r_214 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -1166,8 +1182,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_bsfnf_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_bsfnf_225 {
+._swatchOn_jt86r_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_jt86r_225 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -1177,22 +1193,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_bsfnf_235 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_bsfnf_236 { display: inline-flex; align-items: center; }
-._stacked_bsfnf_237 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_bsfnf_237:first-child { margin-left: 0; }
-._presenceMore_bsfnf_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_bsfnf_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_jt86r_235 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_jt86r_236 { display: inline-flex; align-items: center; }
+._stacked_jt86r_237 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_jt86r_237:first-child { margin-left: 0; }
+._presenceMore_jt86r_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_jt86r_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_bsfnf_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_bsfnf_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_bsfnf_244 { flex: 1; }
-._rosterYou_bsfnf_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_bsfnf_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_jt86r_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_jt86r_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_jt86r_244 { flex: 1; }
+._rosterYou_jt86r_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_jt86r_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_bsfnf_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_bsfnf_250 {
+._avatarGrid_jt86r_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_jt86r_250 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1202,23 +1218,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_bsfnf_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_jt86r_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_bsfnf_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_bsfnf_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
-._inviteCode_bsfnf_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_bsfnf_266 {
+._invite_jt86r_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_jt86r_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_jt86r_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_jt86r_266 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_bsfnf_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_jt86r_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_bsfnf_276 {
+._copyField_jt86r_276 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1232,7 +1248,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_bsfnf_290 {
+._copyValue_jt86r_290 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1240,10 +1256,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_bsfnf_298 { flex: none; }
+._copyBtn_jt86r_298 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_bsfnf_301 {
+._toast_jt86r_301 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1258,7 +1274,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_bsfnf_316 {
+._modal_jt86r_316 {
   /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
      Only the skin is ours. */
   border: 1px solid var(--line);
@@ -1269,14 +1285,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_bsfnf_316::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_bsfnf_328 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_bsfnf_329 { font-size: var(--fs-l); margin: 0; }
-._modalActions_bsfnf_330 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_jt86r_316::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_jt86r_328 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_jt86r_329 { font-size: var(--fs-l); margin: 0; }
+._modalActions_jt86r_330 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_bsfnf_334 {
+._srOnly_jt86r_334 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1760,7 +1776,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* The height and the column belong to PageShell's `app` variant now — a
    four-row grid of masthead, toolbar, this board, credit. What is left is the
    surface it is painted on. */
-._app_ila93_31 {
+._app_vl8j0_31 {
   background: var(--bg);
   color: var(--text);
 }
@@ -1768,7 +1784,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Row 3. Poker scrolled the window before the shell existed; it scrolls in
    here instead, which is what lets `deckZone` park against the top of the
    credit rather than against the viewport. */
-._scroll_ila93_39 {
+._scroll_vl8j0_39 {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -1778,7 +1794,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
-._layout_ila93_49 {
+._layout_vl8j0_49 {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
@@ -1789,15 +1805,15 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   align-items: start;
 }
 
-._main_ila93_60 {
+._main_vl8j0_60 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
-  ._layout_ila93_49 {
+@media (max-width: 1099px) {
+  ._layout_vl8j0_49 {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -1805,7 +1821,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 @media (max-width: 699px) {
-  ._layout_ila93_49 {
+  ._layout_vl8j0_49 {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--s3);
     padding-bottom: calc(var(--s6) * 2 + env(safe-area-inset-bottom));
@@ -1814,7 +1830,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Rail ────────────────────────────────────────────────────────────── */
 
-._rail_ila93_85 {
+._rail_vl8j0_85 {
   position: sticky;
   top: var(--s3);
   /* dvh, not vh — see the header note. */
@@ -1826,11 +1842,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   padding: var(--s3);
 }
 
-._railHead_ila93_97 {
+._railHead_vl8j0_97 {
   margin-bottom: var(--s2);
 }
 
-._railList_ila93_101 {
+._railList_vl8j0_101 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1839,7 +1855,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: 2px;
 }
 
-._railItem_ila93_110 {
+._railItem_vl8j0_110 {
   width: 100%;
   min-height: var(--tap);
   display: flex;
@@ -1856,12 +1872,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._railItem_ila93_110:hover {
+._railItem_vl8j0_110:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-._railDot_ila93_132 {
+._railDot_vl8j0_132 {
   flex: none;
   width: 6px;
   height: 6px;
@@ -1869,30 +1885,30 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--line-strong);
 }
 
-._railCurrent_ila93_140 {
+._railCurrent_vl8j0_140 {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
 }
 
-._railCurrent_ila93_140 ._railDot_ila93_132 {
+._railCurrent_vl8j0_140 ._railDot_vl8j0_132 {
   background: var(--accent);
 }
 
-._railPeeking_ila93_149 {
+._railPeeking_vl8j0_149 {
   outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: -1px;
 }
 
-._railDone_ila93_154 ._railDot_ila93_132 {
+._railDone_vl8j0_154 ._railDot_vl8j0_132 {
   background: var(--ok);
 }
 
-._railDone_ila93_154 ._railText_ila93_158 {
+._railDone_vl8j0_154 ._railText_vl8j0_158 {
   text-decoration: line-through;
   text-decoration-color: var(--dim);
 }
 
-._railText_ila93_158 {
+._railText_vl8j0_158 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -1900,29 +1916,29 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   white-space: nowrap;
 }
 
-._railKey_ila93_171 {
+._railKey_vl8j0_171 {
   font-family: var(--font-mono);
   color: var(--dim);
   margin-right: var(--s1);
 }
 
-._railPts_ila93_177 {
+._railPts_vl8j0_177 {
   flex: none;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ok);
 }
 
-._railToggle_ila93_184 {
+._railToggle_vl8j0_184 {
   display: none;
 }
 
-._railBackdrop_ila93_188 {
+._railBackdrop_vl8j0_188 {
   display: none;
 }
 
 @media (max-width: 699px) {
-  ._rail_ila93_85 {
+  ._rail_vl8j0_85 {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-rail);
@@ -1936,15 +1952,15 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     transition: transform var(--dur-base) var(--ease);
   }
 
-  ._railOpen_ila93_207 {
+  ._railOpen_vl8j0_207 {
     transform: translateX(0);
   }
 
-  ._railToggle_ila93_184 {
+  ._railToggle_vl8j0_184 {
     display: inline-flex;
   }
 
-  ._railBackdrop_ila93_188 {
+  ._railBackdrop_vl8j0_188 {
     display: block;
     position: fixed;
     inset: 0;
@@ -1955,42 +1971,42 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Ticket ──────────────────────────────────────────────────────────── */
 
-._ticket_ila93_226 {
+._ticket_vl8j0_226 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._ticketPeek_ila93_233 {
+._ticketPeek_vl8j0_233 {
   border-style: dashed;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
-._tkrow_ila93_238 {
+._tkrow_vl8j0_238 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._key_ila93_245 {
+._key_vl8j0_245 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--track-label);
   color: var(--muted);
 }
 
-._key_ila93_245 a {
+._key_vl8j0_245 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-._key_ila93_245 a:hover {
+._key_vl8j0_245 a:hover {
   text-decoration: underline;
 }
 
-._phaseTag_ila93_261 {
+._phaseTag_vl8j0_261 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2001,44 +2017,44 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   padding: 2px var(--s2);
 }
 
-._phaseTagOn_ila93_272 {
+._phaseTagOn_vl8j0_272 {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-._phaseTagPeek_ila93_278 {
+._phaseTagPeek_vl8j0_278 {
   color: var(--accent2);
   border-color: color-mix(in srgb, var(--accent2) 45%, transparent);
 }
 
-._tkSummary_ila93_283 {
+._tkSummary_vl8j0_283 {
   margin: var(--s2) 0 var(--s3);
   font-size: var(--fs-xl);
   line-height: 1.25;
   font-weight: 600;
 }
 
-._chips_ila93_290 {
+._chips_vl8j0_290 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
 
-._bodyLabel_ila93_297 {
+._bodyLabel_vl8j0_297 {
   display: block;
   margin: var(--s3) 0 var(--s1);
 }
 
-._desc_ila93_302 {
+._desc_vl8j0_302 {
   white-space: pre-wrap;
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._descClipped_ila93_309 {
+._descClipped_vl8j0_309 {
   max-height: 9em;
   overflow: hidden;
   /* Fades rather than cuts, so it is visibly clipped and not just ended.
@@ -2047,7 +2063,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   mask-image: linear-gradient(to bottom, var(--text) 65%, transparent);
 }
 
-._descToggle_ila93_318 {
+._descToggle_vl8j0_318 {
   margin-top: var(--s2);
   min-height: var(--tap-min);
   background: none;
@@ -2059,13 +2075,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._descEmpty_ila93_330 {
+._descEmpty_vl8j0_330 {
   color: var(--dim);
   font-size: var(--fs-s);
   font-style: italic;
 }
 
-._peekBanner_ila93_336 {
+._peekBanner_vl8j0_336 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2079,12 +2095,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._peekActions_ila93_350 {
+._peekActions_vl8j0_350 {
   display: flex;
   gap: var(--s2);
 }
 
-._pkbtn_ila93_355 {
+._pkbtn_vl8j0_355 {
   min-height: var(--tap-min);
   padding: var(--s1) var(--s2);
   border: 1px solid var(--line-strong);
@@ -2096,14 +2112,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._pkbtnGo_ila93_367 {
+._pkbtnGo_vl8j0_367 {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
 }
 
 /* ── Results ─────────────────────────────────────────────────────────── */
 
-._results_ila93_374 {
+._results_vl8j0_374 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
@@ -2113,7 +2129,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s3);
 }
 
-._resultsHead_ila93_384 {
+._resultsHead_vl8j0_384 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2121,18 +2137,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   flex-wrap: wrap;
 }
 
-._resultsSum_ila93_392 {
+._resultsSum_vl8j0_392 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-s);
   color: var(--muted);
 }
 
-._resultsSum_ila93_392 b {
+._resultsSum_vl8j0_392 b {
   color: var(--accent);
 }
 
-._dist_ila93_403 {
+._dist_vl8j0_403 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2141,7 +2157,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s1);
 }
 
-._drow_ila93_412 {
+._drow_vl8j0_412 {
   display: grid;
   grid-template-columns: 2.5em 1fr 2em;
   align-items: center;
@@ -2152,19 +2168,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._dval_ila93_423 {
+._dval_vl8j0_423 {
   text-align: right;
   color: var(--text);
 }
 
-._dtrack_ila93_428 {
+._dtrack_vl8j0_428 {
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--panel-2);
   overflow: hidden;
 }
 
-._dbar_ila93_435 {
+._dbar_vl8j0_435 {
   display: block;
   height: 100%;
   border-radius: var(--r-pill);
@@ -2172,21 +2188,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   transition: width var(--dur-base) var(--ease);
 }
 
-._drowTop_ila93_443 ._dbar_ila93_435 {
+._drowTop_vl8j0_443 ._dbar_vl8j0_435 {
   background: var(--accent);
 }
 
-._drowTop_ila93_443 ._dval_ila93_423 {
+._drowTop_vl8j0_443 ._dval_vl8j0_423 {
   color: var(--accent);
 }
 
-._dcount_ila93_451 {
+._dcount_vl8j0_451 {
   text-align: right;
 }
 
 /* ── AI note ─────────────────────────────────────────────────────────── */
 
-._ainote_ila93_457 {
+._ainote_vl8j0_457 {
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent2);
   border-radius: var(--r-s);
@@ -2194,7 +2210,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel-2);
 }
 
-._aiHead_ila93_465 {
+._aiHead_vl8j0_465 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2205,57 +2221,57 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._aiBody_ila93_476 {
+._aiBody_vl8j0_476 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 
-._conf_ila93_482 {
+._conf_vl8j0_482 {
   font-size: var(--fs-2xs);
   border-radius: var(--r-pill);
   padding: 1px var(--s2);
   border: 1px solid currentcolor;
 }
 
-._conf-high_ila93_489 {
+._conf-high_vl8j0_489 {
   color: var(--ok);
 }
 
-._conf-medium_ila93_493 {
+._conf-medium_vl8j0_493 {
   color: var(--warn);
 }
 
-._conf-low_ila93_497 {
+._conf-low_vl8j0_497 {
   color: var(--danger);
 }
 
-._ev_ila93_501 {
+._ev_vl8j0_501 {
   margin: var(--s2) 0 0;
   padding-left: var(--s4);
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_ila93_508 {
+._sug_vl8j0_508 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._sug_ila93_508 b {
+._sug_vl8j0_508 b {
   color: var(--accent);
   font-family: var(--font-mono);
 }
 
 /* "Thinking" with the ellipsis animated in, so a stalled worker is visibly
    different from a finished one. Steps, not a fade — it reads as a cursor. */
-._ainotePending_ila93_521 ._aiBody_ila93_476::after {
+._ainotePending_vl8j0_521 ._aiBody_vl8j0_476::after {
   content: '…';
-  animation: _dots_ila93_1 1.2s steps(4, end) infinite;
+  animation: _dots_vl8j0_1 1.2s steps(4, end) infinite;
 }
 
-@keyframes _dots_ila93_1 {
+@keyframes _dots_vl8j0_1 {
   from {
     clip-path: inset(0 100% 0 0);
   }
@@ -2266,14 +2282,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Duel ────────────────────────────────────────────────────────────── */
 
-._duel_ila93_537 {
+._duel_vl8j0_537 {
   background: var(--panel);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._duelHead_ila93_544 {
+._duelHead_vl8j0_544 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2285,13 +2301,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._duelBody_ila93_556 {
+._duelBody_vl8j0_556 {
   margin: var(--s3) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._duelTranscript_ila93_562 {
+._duelTranscript_vl8j0_562 {
   margin: var(--s3) 0 0;
   white-space: pre-wrap;
   font-size: var(--fs-s);
@@ -2300,41 +2316,41 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow-y: auto;
 }
 
-._recind_ila93_571 {
+._recind_vl8j0_571 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--danger);
 }
 
-._recDot_ila93_578 {
+._recDot_vl8j0_578 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--danger);
-  animation: _recpulse_ila93_1 1.4s ease-in-out infinite;
+  animation: _recpulse_vl8j0_1 1.4s ease-in-out infinite;
 }
 
-@keyframes _recpulse_ila93_1 {
+@keyframes _recpulse_vl8j0_1 {
   50% {
     opacity: 0.25;
   }
 }
 
-._norec_ila93_592 {
+._norec_vl8j0_592 {
   color: var(--warn);
   text-transform: none;
   letter-spacing: 0;
 }
 
-._dualrow_ila93_598 {
+._dualrow_vl8j0_598 {
   display: flex;
   align-items: stretch;
   gap: var(--s3);
   margin-top: var(--s3);
 }
 
-._duelist_ila93_605 {
+._duelist_vl8j0_605 {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2346,31 +2362,31 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-align: center;
 }
 
-._duelistSpeaking_ila93_617 {
+._duelistSpeaking_vl8j0_617 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-._duelFace_ila93_622 {
+._duelFace_vl8j0_622 {
   font-size: var(--fs-xl);
 }
 
-._duelName_ila93_626 {
+._duelName_vl8j0_626 {
   font-weight: 600;
   font-size: var(--fs-s);
 }
 
-._duelValue_ila93_631 {
+._duelValue_vl8j0_631 {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._duelValue_ila93_631 b {
+._duelValue_vl8j0_631 b {
   font-family: var(--font-mono);
   color: var(--text);
 }
 
-._duelFloor_ila93_641 {
+._duelFloor_vl8j0_641 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2378,12 +2394,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--accent);
 }
 
-._duelMic_ila93_649 {
+._duelMic_vl8j0_649 {
   font-size: var(--fs-2xs);
   color: var(--danger);
 }
 
-._vs_ila93_654 {
+._vs_vl8j0_654 {
   align-self: center;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
@@ -2391,7 +2407,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--dim);
 }
 
-._youup_ila93_662 {
+._youup_vl8j0_662 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-s);
@@ -2401,7 +2417,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
 }
 
-._micRow_ila93_672 {
+._micRow_vl8j0_672 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -2409,7 +2425,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin-top: var(--s3);
 }
 
-._micBtn_ila93_680 {
+._micBtn_vl8j0_680 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--accent);
@@ -2421,21 +2437,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._hint_ila93_692 {
+._hint_vl8j0_692 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
 /* ── The table ───────────────────────────────────────────────────────── */
 
-._table_ila93_699 {
+._table_vl8j0_699 {
   background: var(--felt);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s4);
 }
 
-._tableHead_ila93_706 {
+._tableHead_vl8j0_706 {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -2443,18 +2459,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin-bottom: var(--s3);
 }
 
-._tableWait_ila93_714 {
+._tableWait_vl8j0_714 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._vempty_ila93_720 {
+._vempty_vl8j0_720 {
   color: var(--dim);
   font-size: var(--fs-s);
 }
 
-._vrow_ila93_725 {
+._vrow_vl8j0_725 {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -2463,7 +2479,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s3);
 }
 
-._voter_ila93_734 {
+._voter_vl8j0_734 {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2471,7 +2487,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   width: 68px;
 }
 
-._face_ila93_742 {
+._face_vl8j0_742 {
   position: relative;
   display: grid;
   place-items: center;
@@ -2483,7 +2499,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
 }
 
-._tick_ila93_226 {
+._tick_vl8j0_226 {
   position: absolute;
   right: -2px;
   bottom: -2px;
@@ -2506,7 +2522,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * — the global reduced-motion override flattens duration to 0.01ms, and an
  * animation written the other way round would freeze mid-flip.
  */
-._vcard_ila93_777 {
+._vcard_vl8j0_777 {
   display: grid;
   place-items: center;
   width: 44px;
@@ -2518,18 +2534,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   font-weight: 700;
-  animation: _flip_ila93_1 320ms var(--ease) both;
+  animation: _flip_vl8j0_1 320ms var(--ease) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-@keyframes _flip_ila93_1 {
+@keyframes _flip_vl8j0_1 {
   from {
     transform: rotateY(90deg);
     opacity: 0;
   }
 }
 
-._nm_ila93_800 {
+._nm_vl8j0_800 {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2540,7 +2556,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── The deck ────────────────────────────────────────────────────────── */
 
-._deckZone_ila93_811 {
+._deckZone_vl8j0_811 {
   position: sticky;
   bottom: 0;
   z-index: var(--z-deck);
@@ -2568,13 +2584,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * App from the same flag that renders it, so the two cannot disagree — it
  * reaches this element through PageShell's `data` prop.
  */
-@media (max-width: 1100px) {
-  ._app_ila93_31[data-host='true'] {
+@media (max-width: 1099px) {
+  ._app_vl8j0_31[data-host='true'] {
     padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
   }
 }
 
-._deckStatus_ila93_845 {
+._deckStatus_vl8j0_845 {
   margin: 0 0 var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -2583,18 +2599,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-align: center;
 }
 
-._deckMine_ila93_854 {
+._deckMine_vl8j0_854 {
   color: var(--accent);
 }
 
-._deck_ila93_811 {
+._deck_vl8j0_811 {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--s2);
 }
 
-._pcard_ila93_865 {
+._pcard_vl8j0_865 {
   position: relative;
   width: 52px;
   height: 74px;
@@ -2609,17 +2625,17 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     border-color var(--dur-fast) var(--ease);
 }
 
-._pcard_ila93_865:hover:not(:disabled) {
+._pcard_vl8j0_865:hover:not(:disabled) {
   transform: translateY(-4px);
   border-color: var(--accent);
 }
 
-._pcard_ila93_865:disabled {
+._pcard_vl8j0_865:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-._pcardSel_ila93_890 {
+._pcardSel_vl8j0_890 {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 18%, var(--card));
   color: var(--accent);
@@ -2629,11 +2645,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Your tap is committed locally before the server confirms it. The dash says
    "not yet acknowledged" without moving anything, so a slow tunnel does not
    make the card twitch. */
-._pcardWait_ila93_900 {
+._pcardWait_vl8j0_900 {
   border-style: dashed;
 }
 
-._ci_ila93_904 {
+._ci_vl8j0_904 {
   position: absolute;
   top: 4px;
   left: 5px;
@@ -2641,7 +2657,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   opacity: 0.75;
 }
 
-._ciFlip_ila93_912 {
+._ciFlip_vl8j0_912 {
   top: auto;
   left: auto;
   right: 5px;
@@ -2649,14 +2665,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   transform: rotate(180deg);
 }
 
-._cv_ila93_920 {
+._cv_vl8j0_920 {
   font-size: var(--fs-l);
   font-weight: 700;
 }
 
 /* ── Host console ────────────────────────────────────────────────────── */
 
-._console_ila93_927 {
+._console_vl8j0_927 {
   position: sticky;
   top: var(--s3);
   max-height: calc(100dvh - var(--s6) * 2);
@@ -2670,13 +2686,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s3);
 }
 
-._cbar_ila93_941 {
+._cbar_vl8j0_941 {
   display: none;
   align-items: center;
   gap: var(--s2);
 }
 
-._cphase_ila93_947 {
+._cphase_vl8j0_947 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2684,19 +2700,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--accent);
 }
 
-._cbody_ila93_955 {
+._cbody_vl8j0_955 {
   display: flex;
   flex-direction: column;
   gap: var(--s4);
 }
 
-._cgroup_ila93_961 {
+._cgroup_vl8j0_961 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
 }
 
-._cbtn_ila93_967 {
+._cbtn_vl8j0_967 {
   min-height: var(--tap);
   padding: var(--s2) var(--s3);
   border: 1px solid var(--line-strong);
@@ -2708,12 +2724,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._cbtn_ila93_967:disabled {
+._cbtn_vl8j0_967:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-._cbtnPrimary_ila93_984:not(:disabled) {
+._cbtnPrimary_vl8j0_984:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--ink);
@@ -2721,28 +2737,28 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* Everyone present has voted. The one moment the console asks for attention. */
-._cbtnPulse_ila93_992:not(:disabled) {
-  animation: _cpulse_ila93_1 1.6s ease-in-out infinite;
+._cbtnPulse_vl8j0_992:not(:disabled) {
+  animation: _cpulse_vl8j0_1 1.6s ease-in-out infinite;
 }
 
-@keyframes _cpulse_ila93_1 {
+@keyframes _cpulse_vl8j0_1 {
   50% {
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
   }
 }
 
-._crow_ila93_1002,
-._navrow_ila93_1003 {
+._crow_vl8j0_1002,
+._navrow_vl8j0_1003 {
   display: flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._duelSlot_ila93_1009 {
+._duelSlot_vl8j0_1009 {
   min-height: var(--tap);
 }
 
-._duelInline_ila93_1013 {
+._duelInline_vl8j0_1013 {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -2751,12 +2767,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-s);
 }
 
-._seg_ila93_1022 {
+._seg_vl8j0_1022 {
   display: flex;
   gap: var(--s1);
 }
 
-._preset_ila93_1027 {
+._preset_vl8j0_1027 {
   flex: 1;
   min-height: var(--tap-min);
   border: 1px solid var(--line-strong);
@@ -2768,8 +2784,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._clabel_ila93_1039,
-._finlab_ila93_1040 {
+._clabel_vl8j0_1039,
+._finlab_vl8j0_1040 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   text-transform: uppercase;
@@ -2777,38 +2793,38 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._chint_ila93_1048,
-._cnotice_ila93_1049 {
+._chint_vl8j0_1048,
+._cnotice_vl8j0_1049 {
   margin: 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
   line-height: 1.5;
 }
 
-._cnotice_ila93_1049 {
+._cnotice_vl8j0_1049 {
   color: var(--warn);
 }
 
-._readout_ila93_1060 {
+._readout_vl8j0_1060 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._readout_ila93_1060 b {
+._readout_vl8j0_1060 b {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-._finrow_ila93_1072 {
+._finrow_vl8j0_1072 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   flex-wrap: wrap;
 }
 
-._finInput_ila93_1079 {
+._finInput_vl8j0_1079 {
   width: 5em;
   min-height: var(--tap);
   padding: var(--s1) var(--s2);
@@ -2820,12 +2836,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
 }
 
-._finSrc_ila93_1091 {
+._finSrc_vl8j0_1091 {
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._cpos_ila93_1096 {
+._cpos_vl8j0_1096 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -2834,8 +2850,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-@media (max-width: 1100px) {
-  ._console_ila93_927 {
+@media (max-width: 1099px) {
+  ._console_vl8j0_927 {
     position: fixed;
     inset: auto 0 0 0;
     z-index: var(--z-console);
@@ -2845,31 +2861,31 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     padding-bottom: max(var(--s3), env(safe-area-inset-bottom));
   }
 
-  ._cbar_ila93_941 {
+  ._cbar_vl8j0_941 {
     display: flex;
   }
 
   /* Collapsed by default: the bar carries the one action that matters, and the
      rest is one tap away. A host on a phone is holding the phone. */
-  ._cbody_ila93_955 {
+  ._cbody_vl8j0_955 {
     display: none;
   }
 
-  ._consoleOpen_ila93_1126 ._cbody_ila93_955 {
+  ._consoleOpen_vl8j0_1126 ._cbody_vl8j0_955 {
     display: flex;
   }
 }
 
 /* ── Toolbar bits ────────────────────────────────────────────────────── */
 
-._identity_ila93_1133 {
+._identity_vl8j0_1133 {
   display: flex;
   align-items: center;
   gap: var(--s2);
   min-width: 0;
 }
 
-._meChip_ila93_1140 {
+._meChip_vl8j0_1140 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -2884,27 +2900,27 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._meName_ila93_1155 {
+._meName_vl8j0_1155 {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-._pen_ila93_1162 {
+._pen_vl8j0_1162 {
   color: var(--dim);
 }
 
-._roomCount_ila93_1166 {
+._roomCount_vl8j0_1166 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-._offline_ila93_1171 {
+._offline_vl8j0_1171 {
   color: var(--warn);
 }
 
-._castBtn_ila93_1175 {
+._castBtn_vl8j0_1175 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s2);
@@ -2917,14 +2933,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
 }
 
-._popNote_ila93_1188 {
+._popNote_vl8j0_1188 {
   margin: 0;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 
-._lockBanner_ila93_1194,
-._musicBanner_ila93_1195 {
+._lockBanner_vl8j0_1194,
+._musicBanner_vl8j0_1195 {
   margin: 0;
   padding: var(--s2) var(--s4);
   text-align: center;
@@ -2932,12 +2948,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._lockBanner_ila93_1194 {
+._lockBanner_vl8j0_1194 {
   background: color-mix(in srgb, var(--warn) 16%, var(--panel));
   color: var(--warn);
 }
 
-._musicBanner_ila93_1195 {
+._musicBanner_vl8j0_1195 {
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -2950,7 +2966,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Edit modal ──────────────────────────────────────────────────────── */
 
-._flabel_ila93_1221 {
+._flabel_vl8j0_1221 {
   display: block;
   margin: var(--s3) 0 var(--s1);
   font-family: var(--font-mono);
@@ -2960,7 +2976,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._field_ila93_1231 {
+._field_vl8j0_1231 {
   width: 100%;
   min-height: var(--tap);
   padding: var(--s2);
@@ -2972,24 +2988,24 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-s);
 }
 
-textarea._field_ila93_1231 {
+textarea._field_vl8j0_1231 {
   min-height: 8em;
   resize: vertical;
 }
 
-._editWarn_ila93_1248 {
+._editWarn_vl8j0_1248 {
   margin: var(--s3) 0 0;
   font-size: var(--fs-xs);
   color: var(--warn);
 }
 
-._editNote_ila93_1254 {
+._editNote_vl8j0_1254 {
   margin: var(--s2) 0 0;
   font-size: var(--fs-2xs);
   color: var(--dim);
 }
 
-._editSave_ila93_1260 {
+._editSave_vl8j0_1260 {
   width: 100%;
   min-height: var(--tap);
   margin-top: var(--s4);
@@ -3004,7 +3020,7 @@ textarea._field_ila93_1231 {
 
 /* ── Utility ─────────────────────────────────────────────────────────── */
 
-._srOnly_ila93_1275 {
+._srOnly_vl8j0_1275 {
   position: absolute;
   width: 1px;
   height: 1px;

@@ -121,7 +121,7 @@ export function App({ boot }: { boot: RetroBoot }) {
   const locked = useBoardSelector(store, (s) => s?.locked ?? false);
 
   // ── Local UI state ─────────────────────────────────────────────────────
-  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.retro) ?? 'midnight');
+  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
   const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -138,7 +138,7 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   const chooseTheme = useCallback((next: Theme) => {
     setLocalTheme(next);
-    setTheme(next, THEME_KEYS.retro);
+    setTheme(next, THEME_KEYS.site);
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
 

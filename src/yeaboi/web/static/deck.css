@@ -213,10 +213,26 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      Documented as tokens even though @media cannot read a custom property —
      retro and poker picked different breakpoints, which is why the two
      boards behaved differently on the same phone. These are the numbers to
-     write literally into every @media query. */
+     write literally into every @media query.
+
+     The *convention* matters as much as the numbers, and its absence is what
+     let them drift: retro wrote `max-width: 1099px` where poker wrote
+     `max-width: 1100px`, so at exactly 1100px the two boards took different
+     branches. Always:
+
+         @media (min-width: <bp>)              — 700px  / 1100px / 1440px
+         @media (max-width: calc(<bp> − 1px))  — 699px  / 1099px / 1439px
+
+     written literally. `TestBreakpoints` in test_web_frontend_guards.py
+     rejects any other value. */
   --bp-s: 700px;
   --bp-m: 1100px;
   --bp-l: 1440px;
+
+  /* Paper. Not a themed surface: the one thing that has to stay white in
+     every palette is a QR code's quiet zone, because a scanner reads contrast
+     rather than a design system. */
+  --paper: #ffffff;
 
   /* ── Motion ─────────────────────────────────────────────────────── */
   --dur-fast: 120ms;
@@ -1013,7 +1029,7 @@ body {
  * Python renderer used to emit per font-scale setting.
  */
 
-._app_bk0j4_10 {
+._app_3kut9_10 {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1037,9 +1053,9 @@ body {
  * label rather than a logo, because that is what it is — the deck came out of
  * someone's terminal.
  */
-._rail_bk0j4_34,
-._brand_bk0j4_35,
-._corner_bk0j4_36 {
+._rail_3kut9_34,
+._brand_3kut9_35,
+._corner_3kut9_36 {
   position: absolute;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1048,7 +1064,7 @@ body {
   margin: 0;
 }
 
-._rail_bk0j4_34 {
+._rail_3kut9_34 {
   top: calc(var(--s4) + env(safe-area-inset-top));
   left: calc(var(--s5) + env(safe-area-inset-left));
   max-width: 46ch;
@@ -1058,7 +1074,7 @@ body {
   text-transform: uppercase;
 }
 
-._brand_bk0j4_35 {
+._brand_3kut9_35 {
   top: calc(var(--s3) + env(safe-area-inset-top));
   right: calc(var(--s5) + env(safe-area-inset-right));
   display: flex;
@@ -1066,7 +1082,7 @@ body {
   gap: var(--s2);
 }
 
-._brandMark_bk0j4_63 {
+._brandMark_3kut9_63 {
   display: inline-flex;
   align-items: baseline;
   gap: 0.5ch;
@@ -1079,21 +1095,21 @@ body {
  * so at the same colour the mark reads a weight heavier than the words it sits
  * in and the credit line turns into a logo. One tier down puts them level.
  */
-._brandWordmark_bk0j4_76 {
+._brandWordmark_3kut9_76 {
   color: var(--dim);
   /* The glyph rows are their own baseline; nudge them onto the text's. */
   align-self: center;
 }
 
-._brandDate_bk0j4_82 {
+._brandDate_3kut9_82 {
   font-variant-numeric: tabular-nums;
 }
 
-._corner_bk0j4_36 {
+._corner_3kut9_36 {
   bottom: calc(var(--s3) + env(safe-area-inset-bottom));
 }
 
-._cornerLeft_bk0j4_90 {
+._cornerLeft_3kut9_90 {
   left: calc(var(--s5) + env(safe-area-inset-left));
   max-width: 30ch;
   overflow: hidden;
@@ -1101,14 +1117,14 @@ body {
   white-space: nowrap;
 }
 
-._cornerRight_bk0j4_98 {
+._cornerRight_3kut9_98 {
   right: calc(var(--s5) + env(safe-area-inset-right));
   font-variant-numeric: tabular-nums;
 }
 
 /* ── Stage ──────────────────────────────────────────────────────────────── */
 
-._stage_bk0j4_105 {
+._stage_3kut9_105 {
   flex: 1;
   display: grid;
   place-items: center;
@@ -1117,7 +1133,7 @@ body {
   padding: var(--s6) 0 var(--s5);
 }
 
-._slide_bk0j4_114 {
+._slide_3kut9_114 {
   width: 100%;
   max-width: 1040px;
   /*
@@ -1125,17 +1141,17 @@ body {
    * in tokens.css flattens every animation to 0.01ms, so a `to`-animation would
    * freeze on its first frame — here, an invisible slide.
    */
-  animation: _enter_bk0j4_1 320ms var(--ease) both;
+  animation: _enter_3kut9_1 320ms var(--ease) both;
 }
 
-@keyframes _enter_bk0j4_1 {
+@keyframes _enter_3kut9_1 {
   from {
     opacity: 0;
     transform: translateY(12px);
   }
 }
 
-._centered_bk0j4_132 {
+._centered_3kut9_132 {
   text-align: center;
 }
 
@@ -1148,7 +1164,7 @@ body {
  * content slide meant a quarter of the screen was a decorative pictogram. At
  * this size it works as what it actually is: a marker beside the section label.
  */
-._head_bk0j4_145 {
+._head_3kut9_145 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -1156,13 +1172,13 @@ body {
   min-height: calc(1.6rem * var(--deck-scale));
 }
 
-._emoji_bk0j4_153 {
+._emoji_3kut9_153 {
   font-size: calc(clamp(1.4rem, 2.6vw, 2rem) * var(--deck-scale));
   line-height: 1;
 }
 
 /* The bookend slides keep the large mark — there, it is the whole composition. */
-._markLarge_bk0j4_159 {
+._markLarge_3kut9_159 {
   font-size: calc(clamp(2.6rem, 7vw, 4.5rem) * var(--deck-scale));
   line-height: 1;
   margin-bottom: var(--s5);
@@ -1170,7 +1186,7 @@ body {
 
 /* ── Headings ───────────────────────────────────────────────────────────── */
 
-._h1_bk0j4_167 {
+._h1_3kut9_167 {
   font-size: calc(clamp(2rem, 6vw, 4rem) * var(--deck-scale));
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -1187,7 +1203,7 @@ body {
  * endpoint, on the one element that has to read from the back of a room. The
  * accent moved to the eyebrow above it, where it marks the section instead.
  */
-._h2_bk0j4_184 {
+._h2_3kut9_184 {
   font-size: calc(clamp(1.6rem, 4.2vw, 2.8rem) * var(--deck-scale));
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -1196,20 +1212,20 @@ body {
   margin: 0 0 calc(var(--s5) * var(--deck-scale));
 }
 
-._headline_bk0j4_193 {
+._headline_3kut9_193 {
   font-size: calc(clamp(1.1rem, 2.6vw, 1.7rem) * var(--deck-scale));
   font-weight: 600;
   color: var(--accent2);
   margin: var(--s5) 0 0;
 }
 
-._sub_bk0j4_200 {
+._sub_3kut9_200 {
   font-size: calc(clamp(1rem, 2.2vw, 1.3rem) * var(--deck-scale));
   color: var(--muted);
   margin: var(--s4) 0 0;
 }
 
-._thanksMark_bk0j4_206 {
+._thanksMark_3kut9_206 {
   color: var(--accent);
   /* The glyphs are a grid of cells; any tracking at all opens hairline gaps
      straight through the middle of a letter. Restated from the primitive
@@ -1220,20 +1236,20 @@ body {
 
 /* ── Bodies ─────────────────────────────────────────────────────────────── */
 
-._body_bk0j4_217 {
+._body_3kut9_217 {
   font-size: calc(clamp(1.05rem, 2.3vw, 1.5rem) * var(--deck-scale));
   line-height: 1.6;
 }
 
-._body_bk0j4_217 p {
+._body_3kut9_217 p {
   margin: 0 0 0.9em;
 }
 
-._body_bk0j4_217 p:last-child {
+._body_3kut9_217 p:last-child {
   margin-bottom: 0;
 }
 
-._items_bk0j4_230 {
+._items_3kut9_230 {
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -1242,14 +1258,14 @@ body {
   padding: 0;
 }
 
-._items_bk0j4_230 li {
+._items_3kut9_230 li {
   font-size: calc(clamp(1rem, 2.2vw, 1.4rem) * var(--deck-scale));
   line-height: 1.4;
   padding-left: 1.9em;
   position: relative;
 }
 
-._items_bk0j4_230 li::before {
+._items_3kut9_230 li::before {
   content: "▸";
   color: var(--deck-heading, var(--accent));
   position: absolute;
@@ -1257,7 +1273,7 @@ body {
   top: 0;
 }
 
-._footnote_bk0j4_254 {
+._footnote_3kut9_254 {
   color: var(--muted);
   font-size: calc(clamp(0.8rem, 1.6vw, 1rem) * var(--deck-scale));
   margin: var(--s5) 0 0;
@@ -1266,7 +1282,7 @@ body {
 
 /* ── Metrics ────────────────────────────────────────────────────────────── */
 
-._metrics_bk0j4_263 {
+._metrics_3kut9_263 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s4);
@@ -1279,20 +1295,20 @@ body {
  * the dark ones — it was a single value doing duty across four backgrounds. A
  * border derived from `--text` tracks whatever palette is showing.
  */
-._metric_bk0j4_263,
-._card_bk0j4_277 {
+._metric_3kut9_263,
+._card_3kut9_277 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent);
   border-radius: var(--r-m);
 }
 
-._metric_bk0j4_263 {
+._metric_3kut9_263 {
   padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s5) * var(--deck-scale));
   min-width: 10ch;
 }
 
-._metricValue_bk0j4_289 {
+._metricValue_3kut9_289 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: calc(clamp(2.2rem, 5.4vw, 3.6rem) * var(--deck-scale));
@@ -1301,7 +1317,7 @@ body {
   color: var(--accent2);
 }
 
-._metricLabel_bk0j4_298 {
+._metricLabel_3kut9_298 {
   font-family: var(--font-mono);
   font-size: calc(clamp(0.7rem, 1.3vw, 0.85rem) * var(--deck-scale));
   letter-spacing: var(--track-label);
@@ -1312,7 +1328,7 @@ body {
 
 /* ── Outcome cards ──────────────────────────────────────────────────────── */
 
-._cards_bk0j4_309 {
+._cards_3kut9_309 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--s4);
@@ -1321,49 +1337,49 @@ body {
   align-items: start;
 }
 
-._cardsWide_bk0j4_318 {
+._cardsWide_3kut9_318 {
   grid-template-columns: 1fr;
 }
 
-._card_bk0j4_277 {
+._card_3kut9_277 {
   padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s4) * var(--deck-scale));
 }
 
-._cardTitle_bk0j4_326 {
+._cardTitle_3kut9_326 {
   font-size: calc(clamp(0.95rem, 2vw, 1.2rem) * var(--deck-scale));
   font-weight: 700;
   color: var(--deck-heading, var(--accent2));
   margin: 0 0 calc(var(--s3) * var(--deck-scale));
 }
 
-._card_bk0j4_277 ._items_bk0j4_230 {
+._card_3kut9_277 ._items_3kut9_230 {
   gap: calc(var(--s2) * var(--deck-scale));
 }
 
-._card_bk0j4_277 ._items_bk0j4_230 li {
+._card_3kut9_277 ._items_3kut9_230 li {
   font-size: calc(clamp(0.82rem, 1.6vw, 1rem) * var(--deck-scale));
   padding-left: 1.5em;
 }
 
 /* ── Chrome ─────────────────────────────────────────────────────────────── */
 
-._chrome_bk0j4_344 {
+._chrome_3kut9_344 {
   flex: none;
 }
 
-._progress_bk0j4_348 {
+._progress_3kut9_348 {
   height: 2px;
   background: var(--line);
   overflow: hidden;
 }
 
-._bar_bk0j4_354 {
+._bar_3kut9_354 {
   height: 100%;
   background: var(--accent);
   transition: width var(--dur-base) var(--ease);
 }
 
-._controls_bk0j4_360 {
+._controls_3kut9_360 {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1371,7 +1387,7 @@ body {
   margin-top: var(--s3);
 }
 
-._controls_bk0j4_360 button {
+._controls_3kut9_360 button {
   width: var(--tap);
   height: var(--tap);
   border: 1px solid var(--line);
@@ -1386,17 +1402,17 @@ body {
     border-color var(--dur-fast) var(--ease);
 }
 
-._controls_bk0j4_360 button:hover:not(:disabled) {
+._controls_3kut9_360 button:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--accent);
 }
 
-._controls_bk0j4_360 button:disabled {
+._controls_3kut9_360 button:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-._counter_bk0j4_393 {
+._counter_3kut9_393 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
@@ -1406,7 +1422,7 @@ body {
   text-align: center;
 }
 
-._hint_bk0j4_403 {
+._hint_3kut9_403 {
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1417,17 +1433,17 @@ body {
 
 /* ── Narrow ─────────────────────────────────────────────────────────────── */
 
-@media (max-width: 700px) {
-  ._hint_bk0j4_403,
-  ._rail_bk0j4_34 {
+@media (max-width: 699px) {
+  ._hint_3kut9_403,
+  ._rail_3kut9_34 {
     display: none;
   }
 
-  ._cards_bk0j4_309 {
+  ._cards_3kut9_309 {
     grid-template-columns: 1fr;
   }
 
-  ._metrics_bk0j4_263 {
+  ._metrics_3kut9_263 {
     gap: var(--s3);
   }
 }
