@@ -2,6 +2,47 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.43.0",
+      "date": "2026-07-31",
+      "summary": "Every page yeaboi opens in a browser — the retro board, planning poker, the join screen and the reporting slide deck — has been rebuilt on one shared design, so they now read as parts of the same app rather than three pages that had quietly drifted apart. Inviting people got easier: both live boards hand you a copyable invite link, and you can copy it from the terminal too instead of only holding up a QR code. The retro board gains a composer at the top of every column and sixteen reactions to vote with, and dragging a card on a phone finally works — touch dragging never fired at all before. Planning poker's reveal is a moment now rather than a flicker, and the timer ends on a bell instead of an alarm. Boards also stay current without the constant one-second refresh, which is gentler on a phone battery and on a shared tunnel. Every exported HTML report is drawn by the same pieces as the live boards, so an export matches what you saw. One fix worth naming: a ticket link in an export could previously carry a script that ran when you clicked it, and can't any more.",
+      "highlights": [
+        {
+          "text": "The retro board, planning poker, the join screen and the slide deck rebuilt on one shared design",
+          "areas": [
+            "retro",
+            "planning",
+            "reporting"
+          ]
+        },
+        {
+          "text": "Copy a board's invite link from the browser or from the terminal, instead of only scanning the QR code",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "A composer at the top of every retro column, and sixteen reactions to vote with",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Cards can be dragged on a phone — touch dragging did not work before",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "A ticket link in an exported report can no longer run a script when clicked",
+          "areas": [
+            "reporting",
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.42.0",
       "date": "2026-07-31",
       "summary": "The welcome screen gains a duck companion who now does more than sit there: press f and a speech bubble opens from him that you write your feedback straight into, pick a type and area for, paste screenshots into, or dictate out loud. Settings gets a full rebuild around boxed sections you can drive entirely from the keyboard — arrow between boxes, Enter to focus one, then arrow between the values inside it — with storage settings moved under System and long status lines that wrap instead of getting cut off. Clicking now works across the whole app rather than just the main menu, and a handful of small annoyances are gone: the Back button leaves in one click, the controls drawer opens with c, and the wordmark intro no longer replays every time you open Changelog, Feedback, or All Tips.",

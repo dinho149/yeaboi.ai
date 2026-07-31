@@ -29,7 +29,9 @@ from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
     PLANNING_THEME,
+    action_rows_height,
     build_action_buttons,
+    build_action_rows,
     build_page_panel,
     build_progress_dots,
     build_scrollbar,
@@ -157,6 +159,53 @@ def _build_analysis_review_screen(
 # (imported above), which the reporting/analysis setup screens use — do not
 # collapse the two: several layouts are measured against one or the other.
 _PAD = "  "
+
+
+def _link_lines(
+    label: str, url: str, *, width: int, label_style: str, url_style: str, indent: str = "    "
+) -> list[Text]:
+    """Render a ``label: url`` row as lines that each occupy exactly one terminal row.
+
+    Every other row in these screens is one Text and therefore one row, which is
+    what lets the viewport reserve a fixed number of lines. A URL breaks that
+    assumption: a tunnel hostname or a host link carrying a token is routinely
+    wider than the panel, Rich silently soft-wraps it, and the viewport then
+    draws more rows than it reserved — pushing whatever is below it off the
+    bottom. That was invisible while the action bar was one row of buttons that
+    happened to survive being nudged; with a wrapping bar it costs a whole row of
+    buttons.
+
+    So the wrapping happens here, where it can be counted. The URL moves to its
+    own indented line when the pair will not fit, and is hard-split if even that
+    is too narrow — mid-token, deliberately: a URL has no safe break point, and a
+    host reading one off the screen is better served by all of it on two lines
+    than by most of it on one.
+    """
+    # Budget, measured rather than guessed: the panel takes 2 border + 4 padding
+    # columns and the viewport reserves 2 more for the scrollbar and its gap, so
+    # a body line has `width - 8` to play with. Subtract this row's own indent
+    # (_PAD + *indent*) and what is left is what the label and URL have to share.
+    # `indent` is a parameter because the join blocks sit level with their
+    # heading while value rows elsewhere sit one step in — and a budget computed
+    # for the wrong one wraps a line that fits, or fails to wrap one that doesn't.
+    avail = max(24, width - 14 - len(indent))
+    one_line = f"{label}:  {url}"
+    if len(one_line) <= avail:
+        row = Text(_PAD + indent, justify="left")
+        row.append(f"{label}:  ", style=label_style)
+        row.append(url, style=url_style)
+        return [row]
+
+    head = Text(_PAD + indent, justify="left")
+    head.append(f"{label}:", style=label_style)
+    lines = [head]
+    # The continuation lines are indented two further columns, so they get two
+    # fewer than `avail` — overshooting here is what makes Rich ellipsize the
+    # tail of a token the host is trying to read off the screen.
+    chunk = max(16, width - 16 - len(indent))
+    for i in range(0, len(url), chunk):
+        lines.append(Text(_PAD + indent + "  " + url[i : i + chunk], style=url_style, justify="left"))
+    return lines
 
 
 def _build_generate_confirm_screen(
@@ -4759,7 +4808,18 @@ def _build_retro_screen(
     # hub passes snapshot=True to suppress this whole block (the report replays the
     # grids + carried actions, not a resumable board). Content is unindented —
     # aligned with the heading — and the server-ready/status note sits right under
-    # the "Join this retro" heading.
+    # the heading.
+    #
+    # Two audiences, told apart. This was a flat list of four labels — Share
+    # code, LAN URL, Remote URL, Host link — which reads fine until you are
+    # mid-ceremony working out which one to paste into the team chat, and the
+    # wrong answer hands over the admin secret. The participant's link and code
+    # now lead, and the host's sits below a blank line under a label that says
+    # whose it is.
+    #
+    # Kept to within a line of the old block's height on purpose: this sits above
+    # the grids on every frame, and every row added here is a row of cards pushed
+    # off the viewport.
     message = retro_data.get("message", "")
 
     def _jrow(label: str, value: str, value_style: str = "") -> None:
@@ -4771,21 +4831,43 @@ def _build_retro_screen(
     def _jline(text: str, style: str = "") -> None:
         body_lines.append(Text(_PAD + "  " + text, style=style or theme.value, justify="left"))
 
+    def _jlink(label: str, url: str, value_style: str = "") -> None:
+        """A join-block label+URL row: level with the heading, and never soft-wrapped."""
+        body_lines.extend(
+            _link_lines(
+                label,
+                str(url),
+                width=width,
+                label_style=theme.muted,
+                url_style=value_style or theme.value,
+                indent="  ",
+            )
+        )
+
     if not retro_data.get("snapshot"):
-        _heading("Join this retro")
+        _heading("Send this to your team")
         if message:
             body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
-        _jrow("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
-        _jrow("LAN URL", retro_data.get("url", "—"), theme.value)
-        _jline("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
         public_url = retro_data.get("public_url", "")
+        # Labels stay short so the URL fits beside them at 80 columns; the
+        # reach ("works anywhere" vs "same Wi-Fi") goes in the muted line below,
+        # where it costs nothing when it wraps.
+        _jlink(
+            "Participant link",
+            public_url or retro_data.get("url", "—"),
+            f"bold {theme.accent_bright}",
+        )
+        _jrow("Share code", retro_data.get("display_code", "—"), f"bold {theme.accent_bright}")
         if public_url:
-            _jrow("Remote URL", public_url, f"bold {theme.accent_bright}")
-            _jline("Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted)
+            _jline("Works anywhere. They open the link, then type the code.", theme.muted)
+        else:
+            _jline("Same Wi-Fi only — Share Remotely adds a public link.", theme.muted)
+
         host_url = retro_data.get("host_url", "")
         if host_url:
-            _jrow("Host link (private)", host_url, theme.muted)
-            _jline("For you only — this link skips the code. Don't share it.", theme.muted)
+            body_lines.append(Text(""))
+            _jlink("Host link (yours only)", host_url, theme.muted)
+            _jline("Skips the code and holds the host controls — never send it.", theme.muted)
         body_lines.append(Text(""))
     elif message:
         body_lines.append(Text(_PAD + "  " + message, style=theme.accent_bright, justify="left"))
@@ -4850,7 +4932,13 @@ def _build_retro_screen(
             body_lines.append(Text(_PAD + "        " + f"[{badge}]", style=theme.dim, justify="left"))
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=6, action_h=4)
+    # The bar wraps, so its height is measured rather than assumed — seven
+    # buttons do not fit an 80-column terminal on one line, and a hardcoded
+    # action_h would push the second row off the bottom of the panel.
+    actions = retro_data.get("actions") or ["Generate Action Items", "Export", "Close"]
+    action_lines = build_action_rows(actions, action_sel, width=width)
+
+    viewport_h = calc_viewport(height, header_h=6, action_h=action_rows_height(actions, width))
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -4861,9 +4949,6 @@ def _build_retro_screen(
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    actions = retro_data.get("actions") or ["Generate Action Items", "Export", "Close"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -4891,9 +4976,7 @@ def _build_retro_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *action_lines,
     )
 
     return build_page_panel(content, theme=RETRO_THEME, height=height)
@@ -4981,6 +5064,12 @@ def _build_poker_screen(
         r.append(str(value), style=value_style or theme.value)
         body_lines.append(r)
 
+    def _link(label: str, url: str, value_style: str = "") -> None:
+        """A label+URL row that never soft-wraps out of the viewport's budget."""
+        body_lines.extend(
+            _link_lines(label, str(url), width=width, label_style=theme.muted, url_style=value_style or theme.value)
+        )
+
     def _line(text: str, style: str = "") -> None:
         body_lines.append(Text(_PAD + "    " + text, style=style or theme.value, justify="left"))
 
@@ -5025,21 +5114,27 @@ def _build_poker_screen(
 
     elif state is not None:
         # ── Live monitoring view ──────────────────────────────────
+        # Grouped by audience, matching the retro board — see the note there,
+        # including why this block stays about as short as the one it replaced.
         if not poker_data.get("snapshot"):
-            _heading("Join this session")
-            _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
-            _row("LAN URL", poker_data.get("url", "—"), theme.value)
-            _line("Teammates on the same Wi-Fi open the LAN URL, then enter the Share code above.", theme.muted)
+            _heading("Send this to your team")
             public_url = poker_data.get("public_url", "")
+            _link(
+                "Participant link",
+                public_url or poker_data.get("url", "—"),
+                f"bold {theme.accent_bright}",
+            )
+            _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
             if public_url:
-                _row("Remote URL", public_url, f"bold {theme.accent_bright}")
-                _line(
-                    "Off-network teammates open the Remote URL (public HTTPS link), then enter the code.", theme.muted
-                )
+                _line("Works anywhere. They open the link, then type the code.", theme.muted)
+            else:
+                _line("Same Wi-Fi only — Share Remotely adds a public link.", theme.muted)
+
             host_url = poker_data.get("host_url", "")
             if host_url:
-                _row("Host link (private)", host_url, theme.muted)
-                _line("Open this in YOUR browser — it holds the admin controls (reveal, save, edit, AI).", theme.muted)
+                body_lines.append(Text(""))
+                _link("Host link (yours only)", host_url, theme.muted)
+                _line("Open in YOUR browser — it holds reveal, save, edit and AI.", theme.muted)
 
         notice = state.get("notice", "")
         if notice:
@@ -5171,7 +5266,12 @@ def _build_poker_screen(
                 )
 
     # ── Layout using shared components ────────────────────────────
-    viewport_h = calc_viewport(height, header_h=10, action_h=4)
+    # Measured, not assumed: the bar wraps once the copy buttons are on it, and
+    # a hardcoded action_h would push the second row off the panel.
+    actions = poker_data.get("actions") or ["Close"]
+    action_lines = build_action_rows(actions, action_sel, width=width)
+
+    viewport_h = calc_viewport(height, header_h=10, action_h=action_rows_height(actions, width))
     total_lines = len(body_lines)
     max_scroll = max(0, total_lines - viewport_h)
     actual_scroll = min(scroll_offset, max_scroll)
@@ -5189,9 +5289,6 @@ def _build_poker_screen(
     padded_lines: list = list(visible)
     for _ in range(max(0, viewport_h - len(visible))):
         padded_lines.append(Text(""))
-
-    actions = poker_data.get("actions") or ["Close"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -5219,9 +5316,7 @@ def _build_poker_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *action_lines,
     )
 
     return build_page_panel(content, theme=POKER_THEME, height=height)

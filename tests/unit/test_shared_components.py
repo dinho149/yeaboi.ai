@@ -9,7 +9,9 @@ from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PLANNING_THEME,
     Theme,
+    action_rows_height,
     build_action_buttons,
+    build_action_rows,
     build_meter,
     build_page_panel,
     build_progress_dots,
@@ -116,6 +118,83 @@ class TestBuildActionButtons:
         assert "\u256d" in top.plain  # ╭
         assert "\u2502" in mid.plain  # │
         assert "\u2570" in bot.plain  # ╰
+
+
+class TestBuildActionRows:
+    """The wrapping bar.
+
+    This exists because of a bug that was live and invisible: the retro board's
+    five buttons come to 92 columns, so on a standard 80-column terminal the last
+    one was drawn off the edge of the panel — still reachable with the arrow keys,
+    just not on screen. A Rich Text is happy to be wider than the console, so
+    nothing failed; it was simply clipped.
+    """
+
+    RETRO = ["Copy Invite", "Copy Host Link", "Generate Action Items", "Share Remotely", "Export", "Anonymize", "Close"]
+
+    def test_wraps_rather_than_overflowing_eighty_columns(self):
+        rows = build_action_rows(self.RETRO, 0, width=80)
+        assert len(rows) > 3, "the bar should have wrapped"
+        for row in rows:
+            assert len(row.plain) <= 80
+
+    def test_keeps_every_button(self):
+        # Clipping is the failure being fixed; dropping one would be the same
+        # bug with a tidier implementation.
+        rows = build_action_rows(self.RETRO, 0, width=80)
+        drawn = "".join(r.plain for r in rows)
+        for label in self.RETRO:
+            assert label in drawn
+
+    def test_separates_stacked_rows(self):
+        # Without the blank line two rows' borders touch and read as one grid.
+        rows = build_action_rows(self.RETRO, 0, width=80)
+        assert any(r.plain == "" for r in rows)
+
+    def test_no_width_means_one_row(self):
+        rows = build_action_rows(self.RETRO, 0)
+        assert len(rows) == 3
+
+    def test_a_button_wider_than_the_terminal_is_still_drawn(self):
+        # It cannot fit, and an empty row would mean a selectable button that
+        # never appears — worse than one that overflows.
+        rows = build_action_rows(["A ridiculously long label indeed"], 0, width=20)
+        assert "ridiculously" in rows[1].plain
+
+    def test_empty_actions_draw_nothing(self):
+        assert build_action_rows([], 0, width=80) == []
+
+
+class TestActionRowsHeight:
+    def test_matches_what_was_drawn(self):
+        # The number the screen hands calc_viewport. If it disagrees with the
+        # bar, the extra rows come off the bottom of the panel instead of out of
+        # the scroll viewport.
+        actions = TestBuildActionRows.RETRO
+        rows = build_action_rows(actions, 0, width=80)
+        assert action_rows_height(actions, 80) == len(rows) + 1
+
+    def test_single_row_keeps_the_historic_four(self):
+        # Every screen that has not moved to rows hardcodes action_h=4.
+        assert action_rows_height(["Back"], 80) == 4
+        assert action_rows_height(["Back"]) == 4
+
+    def test_no_actions_still_reserves_a_row(self):
+        assert action_rows_height([], 80) == 4
+
+
+class TestBuildActionButtonsUnchanged:
+    """The ~40 screens that still unpack three values must see no difference."""
+
+    def test_matches_the_wrapping_builder_with_no_width(self):
+        actions = ["Accept", "Edit", "Export"]
+        top, mid, bot = build_action_buttons(actions, 1)
+        rows = build_action_rows(actions, 1, width=None)
+        assert [top.plain, mid.plain, bot.plain] == [r.plain for r in rows]
+
+    def test_still_returns_three_texts_for_no_actions(self):
+        top, mid, bot = build_action_buttons([], 0)
+        assert (top.plain, mid.plain, bot.plain) == ("    ", "    ", "    ")
 
 
 class TestBuildScrollbar:

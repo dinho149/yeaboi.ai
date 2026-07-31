@@ -1,0 +1,95 @@
+{
+  "ai": {
+    "confidence": "",
+    "evidence": [],
+    "note": "",
+    "pending": false,
+    "suggested": null
+  },
+  "broadcast": {
+    "music": null,
+    "theme": null
+  },
+  "distribution": {},
+  "duel": null,
+  "locked": false,
+  "median": null,
+  "mine_value": "3",
+  "notice": "",
+  "phase": "voting",
+  "presence": [
+    {
+      "avatar": "🦊",
+      "name": "Ada"
+    },
+    {
+      "avatar": "🐙",
+      "name": "Grace"
+    }
+  ],
+  "progress": {
+    "estimated": 0,
+    "total": 2
+  },
+  "revision": 3,
+  "suggestion": null,
+  "ticket": {
+    "acceptance_text": "Updates land in under a second.",
+    "accepted_votes": [],
+    "ai_note": "",
+    "assignee": "Ada",
+    "description_text": "The tunnel buffers SSE.",
+    "duel_high": "",
+    "duel_low": "",
+    "duel_transcript": "",
+    "estimated": false,
+    "final_points": null,
+    "initial_points": null,
+    "key": "YB-1",
+    "rev": 0,
+    "source": "jira",
+    "state": "To Do",
+    "story_points": null,
+    "summary": "Long-poll the board",
+    "type": "Story",
+    "url": "https://example.invalid/browse/YB-1"
+  },
+  "ticket_count": 2,
+  "ticket_index": 0,
+  "tickets_meta": [
+    {
+      "estimated": false,
+      "final_points": null,
+      "key": "YB-1",
+      "rev": 0,
+      "story_points": null,
+      "summary": "Long-poll the board"
+    },
+    {
+      "estimated": false,
+      "final_points": null,
+      "key": "YB-2",
+      "rev": 0,
+      "story_points": 3,
+      "summary": "Quantise the duck"
+    }
+  ],
+  "timer": {
+    "duration": 120,
+    "end_epoch": 0,
+    "now_epoch": 0,
+    "running": true
+  },
+  "votes": [
+    {
+      "avatar": "🦊",
+      "name": "Ada",
+      "voted": true
+    },
+    {
+      "avatar": "🐙",
+      "name": "Grace",
+      "voted": true
+    }
+  ]
+}

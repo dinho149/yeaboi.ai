@@ -1,15 +1,20 @@
-"""yeaboi.ai branding assets for the exported presentations.
+"""The yeaboi duck, for the .pptx export.
 
-One small pixel-art duck (``assets/duck.png``, shipped as package data) rendered
-as a subtle mark on the HTML deck's footer badge and the .pptx title/thank-you
-slides. Loading is best-effort and cached: a missing or unreadable asset returns
-None and the export renders without branding — cosmetics must never break an
-export.
+One small pixel-art duck (``assets/duck.png``, shipped as package data) placed on
+the PowerPoint title and thank-you slides. Loading is best-effort and cached: a
+missing or unreadable asset returns None and the export renders without
+branding — cosmetics must never break an export.
+
+There used to be a ``duck_data_uri()`` beside it, which base64'd this same PNG
+into the HTML slide deck's footer. The deck is a React bundle now and takes the
+duck from ``frontend/src/assets/duck`` — the quantised 128px sprites the live
+boards use, ~7 KB for all three layers against ~59 KB for one base64 copy of
+this one, and animated rather than flat. python-pptx needs real bytes, so this
+half stays.
 """
 
 from __future__ import annotations
 
-import base64
 import logging
 from functools import lru_cache
 from importlib import resources
@@ -26,12 +31,3 @@ def duck_png() -> bytes | None:
         logger.debug("reporting branding: duck asset unavailable", exc_info=True)
         return None
     return data or None
-
-
-@lru_cache(maxsize=1)
-def duck_data_uri() -> str | None:
-    """The duck as a ``data:image/png;base64`` URI for the self-contained deck."""
-    data = duck_png()
-    if data is None:
-        return None
-    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")

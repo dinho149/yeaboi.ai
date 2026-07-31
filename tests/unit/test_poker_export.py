@@ -1,5 +1,12 @@
-"""Tests for the poker exporter (poker/export.py) — MD/HTML content + escaping."""
+"""Tests for the poker exporter (poker/export.py) — the Markdown, and the payload.
 
+The HTML is drawn by ``frontend/src/export`` from a JSON island, so what this
+module can assert about it is the *payload*: that every field of the session
+reached it, correctly shaped. How a skipped ticket looks, or how the votes lay
+out, is asserted in ``Poker.test.tsx``, where the component actually runs.
+"""
+
+from tests._pages import island
 from yeaboi.agent.state import PokerReport, PokerTicketResult, PokerVote
 from yeaboi.poker.export import build_poker_html, build_poker_markdown, export_poker
 
@@ -62,27 +69,60 @@ class TestMarkdown:
 
 
 class TestHtml:
-    def test_escapes_untrusted_text(self):
+    def test_untrusted_text_travels_as_data_not_markup(self):
         html = build_poker_html(_report())
-        # The shared page shell carries its own theme-switcher <script>, so
-        # assert on the attack strings specifically.
+        # The probe reaches the payload, JSON-escaped — `<` inside a JSON island
+        # is written `<` so the string can never close the <script> around it.
         assert "<script>alert(1)</script>" not in html
-        assert "&lt;script&gt;" in html
-        assert "&lt;b&gt;risk&lt;/b&gt;" in html
-        # The duel transcript is participant speech — escaped like everything else.
-        assert "&lt;script&gt;simple&lt;/script&gt;" in html
+        ticket = island(html)["report"]["tickets"][0]
+        assert ticket["summary"] == "Add <script>alert(1)</script> login"
+        assert ticket["aiNote"] == "The 8 voter sees <b>risk</b>"
+        assert "<script>simple</script>" in ticket["duel"]["transcript"]
 
     def test_structure(self):
         html = build_poker_html(_report())
         assert html.startswith("<!DOCTYPE html>")
-        assert "Planning Poker" in html
-        assert "PROJ-1" in html
-        assert "skipped" in html
+        boot = island(html)
+        assert boot["chrome"]["title"] == "Planning Poker — Sprint 42"
+        assert boot["chrome"]["wordmark"] == "poker"
+        assert boot["report"]["kind"] == "poker"
 
-    def test_duel_section(self):
-        html = build_poker_html(_report())
-        assert "<h2>Duels</h2>" in html
-        assert "Alex (5) vs Sam (8)" in html
+    def test_facts_name_the_session(self):
+        facts = dict(tuple(f) for f in island(build_poker_html(_report()))["chrome"]["facts"])
+        assert facts == {
+            "SOURCE": "jira",
+            "SCOPE": "Sprint 42",
+            "DATE": "2026-07-25",
+            "ESTIMATED": "1/2",
+        }
+
+    def test_noscript_names_the_markdown_twin(self):
+        # The page draws client-side; with scripting off the sibling .md is the
+        # whole content, so the note has to name a file that actually exists.
+        assert "poker-2026-07-25.md" in build_poker_html(_report())
+
+    def test_duel_payload(self):
+        ticket = island(build_poker_html(_report()))["report"]["tickets"][0]
+        assert ticket["duel"]["low"] == "Alex (5)"
+        assert ticket["duel"]["high"] == "Sam (8)"
+
+    def test_skipped_ticket_carries_no_final(self):
+        # A number beside "skipped" is a contradiction; the payload never offers one.
+        skipped = island(build_poker_html(_report()))["report"]["tickets"][1]
+        assert skipped["estimated"] is False
+        assert skipped["final"] is None
+        assert skipped["before"] == 3.0
+
+    def test_unsafe_ticket_url_is_dropped(self):
+        report = PokerReport(tickets=(PokerTicketResult(key="X-1", url="javascript:alert(1)"),))
+        assert "url" not in island(build_poker_html(report))["report"]["tickets"][0]
+
+    def test_votes_without_a_value_are_not_votes(self):
+        report = PokerReport(
+            tickets=(PokerTicketResult(key="X-1", votes=(PokerVote("Alex", "🦊", ""), PokerVote("Sam", "🐙", "5"))),)
+        )
+        votes = island(build_poker_html(report))["report"]["tickets"][0]["votes"]
+        assert votes == [{"voter": "Sam", "value": "5"}]
 
 
 class TestExportPoker:
@@ -118,68 +158,35 @@ class TestSharedDesignSystem:
     def test_poker_html_uses_shared_theme(self):
         html = build_poker_html(_report())
         assert 'data-theme="midnight"' in html
-        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'data-mode="poker"' in html  # the accent, set before first paint
         assert 'src="http' not in html and "<link" not in html  # self-contained
 
-    def test_nav_sections(self):
-        html = build_poker_html(_report())
-        assert '<section id="overview">' in html
-        assert '<section id="tickets">' in html
-        assert '<section id="ai">' in html
-        assert '<section id="duels">' in html
+    def test_nav_lists_only_the_sections_that_exist(self):
+        nav = [tuple(entry) for entry in island(build_poker_html(_report()))["chrome"]["nav"]]
+        assert nav == [
+            ("overview", "Overview"),
+            ("tickets", "Tickets"),
+            ("ai", "AI perspectives"),
+            ("duels", "Duels"),
+        ]
+
+    def test_nav_drops_absent_sections(self):
+        report = PokerReport(tickets=(PokerTicketResult(key="X-1"),))
+        nav = [tuple(entry) for entry in island(build_poker_html(report))["chrome"]["nav"]]
+        assert nav == [("overview", "Overview"), ("tickets", "Tickets")]
 
 
-class TestVisuals:
-    def test_stat_tiles_and_split_bar(self):
-        html = build_poker_html(_report())
-        assert ">Tickets</div>" in html and ">Estimated</div>" in html and ">Participants</div>" in html
-        # class attribute, not the bare token — ".seg-track" also lives in the stylesheet.
-        assert 'class="seg-track"' in html
-        assert "Estimated 1" in html and "Skipped 1" in html
-
-    def test_participant_and_voter_avatars(self):
-        html = build_poker_html(_report())
-        assert html.count('class="avatar"') >= 4  # 2 participants + 2 voters
-        assert ">A</span>" in html and ">S</span>" in html
-
-    def test_avatar_name_escaped(self):
-        rep = PokerReport(
-            date="2026-07-25",
-            tickets=(
-                PokerTicketResult(
-                    key="X-1", estimated=True, final_points=3.0, votes=(PokerVote("<b>Eve</b>", "🦊", "3"),)
-                ),
-            ),
-        )
-        html = build_poker_html(rep)
-        assert "<b>Eve</b>" not in html
-
-    def test_ticket_key_is_badge_link(self):
-        html = build_poker_html(_report())
-        assert (
-            "<a class='badge' href='https://x.atlassian.net/browse/PROJ-1' target='_blank' rel='noopener'>PROJ-1</a>"
-            in html
-        )
-
-    def test_ai_notes_split_into_bullets(self):
-        rep = PokerReport(
-            date="2026-07-25",
-            tickets=(PokerTicketResult(key="X-1", ai_note="Estimate looks high. Risk is contained; scope is clear."),),
-        )
-        html = build_poker_html(rep)
-        assert "<li>Estimate looks high.</li>" in html
-        assert "<li>Risk is contained</li>" in html
-        assert "<li>scope is clear.</li>" in html
-
-    def test_sparkline_from_history(self):
+class TestTrend:
+    def test_trend_from_history(self):
         history = _history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9), ("2026-06-27", 7, 7))
-        html = build_poker_html(_report(), history=history)
-        assert 'class="spark-wrap"' in html
-        assert "Estimation trend" in html
-        assert "2026-06-27" in html  # oldest label rendered
+        trend = island(build_poker_html(_report(), history=history))["report"]["trend"]
+        assert trend["title"] == "Estimation trend"
+        assert trend["points"][0] == ["2026-06-27", 7]  # oldest first
 
-    def test_no_history_no_sparkline(self):
-        assert 'class="spark-wrap"' not in build_poker_html(_report())
+    def test_no_history_no_trend(self):
+        # None, not an absent key — "the server decided there is no chart" has
+        # to be distinguishable from "the field is missing".
+        assert island(build_poker_html(_report()))["report"]["trend"] is None
 
     def test_self_contained_with_history(self):
         html = build_poker_html(_report(), history=_history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9)))
@@ -190,4 +197,4 @@ class TestVisuals:
         monkeypatch.setattr("yeaboi.paths.get_poker_export_dir", lambda key: out_dir / key)
         (out_dir / "proj").mkdir(parents=True)
         paths = export_poker(_report(), history=_history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9)))
-        assert 'class="spark-wrap"' in paths["html"].read_text(encoding="utf-8")
+        assert island(paths["html"].read_text(encoding="utf-8"))["report"]["trend"] is not None

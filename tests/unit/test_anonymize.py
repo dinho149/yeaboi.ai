@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from tests._pages import island
 from yeaboi.agent.state import AnonymizedOutput
 from yeaboi.anonymize import engine as anon_engine
 from yeaboi.anonymize.engine import (
@@ -202,16 +203,23 @@ class TestExport:
         assert paths["markdown"].exists()
         assert paths["html"].exists()
         html = paths["html"].read_text()
-        assert "<h1>" in html
-        assert "<li>a bullet</li>" in html
+        # The masked document travels as the Markdown it already is and is read
+        # by the bundle (frontend/src/export/markdown.ts), so the two files this
+        # writes carry provably the same text rather than two renderings of it.
+        assert island(html)["report"]["markdown"] == result.anonymized_text
+        assert f"<code>{paths['markdown'].name}</code>" in html  # the no-JavaScript answer
 
-    def test_html_escapes_and_renders_table(self):
+    def test_masked_document_is_data_not_markup(self):
         from yeaboi.anonymize.export import build_anonymized_html
 
-        result = AnonymizedOutput(anonymized_text="| A | B |\n|---|---|\n| <x> | 2 |")
+        # This is the export whose input was handled *because* it held sensitive
+        # material, and it has been through an LLM. Nothing in it reaches the
+        # HTML parser at all now: it is a string inside a non-executable
+        # application/json element.
+        result = AnonymizedOutput(anonymized_text="| A | B |\n|---|---|\n| <img src=x onerror=alert(1)> | 2 |")
         html = build_anonymized_html(result, title="T")
-        assert "<table>" in html
-        assert "&lt;x&gt;" in html  # cell content escaped
+        assert "<img src=x" not in html
+        assert island(html)["report"]["markdown"] == result.anonymized_text
 
     def test_markdown_carries_notices(self):
         from yeaboi.anonymize.export import build_anonymized_markdown

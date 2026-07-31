@@ -1,0 +1,209 @@
+/*
+ * Join gate.
+ *
+ * The most important page in the product and, until this pass, the most
+ * generic: a plain panel with an emoji. It is the only thing a teammate sees
+ * before they are inside, so for a lot of people it is the *whole* impression
+ * yeaboi makes.
+ *
+ * What it may say is tightly limited. `sharing/gate.py` serves a document with
+ * no per-share information in it at all — no title, no mode, no host name —
+ * because an unauthenticated visitor must learn nothing about what is behind
+ * the gate. So the identity here is carried entirely by constants: the
+ * block-glyph brand, the terminal frame, the duck. Nothing on this page varies
+ * with the share, and nothing may be added that does.
+ *
+ * Everything colour-bearing comes from design/palette.css, so the gate follows
+ * whichever theme the visitor last chose.
+ */
+
+/*
+ * The gate centres itself.
+ *
+ * This used to live on `body` in gate/page.css, on the theory that a consumer
+ * should be free to place the panel anywhere. In practice there are three
+ * consumers and all three want it dead centre — and the two that were left to
+ * do it themselves (the retro and poker boards, which render the gate as their
+ * entire tree) did not, so a teammate following a tunnel link met a card jammed
+ * into the top-left corner. One definition, in the component that needs it.
+ */
+.shell {
+  /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
+     the visible viewport, which pushes a centred card off-screen. Most people
+     open a tunnel link on a phone, so this is the common case, not the edge. */
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  /* Landscape on a notched phone otherwise clips the card against the sensor
+     housing. Padding, not margin, so the grid centring still applies. */
+  padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
+}
+
+.card {
+  width: min(92vw, 430px);
+}
+
+.wordmark {
+  /* Large enough to be the first thing seen, and the reason there is no logo
+     image on this page: it is text, so it costs nothing and scales cleanly. */
+  font-size: 17px;
+  margin-bottom: var(--s4);
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+.heading {
+  margin: 0 0 var(--s2);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.blurb {
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* The label and the duck share a baseline row, so the bird sits on the field
+   rather than floating beside it. */
+.labelRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin: var(--s5) 0 var(--s2);
+  /* The duck overhangs the field by design; without this its feet are clipped
+     by the row box on Safari. */
+  overflow: visible;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.duck {
+  /* Sits down onto the input's top edge. Negative margin rather than absolute
+     positioning so it still participates in the flex row and cannot end up
+     overlapping the label on a narrow phone. */
+  margin-bottom: -10px;
+}
+
+.code {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--bg);
+  color: var(--text);
+  /* Monospace + wide tracking so an O/0 or 5/S mix-up is visible while typing.
+     The alphabet in access.py already excludes I, O, 0 and 1 for the same
+     reason — this is the client half of that decision. */
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.code::placeholder {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.code:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.wrong {
+  border-color: var(--danger);
+  animation: shake 220ms ease-in-out;
+}
+
+/*
+ * A refused code always keeps the field focused — the handler calls select() so
+ * the visitor can retype straight over it. That means `.code:focus-visible`
+ * above was repainting the border accent-blue the instant the error appeared,
+ * and the red never showed: the one state the border exists to signal was the
+ * one state it could not reach.
+ */
+.wrong:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.go {
+  width: 100%;
+  /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
+     minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
+  min-height: 44px;
+  margin-top: var(--s3);
+  padding: 0.75rem;
+  border: 0;
+  border-radius: var(--r-m);
+  background: var(--accent);
+  color: var(--ink);
+  /* Mono, like every other control: in this type system the proportional face
+     is reserved for prose a person wrote. */
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-s);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.go:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.go:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.go:disabled {
+  /* Visibly inert rather than hidden: the button is disabled until eight
+     characters are in, which doubles as progress feedback. */
+  opacity: 0.45;
+  cursor: default;
+}
+
+.status {
+  /* Reserved height — the card must not resize when a message appears. */
+  min-height: 1.4rem;
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  text-align: center;
+}
+
+.bad {
+  color: var(--danger);
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* A wrong code already announces itself through the alert region and the
+   colour change; the motion is decoration and must be droppable. The duck's
+   own startle is neutralised by the global guard in tokens.css. */
+@media (prefers-reduced-motion: reduce) {
+  .wrong { animation: none; }
+  .go { transition: none; }
+}

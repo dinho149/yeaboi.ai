@@ -1,0 +1,12 @@
+# Built front-end bundles — committed so `pip install yeaboi` never needs Node.
+#
+# -text is mandatory, not tidiness: without it a contributor with
+# core.autocrlf=true checks these out with CRLF, Vite rewrites them with LF, and
+# `make web-check` (git diff --exit-code) fails forever on their machine.
+#
+# linguist-generated collapses the minified JS in GitHub diffs, which matters a
+# lot for review noise and for the async claude-review workflow.
+src/yeaboi/web/static/** -text linguist-generated=true
+
+# npm's lockfile is generated; same treatment.
+frontend/package-lock.json -diff linguist-generated=true

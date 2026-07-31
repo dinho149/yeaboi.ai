@@ -46,12 +46,18 @@ from yeaboi.reporting.themes import _HEX_RE
 logger = logging.getLogger(__name__)
 
 # Font presets: one label for the TUI, a real typeface name for python-pptx, and the
-# matching CSS stack for the HTML deck ("modern" mirrors the deck's historical stack).
+# matching CSS stack for the HTML deck.
+#
+# "modern" and "mono" name the design tokens rather than repeating a stack, so a
+# deck picks up the same faces as every other yeaboi page — including the fact
+# that those stacks name yeaboi.ai's own Geist / JetBrains Mono first, which a
+# hand-copied list here would not. "classic" and "rounded" are deliberate
+# departures from the system and so carry their own stacks.
 FONT_PRESETS: dict[str, dict[str, str]] = {
     "modern": {
         "label": "Modern",
         "pptx": "Calibri",
-        "css": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        "css": "var(--font-sans)",
     },
     "classic": {
         "label": "Classic serif",
@@ -61,7 +67,7 @@ FONT_PRESETS: dict[str, dict[str, str]] = {
     "mono": {
         "label": "Mono",
         "pptx": "Consolas",
-        "css": '"SF Mono", SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+        "css": "var(--font-mono)",
     },
     "rounded": {
         "label": "Rounded",

@@ -81,7 +81,7 @@ src/yeaboi/
     engine.py           — run_delivery_report() pipeline (gather → one LLM "design" call → parse → fallback)
     render.py           — DeliveryReport → Rich + plaintext (TUI detail view)
     export.py           — DeliveryReport → Markdown + HTML + slide deck (paths.get_reporting_export_dir)
-    presentation.py     — build_presentation_html(): self-contained keyboard-nav slide deck (E501-exempt asset)
+    presentation.py     — deck_payload() + build_presentation_html(): the slide deck's content; renderer is frontend/src/deck
     store.py            — ReportingStore (reporting_history table, schema v9)
   roadmap/              — Roadmap Intake mode (proactive Planning: quarterly roadmap → ranked candidate projects)
     engine.py           — run_roadmap_analysis(): fetch source → LLM analysis → ranked projects (parse → fallback → format)

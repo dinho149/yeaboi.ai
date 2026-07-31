@@ -1,0 +1,346 @@
+/*
+ * Styling for the shared primitives.
+ *
+ * One module for the whole set rather than twelve files: they are a single
+ * cohesive vocabulary, they are all small, and keeping them together makes the
+ * spacing and radius choices comparable at a glance instead of scattered.
+ *
+ * Every value here is a token. If you find yourself typing a hex colour or a
+ * pixel gap, it belongs in tokens.css first.
+ */
+
+/* ── Chip ─────────────────────────────────────────────────────── */
+.chip {
+  display: inline-block;
+  padding: 2px var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+/* Tone-specific colours come from an inline style built by toneMix(), because
+   the set of tones is a TypeScript union rather than a set of class names —
+   one source of truth, and adding a tone needs no CSS change. */
+.chipLink { text-decoration: none; }
+.chipLink:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Stat tile ────────────────────────────────────────────────── */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+.statValue {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  color: var(--accent);
+  /* Tabular figures: a value that ticks (a count, a countdown) must not make
+     the tile jitter as digit widths change. */
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.statLabel {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+.statHint { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+
+/* ── Bars ─────────────────────────────────────────────────────── */
+.bar {
+  height: 6px;
+  background: var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.barFill { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+
+.segTrack {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  min-width: 2px;
+}
+.segTrack > i { display: block; height: 100%; }
+
+/* ── Legend ───────────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+.legend > span { display: inline-flex; align-items: center; gap: var(--s1); }
+.legendSwatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.legendCount { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Sparkline ────────────────────────────────────────────────── */
+.sparkWrap { margin: var(--s1) 0 var(--s3); }
+.sparkWrap svg { display: block; width: 100%; height: 48px; }
+.sparkLabels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Avatar ───────────────────────────────────────────────────── */
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  flex: none;
+  user-select: none;
+}
+
+/* ── Notice ───────────────────────────────────────────────────── */
+.notice {
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+}
+.noticeTitle {
+  font-weight: 600;
+  font-size: var(--fs-s);
+  color: var(--warn);
+  margin-bottom: var(--s1);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.notice ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+
+/* ── Card / Section ───────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  padding: var(--s3) var(--s4);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.cardHover:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+  /* Wrap the actions onto their own line rather than squeezing the title.
+     Without this, a card with four chips on a phone reflows "Billing revamp"
+     to two lines to make room for them — the title is the thing being read. */
+  flex-wrap: wrap;
+}
+.cardTitle { font-weight: 600; font-size: var(--fs-s); }
+
+.section { margin-bottom: var(--s6); }
+.sectionTitle {
+  font-size: var(--fs-l);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--s1);
+  margin-bottom: var(--s4);
+}
+
+/* ── Data table ───────────────────────────────────────────────── */
+/* The wrapper, not the table, scrolls. A table wide enough to overflow must
+   never make the *page* scroll sideways — on a phone that breaks every
+   vertical swipe on the board behind it. */
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+.table th {
+  background: var(--card);
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  font-weight: 600;
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.table td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+.table tr:last-child td { border-bottom: none; }
+.numeric { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Prose ────────────────────────────────────────────────────── */
+.prose { font-size: var(--fs-s); line-height: 1.6; }
+/* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
+   (tickets.py already strips their HTML) and must never be re-parsed as
+   markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
+.proseText { white-space: pre-wrap; overflow-wrap: anywhere; }
+.proseList { list-style: none; padding-left: 0; margin: 0; }
+.proseList > li {
+  position: relative;
+  padding: var(--s1) 0 var(--s1) var(--s4);
+  line-height: 1.55;
+}
+.proseList > li::before {
+  content: "•";
+  color: var(--accent);
+  position: absolute;
+  left: var(--s1);
+}
+
+/* ── Wordmark ─────────────────────────────────────────────────────
+   The block-glyph display face. Two rules are load-bearing:
+
+   1. `letter-spacing: 0` — the glyphs are a grid of cells, so any tracking
+      opens hairline gaps straight through the middle of a letter.
+   2. `line-height: 1` — the two rows have to touch. At the default 1.5 the
+      word reads as two unrelated bands of noise.
+
+   `font-family` must resolve to a monospace with full block-drawing coverage
+   (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
+   rather than a face keeps that true if the stack changes. */
+.wordmark {
+  font-family: var(--font-mono);
+  font-size: var(--fs-l);
+  line-height: 1;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--accent);
+  margin: 0;
+  /* Cells are solid ink; on a dark surface the browser's default subpixel
+     smoothing makes the verticals look uneven. */
+  -webkit-font-smoothing: antialiased;
+  white-space: pre;
+  /* A long mode name at a large size will overflow a narrow phone before it
+     will wrap — it cannot wrap, the rows would desync. Let it shrink instead. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wordmark::-webkit-scrollbar { display: none; }
+
+/* ── Wordmark, ANSI Shadow face ───────────────────────────────────
+   The six-row face, for the two places the wordmark is the hero: the join gate
+   and an export's masthead. Everywhere else keeps the compact face — at the app
+   bar's 10px this would be a 60px header, and at a size that fits it the glyphs
+   stop being legible.
+
+   The wrapper exists only to be a query container. Wordmark.tsx sizes the type
+   from `100cqi` and the word's cell count, which is the only way a fixed grid of
+   60 cells fits a 345px phone; there is no CSS length that does that on its own. */
+.wordmarkFit {
+  display: block;
+  container-type: inline-size;
+  /* Without this the container has no definite inline size to report inside a
+     flex row, and every cqi length resolves to zero. */
+  width: 100%;
+  min-width: 0;
+}
+
+.wordmarkShadow {
+  /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
+     grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
+     4% opens a hairline through every horizontal join and the word stops reading
+     as letterforms and starts reading as hatching. Same rule as the two-row
+     face, and easier to break here because six rows means five seams. */
+  /* The sizing already guarantees a fit, so nothing should scroll; keeping the
+     compact face's overflow here would add a phantom scroll area under the hero. */
+  overflow-x: visible;
+}
+
+/* The drop shadow, held back from the letter bodies. Same hue, less of it — at
+   full accent the strokes weigh as much as the blocks and the word reads as a
+   wire outline instead of as letters standing off the page. */
+.wordmarkStroke {
+  color: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+/* ── Eyebrow ──────────────────────────────────────────────────────
+   Mono, uppercase, widely tracked — the "this is furniture" signal in the
+   mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
+.eyebrow {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+  /* Tracking adds space *after* the last glyph too, which visually shifts the
+     whole label left of anything stacked under it. */
+  margin-right: calc(var(--track-eyebrow) * -1);
+}
+.eyebrowAccent { color: var(--accent); }
+.eyebrowDot { color: var(--dim); letter-spacing: 0; }
+.eyebrowValue {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+/* ── TerminalFrame ────────────────────────────────────────────────
+   The window chrome from yeaboi.ai's hero. Gate and export headers only —
+   never a live board, where it would be a costume. */
+.frame {
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--panel);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, var(--shadow-2);
+  overflow: hidden;
+}
+.frameBar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.frameLights { display: inline-flex; gap: 6px; flex: none; }
+.frameLights i {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+}
+/* Tinted from the palette rather than the usual literal red/amber/green, so
+   the chrome belongs to whatever theme the visitor picked. */
+.frameLights i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+.frameLights i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+.frameLights i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+.frameTitle {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--dim);
+  /* Offset the lights so the title is centred on the frame, not on the space
+     left over beside them. */
+  margin-right: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.frameBody { padding: var(--s5); }

@@ -36,8 +36,13 @@ def _post(server, code: str):
 def test_gate_hides_artifact_until_code_is_exchanged(share_server):
     with urllib.request.urlopen(share_server.local_url, timeout=2) as response:  # noqa: S310
         gate = response.read().decode()
+        gate_csp = response.headers["Content-Security-Policy"]
     assert "Enter the access code" in gate
     assert "SECRET OUTPUT" not in gate
+    # The gate is served over a public tunnel URL and runs a script bundle, so
+    # it needs a policy of its own — 'self' only, for the join POST.
+    assert "default-src 'none'" in gate_csp
+    assert "connect-src 'self'" in gate_csp
 
     with _post(share_server, share_server.display_code) as response:
         token = json.loads(response.read())["token"]
@@ -46,6 +51,29 @@ def test_gate_hides_artifact_until_code_is_exchanged(share_server):
         assert response.headers["Cache-Control"].startswith("no-store")
         assert response.headers["X-Frame-Options"] == "DENY"
         assert "default-src 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_join_code_goes_on_the_wire_exactly_as_displayed(share_server):
+    """The dash is part of the code, not a display affordance.
+
+    ``make_join_code`` issues ``XXXX-XXXX`` and the handler compares the posted
+    string against it with ``compare_digest``, so a client that strips the dash
+    for readability gets a 403 on a code the visitor typed correctly — which is
+    exactly the regression the React gate shipped with. Unit tests on either
+    side of this seam both passed; only the two together pin the contract.
+
+    Mirrored by "sends the code in the XXXX-XXXX form the server issued" in
+    frontend/src/shared/JoinGate.test.tsx.
+    """
+    displayed = share_server.display_code
+    assert "-" in displayed, "the fixture below is meaningless if the code has no dash"
+
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post(share_server, displayed.replace("-", ""))
+    assert exc.value.code == 403
+
+    with _post(share_server, displayed) as response:
+        assert json.loads(response.read())["token"]
 
 
 def test_wrong_code_is_rejected(share_server):

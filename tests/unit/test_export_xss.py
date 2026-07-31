@@ -27,6 +27,15 @@ RAW_MARKERS = ("<script>window.__xss_probe__", '" onmouseover="alert(1)')
 # rather than being silently dropped.
 ESCAPED_MARKER = "&lt;script&gt;window.__xss_probe__"
 
+# The same proof for a React-rendered export, where the probe travels as a JSON
+# string rather than as markup. json_island escapes `<`, `>` and `&` to their
+# \uXXXX forms — the three characters that could otherwise end the containing
+# <script> element early and have the rest parsed as HTML.
+ISLAND_MARKER = "\\u003cscript\\u003ewindow.__xss_probe__"
+
+# How a page announces which of the two it is. Set by web.assets.render_page.
+ISLAND_TAG = 'id="yeaboi-data"'
+
 # (dataclass name, field name) pairs kept at their original value because the
 # builder needs them semantically valid. Every exclusion must state why.
 _EXCLUDE_FIELDS: frozenset[tuple[str, str]] = frozenset(
@@ -700,12 +709,28 @@ def test_injected_strings_never_land_raw(name):
     html_out = _BUILDERS[name]()
     for marker in RAW_MARKERS:
         assert marker not in html_out, f"{name}: raw XSS probe leaked into exported HTML"
-    assert ESCAPED_MARKER in html_out, f"{name}: probe neither escaped nor rendered — fixture reaches no output"
+
+    # Which proof applies depends on how the page is built, and the page says
+    # which. The distinction is load-bearing rather than tidy: on a React export
+    # the <title> alone satisfies ESCAPED_MARKER, so keeping that assertion
+    # would leave the *payload* — where every probed field actually lands —
+    # unchecked, and a builder silently dropping a field would still pass. This
+    # branch disappears when the last exporter migrates.
+    if ISLAND_TAG in html_out:
+        assert ISLAND_MARKER in html_out, f"{name}: probe never reached the boot payload"
+    else:
+        assert ESCAPED_MARKER in html_out, f"{name}: probe neither escaped nor rendered — fixture reaches no output"
 
 
 class TestDictKeyRenderedFields:
     """Targeted probes for fields the generic injector cannot reach (dict keys
-    rendered into HTML, e.g. discipline names used as mapping keys)."""
+    rendered into the report, e.g. discipline names used as mapping keys).
+
+    These now assert against the *payload* rather than the document. The team
+    profile is a React export, so the probe travels as JSON-escaped text inside
+    the boot island — reaching the payload is the proof that the field is still
+    rendered at all, and the raw-marker check is what proves it cannot execute.
+    """
 
     def test_team_profile_spillover_discipline_keys_escaped(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -718,7 +743,7 @@ class TestDictKeyRenderedFields:
         )
         for marker in RAW_MARKERS:
             assert marker not in html_out
-        assert ESCAPED_MARKER in html_out
+        assert ISLAND_MARKER in html_out
 
     def test_team_profile_ac_by_discipline_keys_escaped(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -736,4 +761,127 @@ class TestDictKeyRenderedFields:
         )
         for marker in RAW_MARKERS:
             assert marker not in html_out
-        assert ESCAPED_MARKER in html_out
+        assert ISLAND_MARKER in html_out
+
+
+# ---------------------------------------------------------------------------
+# URL scheme allowlist
+# ---------------------------------------------------------------------------
+
+# A scheme-shaped probe. The markup-shaped XSS_PROBE above cannot catch this
+# class of bug: `javascript:` contains no character html.escape() rewrites, so
+# it survives escaping intact and executes on click. React does not block it
+# either (it only warns in development), so the allowlist is the only defense.
+URL_PROBE = "javascript:alert(1)"
+
+# Any of these appearing in output means a live click-to-execute link shipped.
+UNSAFE_HREF_MARKERS = (
+    'href="javascript:',
+    "href='javascript:",
+    "](javascript:",  # Markdown link — renders to <a href> downstream
+)
+
+
+def _poker_report_with_url(url: str):
+    """A minimal poker report whose ticket URL is caller-controlled."""
+    from yeaboi.agent.state import PokerReport, PokerTicketResult
+
+    return PokerReport(
+        date="2026-07-25",
+        session_id="sess-1",
+        project_name="Proj",
+        source="jira",
+        tickets=(PokerTicketResult(key="PROJ-1", url=url, summary="Add login", final_points=5.0, estimated=True),),
+        participants=("Alex",),
+    )
+
+
+def _standup_report_with_url(url: str):
+    """A minimal standup report whose evidence link is caller-controlled."""
+    from yeaboi.agent.state import MemberUpdate, StandupReport
+
+    return StandupReport(
+        date="2026-07-10",
+        session_id="demo",
+        team_summary="steady progress",
+        member_updates=(MemberUpdate(name="Alice", summary="login page", source="inferred", links=(("PROJ-1", url),)),),
+    )
+
+
+def _assert_no_live_javascript_url(out: str, label: str) -> None:
+    lowered = out.lower()
+    for marker in UNSAFE_HREF_MARKERS:
+        assert marker not in lowered, f"{label}: javascript: URL reached an href"
+
+
+class TestUrlSchemeAllowlist:
+    """Every builder must refuse a `javascript:` URL from tracker-supplied data."""
+
+    def test_poker_ticket_url(self):
+        """The poker page is React, so the allowlist has to hold in the payload.
+
+        ``_assert_no_live_javascript_url`` greps for an ``href``, and this page
+        writes none — so on its own it would pass even if the hostile URL rode
+        into the island untouched. The payload assertion is the one that bites.
+        """
+        from tests._pages import island
+        from yeaboi.poker.export import build_poker_html, build_poker_markdown
+
+        report = _poker_report_with_url(URL_PROBE)
+        out = build_poker_html(report)
+        _assert_no_live_javascript_url(out, "poker html")
+        assert "url" not in island(out)["report"]["tickets"][0], "unsafe URL reached the payload"
+        _assert_no_live_javascript_url(build_poker_markdown(report), "poker md")
+
+    def test_standup_ticket_url(self):
+        from yeaboi.standup.export import build_standup_html
+
+        _assert_no_live_javascript_url(build_standup_html(_standup_report_with_url(URL_PROBE)), "standup html")
+
+    def test_anonymize_markdown_link(self):
+        """The anonymize page carries Markdown, so the allowlist runs client-side.
+
+        `](javascript:` is *expected* in this document now — it is the masked
+        text, verbatim, inside a JSON island — so the Markdown marker cannot be
+        the assertion here. It is not a live link until something turns it into
+        an `href`, and the only thing that does is `RichText`, which routes
+        every run through `safeUrl`. That half is proven in
+        `frontend/src/export/reports/Anonymize.test.tsx`; this half proves the
+        page ships no anchor at all.
+        """
+        from yeaboi.agent.state import AnonymizedOutput
+        from yeaboi.anonymize.export import build_anonymized_html
+
+        art = AnonymizedOutput(
+            anonymized_text=f"See [the ticket]({URL_PROBE}) for details.",
+            source_mode="retro",
+            generated_at="2026-07-20",
+        )
+        out = build_anonymized_html(art).lower()
+        assert 'href="javascript:' not in out and "href='javascript:" not in out
+        assert "<a " not in out.split("<script>", 1)[0], "the document shell must contain no anchors"
+
+    def test_team_profile_example_links(self):
+        from yeaboi.team_profile_exporter import build_team_profile_html
+
+        out = build_team_profile_html(
+            _team_profile(),
+            examples={"doc_samples": [{"title": "t", "platform": "notion", "url": URL_PROBE}]},
+        )
+        _assert_no_live_javascript_url(out, "team profile html")
+
+    def test_markdown_convert_confluence(self):
+        from yeaboi.markdown_convert import markdown_to_confluence_storage
+
+        out = markdown_to_confluence_storage(f"See [the ticket]({URL_PROBE}).")
+        _assert_no_live_javascript_url(out, "confluence storage")
+
+    def test_safe_urls_still_render_as_links(self):
+        """Guard against over-blocking: a real tracker URL must still link."""
+        from tests._pages import island
+        from yeaboi.poker.export import build_poker_html
+
+        out = build_poker_html(_poker_report_with_url("https://jira.example.com/browse/ABC-1"))
+        # The payload keeps it; that it becomes an <a href> is asserted in
+        # Poker.test.tsx, where the Chip and `safeUrl` actually run.
+        assert island(out)["report"]["tickets"][0]["url"] == "https://jira.example.com/browse/ABC-1"
