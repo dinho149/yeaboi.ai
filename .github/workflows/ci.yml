@@ -97,6 +97,22 @@ jobs:
       # committed. The usual cause is "edited frontend/ and forgot `make web`".
       - run: make web-check
 
+  # ── Docs site ────────────────────────────────────────────────────────────
+  # docs/ is published as yeaboi.ai by GitHub Pages straight off main. There is
+  # no deploy step that could fail, so a stale SEO block, a wrong canonical or a
+  # dropped sitemap entry ships silently. tests/unit/test_site_seo.py asserts
+  # the same thing in the unit lane; this job exists so the failure gets its own
+  # named red check pointing at the one command that fixes it.
+  site:
+    name: Docs site (SEO block, sitemap, robots)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv python install 3.11
+      - run: uv sync --extra dev
+      - run: make site-check
+
   # Assert the committed bundles actually make it into the built wheel.
   # .gitignore contains unanchored `dist/` and `build/` globs and hatchling
   # loads it as build excludes, so this class of mistake produces a wheel that

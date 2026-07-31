@@ -427,7 +427,7 @@ function _smallTalk(query) {
     return { text: "🦆 I'm the yeaboi docs duck — a little helper that reads the whole documentation and answers your questions in plain English, with links to the exact page.", cards: [] };
   }
   if (has(/what can you (do|help)|help me|what do you know|how (can|do) you (help|work)/)) {
-    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the six modes (planning, standup, retro, performance, reporting, analysis), integrations & exports, tools, session management, architecture, and deployment. What are you trying to do?", cards: [] };
+    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the seven modes (planning, standup, retro, poker, performance, reporting, analysis), integrations & exports, tools, session management, architecture, and deployment. What are you trying to do?", cards: [] };
   }
   if (has(/^\s*(what is|what's|whats) yeaboi/)) {
     return null; // real question — let the composer answer it from the docs
@@ -515,7 +515,7 @@ function _docsDuckReply(query) {
   if (small) return small;
   var hits = _searchDocs(query);
   if (!hits.length) {
-    return { text: "🦆 Hmm, I couldn't find that in the docs. Try rephrasing — I know about installation & setup, the six modes, integrations & exports, tools, session management, architecture, and deployment.", cards: [] };
+    return { text: "🦆 Hmm, I couldn't find that in the docs. Try rephrasing — I know about installation & setup, the seven modes, integrations & exports, tools, session management, architecture, and deployment.", cards: [] };
   }
   return _composeAnswer(query, hits);
 }
@@ -968,7 +968,16 @@ function navigateTo(url, push) {
   try { target = new URL(url, window.location.href); } catch (e) { window.location.href = url; return; }
 
   fetch(target.href)
-    .then(function (r) { return r.text(); })
+    .then(function (r) {
+      // Check r.ok. Without it a 404 body gets swapped in as though it were a
+      // real page, leaving a dead URL in the address bar under pushState (and,
+      // since a page_view fires below, counted as a successful view).
+      // Throwing lands in the .catch at the bottom, which hands the URL to the
+      // browser for a real 404 with a real status code. (_buildDocsIndex
+      // already checks r.ok; this path never did.)
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
     .then(function (html) {
       var doc = new DOMParser().parseFromString(html, 'text/html');
       var newPage = doc.getElementById('page-content');
@@ -978,6 +987,22 @@ function navigateTo(url, push) {
       if (push) history.pushState({}, '', target.href);
       document.title = doc.title || document.title;
       document.body.className = doc.body.className; // carries the 'docs' scope class
+
+      // GA4: the <head> snippet fires exactly ONE page_view, on the real page
+      // load. Every navigation after that is this function — a pushState swap —
+      // which gtag cannot observe, so without this the entire session would be
+      // attributed to whichever page the visitor happened to land on. Sent
+      // after document.title and pushState above, so it carries the NEW title
+      // and URL. Requires "Page changes based on browser history events" to be
+      // OFF in the GA4 stream's Enhanced Measurement, or every nav counts
+      // twice. No-ops when gtag is absent (not configured, blocked, file://).
+      if (typeof window.gtag === 'function') {
+        window.gtag('event', 'page_view', {
+          page_location: window.location.href,
+          page_path: window.location.pathname,
+          page_title: document.title,
+        });
+      }
 
       curPage.outerHTML = newPage.outerHTML;
       var imported = document.getElementById('page-content');
@@ -1095,7 +1120,7 @@ function rescanReveals() {
 // ---- hero demo: the real app startup — splash, then the mode-select menu --
 // Recreates src/yeaboi/ui/splash.py's wordmark fade, then the actual
 // mode-select screen (src/yeaboi/ui/mode_select/screens/_screens.py) —
-// six modes the visitor can step through by hand, same as arrow-key
+// modes the visitor can step through by hand, same as arrow-key
 // navigation in the real TUI. No-op on any page without #hero-demo (docs).
 var _heroTimer = null;
 var _heroTypeTimer = null;
@@ -1323,6 +1348,12 @@ if (window.matchMedia) {
 // ---- shared docs navigation ------------------------------------------------
 // Single source of truth for the docs page tree, rendered into the rail's
 // DOCS dropdown (built once, persists across all navigation).
+//
+// ALSO READ BY scripts/gen_site_seo.py, which generates the crawlable footer
+// and the JSON-LD breadcrumbs from this literal. Keep it JSON-shaped — plain
+// string/array/object literals only, no computed values, no comments inside
+// the array — or generation fails loudly. Adding a page here without adding
+// the HTML file (or vice versa) fails tests/unit/test_site_seo.py.
 var NAV_GROUPS = [
   { label: "Start", entries: [
     { title: "Documentation", path: "/docs/index.html" },
@@ -1334,6 +1365,7 @@ var NAV_GROUPS = [
       { title: "Planning", path: "/docs/modes/planning.html" },
       { title: "Daily Standup", path: "/docs/modes/standup.html" },
       { title: "Retro", path: "/docs/modes/retro.html" },
+      { title: "Planning Poker", path: "/docs/modes/poker.html" },
       { title: "Performance", path: "/docs/modes/performance.html" },
       { title: "Reporting", path: "/docs/modes/reporting.html" },
       { title: "Team Analysis", path: "/docs/modes/team-analysis.html" },

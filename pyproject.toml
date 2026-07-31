@@ -5,12 +5,19 @@ build-backend = "hatchling.build"
 [project]
 name = "yeaboi"
 version = "2.45.0"
-description = "yeaboi.ai — a team lead's best friend. A terminal AI agent that decomposes projects into epics, user stories, tasks, and sprint plans."
+description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "Omar Din"}]
 license = {text = "MIT"}
-keywords = ["yeaboi", "team-lead", "scrum", "agile", "ai", "project-planning", "jira", "cli"]
+# Dropped "yeaboi" (the brand name collides with a musician, a food truck and a
+# racehorse — unwinnable and it wastes a slot) and "team-lead" (careers intent).
+# These target what someone shopping for this tool actually searches for.
+keywords = [
+    "ai-scrum-master", "scrum", "agile", "sprint-planning", "standup",
+    "retrospective", "planning-poker", "jira", "azure-devops",
+    "project-management", "cli", "tui", "ai-agent", "mcp", "llm",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -91,9 +98,15 @@ dev = [
 ]
 
 [project.urls]
+# Canonical owner, not the old omardin14 path — that still works via GitHub's
+# 301, but a redirect splits link equity and PyPI's sidebar links are real
+# backlinks from a high-authority domain. tests/unit/test_site_seo.py asserts
+# Repository here matches the codeRepository in the site's JSON-LD.
 Homepage = "https://yeaboi.ai"
-Repository = "https://github.com/omardin14/yeaboi.ai"
-Issues = "https://github.com/omardin14/yeaboi.ai/issues"
+Documentation = "https://yeaboi.ai/docs/index.html"
+Repository = "https://github.com/dinho149/yeaboi.ai"
+Issues = "https://github.com/dinho149/yeaboi.ai/issues"
+Changelog = "https://github.com/dinho149/yeaboi.ai/blob/main/CHANGELOG.md"
 
 [project.scripts]
 yeaboi = "yeaboi.cli:main"

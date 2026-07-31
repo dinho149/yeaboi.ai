@@ -51,8 +51,11 @@ class TestHandWrittenCopies:
         assert lines[1] == "name: performance"
 
     def test_readme_marks_the_mode(self):
+        # Matched on "modes, one command" rather than the spelled-out count: the
+        # count is incidental to what this asserts, and hardcoding it breaks the
+        # test every time a mode ships (it did, when Poker made the count seven).
         readme = (REPO / "README.md").read_text(encoding="utf-8")
-        modes_line = next(line for line in readme.splitlines() if "Six modes, one command" in line)
+        modes_line = next(line for line in readme.splitlines() if "modes, one command" in line)
         assert "beta" in modes_line.lower()
 
 

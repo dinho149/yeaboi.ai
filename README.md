@@ -13,7 +13,7 @@
 [![Powered by Claude](https://img.shields.io/badge/Powered%20by-Claude-ff6600?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com)
 [![Built with LangGraph](https://img.shields.io/badge/Built%20with-LangGraph-00CED1?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
 
-[![Tests](https://img.shields.io/github/actions/workflow/status/omardin14/yeaboi.ai/ci.yml?style=for-the-badge&label=Tests&logo=github)](https://github.com/omardin14/yeaboi.ai/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/dinho149/yeaboi.ai/ci.yml?style=for-the-badge&label=Tests&logo=github)](https://github.com/dinho149/yeaboi.ai/actions)
 [![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/yeaboi/)
 
 </div>
@@ -40,7 +40,7 @@ yeaboi --setup                  # configure your API key
 yeaboi                          # launch the interactive TUI
 ```
 
-> **Note on names:** the package was previously published as **`yeaboi`**. It is now **`yeaboi`** on PyPI (matching the command). A final `yeaboi` release remains as a thin redirect that installs `yeaboi`, and the legacy `yeaboi` command still works as an alias for this release — but new installs should use `yeaboi`.
+> **Note on names:** the package was previously published as **`scrum-agent`**. It is now **`yeaboi`** on PyPI, matching the command. A final `scrum-agent` release remains as a thin redirect that installs `yeaboi`, and the legacy `scrum-agent` command still works as an alias for that release — but new installs should use `yeaboi`.
 
 Optional extras (voice input, extra LLM providers) can be requested at install time:
 
@@ -65,7 +65,7 @@ pipx install "yeaboi[voice]"                   # equivalent with pipx
 ### From source
 
 ```bash
-git clone https://github.com/omardin14/yeaboi.ai.git
+git clone https://github.com/dinho149/yeaboi.ai.git
 cd yeaboi.ai
 make install        # installs uv, creates venv, installs dependencies
 make env            # creates .env from .env.example — add your API key
@@ -85,8 +85,8 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 
 🖥️ **Full-screen TUI** — Animated splash, mode selection, pipeline progress, dark/light themes
 🧠 **Smart Intake** — Extracts answers from your project description, asks only what's missing — or feed it a whole quarterly roadmap with Roadmap Intake
-🔄 **Six modes, one command** — Planning, Daily Standup, Retro, Performance _(beta)_, Reporting, Team Analysis
-🔌 **35+ tools** — GitHub, Azure DevOps, Jira, Confluence, Notion, local codebase scanning, and more
+🔄 **Seven modes, one command** — Planning, Daily Standup, Retro, Planning Poker, Performance _(beta)_, Reporting, Team Analysis
+🔌 **37 tools** — GitHub, Azure DevOps, Jira, Confluence, Notion, local codebase scanning, and more
 📤 **5 export formats** — Markdown, HTML, JSON, Jira sync, Azure DevOps Boards sync
 🤖 **5 LLM providers** — Claude (default), GPT, Gemini, AWS Bedrock, or fully local & keyless with Ollama
 🧩 **Every surface** — TUI, CLI subcommands, MCP server, and a Claude Code plugin, with feature parity enforced in CI
@@ -96,7 +96,7 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 ## 📖 Full Documentation
 
 Getting started, the full CLI reference, every mode in depth, integrations, architecture,
-and deployment guides: **[yeaboi.ai/docs](https://yeaboi.ai/docs/)**
+and deployment guides: **[yeaboi.ai/docs](https://yeaboi.ai/docs/index.html)**
 
 ## 📄 License
 
