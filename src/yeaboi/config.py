@@ -144,6 +144,16 @@ def is_tips_enabled() -> bool:
     return os.getenv("TIPS_ENABLED", "true").strip().lower() != "false"
 
 
+def is_beta_notice_enabled() -> bool:
+    """Return True if CLI runs should print the beta-maturity caveat (default on).
+
+    Mirrors :func:`is_tips_enabled`: any value other than "false" keeps it on, so
+    an unset var means enabled — a maturity caveat has to be opt-out, never
+    opt-in. Scripted and cron callers that capture stderr can turn it off.
+    """
+    return os.getenv("BETA_NOTICES_ENABLED", "true").strip().lower() != "false"
+
+
 def set_tips_enabled(enabled: bool) -> None:
     """Persist the tips on/off preference to ~/.scrum-agent/.env and apply it now.
 
@@ -190,6 +200,60 @@ def set_music_channel(idx: int) -> None:
     config_file = set_config_value("MUSIC_CHANNEL", value)
     os.environ["MUSIC_CHANNEL"] = value
     logger.info("Music channel set to %s (persisted to %s)", value, config_file)
+
+
+# Modes that ship in beta show a one-time notice the first time they're opened.
+# The acknowledgement is a comma-separated list of _MODE_CARDS keys rather than a
+# boolean per mode, so the next beta mode costs one card key instead of a new env
+# var and a new pair of functions.
+BETA_ACK_KEY = "BETA_NOTICES_ACK"
+FORCE_BETA_NOTICE_ENV = "YEABOI_FORCE_BETA_NOTICE"
+
+
+def beta_notices_acked() -> set[str]:
+    """Return the set of mode keys whose beta notice has been acknowledged."""
+    raw = os.getenv(BETA_ACK_KEY, "")
+    return {part.strip() for part in raw.split(",") if part.strip()}
+
+
+def is_beta_notice_seen(mode_key: str) -> bool:
+    """Return True if ``mode_key``'s one-time beta notice has already been shown.
+
+    ``YEABOI_FORCE_BETA_NOTICE`` overrides the acknowledgement — either truthy
+    (all modes) or a comma-separated list of specific keys. A once-ever gate is
+    otherwise impossible to re-check by hand after the first click, which makes
+    it impossible to demo, screenshot, or eyeball during review.
+    """
+    forced = os.getenv(FORCE_BETA_NOTICE_ENV, "").strip().lower()
+    if forced:
+        if forced in {"1", "true", "yes", "on"}:
+            return False
+        if mode_key in {part.strip() for part in forced.split(",") if part.strip()}:
+            return False
+    return mode_key in beta_notices_acked()
+
+
+def mark_beta_notice_seen(mode_key: str) -> None:
+    """Record that ``mode_key``'s beta notice has been acknowledged.
+
+    Deliberately not :func:`apply_config_value` (which does the same pair): that
+    helper writes to disk *first*, so a failed write would skip the ``os.environ``
+    update too. Here the order is inverted — ``os.environ`` is set even when the
+    disk write fails (read-only home, odd permissions), because a user who just
+    dismissed the notice must not see it again in the same session. Re-showing
+    it on the next restart is the lesser failure.
+    """
+    acked = beta_notices_acked()
+    if mode_key in acked:
+        return
+    value = ",".join(sorted(acked | {mode_key}))
+    os.environ[BETA_ACK_KEY] = value
+    try:
+        config_file = set_config_value(BETA_ACK_KEY, value)
+    except OSError as exc:
+        logger.warning("Could not persist beta notice acknowledgement for %s: %s", mode_key, exc)
+        return
+    logger.info("Beta notice acknowledged for %s (persisted to %s)", mode_key, config_file)
 
 
 # Proxy environment variables to check (both uppercase and lowercase conventions).

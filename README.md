@@ -85,7 +85,7 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 
 🖥️ **Full-screen TUI** — Animated splash, mode selection, pipeline progress, dark/light themes
 🧠 **Smart Intake** — Extracts answers from your project description, asks only what's missing — or feed it a whole quarterly roadmap with Roadmap Intake
-🔄 **Six modes, one command** — Planning, Daily Standup, Retro, Performance, Reporting, Team Analysis
+🔄 **Six modes, one command** — Planning, Daily Standup, Retro, Performance _(beta)_, Reporting, Team Analysis
 🔌 **35+ tools** — GitHub, Azure DevOps, Jira, Confluence, Notion, local codebase scanning, and more
 📤 **5 export formats** — Markdown, HTML, JSON, Jira sync, Azure DevOps Boards sync
 🤖 **5 LLM providers** — Claude (default), GPT, Gemini, AWS Bedrock, or fully local & keyless with Ollama

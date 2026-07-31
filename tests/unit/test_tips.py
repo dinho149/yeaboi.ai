@@ -170,6 +170,35 @@ def test_at_least_one_new_feature_tip(monkeypatch):
     _clear_cache()
 
 
+def test_at_least_one_beta_feature_tip(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    # The BETA badge branch would otherwise go dead without anything noticing.
+    assert any(t.is_beta for t in _tips._FEATURE_TIPS)
+    _clear_cache()
+
+
+def test_performance_tip_is_beta_not_new(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    perf = next(t for t in _tips._FEATURE_TIPS if t.key == "performance")
+    # Unverified, not recent — the two badges make different promises.
+    assert perf.is_beta is True
+    assert perf.is_new is False
+    _clear_cache()
+
+
+def test_build_tips_text_marks_beta(monkeypatch):
+    _clear_cache()
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    lines = _tips.build_tips_text().splitlines()
+    perf_line = next(line for line in lines if "Performance preps 1:1s" in line)
+    planning_line = next(line for line in lines if "Planning breaks a project" in line)
+    assert "(BETA)" in perf_line
+    assert "(BETA)" not in planning_line
+    _clear_cache()
+
+
 def test_carded_tips_have_mode_keys(monkeypatch):
     _clear_cache()
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))

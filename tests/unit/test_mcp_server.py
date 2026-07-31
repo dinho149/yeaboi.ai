@@ -17,6 +17,7 @@ pytest.importorskip("mcp", reason="mcp extra not installed")
 
 from mcp.shared.memory import create_connected_server_and_client_session  # noqa: E402
 
+from yeaboi.beta import BETA_LABEL, PERFORMANCE_BETA_NOTICE, PERFORMANCE_BETA_PHRASE  # noqa: E402
 from yeaboi.mcp.runtime import LLM_HINT, envelope, error_envelope, to_jsonable  # noqa: E402
 from yeaboi.mcp.server import create_app  # noqa: E402
 
@@ -134,6 +135,32 @@ class TestToolInventory:
         # never print to it (stderr is fine).
         call_tool("sessions_list")
         assert capsys.readouterr().out == ""
+
+    def test_perf_tools_are_marked_beta(self):
+        # The prefixes are hand-written literals (FastMCP reads __doc__ at
+        # decoration time, so they can't be f-strings) — this is what keeps
+        # them in sync with the constant.
+        async def _run():
+            app = create_app()
+            async with create_connected_server_and_client_session(app._mcp_server) as client:
+                listed = await client.list_tools()
+                return {tool.name: tool.description or "" for tool in listed.tools}
+
+        descriptions = anyio.run(_run)
+        for name, description in descriptions.items():
+            if name.startswith("perf_"):
+                assert BETA_LABEL in description, name
+                assert PERFORMANCE_BETA_PHRASE in description, name
+
+    def test_non_perf_tools_are_not_marked_beta(self):
+        async def _run():
+            app = create_app()
+            async with create_connected_server_and_client_session(app._mcp_server) as client:
+                listed = await client.list_tools()
+                return {tool.name: tool.description or "" for tool in listed.tools}
+
+        descriptions = anyio.run(_run)
+        assert BETA_LABEL not in descriptions["report_delivery"]
 
 
 class TestSessionTools:
@@ -421,6 +448,37 @@ class TestEngineTools:
         payload = call_tool("perf_six_month_review", {"engineer": "Sam", "period_months": 12})
         assert payload["ok"] is True
         assert payload["data"]["months"] == 12
+
+    def test_perf_envelope_carries_the_beta_warning(self, tmp_db, monkeypatch):
+        # `warnings` is the only envelope field the server instructions tell the
+        # client to surface to the user; the description reaches only the model.
+        monkeypatch.setattr("yeaboi.performance.roster.fetch_roster", lambda **kw: [{"name": "Sam"}])
+        payload = call_tool("perf_roster")
+        assert payload["warnings"][0] == PERFORMANCE_BETA_NOTICE
+
+    def test_beta_warning_preserves_engine_warnings(self, tmp_db, provider_mode, monkeypatch):
+        monkeypatch.setattr(
+            "yeaboi.performance.engine.run_one_on_one_prep",
+            lambda engineer, **kw: {"engineer": engineer, "warnings": ["Jira returned 401"]},
+        )
+        payload = call_tool("perf_one_on_one_prep", {"engineer": "Sam"})
+        assert payload["warnings"][0] == PERFORMANCE_BETA_NOTICE
+        assert "Jira returned 401" in payload["warnings"]
+
+    def test_error_envelope_has_no_beta_warning(self, tmp_db, provider_mode):
+        payload = call_tool("perf_one_on_one_complete", {"engineer": "Sam", "transcript": " "})
+        assert payload["ok"] is False
+        assert "warnings" not in payload
+
+    def test_non_perf_envelope_is_unaffected(self, tmp_db, provider_mode, monkeypatch):
+        # Proves the wrapper stayed local to tools_performance and didn't leak
+        # into the shared runtime every other tool module uses.
+        monkeypatch.setattr(
+            "yeaboi.reporting.engine.run_delivery_report",
+            lambda *a, **kw: {"executive_summary": "shipped", "warnings": []},
+        )
+        payload = call_tool("report_delivery", {"period": "last_sprint"})
+        assert payload["warnings"] == []
 
     def test_standup_run_channels_passthrough(self, seeded_session, provider_mode, monkeypatch):
         captured: dict = {}

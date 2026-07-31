@@ -11,7 +11,8 @@ description: Full annotated module map of src/yeaboi/ (incl. the MCP server, roa
 src/yeaboi/
   __init__.py           — Version (__version__), LangSmith noise suppression
   cli.py                — CLI entry point (argparse, 20 flags, headless mode, session mgmt)
-  config.py             — Environment/config (API keys, LangSmith, proxy detection)
+  config.py             — Environment/config (API keys, LangSmith, proxy detection, beta-notice acks)
+  beta.py               — Canonical wording for features shipping in beta (BETA_LABEL/BETA_TAG/BETA_RGB + the per-mode notice). **Import-free by contract** — every surface pulls from it, incl. mcp/tools_performance.py at module scope, so an import here would drag langchain into MCP boot; test_beta.py AST-scans it
   persistence.py        — Session persistence layer (checkpoint system)
   sessions.py           — SessionStore (SQLite), state serialization, schema versioning
   setup_wizard.py       — First-time setup flow (provider selection, API key validation)
@@ -228,6 +229,9 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `YEABOI_NO_TUNNEL` — optional, `1`/`true`/`yes` stops the live boards opening a Cloudflare tunnel (`config.tunnels_disabled()`). The board still runs for the host on `127.0.0.1` but has nothing to share. Needed because the tunnel now auto-starts: without it `make run-dry` would download ~40 MB and publish a public URL
 - `CLOUDFLARED_PATH` — optional, path to an existing `cloudflared` binary for Retro remote tunnels (else the app auto-downloads one to `~/.yeaboi/bin/`)
 - `PERFORMANCE_FRAMEWORK_PATH` — optional, path to a custom competency framework / review template for Performance mode's 6-month review (else the bundled `performance/references/competency_framework.md` default is used). 1:1 summary emails reuse the standup `STANDUP_SMTP_*` / `STANDUP_EMAIL_RECIPIENTS` settings.
+- `BETA_NOTICES_ENABLED` — default on; `false` silences the one-line beta caveat the CLI prints to stderr before a beta subcommand runs (`yeaboi perf …`). Does **not** affect the TUI's one-time notice.
+- `BETA_NOTICES_ACK` — **state, not configuration.** Comma-separated `_MODE_CARDS` keys whose one-time TUI beta notice has been dismissed; written automatically to `~/.yeaboi/.env` on Continue. Not surfaced on the Settings page (it would invite hand-editing).
+- `YEABOI_FORCE_BETA_NOTICE` — re-show an already-acknowledged TUI beta notice. `1`/`true` for all modes, or a comma-separated list of mode keys. The only way to re-check a once-ever gate for demos, screenshots or review.
 - `SESSION_PRUNE_DAYS` — auto-prune sessions older than N days (default: 30, 0 = disabled)
 - `LOG_LEVEL` — file logger level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — optional, enables LangSmith tracing

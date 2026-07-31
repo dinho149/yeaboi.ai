@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi import __version__, fs_policy, paths
+from yeaboi.beta import BETA_TAG, PERFORMANCE_BETA_NOTICE
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
@@ -604,16 +605,28 @@ def build_parser() -> argparse.ArgumentParser:
     standup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     standup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
-    perf_p = subparsers.add_parser("perf", help="Performance mode: 1:1 prep/completion, reviews, notes")
+    perf_p = subparsers.add_parser(
+        "perf",
+        help=f"Performance mode {BETA_TAG}: 1:1 prep/completion, reviews, notes",
+        description=PERFORMANCE_BETA_NOTICE,
+    )
     perf_sub = perf_p.add_subparsers(dest="perf_command", metavar="{roster,prep,complete,review,note}", required=True)
-    perf_sub.add_parser("roster", help="List the engineer roster from recent tracker assignees")
-    prep_p = perf_sub.add_parser("prep", help="Prepare a 1:1 for an engineer")
+    # Every child carries the same description: `yeaboi perf prep --help` is a
+    # perfectly normal place to arrive without ever seeing the parent's help.
+    perf_sub.add_parser(
+        "roster",
+        help="List the engineer roster from recent tracker assignees",
+        description=PERFORMANCE_BETA_NOTICE,
+    )
+    prep_p = perf_sub.add_parser("prep", help="Prepare a 1:1 for an engineer", description=PERFORMANCE_BETA_NOTICE)
     prep_p.add_argument("engineer", help="Engineer name (see `yeaboi perf roster`)")
     prep_p.add_argument("--session", default="", metavar="ID", help="Session for team context (default: most recent)")
     prep_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     prep_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     prep_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
-    complete_p = perf_sub.add_parser("complete", help="Complete a held 1:1 from its transcript")
+    complete_p = perf_sub.add_parser(
+        "complete", help="Complete a held 1:1 from its transcript", description=PERFORMANCE_BETA_NOTICE
+    )
     complete_p.add_argument("engineer", help="Engineer name")
     complete_p.add_argument(
         "--transcript", required=True, metavar="TEXT", help="Transcript text; @file.txt reads from file"
@@ -627,14 +640,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--recipients", nargs="+", default=None, metavar="EMAIL", help="Email recipients override (with --deliver)"
     )
     complete_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
-    review_p = perf_sub.add_parser("review", help="Draft a periodic performance review")
+    review_p = perf_sub.add_parser(
+        "review", help="Draft a periodic performance review", description=PERFORMANCE_BETA_NOTICE
+    )
     review_p.add_argument("engineer", help="Engineer name")
     review_p.add_argument("--months", type=int, default=6, help="Review period in months (default 6)")
     review_p.add_argument("--session", default="", metavar="ID", help="Session for team context")
     review_p.add_argument("--jira-project", default="", metavar="KEY", help="Jira project key override")
     review_p.add_argument("--azdo-project", default="", metavar="NAME", help="Azure DevOps project override")
     review_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
-    note_p = perf_sub.add_parser("note", help="Record a note about an engineer")
+    note_p = perf_sub.add_parser("note", help="Record a note about an engineer", description=PERFORMANCE_BETA_NOTICE)
     note_p.add_argument("engineer", help="Engineer name")
     note_p.add_argument("--text", required=True, help="The note text")
 
@@ -1225,6 +1240,23 @@ def _strict_exit(strict: bool, warnings, empty: bool = False) -> int:
     return 0
 
 
+def _print_beta_notice(notice: str) -> None:
+    """Print a beta-maturity caveat before a beta subcommand runs.
+
+    stderr, not stdout: the artifact these commands print is routinely piped or
+    redirected, and a caveat inside the file would be worse than no caveat. It
+    also matches the ``⚠ {warning}`` lines the handlers already emit. Scripted
+    callers turn it off with ``BETA_NOTICES_ENABLED=false``.
+
+    Deliberately NOT routed through the engine's warnings tuple: ``--strict``
+    maps any warning to exit 3, which would make every strict run fail forever.
+    """
+    from yeaboi.config import is_beta_notice_enabled
+
+    if is_beta_notice_enabled():
+        print(f"⚠ {notice}", file=sys.stderr)
+
+
 def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
     from yeaboi.reporting.engine import run_delivery_report
     from yeaboi.reporting.render import format_report_rich
@@ -1363,6 +1395,10 @@ def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_
 
 
 def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
+    logging.getLogger(__name__).info("perf %s (beta)", args.perf_command)
+    # One call site ahead of the branch covers all five subcommands.
+    _print_beta_notice(PERFORMANCE_BETA_NOTICE)
+
     if args.perf_command == "roster":
         from yeaboi.performance.roster import fetch_roster
 

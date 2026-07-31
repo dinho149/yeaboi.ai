@@ -14,6 +14,7 @@ import rich.box
 from rich.panel import Panel
 from rich.text import Text
 
+from yeaboi.beta import BETA_RGB
 from yeaboi.ui.shared._animations import COLOR_RGB
 from yeaboi.ui.shared._ascii_font import render_ascii_text
 
@@ -359,6 +360,32 @@ def feedback_title(shimmer_tick: float | None = None, *, width: int | None = Non
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Tips ASCII title (silver accent). Optionally shimmering."""
     return build_ascii_title("Tips", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
+
+
+def build_badge(label: str, *, rgb: tuple[int, int, int] = BETA_RGB, dim: bool = False) -> Text:
+    """Build a small inverse-video status chip (BETA, COMING SOON).
+
+    Rendered as ``" LABEL "`` in bold black on the given colour — a solid block
+    reads as a status marker at a glance, where coloured text alone reads as
+    emphasis. Deliberately plain text plus a background: the mode-card click
+    hit-testing in ``mode_select`` locates rows by scanning for block-font glyphs
+    (``█▀▄``), so a chip drawn with box characters would be mistaken for a title.
+
+    Takes an rgb tuple rather than a Rich colour string because the ``dim``
+    variant has to do arithmetic on the channels, and the ``COLOR_RGB`` lookup
+    only knows the mode accents — a chip colour absent from it would silently
+    fall through to a default grey.
+
+    Args:
+        label: Chip text. Kept short — it sits beside a wordmark.
+        rgb: Chip background channels. Defaults to the beta amber.
+        dim: Halve the channels for unselected rows, matching the mode-row
+            treatment so a chip never out-shouts the title it annotates.
+    """
+    r, g, b = rgb
+    if dim:
+        r, g, b = max(40, r // 2), max(40, g // 2), max(40, b // 2)
+    return Text(f" {label} ", style=f"bold black on rgb({r},{g},{b})")
 
 
 def build_popup(

@@ -155,6 +155,32 @@ def test_tip_rows_new_badge_when_flagged(monkeypatch):
     _tips.get_tips.cache_clear()
 
 
+def test_tip_rows_beta_badge_when_flagged(monkeypatch):
+    monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    _tips.get_tips.cache_clear()
+    tips = _tips.get_tips()
+    beta_idx = next(i for i, t in enumerate(tips) if t.is_beta)
+    plain_idx = next(i for i, t in enumerate(tips) if not t.is_beta and not t.is_new)
+    assert "BETA" in _tip_rows_text(shimmer_tick=0.0, tip_offset=beta_idx)
+    assert "BETA" not in _tip_rows_text(shimmer_tick=0.0, tip_offset=plain_idx)
+    _tips.get_tips.cache_clear()
+
+
+def test_tip_rows_beta_badge_wins_over_new(monkeypatch):
+    # A maturity caveat outranks a freshness cue, and two badges would push the
+    # centred row out of the companion duck's lane.
+    monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    both = _tips.FeatureTip("x", "🎯 Tip: both flags", mode_key=None, is_new=True, is_beta=True)
+    monkeypatch.setattr(_tips, "get_tips", lambda: (both,))
+
+    out = _tip_rows_text(shimmer_tick=0.0, tip_offset=0)
+
+    assert "BETA" in out
+    assert "NEW" not in out
+
+
 def test_tip_offset_shifts_the_shown_tip(monkeypatch):
     monkeypatch.setattr("yeaboi.config.is_tips_enabled", lambda: True)
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
@@ -196,6 +222,18 @@ def test_all_tips_screen_shows_a_tip_and_new_badge(monkeypatch):
     out = _all_tips_rendered(shimmer_tick=0.0, sub_reveal=99)
     assert "NEW" in out
     assert "opens" in out  # a carded tip's "→ opens <Mode>" note
+    _tips.get_tips.cache_clear()
+
+
+def test_all_tips_screen_shows_the_beta_badge(monkeypatch):
+    monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
+    monkeypatch.setattr(
+        "yeaboi.ui.mode_select.screens._screens_secondary.build_scrollbar",
+        lambda *_args, **_kwargs: None,
+    )
+    _tips.get_tips.cache_clear()
+    out = _all_tips_rendered(height=200, shimmer_tick=0.0, sub_reveal=99)
+    assert "BETA" in out
     _tips.get_tips.cache_clear()
 
 

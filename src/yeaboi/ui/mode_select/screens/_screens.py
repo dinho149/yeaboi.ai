@@ -19,9 +19,10 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
+from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.ui.shared._animations import BLACK_RGB, COLOR_RGB, lerp_color, shimmer_style
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import PAD, build_page_panel
+from yeaboi.ui.shared._components import PAD, build_badge, build_page_panel
 from yeaboi.ui.shared._mascot import render_head, render_head_shades
 from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS
 
@@ -74,7 +75,11 @@ _MODE_CARDS: list[dict[str, Any]] = [
         "key": "performance",
         "title": "Performance",
         "description": "Manage each engineer: 1:1 prep, 1:1 summaries, and 6-month reviews from real delivery data.",
+        # Beta, not unavailable: the mode runs, but its output hasn't been
+        # validated against a real team's tracker yet. "available" must stay True
+        # — it gates Enter, the click handler, and the tip jump key.
         "available": True,
+        "badge": BETA_LABEL,
         "color": "rgb(220,110,90)",
     },
     {
@@ -194,6 +199,10 @@ _COMPANION_COLS = 44  # right-hand lane width (bubble + duck); wide enough for t
 # a flatter left-to-right curtain. This is the inverse of the splash crumble.
 _SWEEP_ROW_WEIGHT = 4.0
 
+# Chip colour for an unavailable (COMING SOON) card — the same dead grey the
+# disabled title uses, so the whole row reads as one state.
+_DISABLED_BADGE_RGB = (90, 90, 100)
+
 
 def mode_title_widths() -> list[int]:
     """Block-font column width of every mode title, index-aligned to _MODE_CARDS.
@@ -202,6 +211,21 @@ def mode_title_widths() -> list[int]:
     in (see the reveal loop in :mod:`yeaboi.ui.mode_select`).
     """
     return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in _MODE_CARDS]
+
+
+def _card_badge(mode: dict[str, Any]) -> str:
+    """Return the status chip text for a card, or "" when it has no status.
+
+    An explicit ``badge`` wins; otherwise an unavailable card is a COMING SOON.
+
+    ``badge`` is read with ``.get`` because ``_build_mode_row`` is also fed dicts
+    synthesised at runtime — the Performance roster builds one per engineer —
+    which set ``available`` but never ``badge``, and so must render no chip.
+    """
+    badge = mode.get("badge", "")
+    if badge:
+        return str(badge)
+    return "" if mode.get("available", True) else "COMING SOON"
 
 
 def _build_mode_row(
@@ -230,9 +254,12 @@ def _build_mode_row(
     """
     available = mode["available"]
     color = mode["color"]
-    lines = render_ascii_text(mode["title"])
+    full_lines = render_ascii_text(mode["title"])
+    lines = full_lines
     if sweep_front is not None:
-        lines = [line[: max(0, int(sweep_front - (row_base + r) * _SWEEP_ROW_WEIGHT))] for r, line in enumerate(lines)]
+        lines = [
+            line[: max(0, int(sweep_front - (row_base + r) * _SWEEP_ROW_WEIGHT))] for r, line in enumerate(full_lines)
+        ]
 
     rendered = Text(justify="left")
 
@@ -260,6 +287,32 @@ def _build_mode_row(
         rendered.append(_PAD + lines[0] + "\n", style=_unsel_style)
         rendered.append(_PAD + lines[1], style=_unsel_style)
 
+    # Status chip (BETA / COMING SOON), pinned to the end of the second block-font
+    # line. It goes on the title rather than the description because the
+    # description only renders on the selected card, and a status marker you have
+    # to arrow onto isn't labelling. Held back until the intro sweep has finished
+    # drawing this row, so no chip floats beside a half-drawn wordmark.
+    badge = _card_badge(mode)
+    if badge and (sweep_front is None or len(lines[1]) == len(full_lines[1])):
+        # An unavailable card's chip is grey in both selection states — the card
+        # is disabled, and a chip that changed hue as you arrowed onto it would
+        # read as a state change. A beta chip keeps its amber and only dims.
+        badge_rgb = BETA_RGB if available else _DISABLED_BADGE_RGB
+        rendered.append("  ")
+        if override_style:
+            # Menu fades restyle the whole row; the chip fades out with it rather
+            # than staying lit over a dissolving title.
+            rendered.append(f" {badge} ", style=override_style)
+        else:
+            rendered.append_text(build_badge(badge, rgb=badge_rgb, dim=not selected))
+
+    # The row is exactly two block-font lines tall and the whole menu's click
+    # hit-testing (mode_at_row / selected_title_offset) derives from that. Crop
+    # rather than wrap so a long title plus a chip can never add a third row —
+    # no_wrap alone is not enough, Rich still folds an over-long line.
+    rendered.no_wrap = True
+    rendered.overflow = "crop"
+
     items: list = [rendered]
 
     # Reserve description space on the selected item so switching never changes the
@@ -284,8 +337,6 @@ def _build_mode_row(
                     if available and 0 <= (solid_count - consumed) < len(wline) and frac > 0:
                         gray = int(255 * frac)  # sub-char fade on the cursor's line
                         lt.append(wline[shown], style=f"rgb({gray},{gray},{gray})")
-                    if not available and line_i == len(wrapped) - 1 and shown >= len(wline):
-                        lt.append("  (coming soon)", style="rgb(60,60,70)")
                     consumed += len(wline)
             else:
                 # Single line: clip with an ellipsis (a wrapped continuation would
@@ -298,8 +349,6 @@ def _build_mode_row(
                 if available and frac > 0 and solid_count < len(desc_full):
                     gray = int(255 * frac)
                     lt.append(desc_full[solid_count], style=f"rgb({gray},{gray},{gray})")
-                if not available and solid_count >= len(desc_full):
-                    lt.append("  (coming soon)", style="rgb(60,60,70)")
 
         items.append(Text(""))
         items.extend(desc_lines)
@@ -315,6 +364,9 @@ _TIP_BODY = (198, 198, 208)  # soft grey-white for the tip text
 _TIP_DOT_DIM = (70, 70, 82)  # inactive position dots (matches the app's hollow ○)
 _TIP_DOT_ON = (226, 186, 96)  # warm accent for the active dot
 _TIP_KEY = (210, 210, 220)  # the "t" keycap glyph
+# Amber caution for the BETA badge — shared with the mode-card chip and the docs
+# site's pill, and deliberately distinct from the gold NEW badge above.
+_TIP_BETA = BETA_RGB
 
 
 def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
@@ -351,9 +403,14 @@ def _build_tip_rows(shimmer_tick: float, *, tip_offset: int = 0) -> list[Text]:
 
     body_style = lerp_color(b, _TIP_BG, _TIP_BODY)
 
-    # Row 1 — an optional NEW badge, then the tip, faded toward full body colour.
+    # Row 1 — an optional BETA/NEW badge, then the tip, faded toward full body colour.
+    # BETA wins over NEW: a maturity caveat outranks a freshness cue, and two
+    # badges would push the centred line out of the companion duck's lane.
     tip_line = Text(justify="center")
-    if tip.is_new:
+    if tip.is_beta:
+        tip_line.append(f" {BETA_LABEL} ", style=f"bold {lerp_color(b, _TIP_BG, _TIP_BETA)}")
+        tip_line.append("  ")
+    elif tip.is_new:
         tip_line.append(" NEW ", style=f"bold {lerp_color(b, _TIP_BG, _TIP_DOT_ON)}")
         tip_line.append("  ")
     tip_line.append(tip.text, style=body_style)

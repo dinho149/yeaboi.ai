@@ -311,6 +311,18 @@ ul.nav-tree ul.nav-tree{margin:3px 0 6px 12px; border-left:1px solid var(--borde
 .badge::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--success);
   box-shadow:0 0 8px var(--success)}
 
+/* Beta pill — a caution marker for a feature that ships but whose output isn't
+   verified yet. Deliberately NOT a .badge: that one injects a green "live" dot,
+   which says the opposite. The amber matches BETA_RGB in src/yeaboi/beta.py, so
+   the terminal chip and this pill are the same colour. */
+.beta-pill{
+  display:inline-block; vertical-align:middle; margin-left:10px;
+  font-family:var(--mono); font-size:.62rem; letter-spacing:.14em;
+  text-transform:uppercase; font-weight:600; line-height:1;
+  color:rgb(224,138,72); border:1px solid rgba(224,138,72,.45);
+  border-radius:999px; padding:4px 8px;
+}
+
 /* ---- terminal window chrome ---- */
 .term{
   background:#0a0b0c; border:1px solid var(--border-strong); border-radius:var(--radius-lg);

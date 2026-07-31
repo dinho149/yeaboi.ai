@@ -19,7 +19,16 @@ All TUI screens MUST use the shared component system in `src/yeaboi/ui/shared/_c
 | Viewport | `calc_viewport(height, header_h=, action_h=)` | Viewport height calculation |
 | Titles | `planning_title()`, `analysis_title()`, `usage_title()`, `settings_title()` | ASCII art headers |
 | Popup | `build_popup(message, width=, border_style=)` | Confirmation dialogs |
+| Badge | `build_badge(label, rgb=BETA_RGB, dim=)` | Inverse-video status chip (BETA, COMING SOON). Takes an rgb **tuple**, not a colour string — `dim` does arithmetic on the channels, and `COLOR_RGB` only knows the mode accents. Never draw a chip with box glyphs: the mode-card click hit-testing finds title rows by scanning for `█▀▄` |
 | Padding | `PAD` constant | Left indent for visual balance |
+
+**Beta modes.** A mode whose output isn't verified yet keeps `"available": True`
+in `_MODE_CARDS` (that flag gates Enter, the click handler *and* the welcome
+screen's `g` jump key — flipping it removes the feature rather than labelling
+it) and adds `"badge": BETA_LABEL`. Three markers must move together, and
+`test_beta_surfaces.py::TestBetaMarkersAgree` enforces it: the card badge, a
+`_BETA_MODES` entry in `ui/shared/_beta_notice.py` (the one-time entry notice),
+and `FeatureTip(is_beta=True)`. Where both could render, **BETA beats NEW**.
 
 ## Page Structure (every `_build_*_screen` function MUST follow)
 

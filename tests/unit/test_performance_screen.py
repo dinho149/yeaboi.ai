@@ -5,7 +5,10 @@ import io
 from rich.console import Console
 from rich.panel import Panel
 
+from yeaboi.beta import BETA_LABEL
+from yeaboi.ui.mode_select.screens._screens import _MIN_WIDTH
 from yeaboi.ui.mode_select.screens._screens_secondary import _build_performance_screen
+from yeaboi.ui.shared._components import TITLE_ROWS
 
 
 def _render(panel: Panel) -> str:
@@ -69,3 +72,39 @@ class TestBuildPerformanceScreen:
         data = {"view": "detail", "detail_title": "x", "detail_lines": lines, "actions": ["Export", "Back"]}
         panel = _build_performance_screen(data, width=100, height=20, scroll_offset=40)
         assert isinstance(panel, Panel)
+
+
+class TestBetaChip:
+    """The mode is usable but unverified — the header says so on every view."""
+
+    def test_roster_header_carries_the_beta_chip(self):
+        data = {"session_name": "Demo", "view": "roster", "roster": ["Ada Lovelace"], "selected_idx": 0}
+        out = _render(_build_performance_screen(data, width=100, height=30))
+        assert BETA_LABEL in out
+
+    def test_detail_header_carries_the_beta_chip(self):
+        data = {
+            "view": "detail",
+            "detail_title": "1:1 Prep — Ada",
+            "detail_lines": ["Talking points:", "  • one"],
+            "actions": ["Export", "Back"],
+        }
+        out = _render(_build_performance_screen(data, width=100, height=32))
+        assert BETA_LABEL in out
+
+    def test_header_stays_two_rows_and_keeps_the_chip_at_min_width(self):
+        # The chip is appended to the wordmark, so the narrowest supported
+        # terminal is where it would wrap and silently push every viewport row
+        # down by one. Asserted at _MIN_WIDTH rather than something arbitrarily
+        # narrow: below ~64 columns the chip is cropped off entirely, so a
+        # narrower assertion would still pass if the chip were never appended.
+        # An empty roster isolates the header — engineer names use block font too.
+        data = {"view": "roster", "roster": [], "selected_idx": 0}
+        panel = _build_performance_screen(data, width=_MIN_WIDTH, height=30)
+        console = Console(file=io.StringIO(), width=_MIN_WIDTH)
+        console.print(panel)
+        out = console.file.getvalue()
+
+        glyph_rows = [line for line in out.splitlines() if any(ch in line for ch in "█▀▄")]
+        assert len(glyph_rows) == TITLE_ROWS
+        assert BETA_LABEL in out
