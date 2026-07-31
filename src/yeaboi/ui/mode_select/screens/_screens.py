@@ -15,6 +15,7 @@ from rich.align import Align
 from rich.console import Group, RenderableType
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
@@ -399,8 +400,9 @@ class _WelcomeFrame:
     pocket to occupy. Not a Panel, so MusicLive leaves it alone (no flat subtitle).
     """
 
-    def __init__(self, panel: Panel) -> None:
+    def __init__(self, panel: Panel, compose: dict | None = None) -> None:
         self.panel = panel
+        self.compose = compose  # the feedback bubble, drawn OVER the finished frame
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -409,6 +411,8 @@ class _WelcomeFrame:
 
         lines = console.render_lines(self.panel, options, pad=False)
         draw_music_pocket(console, options, lines)
+        if self.compose is not None:
+            _draw_compose_bubble(console, options, lines, self.compose)
         # The welcome screen already lists its own controls, so the tab doesn't
         # belong here — target 0 so it eases back out instead of vanishing.
         draw_controls_pocket(console, options, lines, target=0.0)
@@ -665,7 +669,7 @@ def _build_mode_screen(
         return panel
     # Draw the music pocket over the reserved bottom rows. Returning a frame (not a
     # bare Panel) also means MusicLive won't stamp the flat music subtitle.
-    return _WelcomeFrame(panel)
+    return _WelcomeFrame(panel, compose=compose)
 
 
 def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -> int | None:
@@ -773,6 +777,11 @@ def duck_hit(width: int, height: int, *, row: int, col: int) -> bool:
 # down) and truncates the bottom-left hint row, both the moment you press `f`.
 # Room is bought vertically instead, which costs the left column nothing.
 _COMPOSE_MAX_ROWS = 12  # typing rows before the box scrolls with the cursor
+# The overlay is free to be wider than the companion lane — nothing else is laid
+# out against it — so it takes a comfortable writing width, clamped to the frame.
+_COMPOSE_OVERLAY_COLS = 76
+_COMPOSE_LEFT_MARGIN = 8  # frame columns kept clear to the bubble's left
+_COMPOSE_TOP_MARGIN = 3  # …and above it
 _COMPOSE_MIN_ROWS = 2
 # Rows the bubble costs besides its message: two borders, the Type and Area rows
 # and the blank under them. Plus the tail below it and the duck's own height —
@@ -873,10 +882,63 @@ def _compose_chips(
     return row
 
 
-def _compose_message_rows(lane_h: int) -> int:
-    """How many message rows fit above the duck without clipping him."""
-    spare = lane_h - _COMPANION_HEAD_H - _COMPOSE_TAIL_ROWS - _COMPOSE_CHROME_ROWS
-    return max(_COMPOSE_MIN_ROWS, min(_COMPOSE_MAX_ROWS, spare))
+def _compose_message_rows(space: int) -> int:
+    """How many message rows fit in ``space`` rows of frame above the tail."""
+    return max(_COMPOSE_MIN_ROWS, min(_COMPOSE_MAX_ROWS, space - _COMPOSE_CHROME_ROWS))
+
+
+def welcome_shows_companion(width: int, height: int) -> bool:
+    """Whether the welcome screen has room for the duck's lane at this size.
+
+    The composer is drawn over that lane, so a caller has to know: below this the
+    bubble would render nothing while still swallowing every key.
+    """
+    return width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
+
+
+def _draw_compose_bubble(console, options, lines: list, compose: dict) -> None:
+    """Composite the feedback bubble over the finished welcome frame, in place.
+
+    Drawn here rather than inside the companion lane so it can be as wide as it
+    likes: the lane's width feeds the mode list's, so a wider lane would reflow
+    every description and truncate the bottom-left hint row. Overdrawing touches
+    neither — the frame underneath is exactly the frame without a bubble.
+
+    Anchored on the duck: the layout puts him in the last ``_COMPANION_HEAD_H``
+    rows of the grid, with the pocket's two rows and the bottom border below, so
+    his top row is a fixed offset from the foot and the bubble stacks up from
+    there. Right-aligned with where the tip bubble sits, growing leftward.
+    """
+    from rich.segment import Segment
+
+    if not lines or not lines[-1]:
+        return
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    height = len(lines)
+    # Render over the page's own tint so the box doesn't punch a hole in it.
+    base = lines[-1][0].style
+    bg_style = Style(bgcolor=base.bgcolor) if base and base.bgcolor else None
+
+    duck_top = height - 1 - _MUSIC_POCKET_ROWS - _COMPANION_HEAD_H
+    bottom = duck_top - 1 - _COMPOSE_TAIL_ROWS  # the tail sits between them
+    right = width - 5  # level with the tip bubble's right edge
+    cols = min(_COMPOSE_OVERLAY_COLS, right - _COMPOSE_LEFT_MARGIN)
+    if cols < _COMPANION_COLS - 2 or bottom < 4:
+        return  # too cramped to overlay — the duck keeps the screen to himself
+
+    rows = _compose_message_rows(bottom - _COMPOSE_TOP_MARGIN)
+    bubble = _build_compose_bubble(compose, cols=cols + 2, max_rows=rows)
+    rendered = console.render_lines(bubble, options.update_width(cols), pad=True, style=bg_style)
+    top = bottom - len(rendered) + 1
+    if top < _COMPOSE_TOP_MARGIN:
+        return
+    left = right - cols + 1
+    for i, row in enumerate(rendered):
+        r = top + i
+        if not 0 <= r < height:
+            continue
+        before, _mid, after = Segment.divide(lines[r], [left, right + 1, width])
+        lines[r] = list(before) + list(row) + list(after)
 
 
 def _build_compose_bubble(compose: dict, *, cols: int, max_rows: int = _COMPOSE_MAX_ROWS) -> RenderableType:
@@ -1051,11 +1113,12 @@ def _build_companion(
     has_controls = controls is not None and controls.plain.strip()
     parts: list[RenderableType] = []
     if compose is not None:
-        # Composing takes the lane: no tip, no update box competing for height.
+        # The composer is drawn as an OVERLAY over the finished frame (see
+        # _draw_compose_bubble), so it can be wider than this lane without
+        # resizing the mode list beside it. The lane itself just loses its tip.
         presence = min(1.0, max(0.0, compose.get("presence", 1.0)))
         tail = Align.center(Text("▾", style=lerp_color(presence, BLACK_RGB, (120, 135, 150))))
-        bubble = _build_compose_bubble(compose, cols=_COMPANION_COLS, max_rows=_compose_message_rows(lane_h))
-        return Align.center(Group(bubble, tail, duck), vertical="bottom")
+        return Align.center(Group(tail, duck), vertical="bottom")
     if update_box is not None and show_extras:
         # More pressing than the tip: it sits at the top of the lane, above the
         # bubble, with a blank line separating the two boxes.

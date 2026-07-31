@@ -58,6 +58,7 @@ from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
     mode_at_row,
     mode_title_widths,
     selected_title_offset,
+    welcome_shows_companion,
 )
 from yeaboi.ui.mode_select.screens._screens_secondary import (  # noqa: F401
     _build_export_success_screen,
@@ -10193,6 +10194,16 @@ def select_mode(
                     # Quick feedback comes out of the duck: his tip bubble becomes a
                     # composer in place, so the welcome screen never leaves. The full
                     # form (type/area/AI polish/attachments) is Tab from inside it.
+                    # The bubble is drawn over the duck's lane, so without one there
+                    # is nothing to draw on — fall back to the full form rather than
+                    # swallowing keys into an invisible composer.
+                    _fw, _fh = console.size
+                    if not welcome_shows_companion(_fw, _fh):
+                        logger.info("feedback: terminal too small for the bubble, opening the form")
+                        _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        _slide_menu_in(console, live, selected, n)
+                        select_time = time.monotonic()
+                        continue
                     logger.info("feedback bubble opened from mode select")
                     # set_text_entry so 'c' types a 'c' instead of opening the
                     # controls drawer while the message is being written.

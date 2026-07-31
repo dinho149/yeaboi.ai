@@ -332,15 +332,16 @@ class TestFeedbackComposeBubble:
         assert "sending…" in out
         assert "Esc cancel" not in out  # the keys don't apply mid-flight
 
-    def test_the_composer_leaves_the_mode_list_untouched(self):
-        # The lane width feeds the mode list's own width, so widening it for the
-        # composer reflowed every description (pushing the bottom-anchored duck
-        # down) and truncated the bottom-left hint row. Room is bought vertically.
+    def test_the_composer_only_overdraws_its_own_band(self):
+        # The bubble is composited OVER the finished frame rather than laid out in
+        # the companion lane: the lane's width feeds the mode list's, so a wider
+        # lane reflowed every description (pushing the bottom-anchored duck down)
+        # and truncated the bottom-left hint row. Overdrawing touches neither.
         import io
 
         from rich.console import Console
 
-        from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _build_mode_screen
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
 
         def frame(compose):
             buf = io.StringIO()
@@ -351,12 +352,25 @@ class TestFeedbackComposeBubble:
 
         plain = frame(None)
         composing = frame(self._state(buf="a message long enough to wrap over several lines in the box"))
-        left = 140 - _COMPANION_COLS - 3  # panel border + padding
-        assert [ln[:left] for ln in plain] == [ln[:left] for ln in composing]
-        # …including the duck, who is bottom-anchored in that same grid row.
-        assert next(i for i, ln in enumerate(plain) if "▄▀▀▀▀▄" in ln) == next(
-            i for i, ln in enumerate(composing) if "▄▀▀▀▀▄" in ln
-        )
+        differing = [i for i, (a, b) in enumerate(zip(plain, composing)) if a != b]
+        assert differing  # it did draw something
+        # One contiguous band, and everything below it — the duck, the version row,
+        # the music pocket — is byte-identical to the frame without a bubble.
+        assert differing == list(range(differing[0], differing[-1] + 1))
+        assert "Tell the duck" in composing[differing[0]]
+        below = differing[-1] + 1
+        assert plain[below:] == composing[below:]
+        assert any("a all tips" in ln for ln in composing[below:])  # hint intact
+        assert any("▄▀▀▀▀▄" in ln for ln in composing[below:])  # duck unmoved
+
+    def test_the_overlay_is_wider_than_the_companion_lane(self):
+        # The whole point of overdrawing: a writing box, not a tip-sized bubble.
+        from yeaboi.ui.mode_select.screens._screens import _COMPANION_COLS, _COMPOSE_OVERLAY_COLS
+
+        assert _COMPOSE_OVERLAY_COLS > _COMPANION_COLS
+        out = self._render(self._state())
+        row = next(ln for ln in out.splitlines() if "Tell the duck" in ln)
+        assert row.count("─") > _COMPANION_COLS  # the border really is that wide
 
     def test_the_hint_fits_inside_the_bubble(self):
         # The subtitle sits on the bottom border of a 44-column lane; too long and
@@ -688,3 +702,20 @@ class TestComposePresence:
 
         st = self._state(done_at=_t.monotonic() - mode_select._COMPOSE_RESULT_SECONDS - 1, status="sent")
         assert mode_select._feedback_compose_tick(st)["closing"] is True
+
+
+def test_composer_falls_back_to_the_form_when_the_lane_is_gone():
+    """Below the companion's size the bubble has nothing to draw over.
+
+    It would render nothing while still swallowing every key, so `f` opens the
+    full feedback form instead of a composer the user can't see.
+    """
+    from yeaboi.ui.mode_select.screens._screens import (
+        _COMPANION_MIN_HEIGHT,
+        _COMPANION_MIN_WIDTH,
+        welcome_shows_companion,
+    )
+
+    assert welcome_shows_companion(_COMPANION_MIN_WIDTH, _COMPANION_MIN_HEIGHT)
+    assert not welcome_shows_companion(_COMPANION_MIN_WIDTH - 1, _COMPANION_MIN_HEIGHT)
+    assert not welcome_shows_companion(_COMPANION_MIN_WIDTH, _COMPANION_MIN_HEIGHT - 1)
