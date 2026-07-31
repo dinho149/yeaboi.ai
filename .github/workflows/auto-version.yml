@@ -140,7 +140,15 @@ jobs:
           # Semver classification is mechanical (labels always win; the bump is a
           # script; the changelog paragraph is short) — routed to Haiku for cost.
           # If wrong-level bumps appear, promote to claude-sonnet-5 (one line).
-          claude_args: '--model claude-haiku-4-5 --max-turns 15 --allowedTools "Bash,Read,Edit,Write"'
+          #
+          # Pin the DATED model id, not the bare `claude-haiku-4-5` alias. The
+          # alias stopped resolving between 2026-07-29 and 2026-07-30: every run
+          # from then on died on turn 1 in ~2s with total_cost_usd 0, while every
+          # sibling workflow on claude-sonnet-5 kept passing with the same OAuth
+          # token — and this file hadn't changed. The action hides SDK output
+          # (`Running Claude Code via SDK (full output hidden for security)`), so
+          # the only symptom is a bare `is_error: true` with no message.
+          claude_args: '--model claude-haiku-4-5-20251001 --max-turns 15 --allowedTools "Bash,Read,Edit,Write"'
           prompt: |
             You are the release-versioning bot for this repository. Pull request #${{ github.event.pull_request.number }} is open; decide whether and how to bump the project version. The version lives only in pyproject.toml. Changelog-only mode: ${{ steps.guard.outputs.changelog_only || 'false' }}.
 

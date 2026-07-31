@@ -120,8 +120,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Filing issues from a prepared JSON is classification + formatting,
-          # not deep reasoning — routed to Haiku.
-          claude_args: '--model claude-haiku-4-5 --max-turns 15 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Read,Grep"'
+          # not deep reasoning — routed to Haiku. Pinned to the dated id because
+          # the bare `claude-haiku-4-5` alias stopped resolving (see the same
+          # note in auto-version.yml).
+          claude_args: '--model claude-haiku-4-5-20251001 --max-turns 15 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Read,Grep"'
           prompt: |
             The deterministic flake detector just ran on `main`. Its results are in
             two files at the repo root:

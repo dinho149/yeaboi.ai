@@ -2,6 +2,18 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.42.0",
+      "date": "2026-07-31",
+      "summary": "The welcome screen gains a duck companion who now does more than sit there: press f and a speech bubble opens from him that you write your feedback straight into, pick a type and area for, paste screenshots into, or dictate out loud. Settings gets a full rebuild around boxed sections you can drive entirely from the keyboard — arrow between boxes, Enter to focus one, then arrow between the values inside it — with storage settings moved under System and long status lines that wrap instead of getting cut off. Clicking now works across the whole app rather than just the main menu, and a handful of small annoyances are gone: the Back button leaves in one click, the controls drawer opens with c, and the wordmark intro no longer replays every time you open Changelog, Feedback, or All Tips.",
+      "highlights": [
+        {"text": "Write and send feedback in a speech bubble from the duck, with image paste and voice dictation", "areas": ["general"]},
+        {"text": "Settings laid out as boxed sections you can navigate and edit with the keyboard alone", "areas": ["settings"]},
+        {"text": "Storage settings moved under System, and long status lines wrap instead of truncating", "areas": ["settings"]},
+        {"text": "Clicking buttons, rows, and cards now works on every screen, not just the main menu", "areas": ["general"]},
+        {"text": "Back leaves in one click, c opens the controls drawer, and the intro animation no longer replays on secondary pages", "areas": ["general"]}
+      ]
+    },
+    {
       "version": "2.41.0",
       "date": "2026-07-28",
       "summary": "Reporting mode reaches feature and UX parity with Analysis and Standup with six major capability launches. Threaded generation runs the engine on a background worker behind a shared progress screen with full cancellation support, and adds Last Week and custom date range periods with automatic window clamping for delivered items. The new theme registry (4 built-in themes plus custom palettes from ~/.yeaboi/data/reporting_themes.json) flows into HTML deck CSS, .pptx slides, CLI --theme flag, and MCP tools. Native .pptx export now available as an optional docs extra with graceful degradation if python-pptx is missing. Per-component source selection (delivery/code/docs) lets you pick what gets included, and deterministic supporting signals (merged PRs, commits, doc updates) appear as bounded reference-only rows with corroboration footnotes. Persisted DeckStyle preferences control title/heading colors, font presets, layout density, bullets, section toggles, and slide numbers with neutral defaults. New layout.py planner delivers content-aware slide packing shared by both renderers: full-width lone cards, greedy 2-column layouts, pagination with (cont.) markers, and a content_fit mode (ask/expand/tight) that lets users decide whether to add slides when content exceeds bounds. Visual quality improvements include top-anchored outcome cards, height-fitted delivered-items table with explicit column widths, deduplicated items (collapsed ticket + changelog rows), executive summary as sentence bullets, and flattened doc-collector progress. Packaged pixel-duck mark appears on both surfaces (inline data URI, offline-safe).",
