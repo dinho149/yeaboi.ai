@@ -251,6 +251,154 @@
   color: var(--muted);
 }
 
+/* ── Standup ──────────────────────────────────────────────────── */
+
+.confidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0;
+}
+.rationale {
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Per-member bars, scaled against the busiest member. The name column is a
+   fixed share so the bars all start at the same x and can be compared. */
+.activity {
+  margin: var(--s4) 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+.activity > * + * {
+  margin-top: var(--s2);
+}
+.activityRow {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--s3);
+}
+.activityName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+.activityTotal {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}
+
+.member {
+  margin-bottom: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+/* A blocked member is the one thing on this page somebody has to act on. */
+.blocked {
+  border-left-color: var(--danger);
+}
+.memberHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+.memberSummary {
+  margin: 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+.since {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+/* `auto-fit`, so two active categories share the width instead of leaving a
+   third of the card empty to preserve a three-column shape. */
+.categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+.category > * + * {
+  margin-top: var(--s2);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.quote {
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r-s) var(--r-s) 0;
+  background: var(--card);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+  /* The one place a person's own words are shown verbatim — their line breaks
+     are the only formatting they get. */
+  white-space: pre-wrap;
+}
+
+.screenshot {
+  display: block;
+  max-width: 100%;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+.details {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.8;
+}
+.coverage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-right: var(--s3);
+  white-space: nowrap;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.dim {
+  color: var(--dim);
+}
+
 /* ── Reporting ────────────────────────────────────────────────── */
 
 /* The host's chosen decoration, held at the reader's text size rather than the
@@ -258,6 +406,146 @@
 .headingEmoji {
   margin-right: var(--s2);
   letter-spacing: 0;
+}
+
+/* ── Plan ─────────────────────────────────────────────────────── */
+
+.cardId {
+  margin-right: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  /* An id is one token. Wrapping "T-2" onto two lines makes a table column
+     twice as tall to save four pixels of width. */
+  white-space: nowrap;
+}
+
+.feature,
+.story,
+.sprint {
+  margin-bottom: var(--s3);
+}
+/* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
+.story {
+  border-left: 2px solid var(--story-tone, var(--line-strong));
+}
+.storyText {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  font-style: italic;
+  line-height: 1.6;
+}
+.storyGroup {
+  margin-bottom: var(--s5);
+}
+.storyGroup > :global(.eyebrow) {
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+/* Given/When/Then, one criterion per row, the label in the mono voice so the
+   three clauses stay readable as prose. */
+.criteria {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+.criteria li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s2);
+  align-items: baseline;
+}
+.criteria li + li {
+  margin-top: var(--s1);
+}
+.criteria b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dod {
+  margin-top: var(--s3);
+}
+.dod ul {
+  margin: var(--s2) 0 0;
+  padding-left: 1.1rem;
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+/* Struck through rather than dropped: which items a story is *exempt* from is
+   a decision worth showing. */
+.exempt {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0;
+}
+.field > * + * {
+  margin-top: var(--s2);
+}
+
+.target {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.capacity {
+  margin-top: var(--s4);
+}
+.capacity > * + * {
+  margin-top: var(--s3);
+}
+
+.sprintGoal {
+  margin: 0 0 var(--s3);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* A sprint that lost capacity to leave or holidays says so on its edge. */
+.reduced {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+}
+.reducedNote {
+  margin: var(--s2) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+}
+
+.taskGroup {
+  margin-bottom: var(--s5);
+}
+.taskGroup > :global(.eyebrow) {
+  display: block;
+}
+/* The story the tasks decompose, in its own case — see Plan.tsx. */
+.groupSubject {
+  margin: var(--s1) 0 var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+}
+/* Own line under the description — a test plan run inline turns every row into
+   a paragraph and the table stops being scannable. */
+.taskNote {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
 }
 
 /* ── Anonymize: a re-published document ───────────────────────── */

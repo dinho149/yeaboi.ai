@@ -14,6 +14,7 @@ Analysis logs are written to ~/.scrum-agent/logs/:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -185,52 +186,109 @@ def _link_html(url: str, inner: str) -> str:
     return f'<a href="{_e(safe)}">{inner}</a>' if safe else inner
 
 
-def _insight_html(it: dict) -> str:
-    """Render one coaching insight as an <li>, linking the cited example when present."""
-    body = f"<strong>{_e(str(it.get('title', '')))}</strong> &mdash; {_e(str(it.get('detail', '')))}"
+def _md_runs(runs: Sequence[Mapping]) -> str:
+    """Render a ``Run[]`` as Markdown — the other consumer of the same structure."""
+    out: list[str] = []
+    for run in runs:
+        text = str(run.get("s", ""))
+        if run.get("href"):
+            text = f"[{text}]({run['href']})"
+        if run.get("em"):
+            text = f"_{text}_"
+        if run.get("strong"):
+            text = f"**{text}**"
+        out.append(text)
+    return "".join(out)
+
+
+def _insight_runs(it: dict) -> list[dict]:
+    """One coaching insight as ``Run[]``: title, detail, evidence, cited example.
+
+    **This is one of the pairs that collapsed.** ``_insight_html`` and
+    ``_insight_md`` rendered the same four fields into two markups, so every
+    future field had to be added to both, in two different escaping regimes.
+    The runs *are* the fields; each renderer draws them.
+    """
+    runs: list[dict] = [
+        {"s": str(it.get("title", "")), "strong": True},
+        {"s": " — "},
+        {"s": str(it.get("detail", ""))},
+    ]
+    # The separating space is its own run, outside the emphasis. Markdown does
+    # not italicise `_ text_` — a leading space inside the delimiters cancels
+    # the emphasis outright, which is invisible until someone reads the .md.
     if it.get("evidence"):
-        body += f" <em>({_e(str(it['evidence']))})</em>"
-    link = safe_url(str(it.get("link", "") or "").strip())
-    if link:
-        body += f' <a href="{_e(link)}">↳ example</a>'
-    return f"<li>{body}</li>"
+        runs += [{"s": " "}, {"s": f"({it['evidence']})", "em": True}]
+    if link := safe_url(str(it.get("link", "") or "").strip()):
+        runs += [{"s": " "}, {"s": "↳ example", "href": link}]
+    return runs
+
+
+def _action_runs(action: dict) -> list[dict]:
+    """One prioritised action as ``Run[]``.
+
+    The HTML twin used to omit ``completion_check`` where the Markdown twin
+    included it — the same action in two artifacts, and only one of them told
+    you how you would know it was done. One producer, so it cannot recur.
+    """
+    title = str(action.get("title", ""))
+    head: dict = {"s": f"{str(action.get('priority', '')).upper()}: {title}", "strong": True}
+    if link := safe_url(str(action.get("link", "") or "")):
+        head["href"] = link
+    meta = [
+        f"Scope: {', '.join(str(v) for v in action.get('affected_scope', []))}",
+        f"Owner: {action.get('owner_role', '')}",
+        f"Effort: {action.get('effort', '')}",
+    ]
+    if check := action.get("completion_check", ""):
+        meta.append(f"Done when: {check}")
+    return [
+        head,
+        {"s": " — "},
+        {"s": str(action.get("detail", ""))},
+        {"s": " "},
+        {"s": f"({'; '.join(meta)})", "em": True},
+    ]
+
+
+def _html_runs(runs: Sequence[Mapping]) -> str:
+    """Render a ``Run[]`` as HTML — the third consumer, until this page is React.
+
+    Interim: the team profile is the last export still assembling markup, so it
+    still needs an HTML renderer for the runs. It goes with the rest of this
+    file's markup when the page moves to a payload; what stays is the producers.
+    """
+    out: list[str] = []
+    for run in runs:
+        text = _e(str(run.get("s", "")))
+        if run.get("em"):
+            text = f"<em>{text}</em>"
+        if run.get("strong"):
+            text = f"<strong>{text}</strong>"
+        if url := safe_url(str(run.get("href", "") or "")):
+            text = f'<a href="{_e(url, quote=True)}">{text}</a>'
+        out.append(text)
+    return "".join(out)
 
 
 def _insight_md(it: dict) -> str:
-    """Render one coaching insight as a Markdown bullet, linking the cited example when present."""
-    line = f"- **{it.get('title', '')}** — {it.get('detail', '')}"
-    if it.get("evidence"):
-        line += f" *({it['evidence']})*"
-    link = str(it.get("link", "") or "").strip()
-    if link:
-        line += f" [↳ example]({link})"
-    return line
+    """Render one coaching insight as a Markdown bullet."""
+    return f"- {_md_runs(_insight_runs(it))}"
 
 
-def _action_html(action: dict) -> str:
-    scope = ", ".join(str(value) for value in action.get("affected_scope", []))
-    link = str(action.get("link", "") or "")
-    title = _e(str(action.get("title", "")))
-    title_html = _link_html(link, title)
-    return (
-        f"<li><strong>{_e(str(action.get('priority', '')).upper())}: {title_html}</strong>"
-        f" — {_e(str(action.get('detail', '')))}"
-        f"<br><em>Scope: {_e(scope)} · Owner: {_e(str(action.get('owner_role', '')))}"
-        f" · Effort: {_e(str(action.get('effort', '')))}</em></li>"
-    )
+def _insight_html(it: dict) -> str:
+    """Render one coaching insight as an ``<li>``."""
+    return f"<li>{_html_runs(_insight_runs(it))}</li>"
 
 
 def _action_md(action: dict) -> str:
-    title = str(action.get("title", ""))
-    link = str(action.get("link", "") or "")
-    if link:
-        title = f"[{title}]({link})"
-    scope = ", ".join(str(value) for value in action.get("affected_scope", []))
-    return (
-        f"- **{str(action.get('priority', '')).upper()}: {title}** — {action.get('detail', '')} "
-        f"_(Scope: {scope}; Owner: {action.get('owner_role', '')}; Effort: {action.get('effort', '')}; "
-        f"Done when: {action.get('completion_check', '')})_"
-    )
+    """Render one prioritised action as a Markdown bullet."""
+    return f"- {_md_runs(_action_runs(action))}"
+
+
+def _action_html(action: dict) -> str:
+    """Render one prioritised action as an ``<li>``."""
+    return f"<li>{_html_runs(_action_runs(action))}</li>"
 
 
 def _ai_example_md(s: dict) -> str:
@@ -728,7 +786,7 @@ def build_team_profile_html(
             # Velocity chart (optional charts extra) — base64-embedded above
             # the table so the HTML stays self-contained/offline.
             from yeaboi.charts import velocity_chart
-            from yeaboi.html_exporter import img_b64_tag
+            from yeaboi.html_theme import image_data_uri
 
             chart_rows = [
                 (str(sd.get("name", "?")), float(sd.get("planned", 0) or 0), float(sd.get("completed", 0) or 0))
@@ -736,7 +794,13 @@ def build_team_profile_html(
                 if isinstance(sd, dict)
             ]
             chart = velocity_chart(chart_rows, charts_dir / "velocity.png") if charts_dir is not None else None
-            chart_html = img_b64_tag(chart, "Sprint velocity") if chart else ""
+            chart_uri = image_data_uri(chart) if chart else ""
+            chart_html = (
+                f'<img src="{_e(chart_uri, quote=True)}" alt="Sprint velocity" '
+                'style="max-width:100%;border-radius:8px" />'
+                if chart_uri
+                else ""
+            )
             sprint_content = chart_html + (
                 f'<div class="card" style="padding:0;overflow:hidden;">'
                 f'<table class="data-table">{sp_hdr}{"".join(sp_rows_html)}</table></div>'

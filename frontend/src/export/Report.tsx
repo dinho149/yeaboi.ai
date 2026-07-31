@@ -12,10 +12,12 @@
 import type { ExportReport } from './boot';
 import { Anonymize } from './reports/Anonymize';
 import { Performance } from './reports/Performance';
+import { Plan } from './reports/Plan';
 import { Poker } from './reports/Poker';
 import { Reporting } from './reports/Reporting';
 import { Retro } from './reports/Retro';
 import { Roadmap } from './reports/Roadmap';
+import { Standup } from './reports/Standup';
 
 export function Report({ report }: { report: ExportReport }) {
   switch (report.kind) {
@@ -55,6 +57,38 @@ export function Report({ report }: { report: ExportReport }) {
           items={report.items}
           breakdown={report.breakdown}
           emoji={report.emoji}
+          trend={report.trend}
+          warnings={report.warnings}
+        />
+      );
+    case 'plan':
+      return (
+        <Plan
+          questionnaire={report.questionnaire}
+          analysis={report.analysis}
+          capacity={report.capacity}
+          epicKey={report.epicKey}
+          features={report.features}
+          storyGroups={report.storyGroups}
+          pointsByDiscipline={report.pointsByDiscipline}
+          taskGroups={report.taskGroups}
+          sprints={report.sprints}
+          velocity={report.velocity}
+          images={report.images}
+        />
+      );
+    case 'standup':
+      return (
+        <Standup
+          sprint={report.sprint}
+          confidence={report.confidence}
+          summary={report.summary}
+          members={report.members}
+          activityCounts={report.activityCounts}
+          activityWindow={report.activityWindow}
+          coverage={report.coverage}
+          skipped={report.skipped}
+          images={report.images}
           trend={report.trend}
           warnings={report.warnings}
         />

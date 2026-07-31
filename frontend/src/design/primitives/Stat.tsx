@@ -19,10 +19,18 @@ export interface StatTileProps {
   hint?: string;
   /** Colour of the value. Defaults to the theme accent. */
   tone?: Tone;
+  /**
+   * Rendered under the label — a progress bar, a sparkline, a breakdown.
+   *
+   * Inside the tile rather than beside it, because a bar that describes *this*
+   * number has to sit with it: standup's sprint-progress bar rendered under the
+   * whole grid read as a page-level progress indicator instead of "day 7 of 10".
+   */
+  children?: ReactNode;
   className?: string | undefined;
 }
 
-export function StatTile({ value, label, hint, tone, className }: StatTileProps) {
+export function StatTile({ value, label, hint, tone, children, className }: StatTileProps) {
   return (
     <div className={cx(styles['stat'], className)}>
       <div className={styles['statValue']} style={tone ? { color: toneVar(tone) } : undefined}>
@@ -30,6 +38,7 @@ export function StatTile({ value, label, hint, tone, className }: StatTileProps)
       </div>
       <div className={styles['statLabel']}>{label}</div>
       {hint ? <div className={styles['statHint']}>{hint}</div> : null}
+      {children}
     </div>
   );
 }

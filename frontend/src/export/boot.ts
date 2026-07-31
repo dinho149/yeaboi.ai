@@ -18,8 +18,14 @@
  *   this side's business, so a theme change is one file.
  */
 
+import type { Run } from '../design/primitives';
 import { requireBoot } from '../runtime/boot';
 import type { CarriedStatuses, RetroGrids } from '../types/enums';
+
+// Re-exported so a report component imports its whole payload vocabulary from
+// one place. `Run` is a design primitive rather than a payload type, but it is
+// the shape standup's prose arrives in, so it belongs in that vocabulary.
+export type { Run };
 
 /** Page furniture, identical for every report. */
 export interface ExportChrome {
@@ -61,6 +67,13 @@ export interface Trend {
   label: string;
   /** `[date, value]`, oldest first. */
   points: Array<[string, number]>;
+  /**
+   * Bounds on the drawn domain. Facts about the series, not about the drawing:
+   * a confidence percentage cannot exceed 100, so padding past it would claim
+   * headroom that does not exist. Absent means unbounded that way.
+   */
+  floor?: number;
+  ceiling?: number;
 }
 
 export interface RoadmapProject {
@@ -142,6 +155,91 @@ export interface ReportTheme {
   outcomes: string[];
 }
 
+/**
+ * An evidence link, `[label, url]`.
+ *
+ * The URL is `""` when the exporter's scheme allowlist rejected it, and the row
+ * survives anyway: the label says what the link was *evidence of*, and dropping
+ * it would silently shrink the evidence a reader is being shown.
+ */
+export type EvidenceLink = [string, string];
+
+/** One labelled list inside a member card: Ticketing, Code, or Documentation. */
+export interface StandupCategory {
+  label: string;
+  /** Bullet fragments, each already split by the shared prose splitter. */
+  items: Run[][];
+  links: EvidenceLink[];
+}
+
+export interface StandupMember {
+  name: string;
+  /** They wrote this themselves, rather than it being derived from activity. */
+  own?: boolean;
+  summary: Run[];
+  progressNote?: Run[];
+  /** Only the categories with real activity or evidence. */
+  categories: StandupCategory[];
+  /** Categories with prose but nothing to show — rendered as muted footnotes. */
+  footnotes: Array<{ label: string; runs: Run[] }>;
+  outlook?: Run[];
+  blockers?: Run[];
+  selfReport?: Run[];
+  /** `[tickets, code, docs]` — the order the chips and the activity bars use. */
+  counts: [number, number, number];
+  /** Leftover general links. Legacy reports carry no per-category ones. */
+  links: EvidenceLink[];
+}
+
+export interface PlanFeature {
+  id: string;
+  title: string;
+  description: string;
+  /** `critical` | `high` | `medium` | `low`. Unknown values render neutral. */
+  priority: string;
+}
+
+export interface PlanStory {
+  id: string;
+  title: string;
+  /** The "As a X, I want Y, so that Z" sentence. */
+  text: string;
+  priority: string;
+  discipline: string;
+  points: number;
+  rationale?: string;
+  /** `high` | `medium` | `low` — how sure the estimate is. */
+  confidence?: string;
+  acceptanceCriteria: Array<{ given: string; when: string; then: string }>;
+  /**
+   * `[item, applicable]` pairs, already zipped.
+   *
+   * Sent paired rather than as two lists because the old renderer zipped them
+   * itself behind a length check, and a mismatch silently dropped the whole
+   * block. Empty when the story's flags did not line up with the team's DoD.
+   */
+  dod: Array<[string, boolean]>;
+}
+
+export interface PlanTask {
+  id: string;
+  title: string;
+  description: string;
+  label: string;
+  testPlan?: string;
+  aiPrompt?: string;
+}
+
+export interface PlanSprint {
+  name: string;
+  goal: string;
+  /** Points this sprint can hold, after capacity deductions. */
+  capacity: number;
+  /** Points the planned stories actually add up to. */
+  used: number;
+  storyIds: string[];
+}
+
 export type ExportReport =
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
   | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
@@ -197,6 +295,76 @@ export type ExportReport =
       emoji: Record<string, string>;
       trend: Trend | null;
       warnings: string[];
+    }
+  | {
+      kind: 'standup';
+      sprint: { name: string; day: number; total: number };
+      /**
+       * `label` and `trend` are produced by the engine, not validated against
+       * untrusted input, so they travel as their own strings and this side maps
+       * them to tones with a fallback. An unfamiliar label goes muted rather
+       * than failing a build.
+       */
+      confidence: {
+        label: string;
+        pct: number;
+        text: string;
+        trend: string;
+        trendText: string;
+        rationale: string;
+      };
+      /** The team summary, one run-list per sentence. */
+      summary: Run[][];
+      members: StandupMember[];
+      activityCounts: Array<[string, number]>;
+      activityWindow: string;
+      /** `[category, status]` — how completely each source could be read. */
+      coverage: Array<[string, string]>;
+      /** `[source, reason]` for the sources that were not read at all. */
+      skipped: Array<[string, string]>;
+      /** Screenshots, embedded as `data:` URIs so the file stays portable. */
+      images: string[];
+      trend: Trend | null;
+      warnings: string[];
+    }
+  | {
+      kind: 'plan';
+      /** `[label, question, answer]`. Empty before intake has been answered. */
+      questionnaire: Array<[string, string, string]>;
+      /**
+       * `null` until the analyzer has run. Every section below is likewise
+       * empty rather than absent at its own checkpoint — a plan exported
+       * mid-pipeline is a normal artifact, not a broken one.
+       */
+      analysis: {
+        name: string;
+        description: string;
+        targetState: string;
+        projectType: string;
+        sprintWeeks: number;
+        targetSprints: number;
+        fields: Array<{ label: string; items: string[] }>;
+      } | null;
+      capacity: {
+        teamSize: number;
+        sprintWeeks: number;
+        targetSprints: number;
+        velocity: number;
+        netVelocity: number;
+        /** Pre-formatted phrases — "bank holidays: 2d", "discovery: 5%". */
+        deductions: string[];
+      } | null;
+      /** The tracker key the epic was pushed to, when it has been. */
+      epicKey: string;
+      features: PlanFeature[];
+      storyGroups: Array<{ featureId: string; featureTitle: string; stories: PlanStory[] }>;
+      /** `[discipline, points]`, sorted by discipline. */
+      pointsByDiscipline: Array<[string, number]>;
+      taskGroups: Array<{ storyId: string; storyText: string; tasks: PlanTask[] }>;
+      sprints: PlanSprint[];
+      /** Gross velocity, for comparing against a sprint's reduced capacity. */
+      velocity: number;
+      images: string[];
     };
 
 export interface ExportBoot {

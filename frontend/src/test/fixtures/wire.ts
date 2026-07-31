@@ -54,10 +54,12 @@ import type { PokerState, RetroState, TicketView } from '../../types/board';
 import deckJson from './deck.json';
 import exportAnonymizeJson from './export.anonymize.json';
 import exportPerformanceJson from './export.performance.json';
+import exportPlanJson from './export.plan.json';
 import exportPokerJson from './export.poker.json';
 import exportReportingJson from './export.reporting.json';
 import exportRetroJson from './export.retro.json';
 import exportRoadmapJson from './export.roadmap.json';
+import exportStandupJson from './export.standup.json';
 import pokerDuelJson from './poker.duel.json';
 import pokerRevealedJson from './poker.revealed.json';
 import pokerVotingJson from './poker.voting.json';
@@ -83,7 +85,7 @@ export const POKER_DUEL_WIRE = pokerDuelJson as PokerState;
 export const TICKET_PEEK_WIRE = ticketPeekJson as TicketView;
 
 /*
- * The six static exports have no `as` alias here, unlike the boards above.
+ * The eight static exports have no `as` alias here, unlike the boards above.
  * Their assertions are at the bottom of the file and that is all they are for:
  * a report's TSX takes component props, not the boot payload, so there is
  * nothing for a test to build its state from — and a cast would only be a
@@ -113,7 +115,7 @@ type Widened<T> = T extends string
  * and let a fixture satisfy `ExportBoot` by matching *some* member — including,
  * for a payload that had lost half its fields, a smaller one. Pinning the member
  * first means each fixture is checked against the interface it is actually for,
- * and the error names that interface instead of listing all six.
+ * and the error names that interface instead of listing all of them.
  */
 type BootOf<K extends ExportReport['kind']> = ExportBoot & { report: Extract<ExportReport, { kind: K }> };
 
@@ -126,7 +128,9 @@ void (ticketPeekJson satisfies Widened<TicketView>);
 void (deckJson satisfies Widened<DeckBoot>);
 void (exportAnonymizeJson satisfies Widened<BootOf<'anonymize'>>);
 void (exportPerformanceJson satisfies Widened<BootOf<'performance'>>);
+void (exportPlanJson satisfies Widened<BootOf<'plan'>>);
 void (exportPokerJson satisfies Widened<BootOf<'poker'>>);
 void (exportReportingJson satisfies Widened<BootOf<'reporting'>>);
 void (exportRetroJson satisfies Widened<BootOf<'retro'>>);
 void (exportRoadmapJson satisfies Widened<BootOf<'roadmap'>>);
+void (exportStandupJson satisfies Widened<BootOf<'standup'>>);

@@ -80,9 +80,9 @@ def test_standup_document_history_feeds_trend_chart():
         {"standup_date": "2026-07-23", "confidence_pct": 60, "status": "success"},
     ]
     doc = standup_document(StandupReport(date="2026-07-24", confidence_pct=80), history=history)
-    assert 'class="spark-wrap"' in doc.html
+    assert island(doc.html)["report"]["trend"] is not None
     # Without history the page renders unchanged (no trend chart).
-    assert 'class="spark-wrap"' not in standup_document(StandupReport(date="2026-07-24")).html
+    assert island(standup_document(StandupReport(date="2026-07-24")).html)["report"]["trend"] is None
 
 
 class TestRetroHistoryFeedsTrend:

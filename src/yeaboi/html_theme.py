@@ -23,6 +23,7 @@ import html
 import logging
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from yeaboi.web.assets import read_asset, render_page
 
@@ -412,8 +413,12 @@ def trend(
     value_key: str,
     title: str,
     label: str,
+    status_key: str = "",
     cutoff_date: str = "",
     current: tuple[str, float] | None = None,
+    max_points: int = 14,
+    floor: float | None = None,
+    ceiling: float | None = None,
 ) -> dict | None:
     """Return the export bundle's trend-card payload, or ``None`` for no chart.
 
@@ -421,21 +426,62 @@ def trend(
     :func:`history_series`), no markup. ``None`` under two points, because one
     run is not a trend — and ``None`` rather than an omitted key, so the bundle
     can tell "the server decided there is no chart" from "the field is missing".
+
+    ``floor``/``ceiling`` bound the drawn domain. They travel because they are
+    facts about the *series*, not about the drawing: a confidence percentage
+    cannot exceed 100, so padding the top past it would claim headroom that does
+    not exist. A count has a floor of 0 and no ceiling, which is the default.
     """
     points = history_series(
         rows,
         date_key=date_key,
         value_key=value_key,
+        status_key=status_key,
         cutoff_date=cutoff_date,
         current=current,
+        max_points=max_points,
     )
     if len(points) < 2:
         return None
-    return {
+    out: dict = {
         "title": title,
         "label": f"{label} — last {len(points)} runs",
         "points": [[day, value] for day, value in points],
     }
+    if floor is not None:
+        out["floor"] = floor
+    if ceiling is not None:
+        out["ceiling"] = ceiling
+    return out
+
+
+# Mirrors the export-image cap in ``export_targets._MAX_IMAGE_BYTES`` — anything
+# bigger bloats the self-contained page past usefulness.
+_MAX_EMBED_BYTES = 5 * 1024 * 1024
+
+
+def image_data_uri(path: str | Path) -> str:
+    """Return a file as a ``data:`` URI, or "" if it cannot be embedded.
+
+    Keeps an exported page self-contained and offline: screenshots and charts
+    live under ``~/.yeaboi`` and get pruned, so a page that referenced them by
+    path would quietly lose its images. Best-effort by design — a missing,
+    oversized or unreadable file is a decoration the report can do without, not
+    a reason to fail the export.
+    """
+    import base64
+    import mimetypes
+
+    p = Path(path)
+    try:
+        if not p.is_file() or p.stat().st_size > _MAX_EMBED_BYTES:
+            logger.warning("Skipping image embed (missing or too large): %s", p)
+            return ""
+        mime = mimetypes.guess_type(p.name)[0] or "image/png"
+        return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode('ascii')}"
+    except Exception as exc:  # noqa: BLE001 — embedding is best-effort decoration
+        logger.warning("Could not embed image %s: %s", p, exc)
+        return ""
 
 
 # ---------------------------------------------------------------------------

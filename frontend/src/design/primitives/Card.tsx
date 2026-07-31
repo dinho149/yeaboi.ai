@@ -4,7 +4,7 @@
  * Ports of `html_theme`'s `.card` markup and `html_theme.section`.
  */
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 import { cx } from '../../runtime/cx';
 import styles from './primitives.module.css';
@@ -16,12 +16,21 @@ export interface CardProps {
   actions?: ReactNode;
   /** Highlight the border on hover. Off by default: only do it if it is clickable. */
   interactive?: boolean;
+  /**
+   * For passing a custom property the stylesheet reads, e.g. a per-card tone.
+   *
+   * Deliberately not a general escape hatch: the plan export colours a story
+   * card by its priority, and the alternative was four hand-written CSS rules
+   * duplicating a vocabulary that already exists as a typed `Record`. Reach for
+   * `className` for anything a stylesheet can express on its own.
+   */
+  style?: CSSProperties | undefined;
   className?: string | undefined;
 }
 
-export function Card({ children, title, actions, interactive, className }: CardProps) {
+export function Card({ children, title, actions, interactive, style, className }: CardProps) {
   return (
-    <div className={cx(styles['card'], interactive && styles['cardHover'], className)}>
+    <div className={cx(styles['card'], interactive && styles['cardHover'], className)} style={style}>
       {title || actions ? (
         <div className={styles['cardHeader']}>
           <div className={styles['cardTitle']}>{title}</div>

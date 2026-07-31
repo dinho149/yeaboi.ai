@@ -1,13 +1,13 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
-from tests._pages import markup
+from tests._pages import island
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.standup import export
 from yeaboi.standup.export import (
     _leftover_links,
-    _linkify,
-    _linkify_md,
-    _team_summary_html,
+    _md_runs,
+    _runs,
+    _team_summary_runs,
     _ticket_key_map,
     build_standup_html,
     build_standup_markdown,
@@ -135,7 +135,7 @@ class TestMemberLinks:
         md = build_standup_markdown(rep)
         assert "- **Links:** [fix login](https://github.com/o/r/pull/9)" in md
 
-    def test_html_links_are_anchors_and_escaped(self):
+    def test_html_links_travel_as_label_url_pairs(self):
         rep = _report(
             member_updates=(
                 MemberUpdate(
@@ -146,44 +146,75 @@ class TestMemberLinks:
             )
         )
         html = build_standup_html(rep)
-        assert "<a href='https://x.atlassian.net/browse/PSOT-1?a=1&amp;b=2'" in html
-        assert "&lt;b&gt;PSOT-1&lt;/b&gt;" in html  # label escaped, not injected
+        assert "<b>PSOT-1</b>" not in html  # never markup in the document
+        member = island(html)["report"]["members"][0]
+        assert member["links"] == [["<b>PSOT-1</b>", "https://x.atlassian.net/browse/PSOT-1?a=1&b=2"]]
+
+    def test_unsafe_link_keeps_its_label_and_loses_its_url(self):
+        # Dropping the row would silently shrink the evidence a reader is shown.
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="work", links=(("see this", "javascript:alert(1)"),)),)
+        )
+        assert island(build_standup_html(rep))["report"]["members"][0]["links"] == [["see this", ""]]
 
     def test_no_links_no_section(self):
         md = build_standup_markdown(_report())
         assert "**Links:**" not in md
 
 
-class TestLinkify:
+class TestRuns:
+    """The `Run[]` contract that replaced the escape-then-substitute pair.
+
+    Both artifacts read this one structure — the page through `RichText`, the
+    Markdown through `_md_runs` — so these assert the *spans*, and the fact that
+    the two renderings of the same spans agree.
+    """
+
     URL = "https://x.atlassian.net/browse/PSOT-1"
 
-    def test_mapped_key_becomes_anchor(self):
-        html = _linkify("moved PSOT-1 to review", {"PSOT-1": self.URL})
-        assert f"<a href='{self.URL}' target='_blank' rel='noopener'>PSOT-1</a>" in html
+    def test_mapped_key_becomes_a_link_run(self):
+        assert _runs("moved PSOT-1 to review", {"PSOT-1": self.URL}) == [
+            {"s": "moved "},
+            {"s": "PSOT-1", "href": self.URL},
+            {"s": " to review"},
+        ]
 
-    def test_unknown_key_untouched(self):
-        html = _linkify("moved PSOT-2 to review", {"PSOT-1": self.URL})
-        assert "<a" not in html
-        assert "PSOT-2" in html
+    def test_unknown_key_is_a_plain_run(self):
+        runs = _runs("moved PSOT-2 to review", {"PSOT-1": self.URL})
+        assert all("href" not in run for run in runs)
+        assert "".join(run["s"] for run in runs) == "moved PSOT-2 to review"
 
-    def test_escapes_once_no_double_escape(self):
-        html = _linkify("a & b <script> PSOT-1", {"PSOT-1": self.URL})
-        assert "a &amp; b" in html
-        assert "&amp;amp;" not in html
-        assert "&lt;script&gt;" in html
+    def test_markup_in_the_prose_stays_text(self):
+        # No escaping anywhere: the text is a text child on the page, and the
+        # angle brackets are simply part of the string.
+        assert _runs("a & b <script> PSOT-1", {"PSOT-1": self.URL})[0] == {"s": "a & b <script> "}
 
-    def test_href_is_attribute_escaped(self):
-        html = _linkify("PSOT-1", {"PSOT-1": "https://x/browse/PSOT-1?a=1&b='c'"})
-        assert "href='https://x/browse/PSOT-1?a=1&amp;b=&#x27;c&#x27;'" in html
+    def test_unsafe_key_url_never_becomes_a_link(self):
+        # The `_ticket_key_map` fallback builds URLs from a configured base, so
+        # a hostile base must not produce a live link.
+        assert _runs("PSOT-1", {"PSOT-1": "javascript:alert(1)"}) == [{"s": "PSOT-1"}]
 
     def test_longer_key_never_half_matches(self):
-        m = {"PSOT-1": "https://x/1", "PSOT-12": "https://x/12"}
-        html = _linkify("closed PSOT-12", m)
-        assert "href='https://x/12'" in html
-        assert "https://x/1'" not in html
+        runs = _runs("closed PSOT-12", {"PSOT-1": "https://x/1", "PSOT-12": "https://x/12"})
+        assert runs[1] == {"s": "PSOT-12", "href": "https://x/12"}
 
-    def test_markdown_flavor(self):
-        assert _linkify_md("moved PSOT-1", {"PSOT-1": self.URL}) == f"moved [PSOT-1]({self.URL})"
+    def test_the_two_renderings_agree(self):
+        runs = _runs("moved PSOT-1", {"PSOT-1": self.URL})
+        assert _md_runs(runs) == f"moved [PSOT-1]({self.URL})"
+        # …and the same list is what the page gets, verbatim.
+        rep = _report(
+            team_summary="",
+            member_updates=(
+                MemberUpdate(name="Alice", summary="moved PSOT-1", ticketing_links=(("PSOT-1", self.URL),)),
+            ),
+        )
+        assert island(build_standup_html(rep))["report"]["members"][0]["summary"] == runs
+
+    def test_bold_and_link_can_share_a_sentence(self):
+        runs = _team_summary_runs("Alice shipped PSOT-1.", {"PSOT-1": self.URL}, ["Alice"])[0]
+        assert {"s": "Alice", "strong": True} in runs
+        assert {"s": "PSOT-1", "href": self.URL} in runs
+        assert _md_runs(runs) == f"**Alice** shipped [PSOT-1]({self.URL})."
 
     def test_key_map_from_link_evidence(self):
         rep = _report(
@@ -223,73 +254,73 @@ class TestLinkify:
         assert _leftover_links("quiet day", links) == list(links)
 
 
-class TestTeamSummaryHtml:
-    def test_bullets_bold_names_and_link_tickets(self):
-        html = _team_summary_html(
+class TestTeamSummaryRuns:
+    def test_one_run_list_per_sentence_with_names_and_tickets(self):
+        sentences = _team_summary_runs(
             "Alice shipped PSOT-1. Bob is blocked on the auth migration.",
             {"PSOT-1": "https://x/browse/PSOT-1"},
             ["Alice Smith", "Bob"],
         )
-        assert html.count("<li>") == 2
-        assert "<strong>Alice</strong>" in html
-        assert "<strong>Bob</strong>" in html
-        assert ">PSOT-1</a>" in html
+        assert len(sentences) == 2
+        assert {"s": "Alice", "strong": True} in sentences[0]
+        assert {"s": "PSOT-1", "href": "https://x/browse/PSOT-1"} in sentences[0]
+        assert {"s": "Bob", "strong": True} in sentences[1]
 
-    def test_single_sentence_stays_paragraph(self):
-        html = _team_summary_html("Steady progress across the board.", {}, ["Alice"])
-        assert "<ul>" not in html
-        assert "<p>Steady progress across the board.</p>" in html
+    def test_single_sentence_is_a_single_list(self):
+        # Whether that renders as a paragraph or a bullet is the bundle's call.
+        assert _team_summary_runs("Steady progress across the board.", {}, ["Alice"]) == [
+            [{"s": "Steady progress across the board."}]
+        ]
 
-    def test_full_name_not_double_bolded(self):
-        html = _team_summary_html("Alice Smith shipped it.", {}, ["Alice Smith"])
-        assert "<strong>Alice Smith</strong>" in html
-        assert "<strong><strong>" not in html
+    def test_full_name_wins_over_first_name(self):
+        # Longest-first alternation: one bold run, not a nested pair.
+        assert _team_summary_runs("Alice Smith shipped it.", {}, ["Alice Smith"])[0] == [
+            {"s": "Alice Smith", "strong": True},
+            {"s": " shipped it."},
+        ]
 
-    def test_xss_member_name_bolded_safely(self):
-        html = _team_summary_html("<i>Eve</i> shipped it.", {}, ["<i>Eve</i>"])
-        assert "<i>" not in html
-        assert "<strong>&lt;i&gt;Eve&lt;/i&gt;</strong>" in html
+    def test_a_member_name_that_looks_like_markup_stays_text(self):
+        assert _team_summary_runs("<i>Eve</i> shipped it.", {}, ["<i>Eve</i>"])[0][0] == {
+            "s": "<i>Eve</i>",
+            "strong": True,
+        }
 
-    def test_rendered_in_full_page(self):
+    def test_reaches_the_page(self):
         rep = _report(team_summary="Alice shipped the login page. Bob is blocked.")
-        html = build_standup_html(rep)
-        assert "<strong>Alice</strong>" in html
-        assert html.count("<li>Alice") <= 1  # sanity: bullets, not duplication
+        summary = island(build_standup_html(rep))["report"]["summary"]
+        assert len(summary) == 2
+        assert {"s": "Alice", "strong": True} in summary[0]
 
 
 class TestHtml:
-    def test_selfcontained_and_escaped(self):
+    def test_selfcontained_and_untrusted_text_is_data(self):
         rep = _report(team_summary="<script>alert(1)</script>")
         html = build_standup_html(rep)
         assert html.startswith("<!DOCTYPE html>")
         assert "<style>" in html  # inline CSS, self-contained
-        assert "card story-card" in html  # member cards replaced the data table
-        assert "At risk" in html
-        assert "Jira: authentication failed" in html
-        # user content is escaped, not injected
-        assert "<script>alert(1)</script>" not in html
-        assert "&lt;script&gt;" in html
+        assert "<script>alert(1)</script>" not in html  # never markup in the document
+        report = island(html)["report"]
+        assert report["confidence"]["label"] == "At risk"
+        assert report["warnings"] == ["Jira: authentication failed — check token"]
+        # The probe reaches the payload verbatim; the island's JSON encoding is
+        # what makes it inert, not an escape pass.
+        assert report["summary"] == [[{"s": "<script>alert(1)</script>"}]]
 
     def test_empty_report(self):
-        html = build_standup_html(StandupReport(date="2026-07-10"))
-        assert "No individual updates." in html
+        report = island(build_standup_html(StandupReport(date="2026-07-10")))["report"]
+        assert report["members"] == []
 
-    def test_overview_stat_tiles(self):
-        html = build_standup_html(_report())
-        assert "3 / 10" in html  # sprint day tile
-        assert "Sprint day" in html
-        assert "82%" in html  # confidence tile
-        assert ">Members</div>" in html
-        assert ">Activity items</div>" in html  # 2 + 1 = 3 items examined
-        assert ">3</div>" in html
+    def test_overview_facts(self):
+        report = island(build_standup_html(_report()))["report"]
+        assert report["sprint"] == {"name": "Sprint 5", "day": 3, "total": 10}
+        assert report["confidence"]["pct"] == 82
+        assert report["confidence"]["label"] == "At risk"
+        assert sum(n for _, n in report["activityCounts"]) == 3
 
     def test_nav_links_present_sections(self):
-        html = build_standup_html(_report())
-        assert 'href="#overview"' in html
-        assert 'href="#summary"' in html
-        assert 'href="#updates"' in html
-        assert 'href="#details"' in html
-        assert 'href="#screenshots"' not in html  # no images in the base report
+        nav = dict(tuple(entry) for entry in island(build_standup_html(_report()))["chrome"]["nav"])
+        assert set(nav) == {"overview", "summary", "updates", "details"}
+        assert "screenshots" not in nav  # no images in the base report
 
     def test_ticket_key_linked_inline_no_link_line(self):
         rep = _report(
@@ -302,30 +333,22 @@ class TestHtml:
                 ),
             )
         )
-        html = build_standup_html(rep)
-        assert ">PSOT-1</a>" in html
-        assert "🔗" not in html  # no separate link lines anywhere
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert {"s": "PSOT-1", "href": "https://x.atlassian.net/browse/PSOT-1"} in member["summary"]
+        # The key is inline in the prose, so it is not repeated as a chip.
+        assert member["categories"][0]["links"] == []
 
-    def test_blocked_member_card(self):
-        html = build_standup_html(_report())
-        assert "card story-card critical" in html  # Bob has a blocker
-        assert "badge-danger" in html
-        assert ">Blocker</span> waiting on review" in html
-        assert ">BLOCKED<" in html.upper() or ">blocked</span>" in html  # blocked chip
+    def test_blocked_member_carries_its_blocker(self):
+        members = {m["name"]: m for m in island(build_standup_html(_report()))["report"]["members"]}
+        assert members["Bob"]["blockers"] == [{"s": "waiting on review"}]
+        assert "blockers" not in members["Alice"]
 
-    def test_activity_count_chips_only_when_nonzero(self):
+    def test_activity_counts_travel_in_category_order(self):
+        # [tickets, code, docs] — the order the chips and the bars both use.
         rep = _report(
             member_updates=(MemberUpdate(name="Alice", summary="x", ticketing_activity_count=3, code_activity_count=0),)
         )
-        html = markup(build_standup_html(rep))
-        assert ">3 tickets</span>" in html
-        assert "0 code" not in html
-
-    def test_activity_count_chip_singular(self):
-        rep = _report(member_updates=(MemberUpdate(name="Alice", summary="x", ticketing_activity_count=1),))
-        html = build_standup_html(rep)
-        assert ">1 ticket</span>" in html
-        assert "1 tickets" not in html
+        assert island(build_standup_html(rep))["report"]["members"][0]["counts"] == [3, 0, 0]
 
     def test_self_report_ticket_key_linked(self):
         rep = _report(
@@ -338,14 +361,14 @@ class TestHtml:
                 ),
             )
         )
-        html = build_standup_html(rep)
-        assert "will pick up <a href='https://x.atlassian.net/browse/PSOT-14'" in html
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert {"s": "PSOT-14", "href": "https://x.atlassian.net/browse/PSOT-14"} in member["selfReport"]
 
-    def test_self_report_quote_and_you_chip(self):
-        html = build_standup_html(_report())
-        assert "class='quote'" in html
-        assert "paired with Alice on auth" in html
-        assert ">you</span>" in html
+    def test_self_report_marks_the_member_as_their_own_author(self):
+        members = {m["name"]: m for m in island(build_standup_html(_report()))["report"]["members"]}
+        assert members["Bob"]["own"] is True
+        assert "".join(r["s"] for r in members["Bob"]["selfReport"]) == "paired with Alice on auth"
+        assert "own" not in members["Alice"]
 
     def test_category_sections_render(self):
         # Adaptive grid: a category earns its column with activity or links.
@@ -365,22 +388,19 @@ class TestHtml:
                 ),
             )
         )
-        assert ">Ticketing</h3>" in html
-        assert ">Code</h3>" in html
-        assert ">Documentation</h3>" in html
+        member = island(html)["report"]["members"][0]
+        assert [c["label"] for c in member["categories"]] == ["Ticketing", "Code", "Documentation"]
 
     def test_images_base64_embedded(self, tmp_path):
         img = tmp_path / "shot.png"
         img.write_bytes(b"\x89PNG fake")
-        html = build_standup_html(_report(images=(str(img),)))
-        assert "Screenshots" in html
-        assert "data:image/png;base64," in html
+        images = island(build_standup_html(_report(images=(str(img),))))["report"]["images"]
+        assert len(images) == 1 and images[0].startswith("data:image/png;base64,")
 
     def test_missing_image_skipped(self):
         # markup(): the inlined bundle carries the duck sprites as data URIs, so
         # a check against the whole document reads those instead of the report.
-        html = markup(build_standup_html(_report(images=("/nope/gone.png",))))
-        assert "data:image" not in html
+        assert island(build_standup_html(_report(images=("/nope/gone.png",))))["report"]["images"] == []
 
 
 class TestExportWrites:
@@ -423,10 +443,8 @@ class TestSkippedSourcesLine:
         assert "Sources skipped — github (STANDUP_GITHUB_REPO not set)" in md
 
     def test_html_lists_skipped_sources_in_details(self):
-        html = build_standup_html(_report(skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),)))
-        assert "Sources skipped" in html
-        assert "NOTION_ROOT_PAGE_ID not set" in html
-        assert "ac-list" in html  # rendered inside the Details list
+        report = island(build_standup_html(_report(skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),))))
+        assert report["report"]["skipped"] == [["notion", "NOTION_ROOT_PAGE_ID not set"]]
 
     def test_plaintext_lists_skipped_sources(self):
         from yeaboi.standup.render import format_standup_plaintext
@@ -466,25 +484,25 @@ def _history(*rows):
 
 
 class TestVisuals:
-    def test_sparkline_present_with_history(self):
+    def test_trend_present_with_history(self):
         html = build_standup_html(
             _report(), history=_history(("2026-07-10", 82), ("2026-07-09", 70), ("2026-07-08", 65))
         )
-        # class attribute, not the bare token — ".spark-wrap" also lives in the stylesheet
-        assert 'class="spark-wrap"' in html and "<svg" in html
-        assert "Confidence trend" in html
+        trend = island(html)["report"]["trend"]
+        assert trend["title"] == "Confidence trend"
+        # A percentage cannot exceed 100, so the drawn domain says so.
+        assert trend["floor"] == 0 and trend["ceiling"] == 100
 
-    def test_sparkline_absent_without_trend(self):
-        assert 'class="spark-wrap"' not in build_standup_html(_report())
-        assert 'class="spark-wrap"' not in build_standup_html(_report(), history=_history(("2026-07-10", 82)))
+    def test_trend_absent_without_two_points(self):
+        assert island(build_standup_html(_report()))["report"]["trend"] is None
+        one = build_standup_html(_report(), history=_history(("2026-07-10", 82)))
+        assert island(one)["report"]["trend"] is None
 
-    def test_sparkline_oldest_date_on_left(self):
+    def test_trend_is_oldest_first(self):
         html = build_standup_html(_report(), history=_history(("2026-07-10", 82), ("2026-07-01", 50)))
-        labels = html.split('class="spark-labels"')[1]
-        first = labels.split("<span>")[1].split("</span>")[0]
-        assert first == "2026-07-01"
+        assert island(html)["report"]["trend"]["points"][0] == ["2026-07-01", 50]
 
-    def test_sparkline_skips_failed_and_dedupes_and_ignores_future(self):
+    def test_trend_skips_failed_and_dedupes_and_ignores_future(self):
         history = _history(
             ("2026-07-12", 90),  # after report.date → ignored
             ("2026-07-10", 82),
@@ -492,25 +510,22 @@ class TestVisuals:
             ("2026-07-09", 0, "failed"),  # failed → skipped
             ("2026-07-08", 60),
         )
-        html = build_standup_html(_report(), history=history)
-        points = html.split('points="')[1].split('"')[0].split()
-        assert len(points) == 2  # 07-08 and 07-10 only
-        assert "2026-07-12" not in html.split('class="spark-labels"')[1].split("</div>")[0]
+        points = island(build_standup_html(_report(), history=history))["report"]["trend"]["points"]
+        assert points == [["2026-07-08", 60], ["2026-07-10", 82]]
 
-    def test_sparkline_end_dot_uses_confidence_color(self):
+    def test_confidence_label_travels_for_the_end_dot(self):
+        # The dot's colour is the bundle's business; the label it derives from
+        # is the server's, and this is the only thing that has to cross.
         html = build_standup_html(_report(), history=_history(("2026-07-10", 82), ("2026-07-09", 70)))
-        circle = html.split("<circle")[1].split("/>")[0]
-        assert 'fill="var(--warn)"' in circle  # "At risk"
+        assert island(html)["report"]["confidence"]["label"] == "At risk"
 
-    def test_sprint_tile_progress_bar(self):
-        html = build_standup_html(_report())
-        # The bar follows the "Sprint day" label inside the same tile.
-        after_label = html.split("Sprint day</div>")[1][:200]
-        assert 'class="capacity-bar"' in after_label
-        html_no_days = build_standup_html(_report(sprint_total_days=0, sprint_day=0))
-        assert 'class="capacity-bar"' not in html_no_days.split("<footer")[0].split('<div class="container">')[1]
+    def test_sprint_progress_is_derivable(self):
+        report = island(build_standup_html(_report()))["report"]
+        assert report["sprint"]["day"] == 3 and report["sprint"]["total"] == 10
+        no_days = island(build_standup_html(_report(sprint_total_days=0, sprint_day=0)))["report"]
+        assert no_days["sprint"]["total"] == 0  # nothing to draw a bar from
 
-    def test_team_activity_bars(self):
+    def test_team_activity_counts_per_member(self):
         rep = _report(
             member_updates=(
                 MemberUpdate(name="Alice", summary="x", ticketing_activity_count=3, code_activity_count=2),
@@ -518,53 +533,24 @@ class TestVisuals:
                 MemberUpdate(name="Zed", summary="quiet"),  # all-zero → no bar row
             )
         )
-        html = build_standup_html(rep)
-        assert "Team activity" in html
-        assert html.count("class='bar-row'") == 2  # class attr — ".bar-row" also lives in the stylesheet
-        assert 'class="seg-track"' in html
-        assert "Tickets" in html and "Code" in html and "Docs" in html  # legend
-        block = html.split("Team activity")[1].split("</div></div>")[0]
-        assert "Zed" not in block
+        counts = {m["name"]: m["counts"] for m in island(build_standup_html(rep))["report"]["members"]}
+        assert counts == {"Alice": [3, 2, 0], "Bob": [0, 0, 1], "Zed": [0, 0, 0]}
 
-    def test_team_activity_absent_when_no_counts(self):
-        assert "Team activity" not in build_standup_html(_report())
+    def test_activity_counts_by_source(self):
+        assert island(build_standup_html(_report()))["report"]["activityCounts"] == [["github", 2], ["jira", 1]]
 
-    def test_source_bar_with_counted_legend(self):
-        html = build_standup_html(_report())
-        details = html.split('id="details"')[1]
-        assert "seg-track" in details
-        assert "github 2" in details and "jira 1" in details
-
-    def test_source_bar_folds_overflow_into_other(self):
-        counts = tuple((f"src{i}", 10 - i) for i in range(9))
-        html = build_standup_html(_report(activity_counts=counts))
-        details = html.split('id="details"')[1]
-        assert "other" in details
-        assert "var(--muted)" in details.split("legend")[0]  # the folded segment
-
-    def test_coverage_dots(self):
+    def test_coverage_statuses_travel_as_words(self):
         rep = _report(category_coverage=(("ticketing", "covered"), ("documentation", "not_configured")))
-        html = build_standup_html(rep)
-        li = html.split("Coverage — ")[1].split("</li>")[0]
-        assert "class='dot' style='background:var(--ok)'" in li
-        assert "class='dot' style='background:var(--low)'" in li
-        assert "covered" in li and "not configured" in li  # status words stay as text
+        assert island(build_standup_html(rep))["report"]["coverage"] == [
+            ["ticketing", "covered"],
+            ["documentation", "not_configured"],
+        ]
 
-    def test_member_avatars(self):
-        rep = _report(member_updates=(MemberUpdate(name="Alice Johnson", summary="x"),))
-        html = build_standup_html(rep)
-        assert 'class="avatar"' in html
-        assert ">AJ</span>" in html
-
-    def test_avatar_xss_name_safe(self):
+    def test_member_name_is_never_markup(self):
         rep = _report(member_updates=(MemberUpdate(name="<img src=x>", summary="x"),))
         html = build_standup_html(rep)
         assert "<img src=x>" not in html
-
-    def test_theme_vars_inside_svg(self):
-        html = build_standup_html(_report(), history=_history(("2026-07-10", 82), ("2026-07-09", 70)))
-        svg = html.split("<svg")[1].split("</svg>")[0]
-        assert "var(--accent)" in svg
+        assert island(html)["report"]["members"][0]["name"] == "<img src=x>"
 
     def test_self_contained_with_history(self):
         html = build_standup_html(_report(), history=_history(("2026-07-10", 82), ("2026-07-09", 70)))
@@ -604,12 +590,12 @@ class TestDayOverDayExport:
         md = build_standup_markdown(self._rep(confidence_delta=0, confidence_trend=""))
         assert "vs last standup" not in md
 
-    def test_html_progress_note_and_outlook_render_linkified(self):
-        html = build_standup_html(self._rep())
-        assert "Since last standup:" in html
-        assert ">Outlook</span>" in html
-        # Ticket keys inside both prose fields become inline links.
-        assert html.count("https://acme.atlassian.net/browse/PSOT-9") >= 2
+    def test_html_progress_note_and_outlook_are_linkified(self):
+        member = island(build_standup_html(self._rep()))["report"]["members"][0]
+        link = {"s": "PSOT-9", "href": "https://acme.atlassian.net/browse/PSOT-9"}
+        # Ticket keys inside both prose fields become link runs.
+        assert link in member["progressNote"]
+        assert link in member["outlook"]
 
     def test_html_trend_chip(self):
         html = build_standup_html(self._rep())
@@ -629,10 +615,9 @@ class TestDayOverDayExport:
         assert "<b>bold</b>" not in html
         assert "<i>it</i>" not in html
 
-    def test_empty_fields_render_nothing(self):
-        html = build_standup_html(_report())
-        assert "Since last standup" not in html
-        assert ">Outlook</span>" not in html
+    def test_empty_fields_are_absent_not_empty(self):
+        member = island(build_standup_html(_report()))["report"]["members"][0]
+        assert "progressNote" not in member and "outlook" not in member
 
 
 class TestCardReadability:
@@ -652,10 +637,12 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert "<li>PSOT-1593 was moved to In Progress.</li>" in html
-        assert "<li>Several sub-tasks remain in To Do</li>" in html
-        assert "<li>the access-key work is In Progress.</li>" in html
+        category = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]
+        assert [_md_runs(item) for item in category["items"]] == [
+            "PSOT-1593 was moved to In Progress.",
+            "Several sub-tasks remain in To Do",
+            "the access-key work is In Progress.",
+        ]
 
     def test_leftover_links_render_as_chip_row(self):
         rep = _report(
@@ -672,11 +659,13 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert "class='chip-row'" in html
-        assert "<a class='badge' href='https://j/browse/PSOT-2' target='_blank' rel='noopener'>PSOT-2</a>" in html
-        # The old cramped dot-separated link bullet is gone from category blocks.
-        assert "</a> · <a" not in html.split("class='analysis-grid member-grid'")[1].split("</div></div>")[0]
+        category = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]
+        # PSOT-1 is inline in the prose, so only the two unmentioned keys are
+        # left over as evidence chips.
+        assert category["links"] == [
+            ["PSOT-2", "https://j/browse/PSOT-2"],
+            ["PSOT-3", "https://j/browse/PSOT-3"],
+        ]
 
     def test_empty_category_becomes_footnote_not_column(self):
         rep = _report(
@@ -691,13 +680,14 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert "<h3>Ticketing</h3>" in html
-        assert "<h3>Documentation</h3>" not in html
-        assert (
-            "<p class='card-footnote'>Documentation — No documentation activity detected "
-            "in the selected sources.</p>" in html
-        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert [c["label"] for c in member["categories"]] == ["Ticketing"]
+        assert member["footnotes"] == [
+            {
+                "label": "Documentation",
+                "runs": [{"s": "No documentation activity detected in the selected sources."}],
+            }
+        ]
 
     def test_not_configured_wording_survives_in_footnote(self):
         rep = _report(
@@ -712,8 +702,9 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert "Documentation — Documentation sources are not configured" in html
+        # "not configured" must stay distinguishable from "no activity detected".
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert _md_runs(member["footnotes"][0]["runs"]).startswith("Documentation sources are not configured")
 
     def test_all_quiet_member_has_no_grid(self):
         rep = _report(
@@ -727,10 +718,9 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        card = html.split("Quiet")[1]
-        assert "member-grid" not in card.split("</div></div>")[0]
-        assert card.count("card-footnote") >= 3
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert member["categories"] == []
+        assert len(member["footnotes"]) == 3
 
     def test_links_only_category_still_gets_column(self):
         # Evidence links with no prose (legacy-ish shape) must not vanish.
@@ -743,9 +733,8 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert "<h3>Code</h3>" in html
-        assert "<a class='badge' href='https://g/pull/42' target='_blank' rel='noopener'>PR 42</a>" in html
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert member["categories"] == [{"label": "Code", "items": [], "links": [["PR 42", "https://g/pull/42"]]}]
 
     def test_bullets_still_linkify_ticket_keys(self):
         rep = _report(
@@ -759,7 +748,5 @@ class TestCardReadability:
                 ),
             ),
         )
-        html = build_standup_html(rep)
-        assert (
-            "<a href='https://j/browse/PSOT-9' target='_blank' rel='noopener'>PSOT-9</a> moved to review</li>" in html
-        )
+        category = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]
+        assert category["items"][0][0] == {"s": "PSOT-9", "href": "https://j/browse/PSOT-9"}
