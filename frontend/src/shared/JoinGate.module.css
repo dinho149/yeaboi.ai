@@ -6,12 +6,16 @@
  * before they are inside, so for a lot of people it is the *whole* impression
  * yeaboi makes.
  *
- * What it may say is tightly limited. `sharing/gate.py` serves a document with
- * no per-share information in it at all — no title, no mode, no host name —
- * because an unauthenticated visitor must learn nothing about what is behind
- * the gate. So the identity here is carried entirely by constants: the
- * block-glyph brand, the terminal frame, the duck. Nothing on this page varies
- * with the share, and nothing may be added that does.
+ * What it may say is tightly limited, and the limit moved once. It names the
+ * *mode* — one word from the fixed vocabulary in `web/brand.py` — and wears
+ * that mode's accent. Everything that would be a real disclosure is still
+ * withheld: the artifact's title, the host's name and machine, the sprint or
+ * period or engineer it is about, its contents, the token, the join code, and
+ * how many people are already inside. `sharing/gate.py` is the list.
+ *
+ * So the identity here is carried entirely by constants of the mode: the
+ * six-row wordmark, the terminal frame, the accent, the duck. Nothing on this
+ * page varies with the *share*, and nothing may be added that does.
  *
  * Everything colour-bearing comes from design/palette.css, so the gate follows
  * whichever theme the visitor last chose.
@@ -34,6 +38,12 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
+  /* Two children now — the card and the credit — and they must centre as a
+     pair. Without these the auto rows stretch to fill the viewport and the
+     grid centres each one inside its own half, leaving the card floating in
+     the top half with the byline stranded in the bottom. */
+  grid-auto-rows: min-content;
+  align-content: center;
   /* Landscape on a notched phone otherwise clips the card against the sensor
      housing. Padding, not margin, so the grid centring still applies. */
   padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
@@ -41,6 +51,21 @@
 
 .card {
   width: min(92vw, 430px);
+}
+
+/*
+ * The same credit every other surface carries, in the same face and tracking —
+ * it is the one piece of furniture the gate was missing. Centred under the card
+ * rather than inside it: the card is a keypad, and a byline is not part of one.
+ */
+.foot {
+  margin-top: var(--s4);
+  text-align: center;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .wordmark {

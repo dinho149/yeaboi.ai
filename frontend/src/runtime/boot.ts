@@ -15,9 +15,11 @@ export const BOOT_ELEMENT_ID = 'yeaboi-data';
 /**
  * Parse the boot payload, or return `null` when there isn't one.
  *
- * `null` is a real answer, not an error: the join gate deliberately ships with
- * no island at all, because an unauthenticated visitor must not learn the title
- * or mode of what is behind it.
+ * `null` is a real answer, not an error. The join gate carries an island now
+ * (one word: which mode), but it must still boot without one — `dev/gate.html`
+ * has none, and a browser holding a cached copy of a document served before the
+ * gate was branded has none either. A gate that threw on either would be a
+ * blank page in front of the person least able to diagnose it.
  *
  * A payload that is present but malformed is a bug in the page we just served,
  * so it throws rather than degrading — a board silently booting with no config

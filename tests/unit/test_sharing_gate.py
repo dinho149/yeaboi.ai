@@ -9,11 +9,25 @@ nowhere to send anything.
 
 from __future__ import annotations
 
+import json
 import re
 
-from tests._pages import assert_self_contained
+from tests._pages import assert_self_contained, island, markup
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
 from yeaboi.web.assets import read_asset
+from yeaboi.web.brand import MODE_LABELS, MODE_WORDMARKS
+
+
+def _html_tag(page: str) -> str:
+    """The opening ``<html …>`` tag, where ``data-mode`` lives.
+
+    Checked in isolation because the inlined bundle mentions `data-mode` too —
+    `runtime/theme.ts` sets it — so a substring search over the document would
+    pass or fail for the wrong reason.
+    """
+    match = re.search(r"<html[^>]*>", page)
+    assert match is not None
+    return match.group(0)
 
 
 def _directives(csp: str) -> dict[str, str]:
@@ -43,15 +57,80 @@ class TestGateDocument:
         assert read_asset("gate.css") in page
 
     def test_says_nothing_about_what_is_shared(self):
-        """An unauthenticated visitor must not learn the artifact's subject.
+        """It may name the mode. It may not name the share.
 
-        `ShareDocument.title` is something like "Q3 headcount plan". The page is
-        reachable by anyone holding the tunnel URL, so the shell is a constant:
-        there is no per-share data in it to leak in the first place.
+        `ShareDocument.title` is "1:1 Prep — Ada", "Retro — Sprint 42",
+        "Q3 headcount plan". The page is reachable by anyone holding the tunnel
+        URL, so the document is still a constant *of the mode*: one word from a
+        fixed vocabulary, and nothing that varies run to run.
         """
-        page = render_gate_page()
-        assert 'id="yeaboi-data"' not in page, "the gate must not carry a data island"
-        assert render_gate_page() == page  # constant, not per-share
+        page = render_gate_page("retro")
+        assert render_gate_page("retro") == page  # constant per mode, not per share
+        boot = island(page)
+        assert set(boot) == {"mode", "wordmark", "frameTitle", "heading", "eyebrow", "cta"}
+        assert boot["wordmark"] == "retro"
+        assert boot["mode"] == "retro"
+
+    def test_the_island_carries_only_the_mode_vocabulary(self):
+        """Every value must be findable in web/brand.py, not in a ShareDocument."""
+        allowed = set(MODE_WORDMARKS.values()) | {"", "yeaboi"}
+        for mode in MODE_LABELS:
+            boot = island(render_gate_page(mode))
+            assert boot["wordmark"] in allowed
+            assert boot["mode"] in set(MODE_LABELS) | {""}
+
+    def test_two_modes_produce_two_documents(self):
+        assert render_gate_page("retro") != render_gate_page("standup")
+
+    def test_names_the_mode_and_wears_its_accent(self):
+        page = render_gate_page("standup")
+        assert 'data-mode="standup"' in page
+        assert "<title>Daily Standup — shared with yeaboi</title>" in page
+        assert island(page)["wordmark"] == "standup"
+
+    def test_roadmap_borrows_plannings_accent_but_keeps_its_word(self):
+        boot = island(render_gate_page("roadmap"))
+        assert boot["mode"] == "planning"
+        assert boot["wordmark"] == "roadmap"
+
+    def test_performance_stays_anonymous(self):
+        """The one mode whose name is itself the disclosure.
+
+        Telling a stranger holding a quick-tunnel URL that somebody's 1:1 or
+        six-month review is behind the door says something real about a named
+        colleague. "A retro" does not.
+        """
+        page = render_gate_page("performance")
+        assert _html_tag(page) == '<html lang="en">'
+        assert "<title>Shared with yeaboi</title>" in page
+        assert island(page)["wordmark"] == "yeaboi"
+        # The word must not reach the visitor through the markup either — the
+        # <noscript> body is the one thing rendered with scripting off.
+        assert "performance" not in markup(page).lower()
+
+    def test_an_unknown_mode_degrades_to_the_neutral_gate(self):
+        for mode in ("", "nonsense", '" onload="alert(1)'):
+            page = render_gate_page(mode)
+            assert _html_tag(page) == '<html lang="en">', mode
+            assert island(page)["wordmark"] == "yeaboi"
+
+    def test_never_carries_the_share_title_host_or_code(self):
+        """Scoped to the island and the markup — the inlined bundle is not ours.
+
+        A blanket substring search over the whole document reads 40 KB of
+        minified CSS and JS, where "token" is a design-token comment. What this
+        test is about is what the *server* put on the page.
+
+        The probes are all things that could only have come from a
+        ``ShareDocument`` or the running server. Note that a mode's own label is
+        not one of them — "Sprint Plan" is planning's name for itself, and the
+        sprint a share is *about* never reaches here.
+        """
+        for mode in [*MODE_LABELS, ""]:
+            page = render_gate_page(mode)
+            blob = json.dumps(island(page)) + markup(page)
+            for secret in ("token", "joinCode", "shareUrl", "trycloudflare", "127.0.0.1"):
+                assert secret not in blob, f"{mode}: {secret}"
 
     def test_works_without_javascript(self):
         page = render_gate_page()
@@ -63,6 +142,7 @@ class TestGateDocument:
         assert 'content="noindex, nofollow"' in render_gate_page()
 
     def test_is_cached_per_process(self):
+        assert render_gate_page("retro") is render_gate_page("retro")
         assert render_gate_page() is render_gate_page()
 
 

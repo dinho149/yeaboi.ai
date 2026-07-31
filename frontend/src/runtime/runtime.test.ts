@@ -103,8 +103,8 @@ describe('readBoot', () => {
   }
 
   it('returns null when there is no payload', () => {
-    // A real answer, not an error: the join gate ships with no island at all,
-    // so an unauthenticated visitor learns nothing about what is behind it.
+    // A real answer, not an error: the gate must boot without an island, which
+    // is what `dev/gate.html` and any cached pre-branding document give it.
     expect(readBoot()).toBeNull();
   });
 

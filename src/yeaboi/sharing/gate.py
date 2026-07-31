@@ -2,8 +2,23 @@
 
 The gate is what an unauthenticated visitor gets at ``GET /`` on a tunnel URL.
 It is rendered from the committed ``gate`` bundle (``frontend/src/gate``) rather
-than a Python string, so the retro and poker boards can reuse the same React
-component when they migrate.
+than a Python string, so the retro and poker boards reuse the same React
+component.
+
+**What this page may say.** It is reachable by anyone holding the tunnel URL, so
+whatever it says is said to a stranger. It names the *mode* — one word from the
+fixed vocabulary in ``web/brand.py`` — and wears that mode's accent, because a
+teammate who followed a link deserves to know what they are being asked to join,
+and "a retro" tells a stranger nothing the host's message did not.
+
+Everything that would actually be a disclosure is still withheld:
+
+* the artifact's title (``ShareDocument.title`` is "1:1 Prep — Ada", "Retro —
+  Sprint 42"; the tab title here comes from ``MODE_LABELS`` and never from it),
+* the host's name and machine, the sprint, period or engineer it is about,
+* its contents, the access token, the join code, and how many people are inside.
+
+``performance`` is excluded from even the mode name — see ``GATE_BRANDED_MODES``.
 
 # See docs: "Guardrails" — access control and untrusted browser input
 """
@@ -14,6 +29,13 @@ import logging
 from functools import lru_cache
 
 from yeaboi.web.assets import render_page
+from yeaboi.web.brand import (
+    GATE_BRANDED_MODES,
+    MODE_LABELS,
+    MODE_SHARE_PHRASES,
+    MODE_WORDMARKS,
+    accent_mode,
+)
 
 # The two policies this module's surfaces run under live in ``web.security``
 # alongside the board's, so that all three are written and reviewed together.
@@ -24,32 +46,66 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["ARTIFACT_CSP", "GATE_CSP", "render_gate_page"]
 
-# Shown only when scripting is off. It is also the entire server-rendered body:
-# an unauthenticated visitor must learn nothing about what is behind the gate,
-# so no title, no mode, no host name — the same silence the old inline gate kept.
-_NOSCRIPT = (
-    "<noscript><main>"
-    "<h1>Someone shared an output with you</h1>"
-    "<p>Enter the access code shown by the host to view it. "
-    "This page needs JavaScript to check the code, and it disappears when the "
-    "host stops sharing.</p>"
-    "</main></noscript>"
-)
+# What an unbranded gate says — the neutral fallback for `performance` and for
+# any mode the vocabulary does not know.
+_NEUTRAL_TITLE = "Shared with yeaboi"
+_NEUTRAL_HEADING = "Someone shared this with you"
 
 
-@lru_cache(maxsize=1)
-def render_gate_page() -> str:
-    """Return the join-gate document.
+def _noscript(heading: str) -> str:
+    """The entire server-rendered body — shown only when scripting is off.
 
-    Constant — it carries no per-share data, deliberately (see ``_NOSCRIPT``),
-    so it is built once per process. The token and join code never appear in
-    it; the code is checked server-side in ``sharing.server``.
+    Everything on it is a constant of the mode, never of the share.
     """
+    return (
+        "<noscript><main>"
+        f"<h1>{heading}</h1>"
+        "<p>Enter the access code shown by the host to view it. "
+        "This page needs JavaScript to check the code, and it disappears when the "
+        "host stops sharing.</p>"
+        "</main></noscript>"
+    )
+
+
+@lru_cache(maxsize=16)
+def render_gate_page(mode: str = "") -> str:
+    """Return the join-gate document for ``mode``.
+
+    Still a per-process constant, just one per mode rather than one overall:
+    nothing in it varies with the share, so ``render_gate_page("retro") is
+    render_gate_page("retro")`` holds. Sixteen slots covers the eight modes, the
+    empty default, and room to grow.
+
+    The token and join code never appear in it; the code is checked server-side
+    in ``sharing.server``.
+    """
+    branded = mode in GATE_BRANDED_MODES
+    label = MODE_LABELS.get(mode, "") if branded else ""
+    wordmark = MODE_WORDMARKS.get(mode, "yeaboi") if branded else "yeaboi"
+    accent = accent_mode(mode) if branded else ""
+
+    phrase = MODE_SHARE_PHRASES.get(mode, "") if branded else ""
+    title = f"{label} — shared with yeaboi" if label else _NEUTRAL_TITLE
+    heading = f"Someone shared {phrase} with you" if phrase else _NEUTRAL_HEADING
+
+    boot = {
+        "mode": accent,
+        "wordmark": wordmark,
+        "frameTitle": f"yeaboi — {accent}" if accent else "yeaboi",
+        "heading": heading,
+        "eyebrow": "Shared from a terminal",
+        "cta": "Open",
+    }
+
     html = render_page(
         bundle="gate",
-        title="Shared with yeaboi",
-        body=_NOSCRIPT,
+        title=title,
+        data=boot,
+        body=_noscript(heading),
         head='<meta name="robots" content="noindex, nofollow">',
+        # `accent` comes from accent_mode()'s allowlist, so it is safe to
+        # interpolate — an unknown mode yields "" and no attribute at all.
+        html_attrs=f'data-mode="{accent}"' if accent else "",
     )
-    logger.debug("gate page rendered (%d bytes)", len(html))
+    logger.debug("gate page rendered for mode=%r (%d bytes)", mode, len(html))
     return html

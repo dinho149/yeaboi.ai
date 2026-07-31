@@ -14,6 +14,7 @@ import json
 from yeaboi.web.brand import (
     GATE_BRANDED_MODES,
     MODE_LABELS,
+    MODE_SHARE_PHRASES,
     MODE_WORDMARKS,
     accent_mode,
     build_chrome,
@@ -22,8 +23,14 @@ from yeaboi.web.brand import (
 
 
 class TestModeVocabulary:
-    def test_every_mode_has_a_label_and_a_wordmark(self):
-        assert set(MODE_LABELS) == set(MODE_WORDMARKS)
+    def test_every_mode_has_a_label_a_wordmark_and_a_phrase(self):
+        assert set(MODE_LABELS) == set(MODE_WORDMARKS) == set(MODE_SHARE_PHRASES)
+
+    def test_share_phrases_read_as_english(self):
+        """They are pasted into "Someone shared ___ with you"."""
+        for mode, phrase in MODE_SHARE_PHRASES.items():
+            assert phrase[:2] in ("a ", "an"), f"{mode}: {phrase!r} needs an article"
+            assert phrase == phrase.lower(), f"{mode}: {phrase!r} mid-sentence must not be title case"
 
     def test_wordmarks_are_short_enough_for_the_display_face(self):
         # The face is a grid of block glyphs at roughly three columns a letter,

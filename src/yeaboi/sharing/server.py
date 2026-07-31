@@ -71,7 +71,13 @@ class _OutputHandler(BaseHTTPRequestHandler):
         # The gate ran without a CSP until now — an omission, not a decision.
         # It is the one page here that executes a bundle *and* talks back to the
         # server, so it is the one that most wanted a policy.
-        self._send(200, render_gate_page().encode(), "text/html; charset=utf-8", csp=GATE_CSP)
+        #
+        # `source_mode` is the only thing the gate learns about the share, and
+        # the only thing it says: see the module docstring in sharing/gate.py
+        # for what stays withheld.
+        document = self.server.document  # type: ignore[attr-defined]
+        gate = render_gate_page(document.source_mode).encode()
+        self._send(200, gate, "text/html; charset=utf-8", csp=GATE_CSP)
 
     def do_POST(self) -> None:  # noqa: N802
         if urlparse(self.path).path != "/api/join":

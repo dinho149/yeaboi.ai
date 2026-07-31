@@ -44,6 +44,23 @@ MODE_WORDMARKS: dict[str, str] = {
     "roadmap": "roadmap",
 }
 
+# What the gate says a visitor is being invited to.
+#
+# Spelled out rather than derived from the label or the wordmark, because
+# deriving it produces English nobody would write: the wordmark gives
+# "Someone shared a team with you" and the label gives "a Planning Poker".
+# Eight strings of user-facing copy are worth eight strings.
+MODE_SHARE_PHRASES: dict[str, str] = {
+    "standup": "a standup",
+    "retro": "a retro",
+    "poker": "a planning poker session",
+    "reporting": "a delivery report",
+    "planning": "a sprint plan",
+    "analysis": "a team profile",
+    "performance": "a performance artifact",
+    "roadmap": "a roadmap",
+}
+
 # Modes that own a ``[data-mode]`` accent in frontend/src/design/tokens.css.
 # Every entry here must have both a dark and a light rendition there;
 # ``test_every_mode_accent_has_a_light_rendition`` enforces that side.

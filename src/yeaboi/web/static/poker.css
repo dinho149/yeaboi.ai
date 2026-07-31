@@ -1295,12 +1295,16 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * before they are inside, so for a lot of people it is the *whole* impression
  * yeaboi makes.
  *
- * What it may say is tightly limited. `sharing/gate.py` serves a document with
- * no per-share information in it at all — no title, no mode, no host name —
- * because an unauthenticated visitor must learn nothing about what is behind
- * the gate. So the identity here is carried entirely by constants: the
- * block-glyph brand, the terminal frame, the duck. Nothing on this page varies
- * with the share, and nothing may be added that does.
+ * What it may say is tightly limited, and the limit moved once. It names the
+ * *mode* — one word from the fixed vocabulary in `web/brand.py` — and wears
+ * that mode's accent. Everything that would be a real disclosure is still
+ * withheld: the artifact's title, the host's name and machine, the sprint or
+ * period or engineer it is about, its contents, the token, the join code, and
+ * how many people are already inside. `sharing/gate.py` is the list.
+ *
+ * So the identity here is carried entirely by constants of the mode: the
+ * six-row wordmark, the terminal frame, the accent, the duck. Nothing on this
+ * page varies with the *share*, and nothing may be added that does.
  *
  * Everything colour-bearing comes from design/palette.css, so the gate follows
  * whichever theme the visitor last chose.
@@ -1316,41 +1320,62 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * entire tree) did not, so a teammate following a tunnel link met a card jammed
  * into the top-left corner. One definition, in the component that needs it.
  */
-._shell_1f07a_30 {
+._shell_vc236_34 {
   /* dvh, not vh: on iOS Safari the collapsing URL bar makes 100vh taller than
      the visible viewport, which pushes a centred card off-screen. Most people
      open a tunnel link on a phone, so this is the common case, not the edge. */
   min-height: 100dvh;
   display: grid;
   place-items: center;
+  /* Two children now — the card and the credit — and they must centre as a
+     pair. Without these the auto rows stretch to fill the viewport and the
+     grid centres each one inside its own half, leaving the card floating in
+     the top half with the byline stranded in the bottom. */
+  grid-auto-rows: min-content;
+  align-content: center;
   /* Landscape on a notched phone otherwise clips the card against the sensor
      housing. Padding, not margin, so the grid centring still applies. */
   padding: var(--s4) max(var(--s4), env(safe-area-inset-right)) var(--s4) max(var(--s4), env(safe-area-inset-left));
 }
 
-._card_1f07a_42 {
+._card_vc236_52 {
   width: min(92vw, 430px);
 }
 
-._wordmark_1f07a_46 {
+/*
+ * The same credit every other surface carries, in the same face and tracking —
+ * it is the one piece of furniture the gate was missing. Centred under the card
+ * rather than inside it: the card is a keypad, and a byline is not part of one.
+ */
+._foot_vc236_61 {
+  margin-top: var(--s4);
+  text-align: center;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+._wordmark_vc236_71 {
   /* Large enough to be the first thing seen, and the reason there is no logo
      image on this page: it is text, so it costs nothing and scales cleanly. */
   font-size: 17px;
   margin-bottom: var(--s4);
 }
 
-._eyebrow_1f07a_53 {
+._eyebrow_vc236_78 {
   display: block;
   margin-bottom: var(--s2);
 }
 
-._heading_1f07a_58 {
+._heading_vc236_83 {
   margin: 0 0 var(--s2);
   font-size: 1.35rem;
   line-height: 1.25;
 }
 
-._blurb_1f07a_64 {
+._blurb_vc236_89 {
   color: var(--muted);
   font-size: var(--fs-s);
   line-height: 1.55;
@@ -1359,7 +1384,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* The label and the duck share a baseline row, so the bird sits on the field
    rather than floating beside it. */
-._labelRow_1f07a_73 {
+._labelRow_vc236_98 {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1370,7 +1395,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   overflow: visible;
 }
 
-._label_1f07a_73 {
+._label_vc236_98 {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   font-weight: 500;
@@ -1379,14 +1404,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   color: var(--muted);
 }
 
-._duck_1f07a_93 {
+._duck_vc236_118 {
   /* Sits down onto the input's top edge. Negative margin rather than absolute
      positioning so it still participates in the flex row and cannot end up
      overlapping the label on a narrow phone. */
   margin-bottom: -10px;
 }
 
-._code_1f07a_100 {
+._code_vc236_125 {
   width: 100%;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line-strong);
@@ -1404,20 +1429,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
 }
 
-._code_1f07a_100::placeholder {
+._code_vc236_125::placeholder {
   color: var(--dim);
   font-weight: 500;
 }
 
-._code_1f07a_100:focus-visible {
+._code_vc236_125:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-._wrong_1f07a_129 {
+._wrong_vc236_154 {
   border-color: var(--danger);
-  animation: _shake_1f07a_1 220ms ease-in-out;
+  animation: _shake_vc236_1 220ms ease-in-out;
 }
 
 /*
@@ -1427,12 +1452,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * and the red never showed: the one state the border exists to signal was the
  * one state it could not reach.
  */
-._wrong_1f07a_129:focus-visible {
+._wrong_vc236_154:focus-visible {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
-._go_1f07a_146 {
+._go_vc236_171 {
   width: 100%;
   /* 44px floor — this is a phone-first surface and the WCAG 2.2 target
      minimum is 24px; 44 is Apple's and is what a thumb actually wants. */
@@ -1454,23 +1479,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 
-._go_1f07a_146:hover:not(:disabled) {
+._go_vc236_171:hover:not(:disabled) {
   filter: brightness(1.08);
 }
 
-._go_1f07a_146:focus-visible {
+._go_vc236_171:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 
-._go_1f07a_146:disabled {
+._go_vc236_171:disabled {
   /* Visibly inert rather than hidden: the button is disabled until eight
      characters are in, which doubles as progress feedback. */
   opacity: 0.45;
   cursor: default;
 }
 
-._status_1f07a_184 {
+._status_vc236_209 {
   /* Reserved height — the card must not resize when a message appears. */
   min-height: 1.4rem;
   margin: var(--s2) 0 0;
@@ -1479,11 +1504,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-align: center;
 }
 
-._bad_1f07a_193 {
+._bad_vc236_218 {
   color: var(--danger);
 }
 
-@keyframes _shake_1f07a_1 {
+@keyframes _shake_vc236_1 {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
@@ -1493,8 +1518,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
    colour change; the motion is decoration and must be droppable. The duck's
    own startle is neutralised by the global guard in tokens.css. */
 @media (prefers-reduced-motion: reduce) {
-  ._wrong_1f07a_129 { animation: none; }
-  ._go_1f07a_146 { transition: none; }
+  ._wrong_vc236_154 { animation: none; }
+  ._go_vc236_171 { transition: none; }
 }
 /*
  * The poker board.
