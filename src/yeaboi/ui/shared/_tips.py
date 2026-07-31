@@ -30,6 +30,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
+from yeaboi.beta import BETA_LABEL
+
 # Seconds each tip stays on screen before the next one rotates in.
 TIP_ROTATE_SECONDS = 6.0
 
@@ -43,12 +45,16 @@ class FeatureTip:
     synthetic keys and are exempt from parity. ``mode_key`` is the ``_MODE_CARDS``
     key to jump to when the user presses the open key, or ``None`` when the feature
     isn't reachable as a home-screen mode. ``is_new`` renders a small NEW badge.
+    ``is_beta`` renders a BETA badge — the capability ships and works, but its
+    output isn't verified yet. The two are different claims and must not be
+    conflated; where both are set, BETA wins (see the render sites).
     """
 
     key: str
     text: str
     mode_key: str | None = None
     is_new: bool = False
+    is_beta: bool = False
 
 
 # Feature tips — one per user-facing capability. Each is short (one line) and
@@ -88,6 +94,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "performance",
         "\U0001f3af Tip: Performance preps 1:1s and 6-month reviews from real delivery data",
         mode_key="performance",
+        # Not is_new: the mode isn't recent, it's unverified. The text stays a
+        # plain capability description — the gallery strips the "Tip: " prefix,
+        # so a caveat written into the prose renders inconsistently across the
+        # two surfaces where a flag renders the same on both.
+        is_beta=True,
     ),
     FeatureTip(
         "reporting",
@@ -175,7 +186,8 @@ def build_tips_text() -> str:
     Powers the "Copy all" action on the All Tips page, mirroring
     ``build_changelog_text``. Pure — :func:`get_tips` already resolves
     voice/music availability. Carded tips note the mode they open (by its
-    friendly ``_MODE_CARDS`` title) and freshly-shipped ones are marked ``(NEW)``.
+    friendly ``_MODE_CARDS`` title), freshly-shipped ones are marked ``(NEW)``
+    and unverified ones ``(BETA)``.
     """
     # Lazy import to avoid a UI import cycle (screens import from this module).
     from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
@@ -184,7 +196,11 @@ def build_tips_text() -> str:
     lines = ["# yeaboi — Tips", ""]
     for tip in get_tips():
         line = f"- {tip.text}"
-        if tip.is_new:
+        # BETA outranks NEW: a maturity caveat matters more than a freshness cue,
+        # and a copied tip list that says both reads as neither.
+        if tip.is_beta:
+            line += f" ({BETA_LABEL})"
+        elif tip.is_new:
             line += " (NEW)"
         if tip.mode_key and tip.mode_key in titles:
             line += f" → opens {titles[tip.mode_key]}"

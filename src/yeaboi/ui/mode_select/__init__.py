@@ -74,6 +74,7 @@ from yeaboi.ui.shared._animations import (
     FRAME_TIME_60FPS,
     ease_out_cubic,
 )
+from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
@@ -11441,7 +11442,13 @@ def select_mode(
             if chosen["key"] == "performance":
                 logger.info("Performance mode selected")
                 with mode_log("performance"):
-                    _run_performance_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                    # Beta gate first: the mode drafts material about named
+                    # people, so the caveat comes before the roster, not after.
+                    # Shown once ever; a decline returns to the menu unrecorded.
+                    if show_beta_notice(
+                        live, console, read_key, _FRAME_TIME, _supports_timeout, mode_key="performance"
+                    ):
+                        _run_performance_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
                 _restart_mode_select = True
                 _skip_fade_in = True
                 continue

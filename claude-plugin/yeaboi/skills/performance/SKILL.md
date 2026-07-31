@@ -1,9 +1,13 @@
 ---
 name: performance
-description: "Manage engineers with yeaboi: 1:1 prep from real delivery data, 1:1 completion summaries with tracked action items, periodic performance reviews, and quick notes. Use when the user wants to prepare for a 1:1, write up a held 1:1, draft a performance review, or record an observation about an engineer."
+description: "(beta) Manage engineers with yeaboi: 1:1 prep from real delivery data, 1:1 completion summaries with tracked action items, periodic performance reviews, and quick notes. Use when the user wants to prepare for a 1:1, write up a held 1:1, draft a performance review, or record an observation about an engineer."
 ---
 
 # Performance workflows with yeaboi
+
+> **Beta.** Performance mode is in beta — its output is not yet verified against real delivery data.
+> Treat every 1:1 prep, summary and review as a draft to edit, not a verdict, and
+> say so when you present it to the user.
 
 1. **Know the roster.** Call `perf_roster` to list the engineers derived from
    recent Jira/Azure DevOps assignees — these are the names every other tool
@@ -25,8 +29,9 @@ description: "Manage engineers with yeaboi: 1:1 prep from real delivery data, 1:
    - **Record an observation** → `perf_note_add` with the engineer and the
      note. Notes feed future preps and reviews.
 
-3. **Surface `warnings`** (tracker 401s, missing SMTP, LLM fallback) so the
-   user knows what informed — or didn't inform — the output.
+3. **Surface `warnings`** (the beta caveat, tracker 401s, missing SMTP, LLM
+   fallback) so the user knows what informed — or didn't inform — the output.
+   Every perf tool now returns the beta caveat as its first warning.
 
 4. **Sensitive data.** This is personnel material: keep it in the conversation,
    don't post it anywhere external unless explicitly asked. Exports auto-save

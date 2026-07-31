@@ -15,6 +15,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from yeaboi.beta import BETA_LABEL, BETA_RGB
 from yeaboi.ui.mode_select.screens._analysis_sections import (
     _TA_CARDS,
     _measure_render_height,
@@ -3152,6 +3153,7 @@ def _build_all_tips_screen(
     sub = build_reveal_subtitle("Everything yeaboi can do", sub_reveal, pad=_PAD + "  ")
     cards = {card["key"]: card for card in _MODE_CARDS}
     gold = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
+    beta_c = f"rgb({BETA_RGB[0]},{BETA_RGB[1]},{BETA_RGB[2]})"
 
     body_lines: list = []
     if message:
@@ -3215,12 +3217,15 @@ def _build_all_tips_screen(
                 prefix = bullet_prefix if i == 0 else continuation_prefix
                 body_lines.append(Text(prefix + chunk, style=theme.value, justify="left"))
 
-            if tip.is_new or (tip.mode_key and tip.mode_key in cards):
+            if tip.is_beta or tip.is_new or (tip.mode_key and tip.mode_key in cards):
                 metadata = Text(continuation_prefix, justify="left")
-                if tip.is_new:
+                # Same precedence as the welcome tip row: BETA outranks NEW.
+                if tip.is_beta:
+                    metadata.append(BETA_LABEL, style=f"bold {beta_c}")
+                elif tip.is_new:
                     metadata.append("NEW", style=f"bold {gold}")
                 if tip.mode_key and tip.mode_key in cards:
-                    if tip.is_new:
+                    if tip.is_beta or tip.is_new:
                         metadata.append("  ·  ", style=theme.sep)
                     metadata.append("opens ", style=theme.muted)
                     card = cards[tip.mode_key]
@@ -3556,11 +3561,25 @@ def _build_performance_screen(
     # See docs: "Performance Mode" — TUI page
     """
     from yeaboi.ui.mode_select.screens._screens import _build_mode_row
-    from yeaboi.ui.shared._components import PERFORMANCE_THEME, build_reveal_subtitle, performance_title
+    from yeaboi.ui.shared._components import (
+        PERFORMANCE_THEME,
+        build_badge,
+        build_reveal_subtitle,
+        performance_title,
+    )
 
     theme = PERFORMANCE_THEME
     _accent = "rgb(220,110,90)"  # PERFORMANCE_THEME accent — the mode-row colour key
     title = performance_title(shimmer_tick, width=width)
+    # The BETA chip is the standing reminder once the one-time entry notice has
+    # been dismissed, so it sits on the header of both views. Appended here rather
+    # than inside performance_title(): that wordmark is shared with the export
+    # picker and the run hub, which we didn't decide to label. no_wrap keeps the
+    # header at TITLE_ROWS rows, which the viewport maths assumes.
+    title.append("  ")
+    title.append_text(build_badge(BETA_LABEL))
+    title.no_wrap = True
+    title.overflow = "crop"
     view = performance_data.get("view", "roster")
     session_name = performance_data.get("session_name", "")
 

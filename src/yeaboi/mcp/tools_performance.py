@@ -8,6 +8,7 @@ import logging
 # stringified type hints (PEP 563) of tool functions against this namespace.
 from mcp.server.fastmcp import Context
 
+from yeaboi.beta import PERFORMANCE_BETA_NOTICE
 from yeaboi.mcp.runtime import run_engine, run_readonly
 
 logger = logging.getLogger(__name__)
@@ -91,14 +92,41 @@ def _six_month_review(engineer: str, period_months: int, session_id: str, jira_p
     )
 
 
+def _with_beta(payload: dict) -> dict:
+    """Prepend the beta caveat to a success envelope's warnings.
+
+    ``warnings`` is the only envelope field that both the server instructions and
+    the performance skill tell the client to surface *to the user*; a tool
+    description only ever reaches the model. For drafts about named people, that
+    difference is the whole point.
+
+    Applied here in the adapter and NEVER in the engine artifact's own warnings
+    tuple: ``cli._strict_exit`` maps any engine warning to exit 3, so pushing it
+    down there would make every ``yeaboi perf … --strict`` run fail forever.
+
+    Failure envelopes are skipped — they carry no ``warnings`` key, and the user
+    already has a bigger problem than the maturity of the mode.
+    """
+    if payload.get("ok"):
+        payload["warnings"] = [PERFORMANCE_BETA_NOTICE, *payload.get("warnings", [])]
+    return payload
+
+
 def register(app) -> None:
     """Attach the performance tools to the FastMCP app."""
 
+    # NOTE: the "BETA — " prefixes below are hand-written literals, not f-strings.
+    # FastMCP captures each tool's description from ``fn.__doc__`` at decoration
+    # time, so an f-string docstring is a syntax error and reassigning __doc__
+    # afterwards is a no-op. test_mcp_server pins them against BETA_LABEL.
+
     @app.tool()
     async def perf_roster(jira_project: str = "", azdo_project: str = "") -> dict:
-        """List the engineer roster derived from recent Jira/Azure DevOps assignees —
-        the engineer names the other perf_* tools accept."""
-        return await run_readonly(_roster, jira_project, azdo_project)
+        """BETA — List the engineer roster derived from recent Jira/Azure DevOps assignees —
+        the engineer names the other perf_* tools accept.
+
+        Performance mode is in beta — its output is not yet verified against real delivery data."""
+        return _with_beta(await run_readonly(_roster, jira_project, azdo_project))
 
     @app.tool()
     async def perf_one_on_one_prep(
@@ -108,9 +136,12 @@ def register(app) -> None:
         jira_project: str = "",
         azdo_project: str = "",
     ) -> dict:
-        """Prepare a 1:1 for an engineer: talking points, feedback, goals and growth areas from
-        their recent tickets plus open action items from the previous 1:1."""
-        return await run_engine(ctx, _one_on_one_prep, engineer, session_id, jira_project, azdo_project)
+        """BETA — Prepare a 1:1 for an engineer: talking points, feedback, goals and growth areas
+        from their recent tickets plus open action items from the previous 1:1.
+
+        Performance mode is in beta — its output is not yet verified against real delivery data.
+        Present it as a draft for the lead to edit, not a verdict."""
+        return _with_beta(await run_engine(ctx, _one_on_one_prep, engineer, session_id, jira_project, azdo_project))
 
     @app.tool()
     async def perf_one_on_one_complete(
@@ -122,19 +153,24 @@ def register(app) -> None:
         recipients: list[str] | None = None,
         images: list[str] | None = None,
     ) -> dict:
-        """Complete a held 1:1 from its notes/transcript: produces a summary and tracked action
-        items (carried into the next prep). images takes local file paths of photographed notes
-        to include in the multimodal call. deliver=true emails the summary via the configured
-        SMTP — ask the user before enabling."""
-        return await run_engine(
-            ctx, _one_on_one_complete, engineer, transcript, session_id, deliver, recipients, images
+        """BETA — Complete a held 1:1 from its notes/transcript: produces a summary and tracked
+        action items (carried into the next prep). images takes local file paths of photographed
+        notes to include in the multimodal call. deliver=true emails the summary via the configured
+        SMTP — ask the user before enabling.
+
+        Performance mode is in beta — its output is not yet verified against real delivery data.
+        Present it as a draft for the lead to edit, not a verdict."""
+        return _with_beta(
+            await run_engine(ctx, _one_on_one_complete, engineer, transcript, session_id, deliver, recipients, images)
         )
 
     @app.tool()
     async def perf_note_add(engineer: str, note_text: str) -> dict:
-        """Record a free-text note about an engineer (an observation, kudos, a concern).
-        Notes feed the next 1:1 prep and the periodic review for that engineer."""
-        return await run_readonly(_note_add, engineer, note_text)
+        """BETA — Record a free-text note about an engineer (an observation, kudos, a concern).
+        Notes feed the next 1:1 prep and the periodic review for that engineer.
+
+        Performance mode is in beta — its output is not yet verified against real delivery data."""
+        return _with_beta(await run_readonly(_note_add, engineer, note_text))
 
     @app.tool()
     async def perf_six_month_review(
@@ -145,6 +181,11 @@ def register(app) -> None:
         jira_project: str = "",
         azdo_project: str = "",
     ) -> dict:
-        """Draft an engineer's periodic performance review from past 1:1s, delivery history and
-        the competency framework (bundled default, or PERFORMANCE_FRAMEWORK_PATH)."""
-        return await run_engine(ctx, _six_month_review, engineer, period_months, session_id, jira_project, azdo_project)
+        """BETA — Draft an engineer's periodic performance review from past 1:1s, delivery history
+        and the competency framework (bundled default, or PERFORMANCE_FRAMEWORK_PATH).
+
+        Performance mode is in beta — its output is not yet verified against real delivery data.
+        Present it as a draft for the lead to edit, not a verdict."""
+        return _with_beta(
+            await run_engine(ctx, _six_month_review, engineer, period_months, session_id, jira_project, azdo_project)
+        )

@@ -5,7 +5,10 @@ import os
 import pytest
 
 from yeaboi.config import (
+    BETA_ACK_KEY,
+    FORCE_BETA_NOTICE_ENV,
     VALID_LOG_LEVELS,
+    beta_notices_acked,
     detect_proxy,
     disable_langsmith_tracing,
     get_anthropic_api_key,
@@ -20,9 +23,12 @@ from yeaboi.config import (
     get_team_analysis_fast_model,
     get_team_analysis_llm_max_concurrency,
     get_team_analysis_llm_target_seconds,
+    is_beta_notice_enabled,
+    is_beta_notice_seen,
     is_langsmith_enabled,
     is_tips_enabled,
     load_user_config,
+    mark_beta_notice_seen,
     set_log_level,
     set_tips_enabled,
 )
@@ -179,6 +185,88 @@ def test_set_tips_enabled_round_trips(monkeypatch, tmp_path):
     set_tips_enabled(True)
     assert os.environ["TIPS_ENABLED"] == "true"
     assert is_tips_enabled() is True
+
+
+class TestBetaNotices:
+    """The one-time beta-notice acknowledgement (persisted to ~/.yeaboi/.env)."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_env(self, monkeypatch, tmp_path):
+        self.config_file = tmp_path / ".env"
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: self.config_file)
+        monkeypatch.delenv(BETA_ACK_KEY, raising=False)
+        monkeypatch.delenv(FORCE_BETA_NOTICE_ENV, raising=False)
+
+    def test_unseen_by_default(self):
+        assert is_beta_notice_seen("performance") is False
+        assert beta_notices_acked() == set()
+
+    def test_mark_round_trips(self):
+        mark_beta_notice_seen("performance")
+
+        assert os.environ[BETA_ACK_KEY] == "performance"
+        assert BETA_ACK_KEY in self.config_file.read_text()
+        assert is_beta_notice_seen("performance") is True
+
+    def test_other_modes_stay_unseen(self):
+        mark_beta_notice_seen("performance")
+        assert is_beta_notice_seen("reporting") is False
+
+    def test_accumulates_without_duplicating(self):
+        mark_beta_notice_seen("performance")
+        mark_beta_notice_seen("reporting")
+        mark_beta_notice_seen("performance")
+
+        assert beta_notices_acked() == {"performance", "reporting"}
+        assert os.environ[BETA_ACK_KEY] == "performance,reporting"
+
+    @pytest.mark.parametrize("raw", ["", "   ", ",,", " , performance ,"])
+    def test_tolerates_hand_edited_values(self, monkeypatch, raw):
+        # The key lives in a file users open to edit their API keys.
+        monkeypatch.setenv(BETA_ACK_KEY, raw)
+        assert is_beta_notice_seen("reporting") is False
+        assert is_beta_notice_seen("performance") is ("performance" in raw)
+
+    @pytest.mark.parametrize("forced", ["1", "true", "TRUE", "yes", "on"])
+    def test_force_flag_regates_an_acked_mode(self, monkeypatch, forced):
+        mark_beta_notice_seen("performance")
+        monkeypatch.setenv(FORCE_BETA_NOTICE_ENV, forced)
+        assert is_beta_notice_seen("performance") is False
+
+    def test_force_flag_accepts_a_mode_list(self, monkeypatch):
+        mark_beta_notice_seen("performance")
+        mark_beta_notice_seen("reporting")
+        monkeypatch.setenv(FORCE_BETA_NOTICE_ENV, "performance")
+
+        assert is_beta_notice_seen("performance") is False
+        assert is_beta_notice_seen("reporting") is True
+
+    def test_unwritable_config_still_suppresses_for_this_session(self, monkeypatch):
+        def _boom(key, value):
+            raise OSError("read-only file system")
+
+        monkeypatch.setattr("yeaboi.config.set_config_value", _boom)
+
+        mark_beta_notice_seen("performance")  # must not raise
+
+        assert is_beta_notice_seen("performance") is True
+
+
+class TestIsBetaNoticeEnabled:
+    def test_enabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("BETA_NOTICES_ENABLED", raising=False)
+        assert is_beta_notice_enabled() is True
+
+    @pytest.mark.parametrize("value", ["false", "FALSE", "  false  "])
+    def test_disabled_when_false(self, monkeypatch, value):
+        monkeypatch.setenv("BETA_NOTICES_ENABLED", value)
+        assert is_beta_notice_enabled() is False
+
+    @pytest.mark.parametrize("value", ["0", "off", "nonsense"])
+    def test_only_false_disables_it(self, monkeypatch, value):
+        # Opt-out semantics: a typo must not silently hide the caveat.
+        monkeypatch.setenv("BETA_NOTICES_ENABLED", value)
+        assert is_beta_notice_enabled() is True
 
 
 class TestSetLogLevel:

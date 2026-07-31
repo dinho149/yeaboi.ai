@@ -10,6 +10,7 @@ import os
 import pytest
 
 from yeaboi.agent.state import DeliveryReport, OneOnOnePrep, OneOnOneRecord, SixMonthReview, StandupReport
+from yeaboi.beta import BETA_TAG, PERFORMANCE_BETA_NOTICE, PERFORMANCE_BETA_PHRASE
 from yeaboi.cli import _cmd_analyze, _cmd_perf, _cmd_report, _cmd_standup, _run_subcommand, build_parser
 
 
@@ -431,6 +432,81 @@ class TestPerfCommand:
 
         with PerformanceStore(db) as store:
             assert store.get_notes("Sam")[0]["note_text"] == "shipped the migration solo"
+
+
+class TestPerfBetaLabelling:
+    """`yeaboi perf` says it's beta in its help and before every run."""
+
+    def _perf_parser(self):
+        parser = build_parser()
+        subs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+        return subs
+
+    def test_parent_help_carries_the_tag_and_description(self):
+        subs = self._perf_parser()
+        assert subs.choices["perf"].description == PERFORMANCE_BETA_NOTICE
+        help_text = next(a.help for a in subs._choices_actions if a.dest == "perf")
+        assert BETA_TAG in help_text
+
+    def test_every_child_help_carries_the_description(self):
+        # `yeaboi perf prep --help` is a normal place to land without ever
+        # seeing the parent's help.
+        perf = self._perf_parser().choices["perf"]
+        nested = next(a for a in perf._actions if isinstance(a, argparse._SubParsersAction))
+        for name, child in nested.choices.items():
+            assert child.description == PERFORMANCE_BETA_NOTICE, name
+
+    def _run_note(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        args = build_parser().parse_args(["perf", "note", "Sam", "--text", "x"])
+        return _cmd_perf(args, _console())
+
+    def test_notice_goes_to_stderr_not_stdout(self, monkeypatch, tmp_path, capsys):
+        # The artifact is routinely piped; a caveat inside the file is worse
+        # than no caveat at all.
+        monkeypatch.delenv("BETA_NOTICES_ENABLED", raising=False)
+        assert self._run_note(monkeypatch, tmp_path) == 0
+
+        captured = capsys.readouterr()
+        assert PERFORMANCE_BETA_PHRASE in captured.err
+        assert PERFORMANCE_BETA_PHRASE not in captured.out
+
+    def test_notice_suppressed_by_env(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("BETA_NOTICES_ENABLED", "false")
+        assert self._run_note(monkeypatch, tmp_path) == 0
+
+        assert PERFORMANCE_BETA_PHRASE not in capsys.readouterr().err
+
+    @pytest.mark.parametrize("subcommand", ["roster", "prep", "complete", "review", "note"])
+    def test_notice_prints_for_every_subcommand(self, monkeypatch, tmp_path, capsys, subcommand):
+        # Guards against the call being pushed down into one branch later.
+        monkeypatch.delenv("BETA_NOTICES_ENABLED", raising=False)
+        monkeypatch.setattr("yeaboi.paths.get_db_path", lambda: tmp_path / "sessions.db")
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        monkeypatch.setattr("yeaboi.performance.roster.fetch_roster", lambda **kw: [])
+        monkeypatch.setattr(
+            "yeaboi.performance.engine.run_one_on_one_prep",
+            lambda engineer, **kw: OneOnOnePrep(engineer=engineer),
+        )
+        monkeypatch.setattr(
+            "yeaboi.performance.engine.complete_one_on_one",
+            lambda engineer, transcript, **kw: OneOnOneRecord(engineer=engineer),
+        )
+        monkeypatch.setattr(
+            "yeaboi.performance.engine.run_six_month_review",
+            lambda engineer, **kw: SixMonthReview(engineer=engineer),
+        )
+        argv = {
+            "roster": ["perf", "roster"],
+            "prep": ["perf", "prep", "Sam"],
+            "complete": ["perf", "complete", "Sam", "--transcript", "notes"],
+            "review": ["perf", "review", "Sam"],
+            "note": ["perf", "note", "Sam", "--text", "x"],
+        }[subcommand]
+
+        _cmd_perf(build_parser().parse_args(argv), _console())
+
+        assert PERFORMANCE_BETA_PHRASE in capsys.readouterr().err
 
 
 class TestRetroCommand:
