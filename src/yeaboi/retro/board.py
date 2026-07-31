@@ -63,14 +63,38 @@ CARRIED_OPEN_STATUSES: tuple[str, ...] = ("pending", "in_progress", "carried_ove
 
 # Canonical, server-validated theme names. The host (admin) can broadcast one of
 # these to every browser; a name from a LAN peer is rejected unless it's here. These
-# MUST match the [data-theme="…"] blocks in retro/page.py's _CSS (page.py injects
-# this tuple as __THEMES__ so client and server never drift).
+# MUST match the [data-theme="…"] blocks in frontend/src/design/palette.css —
+# scripts/gen_web_types.py emits this tuple into types/enums.ts (with a --check in
+# CI) so the client and the server cannot drift.
 RETRO_THEMES: tuple[str, ...] = ("midnight", "light", "solarized", "synthwave", "forest")
 
-# Canonical, server-validated sets shared with the browser page (retro/page.py
-# injects these so client and server agree). Reactions/avatars from a LAN peer are
-# rejected unless they're in these tuples — bounding what can be stored/rendered.
-REACTION_EMOJIS: tuple[str, ...] = ("👍", "❤️", "🎉", "😂", "🔥", "😢", "🚀", "👀")
+# Canonical, server-validated sets shared with the browser page (emitted into
+# types/enums.ts by the same codegen, so client and server agree). Reactions and
+# avatars from a LAN peer are rejected unless they're in these tuples — bounding
+# what can be stored and rendered.
+#
+# Only ever *append* to REACTION_EMOJIS. store.py rehydrates persisted reactions
+# without re-validating membership, so dropping one leaves an old board's export
+# still rendering an emoji that the live counter (which filters by this tuple)
+# has stopped counting — the two disagree with nothing to point at.
+REACTION_EMOJIS: tuple[str, ...] = (
+    "👍",
+    "👎",
+    "❤️",
+    "🎉",
+    "😂",
+    "🔥",
+    "😢",
+    "🚀",
+    "👀",
+    "💯",
+    "🙌",
+    "🤔",
+    "🐛",
+    "✅",
+    "⚠️",
+    "🧠",
+)
 AVATARS: tuple[str, ...] = (
     "🤠",
     "👻",

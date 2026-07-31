@@ -1,0 +1,769 @@
+/*
+ * Report bodies. One module for all of them: they are the same document
+ * grammar — a heading, some bullets, some cards — wearing different data, and
+ * splitting them per report would make that grammar drift.
+ *
+ * The typography rule the whole file follows: **mono is structure, the
+ * proportional face is only what a person or a model wrote.** So section
+ * headings, indices and labels are mono; bullets, descriptions and summaries
+ * are not. It is the inversion of the usual hierarchy and it is true to a
+ * product whose primary surface is a terminal.
+ */
+
+/* ── Document grammar ─────────────────────────────────────────── */
+
+.h2 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin: 0 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text);
+  font-size: var(--fs-s);
+  line-height: 1.65;
+}
+.bullets li + li {
+  margin-top: var(--s1);
+}
+.bullets li::marker {
+  color: var(--accent);
+}
+
+.lede {
+  margin: 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  /* The accent edge, not a full tint: this is the model's one-line reading of
+     the whole document, and it should look quoted rather than alarming. */
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  font-size: var(--fs-m);
+  line-height: 1.6;
+}
+
+.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.footnote {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+}
+
+/* A counted breakdown: bar directly over its key, as one block. Two separate
+   margins let a legend drift toward the section under it and read as that
+   section's caption instead of this one's. */
+.split {
+  margin: var(--s4) 0;
+}
+.split > * + * {
+  margin-top: var(--s2);
+}
+
+.trend {
+  margin-bottom: var(--s4);
+}
+
+/* A row of people. `inline-flex` per name so an avatar never separates from the
+   name it belongs to across a wrap. */
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: 0 0 var(--s4);
+  font-size: var(--fs-s);
+}
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+}
+
+/* ── Performance ──────────────────────────────────────────────── */
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--fs-m);
+}
+
+/* ── Roadmap ──────────────────────────────────────────────────── */
+
+/* Side by side where there is room. A breakdown of three projects does not
+   need 1100px of track, and two of them stacked full-width dominate the
+   section they are supposed to introduce. */
+.mixes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+}
+.mix > * + * {
+  margin-top: var(--s2);
+}
+
+.projects {
+  display: grid;
+  gap: var(--s3);
+}
+
+.project {
+  border-left: 2px solid var(--accent);
+}
+
+.projectIndex {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  margin-right: var(--s2);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  justify-content: flex-end;
+}
+@media (max-width: 560px) {
+  /* Own line, under the title. Sharing the row costs the title half its width
+     and reflows "Billing revamp" onto two lines to make room for four chips —
+     the title is the thing being read. `.cardHeader` wraps; this is what asks
+     it to. */
+  .chips {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+
+.why {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+/* ── Poker ────────────────────────────────────────────────────── */
+
+.votes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+}
+.vote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skipped is muted, not struck through or red. The room decided not to estimate
+   it; that is an outcome, and styling it as damage misreports the meeting. */
+.skipped {
+  color: var(--dim);
+  font-style: italic;
+}
+
+.notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+
+.transcript {
+  font-size: var(--fs-s);
+}
+
+/* ── Retro ────────────────────────────────────────────────────── */
+
+/* `auto-fit` rather than four fixed tracks: on a board where only two columns
+   have cards, four tracks would leave half the page empty to preserve an
+   arrangement that no longer describes anything. */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
+   board reads — so a column is the same colour in the meeting and in the file. */
+.column {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--col-tone, var(--accent));
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+.columnTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--col-tone, var(--text));
+}
+.count {
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.column .bullets li::marker {
+  color: var(--col-tone, var(--accent));
+}
+
+.byline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.reactions {
+  margin-left: var(--s1);
+}
+.status {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+/* ── Standup ──────────────────────────────────────────────────── */
+
+.confidence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0;
+}
+.rationale {
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Per-member bars, scaled against the busiest member. The name column is a
+   fixed share so the bars all start at the same x and can be compared. */
+.activity {
+  margin: var(--s4) 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+.activity > * + * {
+  margin-top: var(--s2);
+}
+.activityRow {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--s3);
+}
+.activityName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+.activityTotal {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}
+
+.member {
+  margin-bottom: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+/* A blocked member is the one thing on this page somebody has to act on. */
+.blocked {
+  border-left-color: var(--danger);
+}
+.memberHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+.memberSummary {
+  margin: 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+.since {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+/* `auto-fit`, so two active categories share the width instead of leaving a
+   third of the card empty to preserve a three-column shape. */
+.categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+.category > * + * {
+  margin-top: var(--s2);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.quote {
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r-s) var(--r-s) 0;
+  background: var(--card);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+  /* The one place a person's own words are shown verbatim — their line breaks
+     are the only formatting they get. */
+  white-space: pre-wrap;
+}
+
+.screenshot {
+  display: block;
+  max-width: 100%;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+.details {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.8;
+}
+.coverage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-right: var(--s3);
+  white-space: nowrap;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.dim {
+  color: var(--dim);
+}
+
+/* ── Reporting ────────────────────────────────────────────────── */
+
+/* The host's chosen decoration, held at the reader's text size rather than the
+   heading's tracking — an emoji does not letter-space, it just drifts. */
+.headingEmoji {
+  margin-right: var(--s2);
+  letter-spacing: 0;
+}
+
+/* ── Plan ─────────────────────────────────────────────────────── */
+
+.cardId {
+  margin-right: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  /* An id is one token. Wrapping "T-2" onto two lines makes a table column
+     twice as tall to save four pixels of width. */
+  white-space: nowrap;
+}
+
+.feature,
+.story,
+.sprint {
+  margin-bottom: var(--s3);
+}
+/* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
+.story {
+  border-left: 2px solid var(--story-tone, var(--line-strong));
+}
+.storyText {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  font-style: italic;
+  line-height: 1.6;
+}
+.storyGroup {
+  margin-bottom: var(--s5);
+}
+.storyGroup > :global(.eyebrow) {
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+/* Given/When/Then, one criterion per row, the label in the mono voice so the
+   three clauses stay readable as prose. */
+.criteria {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+.criteria li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s2);
+  align-items: baseline;
+}
+.criteria li + li {
+  margin-top: var(--s1);
+}
+.criteria b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dod {
+  margin-top: var(--s3);
+}
+.dod ul {
+  margin: var(--s2) 0 0;
+  padding-left: 1.1rem;
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+/* Struck through rather than dropped: which items a story is *exempt* from is
+   a decision worth showing. */
+.exempt {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0;
+}
+.field > * + * {
+  margin-top: var(--s2);
+}
+
+.target {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+.capacity {
+  margin-top: var(--s4);
+}
+.capacity > * + * {
+  margin-top: var(--s3);
+}
+
+.sprintGoal {
+  margin: 0 0 var(--s3);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* A sprint that lost capacity to leave or holidays says so on its edge. */
+.reduced {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+}
+.reducedNote {
+  margin: var(--s2) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+}
+
+.taskGroup {
+  margin-bottom: var(--s5);
+}
+.taskGroup > :global(.eyebrow) {
+  display: block;
+}
+/* The story the tasks decompose, in its own case — see Plan.tsx. */
+.groupSubject {
+  margin: var(--s1) 0 var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+}
+/* Own line under the description — a test plan run inline turns every row into
+   a paragraph and the table stops being scannable. */
+.taskNote {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+}
+
+/* ── Anonymize: a re-published document ───────────────────────── */
+
+.document {
+  font-size: var(--fs-s);
+  line-height: 1.7;
+}
+.document > * + * {
+  margin-top: var(--s3);
+}
+/* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
+   section we wrote. These headings are the original author's own words, and
+   transforming them is both presumptuous and lossy: "iOS migration" comes back
+   as "IOS MIGRATION". */
+.document h2,
+.document h3,
+.document h4,
+.document h5,
+.document h6 {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-top: var(--s5);
+  margin-bottom: var(--s2);
+}
+.document h2 { font-size: var(--fs-m); }
+.document h3 { font-size: var(--fs-s); }
+.document h4,
+.document h5,
+.document h6 { font-size: var(--fs-xs); color: var(--muted); }
+.document ul,
+.document ol {
+  padding-left: 1.2rem;
+}
+.document li + li {
+  margin-top: var(--s1);
+}
+.document li::marker {
+  color: var(--accent);
+}
+.document code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: var(--r-s);
+  background: var(--card);
+  color: var(--accent2);
+}
+.document a {
+  color: var(--accent);
+}
+
+.quote {
+  margin: 0;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.code {
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  /* The block scrolls, the page does not. A wide code sample otherwise makes
+     the whole document scroll sideways on a phone. */
+  overflow-x: auto;
+}
+.code code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.rule {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: var(--s5) 0;
+}
+
+/* ── Team profile: generated blocks ───────────────────────────── */
+
+.blocks > * + * {
+  margin-top: var(--s4);
+}
+
+/* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
+   accent — it groups within a section rather than announcing a new one. */
+.h3 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 0 0 var(--s2);
+}
+.kvWrap > * + * {
+  margin-top: var(--s2);
+}
+
+/* Label and value on one baseline. A `<dl>` rather than a table: these are
+   facts about one thing, not rows that compare with each other. */
+.kv {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  font-size: var(--fs-s);
+}
+.kv > div {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) 1fr;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.kv > div:last-child {
+  border-bottom: none;
+}
+.kv dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.kv dd {
+  margin: 0;
+  line-height: 1.6;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .kv > div {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Bounded rather than fluid: a proportion bar is only comparable down a column
+   if every row draws the same track. */
+.cellBar {
+  width: 90px;
+  flex: none;
+}
+.cellNote {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.cellPerson {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.profileCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+.profileProse {
+  font-size: var(--fs-s);
+}
+
+/* A caveat reads as a qualification of the section, not as one of its
+   findings. */
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: 1.6;
+}
+
+/* A finding worth stopping on. The rule and the wash are both derived from the
+   tone the payload sent, so a recommendation and a bottleneck read alike. */
+.callout {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  font-size: var(--fs-s);
+}
+.callout > * + * {
+  margin-top: var(--s2);
+}
+.callout p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── Print ────────────────────────────────────────────────────── */
+
+@media print {
+  /* A card split across a page break loses its border on one side and reads as
+     two half-finished things. */
+  .project,
+  .column,
+  .lede,
+  .callout {
+    break-inside: avoid;
+  }
+  .h3 {
+    break-after: avoid;
+  }
+  .h2 {
+    break-after: avoid;
+  }
+}

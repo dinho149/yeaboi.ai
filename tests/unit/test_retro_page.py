@@ -1,169 +1,145 @@
-"""Unit tests for the served browser board page + config getter."""
+"""Contract tests for the retro board page + the retro config getters.
 
-from yeaboi.retro.page import build_board_html
+These are the assertions that must hold even though ``make test`` never runs
+Node: the document is self-contained, it leaks nothing, and the JSON island it
+hands the bundle is both well-formed and script-safe.
+
+The behavioural tests live in ``frontend/src/retro/*.test.tsx``. What is checked
+here is the *seam* — everything Python is responsible for.
+
+Merged from ``test_retro_react_page.py`` when the legacy hand-written board was
+deleted: with one page there is one test file, per the one-file-per-module rule.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from tests._pages import island
+from yeaboi.retro.board import RETRO_THEMES, RetroBoard
+from yeaboi.retro.page import board_config, build_board_html
+from yeaboi.retro.server import RetroServer
 
 
-class TestBuildBoardHtml:
-    def test_esc_escapes_attribute_breakers(self):
-        # esc()'d values land inside double-quoted HTML attributes: quotes must
-        # be escaped or a participant-chosen name breaks out of the attribute.
-        html = build_board_html()
-        assert '"&quot;"' in html
-        assert '"&#39;"' in html
+@pytest.fixture
+def page() -> str:
+    return build_board_html("Sprint 42")
 
-    def test_self_contained(self):
-        html = build_board_html()
-        assert "<!DOCTYPE html>" in html
-        assert "<style>" in html and "<script>" in html
-        # No external code/style resources (CSP-hostile) — no external script/style/
-        # link tags, no CDN. The music streams (audio URLs in JS data) are the one
-        # deliberate exception, so we forbid resource *tags* rather than any URL.
-        assert 'src="http' not in html and 'href="http' not in html
-        assert "<link" not in html
-        assert "cdn" not in html.lower()
 
-    def test_token_free_page(self):
-        # Security: the served page must NOT bake the token (GET / is unauthenticated).
-        # The client reads it from the URL instead.
-        html = build_board_html()
-        assert "let TOKEN = new URLSearchParams" in html
-        assert "const TOKEN" not in html
+class TestSelfContained:
+    def test_is_one_document_with_inline_assets(self, page: str):
+        assert page.startswith("<!DOCTYPE html>")
+        assert "<style>" in page and "<script>" in page
 
-    def test_has_four_grids(self):
-        html = build_board_html()
-        for label in ("What went well", "What didn't go well", "Action items", "Demos"):
-            assert label in html
+    def test_no_external_resources(self, page: str):
+        # Not a style preference: the tunnel CSP forbids every external origin,
+        # and a page opened over file:// cannot fetch one at all. Resource
+        # *tags* are banned rather than any URL — the music stream URLs in the
+        # island are the one deliberate exception, and they are audio, not code.
+        assert "<link" not in page
+        assert 'src="http' not in page and 'href="http' not in page
+        assert "cdn" not in page.lower()
 
-    def test_renders_via_textcontent_not_innerhtml(self):
-        html = build_board_html()
-        assert "function esc(" in html
-        assert "textContent" in html
+    def test_bundle_is_not_a_module_script(self, page: str):
+        # A type="module" script does not execute over file:// at all, and the
+        # boards share their build with the exports. Classic IIFE or nothing.
+        assert '<script type="module"' not in page
 
-    def test_round1_features(self):
-        html = build_board_html()
-        assert "AudioContext" in html and "music-btn" in html and "music-mood" in html
-        assert 'data-secs="60"' in html and "timer-readout" in html and "custom-min" in html
-        assert "reactionBar" in html and "/api/react" in html
-        assert 'id="avatars"' in html and 'id="dice"' in html and "randomName" in html
-        assert "typing…" in html and 'id="presence"' in html and "/api/presence" in html
+    def test_mounts_into_root_with_a_noscript_fallback(self, page: str):
+        assert '<div id="root">' in page
+        assert "<noscript>" in page
+        # The board is a live surface with no static rendering to fall back to,
+        # so the fallback must point somewhere real rather than just apologise.
+        assert "export" in page[page.index("<noscript>") : page.index("</noscript>")]
 
-    def test_round2_features(self):
-        html = build_board_html()
-        # join code gate + invite QR
-        assert 'id="code-modal"' in html and "/api/join" in html
-        assert 'id="invite-modal"' in html and "/api/qr" in html
-        # rename control
-        assert 'id="me"' in html and "openProfile" in html
-        # theme switcher: swatch buttons (built from THEMES) + the alt-theme CSS block
-        assert "data-set-theme" in html and '[data-theme="synthwave"]' in html
-        assert '"synthwave"' in html and "buildSwatches" in html
-        assert 'id="theme-btn"' in html and 'id="theme-pop"' in html
-        # internet-radio music: the TUI's SomaFM channels, played via <audio>
-        assert "setChannel" in html and "buildChannels" in html
-        assert '"Lofi"' in html and '"Jazz"' in html and "somafm" in html
-        # visualizer + drag + edit/delete + confetti/alarm
-        assert 'id="viz"' in html and "drawViz" in html
-        assert 'draggable="true"' in html and "/api/card/move" in html
-        assert "data-edit" in html and "/api/card/edit" in html and "/api/card/delete" in html
-        assert 'id="confetti"' in html and "function confetti(" in html and "function alarm(" in html
+    def test_declares_the_retro_mode_accent(self, page: str):
+        assert 'data-mode="retro"' in page
 
-    def test_compact_toolbar(self):
-        html = build_board_html()
-        # Toolbar icon buttons + their popovers (controls appear on demand).
-        assert 'class="toolbar"' in html
-        for tid in ("music-btn", "timer-btn", "theme-btn", "invite-btn"):
-            assert f'id="{tid}"' in html
-        for pid in ("music-pop", "timer-pop", "theme-pop"):
-            assert f'id="{pid}"' in html
-        assert "togglePop" in html and "closePops" in html
-        # Distinct "you" chip + others-only presence stack (no duplicate self).
-        assert 'class="me-chip"' in html and 'class="avatars"' in html
-        assert "p.name !== NAME" in html  # self excluded from the teammate stack
-        # Room count + roster of who's in the room.
-        assert 'id="room-btn"' in html and 'id="roomcount"' in html
-        assert 'id="room-pop"' in html and "function renderRoom" in html
+    def test_no_hand_written_board_survives(self, page: str):
+        """The legacy page is gone, not merely unreachable.
 
-    def test_stable_pid_generated_offline(self):
-        html = build_board_html()
-        assert "crypto.randomUUID" in html and "retro_pid" in html
+        Its two load-bearing markers: the inline bootstrap that read the token
+        straight out of ``location.search``, and the ``editingHere`` guard that
+        froze a whole column while one person had an editor open. If either
+        reappears in the served document, something has re-imported the old
+        renderer rather than the bundle.
+        """
+        assert "let TOKEN = new URLSearchParams" not in page
+        assert "editingHere" not in page
 
-    def test_no_dangling_element_ids(self):
-        # Regression: toggleInvite once referenced a non-existent #invite-code and
-        # threw. Every getElementById target used at runtime must exist in the DOM.
-        import re
 
-        html = build_board_html()
-        referenced = set(re.findall(r'getElementById\("([^"]+)"\)', html))
-        defined = set(re.findall(r'id="([^"]+)"', html))
-        # Grid-scoped ids (cards-*/typing-*/in-*/edit-*) are created dynamically.
-        dynamic = {r for r in referenced if r.split("-")[0] in ("cards", "typing", "in", "edit")}
-        missing = referenced - defined - dynamic
-        assert not missing, f"getElementById targets with no matching element: {missing}"
+class TestBootIsland:
+    def test_carries_the_word_lists_and_stations(self, page: str):
+        boot = island(page)
+        assert boot["sprint"] == "Sprint 42"
+        assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
+        assert all(set(channel) == {"name", "url"} for channel in boot["musicChannels"])
+        assert any(channel["name"] == "Lofi" for channel in boot["musicChannels"])
 
-    def test_injected_sets_present(self):
-        html = build_board_html()
-        for emoji in ("👍", "❤️", "🔥"):
-            assert emoji in html
-        assert "🤠" in html  # an avatar
+    def test_omits_what_the_generated_enums_already_pin(self):
+        """Grids, statuses, emojis, avatars and themes must NOT be in the island.
 
-    def test_reaction_broadcast_and_react_button(self):
-        html = build_board_html()
-        # Collapsed reactions: a React button + a floating picker (not all chips).
-        assert "react-btn" in html and "rx-picker" in html and "openReactPicker" in html
-        # Floating-emoji broadcast overlay + the poll-driven event drain.
-        assert 'id="rx-fx"' in html and "function floatEmoji(" in html
-        assert "reaction_events" in html and "seededRx" in html
+        They are server-validated tuples, and ``scripts/gen_web_types.py``
+        emits them into ``types/enums.ts`` from the same constants with a
+        ``--check`` in CI. Carrying them here as well would give one tuple two
+        sources of truth, and the island would win at runtime — so a stale
+        bundle would render a board whose columns disagree with the server's.
+        """
+        assert set(board_config()) == {"title", "sprint", "adjectives", "nouns", "musicChannels"}
 
-    def test_music_uses_audio_element_not_synth(self):
-        html = build_board_html()
-        # Real streams via <audio>; the old synth mood engine is gone.
-        assert "new Audio()" in html and "Music.channels()" in html
-        assert "MOODS" not in html and "boombap" not in html
-        # The alarm no longer borrows the (removed) synth context.
-        assert "Music.ctx()" not in html and "Music.out()" not in html
+    def test_theme_names_are_not_duplicated_into_the_payload(self, page: str):
+        boot = island(page)
+        assert "themes" not in boot
+        # Guards the reasoning above rather than the payload: if this ever fails
+        # it means the generated enums drifted from the board.
+        assert list(RETRO_THEMES) == ["midnight", "light", "solarized", "synthwave", "forest"]
 
-    def test_share_code_token_hardening(self):
-        html = build_board_html()
-        # Token is persisted per-tab and never re-written into the address bar,
-        # so copying the URL doesn't leak access.
-        assert 'sessionStorage.getItem("retro_token")' in html
-        assert 'sessionStorage.setItem("retro_token"' in html
-        assert '"/?token="' not in html  # never rebuild a token'd URL client-side
+    def test_island_is_script_safe(self):
+        """A card title cannot close the `<script>` element it is embedded in.
 
-    def test_timestamps_on_cards(self):
-        html = build_board_html()
-        # Relative "age" helper + the .ago span in the card's who-row.
-        assert "function fmtAgo(" in html and 'class="ago"' in html
+        Inside a `<script>` the tokenizer is in script-data state, where
+        `</script`, `<!--` and `<script` all change parsing. `json.dumps` leaves
+        `<` and `>` literal, so `json_island` escapes them — asserted here with
+        a payload built from a hostile sprint name.
+        """
+        html = build_board_html("</script><img src=x onerror=alert(1)>")
+        assert "</script><img" not in html
+        assert "\\u003c/script" in html
+        # …and it is still valid JSON that parses back to exactly what went in.
+        assert island(html)["sprint"] == "</script><img src=x onerror=alert(1)>"
 
-    def test_focus_and_group_controls(self):
-        html = build_board_html()
-        assert 'id="focus-author"' in html and 'id="group-toggle"' in html
-        # Grouping/focus render path + persisted group toggle.
-        assert "function gridInner(" in html and "updateFocusOptions" in html
-        assert 'localStorage.setItem("retro_grouped"' in html
+    def test_island_has_no_secrets(self, page: str):
+        boot = island(page)
+        flat = json.dumps(boot).lower()
+        for forbidden in ("token", "admin", "secret", "password", "code"):
+            assert forbidden not in flat
 
-    def test_edit_focuses_and_guards_render(self):
-        html = build_board_html()
-        # Entering edit focuses the box and moves the caret to the end…
-        assert "setSelectionRange" in html
-        # …and the poll re-render skips the grid holding the focused editbox.
-        assert "editingHere" in html
 
-    def test_theme_set_injected_from_board(self):
-        html = build_board_html()
-        # THEMES comes from board.RETRO_THEMES (no leftover placeholder).
-        assert "const THEMES = __THEMES__" not in html
-        assert '"midnight"' in html and '"forest"' in html
+class TestServedPageIsTokenFree:
+    """The real check, against a running server rather than the builder.
 
-    def test_admin_controls_present(self):
-        html = build_board_html()
-        # Admin secret read from the host link + the four host controls.
-        assert 'new URLSearchParams(location.search).get("admin")' in html
-        for eid in ("lock-btn", "music-cast", "theme-cast", "music-banner", "lock-banner"):
-            assert f'id="{eid}"' in html
-        # Admin-gated broadcast/lock endpoints + autoplay-fallback banner logic.
-        assert "/api/admin/broadcast" in html and "/api/admin/lock" in html
-        assert "showMusicBanner" in html and "applyLock" in html
+    ``GET /`` is unauthenticated, so a token baked into the page would hand
+    access to any LAN peer that loads it. Asserting on a string in the source is
+    a proxy; asserting the running server's own token is absent from its own
+    response body is the property itself.
+    """
+
+    def test_served_page_never_contains_the_token(self):
+        import urllib.request
+
+        server = RetroServer(RetroBoard("t", sprint_name="Sprint 42"), port=5399)
+        server.start()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/", timeout=5) as response:
+                body = response.read().decode()
+        finally:
+            server.stop()
+
+        assert server.token not in body
+        assert server.admin_token not in body
+        assert server.join_code not in body
 
 
 class TestConfig:

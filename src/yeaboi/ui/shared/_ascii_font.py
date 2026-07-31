@@ -2,6 +2,11 @@
 
 Each letter is a 2-element list of strings (top line, bottom line).
 Characters use █ ▀ ▄ ░ block drawing chars for a compact, bold look.
+
+This is the product's own display typeface. The TUI sets every mode title in it,
+yeaboi.ai's hero recreates it in the browser, and the tunnel pages render it via
+``<Wordmark>``. The table is exported to TypeScript by ``scripts/gen_web_types``
+rather than hand-copied, so the web cannot drift from the terminal.
 """
 
 from __future__ import annotations
@@ -47,6 +52,12 @@ _LETTERS: dict[str, list[str]] = {
     "9": ["█▀█", "▀▀█"],
 }
 # fmt: on
+
+# Public alias. The table itself stays underscore-private because nothing should
+# reach past render_ascii_text() to draw with it; the codegen is the one caller
+# that legitimately needs the raw glyphs, and naming that seam is better than
+# having scripts/gen_web_types.py import a private.
+BLOCK_GLYPHS: dict[str, list[str]] = _LETTERS
 
 
 def render_ascii_text(text: str) -> list[str]:

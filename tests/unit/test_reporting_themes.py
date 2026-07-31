@@ -26,15 +26,23 @@ class TestBuiltins:
             for value in palette.values():
                 assert _HEX.match(value), value
 
-    def test_builtin_hexes_match_presentation_css(self):
-        """The registry is the single source the deck/pptx color from — it must not
-        drift from the CSS [data-theme] blocks in presentation.py."""
-        from yeaboi.reporting.presentation import _CSS
+    def test_the_deck_reads_these_hexes_rather_than_its_own_copy(self):
+        """There used to be a second copy of every palette here.
 
+        The deck carried a matching `[data-theme="aurora"] { --bg1: … }` CSS
+        block per built-in, and the guard in this slot compared the two lists
+        hex by hex. The deck ships the registry itself now — palettes travel in
+        the boot payload, which is also the only way a *custom* palette could
+        ever have worked without generating a stylesheet — so there is one list
+        again and nothing left to compare it against. This asserts the arrow
+        instead: whatever is in here is what an exported deck paints with.
+        """
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.reporting.presentation import deck_payload
+
+        shipped = deck_payload(DeliveryReport(period_label="Last sprint"))["palettes"]
         for name, palette in themes.BUILTIN_PALETTES.items():
-            assert f'[data-theme="{name}"]' in _CSS
-            for role, value in palette.items():
-                assert f"--{role}:{value}" in _CSS, f"{name}.{role} = {value} not in presentation CSS"
+            assert shipped[name] == palette
 
 
 class TestCustomPalettes:

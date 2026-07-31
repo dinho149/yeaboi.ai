@@ -20,41 +20,27 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import MemberUpdate, StandupReport
-from yeaboi.html_theme import escape as _e
 from yeaboi.html_theme import prose_bullets as _summary_bullets
+from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
 
 logger = logging.getLogger(__name__)
 
-# Confidence label → semantic CSS token (resolves per theme in the shared stylesheet).
-_CONF_COLOR = {
-    "On track": "var(--ok)",
-    "At risk": "var(--warn)",
-    "Behind": "var(--danger)",
-    "Insufficient data": "var(--low)",
-}
-
-# Confidence label → chip kind (shared .badge-* classes).
-_CONF_CHIP_KIND = {
-    "On track": "ok",
-    "At risk": "warn",
-    "Behind": "danger",
-    "Insufficient data": "low",
-}
-
-# category_coverage status → status-dot token (status word always kept as text
-# beside the dot — never color-alone).
-_COVERAGE_DOT = {
-    "covered": "--ok",
-    "partial": "--warn",
-    "failed": "--danger",
-    "not_configured": "--low",
-}
+# The three colour maps that used to live here — confidence label → CSS token,
+# confidence label → chip kind, coverage status → dot token — moved to
+# `frontend/src/export/reports/Standup.tsx`. They were the same fact written
+# three ways for three different markup helpers; there is one renderer now.
+#
+# Both vocabularies still travel as their own strings (`confidence.LABEL_*`,
+# the coverage statuses), because neither is validated against untrusted input —
+# they are *produced* by the engine. So the bundle maps them with a fallback
+# rather than a codegen'd union, which is what this file did too, and an
+# unrecognised label degrades to the muted tone instead of failing a build.
 
 _SPARKLINE_MAX_POINTS = 14
 
@@ -62,10 +48,24 @@ _SPARKLINE_MAX_POINTS = 14
 # deliberately don't match — their URLs only ever arrive via the *_links tuples.
 _TICKET_KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 
+# The same alternation `_runs` builds, for the no-member-names case. Named so
+# the two branches read out of one `match.lastgroup` either way.
+_KEY_ONLY_RE = re.compile(f"(?P<key>{_TICKET_KEY_RE.pattern})")
+
 
 def _slug(name: str) -> str:
     """Return a filesystem-safe slug for the export subdirectory."""
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")[:40] or "standup"
+
+
+def _stem(report: StandupReport) -> str:
+    """The filename stem both artifacts share.
+
+    Shared so the HTML's ``<noscript>`` note can name the Markdown file written
+    beside it; guessing that name twice is how the note ends up pointing at a
+    file nobody wrote.
+    """
+    return f"standup-{report.date or 'latest'}"
 
 
 def _sprint_line(report: StandupReport) -> str:
@@ -157,41 +157,79 @@ def _ticket_key_map(report: StandupReport) -> dict[str, str]:
     return key_map
 
 
-def _anchor(label: str, url: str) -> str:
-    return f"<a href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
+def _runs(text: str, key_map: Mapping[str, str], names: re.Pattern[str] | None = None) -> list[dict]:
+    """Split prose into ``{s, href?, strong?}`` runs: ticket keys link, member names bold.
 
+    **This is what replaced the escape-then-substitute pair.** There used to be
+    a `_linkify` that HTML-escaped the text and then regex-substituted raw `<a>`
+    markup back into it, a `_linkify_md` that did the same job in Markdown, and
+    a `_name_pattern(html=…)` that had to build one alternation against the raw
+    text and another against the escaped text so bolding worked on both. Four
+    functions arranging one fact: *which spans of this sentence are special*.
 
-def _linkify_escaped(escaped: str, key_map: dict[str, str]) -> str:
-    """Substitute mapped ticket keys in *already HTML-escaped* text with anchors."""
+    That fact is now the return value. `RichText` renders it with text children
+    and `safeUrl`, so no escaping is involved on the HTML side at all; the
+    Markdown builder renders the same list with `[KEY](url)` and `**Name**`.
+    Neither can drift, and neither is one regex bug away from an injection.
 
-    def repl(match: re.Match[str]) -> str:
-        url = key_map.get(match.group(0))
-        if not url:
-            return match.group(0)
-        return f"<a href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{match.group(0)}</a>"
-
-    return _TICKET_KEY_RE.sub(repl, escaped)
-
-
-def _linkify(text: str, key_map: dict[str, str]) -> str:
-    """HTML-escape ``text`` then turn mapped ticket keys into inline anchors.
-
-    Safe by construction: escaping happens exactly once, *before* substitution;
-    the entities escaping produces (&lt; &amp; …) contain no UPPERCASE-digits
-    run, so the key regex can never match inside them, and matched keys are
-    ``[A-Z0-9-]`` only — safe to embed verbatim as anchor text.
+    Names and keys share a single alternation so a match can only be one of
+    them — with names first, since a member could in principle be called
+    something the key regex likes.
     """
-    return _linkify_escaped(_e(text), key_map)
+    if not text:
+        return []
+    pattern = re.compile(f"(?P<name>{names.pattern})|(?P<key>{_TICKET_KEY_RE.pattern})") if names else _KEY_ONLY_RE
+
+    runs: list[dict] = []
+    pos = 0
+    for match in pattern.finditer(text):
+        if match.start() > pos:
+            runs.append({"s": text[pos : match.start()]})
+        span = match.group(0)
+        if names and match.lastgroup == "name":
+            runs.append({"s": span, "strong": True})
+        # safe_url even here: the fallback branch of `_ticket_key_map` builds a
+        # URL from configured Jira base, and a hostile one must not become a link.
+        elif url := safe_url(key_map.get(span) or ""):
+            runs.append({"s": span, "href": url})
+        else:
+            runs.append({"s": span})
+        pos = match.end()
+    if pos < len(text):
+        runs.append({"s": text[pos:]})
+    return runs
 
 
-def _linkify_md(text: str, key_map: dict[str, str]) -> str:
-    """Markdown flavor: mapped ticket keys become ``[KEY](url)``."""
+def _md_runs(runs: Sequence[Mapping]) -> str:
+    """Render runs as Markdown — the other consumer of the same structure."""
+    out: list[str] = []
+    for run in runs:
+        s = str(run.get("s", ""))
+        if run.get("href"):
+            s = f"[{s}]({run['href']})"
+        if run.get("strong"):
+            s = f"**{s}**"
+        out.append(s)
+    return "".join(out)
 
-    def repl(match: re.Match[str]) -> str:
-        url = key_map.get(match.group(0))
-        return f"[{match.group(0)}]({url})" if url else match.group(0)
 
-    return _TICKET_KEY_RE.sub(repl, text)
+def _md_link(label: str, url: str) -> str:
+    """A leftover evidence link as Markdown; an unsafe scheme degrades to text.
+
+    A Markdown link becomes an `<a href>` on Notion/Confluence/GitHub, so it
+    needs the same allowlist the HTML path gets from `safeUrl`.
+    """
+    return f"[{label or url}]({safe})" if (safe := safe_url(url)) else (label or url)
+
+
+def _links_payload(pairs: Sequence[tuple[str, str]]) -> list[list[str]]:
+    """Leftover evidence links as ``[label, url]``, unsafe schemes dropped to "".
+
+    The empty URL is deliberate rather than dropping the row: the label is what
+    the link was *evidence of*, and losing it entirely would silently shrink the
+    evidence a reader is being shown.
+    """
+    return [[label or url, safe_url(url)] for label, url in pairs or ()]
 
 
 def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -230,53 +268,31 @@ def _name_variants(member_names: Sequence[str]) -> list[str]:
     return sorted(set(variants), key=len, reverse=True)
 
 
-def _name_pattern(variants: Sequence[str], *, html: bool) -> re.Pattern[str] | None:
+def _name_pattern(variants: Sequence[str]) -> re.Pattern[str] | None:
+    """One alternation over the member-name variants.
+
+    No `html=` flag any more: it existed because the HTML path matched against
+    *escaped* text and so needed `re.escape(_e(v))` while Markdown needed
+    `re.escape(v)`. Nothing matches against escaped text now — see `_runs`.
+    """
     if not variants:
         return None
     alts = []
     for v in variants:
-        literal = re.escape(_e(v) if html else v)
         pre = r"\b" if v[:1].isalnum() else ""
         post = r"\b" if v[-1:].isalnum() else ""
-        alts.append(f"{pre}{literal}{post}")
+        alts.append(f"{pre}{re.escape(v)}{post}")
     return re.compile("|".join(alts))
 
 
-def _team_summary_html(text: str, key_map: dict[str, str], member_names: Sequence[str]) -> str:
-    """Render the LLM team summary as a scannable bullet list with bolded names + inline ticket links.
+def _team_summary_runs(text: str, key_map: Mapping[str, str], member_names: Sequence[str]) -> list[list[dict]]:
+    """The team summary as one run-list per sentence: names bold, ticket keys linked.
 
-    Deterministic post-processing only — no prompt/schema change, so it also
-    improves historical reports and the no-LLM fallback path. (A structured
-    ``highlights`` field in the summary prompt is a possible future upgrade.)
-    Names are bolded *before* anchors are inserted, so a name can never match
-    inside an href.
+    Deterministic post-processing only — no prompt or schema change, so it also
+    improves historical reports and the no-LLM fallback path.
     """
-    pattern = _name_pattern(_name_variants(member_names), html=True)
-    items: list[str] = []
-    for sentence in _split_sentences(text):
-        escaped = _e(sentence)
-        if pattern:
-            escaped = pattern.sub(lambda m: f"<strong>{m.group(0)}</strong>", escaped)
-        items.append(_linkify_escaped(escaped, key_map))
-    if not items:
-        return ""
-    if len(items) == 1:
-        return f"<div class='card'><p>{items[0]}</p></div>"
-    lis = "".join(f"<li>{item}</li>" for item in items)
-    return f"<div class='card'><ul>{lis}</ul></div>"
-
-
-def _team_summary_md_lines(text: str, key_map: dict[str, str], member_names: Sequence[str]) -> list[str]:
-    """Markdown flavor of the summary bullets: ``**Name**`` bolding + ``[KEY](url)`` links."""
-    pattern = _name_pattern(_name_variants(member_names), html=False)
-    items: list[str] = []
-    for sentence in _split_sentences(text):
-        if pattern:
-            sentence = pattern.sub(lambda m: f"**{m.group(0)}**", sentence)
-        items.append(_linkify_md(sentence, key_map))
-    if len(items) == 1:
-        return items
-    return [f"- {item}" for item in items]
+    pattern = _name_pattern(_name_variants(member_names))
+    return [_runs(sentence, key_map, pattern) for sentence in _split_sentences(text)]
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +320,9 @@ def build_standup_markdown(report: StandupReport) -> str:
 
     if report.team_summary:
         lines += ["", "## Team Summary", ""]
-        lines += _team_summary_md_lines(report.team_summary, key_map, member_names)
+        sentences = [_md_runs(runs) for runs in _team_summary_runs(report.team_summary, key_map, member_names)]
+        # A single sentence is a paragraph; several are a scannable list.
+        lines += sentences if len(sentences) == 1 else [f"- {s}" for s in sentences]
 
     lines += ["", "## Updates", ""]
     if report.member_updates:
@@ -314,14 +332,14 @@ def build_standup_markdown(report: StandupReport) -> str:
             is_own = bool(m.self_report) or m.source == "self-reported"
             lines.append(f"### {m.name} (you)" if is_own else f"### {m.name}")
             lines.append("")
-            overview = _linkify_md(m.summary, key_map) if m.summary else "_No activity detected._"
+            overview = _md_runs(_runs(m.summary, key_map)) if m.summary else "_No activity detected._"
             lines.append(overview)
             lines.append("")
             if getattr(m, "progress_note", ""):
-                lines.append(f"- **Since last standup:** {_linkify_md(m.progress_note, key_map)}")
+                lines.append(f"- **Since last standup:** {_md_runs(_runs(m.progress_note, key_map))}")
 
             def _refs(pairs: Sequence[tuple[str, str]]) -> str:
-                return " · ".join(f"[{label or url}]({url})" for label, url in pairs)
+                return " · ".join(_md_link(label, url) for label, url in pairs)
 
             bullets: list[str] = []
             for label, text, links in (
@@ -331,15 +349,15 @@ def build_standup_markdown(report: StandupReport) -> str:
             ):
                 if not text and not links:
                     continue
-                value = _linkify_md(text, key_map) if text else ""
+                value = _md_runs(_runs(text, key_map)) if text else ""
                 leftovers = _leftover_links(text, links)
                 if leftovers:
                     value = f"{value} — {_refs(leftovers)}" if value else _refs(leftovers)
                 bullets.append(f"- **{label}:** {value}")
             if getattr(m, "outlook", ""):
-                bullets.append(f"- **Outlook:** {_linkify_md(m.outlook, key_map)}")
+                bullets.append(f"- **Outlook:** {_md_runs(_runs(m.outlook, key_map))}")
             if m.blockers:
-                bullets.append(f"- **Blocker:** {_linkify_md(m.blockers, key_map)}")
+                bullets.append(f"- **Blocker:** {_md_runs(_runs(m.blockers, key_map))}")
             # Legacy reports carry only the general links tuple.
             category_links = (
                 *(getattr(m, "ticketing_links", ()) or ()),
@@ -385,156 +403,48 @@ def build_standup_markdown(report: StandupReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _history_points(report: StandupReport, history: Sequence[dict]) -> list[tuple[str, int]]:
-    """Normalize store history rows into (standup_date, confidence_pct), oldest → newest.
-
-    Thin wrapper over the shared ``history_series`` with standup's field names,
-    clipped to the report's own date so re-exporting an old run never shows its
-    future.
-    """
-    from yeaboi.html_theme import history_series
-
-    points = history_series(
-        history,
-        date_key="standup_date",
-        value_key="confidence_pct",
-        status_key="status",
-        cutoff_date=report.date,
-        current=(report.date, report.confidence_pct),
-        max_points=_SPARKLINE_MAX_POINTS,
-    )
-    return [(day, int(value)) for day, value in points]
+def _category_payload(label: str, summary: str, links: Sequence[tuple[str, str]], key_map: Mapping[str, str]) -> dict:
+    """One labelled list inside a member card: bullet runs plus leftover evidence."""
+    return {
+        "label": label,
+        "items": [_runs(fragment, key_map) for fragment in _summary_bullets(summary)],
+        "links": _links_payload(_leftover_links(summary, links)),
+    }
 
 
-def _confidence_sparkline(report: StandupReport, history: Sequence[dict]) -> str:
-    """Confidence-over-time trend card, or "" when there is no trend to show."""
-    from yeaboi.html_theme import sparkline_card
-
-    points = _history_points(report, history)
-    # _CONF_COLOR stores full "var(--ok)" strings; the SVG helper wants bare tokens.
-    end_token = _CONF_COLOR.get(report.confidence_label, "var(--low)")[4:-1]
-    return sparkline_card(
-        points,
-        title="Confidence trend",
-        end_color_var=end_token,
-        floor=0,
-        ceiling=100,
-        svg_title=f"Confidence trend — last {len(points)} standups",
-    )
-
-
-def _team_activity_block(report: StandupReport) -> str:
-    """Comparable per-member stacked activity bars (tickets/code/docs), or ""."""
-    from yeaboi.html_theme import legend, segment_bar
-
-    rows: list[tuple[str, int, int, int, int]] = []
-    for m in report.member_updates:
-        t = getattr(m, "ticketing_activity_count", 0)
-        c = getattr(m, "code_activity_count", 0)
-        d = getattr(m, "documentation_activity_count", 0)
-        total = t + c + d
-        if total > 0:
-            rows.append((m.name, t, c, d, total))
-    if not rows:
-        return ""
-    team_max = max(total for *_, total in rows)
-    bars = "".join(
-        "<div class='bar-row'>"
-        f"<span class='bar-name'>{_e(name)}</span>"
-        + segment_bar(
-            [(t, "--accent"), (c, "--accent2"), (d, "--info")],
-            title=f"{name}: {total} activity item(s)",
-            width_pct=total / team_max * 100,
-        )
-        + f"<span class='bar-total'>{total}</span></div>"
-        for name, t, c, d, total in rows
-    )
-    key = legend([("Tickets", "--accent"), ("Code", "--accent2"), ("Docs", "--info")])
-    return f"<div class='card'><div class='card-title' style='margin-bottom:.3rem'>Team activity</div>{key}{bars}</div>"
-
-
-def _source_bar(report: StandupReport) -> str:
-    """Activity-by-source segmented bar with a counted legend, or ""."""
-    from yeaboi.html_theme import counted_segment_bar
-
-    block = counted_segment_bar(report.activity_counts, title="Activity by source")
-    return f"<div style='margin-bottom:.6rem'>{block}</div>" if block else ""
-
-
-def _category_block(title: str, summary: str, links: Sequence[tuple[str, str]], key_map: dict[str, str]) -> str:
-    """One labeled list inside the member card's Ticketing / Code / Documentation grid.
-
-    Returns "" when there is nothing to show — the caller collapses empty
-    categories into a footnote so the grid redistributes the freed width.
-    """
-    items = [f"<li>{_linkify(fragment, key_map)}</li>" for fragment in _summary_bullets(summary)]
-    leftovers = _leftover_links(summary, links)
-    chips = ""
-    if leftovers:
-        chips = (
-            "<div class='chip-row'>"
-            + "".join(
-                f"<a class='badge' href='{_e(url, quote=True)}' target='_blank' rel='noopener'>{_e(label or url)}</a>"
-                for label, url in leftovers
-            )
-            + "</div>"
-        )
-    if not items and not chips:
-        return ""
-    return f"<div class='analysis-section'><h3>{_e(title)}</h3><ul>{''.join(items)}</ul>{chips}</div>"
-
-
-def _member_card(m: MemberUpdate, key_map: dict[str, str]) -> str:
-    """One card per member: avatar + overview paragraph, category lists, blocker callout, self-report quote."""
-    from yeaboi.html_theme import avatar, chip
-
-    is_own = bool(m.self_report) or m.source == "self-reported"
-    title = f"<strong>{_e(m.name)}</strong>"
-    if is_own:
-        title += f" {chip('you', 'accent')}"
-    title = (
-        f"<span style='display:inline-flex;align-items:center;gap:.55rem'>{avatar(m.name)}<span>{title}</span></span>"
-    )
-
-    meta_chips: list[str] = []
-    for count, singular, plural in (
-        (getattr(m, "ticketing_activity_count", 0), "ticket", "tickets"),
-        (getattr(m, "code_activity_count", 0), "code", "code"),
-        (getattr(m, "documentation_activity_count", 0), "doc", "docs"),
-    ):
-        if count:
-            meta_chips.append(chip(f"{count} {singular if count == 1 else plural}"))
-    if m.blockers:
-        meta_chips.append(chip("blocked", "danger"))
-    meta_html = f"<div class='card-meta'>{''.join(meta_chips)}</div>" if meta_chips else ""
-
-    parts = [
-        f"<div class='card-header'><div class='card-title'>{title}</div>{meta_html}</div>",
-        f"<p>{_linkify(m.summary or 'No activity detected.', key_map)}</p>",
-    ]
+def _member_payload(m: MemberUpdate, key_map: Mapping[str, str]) -> dict:
+    """One member as data: their prose, their evidence, and what they are stuck on."""
+    out: dict = {
+        "name": m.name,
+        "summary": _runs(m.summary, key_map),
+        # Order matters: ticketing, code, docs — the same order as the chips and
+        # the team-activity bars, so a reader compares like with like.
+        "counts": [
+            getattr(m, "ticketing_activity_count", 0),
+            getattr(m, "code_activity_count", 0),
+            getattr(m, "documentation_activity_count", 0),
+        ],
+        "categories": [],
+        "footnotes": [],
+        "links": [],
+    }
+    if bool(m.self_report) or m.source == "self-reported":
+        out["own"] = True
     if getattr(m, "progress_note", ""):
-        parts.append(
-            f"<p style='color:var(--muted);font-size:.875rem'>↺ <em>Since last standup:</em> "
-            f"{_linkify(m.progress_note, key_map)}</p>"
-        )
-    # Legacy reports carry only the general links tuple — surface what isn't already inline.
-    category_links = (
-        *(getattr(m, "ticketing_links", ()) or ()),
-        *(getattr(m, "code_links", ()) or ()),
-        *(getattr(m, "documentation_links", ()) or ()),
-    )
-    if getattr(m, "links", ()) and not category_links:
-        leftovers = _leftover_links(m.summary, m.links)
-        if leftovers:
-            anchors = " · ".join(_anchor(label, url) for label, url in leftovers)
-            parts.append(f"<p style='font-size:.85rem'>{anchors}</p>")
-    # Adaptive grid: only categories with real activity get a column (count > 0
-    # or evidence links), so a quiet category never squeezes the busy ones into
-    # narrow strips. Empty categories collapse into muted footnote lines that
-    # KEEP the coverage-aware wording — "source not configured" must stay
-    # distinguishable from "no activity detected".
-    sections: list[str] = []
-    footnotes: list[str] = []
+        out["progressNote"] = _runs(m.progress_note, key_map)
+    if getattr(m, "outlook", ""):
+        out["outlook"] = _runs(m.outlook, key_map)
+    if m.blockers:
+        out["blockers"] = _runs(m.blockers, key_map)
+    if m.self_report:
+        # The verbatim quote gets linkified too — people type bare ticket keys.
+        out["selfReport"] = _runs(m.self_report, key_map)
+
+    # A category earns a column when it has real activity or evidence links; one
+    # with prose but neither becomes a footnote, so a quiet category never
+    # squeezes the busy ones into narrow strips. The wording is preserved
+    # either way — "source not configured" must stay distinguishable from
+    # "no activity detected".
     for label, summary, links, count in (
         (
             "Ticketing",
@@ -550,143 +460,102 @@ def _member_card(m: MemberUpdate, key_map: dict[str, str]) -> str:
             getattr(m, "documentation_activity_count", 0),
         ),
     ):
-        block = _category_block(label, summary, links, key_map) if (count or links) else ""
-        if block:
-            sections.append(block)
+        block = _category_payload(label, summary, links, key_map) if (count or links) else None
+        if block and (block["items"] or block["links"]):
+            out["categories"].append(block)
         elif summary:
-            footnotes.append(f"<p class='card-footnote'>{_e(label)} — {_linkify(summary, key_map)}</p>")
-    if sections:
-        parts.append(f"<div class='analysis-grid member-grid' style='margin-top:.6rem'>{''.join(sections)}</div>")
-    parts.extend(footnotes)
-    if getattr(m, "outlook", ""):
-        parts.append(
-            f"<p style='margin-top:.6rem;font-size:.875rem'><span class='badge'>Outlook</span> "
-            f"{_linkify(m.outlook, key_map)}</p>"
-        )
-    if m.blockers:
-        parts.append(
-            f"<p style='margin-top:.6rem'><span class='badge badge-danger'>Blocker</span> "
-            f"{_linkify(m.blockers, key_map)}</p>"
-        )
-    if m.self_report:
-        # Linkify the verbatim quote too — people often type bare ticket keys.
-        sr_html = _linkify(m.self_report, key_map).replace("\n", "<br>")
-        parts.append(f"<p class='quote'>✍ {sr_html}</p>")
+            out["footnotes"].append({"label": label, "runs": _runs(summary, key_map)})
 
-    classes = "card story-card critical" if m.blockers else "card story-card"
-    return f"<div class='{classes}'>{''.join(parts)}</div>"
+    # Legacy reports carry only the general links tuple — surface what is not
+    # already an inline anchor in the prose.
+    category_links = (
+        *(getattr(m, "ticketing_links", ()) or ()),
+        *(getattr(m, "code_links", ()) or ()),
+        *(getattr(m, "documentation_links", ()) or ()),
+    )
+    if getattr(m, "links", ()) and not category_links:
+        out["links"] = _links_payload(_leftover_links(m.summary, m.links))
+    return out
 
 
 def build_standup_html(report: StandupReport, *, history: Sequence[dict] = ()) -> str:
-    """Return the standup as a self-contained HTML document (shared design system).
+    """Return the standup as a self-contained HTML document.
 
     ``history`` is optional ``StandupStore.get_history`` rows (newest-first);
     with two or more usable points it powers the confidence-trend sparkline.
-    All visuals are inline SVG/CSS on theme tokens — no external resources.
     """
-    from yeaboi.html_theme import chip, html_page, notice_block, section, stat_bar, stat_tile
+    from yeaboi.html_theme import export_page, image_data_uri, trend
 
     key_map = _ticket_key_map(report)
-    conf_color = _CONF_COLOR.get(report.confidence_label, "var(--low)")
-
-    # Overview — stat tiles + confidence chip + trend + team activity + notices.
-    if report.confidence_label and report.confidence_label != "Insufficient data":
-        conf_num = f"{report.confidence_pct}%"
-    else:
-        conf_num = "—"
-    if report.sprint_total_days:
-        sprint_pct = report.sprint_day / report.sprint_total_days * 100
-        sprint_tile = (
-            f"<div class='stat'><div class='num'>{report.sprint_day} / {report.sprint_total_days}</div>"
-            f"<div class='lbl'>Sprint day</div>{stat_bar(sprint_pct)}</div>"
-        )
-    else:
-        sprint_tile = stat_tile(report.sprint_name or "—", "Sprint")
-    tiles = [
-        sprint_tile,
-        # Hand-built tile: stat_tile can't color the number by confidence.
-        f"<div class='stat'><div class='num' style='color:{conf_color}'>{_e(conf_num)}</div>"
-        f"<div class='lbl'>Confidence</div></div>",
-        stat_tile(str(len(report.member_updates)), "Members"),
-    ]
-    if report.activity_counts:
-        tiles.append(stat_tile(str(sum(n for _, n in report.activity_counts)), "Activity items"))
-    overview = [f"<div class='stat-grid'>{''.join(tiles)}</div>"]
-    conf_line = f"<p>{chip(_confidence_text(report), _CONF_CHIP_KIND.get(report.confidence_label, 'low'))}"
-    trend_text = _trend_text(report)
-    if trend_text:
-        trend_kind = "ok" if report.confidence_trend == "improving" else "danger"
-        conf_line += f" {chip(trend_text, trend_kind)}"
-    if report.confidence_rationale:
-        conf_line += f" <span style='color:var(--muted);font-size:.875rem'>{_e(report.confidence_rationale)}</span>"
-    overview.append(conf_line + "</p>")
-    overview.append(_confidence_sparkline(report, history))
-    overview.append(_team_activity_block(report))
-    overview.append(notice_block("Notices", report.warnings or []))
-    parts: list[str] = [section("overview", "Overview", "".join(overview))]
-
-    if report.team_summary:
-        names = [m.name for m in report.member_updates]
-        parts.append(section("summary", "Team Summary", _team_summary_html(report.team_summary, key_map, names)))
-
-    if report.member_updates:
-        cards = "".join(_member_card(m, key_map) for m in report.member_updates)
-    else:
-        cards = "<p style='color:var(--muted)'>No individual updates.</p>"
-    parts.append(section("updates", "Updates", cards))
-
-    has_screenshots = False
-    if report.images:
-        from yeaboi.html_exporter import img_b64_tag
-
-        tags = "".join(img_b64_tag(p, "Screenshot") for p in report.images)
-        if tags:
-            parts.append(section("screenshots", "Screenshots", tags))
-            has_screenshots = True
-
-    detail_items: list[str] = []
-    if report.activity_counts:
-        counts = ", ".join(f"{_e(src)}: {n}" for src, n in report.activity_counts)
-        window = f" ({_e(report.activity_window)})" if report.activity_window else ""
-        detail_items.append(f"<li>Activity examined — {counts}{window}</li>")
-    if report.category_coverage:
-        coverage = " &nbsp; ".join(
-            f"<span class='dot' style='background:var({_COVERAGE_DOT.get(status, '--low')})'></span>"
-            f"{_e(category)} <span style='color:var(--muted)'>{_e(status.replace('_', ' '))}</span>"
-            for category, status in report.category_coverage
-        )
-        detail_items.append(f"<li>Coverage — {coverage}</li>")
-    if report.skipped_sources:
-        skipped = ", ".join(f"{_e(src)} ({_e(reason)})" for src, reason in report.skipped_sources)
-        detail_items.append(f"<li>Sources skipped — {skipped}</li>")
-    source_bar = _source_bar(report)
-    if detail_items or source_bar:
-        details = source_bar + f"<ul class='ac-list'>{''.join(detail_items)}</ul>"
-        parts.append(section("details", "Details", details))
+    members = [_member_payload(m, key_map) for m in report.member_updates]
+    # Screenshots pasted into "My Update". Embedded rather than referenced: the
+    # files live under ~/.yeaboi and get pruned, so a path would go stale.
+    images = [uri for p in report.images if (uri := image_data_uri(p))]
 
     nav: list[tuple[str, str]] = [("overview", "Overview")]
     if report.team_summary:
         nav.append(("summary", "Team Summary"))
     nav.append(("updates", "Updates"))
-    if has_screenshots:
+    if images:
         nav.append(("screenshots", "Screenshots"))
-    if detail_items or source_bar:
+    has_details = bool(report.activity_counts or report.category_coverage or report.skipped_sources)
+    if has_details:
         nav.append(("details", "Details"))
 
-    meta = [_sprint_line(report)]
-    if report.activity_window:
-        meta.append(report.activity_window)
-    n = len(report.member_updates)
-    meta.append(f"{n} member{'s' if n != 1 else ''}")
-
-    return html_page(
-        title=f"Daily Standup — {report.date}",
-        heading="Daily Standup",
+    return export_page(
+        mode="standup",
+        title="Daily Standup",
+        wordmark="standup",
         subtitle=report.date,
-        meta=meta,
+        facts=[
+            ("SPRINT", _sprint_line(report)),
+            ("CONFIDENCE", _confidence_text(report)),
+            ("MEMBERS", str(len(report.member_updates))),
+            ("WINDOW", report.activity_window or ""),
+        ],
         nav=nav,
-        body="".join(parts),
-        footer_note=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+        report={
+            "kind": "standup",
+            "sprint": {
+                "name": report.sprint_name,
+                "day": report.sprint_day,
+                "total": report.sprint_total_days,
+            },
+            # The label is a produced value, not a validated one, so it travels
+            # as itself and the bundle maps it to a tone with a fallback —
+            # exactly what `_CONF_COLOR.get(label, "var(--low)")` did here.
+            "confidence": {
+                "label": report.confidence_label,
+                "pct": report.confidence_pct,
+                "text": _confidence_text(report),
+                "trend": getattr(report, "confidence_trend", ""),
+                "trendText": _trend_text(report),
+                "rationale": report.confidence_rationale,
+            },
+            "summary": _team_summary_runs(report.team_summary, key_map, [m.name for m in report.member_updates]),
+            "members": members,
+            "activityCounts": [[source, count] for source, count in report.activity_counts],
+            "activityWindow": report.activity_window,
+            "coverage": [[category, status] for category, status in report.category_coverage],
+            "skipped": [[source, reason] for source, reason in report.skipped_sources],
+            "images": images,
+            "trend": trend(
+                history,
+                date_key="standup_date",
+                value_key="confidence_pct",
+                status_key="status",
+                title="Confidence trend",
+                label="Confidence",
+                cutoff_date=report.date,
+                current=(report.date, report.confidence_pct),
+                max_points=_SPARKLINE_MAX_POINTS,
+                floor=0,
+                ceiling=100,
+            ),
+            "warnings": list(report.warnings or []),
+        },
+        footer=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
+        markdown_name=f"{_stem(report)}.md",
     )
 
 
@@ -707,7 +576,7 @@ def export_standup(report: StandupReport, *, project_name: str = "", history: Se
 
     key = _slug(project_name or report.session_id)
     out_dir = get_standup_export_dir(key)
-    stem = f"standup-{report.date or 'latest'}"
+    stem = _stem(report)
     md_path = out_dir / f"{stem}.md"
     html_path = out_dir / f"{stem}.html"
     from yeaboi.export_targets import localize_images

@@ -3,6 +3,7 @@
 import pytest
 from rich.console import Group
 
+from tests._pages import island
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
 from yeaboi.performance import delivery, export, render
 
@@ -90,13 +91,13 @@ class TestExport:
         with pytest.raises(ValueError):
             export.export_artifact(object(), engineer="Ada", kind="bogus")
 
-    def test_html_escapes_engineer_name(self):
+    def test_hostile_engineer_name_never_reaches_the_parser_as_markup(self):
         rec = OneOnOneRecord(engineer="<script>", date="2026-07-12", email_summary="hi")
         html = export.build_completion_html(rec)
-        # The only raw <script> allowed is the constant theme-switcher script.
-        assert html.count("<script>") == 1
-        assert "yeaboi-export-theme" in html
-        assert "&lt;script&gt;" in html
+        # Two <script> elements are legitimate: the JSON island (not executable)
+        # and the bundle. A third would mean the name opened one.
+        assert html.count("<script") == 2
+        assert island(html)["report"]["engineer"] == "<script>"
 
 
 class TestDelivery:
@@ -145,52 +146,76 @@ class TestDelivery:
 
 
 class TestSharedDesignSystem:
-    def test_prep_html_uses_shared_theme(self):
+    def test_prep_html_is_self_contained_and_wears_the_mode_accent(self):
         html = export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-12", talking_points=("point",)))
-        assert 'data-theme="midnight"' in html
-        assert "yeaboi-export-theme" in html  # theme switcher present
+        assert 'data-mode="performance"' in html
         assert 'src="http' not in html and "<link" not in html  # self-contained
 
 
-class TestVisuals:
-    def test_engineer_avatar_row_on_all_docs(self):
-        from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
-        from yeaboi.performance import export
+class TestPayload:
+    """All three artifacts render through one component, so all three build one shape.
 
-        prep_html = export.build_prep_html(OneOnOnePrep(engineer="Ada Lovelace", date="2026-07-27"))
-        rec_html = export.build_completion_html(OneOnOneRecord(engineer="Ada Lovelace", date="2026-07-27"))
-        rev_html = export.build_review_html(SixMonthReview(engineer="Ada Lovelace"))
-        for html in (prep_html, rec_html, rev_html):
-            # class attribute, not the bare token — ".avatar" also lives in the stylesheet.
-            assert 'class="avatar"' in html
-            assert ">AL</span>" in html
+    That is the change worth guarding: `build_prep_html`, `build_completion_html`
+    and `build_review_html` used to be three copies of the same assembly that
+    differed only in section titles, and each drifted from its Markdown twin
+    independently. What varies now is data — a wordmark, a subtitle, a list of
+    `(title, items)` — and these tests read it as data.
+    """
 
-    def test_avatar_name_escaped(self):
-        from yeaboi.agent.state import OneOnOnePrep
-        from yeaboi.performance import export
+    def test_every_artifact_names_its_engineer_and_its_kind(self):
+        pages = {
+            "prep": export.build_prep_html(OneOnOnePrep(engineer="Ada Lovelace", date="2026-07-27")),
+            "summary": export.build_completion_html(OneOnOneRecord(engineer="Ada Lovelace", date="2026-07-27")),
+            "review": export.build_review_html(SixMonthReview(engineer="Ada Lovelace")),
+        }
+        for wordmark, html in pages.items():
+            boot = island(html)
+            assert boot["chrome"]["wordmark"] == wordmark
+            assert boot["chrome"]["title"].endswith("Ada Lovelace")
+            # The name is in the title and in the body's avatar row; a third
+            # copy as a header eyebrow is noise, not emphasis.
+            assert "facts" not in boot["chrome"]
+            assert boot["report"]["kind"] == "performance"
+            assert boot["report"]["engineer"] == "Ada Lovelace"
 
-        html = export.build_prep_html(OneOnOnePrep(engineer="<b>Eve</b>", date="2026-07-27"))
-        assert "<b>Eve</b>" not in html
-
-    def test_long_items_split_into_bullets(self):
-        from yeaboi.agent.state import OneOnOnePrep
-        from yeaboi.performance import export
-
-        long_item = (
-            "Ada shipped the SSO rollout across every tenant and closed the audit findings. "
-            "The break-glass path is still untested; the follow-up work needs a dedicated spike "
-            "before the compliance review lands next month."
+    def test_prep_sections_are_titled_bullet_runs_in_order(self):
+        prep = OneOnOnePrep(
+            engineer="Ada",
+            date="2026-07-27",
+            activity_summary="shipped auth",
+            talking_points=("tp",),
+            goals=("goal",),
+            carried_action_items=("carry",),
         )
-        html = export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-27", talking_points=(long_item,)))
-        assert "<li>Ada shipped the SSO rollout across every tenant and closed the audit findings.</li>" in html
-        assert "<li>The break-glass path is still untested</li>" in html
-        assert "class='analysis-section'" in html
+        report = island(export.build_prep_html(prep))["report"]
+        assert report["lead"] == {"title": "Sprint work", "text": "shipped auth"}
+        assert report["sections"] == [
+            {"title": "Carried-over action items", "items": ["carry"]},
+            {"title": "Talking points", "items": ["tp"]},
+            {"title": "Goals to align on", "items": ["goal"]},
+        ]
 
-    def test_short_items_stay_whole(self):
-        from yeaboi.agent.state import OneOnOnePrep
-        from yeaboi.performance import export
+    def test_empty_sections_are_dropped_not_sent_blank(self):
+        # A section with no items draws nothing, so shipping it would put a row
+        # in the payload whose only possible rendering is absence.
+        report = island(export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-27")))["report"]
+        assert report["sections"] == []
+        assert "lead" not in report
 
-        html = export.build_prep_html(
-            OneOnOnePrep(engineer="Ada", date="2026-07-27", talking_points=("Discuss growth; align on goals.",))
+    def test_review_framework_rides_as_a_footnote(self):
+        review = SixMonthReview(engineer="Ada", framework_used="Dreyfus", strengths=("clear writer",))
+        report = island(export.build_review_html(review))["report"]
+        assert report["footnote"] == "Framework: Dreyfus"
+        assert report["sections"][0] == {"title": "Strengths", "items": ["clear writer"]}
+
+    def test_completion_subject_is_a_section_not_a_second_prose_slot(self):
+        record = OneOnOneRecord(
+            engineer="Ada",
+            date="2026-07-12",
+            email_subject="1:1 recap",
+            email_summary="We agreed on the plan.",
+            action_items=("book the spike",),
         )
-        assert "<li>Discuss growth; align on goals.</li>" in html
+        report = island(export.build_completion_html(record))["report"]
+        assert report["lead"] == {"title": "Summary email", "text": "We agreed on the plan."}
+        assert report["sections"][0] == {"title": "Subject", "items": ["1:1 recap"]}

@@ -11,6 +11,14 @@ eggs/
 *.whl
 .eggs/
 
+# Front-end toolchain. NOTE: src/yeaboi/web/static/ is the Vite *output* and is
+# deliberately committed (so `pip install yeaboi` needs no Node) — do not add it
+# here. Beware the unanchored `dist/` and `build/` globs above: hatchling reads
+# this file as build excludes, so a build dir with either name would vanish from
+# the wheel.
+frontend/node_modules/
+frontend/.vite/
+
 # Virtual environments
 .venv/
 venv/

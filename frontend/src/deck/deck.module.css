@@ -1,0 +1,427 @@
+/*
+ * The slide deck.
+ *
+ * Every size is `calc(<clamp> * var(--deck-scale))`. Multiplying a clamp by a
+ * positive constant is the same as scaling all three of its bounds, so the one
+ * expression replaces the table of hand-scaled `clamp()` re-declarations the
+ * Python renderer used to emit per font-scale setting.
+ */
+
+.app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* dvh, not vh: on iOS the URL bar is inside 100vh, so the chrome row sat
+     below the fold on exactly the device someone opens an emailed deck on. */
+  height: 100dvh;
+  font-family: var(--deck-font);
+  background: radial-gradient(115% 85% at 22% 0%, var(--deck-glow) 0%, var(--bg) 62%);
+  padding:
+    calc(var(--s5) + env(safe-area-inset-top)) calc(var(--s5) + env(safe-area-inset-right))
+    calc(var(--s4) + env(safe-area-inset-bottom)) calc(var(--s5) + env(safe-area-inset-left));
+}
+
+/* ── Edge furniture ─────────────────────────────────────────────────────── */
+
+/*
+ * Top-left: whose report this is.
+ *
+ * The project name appeared only on the title slide before, so anyone who
+ * joined the call at slide six had no way to tell. Set as a terminal-style
+ * label rather than a logo, because that is what it is — the deck came out of
+ * someone's terminal.
+ */
+.rail,
+.brand,
+.corner {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  color: var(--dim);
+  margin: 0;
+}
+
+.rail {
+  top: calc(var(--s4) + env(safe-area-inset-top));
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.brand {
+  top: calc(var(--s3) + env(safe-area-inset-top));
+  right: calc(var(--s5) + env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.brandMark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5ch;
+}
+
+/*
+ * `--dim`, not `--muted`, and the reason is not taste.
+ *
+ * The block glyphs are solid fills where the mono text beside them is strokes,
+ * so at the same colour the mark reads a weight heavier than the words it sits
+ * in and the credit line turns into a logo. One tier down puts them level.
+ */
+.brandWordmark {
+  color: var(--dim);
+  /* The glyph rows are their own baseline; nudge them onto the text's. */
+  align-self: center;
+}
+
+.brandDate {
+  font-variant-numeric: tabular-nums;
+}
+
+.corner {
+  bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+}
+
+.cornerLeft {
+  left: calc(var(--s5) + env(safe-area-inset-left));
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cornerRight {
+  right: calc(var(--s5) + env(safe-area-inset-right));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Stage ──────────────────────────────────────────────────────────────── */
+
+.stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  /* Clears the rail and the brand badge above. */
+  padding: var(--s6) 0 var(--s5);
+}
+
+.slide {
+  width: 100%;
+  max-width: 1040px;
+  /*
+   * Animate *from* the entrance, never *to* it. The global reduced-motion guard
+   * in tokens.css flattens every animation to 0.01ms, so a `to`-animation would
+   * freeze on its first frame — here, an invisible slide.
+   */
+  animation: enter 320ms var(--ease) both;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.centered {
+  text-align: center;
+}
+
+/* ── Slide head ─────────────────────────────────────────────────────────── */
+
+/*
+ * The section mark and the eyebrow share one row.
+ *
+ * The emoji used to be a 6rem block of its own above the heading, which on a
+ * content slide meant a quarter of the screen was a decorative pictogram. At
+ * this size it works as what it actually is: a marker beside the section label.
+ */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  min-height: calc(1.6rem * var(--deck-scale));
+}
+
+.emoji {
+  font-size: calc(clamp(1.4rem, 2.6vw, 2rem) * var(--deck-scale));
+  line-height: 1;
+}
+
+/* The bookend slides keep the large mark — there, it is the whole composition. */
+.markLarge {
+  font-size: calc(clamp(2.6rem, 7vw, 4.5rem) * var(--deck-scale));
+  line-height: 1;
+  margin-bottom: var(--s5);
+}
+
+/* ── Headings ───────────────────────────────────────────────────────────── */
+
+.h1 {
+  font-size: calc(clamp(2rem, 6vw, 4rem) * var(--deck-scale));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--deck-title, var(--text));
+  margin: 0;
+}
+
+/*
+ * Plain text, not a gradient text-clip.
+ *
+ * The clip was the deck's most dated flourish and it actively cost legibility:
+ * a heading fading toward `--accent` mid-word is lower contrast than either
+ * endpoint, on the one element that has to read from the back of a room. The
+ * accent moved to the eyebrow above it, where it marks the section instead.
+ */
+.h2 {
+  font-size: calc(clamp(1.6rem, 4.2vw, 2.8rem) * var(--deck-scale));
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--deck-heading, var(--text));
+  margin: 0 0 calc(var(--s5) * var(--deck-scale));
+}
+
+.headline {
+  font-size: calc(clamp(1.1rem, 2.6vw, 1.7rem) * var(--deck-scale));
+  font-weight: 600;
+  color: var(--accent2);
+  margin: var(--s5) 0 0;
+}
+
+.sub {
+  font-size: calc(clamp(1rem, 2.2vw, 1.3rem) * var(--deck-scale));
+  color: var(--muted);
+  margin: var(--s4) 0 0;
+}
+
+.thanksMark {
+  color: var(--accent);
+  /* The glyphs are a grid of cells; any tracking at all opens hairline gaps
+     straight through the middle of a letter. Restated from the primitive
+     because a size override is the tempting thing to add here. */
+  font-size: calc(clamp(8px, 1.9vw, 17px) * var(--deck-scale));
+  display: inline-block;
+}
+
+/* ── Bodies ─────────────────────────────────────────────────────────────── */
+
+.body {
+  font-size: calc(clamp(1.05rem, 2.3vw, 1.5rem) * var(--deck-scale));
+  line-height: 1.6;
+}
+
+.body p {
+  margin: 0 0 0.9em;
+}
+
+.body p:last-child {
+  margin-bottom: 0;
+}
+
+.items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--s3) * var(--deck-scale));
+  margin: 0;
+  padding: 0;
+}
+
+.items li {
+  font-size: calc(clamp(1rem, 2.2vw, 1.4rem) * var(--deck-scale));
+  line-height: 1.4;
+  padding-left: 1.9em;
+  position: relative;
+}
+
+.items li::before {
+  content: "▸";
+  color: var(--deck-heading, var(--accent));
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.footnote {
+  color: var(--muted);
+  font-size: calc(clamp(0.8rem, 1.6vw, 1rem) * var(--deck-scale));
+  margin: var(--s5) 0 0;
+  font-style: italic;
+}
+
+/* ── Metrics ────────────────────────────────────────────────────────────── */
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+/*
+ * Tiles are a hairline and a left accent rule, not a translucent white fill.
+ *
+ * `rgba(255,255,255,.05)` is invisible on the light-ish palettes and muddy on
+ * the dark ones — it was a single value doing duty across four backgrounds. A
+ * border derived from `--text` tracks whatever palette is showing.
+ */
+.metric,
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-m);
+}
+
+.metric {
+  padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s5) * var(--deck-scale));
+  min-width: 10ch;
+}
+
+.metricValue {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: calc(clamp(2.2rem, 5.4vw, 3.6rem) * var(--deck-scale));
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--accent2);
+}
+
+.metricLabel {
+  font-family: var(--font-mono);
+  font-size: calc(clamp(0.7rem, 1.3vw, 0.85rem) * var(--deck-scale));
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: var(--s2);
+}
+
+/* ── Outcome cards ──────────────────────────────────────────────────────── */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s4);
+  /* Cards size to their content — without this a short card stretches to match
+     the tall one beside it and the slide reads as two half-empty boxes. */
+  align-items: start;
+}
+
+.cardsWide {
+  grid-template-columns: 1fr;
+}
+
+.card {
+  padding: calc(var(--s4) * var(--deck-scale)) calc(var(--s4) * var(--deck-scale));
+}
+
+.cardTitle {
+  font-size: calc(clamp(0.95rem, 2vw, 1.2rem) * var(--deck-scale));
+  font-weight: 700;
+  color: var(--deck-heading, var(--accent2));
+  margin: 0 0 calc(var(--s3) * var(--deck-scale));
+}
+
+.card .items {
+  gap: calc(var(--s2) * var(--deck-scale));
+}
+
+.card .items li {
+  font-size: calc(clamp(0.82rem, 1.6vw, 1rem) * var(--deck-scale));
+  padding-left: 1.5em;
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+
+.chrome {
+  flex: none;
+}
+
+.progress {
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur-base) var(--ease);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s4);
+  margin-top: var(--s3);
+}
+
+.controls button {
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-l);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.controls button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.controls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.counter {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-label);
+  color: var(--muted);
+  min-width: 8ch;
+  text-align: center;
+}
+
+.hint {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  color: var(--dim);
+  margin: var(--s2) 0 0;
+}
+
+/* ── Narrow ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .hint,
+  .rail {
+    display: none;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    gap: var(--s3);
+  }
+}

@@ -1,0 +1,219 @@
+/**
+ * The access-code gate: swap an ``XXXX-XXXX`` code for a session token.
+ *
+ * Shared deliberately. The static-output share server (``sharing/server.py``),
+ * the retro board and the poker board all put the same gate in front of the
+ * same ``POST /api/join`` contract, and today each one carries its own copy.
+ * Everything mode-specific arrives as a prop.
+ *
+ * Nothing here is a security boundary — it is a keypad in front of one. Codes
+ * are checked server-side with ``compare_digest`` and failures are throttled
+ * per-IP by ``sharing.access.JoinLimiter``; this component just collects eight
+ * characters and reports what the server said.
+ */
+import { useCallback, useId, useRef, useState } from 'react';
+
+import { Duck, Eyebrow, TerminalFrame, useDuckPulse, Wordmark } from '../design/primitives';
+import { cx } from '../runtime/cx';
+import styles from './JoinGate.module.css';
+
+/** Codes are 8 characters from an unambiguous alphabet — see access.py. */
+const CODE_LENGTH = 8;
+
+export interface JoinGateProps {
+  /** Endpoint that exchanges a code for a token. */
+  endpoint?: string;
+  /**
+   * Word set in the block-glyph display face.
+   *
+   * Defaults to the brand, **not** the mode, and that default is load-bearing
+   * on the static-share gate: `sharing/gate.py` deliberately serves a document
+   * carrying no per-share information at all, so an unauthenticated visitor
+   * learns nothing about what is behind it. A mode name here would undo that.
+   * The boards pass their own, because their page title already names the mode.
+   */
+  wordmark?: string;
+  /** Small mono label above the heading. Same rule as `wordmark`. */
+  eyebrow?: string;
+  /** Title-bar text for the terminal frame. Same rule again. */
+  frameTitle?: string;
+  heading?: string;
+  /** One line under the heading explaining what the visitor is joining. */
+  blurb?: string;
+  /** Submit-button label. Keeps its name through the whole flow. */
+  cta?: string;
+  /**
+   * Called with the token once the server accepts the code. Defaults to
+   * reloading at ``/?token=…`` — a full navigation, so the browser drops the
+   * gate document entirely rather than leaving the code in a live JS heap.
+   */
+  onJoined?: (token: string) => void;
+}
+
+type Phase = 'idle' | 'checking' | 'error';
+
+/**
+ * Keep only characters a code can contain, uppercase, and re-insert the dash.
+ *
+ * Runs on every keystroke *and* on paste, which is the case that matters: the
+ * host reads the code out over a call, or sends it in a chat message that gets
+ * pasted with surrounding whitespace, a lowercase spelling, or no dash at all.
+ */
+export function normalizeCode(raw: string): string {
+  const body = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+  return body.length > 4 ? `${body.slice(0, 4)}-${body.slice(4)}` : body;
+}
+
+/**
+ * The eight code characters, dash removed — for length checks only.
+ *
+ * NOT what goes on the wire. ``make_join_code`` issues ``XXXX-XXXX`` and all
+ * three servers compare against that string with ``compare_digest``, so the
+ * dash is part of the code, not decoration. Sending the stripped form made
+ * every join fail with 403.
+ */
+const digits = (value: string): string => value.replace('-', '');
+
+/**
+ * Turn a response into something worth reading.
+ *
+ * The distinction that earns its keep is 429 vs 403: after eight wrong
+ * attempts the limiter locks the IP out for five minutes, and a visitor told
+ * only "that code did not match" will retype the *correct* code repeatedly and
+ * conclude the host sent them a broken link.
+ */
+function messageFor(status: number): string {
+  if (status === 429) return 'Too many attempts. Wait a few minutes, then try again.';
+  if (status === 403) return 'That code did not match. Check it with the host.';
+  return `Something went wrong (HTTP ${status}). Ask the host to re-share.`;
+}
+
+export function JoinGate({
+  endpoint = '/api/join',
+  wordmark = 'yeaboi',
+  eyebrow = 'Shared from a terminal',
+  frameTitle = 'yeaboi',
+  heading = 'Someone shared this with you',
+  blurb = 'Enter the access code they gave you. The link stops working when they close the share.',
+  cta = 'Open',
+  onJoined,
+}: JoinGateProps) {
+  const [code, setCode] = useState('');
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [message, setMessage] = useState('');
+  const [duck, startle] = useDuckPulse('idle');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // useId, not a hardcoded string: the boards will mount this alongside their
+  // own markup, and duplicate ids would break the label/input association.
+  const inputId = useId();
+  const statusId = useId();
+
+  const complete = digits(code).length === CODE_LENGTH;
+  const busy = phase === 'checking';
+
+  const submit = useCallback(
+    async (event: Event) => {
+      event.preventDefault();
+      if (busy || !complete) return;
+
+      setPhase('checking');
+      setMessage('Checking…');
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // `code` is already normalized to XXXX-XXXX, which is exactly the
+          // string the server holds. See the note on `digits` above.
+          body: JSON.stringify({ code }),
+        });
+        if (!response.ok) {
+          setPhase('error');
+          setMessage(messageFor(response.status));
+          // The duck loses its sunglasses. This is the docs site's cursor-dodge
+          // reaction reused on the one screen where something has actually gone
+          // wrong — a rejected code is the most likely moment a visitor has with
+          // this product, so it may as well be the one they remember.
+          startle('startled');
+          // Select rather than clear: a mistyped character is far more likely
+          // than a wholly wrong code, and retyping all eight is a tax.
+          inputRef.current?.select();
+          return;
+        }
+        const { token } = (await response.json()) as { token?: string };
+        if (!token) throw new Error('no token');
+        if (onJoined) onJoined(token);
+        else location.replace(`/?token=${encodeURIComponent(token)}`);
+      } catch {
+        // fetch() rejects only on transport failure — the tunnel dropping, or
+        // the host closing the share while someone is typing.
+        setPhase('error');
+        setMessage('Could not reach the host. They may have stopped sharing.');
+        startle('startled');
+        inputRef.current?.select();
+      }
+    },
+    [busy, code, complete, endpoint, onJoined, startle],
+  );
+
+  return (
+    <div className={styles.shell}>
+      <TerminalFrame title={frameTitle} className={styles.card}>
+        <main>
+          <Wordmark text={wordmark} variant="shadow" className={styles.wordmark} />
+          <Eyebrow className={styles.eyebrow}>{eyebrow}</Eyebrow>
+          <h1 className={styles.heading}>{heading}</h1>
+          <p className={styles.blurb}>{blurb}</p>
+
+          <form onSubmit={submit} noValidate>
+            <div className={styles.labelRow}>
+              <label className={styles.label} htmlFor={inputId}>
+                Access code
+              </label>
+              {/* Perched on the field, watching you type. Purely decorative until
+                  the code is refused, which is the moment it earns its place. */}
+              <Duck state={duck} size={44} className={styles.duck} />
+            </div>
+            <input
+              ref={inputRef}
+              id={inputId}
+              className={cx(styles.code, phase === 'error' && styles.wrong)}
+              value={code}
+              onInput={(event) => {
+                setCode(normalizeCode((event.target as HTMLInputElement).value));
+                if (phase === 'error') {
+                  setPhase('idle');
+                  setMessage('');
+                }
+              }}
+              // maxLength counts the dash. inputMode/autocapitalize matter on
+              // phones, which is where most people open a tunnel link.
+              maxLength={CODE_LENGTH + 1}
+              placeholder="XXXX-XXXX"
+              autoComplete="one-time-code"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              // Lowercase `spellcheck`: preact's JSX types accept React's camelCase
+              // for every other attribute here, but not this one. Both work at
+              // runtime — it is a typing gap, not a behaviour difference.
+              spellcheck={false}
+              aria-describedby={statusId}
+              aria-invalid={phase === 'error'}
+              // readOnly rather than disabled: disabling blurs the field, so the
+              // caret would be gone by the time an error comes back.
+              readOnly={busy}
+              autoFocus
+            />
+            <button className={styles.go} type="submit" disabled={!complete || busy}>
+              {busy ? 'Checking…' : cta}
+            </button>
+            {/* Reserved height so the card does not jump when a message appears. */}
+            <p id={statusId} className={cx(styles.status, phase === 'error' && styles.bad)} role="alert">
+              {message}
+            </p>
+          </form>
+        </main>
+      </TerminalFrame>
+    </div>
+  );
+}

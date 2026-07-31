@@ -104,6 +104,34 @@ class TestServerRouting:
         } == set(data)
         assert data["ticket_count"] == 3
 
+    def test_invite_is_token_gated(self, running_server):
+        srv, _ = running_server
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _get(f"http://127.0.0.1:{srv.port}/api/invite")
+        assert exc.value.code == 403
+
+    def test_invite_returns_the_code_and_a_token_free_url(self, running_server):
+        srv, _ = running_server
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["joinCode"] == srv.join_code
+        assert "token=" not in body["shareUrl"]
+
+    def test_invite_never_carries_the_admin_secret(self, running_server):
+        # Every participant can read this response; the host link it would come
+        # from grants reveal, save and edit.
+        srv, _ = running_server
+        raw = _get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}").read().decode()
+        assert srv.admin_token not in raw
+        assert srv.token not in raw
+
+    def test_invite_url_follows_the_host_header(self, running_server):
+        srv, _ = running_server
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}",
+            headers={"Host": "abc-def.trycloudflare.com", "X-Forwarded-Proto": "https"},
+        )
+        assert json.load(urllib.request.urlopen(req, timeout=5))["shareUrl"] == "https://abc-def.trycloudflare.com/"
+
     def test_unknown_path_404(self, running_server):
         srv, _ = running_server
         with pytest.raises(urllib.error.HTTPError) as exc:

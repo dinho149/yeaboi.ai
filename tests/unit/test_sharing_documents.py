@@ -1,5 +1,6 @@
 """Every generated artifact has a self-contained HTML sharing adapter."""
 
+from tests._pages import island
 from yeaboi.agent.state import (
     AnonymizedOutput,
     DeliveryReport,
@@ -79,9 +80,9 @@ def test_standup_document_history_feeds_trend_chart():
         {"standup_date": "2026-07-23", "confidence_pct": 60, "status": "success"},
     ]
     doc = standup_document(StandupReport(date="2026-07-24", confidence_pct=80), history=history)
-    assert 'class="spark-wrap"' in doc.html
+    assert island(doc.html)["report"]["trend"] is not None
     # Without history the page renders unchanged (no trend chart).
-    assert 'class="spark-wrap"' not in standup_document(StandupReport(date="2026-07-24")).html
+    assert island(standup_document(StandupReport(date="2026-07-24")).html)["report"]["trend"] is None
 
 
 class TestRetroHistoryFeedsTrend:
@@ -99,7 +100,7 @@ class TestRetroHistoryFeedsTrend:
             {"id": 0, "run_at": "2026-06-26T18:00:00", "retro_date": "2026-06-26", "card_count": 5},
         ]
         doc = retro_document(report, history=history)
-        assert 'class="spark-wrap"' in doc.html
+        assert island(doc.html)["report"]["trend"] is not None
 
     def test_anonymized_share_skips_history(self):
         from yeaboi.agent.state import RetroReport
@@ -116,4 +117,6 @@ class TestRetroHistoryFeedsTrend:
             doc = retro_document(RetroReport(date="2026-07-10"), anon=_Anon(), history=[{"retro_date": "x"}])
         except Exception:
             return  # masked path exercises a different pipeline; absence of charts is what matters
-        assert 'class="spark-wrap"' not in doc.html
+        # The masked share re-renders as an anonymize document, which has no
+        # history and therefore no trend to leak a cadence through.
+        assert island(doc.html)["report"]["kind"] == "anonymize"

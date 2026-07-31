@@ -1,7 +1,10 @@
 """Reporting presentation palettes — built-ins plus user-defined custom themes.
 
-A palette is a name → role → hex-color map. The four built-ins mirror the CSS
-``[data-theme]`` blocks in presentation.py; users add their own palettes in
+A palette is a name → role → hex-color map, and this module is the only place
+they are written down: the deck ships them in its boot payload and the ``.pptx``
+renderer reads them directly. (The deck used to carry a duplicate set as CSS
+``[data-theme]`` blocks, which is what the drift guard in
+``test_reporting_themes.py`` was for.) Users add their own palettes in
 ``~/.yeaboi/data/reporting_themes.json`` (path from ``paths.get_reporting_themes_path``)
 and pick them anywhere a theme name is accepted: the TUI theme screen, the HTML
 slide deck (T key cycles them too), the .pptx export, ``yeaboi report --theme``,
@@ -33,11 +36,13 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# The color roles every palette defines (matches the CSS vars in presentation.py;
-# `card`/`border` stay derived overlay defaults there).
+# The color roles every palette defines. Six, and no more: the deck derives its
+# panel, hairline and dim tiers from `fg` and `bg1` in CSS (frontend/src/deck/
+# deck.css), so someone hand-writing a palette picks a handful of colours they
+# can reason about rather than a dozen they cannot.
 ROLE_KEYS = ("bg1", "bg2", "fg", "muted", "accent", "accent2")
 
-# Hexes copied verbatim from the [data-theme] CSS blocks in presentation.py.
+# The canonical hexes. Both presentation surfaces read them from here.
 BUILTIN_PALETTES: dict[str, dict[str, str]] = {
     "midnight": {
         "bg1": "#0d1117",

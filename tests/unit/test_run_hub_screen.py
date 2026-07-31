@@ -208,7 +208,7 @@ class TestSnapshotRendering:
         )
         out = _text(panel)
         assert "ci is green" in out
-        assert "Join this retro" not in out  # live-only join block suppressed for a saved run
+        assert "Send this to your team" not in out  # live-only join block suppressed for a saved run
 
     def test_retro_live_still_shows_join(self):
         # Guard sanity: without the snapshot flag the live board still renders the join block.
@@ -220,7 +220,7 @@ class TestSnapshotRendering:
             width=100,
             height=40,
         )
-        assert "Join this retro" in _text(panel)
+        assert "Send this to your team" in _text(panel)
 
     def test_poker_snapshot_shows_results_and_hides_join(self):
         from yeaboi.agent.state import PokerReport, PokerTicketResult, PokerVote
@@ -257,7 +257,7 @@ class TestSnapshotRendering:
         out = _text(panel)
         assert "Add login" in out
         assert "5 points" in out
-        assert "Join this session" not in out  # live-only join block suppressed for a saved run
+        assert "Send this to your team" not in out  # live-only join block suppressed for a saved run
 
     def test_poker_live_still_shows_join(self):
         from yeaboi.poker.board import PokerBoard
@@ -274,7 +274,7 @@ class TestSnapshotRendering:
             width=100,
             height=40,
         )
-        assert "Join this session" in _text(panel)
+        assert "Send this to your team" in _text(panel)
 
     def test_standup_overview_shows_meter_strip(self):
         from yeaboi.agent.state import StandupReport

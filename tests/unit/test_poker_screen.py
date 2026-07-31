@@ -80,9 +80,12 @@ class TestLiveView:
         assert "Jira write failed" in out
 
     def test_ai_note_shown(self):
+        # Taller than the other live-view tests: the AI note sits below the
+        # ticket body, so it is the first thing off the bottom of a short
+        # viewport. This asserts the note renders, not where it lands.
         b = _board()
         b.set_ai_note("Talk through the 13", 8.0)
-        out = _render(_build_poker_screen(_live_data(b), width=100, height=40))
+        out = _render(_build_poker_screen(_live_data(b), width=100, height=48))
         assert "Talk through the 13" in out
 
     def test_ai_confidence_and_evidence_shown(self):
@@ -93,7 +96,7 @@ class TestLiveView:
             confidence="high",
             evidence=("5-pt stories avg 4.2 days here", "PROJ-87 shipped as a 5"),
         )
-        out = _render(_build_poker_screen(_live_data(b), width=110, height=42))
+        out = _render(_build_poker_screen(_live_data(b), width=110, height=52))
         assert "AI confidence: high" in out
         assert "5-pt stories avg 4.2 days here" in out
         assert "PROJ-87 shipped as a 5" in out

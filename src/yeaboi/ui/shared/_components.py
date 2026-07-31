@@ -393,45 +393,138 @@ def build_popup(
 # ---------------------------------------------------------------------------
 
 
+def _button_width(label: str) -> int:
+    """Total columns one button occupies, borders included."""
+    return max(_BTN_MIN_W - 2, len(label) + 2) + 2
+
+
+def _wrap_actions(actions: list[str], width: int | None, pad: str) -> list[list[int]]:
+    """Group action indices into rows that fit *width*.
+
+    ``width`` is the panel's inner width; ``None`` means "one row, however long",
+    which is what :func:`build_action_buttons` passes and what every screen did
+    before rows existed.
+
+    A row always takes at least one button, even one wider than the terminal —
+    the alternative is an empty row and a button that can be selected but is
+    never drawn.
+    """
+    if width is None:
+        return [list(range(len(actions)))] if actions else []
+
+    budget = max(_BTN_MIN_W, width - len(pad))
+    rows: list[list[int]] = []
+    row: list[int] = []
+    used = 0
+    for i, label in enumerate(actions):
+        size = _button_width(label)
+        extra = size + (_BTN_GAP if row else 0)
+        if row and used + extra > budget:
+            rows.append(row)
+            row, used = [i], size
+        else:
+            row.append(i)
+            used += extra
+    if row:
+        rows.append(row)
+    return rows
+
+
+def action_rows_height(actions: list[str], width: int | None = None, *, pad: str = PAD) -> int:
+    """Rows of terminal the action area will occupy, for :func:`calc_viewport`.
+
+    Screens pass this instead of a hardcoded ``action_h`` so a bar that wraps
+    takes its extra height out of the scroll viewport rather than off the bottom
+    of the panel.
+
+    Four lines per row: three of button (top/label/bottom) plus one blank. For
+    the first row that blank is the separator above the bar, and for each row
+    after it the one between that row and the previous — so the arithmetic is
+    the same either way, and a single row comes to the 4 that every screen still
+    hardcodes.
+    """
+    return 4 * max(1, len(_wrap_actions(actions, width, pad)))
+
+
+def build_action_rows(
+    actions: list[str],
+    selected: int,
+    *,
+    width: int | None = None,
+    pad: str = PAD,
+) -> list[Text]:
+    """Build the action bar as a flat list of Text lines, wrapping to fit *width*.
+
+    Each button is a rounded box-drawing rectangle; the *selected* one takes its
+    accent colour and the rest are greyed out.
+
+    Wrapping exists because the bar had quietly outgrown an 80-column terminal.
+    The retro board's five buttons come to 92 columns, so the last of them was
+    drawn past the edge of the panel — reachable with the arrow keys and
+    invisible to the person pressing them. Nothing caught it, because a Rich
+    ``Text`` is perfectly happy to be wider than the console; it just gets
+    clipped.
+
+    Callers that pass no ``width`` keep the old single-row behaviour exactly.
+    """
+    lines: list[Text] = []
+
+    for row_no, row in enumerate(_wrap_actions(actions, width, pad)):
+        if row_no:
+            # Buttons are three lines with no internal gap, so two stacked rows
+            # would have their borders touch and read as one grid.
+            lines.append(Text(""))
+
+        btn_top = Text(pad, justify="left")
+        btn_mid = Text(pad, justify="left")
+        btn_bot = Text(pad, justify="left")
+
+        for slot, i in enumerate(row):
+            label = actions[i]
+            if slot > 0:
+                btn_top.append(" " * _BTN_GAP)
+                btn_mid.append(" " * _BTN_GAP)
+                btn_bot.append(" " * _BTN_GAP)
+
+            inner_w = max(_BTN_MIN_W - 2, len(label) + 2)
+            pad_l = (inner_w - len(label)) // 2
+            pad_r = inner_w - len(label) - pad_l
+            centered = " " * pad_l + label + " " * pad_r
+
+            accent_b, accent_l, grey_b, grey_l = _BTN_COLORS.get(label, _BTN_DEFAULT)
+            if i == selected:
+                b_style, l_style = accent_b, f"bold {accent_l}"
+            else:
+                b_style, l_style = grey_b, grey_l
+
+            btn_top.append("\u256d" + "\u2500" * inner_w + "\u256e", style=b_style)
+            btn_mid.append("\u2502" + centered + "\u2502", style=l_style)
+            btn_bot.append("\u2570" + "\u2500" * inner_w + "\u256f", style=b_style)
+
+        lines.extend((btn_top, btn_mid, btn_bot))
+
+    return lines
+
+
 def build_action_buttons(
     actions: list[str],
     selected: int,
     *,
     pad: str = PAD,
 ) -> tuple[Text, Text, Text]:
-    """Build the 3 Text lines (top/mid/bot) for a row of action buttons.
+    """Build the 3 Text lines (top/mid/bot) for a single row of action buttons.
 
-    Each button is a rounded box-drawing rectangle. The *selected* button
-    gets its accent color; others are greyed out.
+    The original shape, kept because some forty screens unpack exactly three
+    values from it. It is now :func:`build_action_rows` with no width, so the
+    output is identical to what it has always been; a screen that wants wrapping
+    calls that instead and pairs it with :func:`action_rows_height`.
 
     Returns (btn_top, btn_mid, btn_bot) — three Text objects to append to a Group.
     """
-    btn_top = Text(pad, justify="left")
-    btn_mid = Text(pad, justify="left")
-    btn_bot = Text(pad, justify="left")
-
-    for i, label in enumerate(actions):
-        if i > 0:
-            btn_top.append(" " * _BTN_GAP)
-            btn_mid.append(" " * _BTN_GAP)
-            btn_bot.append(" " * _BTN_GAP)
-
-        inner_w = max(_BTN_MIN_W - 2, len(label) + 2)
-        pad_l = (inner_w - len(label)) // 2
-        pad_r = inner_w - len(label) - pad_l
-        centered = " " * pad_l + label + " " * pad_r
-
-        accent_b, accent_l, grey_b, grey_l = _BTN_COLORS.get(label, _BTN_DEFAULT)
-        if i == selected:
-            b_style, l_style = accent_b, f"bold {accent_l}"
-        else:
-            b_style, l_style = grey_b, grey_l
-
-        btn_top.append("\u256d" + "\u2500" * inner_w + "\u256e", style=b_style)
-        btn_mid.append("\u2502" + centered + "\u2502", style=l_style)
-        btn_bot.append("\u2570" + "\u2500" * inner_w + "\u256f", style=b_style)
-
-    return btn_top, btn_mid, btn_bot
+    rows = build_action_rows(actions, selected, width=None, pad=pad)
+    if not rows:  # no actions at all: three empty lines, as before
+        return Text(pad, justify="left"), Text(pad, justify="left"), Text(pad, justify="left")
+    return rows[0], rows[1], rows[2]
 
 
 def build_scrollbar(

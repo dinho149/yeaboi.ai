@@ -2056,8 +2056,16 @@ def _team_profile_export_flow(
     if dest == "files":
         from yeaboi.team_profile_exporter import export_team_profile_html, export_team_profile_md
 
-        html_path = export_team_profile_html(profile, examples=examples, sprint_names=sprint_names, ceremony=ceremony)
+        # Markdown first, so the HTML page can name it: the page is drawn in the
+        # browser, and the Markdown is what someone with scripting off gets.
         md_path = export_team_profile_md(profile, examples=examples, sprint_names=sprint_names, ceremony=ceremony)
+        html_path = export_team_profile_html(
+            profile,
+            examples=examples,
+            sprint_names=sprint_names,
+            ceremony=ceremony,
+            markdown_name=md_path.name,
+        )
         body = f"HTML  {html_path}\nMD    {md_path}"
         subtitle = "Team profile exported (HTML + MD)"
     elif dest == "copy":
@@ -8975,9 +8983,29 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     anon = None
     anon_instruction = ""
 
+    def _invite_text() -> str:
+        """The link and code to hand a teammate — never the host link.
+
+        Same two lines the Share Online screen copies. The host link is left out
+        deliberately: it skips the join code and carries the admin secret, so
+        pasting it into a team chat would make every reader a host.
+        """
+        link = remote["url"] or server.share_url
+        return f"{link}\nAccess code: {server.display_code}"
+
     def _actions() -> list[str]:
-        # Buttons: 0 Generate, 1 Share/Stop, 2 Export, 3 Anonymize, 4 Close.
-        base = ["Generate Action Items", _share_label(), "Export", "Anonymize", "Close"]
+        # Copy Invite leads, matching the Share Online screen. Copy Host Link is
+        # the one extra button the live boards carry, because they are the only
+        # screens that have a host link at all.
+        base = [
+            "Copy Invite",
+            "Copy Host Link",
+            "Generate Action Items",
+            _share_label(),
+            "Export",
+            "Anonymize",
+            "Close",
+        ]
         if anon is not None:  # swap Anonymize → Adjust + Revert while masked
             i = base.index("Anonymize")
             base[i : i + 1] = ["Adjust", "Revert"]
@@ -9069,7 +9097,34 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                         logger.error("retro: generate action items failed: %s", e, exc_info=True)
                         message = f"Generate failed: {e}"
                     scroll = 0
-                elif sel == 1:  # Share Remotely / Stop Sharing (public Cloudflare tunnel)
+                elif label == "Copy Invite":
+                    from yeaboi.clipboard import copy_markdown_status
+
+                    logger.info("retro: Copy Invite pressed (session=%s)", session_id)
+                    message = copy_markdown_status(_invite_text())
+                    # The status line renders `remote["status"] or message`, and
+                    # a started tunnel leaves its status set for the rest of the
+                    # session — so without clearing it, pressing this once the
+                    # board is shared would show "Remote link ready" and look
+                    # like nothing happened.
+                    remote["status"] = ""
+                    scroll = 0
+                elif label == "Copy Host Link":
+                    from yeaboi.clipboard import copy_markdown_status
+
+                    logger.info("retro: Copy Host Link pressed (session=%s)", session_id)
+                    message = copy_markdown_status(server.url)
+                    # The status line renders `remote["status"] or message`, and
+                    # a started tunnel leaves its status set for the rest of the
+                    # session — so without clearing it, pressing this once the
+                    # board is shared would show "Remote link ready" and look
+                    # like nothing happened.
+                    remote["status"] = ""
+                    scroll = 0
+                # Matched on the label rather than the index it used to sit at:
+                # the label is one of three (Share Remotely / Sharing… / Stop
+                # Sharing) and _share_label() is the only thing that knows which.
+                elif label == _share_label():  # public Cloudflare tunnel
                     if remote["active"]:
                         _stop_remote()
                     elif not remote["starting"]:
@@ -9666,8 +9721,19 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             return "Sharing…"
         return "Share Remotely"
 
+    def _invite_text() -> str:
+        """The link and code to hand a teammate — never the host link.
+
+        The host link holds the admin secret (reveal, save, edit, AI), so it is
+        the one thing that must not end up in the invite someone pastes into a
+        team chat. See the retro loop for the same note.
+        """
+        link = remote["url"] or server.share_url
+        return f"{link}\nAccess code: {server.display_code}"
+
     def _actions() -> list[str]:
-        return [_share_label(), "Export", "Close"]
+        # Same leading pair as the retro board and the Share Online screen.
+        return ["Copy Invite", "Copy Host Link", _share_label(), "Export", "Close"]
 
     def _data() -> dict:
         return {
@@ -9715,7 +9781,31 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 label = acts[sel] if sel < len(acts) else "Close"
                 if label == "Close":
                     break
-                if label in ("Share Remotely", "Stop Sharing", "Sharing…"):
+                if label == "Copy Invite":
+                    from yeaboi.clipboard import copy_markdown_status
+
+                    logger.info("poker: Copy Invite pressed (session=%s)", session_id)
+                    message = copy_markdown_status(_invite_text())
+                    # The status line renders `remote["status"] or message`, and
+                    # a started tunnel leaves its status set for the rest of the
+                    # session — so without clearing it, pressing this once the
+                    # board is shared would show "Remote link ready" and look
+                    # like nothing happened.
+                    remote["status"] = ""
+                    scroll = 0
+                elif label == "Copy Host Link":
+                    from yeaboi.clipboard import copy_markdown_status
+
+                    logger.info("poker: Copy Host Link pressed (session=%s)", session_id)
+                    message = copy_markdown_status(server.url)
+                    # The status line renders `remote["status"] or message`, and
+                    # a started tunnel leaves its status set for the rest of the
+                    # session — so without clearing it, pressing this once the
+                    # board is shared would show "Remote link ready" and look
+                    # like nothing happened.
+                    remote["status"] = ""
+                    scroll = 0
+                elif label in ("Share Remotely", "Stop Sharing", "Sharing…"):
                     if remote["active"]:
                         _stop_remote()
                     elif not remote["starting"]:

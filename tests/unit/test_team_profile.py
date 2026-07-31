@@ -320,6 +320,33 @@ class TestSessionsMigration:
 
 
 # ---------------------------------------------------------------------------
+# Reading the exported page
+#
+# The team profile is a React export: the page is a shell plus a boot payload,
+# and the markup is built by a bundle this suite deliberately does not run. So
+# an assertion about the *report* is an assertion about the payload. What the
+# payload turns into — avatars, bars, tone colours — is asserted in
+# `frontend/src/export/reports/Profile.test.tsx`, where the components run.
+# ---------------------------------------------------------------------------
+
+
+def _profile_sections(html: str) -> dict[str, dict]:
+    """The exported profile's sections, keyed by section id."""
+    from tests._pages import island
+
+    report = island(html)["report"]
+    assert report["kind"] == "profile", f"expected a profile payload, got {report['kind']}"
+    return {section["id"]: section for section in report["sections"]}
+
+
+def _blocks(html: str, section_id: str, kind: str) -> list[dict]:
+    """Every block of one kind in one section, in payload order."""
+    sections = _profile_sections(html)
+    assert section_id in sections, f"no {section_id!r} section — got {sorted(sections)}"
+    return [block for block in sections[section_id]["blocks"] if block["kind"] == kind]
+
+
+# ---------------------------------------------------------------------------
 # Extended data model tests (Phase A)
 # ---------------------------------------------------------------------------
 
@@ -1126,12 +1153,18 @@ class TestTeamProfileExporter:
         profile = _make_extended_profile()
         path = export_team_profile_html(profile, output_dir=tmp_path)
         assert path.exists()
-        content = path.read_text()
-        assert "Team Profile" in content
-        assert "PROJ" in content
-        assert "Velocity" in content
-        assert "Point Value" in content
-        assert "site-header" in content  # uses proper html_exporter structure
+
+        from tests._pages import island
+
+        boot = island(path.read_text())
+        assert boot["chrome"]["title"] == "Team Profile — PROJ"
+        assert boot["chrome"]["mode"] == "analysis"
+        titles = [section["title"] for section in boot["report"]["sections"]]
+        assert "Team & Velocity" in titles
+        assert "What Each Point Value Means" in titles
+        # Every section is reachable from the contents rail — a generated report
+        # that only some sections link to is one nobody scrolls to the end of.
+        assert {nav[0] for nav in boot["chrome"]["nav"]} <= {s["id"] for s in boot["report"]["sections"]}
 
     def test_export_md(self, tmp_path):
         from yeaboi.team_profile_exporter import export_team_profile_md
@@ -1285,9 +1318,12 @@ class TestTeamProfileExporter:
         assert "| Ava | 20 | 10 | 75% | 25% | 50% | 1/4 |" in md  # desc under the sample floor stays a fraction
         assert "| Team |" in md
         assert "cover 9 of 12 items with change metadata" in md
-        html = build_team_profile_html(profile, examples=ex)
-        assert "Engineering practices by member" in html
-        assert "<table><tr><th" in html
+        table = _blocks(build_team_profile_html(profile, examples=ex), "ai-adoption", "table")[0]
+        assert table["title"] == "Engineering practices by member"
+        assert table["headers"] == ["Member", "Commits", "PRs", "Tests", "Docs", "Tickets", "Descriptions"]
+        assert table["rows"][0][0] == {"t": "Ava", "person": True}
+        assert table["rows"][0][6] == "1/4"  # desc under the sample floor stays a fraction
+        assert table["rows"][-1][0]["t"] == "Team"
         monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
         text = write_analysis_log(profile, examples=ex).read_text()
         assert "Practices (team): tests 75% · docs 22% · tickets 36% · descriptions 1/4" in text
@@ -1764,7 +1800,9 @@ class TestNarrativePersistenceAndExport:
         hostile = {"executive_summary": "<script>alert(1)</script>", "sections": {}}
         content = export_team_profile_html(profile, output_dir=tmp_path, examples={"narrative": hostile}).read_text()
         assert "<script>alert(1)</script>" not in content
-        assert "&lt;script&gt;" in content
+        # And it is still *rendered* — the probe reaches the payload as text.
+        # Without this half, an exporter that simply dropped the field would pass.
+        assert _blocks(content, "summary", "prose")[0]["text"] == "<script>alert(1)</script>"
 
     def test_md_export_includes_summary_and_glossary(self, tmp_path):
         from yeaboi.team_profile_exporter import export_team_profile_md
@@ -1885,7 +1923,8 @@ class TestInsightsPersistenceAndExport:
         hostile = {"start": [{"title": "<script>alert(1)</script>", "detail": "x", "evidence": ""}]}
         content = export_team_profile_html(profile, output_dir=tmp_path, examples={"insights": hostile}).read_text()
         assert "<script>alert(1)</script>" not in content
-        assert "&lt;script&gt;" in content
+        cards = _blocks(content, "insights", "cards")[0]["cards"]
+        assert cards[0]["items"][0][0] == {"s": "<script>alert(1)</script>", "strong": True}
 
     def test_md_export_includes_insights(self, tmp_path):
         from yeaboi.team_profile_exporter import export_team_profile_md
@@ -2206,6 +2245,50 @@ class TestAnalysisEnrichmentCache:
             assert store.load_analysis_enrichment("final_synthesis", "digest-1", "model-b") is None
 
 
+class TestRunShape:
+    """``Run[]`` is rendered by two things, and one of them is Markdown.
+
+    A space against an emphasis delimiter cancels the emphasis — ``**x **`` and
+    ``_ x_`` are literal asterisks and underscores — so a run that carries its
+    own separating whitespace produces a broken bullet in the ``.md`` twin while
+    looking fine in the browser. It is the kind of thing that comes back, which
+    is why the block builders normalise it rather than each producer.
+    """
+
+    def _every_run(self, payload):
+        if isinstance(payload, dict):
+            if "s" in payload and ("strong" in payload or "em" in payload):
+                yield payload
+            for value in payload.values():
+                yield from self._every_run(value)
+        elif isinstance(payload, list):
+            for item in payload:
+                yield from self._every_run(item)
+
+    def test_no_emphasis_run_carries_edge_whitespace(self):
+        from tests.unit.test_web_wire_shapes import _team_profile_page
+
+        # The wire fixture's profile, because it is the one input that reaches
+        # every section — a narrower fixture would only pin the producers it
+        # happens to exercise.
+        runs = list(self._every_run(_profile_sections(_team_profile_page())))
+        assert runs, "fixture must produce emphasised runs, or this asserts nothing"
+        offenders = [run for run in runs if run["s"] != run["s"].strip()]
+        assert not offenders, f"emphasis runs with edge whitespace: {offenders}"
+
+    def test_normaliser_splits_the_space_out(self):
+        from yeaboi.team_profile_exporter import _md_runs, _runs
+
+        assert _runs([{"s": "Title: ", "strong": True}]) == [{"s": "Title:", "strong": True}, {"s": " "}]
+        assert _md_runs([{"s": "Title: ", "strong": True}, {"s": "detail"}]) == "**Title:** detail"
+
+    def test_whitespace_only_emphasis_becomes_a_plain_gap(self):
+        from yeaboi.team_profile_exporter import _runs
+
+        # Splitting this into a lead and a trail would duplicate it.
+        assert _runs([{"s": "  ", "em": True}]) == [{"s": "  "}]
+
+
 class TestExportVisuals:
     """Shared-design-system visuals rolled out to the team-analysis export."""
 
@@ -2238,9 +2321,14 @@ class TestExportVisuals:
             ]
         }
         html = build_team_profile_html(profile, examples=ex)
-        # class attribute, not the bare token — ".avatar" also lives in the stylesheet.
-        assert html.count('class="avatar"') >= 2
-        assert ">AL</span>" in html and ">BC</span>" in html
+        table = _blocks(html, "team-members", "table")[0]
+        # `person` is what earns the avatar disc. The payload names a human; it
+        # does not carry initials or a colour — those are derived in the bundle,
+        # from the same digest the live boards use.
+        assert [row[0] for row in table["rows"]] == [
+            {"t": "Ava Lin", "person": True},
+            {"t": "Bo Chen", "person": True},
+        ]
 
     def test_ai_by_contributor_avatars(self):
         from yeaboi.team_profile import AiAdoptionSignal
@@ -2251,8 +2339,11 @@ class TestExportVisuals:
         )
         profile = TeamProfile(team_id="t", source="jira", project_key="P", ai_adoption=sig)
         html = build_team_profile_html(profile, examples={"ai_adoption": {}})
-        assert 'class="avatar"' in html
-        assert ">AL</span>" in html
+        table = next(b for b in _blocks(html, "ai-adoption", "table") if b.get("title") == "By contributor")
+        assert table["rows"] == [
+            [{"t": "Ava Lin", "person": True}, "4"],
+            [{"t": "Bo Chen", "person": True}, "2"],
+        ]
 
     def test_task_type_distribution_mix_bar(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -2269,8 +2360,11 @@ class TestExportVisuals:
             }
         }
         html = build_team_profile_html(profile, examples=ex)
-        assert 'class="seg-track"' in html
-        assert "backend 50" in html and "qa 20" in html
+        assert _blocks(html, "tasks", "bar")[0]["counts"] == [
+            ["backend", 50.0],
+            ["frontend", 30.0],
+            ["qa", 20.0],
+        ]
 
     def test_repo_activity_mix_bar(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
@@ -2285,8 +2379,7 @@ class TestExportVisuals:
             }
         }
         html = build_team_profile_html(profile, examples=ex)
-        assert 'class="seg-track"' in html
-        assert "acme/api 9" in html and "acme/web 6" in html
+        assert _blocks(html, "repos", "bar")[0]["counts"] == [["acme/api", 9], ["acme/web", 6]]
 
     def test_sprint_scope_sparkline_from_daily_snapshots(self):
         from yeaboi.team_profile import DailyScopeSnapshot, ScopeChangeEvent, SprintScopeTimeline
@@ -2320,8 +2413,9 @@ class TestExportVisuals:
             },
         }
         html = build_team_profile_html(profile, examples=ex)
-        assert 'class="spark-wrap"' in html
-        assert "2026-07-06" in html and "2026-07-10" in html
+        trend = _blocks(html, "sprints", "trend")[0]["trend"]
+        assert trend["points"] == [["2026-07-06", 30.0], ["2026-07-08", 33.0], ["2026-07-10", 36.0]]
+        assert "Sprint 12" in trend["label"]
 
     def test_self_contained_with_visuals(self):
         from yeaboi.team_profile_exporter import build_team_profile_html
