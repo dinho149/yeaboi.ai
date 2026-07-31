@@ -21,6 +21,7 @@ import { Avatar } from '../design/primitives';
 import { useDismiss } from '../hooks/useDismiss';
 import { fmtAgo } from '../runtime/format';
 import { cx } from '../runtime/cx';
+import { Button } from '../shared';
 import { RETRO_GRID_LABELS, RETRO_GRIDS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { ReactionChips, ReactionTray, ReactionTrigger } from './ReactionBar';
@@ -91,12 +92,10 @@ function CardEditor({
         }}
       />
       <div className={styles['editActions']}>
-        <button type="button" className={styles['ghostBtn']} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="button" className={styles['saveBtn']} onClick={() => onSave(text)}>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button tone="primary" onClick={() => onSave(text)}>
           Save
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -211,9 +210,13 @@ export function CardView({
           // leaving the ✎ and the grip beside it invites the wrong click again.
           <span ref={confirmRef} className={styles['confirmRow']} role="group" aria-label="Confirm delete">
             <span className={styles['confirmLabel']}>Delete?</span>
-            <button
-              type="button"
-              className={cx(styles['act'], styles['actDanger'], styles['actOn'])}
+            <Button
+              shape="bare"
+              tone="danger"
+              // `emphasis`, not `active`: this is a one-shot answer to a
+              // question, not a toggle that is on, and `aria-pressed` on it
+              // announces a state that never existed.
+              emphasis
               aria-label={`Confirm delete card: ${card.text.slice(0, 40)}`}
               // Focused on appearance, so the keyboard path is ✕, Enter — and
               // so a screen reader is told the row has become a question.
@@ -224,17 +227,20 @@ export function CardView({
               }}
             >
               <span aria-hidden="true">✓</span>
-            </button>
-            <button type="button" className={styles['act']} aria-label="Keep the card" onClick={cancelDelete}>
+            </Button>
+            <Button shape="bare" aria-label="Keep the card" onClick={cancelDelete}>
               <span aria-hidden="true">↩</span>
-            </button>
+            </Button>
           </span>
         ) : (
           <>
           {locked ? null : (
             <span className={styles['gripWrap']}>
-              <button
-                type="button"
+              {/* `.grip` is not styling: its `touch-action: none` and
+                  `cursor: grab` are the drag mechanics useCardDrag reads. That
+                  is why it stays a class rather than becoming a `shape`. */}
+              <Button
+                shape="bare"
                 className={styles['grip']}
                 aria-label={`Move card: ${card.text.slice(0, 40)}`}
                 aria-haspopup="menu"
@@ -243,7 +249,7 @@ export function CardView({
                 onClick={() => setMoveOpen((v) => !v)}
               >
                 <span aria-hidden="true">⠿</span>
-              </button>
+              </Button>
               {moveOpen ? (
                 // The keyboard path. Dragging with arrow keys is a worse
                 // interaction than naming the destination, and this is also the
@@ -280,22 +286,21 @@ export function CardView({
 
           {canModify && !editing ? (
             <>
-              <button
-                type="button"
-                className={styles['act']}
+              <Button
+                shape="bare"
                 aria-label={`Edit card: ${card.text.slice(0, 40)}`}
                 onClick={() => setEditing(true)}
               >
                 <span aria-hidden="true">✎</span>
-              </button>
-              <button
-                type="button"
-                className={cx(styles['act'], styles['actDanger'])}
+              </Button>
+              <Button
+                shape="bare"
+                tone="danger"
                 aria-label={`Delete card: ${card.text.slice(0, 40)}`}
                 onClick={() => setConfirming(true)}
               >
                 <span aria-hidden="true">✕</span>
-              </button>
+              </Button>
             </>
           ) : null}
           </>

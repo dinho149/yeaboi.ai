@@ -23,11 +23,15 @@ export interface ToolbarProps {
   /**
    * The mode name, set in the block-glyph display face.
    *
-   * A string goes through {@link Wordmark}; pass a node to opt out. This is
-   * where a board stops looking like a generic kanban tool and starts looking
-   * like the thing the host has open in their terminal.
+   * A string goes through {@link Wordmark}; pass a node to opt out.
+   *
+   * Optional, and both boards now omit it: the `PageShell` masthead directly
+   * above sets the same word in the six-row face, where there is room for it to
+   * be the identity rather than a label. Two wordmarks sixty pixels apart is
+   * duplication, not consistency. A surface that wears this bar *without* a
+   * masthead should still pass one.
    */
-  brand: ReactNode;
+  brand?: ReactNode;
   /** Sits left of the brand — the duck, on the boards that have one. */
   mark?: ReactNode;
   /** Small muted line beside the brand — a card count, a ticket position. */
@@ -46,9 +50,9 @@ export function Toolbar({ brand, mark, subtitle, children, tools, className }: T
       <div className={styles['brand']}>
         {typeof brand === 'string' ? (
           <Wordmark text={brand} className={styles['brandTitle']} />
-        ) : (
+        ) : brand ? (
           <span className={styles['brandTitle']}>{brand}</span>
-        )}
+        ) : null}
         {subtitle ? <span className={styles['brandSub']}>{subtitle}</span> : null}
       </div>
 

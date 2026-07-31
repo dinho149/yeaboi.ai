@@ -35,12 +35,14 @@ import { apiUrl, loadSession, stripCredentialsFromUrl, type Session } from '../r
 import { participantId, read, write } from '../runtime/storage';
 import { applyTheme, setTheme, storedTheme, THEME_KEYS, type Theme } from '../runtime/theme';
 import {
+  Button,
   ConfettiCanvas,
   IconButton,
   InviteQR,
   JoinGate,
   Modal,
   MusicPlayer,
+  PageShell,
   Popover,
   PresenceRow,
   ProfileModal,
@@ -120,7 +122,7 @@ export function App({ boot }: { boot: RetroBoot }) {
   const locked = useBoardSelector(store, (s) => s?.locked ?? false);
 
   // ── Local UI state ─────────────────────────────────────────────────────
-  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.retro) ?? 'midnight');
+  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
   const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
   const [focus, setFocus] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -137,7 +139,7 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   const chooseTheme = useCallback((next: Theme) => {
     setLocalTheme(next);
-    setTheme(next, THEME_KEYS.retro);
+    setTheme(next, THEME_KEYS.site);
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -320,13 +322,18 @@ export function App({ boot }: { boot: RetroBoot }) {
     // takes, rather than a second one that only code-gate visitors exercise —
     // and the accepted code leaves the JS heap with the document.
     return (
-      // Unlike the static-share gate, this one may name the mode: the board's
-      // own page title already says "Sprint Retro", so there is nothing left to
-      // withhold. `sharing/gate.py` is the surface with the secrecy rule.
+      // The static-share gate names its mode too now, so this is no longer the
+      // exception it once was — the props below just say it in the board's own
+      // words. `sharing/gate.py` still owns the rule about what a gate withholds.
       <JoinGate
         wordmark="retro"
         eyebrow="Sprint retrospective"
-        frameTitle="yeaboi — retro"
+        // From the island, not spelled again: `web.brand.frame_title` is the
+        // one place this format lives, and a second copy here is how the frame
+        // bar ends up reading differently on the gate than on the board behind
+        // it.
+        frameTitle={boot.chrome.frame}
+        footer={boot.chrome.footer}
         heading="Join the retro"
         blurb="Enter the share code from the host's screen."
         cta="Join"
@@ -336,13 +343,15 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   const cardCount = cards.length;
 
-  return (
-    <div className={styles['app']}>
-      <Toolbar
-        brand="retro"
-        // The duck rides in the toolbar, where it is in peripheral vision the
-        // whole ceremony without ever being in the way.
-        mark={<Duck state={duckState} size={30} />}
+  const toolbar = (
+    <Toolbar
+      // No `brand`: the masthead above sets the wordmark, in the six-row face
+      // where there is room for it. Two wordmarks sixty pixels apart is not
+      // consistency, it is duplication.
+      //
+      // The duck rides in the toolbar, where it is in peripheral vision the
+      // whole ceremony without ever being in the way.
+      mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
             {boot.sprint ? `${boot.sprint} · ` : ''}
@@ -369,13 +378,9 @@ export function App({ boot }: { boot: RetroBoot }) {
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => void actions.castMusic(music.playing, music.channel)}
-                    >
+                    <Button onClick={() => void actions.castMusic(music.playing, music.channel)}>
                       <span aria-hidden="true">📣</span> Play for everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -407,13 +412,9 @@ export function App({ boot }: { boot: RetroBoot }) {
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => void actions.castTheme(theme)}
-                    >
+                    <Button onClick={() => void actions.castTheme(theme)}>
                       <span aria-hidden="true">📣</span> Apply to everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -460,8 +461,16 @@ export function App({ boot }: { boot: RetroBoot }) {
           />
           <IconButton icon="⊞" label="Group cards by author" active={grouped} onClick={toggleGrouped} />
         </div>
-      </Toolbar>
+    </Toolbar>
+  );
 
+  return (
+    <PageShell chrome={boot.chrome} variant="app" bar={toolbar} className={styles['app']}>
+      {/* One flex column inside the shell's scroll row. The banners, the
+          carried strip and the focus bar are auto-height siblings above the
+          board, which takes the rest — the same relationship they had when
+          `.app` itself was the flex column. */}
+      <div className={styles['boardRegion']}>
       {locked ? (
         <p className={styles['lockBanner']} role="alert">
           <span aria-hidden="true">🔒</span> The host locked the board.
@@ -510,7 +519,10 @@ export function App({ boot }: { boot: RetroBoot }) {
         onReact={(cardId, emoji) => void react(cardId, emoji)}
         onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
       />
+      </div>
 
+      {/* Overlays and modals are fixed-position, so they take no part in the
+          layout above and can sit anywhere in the tree. */}
       <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
       <ConfettiCanvas canvasRef={confettiRef} />
 
@@ -538,6 +550,6 @@ export function App({ boot }: { boot: RetroBoot }) {
           joinCode={invite.invite?.joinCode}
         />
       </Modal>
-    </div>
+    </PageShell>
   );
 }

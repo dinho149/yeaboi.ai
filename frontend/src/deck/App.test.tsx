@@ -95,7 +95,9 @@ describe('App', () => {
   it('paints the opening palette onto the document', () => {
     render(<App boot={boot({ theme: 'aurora' })} />);
     expect(document.documentElement.getAttribute('data-deck-theme')).toBe('aurora');
-    expect(document.documentElement.style.getPropertyValue('--bg')).toBe(DECK_WIRE.palettes['aurora']!.bg1);
+    expect(document.documentElement.style.getPropertyValue('--deck-accent')).toBe(
+      DECK_WIRE.palettes['aurora']!.accent,
+    );
   });
 
   it('cycles palettes with T, in the payload’s own order', async () => {
@@ -110,7 +112,9 @@ describe('App', () => {
 
   it('falls back to the first palette when the named one is gone', () => {
     render(<App boot={boot({ theme: 'a-custom-theme-since-deleted' })} />);
-    expect(document.documentElement.style.getPropertyValue('--bg')).toBe(DECK_WIRE.palettes['midnight']!.bg1);
+    expect(document.documentElement.style.getPropertyValue('--deck-accent')).toBe(
+      DECK_WIRE.palettes['midnight']!.accent,
+    );
   });
 
   it('shows the custom footer and slide number only when asked', () => {
@@ -123,15 +127,26 @@ describe('App', () => {
   });
 
   describe('style colours', () => {
-    it('resolve against the palette that is showing, not the one it opened with', async () => {
+    it('follow the palette that is showing, not the one the deck opened with', async () => {
+      // The original bug: pressing T re-themed the whole deck *except* the
+      // heading colour the user had chosen, because it had been resolved to a
+      // hex once at mount.
+      //
+      // It cannot recur now, and by construction rather than by re-computing:
+      // the style property holds a `var()`, and what moves underneath it is
+      // `--deck-accent2` on <html>. Assert both halves — a var pointing at
+      // something nobody updates would look just as correct here.
       const user = userEvent.setup();
       const deck = boot({ style: { ...DECK_WIRE.style, headingColor: 'accent2' } });
       const { container } = render(<App boot={deck} />);
       const app = container.firstElementChild as HTMLElement;
+      const root = document.documentElement;
 
-      expect(app.style.getPropertyValue('--deck-heading')).toBe(DECK_WIRE.palettes['midnight']!.accent2);
+      expect(app.style.getPropertyValue('--deck-heading')).toBe('var(--deck-accent2, var(--accent2))');
+      expect(root.style.getPropertyValue('--deck-accent2')).toBe(DECK_WIRE.palettes['midnight']!.accent2);
       await user.keyboard('t');
-      expect(app.style.getPropertyValue('--deck-heading')).toBe(DECK_WIRE.palettes['aurora']!.accent2);
+      expect(app.style.getPropertyValue('--deck-heading')).toBe('var(--deck-accent2, var(--accent2))');
+      expect(root.style.getPropertyValue('--deck-accent2')).toBe(DECK_WIRE.palettes['aurora']!.accent2);
     });
 
     it('are left unset when the user chose none', () => {

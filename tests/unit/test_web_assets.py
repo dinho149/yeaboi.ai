@@ -12,12 +12,14 @@ for the remote teammate on the tunnel or the person who opens an export over
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 
 import pytest
 
-from yeaboi.web.assets import STATIC_DIR, json_island, read_asset, render_page
+from tests._pages import CREDIT_URL
+from yeaboi.web.assets import FAVICON_PATH, STATIC_DIR, json_island, read_asset, render_page
 
 # Every Vite entry that exists today. Grows one row per phase of the React
 # migration; the parametrized guards below then cover the new bundle for free.
@@ -124,18 +126,57 @@ class TestRenderPage:
         assert '<div id="app">' in page
         assert '<html lang="en" data-mode="retro">' in page
 
-    def test_body_and_extra_css_land(self):
-        page = render_page(bundle="export", title="T", body="<p>hi</p>", extra_css=".x{color:red}")
+    def test_body_lands(self):
+        page = render_page(bundle="export", title="T", body="<p>hi</p>")
         assert "<p>hi</p>" in page
-        assert "<style>.x{color:red}</style>" in page
 
     def test_head_extras_land_in_head(self):
         page = render_page(bundle="export", title="T", head='<meta name="robots" content="noindex">')
         assert page.index('name="robots"') < page.index("<body>")
 
+    def test_head_extras_come_after_the_favicon(self):
+        """So a caller can override the icon by emitting its own link."""
+        page = render_page(bundle="export", title="T", head='<link rel="icon" href="data:image/png;base64,AA">')
+        assert page.rindex('rel="icon"') > page.index('rel="icon"')
+        assert page.rindex('rel="icon"') < page.index("<body>")
+
     def test_unknown_bundle_raises(self):
         with pytest.raises(FileNotFoundError, match="make web"):
             render_page(bundle="nope", title="T")
+
+
+class TestFavicon:
+    """Every surface gets a tab icon, and it costs no request to get it."""
+
+    def test_page_carries_an_inline_icon(self):
+        page = render_page(bundle="export", title="T")
+        assert '<link rel="icon" type="image/png" href="data:image/png;base64,' in page
+
+    def test_icon_lives_in_the_head(self):
+        page = render_page(bundle="export", title="T")
+        assert page.index('rel="icon"') < page.index("<body>")
+
+    def test_icon_is_the_committed_png(self):
+        assert FAVICON_PATH.exists(), "run: uv run --extra charts python scripts/gen_duck_sprites.py"
+        expected = base64.b64encode(FAVICON_PATH.read_bytes()).decode("ascii")
+        assert expected in render_page(bundle="export", title="T")
+
+    def test_icon_is_small_enough_to_ship_in_every_document(self):
+        """It rides in ten export files and both boards; a 64px source was 9.4 KB."""
+        assert len(FAVICON_PATH.read_bytes()) < 4096
+
+    def test_a_missing_icon_does_not_break_the_page(self, monkeypatch, tmp_path):
+        """A missing decoration must never be why an export fails to write."""
+        import yeaboi.web.assets as assets_mod
+
+        monkeypatch.setattr(assets_mod, "FAVICON_PATH", tmp_path / "gone.png")
+        assets_mod._favicon_data_uri.cache_clear()
+        try:
+            page = render_page(bundle="export", title="T")
+            assert "<link" not in page
+            assert "<title>T</title>" in page
+        finally:
+            assets_mod._favicon_data_uri.cache_clear()
 
 
 class TestBundlesAreShippable:
@@ -171,11 +212,30 @@ class TestBundlesAreShippable:
 
         Exports are opened over file:// where any external request fails, and
         the tunnel CSP allows no external origins at all.
+
+        The footer credit is the one exception, and it is exempted by *blanking
+        a single occurrence* rather than by widening the pattern. A link is a
+        place to go, not something the page loads: nothing is fetched, an export
+        opened from disk with no network renders identically, and the CSPs
+        govern requests and framing rather than where a click leads. Blanking
+        one occurrence keeps the guard's teeth — a second appearance of the same
+        string, which is what an ``<img src>`` or a real fetch to the site would
+        look like, still fails here.
         """
-        js = read_asset(f"{bundle}.js")
+        js = read_asset(f"{bundle}.js").replace(f'"{CREDIT_URL}"', '""', 1)
         assert not re.search(r"https?://(?!www\.w3\.org)", js), "bundle references an external URL"
         assert "import(" not in js, "dynamic import would emit a second file"
         assert "importScripts" not in js
+
+    @pytest.mark.parametrize("bundle", BUNDLES)
+    def test_every_surface_links_its_credit(self, bundle):
+        """Two-way: the exemption above must not become a place a URL can hide.
+
+        Every one of the five surfaces renders the byline, so every bundle must
+        contain the link — if one stops, the carve-out in the guard above is
+        exempting nothing and should go rather than sit there widening it.
+        """
+        assert CREDIT_URL in read_asset(f"{bundle}.js"), f"{bundle}.js has no credit link"
 
     @pytest.mark.parametrize("bundle", BUNDLES)
     def test_bundle_is_a_classic_script_not_a_module(self, bundle):

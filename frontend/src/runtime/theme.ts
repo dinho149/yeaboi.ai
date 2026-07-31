@@ -14,18 +14,33 @@ export const THEMES = ['midnight', 'light', 'solarized', 'synthwave', 'forest'] 
 export type Theme = (typeof THEMES)[number];
 
 /**
- * Where each surface persists the visitor's choice.
+ * Where the visitor's choice is persisted.
  *
- * The export key is a **compatibility contract** with pages already sitting on
- * people's disks — an export written last month reads this exact string. The
- * board keys match what the old inline scripts used, so an in-flight ceremony
- * does not lose its theme when the React board ships.
+ * **One key, for every surface.** There used to be three, and the split was
+ * indefensible once you looked at it from the visitor's side: a palette chosen
+ * on a retro board never reached the poker board, the gate, or the next export
+ * anyone opened, so the same person kept re-picking the same theme.
+ *
+ * The string is a **compatibility contract** with pages already sitting on
+ * people's disks — an export written last month carries a bundle that reads
+ * this exact key and nothing else — so it keeps the name it had rather than
+ * something prettier. Three Python tests grep the literal out of rendered HTML
+ * for the same reason.
  */
 export const THEME_KEYS = {
+  site: 'yeaboi-export-theme',
+  /** @deprecated Alias for {@link THEME_KEYS.site}; kept so exports and their tests read the same. */
   export: 'yeaboi-export-theme',
-  retro: 'retro_theme',
-  poker: 'poker_theme',
 } as const;
+
+/**
+ * Keys the boards used before the split was collapsed.
+ *
+ * Read once, then written forward to the canonical key. Without this, shipping
+ * the change would silently reset the palette of every retro and poker board
+ * mid-ceremony — which is exactly the moment nobody wants to be surprised.
+ */
+export const LEGACY_THEME_KEYS = ['retro_theme', 'poker_theme'] as const;
 
 /**
  * Swatch preview colours, per theme.
@@ -63,14 +78,29 @@ export function applyTheme(theme: Theme): void {
   document.documentElement.setAttribute('data-theme', theme);
 }
 
-/** Read the persisted palette for a surface, or `null` when unset or unknown. */
-export function storedTheme(key: string = THEME_KEYS.export): Theme | null {
+/**
+ * Read the persisted palette, or `null` when unset or unknown.
+ *
+ * Adopts a legacy board key on the way past, once: a visitor mid-retro when
+ * this shipped keeps the theme they picked, and the next write puts it under
+ * the canonical key so the migration never runs again.
+ */
+export function storedTheme(key: string = THEME_KEYS.site): Theme | null {
   const raw = read('local', key);
-  return isTheme(raw) ? raw : null;
+  if (isTheme(raw)) return raw;
+  if (key !== THEME_KEYS.site) return null;
+  for (const legacy of LEGACY_THEME_KEYS) {
+    const old = read('local', legacy);
+    if (isTheme(old)) {
+      write('local', key, old);
+      return old;
+    }
+  }
+  return null;
 }
 
 /** Apply and persist a palette. */
-export function setTheme(theme: Theme, key: string = THEME_KEYS.export): void {
+export function setTheme(theme: Theme, key: string = THEME_KEYS.site): void {
   applyTheme(theme);
   write('local', key, theme);
 }
@@ -82,7 +112,7 @@ export function setTheme(theme: Theme, key: string = THEME_KEYS.export): void {
  * chose light — including the join gate, which has no theme button of its own
  * but should still match the artifact the visitor is about to open.
  */
-export function applyStoredTheme(key: string = THEME_KEYS.export): Theme {
+export function applyStoredTheme(key: string = THEME_KEYS.site): Theme {
   const theme = storedTheme(key) ?? preferred();
   applyTheme(theme);
   return theme;

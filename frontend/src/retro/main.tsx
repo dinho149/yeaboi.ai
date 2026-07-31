@@ -15,7 +15,7 @@ import { readRetroBoot } from './boot';
 
 // Before the first paint, so a reload does not flash midnight at someone who
 // has been sitting in solarized for the last half hour.
-applyStoredTheme(THEME_KEYS.retro);
+applyStoredTheme(THEME_KEYS.site);
 
 const root = document.getElementById('root');
 if (!root) throw new Error('retro: #root is missing from the document');

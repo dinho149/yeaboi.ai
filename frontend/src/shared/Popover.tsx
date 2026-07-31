@@ -91,12 +91,29 @@ export interface PopoverProps {
   children: ReactNode;
   /** Anchor the panel to the left edge instead of the right. */
   align?: 'left' | 'right';
+  /**
+   * Which side of the trigger the panel opens on.
+   *
+   * Defaults to `below`, which is right for a toolbar at the top of a page.
+   * The slide deck's controls sit at the *bottom* of a 100dvh grid, where a
+   * panel opening downward is entirely off-screen — there is no scrolling a
+   * deck, so it is not merely awkward, it is invisible.
+   */
+  placement?: 'below' | 'above';
   /** Extra classes for the trigger button. */
   triggerClassName?: string;
   className?: string | undefined;
 }
 
-export function Popover({ trigger, label, children, align = 'right', triggerClassName, className }: PopoverProps) {
+export function Popover({
+  trigger,
+  label,
+  children,
+  align = 'right',
+  placement = 'below',
+  triggerClassName,
+  className,
+}: PopoverProps) {
   const group = useContext(PopoverGroupContext);
   const id = useId();
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -141,7 +158,12 @@ export function Popover({ trigger, label, children, align = 'right', triggerClas
         role="group"
         aria-label={label}
         hidden={!open}
-        className={cx(styles['popover'], align === 'left' && styles['popoverLeft'], className)}
+        className={cx(
+          styles['popover'],
+          align === 'left' && styles['popoverLeft'],
+          placement === 'above' && styles['popoverAbove'],
+          className,
+        )}
       >
         {children}
       </div>

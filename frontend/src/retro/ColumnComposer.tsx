@@ -30,6 +30,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import { Button } from '../shared';
 import styles from './retro.module.css';
 
 export interface ColumnComposerProps {
@@ -117,19 +118,17 @@ export function ColumnComposer({
         }}
       />
       <div className={styles['composeActions']}>
-        <button
-          type="button"
-          className={styles['ghostBtn']}
+        <Button
           onClick={() => {
             setText('');
             onClose();
           }}
         >
           Cancel
-        </button>
-        <button type="button" className={styles['addBtn']} disabled={!text.trim()} onClick={submit}>
+        </Button>
+        <Button tone="primary" disabled={!text.trim()} onClick={submit}>
           Add
-        </button>
+        </Button>
       </div>
     </div>
   );

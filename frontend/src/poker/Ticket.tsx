@@ -28,6 +28,7 @@ import { cx } from '../runtime/cx';
 import { safeUrl } from '../runtime/url';
 import type { PokerPhase, PokerTicket, TicketView } from '../types/board';
 import { fmtPoints } from './points';
+import { Button } from '../shared';
 import styles from './poker.module.css';
 
 /** Longer than this and the body clips behind a toggle. */
@@ -155,15 +156,15 @@ export function TicketPanel({
             voting on <b>{liveKey || `ticket ${index + 1}`}</b>
           </span>
           <span className={styles['peekActions']}>
-            <button type="button" className={styles['pkbtn']} onClick={onBackToLive}>
+            <Button size="s" onClick={onBackToLive}>
               Back to live
-            </button>
+            </Button>
             {/* Jumping the room resets the round, so it is an explicit button
                 inside the banner rather than a side effect of a rail click. */}
             {isHost && phase !== 'duel' ? (
-              <button type="button" className={cx(styles['pkbtn'], styles['pkbtnGo'])} onClick={onGotoPeek}>
+              <Button size="s" className={styles['pkbtnGo']} onClick={onGotoPeek}>
                 Vote on this ticket
-              </button>
+              </Button>
             ) : null}
           </span>
         </div>

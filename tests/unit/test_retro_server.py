@@ -9,6 +9,7 @@ import pytest
 
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.server import JoinLimiter, RetroServer, make_token
+from yeaboi.web.security import BOARD_CSP, DOCUMENT_HEADERS
 
 
 class TestJoinLimiter:
@@ -149,7 +150,9 @@ class TestServerRouting:
     def test_get_root_serves_html(self, running_server):
         srv, _ = running_server
         html = _get(f"http://127.0.0.1:{srv.port}/").read().decode()
-        assert "<title>Sprint Retro</title>" in html
+        # The title names the session, not just the mode — a host with three
+        # boards open had three tabs all reading "Sprint Retro".
+        assert "<title>Sprint Retro — Proj</title>" in html
 
     def test_api_without_token_forbidden(self, running_server):
         srv, _ = running_server
@@ -539,3 +542,41 @@ class TestNoSecretLogging:
         blob = "\n".join(r.getMessage() for r in caplog.records)
         assert srv.token not in blob
         assert srv.admin_token not in blob
+
+
+class TestSecurityHeaders:
+    """Every response carries the shared protective header set.
+
+    The board sent a bare ``Cache-Control`` for its whole life while the share
+    server — whose documents are inert — carried a full set. This is the
+    surface a stranger with the tunnel URL can type into, so it is the one that
+    wanted the headers most. See ``yeaboi/web/security.py``.
+    """
+
+    def test_document_carries_every_shared_header(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name
+
+    def test_api_responses_carry_them_too(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name
+
+    def test_board_may_not_be_framed(self, running_server):
+        srv, _ = running_server
+        assert _get(f"http://127.0.0.1:{srv.port}/").headers["X-Frame-Options"] == "DENY"
+
+    def test_document_carries_the_board_policy(self, running_server):
+        srv, _ = running_server
+        csp = _get(f"http://127.0.0.1:{srv.port}/").headers["Content-Security-Policy"]
+        assert csp == BOARD_CSP
+
+    def test_json_responses_do_not_carry_a_policy(self, running_server):
+        # A CSP governs what a *page* may load. On the long poll — the busiest
+        # response the board sends — it would be bytes per request for nothing.
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
+        assert headers["Content-Security-Policy"] is None

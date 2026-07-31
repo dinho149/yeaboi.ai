@@ -48,11 +48,20 @@ logger = logging.getLogger(__name__)
 # Font presets: one label for the TUI, a real typeface name for python-pptx, and the
 # matching CSS stack for the HTML deck.
 #
-# "modern" and "mono" name the design tokens rather than repeating a stack, so a
-# deck picks up the same faces as every other yeaboi page — including the fact
-# that those stacks name yeaboi.ai's own Geist / JetBrains Mono first, which a
-# hand-copied list here would not. "classic" and "rounded" are deliberate
-# departures from the system and so carry their own stacks.
+# Every preset names a design token rather than repeating a stack, so a deck
+# picks up the same faces as every other yeaboi page — including the fact that
+# those stacks name yeaboi.ai's own Geist / JetBrains Mono first, which a
+# hand-copied list here would not.
+#
+# "classic" and "rounded" are still departures from the *body* face; they are
+# just declared in the design layer (`--font-serif`, `--font-rounded` in
+# tokens.css) instead of here. A preset is a user-facing choice, so neither was
+# collapsed into "modern" — that would have made two shipped options silently
+# identical to a third.
+#
+# The `pptx` column is untouched by any of this: PowerPoint has no custom
+# properties, so it needs a real typeface name, and a deck and the .pptx built
+# from the same report still agree about which face was chosen.
 FONT_PRESETS: dict[str, dict[str, str]] = {
     "modern": {
         "label": "Modern",
@@ -62,7 +71,7 @@ FONT_PRESETS: dict[str, dict[str, str]] = {
     "classic": {
         "label": "Classic serif",
         "pptx": "Georgia",
-        "css": 'Georgia, "Times New Roman", Times, serif',
+        "css": "var(--font-serif)",
     },
     "mono": {
         "label": "Mono",
@@ -72,7 +81,7 @@ FONT_PRESETS: dict[str, dict[str, str]] = {
     "rounded": {
         "label": "Rounded",
         "pptx": "Trebuchet MS",
-        "css": '"Trebuchet MS", Verdana, "Segoe UI", sans-serif',
+        "css": "var(--font-rounded)",
     },
 }
 

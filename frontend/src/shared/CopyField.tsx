@@ -75,7 +75,9 @@ export function CopyField({ label, value, mono, className }: CopyFieldProps) {
         label={buttonLabel}
         onClick={copy}
         compact
-        active={state === 'copied'}
+        // Transient feedback that clears itself, not a toggle — see `emphasis`
+        // in Button.tsx.
+        emphasis={state === 'copied'}
         className={styles['copyBtn']}
       />
     </div>

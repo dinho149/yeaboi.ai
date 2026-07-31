@@ -21,6 +21,7 @@
 import type { Run } from '../design/primitives';
 import type { Tone } from '../design/tone';
 import { requireBoot } from '../runtime/boot';
+import type { PageChrome } from '../shared/chrome';
 import type { CarriedStatuses, RetroGrids } from '../types/enums';
 
 // Re-exported so a report component imports its whole payload vocabulary from
@@ -28,28 +29,15 @@ import type { CarriedStatuses, RetroGrids } from '../types/enums';
 // the shape standup's prose arrives in, so it belongs in that vocabulary.
 export type { Run };
 
-/** Page furniture, identical for every report. */
-export interface ExportChrome {
-  /**
-   * Mode key, set as `[data-mode]` on `<html>` by the server and driving
-   * `--accent`. Not every export owns a distinct TUI accent — roadmap borrows
-   * planning's, anonymize the default — so this is the *accent* to wear, not a
-   * claim about which mode wrote the file.
-   */
-  mode: string;
-  /** Terminal title-bar text, conventionally `yeaboi — <mode>`. */
-  frame: string;
-  /** Word set in the block-glyph face. Kept short: the face is two rows and wide. */
-  wordmark: string;
-  title: string;
-  subtitle?: string;
-  /** Header eyebrows, `[label, value]`. Each must say something true about the run. */
-  facts?: Array<[string, string]>;
-  badges?: string[];
-  /** Sticky contents links, `[sectionId, label]`. Omit for a single-screen report. */
-  nav?: Array<[string, string]>;
-  footer: string;
-}
+/**
+ * Page furniture, identical for every report.
+ *
+ * An alias rather than a declaration: the shape moved to `shared/chrome.ts`
+ * when the boards, the gate and the deck started wearing the same masthead.
+ * The name stays because a dozen report components and the wire fixtures import
+ * it, and renaming them would be churn with no reader on the other side.
+ */
+export type ExportChrome = PageChrome;
 
 /**
  * A run-over-run series, drawn as the trend card at the top of a report.

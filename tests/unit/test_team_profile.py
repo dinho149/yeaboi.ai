@@ -2232,7 +2232,9 @@ class TestSharedDesignSystem:
         html = build_team_profile_html(TeamProfile(team_id="x", source="jira", project_key="X"))
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        from tests._pages import assert_self_contained
+
+        assert_self_contained(html)
 
 
 class TestAnalysisEnrichmentCache:
@@ -2423,4 +2425,6 @@ class TestExportVisuals:
         profile = TeamProfile(team_id="t", source="jira", project_key="P")
         ex = {"contributor_stats": [{"name": "Ava", "delivery_pts": 5}]}
         html = build_team_profile_html(profile, examples=ex)
-        assert 'src="http' not in html and "<link" not in html
+        from tests._pages import assert_self_contained
+
+        assert_self_contained(html)

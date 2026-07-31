@@ -17,9 +17,9 @@ import json
 
 import pytest
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.retro.board import RETRO_THEMES, RetroBoard
-from yeaboi.retro.page import board_config, build_board_html
+from yeaboi.retro.page import _document_title, board_config, build_board_html
 from yeaboi.retro.server import RetroServer
 
 
@@ -38,7 +38,7 @@ class TestSelfContained:
         # and a page opened over file:// cannot fetch one at all. Resource
         # *tags* are banned rather than any URL — the music stream URLs in the
         # island are the one deliberate exception, and they are audio, not code.
-        assert "<link" not in page
+        assert_self_contained(page)
         assert 'src="http' not in page and 'href="http' not in page
         assert "cdn" not in page.lower()
 
@@ -87,7 +87,7 @@ class TestBootIsland:
         sources of truth, and the island would win at runtime — so a stale
         bundle would render a board whose columns disagree with the server's.
         """
-        assert set(board_config()) == {"title", "sprint", "adjectives", "nouns", "musicChannels"}
+        assert set(board_config()) == {"chrome", "sprint", "adjectives", "nouns", "musicChannels"}
 
     def test_theme_names_are_not_duplicated_into_the_payload(self, page: str):
         boot = island(page)
@@ -140,6 +140,28 @@ class TestServedPageIsTokenFree:
         assert server.token not in body
         assert server.admin_token not in body
         assert server.join_code not in body
+
+
+class TestDocumentTitle:
+    """A host with three boards open had three tabs all reading "Sprint Retro"."""
+
+    def test_names_both_when_both_are_known(self):
+        assert _document_title("Sprint 42", "yeaboi") == "Sprint Retro — yeaboi · Sprint 42"
+
+    @pytest.mark.parametrize(
+        ("sprint", "project", "expected"),
+        [
+            ("Sprint 42", "", "Sprint Retro — Sprint 42"),
+            ("", "yeaboi", "Sprint Retro — yeaboi"),
+        ],
+    )
+    def test_names_whichever_it_has(self, sprint, project, expected):
+        assert _document_title(sprint, project) == expected
+
+    def test_falls_back_to_the_bare_mode_name(self):
+        # A headless or demo board has neither, and a trailing "— " in the tab
+        # is worse than no suffix at all.
+        assert _document_title("", "") == "Sprint Retro"
 
 
 class TestConfig:

@@ -150,18 +150,18 @@ class TestOnePaletteSource:
 
         Scoped to the component modules. palette.css *is* the colours, and
         tokens.css carries the print override, which is deliberately fixed.
+
+        There is no exception list. There used to be one entry — the QR code's
+        white quiet zone, which is a property of the format rather than a
+        styling choice — and it is now `--paper` in tokens.css, which is a
+        better home for it than a carve-out in a test.
         """
-        # A QR code has to be scanned. White quiet-zone regardless of theme is a
-        # property of the format, not a styling choice.
-        allowed = {"shared.module.css": {".qr"}}
         hex_re = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 
         offenders: list[str] = []
         for path in _sources(".module.css"):
             for lineno, line in enumerate(path.read_text().splitlines(), start=1):
                 if not hex_re.search(line) or line.lstrip().startswith(("*", "/*")):
-                    continue
-                if any(selector in line for selector in allowed.get(path.name, set())):
                     continue
                 offenders.append(f"{_rel(path)}:{lineno}")
         assert offenders == [], f"use a token from design/tokens.css, not a literal colour: {offenders}"
@@ -184,3 +184,54 @@ class TestGeneratedEnums:
         assert OUTPUT.read_text(encoding="utf-8") == render(), (
             "enums.ts is stale — run: uv run python scripts/gen_web_types.py"
         )
+
+
+class TestBreakpoints:
+    """Every @media query sits on the documented scale.
+
+    The numbers were never the problem — the missing *convention* was. Retro
+    wrote `max-width: 1099px` where poker wrote `max-width: 1100px`, so at
+    exactly 1100px the two boards took different branches on the same phone,
+    and reports had a 560px breakpoint that is in no scale at all.
+    """
+
+    #: `--bp-s/m/l` from tokens.css, each with its `calc(bp − 1px)` partner.
+    ALLOWED = {699, 700, 1099, 1100, 1439, 1440}
+
+    #: Heights the same rule applies to. Only one query asks about height —
+    #: PageShell's hero-density switch — and it needs a viewport tall enough to
+    #: give a ~250px masthead *and* a usable board, which no width token can say.
+    ALLOWED_HEIGHTS = {800}
+
+    def test_every_media_query_uses_a_scale_value(self):
+        pattern = re.compile(r"\((min|max)-width:\s*(\d+)px\)")
+        offenders: list[str] = []
+        for path in _sources(".css"):
+            for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+                for _, value in pattern.findall(line):
+                    if int(value) not in self.ALLOWED:
+                        offenders.append(f"{_rel(path)}:{lineno}: {value}px")
+        assert offenders == [], f"off-scale breakpoints (see --bp-* in tokens.css): {offenders}"
+
+    def test_media_queries_in_typescript_use_the_scale_too(self):
+        """A `matchMedia` string is a media query that no stylesheet scan sees.
+
+        The query that decides whether a board wears the hero masthead or the
+        compact one lives in `PageShell.tsx`, not in a stylesheet — so the
+        convention the sibling test enforces stopped exactly where it mattered
+        most. Widths must be on the scale; heights on the short list above.
+        """
+        pattern = re.compile(r"\((min|max)-(width|height):\s*(\d+)px\)")
+        offenders: list[str] = []
+        for path in _sources(".ts", ".tsx"):
+            for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+                for _, axis, value in pattern.findall(line):
+                    allowed = self.ALLOWED if axis == "width" else self.ALLOWED_HEIGHTS
+                    if int(value) not in allowed:
+                        offenders.append(f"{_rel(path)}:{lineno}: {axis} {value}px")
+        assert offenders == [], f"off-scale breakpoints in TypeScript: {offenders}"
+
+    def test_the_scale_is_declared_in_tokens_css(self):
+        tokens = (FRONTEND / "design" / "tokens.css").read_text()
+        for name, value in (("--bp-s", "700px"), ("--bp-m", "1100px"), ("--bp-l", "1440px")):
+            assert f"{name}: {value}" in tokens

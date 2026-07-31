@@ -5,7 +5,7 @@ assertions are about the *payload*. How an empty column becomes a footnote, and
 which colour each column wears, are asserted in ``Retro.test.tsx``.
 """
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import RetroCard, RetroReport
 from yeaboi.retro.export import build_retro_html, build_retro_markdown, export_retro
 
@@ -179,7 +179,7 @@ class TestSharedDesignSystem:
         html = build_retro_html(_report())
         assert 'data-theme="midnight"' in html
         assert 'data-mode="retro"' in html  # the accent, set before first paint
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
 
 def _history(*rows):
@@ -220,4 +220,4 @@ class TestTrend:
 
     def test_self_contained_with_history(self):
         html = build_retro_html(_report(), history=_history(("2026-07-10", 3), ("2026-06-26", 8)))
-        assert 'src="http' not in html and "<link" not in html
+        assert_self_contained(html)

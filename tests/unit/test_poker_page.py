@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.poker.board import POKER_DECK, PokerBoard
-from yeaboi.poker.page import board_config, build_poker_html
+from yeaboi.poker.page import _document_title, board_config, build_poker_html
 from yeaboi.poker.server import PokerServer
 from yeaboi.retro.board import AVATARS, RETRO_THEMES
 
@@ -33,7 +33,7 @@ class TestSelfContained:
         assert "<style>" in page and "<script>" in page
 
     def test_no_external_resources(self, page: str):
-        assert "<link" not in page
+        assert_self_contained(page)
         assert 'src="http' not in page and 'href="http' not in page
         assert "cdn" not in page.lower()
 
@@ -55,9 +55,11 @@ class TestSelfContained:
 
 
 class TestBootIsland:
-    def test_carries_the_titles_word_lists_and_stations(self, page: str):
+    def test_carries_the_chrome_word_lists_and_stations(self, page: str):
         boot = island(page)
-        assert boot["title"] == "yeaboi"
+        assert boot["chrome"]["title"] == "Planning Poker"
+        assert boot["chrome"]["subtitle"] == "yeaboi"
+        assert boot["chrome"]["facts"] == [["PROJECT", "yeaboi"], ["SCOPE", "Sprint 42"]]
         assert boot["scope"] == "Sprint 42"
         assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
         assert any(channel["name"] == "Lofi" for channel in boot["musicChannels"])
@@ -70,7 +72,7 @@ class TestBootIsland:
         here as well would let a stale bundle offer a card the board refuses,
         because the island would win at runtime.
         """
-        assert set(board_config()) == {"title", "scope", "adjectives", "nouns", "musicChannels"}
+        assert set(board_config()) == {"chrome", "scope", "adjectives", "nouns", "musicChannels"}
 
     def test_deck_and_avatars_are_not_duplicated_into_the_payload(self, page: str):
         boot = island(page)
@@ -88,7 +90,7 @@ class TestBootIsland:
         html = build_poker_html("</script><img src=x onerror=alert(1)>")
         assert "</script><img" not in html
         assert "\\u003c/script" in html
-        assert island(html)["title"] == "</script><img src=x onerror=alert(1)>"
+        assert island(html)["chrome"]["subtitle"] == "</script><img src=x onerror=alert(1)>"
 
     def test_island_has_no_secrets(self, page: str):
         boot = island(page)
@@ -162,5 +164,26 @@ class TestServedPageIsTokenFree:
         finally:
             server.stop()
 
-        assert boot["title"] == "yeaboi"
+        assert boot["chrome"]["subtitle"] == "yeaboi"
         assert boot["scope"] == "Sprint 42"
+
+
+class TestDocumentTitle:
+    """A host with a board per team had every tab reading "Planning Poker"."""
+
+    def test_names_both_when_both_are_known(self):
+        assert _document_title("yeaboi", "Sprint 42") == "Planning Poker — yeaboi · Sprint 42"
+
+    @pytest.mark.parametrize(
+        ("project", "scope", "expected"),
+        [
+            ("yeaboi", "", "Planning Poker — yeaboi"),
+            ("", "Sprint 42", "Planning Poker — Sprint 42"),
+        ],
+    )
+    def test_names_whichever_it_has(self, project, scope, expected):
+        assert _document_title(project, scope) == expected
+
+    def test_falls_back_to_the_bare_mode_name(self):
+        # A headless or demo board has neither name to offer.
+        assert _document_title("", "") == "Planning Poker"

@@ -25,12 +25,26 @@
  * popover and below the invite modal with no way to reason about either.
  */
 
+/* The height and the column belong to PageShell's `app` variant now — a
+   scroll-away masthead, a one-viewport region holding the sticky toolbar and
+   this board, and a credit under it. What is left is the surface it is painted
+   on. */
 .app {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
   color: var(--text);
+}
+
+/* The board's own scroller, inside the shell's viewport-tall region. Poker
+   scrolled the window before the shell existed; the window still scrolls, but
+   only far enough to take the masthead and the credit past. Everything else
+   moves in here, which is what lets `deckZone` park against the bottom of the
+   region rather than wherever the window happens to be. */
+.scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
@@ -53,7 +67,7 @@
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1099px) {
   .layout {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
     /* Room for the console, which is a fixed bottom sheet at this width. */
@@ -341,18 +355,9 @@
   gap: var(--s2);
 }
 
-.pkbtn {
-  min-height: var(--tap-min);
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-2xs);
-  cursor: pointer;
-}
-
+/* `.btn size="s"`, plus the one thing that is this button's: the peek strip's
+   go-there control is an accent outline, not a fill — it offers a move rather
+   than confirming one. */
 .pkbtnGo {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
@@ -810,17 +815,29 @@
  * Clear the console sheet.
  *
  * Below --bp-m the console is `position: fixed` at the bottom with a higher
- * z-index, and the deck is sticky at `bottom: 0` — so on a phone the deck's
- * last row (the ☕, once ten cards wrap to two lines) sits *behind* the host's
- * bar and cannot be tapped. Padding on .layout does not help: the deck is
- * sticky, so it parks against the viewport rather than against the content box.
+ * z-index. Two things would otherwise end up behind it: the deck's last row
+ * (the ☕, once ten cards wrap to two lines), and the credit in the shell's
+ * final grid row.
+ *
+ * One fix for both, declared once. `--app-inset-bottom` is the shell's hook for
+ * exactly this: it shortens the viewport-tall region, so the deck sticks to the
+ * bottom of a scroll area that ends above the sheet. Reusing the same value as
+ * padding on this element then does the other half — the credit is the last
+ * thing in the document, and without it the end of the scroll would put the
+ * credit under the sheet too.
+ *
+ * It used to be an offset on `.deckZone` itself, which was wrong: the deck is
+ * sticky and parks against its scroll container, so an offset there fought the
+ * layout instead of describing it.
  *
  * Only for the host, because only the host has a console. `data-host` is set by
- * App from the same flag that renders it, so the two cannot disagree.
+ * App from the same flag that renders it, so the two cannot disagree — it
+ * reaches this element through PageShell's `data` prop.
  */
-@media (max-width: 1100px) {
-  .app[data-host='true'] .deckZone {
-    bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+@media (max-width: 1099px) {
+  .app[data-host='true'] {
+    --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+    padding-bottom: var(--app-inset-bottom);
   }
 }
 
@@ -946,41 +963,6 @@
   gap: var(--s2);
 }
 
-.cbtn {
-  min-height: var(--tap);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
-}
-
-.cbtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.cbtnPrimary:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--ink);
-  font-weight: 600;
-}
-
-/* Everyone present has voted. The one moment the console asks for attention. */
-.cbtnPulse:not(:disabled) {
-  animation: cpulse 1.6s ease-in-out infinite;
-}
-
-@keyframes cpulse {
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-}
-
 .crow,
 .navrow {
   display: flex;
@@ -1084,7 +1066,7 @@
   color: var(--muted);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1099px) {
   .console {
     position: fixed;
     inset: auto 0 0 0;
@@ -1152,19 +1134,6 @@
 
 .offline {
   color: var(--warn);
-}
-
-.castBtn {
-  width: 100%;
-  min-height: var(--tap);
-  margin-top: var(--s2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-s);
-  background: var(--panel-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-xs);
-  cursor: pointer;
 }
 
 .popNote {

@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 
 import { cx } from '../runtime/cx';
 import { randomName } from '../runtime/random';
+import { Button } from './Button';
 import { Modal } from './Modal';
 import styles from './shared.module.css';
 
@@ -70,9 +71,9 @@ export function ProfileModal({
       onClose={required ? () => {} : onClose}
       title="Choose a name"
       actions={
-        <button type="button" className={styles['primaryBtn']} onClick={save}>
+        <Button tone="primary" size="l" onClick={save}>
           {required ? 'Join' : 'Save'}
-        </button>
+        </Button>
       }
     >
       <div className={styles['musicRow']}>
@@ -87,15 +88,14 @@ export function ProfileModal({
             if (event.key === 'Enter') save();
           }}
         />
-        <button
-          type="button"
+        <Button
           className={styles['preset']}
           aria-label="Suggest a random name"
           title="Suggest a random name"
           onClick={() => setDraftName(randomName(adjectives, nouns))}
         >
           <span aria-hidden="true">🎲</span>
-        </button>
+        </Button>
       </div>
 
       <div className={styles['avatarGrid']} role="radiogroup" aria-label="Avatar">

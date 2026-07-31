@@ -21,6 +21,7 @@ import { useState, type ReactNode } from 'react';
 
 import { fmtClock } from '../runtime/format';
 import { cx } from '../runtime/cx';
+import { Button } from './Button';
 import styles from './shared.module.css';
 
 /** Preset lengths, in seconds. The usual retro/poker timeboxes. */
@@ -81,9 +82,9 @@ export function TimerControls({
     <div className={cx(styles['timerPanel'], className)}>
       <div className={styles['presetRow']}>
         {presets.map((seconds) => (
-          <button key={seconds} type="button" className={styles['preset']} onClick={() => onStart(seconds)}>
+          <Button key={seconds} className={styles['preset']} onClick={() => onStart(seconds)}>
             {seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -102,13 +103,13 @@ export function TimerControls({
             if (event.key === 'Enter') startCustom();
           }}
         />
-        <button type="button" className={styles['preset']} onClick={startCustom}>
+        <Button className={styles['preset']} onClick={startCustom}>
           Start
-        </button>
+        </Button>
         {running ? (
-          <button type="button" className={styles['preset']} onClick={onStop}>
+          <Button className={styles['preset']} onClick={onStop}>
             Stop
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

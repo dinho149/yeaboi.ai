@@ -8,7 +8,7 @@ priority wears, are asserted in ``Plan.test.tsx``.
 
 from __future__ import annotations
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.html_exporter import build_export_html
 
 
@@ -46,7 +46,7 @@ class TestSharedDesignSystem:
         html = build_export_html({}, stage="complete")
         assert 'data-theme="midnight"' in html
         assert 'data-mode="planning"' in html  # the accent, set before first paint
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
     def test_empty_state_is_a_valid_plan(self):
         # A plan exported before anything ran is a normal artifact, not a broken

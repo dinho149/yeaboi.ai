@@ -1,95 +1,95 @@
 /**
- * The deck's palettes, measured — including the tiers CSS derives.
+ * The deck's palettes, measured — against every surface they can now land on.
  *
- * The site's five palettes are audited in `runtime/theme.test.ts`. The deck's
- * four are a separate, older set (`reporting/themes.py`) that also drive the
- * `.pptx`, and they were never checked: they predate the design system and were
- * hand-copied between a Python dict and a CSS block for as long as both existed.
+ * This audit used to check a deck palette against *itself*: the palette owned
+ * the background as well as the accents, so `--accent` on `--bg` was two
+ * numbers from the same four-hex block, and `--panel` and `--dim` were mixed
+ * from them in `deck.css`.
  *
- * Two of the tokens they resolve to are not in the palette at all — `--panel`
- * and `--dim` are mixed in `deck.css` from `--text` / `--muted` and `--bg`, so
- * a value nobody wrote is what a metric tile's border and the keyboard hint
- * actually paint with. Those are the ones worth measuring, and they are exactly
- * the ones a stylesheet makes easy to stop measuring.
+ * A deck palette contributes an accent now. The surface underneath is whichever
+ * of the five site palettes the visitor chose — which is what finally gives the
+ * deck a light mode, and which is also a much sharper risk: every palette
+ * Python ships was tuned against a dark background, and `sunset`'s orange on
+ * the `light` theme's near-white is 2.1:1 unaided.
  *
- * The mix ratios are parsed out of `deck.css` rather than repeated here, so
- * editing the stylesheet re-runs the audit against the new number instead of
- * silently invalidating it.
+ * So this measures the real combination — four deck palettes × five site
+ * backgrounds — and it measures what `applyPalette` actually writes, not the
+ * raw hex, because `readable()` darkens an accent until it clears AA. A failure
+ * here means that derivation stopped working, which is the only thing standing
+ * between a custom palette and an unreadable slide.
  *
- * What this cannot cover: a palette a user wrote into `reporting_themes.json`.
- * Four hexes of their choosing can be any contrast at all, and refusing to
- * render one would be worse than showing it.
+ * The site palettes' own tokens (`--panel`, `--dim`, `--muted`) are audited in
+ * `runtime/theme.test.ts` and are no longer the deck's business.
+ *
+ * What this cannot cover: whether a user's own four hexes in
+ * `reporting_themes.json` were a good idea. It can only promise they end up
+ * legible, which is what `readable()` is for.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import deckCss from './deck.css?raw';
-import { AA_NON_TEXT, AA_TEXT, contrast, mixSrgb } from '../design/contrast';
+import { AA_TEXT, contrast, parsePalettes } from '../design/contrast';
+import paletteCss from '../design/palette.css?raw';
 import { DECK_WIRE } from '../test/fixtures/wire';
+import { readableAccent } from './palette';
 
-/** `--name: color-mix(in srgb, var(--role) NN%, var(--base))` → the three parts. */
-function derivations(css: string): Record<string, { role: string; weight: number; base: string }> {
-  const out: Record<string, { role: string; weight: number; base: string }> = {};
-  const re = /--([\w-]+):\s*color-mix\(in srgb,\s*var\(--([\w-]+)\)\s*([\d.]+)%,\s*var\(--([\w-]+)\)\)/g;
-  for (let m = re.exec(css); m !== null; m = re.exec(css)) {
-    out[m[1] as string] = { role: m[2] as string, weight: Number(m[3]) / 100, base: m[4] as string };
-  }
-  return out;
-}
+const DECK_PALETTES = DECK_WIRE.palettes;
+const SITE_PALETTES = parsePalettes(paletteCss);
 
-const DERIVED = derivations(deckCss);
-const PALETTES = DECK_WIRE.palettes;
+const DECK_NAMES = Object.keys(DECK_PALETTES);
+const SITE_NAMES = Object.keys(SITE_PALETTES);
+const ACCENTS = ['accent', 'accent2'] as const;
 
-/** A deck palette's six roles, under the token names the components use. */
-function tokens(name: string): Record<string, string> {
-  const p = PALETTES[name]!;
-  const base: Record<string, string> = {
-    bg: p.bg1,
-    text: p.fg,
-    muted: p.muted,
-    accent: p.accent,
-    accent2: p.accent2,
-  };
-  for (const [token, { role, weight, base: onto }] of Object.entries(DERIVED)) {
-    base[token] = mixSrgb(base[role] as string, base[onto] as string, weight);
-  }
-  return base;
-}
-
-const NAMES = Object.keys(PALETTES);
-const FOREGROUNDS = ['text', 'muted', 'accent', 'accent2'] as const;
-const SURFACES = ['bg', 'panel'] as const;
-
-describe('deck.css derivations', () => {
-  it('parsed the mixes it is about to audit', () => {
-    // A regex that matched nothing would let every case below pass vacuously.
-    expect(Object.keys(DERIVED).sort()).toEqual(['dim', 'panel']);
-    expect(DERIVED['panel']).toEqual({ role: 'text', weight: 0.04, base: 'bg' });
-  });
-});
-
-describe('the four built-in deck palettes', () => {
+describe('the built-in deck palettes', () => {
   it('are the ones Python ships', () => {
     // Straight from the payload the exporter writes, so a palette added in
     // themes.py is audited without anyone remembering to add it here.
-    expect(NAMES).toEqual(['aurora', 'midnight', 'mono', 'sunset']);
+    expect(DECK_NAMES).toEqual(['aurora', 'midnight', 'mono', 'sunset']);
   });
 
-  const cases = NAMES.flatMap((name) => FOREGROUNDS.flatMap((fg) => SURFACES.map((bg) => [name, fg, bg] as const)));
+  it('are audited against every site palette, not just a dark one', () => {
+    // A regex that matched nothing would let every case below pass vacuously.
+    expect(SITE_NAMES).toEqual(['midnight', 'light', 'solarized', 'synthwave', 'forest']);
+  });
+});
 
-  it.each(cases)('%s: --%s on --%s clears AA', (name, fg, bg) => {
-    const t = tokens(name);
-    const ratio = contrast(t[fg] as string, t[bg] as string);
-    expect(ratio, `${name}: --${fg} on --${bg} is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_TEXT);
+describe('a deck accent on a site background', () => {
+  const cases = DECK_NAMES.flatMap((deck) =>
+    SITE_NAMES.flatMap((site) => ACCENTS.map((role) => [deck, site, role] as const)),
+  );
+
+  it.each(cases)('%s/%s: --%s clears AA once applied', (deck, site, role) => {
+    const bg = SITE_PALETTES[site]?.['bg'] as string;
+    const raw = DECK_PALETTES[deck]![role];
+    const applied = readableAccent(raw, bg);
+    const ratio = contrast(applied, bg);
+    expect(ratio, `${deck} ${role} on ${site} --bg is ${ratio.toFixed(2)}:1 (raw ${raw} → ${applied})`).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
-  it.each(NAMES)('%s: --dim recedes without disappearing', (name) => {
-    // Same band the site palettes hold `--dim` in, and for the same reason:
-    // above the non-text floor so the rail and the keyboard hint are legible,
-    // deliberately below body text so nobody sets a sentence in it.
-    const t = tokens(name);
-    const ratio = contrast(t['dim'] as string, t['bg'] as string);
-    expect(ratio, `${name}: --dim on --bg is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_NON_TEXT);
-    expect(ratio, `${name}: --dim on --bg is ${ratio.toFixed(2)}:1 — that is body text, not dim`).toBeLessThan(AA_TEXT);
+  it('leaves an accent alone when it already reads', () => {
+    // The derivation must be a floor, not a filter: a palette tuned for a dark
+    // projector should look exactly as its author chose on a dark theme.
+    const bg = SITE_PALETTES['midnight']?.['bg'] as string;
+    const raw = DECK_PALETTES['aurora']!.accent;
+    expect(contrast(raw, bg)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(readableAccent(raw, bg)).toBe(raw);
+  });
+
+  it('actually changes the ones that do not', () => {
+    // The case that motivated this: sunset's orange on the light theme.
+    const bg = SITE_PALETTES['light']?.['bg'] as string;
+    const raw = DECK_PALETTES['sunset']!.accent;
+    expect(contrast(raw, bg), 'sunset accent was already legible on light — pick a different case').toBeLessThan(
+      AA_TEXT,
+    );
+    expect(readableAccent(raw, bg)).not.toBe(raw);
+  });
+
+  it('returns an unparseable colour untouched rather than throwing', () => {
+    // A palette is user data. A deck that renders someone's odd colour beats a
+    // deck that does not render.
+    expect(readableAccent('not-a-colour', '#0b0c0e')).toBe('not-a-colour');
   });
 });

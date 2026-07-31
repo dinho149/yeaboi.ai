@@ -31,7 +31,7 @@
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-.brandTitle { font-size: 10px; }
+.brandTitle { font-size: var(--wordmark-block, 10px); }
 .brandSub {
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -45,67 +45,140 @@
 .tools { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
-.iconBtn {
+/* One block. Button.tsx records what the five it replaced disagreed about, and
+   which value won where they did. */
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--s2);
-  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and the
-     board's old .act buttons were about 13x20. */
+  /* --tap, not a bespoke height: WCAG 2.2 puts the floor at 24px and retro's
+     old .act buttons were about 13x20. */
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 0 var(--s3);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-s);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-m);
-  line-height: 1;
-}
-.iconBtn:hover { border-color: var(--accent); }
-.iconBtnCompact {
-  min-height: var(--tap-min);
-  min-width: var(--tap-min);
-  padding: 0 var(--s1);
-  font-size: var(--fs-s);
-  /* Visible at rest, not on hover: a hover-only control does not exist on a
-     touch screen, which is where most of these boards are actually used. */
-  opacity: 0.72;
-}
-.iconBtnCompact:hover, .iconBtnCompact:focus-visible { opacity: 1; }
-.iconBtnActive { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.iconBtnPrimary { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-.iconBtnPrimary:hover { filter: brightness(1.08); }
-.iconBtnDanger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-.iconGlyph { font-size: var(--fs-m); line-height: 1; }
-
-.primaryBtn {
-  min-height: var(--tap);
-  padding: 0 var(--s4);
-  background: var(--accent);
-  color: var(--ink);
-  border: 1px solid transparent;
-  border-radius: var(--r-s);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.primaryBtn:hover { filter: brightness(1.08); }
-
-.preset {
-  min-height: var(--tap);
   padding: 0 var(--s3);
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--r-s);
   color: var(--text);
-  font: inherit;
-  font-family: var(--font-mono);
   cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
-.preset:hover { border-color: var(--accent); }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+/* :disabled, not an .is-disabled class — the attribute is what stops the click,
+   so styling anything else can show an enabled-looking button that does not
+   respond. Every deleted block that handled this at all used 0.4–0.45. */
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Sizes. `m` is the base rule and has no class. */
+.btnS {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0 var(--s2);
+  font-size: var(--fs-2xs);
+}
+.btnL { padding: 0 var(--s4); font-size: var(--fs-m); }
+
+.btnPrimary { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+/* Hold the transparent border: the base :hover sets --accent, which would draw
+   a ring in the fill's own colour. */
+.btnPrimary:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+.btnDanger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.btnDanger:hover:not(:disabled) { border-color: var(--danger); }
+
+/* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
+.btnPill {
+  padding: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-l);
+}
+.btnPill:hover:not(:disabled) { color: var(--text); }
+
+/* Retro's card actions: on the card, with no chrome of their own. Dimmed but
+   present at rest — a hover-only control does not exist on a touchscreen, which
+   is where most of these boards are actually used. */
+.btnBare {
+  padding: 0;
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+  opacity: 0.65;
+}
+.btnBare:hover:not(:disabled), .btnBare:focus-visible {
+  border-color: transparent;
+  color: var(--text);
+  opacity: 1;
+}
+
+/* Bare wins over danger on colour by declaration order alone — both are single
+   classes, and `.btnBare` is written later. That silently un-reds the only
+   destructive controls on a board: retro's card ✕ and the ✓ that confirms it,
+   which sat next to a ↩ it had become identical to. Two classes, so it beats
+   `.btnBare` (and, below, `.btnBare.btnActive`) on specificity rather than on
+   where it happens to sit in the file. */
+.btnBare.btnDanger { color: var(--danger); }
+.btnBare.btnDanger:hover:not(:disabled),
+.btnBare.btnDanger:focus-visible { color: var(--danger); border-color: transparent; }
+
+.btnActive { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+/* A bare control that has opened something, or is asking a question, is no
+   longer dimmed background furniture — but it has no border to ring, so it
+   takes a fill instead. */
+.btnBare.btnActive {
+  background: var(--panel-2);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+  opacity: 1;
+}
+/* The raised rendition of the delete confirmation. Three classes, because
+   `.btnBare.btnActive` above is two and would otherwise take the ✓ back to
+   `--text` at the exact moment it is asking about a destructive action. */
+.btnBare.btnActive.btnDanger { color: var(--danger); }
+
+/* Everyone present has voted. The one moment the poker console asks for
+   attention. Neutralised by the global reduced-motion guard in tokens.css. */
+.btnAttention:not(:disabled) { animation: btnPulse 1.6s ease-in-out infinite; }
+@keyframes btnPulse {
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
+}
+
+.btnBlock { width: 100%; }
+
+/* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
+   in-card glyphs, which sit on a card rather than in a toolbar. */
+.btnDim { opacity: 0.72; }
+.btnDim:hover, .btnDim:focus-visible { opacity: 1; }
+
+.iconGlyph { font-size: var(--fs-m); line-height: 1; }
+
+/* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
+   face differs, because a number set in the prose face beside another number
+   set in mono reads as two different kinds of quantity. */
+.preset { font-family: var(--font-mono); }
+
+/* ── Credit ───────────────────────────────────────────────────────
+   The byline link. It inherits everything — colour, face, size, tracking —
+   from whichever footer it is sitting in, because it is the *same string* the
+   surface was already showing and becoming clickable should not make it louder.
+   The underline is held back to hover for the same reason: on a slide deck's
+   corner and a board's status strip it would read as a fifth rule line. */
+.credit {
+  color: inherit;
+  text-decoration: none;
+}
+.credit:hover,
+.credit:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
 .popoverGroup { display: contents; }
@@ -145,6 +218,9 @@
   box-shadow: var(--shadow-2);
 }
 .popoverLeft { right: auto; left: 0; }
+/* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
+   control bar, where a downward panel would be off-screen entirely. */
+.popoverAbove { top: auto; bottom: calc(100% + var(--s2)); }
 .popover[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
@@ -261,7 +337,7 @@
 
 /* ── Invite ───────────────────────────────────────────────────── */
 .invite { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-.qr { width: 200px; height: 200px; border-radius: var(--r-s); background: #fff; }
+.qr { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
 .inviteCode { display: flex; align-items: center; gap: var(--s2); margin: 0; }
 .codeValue {
   font-family: var(--font-mono);

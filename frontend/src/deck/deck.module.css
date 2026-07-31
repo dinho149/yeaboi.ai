@@ -15,7 +15,19 @@
      below the fold on exactly the device someone opens an emailed deck on. */
   height: 100dvh;
   font-family: var(--deck-font);
-  background: radial-gradient(115% 85% at 22% 0%, var(--deck-glow) 0%, var(--bg) 62%);
+  /* The wash that makes aurora feel different from sunset.
+     The glow is mixed *into the surface* rather than painted straight onto it.
+     `--deck-glow` is a palette colour tuned against that palette's own dark
+     background, and every palette Python ships is dark — so on the light site
+     theme the raw value lands as a grey smudge across the top-left of the
+     slide. At 30% it stays a tint of whatever surface is underneath, which is
+     all it was ever meant to be, and it needs no contrast correction because
+     nothing is ever read against it. */
+  background: radial-gradient(
+    115% 85% at 22% 0%,
+    color-mix(in srgb, var(--deck-glow) 30%, var(--bg)) 0%,
+    var(--bg) 62%
+  );
   padding:
     calc(var(--s5) + env(safe-area-inset-top)) calc(var(--s5) + env(safe-area-inset-right))
     calc(var(--s4) + env(safe-area-inset-bottom)) calc(var(--s5) + env(safe-area-inset-left));
@@ -74,9 +86,31 @@
  * in and the credit line turns into a logo. One tier down puts them level.
  */
 .brandWordmark {
+  /* The shared block-face knob, so the deck credit, the board app bar and
+     PageShell's compact masthead all size from one number. */
+  font-size: var(--wordmark-block, 5px);
   color: var(--dim);
   /* The glyph rows are their own baseline; nudge them onto the text's. */
   align-self: center;
+}
+
+/* A `.btn block`, plus a mono face and a left edge. */
+.deckThemeBtn {
+  margin-top: var(--s2);
+  padding: var(--s2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  justify-content: flex-start;
+  /* No uppercase, no tracking: the palette name is variable-length user data,
+     and at the label register "Deck palette: aurora" wrapped to three lines in
+     a 220px popover. Furniture elsewhere can afford the wide setting because
+     its text is fixed and short. */
+  text-align: left;
+}
+
+.brandCredit {
+  color: var(--dim);
 }
 
 .brandDate {
@@ -193,7 +227,7 @@
 .headline {
   font-size: calc(clamp(1.1rem, 2.6vw, 1.7rem) * var(--deck-scale));
   font-weight: 600;
-  color: var(--accent2);
+  color: var(--deck-accent2, var(--accent2));
   margin: var(--s5) 0 0;
 }
 
@@ -204,7 +238,7 @@
 }
 
 .thanksMark {
-  color: var(--accent);
+  color: var(--deck-accent, var(--accent));
   /* The glyphs are a grid of cells; any tracking at all opens hairline gaps
      straight through the middle of a letter. Restated from the primitive
      because a size override is the tempting thing to add here. */
@@ -245,7 +279,7 @@
 
 .items li::before {
   content: "▸";
-  color: var(--deck-heading, var(--accent));
+  color: var(--deck-heading, var(--deck-accent, var(--accent)));
   position: absolute;
   left: 0;
   top: 0;
@@ -277,7 +311,7 @@
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-left: 2px solid var(--accent);
+  border-left: 2px solid var(--deck-accent, var(--accent));
   border-radius: var(--r-m);
 }
 
@@ -292,7 +326,7 @@
   font-size: calc(clamp(2.2rem, 5.4vw, 3.6rem) * var(--deck-scale));
   font-weight: 700;
   line-height: 1.05;
-  color: var(--accent2);
+  color: var(--deck-accent2, var(--accent2));
 }
 
 .metricLabel {
@@ -326,7 +360,7 @@
 .cardTitle {
   font-size: calc(clamp(0.95rem, 2vw, 1.2rem) * var(--deck-scale));
   font-weight: 700;
-  color: var(--deck-heading, var(--accent2));
+  color: var(--deck-heading, var(--deck-accent2, var(--accent2)));
   margin: 0 0 calc(var(--s3) * var(--deck-scale));
 }
 
@@ -353,7 +387,7 @@
 
 .bar {
   height: 100%;
-  background: var(--accent);
+  background: var(--deck-accent, var(--accent));
   transition: width var(--dur-base) var(--ease);
 }
 
@@ -365,24 +399,11 @@
   margin-top: var(--s3);
 }
 
-.controls button {
-  width: var(--tap);
-  height: var(--tap);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--fs-l);
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-}
-
+/* The nav arrows are `.btn shape="pill"`; only the hover accent is the deck's,
+   because the report's author chose it. The descendant selector is kept for the
+   accent alone — it must beat `.btn:hover`, which sets the site accent. */
 .controls button:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--accent);
+  border-color: var(--deck-accent, var(--accent));
 }
 
 .controls button:disabled {
@@ -411,7 +432,7 @@
 
 /* ── Narrow ─────────────────────────────────────────────────────────────── */
 
-@media (max-width: 700px) {
+@media (max-width: 699px) {
   .hint,
   .rail {
     display: none;
@@ -423,5 +444,32 @@
 
   .metrics {
     gap: var(--s3);
+  }
+}
+
+/* ── Print ──────────────────────────────────────────────────────────────
+   A deck printed is a handout: the palette's glow and its accents were chosen
+   against a projector in a dark room, and on paper they cost ink and read
+   badly.
+
+   `!important` is not laziness here, it is the only mechanism that works.
+   `palette.ts` sets `--deck-accent` and `--deck-glow` as *inline* properties on
+   `<html>`, because a custom palette is user data that no build step could emit
+   CSS for — and a normal stylesheet declaration loses to an inline one. An
+   `!important` stylesheet declaration beats a non-important inline one, which
+   is exactly the case this is.
+
+   This is the bug that made `tokens.css`'s own print block unreachable for the
+   whole life of the deck: it forced the light palette onto `--bg`/`--text`, and
+   the inline properties silently overruled it on every page. Those three are
+   the theme's again, so that block works now, and this one only has to hand
+   back the deck's own two. */
+@media print {
+  .app {
+    --deck-accent: var(--accent) !important;
+    --deck-accent2: var(--accent2) !important;
+    --deck-glow: transparent !important;
+    background: none;
+    height: auto;
   }
 }

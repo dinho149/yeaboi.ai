@@ -1,6 +1,6 @@
 """Unit tests for reporting/export — Markdown, HTML, and file writing."""
 
-from tests._pages import island, markup
+from tests._pages import assert_self_contained, island, markup
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import export
 
@@ -206,7 +206,7 @@ class TestSharedDesignSystem:
         html = export.build_report_html(_report())
         assert 'data-theme="midnight"' in html
         assert 'data-mode="reporting"' in html  # the accent, set before first paint
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
 
 def _history(*rows):
@@ -270,7 +270,7 @@ class TestTrend:
 
     def test_self_contained_with_history(self):
         html = export.build_report_html(_report(), history=_history(("2026-07-13", 7), ("2026-06-29", 5)))
-        assert 'src="http' not in html and "<link" not in html
+        assert_self_contained(html)
 
 
 class TestSupportingSignalsMarkdown:

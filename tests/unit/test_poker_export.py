@@ -6,7 +6,7 @@ reached it, correctly shaped. How a skipped ticket looks, or how the votes lay
 out, is asserted in ``Poker.test.tsx``, where the component actually runs.
 """
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import PokerReport, PokerTicketResult, PokerVote
 from yeaboi.poker.export import build_poker_html, build_poker_markdown, export_poker
 
@@ -159,7 +159,7 @@ class TestSharedDesignSystem:
         html = build_poker_html(_report())
         assert 'data-theme="midnight"' in html
         assert 'data-mode="poker"' in html  # the accent, set before first paint
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
     def test_nav_lists_only_the_sections_that_exist(self):
         nav = [tuple(entry) for entry in island(build_poker_html(_report()))["chrome"]["nav"]]
@@ -190,7 +190,7 @@ class TestTrend:
 
     def test_self_contained_with_history(self):
         html = build_poker_html(_report(), history=_history(("2026-07-25", 8, 5), ("2026-07-11", 10, 9)))
-        assert 'src="http' not in html and "<link" not in html
+        assert_self_contained(html)
 
     def test_export_forwards_history(self, tmp_path, monkeypatch):
         out_dir = tmp_path / "exports"

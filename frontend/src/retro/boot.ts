@@ -18,11 +18,19 @@
  */
 
 import { requireBoot } from '../runtime/boot';
+import type { PageChrome } from '../shared/chrome';
 import type { Channel } from '../hooks/useMusic';
 
 export interface RetroBoot {
-  /** Board heading — the project or sprint the retro belongs to. */
-  title: string;
+  /**
+   * Masthead and footer, the same shape every yeaboi surface wears.
+   *
+   * Its facts are *static* ones — the project and sprint. Anything that moves
+   * during a ceremony (card counts, who is here, the timer) arrives over
+   * `/api/state`, because this document is built once at server start and a
+   * live number in here would be frozen at whatever it was then.
+   */
+  chrome: PageChrome;
   /** Sprint name, shown beside the title. May be empty. */
   sprint: string;
   /** Random-name word lists. From `retro/board.py`, so the TUI matches. */

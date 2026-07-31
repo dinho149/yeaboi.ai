@@ -27,11 +27,12 @@ import logging
 
 from yeaboi.music import CHANNELS
 from yeaboi.names import ADJECTIVES, NOUNS
+from yeaboi.web.brand import build_chrome
 
 logger = logging.getLogger(__name__)
 
 
-def board_config(sprint_name: str = "") -> dict[str, object]:
+def board_config(sprint_name: str = "", project_name: str = "") -> dict[str, object]:
     """Return the boot payload the board reads from its JSON island.
 
     Deliberately small. The grids, carried statuses, reaction emojis, avatars
@@ -43,19 +44,53 @@ def board_config(sprint_name: str = "") -> dict[str, object]:
     column the bundle has no heading for.
 
     So the island carries only what a codegen cannot pin: the free-form word
-    lists, the stream library, and this session's titles.
+    lists, the stream library, and this session's chrome.
+
+    **The facts are static ones only.** Card counts, participants and the timer
+    all change during the ceremony and arrive over ``/api/state``; the page HTML
+    is built once at server start, so a live number in here would freeze at
+    whatever it was when the host pressed go. The toolbar subtitle is where a
+    changing number belongs.
 
     Never put a secret in here. ``GET /`` is unauthenticated, so everything in
     this dict is readable by anyone who reaches the board, token or not.
+
+    **That includes the project and sprint names, and it is a deliberate
+    widening.** The sprint was already here; the masthead adds the project. The
+    board is not the share gate: ``sharing/gate.py`` withholds the sprint and
+    the engineer precisely because a gate visitor may be a stranger who was sent
+    a link, whereas a live board is a room the host is actively inviting people
+    into, and a teammate arriving at one needs to know they are in the right
+    retro before they type a code. What is still withheld here is everything
+    that identifies a *person* or the contents: no card text, no participant
+    names, no token, no join code, and no count of who is inside — those arrive
+    over the authenticated ``/api/state``.
     """
     return {
-        "title": "Sprint Retro",
+        "chrome": build_chrome(
+            mode="retro",
+            title="Sprint Retro",
+            wordmark="retro",
+            subtitle=sprint_name,
+            facts=[("PROJECT", project_name), ("SPRINT", sprint_name)],
+        ),
         "sprint": sprint_name,
         "adjectives": list(ADJECTIVES),
         "nouns": list(NOUNS),
         # The same internet-radio library the TUI plays (yeaboi.music.CHANNELS).
         "musicChannels": [{"name": c["name"], "url": c["url"]} for c in CHANNELS],
     }
+
+
+def _document_title(sprint_name: str, project_name: str) -> str:
+    """Tab title naming the session, not just the mode.
+
+    A host with three boards open had three tabs all reading "Sprint Retro".
+    Falls back to the bare mode name when the board has neither name, which is
+    what a headless or demo board looks like.
+    """
+    named = " · ".join(part for part in (project_name, sprint_name) if part)
+    return f"Sprint Retro — {named}" if named else "Sprint Retro"
 
 
 # Shown before the bundle mounts, and to anyone with JavaScript disabled. The
@@ -67,14 +102,14 @@ _NOSCRIPT = (
 )
 
 
-def build_board_html(sprint_name: str = "") -> str:
+def build_board_html(sprint_name: str = "", project_name: str = "") -> str:
     """Return the retro board: one self-contained, token-free document."""
     from yeaboi.web.assets import render_page  # noqa: PLC0415 - avoids an import cycle via html_theme
 
     html = render_page(
         bundle="retro",
-        title="Sprint Retro",
-        data=board_config(sprint_name),
+        title=_document_title(sprint_name, project_name),
+        data=board_config(sprint_name, project_name),
         # Layers the retro accent over whichever palette the visitor chose.
         html_attrs='data-mode="retro"',
         body=_NOSCRIPT,

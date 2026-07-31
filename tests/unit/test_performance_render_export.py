@@ -3,7 +3,7 @@
 import pytest
 from rich.console import Group
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
 from yeaboi.performance import delivery, export, render
 
@@ -149,7 +149,7 @@ class TestSharedDesignSystem:
     def test_prep_html_is_self_contained_and_wears_the_mode_accent(self):
         html = export.build_prep_html(OneOnOnePrep(engineer="Ada", date="2026-07-12", talking_points=("point",)))
         assert 'data-mode="performance"' in html
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
 
 class TestPayload:

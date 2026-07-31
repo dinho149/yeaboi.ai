@@ -40,12 +40,14 @@ import { apiUrl, loadSession, pollState, stripCredentialsFromUrl, type Session }
 import { participantId, read, write } from '../runtime/storage';
 import { applyTheme, setTheme, storedTheme, THEME_KEYS, type Theme } from '../runtime/theme';
 import {
+  Button,
   ConfettiCanvas,
   IconButton,
   InviteQR,
   JoinGate,
   Modal,
   MusicPlayer,
+  PageShell,
   Popover,
   PresenceRow,
   ProfileModal,
@@ -121,7 +123,7 @@ export function App({ boot }: { boot: PokerBoot }) {
   const ticketCount = snapshot?.ticket_count ?? 0;
 
   // ── Local UI state ─────────────────────────────────────────────────────
-  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.poker) ?? 'midnight');
+  const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.site) ?? 'midnight');
   const [inviteOpen, setInviteOpen] = useState(false);
   // Fetched on open rather than read from the boot payload: the page is
   // served unauthenticated, so a join code in the island would be readable by
@@ -134,7 +136,7 @@ export function App({ boot }: { boot: PokerBoot }) {
 
   const chooseTheme = useCallback((next: Theme) => {
     setLocalTheme(next);
-    setTheme(next, THEME_KEYS.poker);
+    setTheme(next, THEME_KEYS.site);
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -307,7 +309,9 @@ export function App({ boot }: { boot: PokerBoot }) {
       <JoinGate
         wordmark="poker"
         eyebrow="Planning poker"
-        frameTitle="yeaboi — poker"
+        // From the island — see the note on retro's gate.
+        frameTitle={boot.chrome.frame}
+        footer={boot.chrome.footer}
         heading="Join the session"
         blurb="Enter the share code from the host's screen."
         cta="Join"
@@ -322,9 +326,15 @@ export function App({ boot }: { boot: PokerBoot }) {
     // `data-host` drives one CSS rule: lifting the sticky deck clear of the
     // console's bottom sheet on a phone. Read from the same flag that renders
     // the console, so a guest never gets the offset for a bar they do not have.
-    <div className={styles['app']} data-host={isHost ? 'true' : undefined}>
-      <Toolbar
-        brand="poker"
+    <PageShell
+      chrome={boot.chrome}
+      variant="app"
+      className={styles['app']}
+      data={{ 'data-host': isHost ? 'true' : undefined }}
+      bar={
+        <Toolbar
+        // No `brand`: the masthead above already sets the word in the six-row
+        // face. See the note on Toolbar's prop.
         mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
@@ -360,13 +370,9 @@ export function App({ boot }: { boot: PokerBoot }) {
                 channels={boot.musicChannels}
                 footer={
                   isHost ? (
-                    <button
-                      type="button"
-                      className={styles['castBtn']}
-                      onClick={() => run(actions.castMusic(music.playing, music.channel))}
-                    >
+                    <Button onClick={() => run(actions.castMusic(music.playing, music.channel))}>
                       <span aria-hidden="true">📣</span> Play for everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -398,9 +404,9 @@ export function App({ boot }: { boot: PokerBoot }) {
                 onChange={chooseTheme}
                 footer={
                   isHost ? (
-                    <button type="button" className={styles['castBtn']} onClick={() => run(actions.castTheme(theme))}>
+                    <Button onClick={() => run(actions.castTheme(theme))}>
                       <span aria-hidden="true">📣</span> Apply to everyone
-                    </button>
+                    </Button>
                   ) : null
                 }
               />
@@ -436,8 +442,14 @@ export function App({ boot }: { boot: PokerBoot }) {
             <Roster people={presence} meName={name} />
           </Popover>
         </div>
-      </Toolbar>
-
+        </Toolbar>
+      }
+    >
+      {/* Poker document-scrolled before the shell existed; now it scrolls
+          inside row 3. `deckZone` is sticky at `bottom: 0`, so it parks against
+          the bottom of this region rather than the viewport — which is where
+          the credit begins, so the two no longer fight. */}
+      <div className={styles['scroll']}>
       {locked ? (
         <p className={styles['lockBanner']} role="alert">
           <span aria-hidden="true">🔒</span> The host locked voting.
@@ -564,6 +576,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           joinCode={invite.invite?.joinCode}
         />
       </Modal>
-    </div>
+      </div>
+    </PageShell>
   );
 }

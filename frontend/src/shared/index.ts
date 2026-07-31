@@ -1,10 +1,21 @@
 /** The shared component library. Import from here, not from the files. */
 
+export {
+  Button,
+  buttonClass,
+  type ButtonProps,
+  type ButtonShape,
+  type ButtonSize,
+  type ButtonTone,
+} from './Button';
+export type { PageChrome } from './chrome';
 export { CopyField, type CopyFieldProps } from './CopyField';
+export { Credit, CREDIT_URL, type CreditProps } from './Credit';
 export { IconButton, type IconButtonProps } from './IconButton';
 export { InviteQR, inviteText, type InviteQRProps } from './InviteQR';
 export { JoinGate, normalizeCode, type JoinGateProps } from './JoinGate';
 export { Modal, type ModalProps } from './Modal';
+export { PageShell, type PageShellProps } from './PageShell';
 export { MusicPlayer, type MusicPlayerProps } from './MusicPlayer';
 export { Popover, PopoverGroup, type PopoverProps } from './Popover';
 export {

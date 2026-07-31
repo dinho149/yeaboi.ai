@@ -30,6 +30,7 @@ import { Eyebrow } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { DuelSlice, PokerPhase, PokerState } from '../types/board';
 import { fmtPoints } from './points';
+import { Button } from '../shared';
 import styles from './poker.module.css';
 
 /** Turn lengths the host can open the floor with. Server clamps to 15..600s. */
@@ -123,74 +124,55 @@ export function Console({
       <div className={styles['cbar']}>
         <span className={styles['cphase']}>{duelLabel(duel, phase)}</span>
         {dueling ? (
-          <button type="button" className={cx(styles['cbtn'], styles['cbtnPrimary'])} onClick={onCloseDuel}>
+          <Button tone="primary" onClick={onCloseDuel}>
             Close the floor
-          </button>
+          </Button>
         ) : transcribing ? (
-          <button type="button" className={cx(styles['cbtn'], styles['cbtnPrimary'])} disabled>
+          <Button tone="primary" disabled>
             Transcribing…
-          </button>
+          </Button>
         ) : revealed ? (
-          <button
-            type="button"
-            className={cx(styles['cbtn'], styles['cbtnPrimary'])}
-            disabled={!finalizeReady}
-            onClick={submitFinalize}
-          >
+          <Button tone="primary" disabled={!finalizeReady} onClick={submitFinalize}>
             Save &amp; next{points ? ` · ${points}` : ''}
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className={cx(styles['cbtn'], styles['cbtnPrimary'], allIn && styles['cbtnPulse'])}
-            disabled={!canReveal}
-            onClick={onReveal}
-          >
+          <Button tone="primary" attention={allIn} disabled={!canReveal} onClick={onReveal}>
             Reveal votes
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className={styles['cbtn']}
+        <Button
           aria-expanded={open}
           aria-label={open ? 'Hide host controls' : 'Show host controls'}
           onClick={() => setOpen(!open)}
         >
           <span aria-hidden="true">⌃</span>
-        </button>
+        </Button>
       </div>
 
       <div className={styles['cbody']}>
         <div className={styles['cgroup']}>
           <Eyebrow>Round</Eyebrow>
-          <button
-            type="button"
-            className={cx(styles['cbtn'], styles['cbtnPrimary'], allIn && styles['cbtnPulse'])}
-            disabled={!canReveal}
-            onClick={onReveal}
-          >
+          <Button tone="primary" attention={allIn} disabled={!canReveal} onClick={onReveal}>
             {revealed || dueling ? 'Revealed ✓' : 'Reveal votes'}
-          </button>
-          <button type="button" className={styles['cbtn']} disabled={!hasTicket || dueling} onClick={onRevote}>
+          </Button>
+          <Button disabled={!hasTicket || dueling} onClick={onRevote}>
             Re-vote
-          </button>
+          </Button>
         </div>
 
         <div className={styles['cgroup']}>
           <Eyebrow>Insight</Eyebrow>
-          <button type="button" className={styles['cbtn']} disabled={!revealed || ai.pending} onClick={onAskAi}>
+          <Button disabled={!revealed || ai.pending} onClick={onAskAi}>
             <span aria-hidden="true">🤖</span> AI perspective
-          </button>
-          <button
-            type="button"
-            className={styles['cbtn']}
+          </Button>
+          <Button
             disabled={!revealed || duel?.status === 'live' || transcribing}
             aria-expanded={duelOpen}
             title="Low vs high voter argue their estimates"
             onClick={() => setDuelOpen(!duelOpen)}
           >
             <span aria-hidden="true">🎤</span> Open the floor
-          </button>
+          </Button>
 
           {/* One reserved slot: the preset picker and the live controls swap
               inside it, so the console never grows or shrinks mid-round. */}
@@ -214,18 +196,16 @@ export function Console({
 
             {dueling ? (
               <div className={styles['crow']}>
-                <button
-                  type="button"
-                  className={styles['cbtn']}
+                <Button
                   disabled={duel?.turn !== 'low'}
                   title="Hand the floor to the high voter"
                   onClick={onNextTurn}
                 >
                   Next turn ›
-                </button>
-                <button type="button" className={styles['cbtn']} onClick={onCloseDuel}>
+                </Button>
+                <Button onClick={onCloseDuel}>
                   Close the floor
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
@@ -261,48 +241,41 @@ export function Console({
                 whether they typed it or the board suggested it. */}
             {!typing && points && finalizeReady ? <span className={styles['finSrc']}>median</span> : null}
           </div>
-          <button
-            type="button"
-            className={cx(styles['cbtn'], styles['cbtnPrimary'])}
+          <Button
+            tone="primary"
             disabled={!finalizeReady}
             title="Save to the board and move on"
             onClick={submitFinalize}
           >
             Save &amp; next
-          </button>
+          </Button>
         </div>
 
         <div className={styles['cgroup']}>
           <Eyebrow>Navigate</Eyebrow>
           <div className={styles['navrow']}>
-            <button
-              type="button"
-              className={styles['cbtn']}
+            <Button
               aria-label="Previous ticket"
               disabled={!hasTicket || dueling || index <= 0}
               onClick={() => onGoto(index - 1)}
             >
               ‹
-            </button>
+            </Button>
             <span className={styles['cpos']}>{hasTicket ? `${index + 1} / ${count}` : '– / –'}</span>
-            <button
-              type="button"
-              className={styles['cbtn']}
+            <Button
               aria-label="Next ticket"
               disabled={!hasTicket || dueling || index >= count - 1}
               onClick={() => onGoto(index + 1)}
             >
               ›
-            </button>
-            <button
-              type="button"
-              className={styles['cbtn']}
+            </Button>
+            <Button
               aria-label="Edit the ticket on the board"
               disabled={!hasTicket || dueling}
               onClick={onEdit}
             >
               ✎
-            </button>
+            </Button>
           </div>
 
           {/* Tracker write failures live here rather than in a toast: they are
