@@ -169,6 +169,17 @@ jobs:
           # outages below each took a round of blind guessing to diagnose. The
           # prompt and diff here are public repo content, so there is nothing to
           # hide; keep this on so the next failure reports itself.
+          #
+          # THIS FLAG CANNOT BE TESTED ON THE PR THAT ADDS IT. The action
+          # validates that the workflow file is byte-identical to the copy on the
+          # default branch, and *skips itself* when it isn't:
+          #   "Skipping action due to workflow validation: … must have identical
+          #    content to the version on the repository's default branch"
+          # The skip reports the step as SUCCESS, so a PR editing this file gets a
+          # green auto-version that never ran Claude at all. Two consequences:
+          #   1. any change here is only exercised after it lands on main;
+          #   2. a green check on a workflow-editing PR proves nothing — read the
+          #      log for the validation warning before believing it.
           show_full_output: true
           # Semver classification is mechanical (labels always win; the bump is a
           # script; the changelog paragraph is short) — routed to Haiku for cost.
