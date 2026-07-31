@@ -46,6 +46,7 @@ import {
   JoinGate,
   Modal,
   MusicPlayer,
+  PageShell,
   Popover,
   PresenceRow,
   ProfileModal,
@@ -322,9 +323,15 @@ export function App({ boot }: { boot: PokerBoot }) {
     // `data-host` drives one CSS rule: lifting the sticky deck clear of the
     // console's bottom sheet on a phone. Read from the same flag that renders
     // the console, so a guest never gets the offset for a bar they do not have.
-    <div className={styles['app']} data-host={isHost ? 'true' : undefined}>
-      <Toolbar
-        brand="poker"
+    <PageShell
+      chrome={boot.chrome}
+      variant="app"
+      className={styles['app']}
+      data={{ 'data-host': isHost ? 'true' : undefined }}
+      bar={
+        <Toolbar
+        // No `brand`: the masthead above already sets the word in the six-row
+        // face. See the note on Toolbar's prop.
         mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
@@ -436,8 +443,14 @@ export function App({ boot }: { boot: PokerBoot }) {
             <Roster people={presence} meName={name} />
           </Popover>
         </div>
-      </Toolbar>
-
+        </Toolbar>
+      }
+    >
+      {/* Poker document-scrolled before the shell existed; now it scrolls
+          inside row 3. `deckZone` is sticky at `bottom: 0`, so it parks against
+          the bottom of this region rather than the viewport — which is where
+          the credit begins, so the two no longer fight. */}
+      <div className={styles['scroll']}>
       {locked ? (
         <p className={styles['lockBanner']} role="alert">
           <span aria-hidden="true">🔒</span> The host locked voting.
@@ -564,6 +577,7 @@ export function App({ boot }: { boot: PokerBoot }) {
           joinCode={invite.invite?.joinCode}
         />
       </Modal>
-    </div>
+      </div>
+    </PageShell>
   );
 }

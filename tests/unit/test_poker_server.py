@@ -69,7 +69,7 @@ class TestServerRouting:
     def test_get_root_serves_html_token_free(self, running_server):
         srv, _ = running_server
         html = _get(f"http://127.0.0.1:{srv.port}/").read().decode()
-        assert "<title>Planning Poker</title>" in html
+        assert "<title>Planning Poker — Proj · Backlog</title>" in html
         assert srv.token not in html
         assert srv.admin_token not in html
 

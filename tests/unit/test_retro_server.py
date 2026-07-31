@@ -150,7 +150,9 @@ class TestServerRouting:
     def test_get_root_serves_html(self, running_server):
         srv, _ = running_server
         html = _get(f"http://127.0.0.1:{srv.port}/").read().decode()
-        assert "<title>Sprint Retro</title>" in html
+        # The title names the session, not just the mode — a host with three
+        # boards open had three tabs all reading "Sprint Retro".
+        assert "<title>Sprint Retro — Proj</title>" in html
 
     def test_api_without_token_forbidden(self, running_server):
         srv, _ = running_server

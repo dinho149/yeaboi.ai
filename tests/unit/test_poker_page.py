@@ -55,9 +55,11 @@ class TestSelfContained:
 
 
 class TestBootIsland:
-    def test_carries_the_titles_word_lists_and_stations(self, page: str):
+    def test_carries_the_chrome_word_lists_and_stations(self, page: str):
         boot = island(page)
-        assert boot["title"] == "yeaboi"
+        assert boot["chrome"]["title"] == "Planning Poker"
+        assert boot["chrome"]["subtitle"] == "yeaboi"
+        assert boot["chrome"]["facts"] == [["PROJECT", "yeaboi"], ["SCOPE", "Sprint 42"]]
         assert boot["scope"] == "Sprint 42"
         assert len(boot["adjectives"]) > 5 and len(boot["nouns"]) > 5
         assert any(channel["name"] == "Lofi" for channel in boot["musicChannels"])
@@ -70,7 +72,7 @@ class TestBootIsland:
         here as well would let a stale bundle offer a card the board refuses,
         because the island would win at runtime.
         """
-        assert set(board_config()) == {"title", "scope", "adjectives", "nouns", "musicChannels"}
+        assert set(board_config()) == {"chrome", "scope", "adjectives", "nouns", "musicChannels"}
 
     def test_deck_and_avatars_are_not_duplicated_into_the_payload(self, page: str):
         boot = island(page)
@@ -88,7 +90,7 @@ class TestBootIsland:
         html = build_poker_html("</script><img src=x onerror=alert(1)>")
         assert "</script><img" not in html
         assert "\\u003c/script" in html
-        assert island(html)["title"] == "</script><img src=x onerror=alert(1)>"
+        assert island(html)["chrome"]["subtitle"] == "</script><img src=x onerror=alert(1)>"
 
     def test_island_has_no_secrets(self, page: str):
         boot = island(page)
@@ -162,5 +164,5 @@ class TestServedPageIsTokenFree:
         finally:
             server.stop()
 
-        assert boot["title"] == "yeaboi"
+        assert boot["chrome"]["subtitle"] == "yeaboi"
         assert boot["scope"] == "Sprint 42"

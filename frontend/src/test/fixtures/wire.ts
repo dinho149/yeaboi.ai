@@ -48,6 +48,8 @@
  */
 
 import type { DeckBoot } from '../../deck/boot';
+import type { PokerBoot } from '../../poker/boot';
+import type { RetroBoot } from '../../retro/boot';
 import type { ExportBoot, ExportReport } from '../../export/boot';
 import type { InviteInfo, PokerState, RetroState, TicketView } from '../../types/board';
 
@@ -62,9 +64,11 @@ import exportReportingJson from './export.reporting.json';
 import exportRetroJson from './export.retro.json';
 import exportRoadmapJson from './export.roadmap.json';
 import exportStandupJson from './export.standup.json';
+import pokerBootJson from './poker.boot.json';
 import pokerDuelJson from './poker.duel.json';
 import pokerRevealedJson from './poker.revealed.json';
 import pokerVotingJson from './poker.voting.json';
+import retroBootJson from './retro.boot.json';
 import retroJson from './retro.json';
 import ticketPeekJson from './ticket.peek.json';
 
@@ -132,6 +136,8 @@ void (pokerDuelJson satisfies Widened<PokerState>);
 void (ticketPeekJson satisfies Widened<TicketView>);
 void (inviteJson satisfies Widened<InviteInfo>);
 void (deckJson satisfies Widened<DeckBoot>);
+void (retroBootJson satisfies Widened<RetroBoot>);
+void (pokerBootJson satisfies Widened<PokerBoot>);
 void (exportAnonymizeJson satisfies Widened<BootOf<'anonymize'>>);
 void (exportPerformanceJson satisfies Widened<BootOf<'performance'>>);
 void (exportPlanJson satisfies Widened<BootOf<'plan'>>);

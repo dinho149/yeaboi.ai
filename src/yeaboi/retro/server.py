@@ -492,7 +492,7 @@ class RetroServer:
         # The served page is token-FREE: GET / is unauthenticated, so baking the
         # token in would leak it to anyone who reaches the board. The client reads
         # the token from its own URL (?token=) or via the join code (/api/join).
-        page_html = build_board_html(self.board.sprint_name)
+        page_html = build_board_html(self.board.sprint_name, self.board.project_name)
         httpd: ThreadingHTTPServer | None = None
         for candidate in range(self.port, self.port + _PORT_WALK):
             try:

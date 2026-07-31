@@ -41,6 +41,7 @@ import {
   JoinGate,
   Modal,
   MusicPlayer,
+  PageShell,
   Popover,
   PresenceRow,
   ProfileModal,
@@ -336,13 +337,15 @@ export function App({ boot }: { boot: RetroBoot }) {
 
   const cardCount = cards.length;
 
-  return (
-    <div className={styles['app']}>
-      <Toolbar
-        brand="retro"
-        // The duck rides in the toolbar, where it is in peripheral vision the
-        // whole ceremony without ever being in the way.
-        mark={<Duck state={duckState} size={30} />}
+  const toolbar = (
+    <Toolbar
+      // No `brand`: the masthead above sets the wordmark, in the six-row face
+      // where there is room for it. Two wordmarks sixty pixels apart is not
+      // consistency, it is duplication.
+      //
+      // The duck rides in the toolbar, where it is in peripheral vision the
+      // whole ceremony without ever being in the way.
+      mark={<Duck state={duckState} size={30} />}
         subtitle={
           <>
             {boot.sprint ? `${boot.sprint} · ` : ''}
@@ -460,8 +463,16 @@ export function App({ boot }: { boot: RetroBoot }) {
           />
           <IconButton icon="⊞" label="Group cards by author" active={grouped} onClick={toggleGrouped} />
         </div>
-      </Toolbar>
+    </Toolbar>
+  );
 
+  return (
+    <PageShell chrome={boot.chrome} variant="app" bar={toolbar} className={styles['app']}>
+      {/* One flex column inside the shell's scroll row. The banners, the
+          carried strip and the focus bar are auto-height siblings above the
+          board, which takes the rest — the same relationship they had when
+          `.app` itself was the flex column. */}
+      <div className={styles['boardRegion']}>
       {locked ? (
         <p className={styles['lockBanner']} role="alert">
           <span aria-hidden="true">🔒</span> The host locked the board.
@@ -510,7 +521,10 @@ export function App({ boot }: { boot: RetroBoot }) {
         onReact={(cardId, emoji) => void react(cardId, emoji)}
         onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
       />
+      </div>
 
+      {/* Overlays and modals are fixed-position, so they take no part in the
+          layout above and can sit anywhere in the tree. */}
       <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
       <ConfettiCanvas canvasRef={confettiRef} />
 
@@ -538,6 +552,6 @@ export function App({ boot }: { boot: RetroBoot }) {
           joinCode={invite.invite?.joinCode}
         />
       </Modal>
-    </div>
+    </PageShell>
   );
 }

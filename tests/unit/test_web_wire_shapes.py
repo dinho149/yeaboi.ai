@@ -402,11 +402,30 @@ def _invite_snapshot() -> dict:
     )
 
 
+def _boot_snapshots() -> dict[str, dict]:
+    """The two boards' boot islands.
+
+    A different direction from every other fixture here: the rest are ``/api``
+    *responses*, read after the board is running. These are what the document
+    is built with, once, at server start — and until now nothing checked their
+    shape at all. A dropped field there does not fail a request; it renders a
+    board with no masthead, and only for whoever opens the tunnel link.
+    """
+    from yeaboi.poker.page import board_config as poker_config
+    from yeaboi.retro.page import board_config as retro_config
+
+    return {
+        "retro.boot": retro_config(sprint_name="Sprint 42", project_name="yeaboi"),
+        "poker.boot": poker_config(project_name="yeaboi", scope_label="Sprint 42"),
+    }
+
+
 def _fixtures() -> dict[str, dict]:
     return {
         "deck": _deck_snapshot(),
         "retro": _retro_snapshot(),
         "invite": _invite_snapshot(),
+        **_boot_snapshots(),
         **_poker_snapshots(),
         **_export_snapshots(),
     }

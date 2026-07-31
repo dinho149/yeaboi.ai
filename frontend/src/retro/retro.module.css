@@ -17,16 +17,28 @@
  *    invisible one for half the room.
  */
 
+/* The height and the column now belong to PageShell's `app` variant, which is a
+   four-row grid: masthead, toolbar, this board, credit. What is left here is
+   the surface it is painted on. */
 .app {
-  display: flex;
-  flex-direction: column;
-  height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font: var(--fs-m) / 1.5 var(--font-sans);
   /* Landscape on a notched phone puts the outer columns under the cutout. */
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+
+/* Everything between the toolbar and the credit. The banners, the carried
+   strip and the focus bar are auto-height siblings; `.board` takes the rest.
+   `min-height: 0` here and on `.board` is the chain that lets the columns
+   scroll inside the viewport instead of growing past it — the grid row above
+   is `minmax(0, 1fr)` for exactly this reason. */
+.boardRegion {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 .offline { color: var(--warn); font-family: var(--font-sans); }

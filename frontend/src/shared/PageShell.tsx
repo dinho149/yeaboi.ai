@@ -79,6 +79,16 @@ export interface PageShellProps {
   /** The scrolling region. */
   children: ReactNode;
   className?: string | undefined;
+  /**
+   * Data attributes for the root element.
+   *
+   * Exists for one real case: poker's console is a fixed bottom sheet below
+   * `--bp-m`, and several of its rules key off `[data-host]` on the layout root
+   * to clear it. That flag has to reach the element this component owns, or the
+   * selectors silently stop matching and the deck's last row hides behind the
+   * host's bar on a phone.
+   */
+  data?: Record<string, string | undefined>;
 }
 
 export function PageShell({
@@ -89,6 +99,7 @@ export function PageShell({
   bar,
   children,
   className,
+  data,
 }: PageShellProps) {
   // Subscribed unconditionally — hooks cannot be conditional — but only
   // consulted when density is 'auto'. The listener is one matchMedia per page.
@@ -101,7 +112,7 @@ export function PageShell({
   const app = variant === 'app';
 
   return (
-    <div className={cx(styles['page'], app && styles['shellApp'], className)}>
+    <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
       <TerminalFrame title={chrome.frame} className={styles['masthead']}>
         <div className={styles['head']}>
           <div className={styles['headMain']}>

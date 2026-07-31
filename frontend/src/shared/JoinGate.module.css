@@ -69,9 +69,9 @@
 }
 
 .wordmark {
-  /* Large enough to be the first thing seen, and the reason there is no logo
-     image on this page: it is text, so it costs nothing and scales cleanly. */
-  font-size: 17px;
+  /* No font-size: this is the six-row face, which Wordmark sizes inline from
+     its container so a long mode name still fits a 345px phone. The gate is the
+     one surface where the wordmark *is* the page, so it keeps the default cap. */
   margin-bottom: var(--s4);
 }
 

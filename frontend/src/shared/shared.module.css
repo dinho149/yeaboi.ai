@@ -31,7 +31,7 @@
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-.brandTitle { font-size: 10px; }
+.brandTitle { font-size: var(--wordmark-block, 10px); }
 .brandSub {
   color: var(--muted);
   font-size: var(--fs-xs);

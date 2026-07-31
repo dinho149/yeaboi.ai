@@ -87,7 +87,7 @@ class TestBootIsland:
         sources of truth, and the island would win at runtime — so a stale
         bundle would render a board whose columns disagree with the server's.
         """
-        assert set(board_config()) == {"title", "sprint", "adjectives", "nouns", "musicChannels"}
+        assert set(board_config()) == {"chrome", "sprint", "adjectives", "nouns", "musicChannels"}
 
     def test_theme_names_are_not_duplicated_into_the_payload(self, page: str):
         boot = island(page)

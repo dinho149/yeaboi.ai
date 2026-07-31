@@ -25,12 +25,23 @@
  * popover and below the invite modal with no way to reason about either.
  */
 
+/* The height and the column belong to PageShell's `app` variant now — a
+   four-row grid of masthead, toolbar, this board, credit. What is left is the
+   surface it is painted on. */
 .app {
-  min-height: 100dvh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
   color: var(--text);
+}
+
+/* Row 3. Poker scrolled the window before the shell existed; it scrolls in
+   here instead, which is what lets `deckZone` park against the top of the
+   credit rather than against the viewport. */
+.scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────── */
@@ -810,17 +821,24 @@
  * Clear the console sheet.
  *
  * Below --bp-m the console is `position: fixed` at the bottom with a higher
- * z-index, and the deck is sticky at `bottom: 0` — so on a phone the deck's
- * last row (the ☕, once ten cards wrap to two lines) sits *behind* the host's
- * bar and cannot be tapped. Padding on .layout does not help: the deck is
- * sticky, so it parks against the viewport rather than against the content box.
+ * z-index. Two things would otherwise end up behind it: the deck's last row
+ * (the ☕, once ten cards wrap to two lines), and the credit in the shell's
+ * final grid row.
+ *
+ * One fix for both, and it moved. It used to be an offset on `.deckZone`,
+ * because the deck is sticky and parks against the *viewport* rather than the
+ * content box, so padding on `.layout` did nothing. Now that the shell owns a
+ * 100dvh grid, padding the grid itself shortens every row at once: the deck
+ * sticks to the bottom of a shorter scroll region, and the credit sits above
+ * the bar instead of under it.
  *
  * Only for the host, because only the host has a console. `data-host` is set by
- * App from the same flag that renders it, so the two cannot disagree.
+ * App from the same flag that renders it, so the two cannot disagree — it
+ * reaches this element through PageShell's `data` prop.
  */
 @media (max-width: 1100px) {
-  .app[data-host='true'] .deckZone {
-    bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+  .app[data-host='true'] {
+    padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
   }
 }
 

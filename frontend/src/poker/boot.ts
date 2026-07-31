@@ -9,11 +9,18 @@
  */
 
 import { requireBoot } from '../runtime/boot';
+import type { PageChrome } from '../shared/chrome';
 import type { Channel } from '../hooks/useMusic';
 
 export interface PokerBoot {
-  /** Board heading — the project the batch belongs to. May be empty. */
-  title: string;
+  /**
+   * Masthead and footer, the same shape every yeaboi surface wears.
+   *
+   * Static facts only — see the note on `RetroBoot.chrome`. The ticket
+   * position and the vote count move during a session and come over
+   * `/api/state`.
+   */
+  chrome: PageChrome;
   /** What the batch is: a sprint, a query, a label. Shown beside the title. */
   scope: string;
   /** Random-name word lists, shared with retro so the join feels identical. */
