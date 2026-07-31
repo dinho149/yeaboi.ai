@@ -1,6 +1,6 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.standup import export
 from yeaboi.standup.export import (
@@ -463,7 +463,7 @@ class TestSharedDesignSystem:
         html = build_standup_html(_report())
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)
 
 
 def _history(*rows):
@@ -554,7 +554,7 @@ class TestVisuals:
 
     def test_self_contained_with_history(self):
         html = build_standup_html(_report(), history=_history(("2026-07-10", 82), ("2026-07-09", 70)))
-        assert 'src="http' not in html and "<link" not in html
+        assert_self_contained(html)
 
 
 class TestDayOverDayExport:

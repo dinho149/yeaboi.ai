@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+from tests._pages import assert_self_contained
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
 from yeaboi.web.assets import read_asset
 
@@ -23,11 +24,18 @@ def _directives(csp: str) -> dict[str, str]:
 class TestGateDocument:
     def test_is_one_self_contained_document(self):
         page = render_gate_page()
-        # No external reference of any kind: the tunnel CSP forbids other
-        # origins, and a <link> or <script src> would leave a blank page.
-        assert "<script src" not in page
-        assert "<link" not in page
-        assert not re.search(r"https?://(?!www\.w3\.org)", page)
+        assert_self_contained(page)
+
+    def test_names_no_external_origin_at_all(self):
+        """Stricter than the shared helper, and only this page can be.
+
+        Every other surface carries a payload that may legitimately *mention* a
+        URL — the boards ship the radio stream list, a report ships ticket
+        links. The gate has no payload and no content, so the absence of any
+        origin is checkable here and nowhere else. www.w3.org is excluded: it
+        appears as an SVG xmlns, which is an identifier, not a retrieval.
+        """
+        assert not re.search(r"https?://(?!www\.w3\.org)", render_gate_page())
 
     def test_inlines_the_gate_bundle(self):
         page = render_gate_page()

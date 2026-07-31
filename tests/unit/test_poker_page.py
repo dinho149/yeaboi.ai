@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.poker.board import POKER_DECK, PokerBoard
 from yeaboi.poker.page import board_config, build_poker_html
 from yeaboi.poker.server import PokerServer
@@ -33,7 +33,7 @@ class TestSelfContained:
         assert "<style>" in page and "<script>" in page
 
     def test_no_external_resources(self, page: str):
-        assert "<link" not in page
+        assert_self_contained(page)
         assert 'src="http' not in page and 'href="http' not in page
         assert "cdn" not in page.lower()
 

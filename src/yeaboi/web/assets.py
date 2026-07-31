@@ -7,6 +7,7 @@ anything; it reads the committed output and inlines it.
 Everything a page needs arrives as one self-contained document:
 
 * the stylesheet inlined in a ``<style>``,
+* the favicon inlined as a ``data:`` URI,
 * server data as a JSON island in a non-executing ``<script type="application/json">``,
 * the bundle inlined in a classic (non-module) ``<script>``.
 
@@ -18,6 +19,7 @@ and tunnel-served pages run under a CSP with no ``eval`` and no external origins
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import logging
@@ -31,6 +33,10 @@ logger = logging.getLogger(__name__)
 # Committed build output. Not a user path, so it does NOT come from paths.py —
 # this is package data that ships inside the wheel.
 STATIC_DIR = Path(__file__).parent / "static"
+
+# The tab icon, 32x32, written by scripts/gen_duck_sprites.py. It sits beside
+# this module rather than in static/, which holds Vite output only.
+FAVICON_PATH = Path(__file__).parent / "favicon.png"
 
 # Bundles are named by their Vite entry (see frontend/entries.mjs). The pattern
 # is a hard gate rather than decoration: read_asset takes a caller-supplied
@@ -69,6 +75,31 @@ def read_asset(filename: str) -> str:
     return text
 
 
+@lru_cache(maxsize=1)
+def _favicon_data_uri() -> str:
+    """Return the tab icon as a ``data:`` URI, or ``""`` if it cannot be read.
+
+    A ``data:`` URI rather than a ``/favicon.ico`` route because half these
+    documents are files: an export opens over ``file://`` with no server to ask.
+    It needs no CSP change either — a favicon request is governed by ``img-src``,
+    and every policy in ``web.security`` already allows ``data:``.
+
+    Deliberately *not* ``html_theme.image_data_uri``: that one is best-effort
+    embedding of arbitrary user files under ``~/.yeaboi`` (mimetype guessing, a
+    5 MB cap, no caching), and ``html_theme`` imports this module, so depending
+    back on it would be a cycle. This is one known packaged PNG, read once.
+
+    Tolerant by design. A missing icon is a missing decoration; it must never be
+    the reason an export fails to write.
+    """
+    try:
+        raw = FAVICON_PATH.read_bytes()
+    except OSError as exc:
+        logger.warning("favicon unavailable at %s (%s) — pages will have no tab icon", FAVICON_PATH, exc)
+        return ""
+    return f"data:image/png;base64,{base64.b64encode(raw).decode('ascii')}"
+
+
 def json_island(value: object) -> str:
     """JSON-encode ``value`` for embedding as the text content of a ``<script>``.
 
@@ -99,7 +130,6 @@ def render_page(
     title: str,
     data: Mapping[str, object] | None = None,
     body: str = "",
-    extra_css: str = "",
     head: str = "",
     html_attrs: str = "",
     root_id: str = "root",
@@ -115,8 +145,8 @@ def render_page(
         body: Markup placed inside the root element — a server-rendered shell or
             ``<noscript>`` fallback. **Trusted**: every caller-supplied value in
             it must already be escaped.
-        extra_css: Additional stylesheet text appended after the bundle's CSS.
         head: Extra ``<head>`` markup (meta tags). Trusted, same rule as ``body``.
+            Emitted after the favicon link, so a caller can override the icon.
         html_attrs: Attributes for the ``<html>`` element, e.g. ``data-mode="retro"``.
         root_id: Element id the bundle mounts into.
         lang: ``<html lang>``.
@@ -138,15 +168,17 @@ def render_page(
         island = f'<script type="application/json" id="yeaboi-data">{json_island(data)}</script>'
 
     attrs = f" {html_attrs}" if html_attrs else ""
-    style_extra = f"\n<style>{extra_css}</style>" if extra_css else ""
+
+    icon = _favicon_data_uri()
+    icon_link = f'\n  <link rel="icon" type="image/png" href="{icon}">' if icon else ""
 
     return f"""<!DOCTYPE html>
 <html lang="{escape(lang)}"{attrs}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{escape(title)}</title>
-  <style>{css}</style>{style_extra}
+  <title>{escape(title)}</title>{icon_link}
+  <style>{css}</style>
   {head}
 </head>
 <body>

@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.retro.board import RETRO_THEMES, RetroBoard
 from yeaboi.retro.page import board_config, build_board_html
 from yeaboi.retro.server import RetroServer
@@ -38,7 +38,7 @@ class TestSelfContained:
         # and a page opened over file:// cannot fetch one at all. Resource
         # *tags* are banned rather than any URL — the music stream URLs in the
         # island are the one deliberate exception, and they are audio, not code.
-        assert "<link" not in page
+        assert_self_contained(page)
         assert 'src="http' not in page and 'href="http' not in page
         assert "cdn" not in page.lower()
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import AnonymizedOutput
 from yeaboi.anonymize import engine as anon_engine
 from yeaboi.anonymize.engine import (
@@ -300,4 +300,4 @@ class TestSharedDesignSystem:
         html = build_anonymized_html(AnonymizedOutput(anonymized_text="body"), title="T")
         assert 'data-theme="midnight"' in html
         assert "yeaboi-export-theme" in html  # theme switcher present
-        assert 'src="http' not in html and "<link" not in html  # self-contained
+        assert_self_contained(html)

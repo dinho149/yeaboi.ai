@@ -10,7 +10,7 @@ JSON island — and the bundle's own deployment guards live in
 
 import json
 
-from tests._pages import island
+from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
 from yeaboi.reporting import presentation
 from yeaboi.reporting.style import DeckStyle
@@ -210,7 +210,7 @@ class TestBuildPresentationHtml:
         html = presentation.build_presentation_html(_report())
         assert html.startswith("<!DOCTYPE html>")
         assert "<style>" in html and "<script>" in html
-        assert "<link" not in html
+        assert_self_contained(html)
         assert '<script type="module"' not in html
 
     def test_mounts_into_root_and_points_noscript_at_the_report(self):

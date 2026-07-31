@@ -219,8 +219,10 @@ class TestExportPage:
         assert "<img src=x" not in page
 
     def test_self_contained(self):
+        from tests._pages import assert_self_contained
+
         page = self._page()
-        assert "<link" not in page
+        assert_self_contained(page)
         assert 'src="http' not in page
 
 
