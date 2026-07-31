@@ -2057,46 +2057,84 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 0;
 }
 /*
- * The exported-report shell: masthead, contents, body column, footer.
+ * The shared page shell: masthead, contents, body column, footer.
  *
- * Two audiences, one file. A report is read on a screen and then, often
- * enough, printed or saved to PDF for someone who was not in the room — so
- * every rule here is checked against `@media print` at the bottom, where the
- * controls disappear, the dark surfaces flatten to paper, and nothing is
- * allowed to break across a page mid-card.
+ * Lifted wholesale out of export/export.module.css when the boards, the gate
+ * and the deck stopped inventing their own headers. The class names are
+ * unchanged from that file on purpose — the print block below matches on them,
+ * and renaming during a move is how a lift stops being a lift.
+ *
+ * Two audiences, one file. A report is read on a screen and then, often enough,
+ * printed or saved to PDF for someone who was not in the room — so every rule
+ * here is checked against `@media print` at the bottom, where the controls
+ * disappear, the dark surfaces flatten to paper, and nothing is allowed to
+ * break across a page mid-card.
  */
 
-._page_106hk_11 {
+._page_1voa8_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
 }
 
-/* ── Masthead ─────────────────────────────────────────────────── */
+/* ── App variant ──────────────────────────────────────────────────
+   A live board is 100dvh and scrolls inside itself, not by moving the window.
+   Four rows: masthead, app bar, the board, the credit.
 
-._masthead_106hk_19 {
-  margin-bottom: var(--s5);
+   `minmax(0, 1fr)` rather than `1fr` on row 3 is the whole trick. A grid track
+   is `auto`-minimum by default, which means "at least as tall as the content" —
+   so a board full of cards would push the footer off the bottom instead of
+   scrolling. The 0 minimum is what keeps the `min-height: 0` chain intact all
+   the way down to the board's own `overflow-y: auto`.
+
+   `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
+   the visible viewport, and most people open a tunnel link on a phone. */
+._shellApp_1voa8_34 {
+  max-width: none;
+  padding: 0;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
-._head_106hk_23 {
+/* ── Masthead ─────────────────────────────────────────────────── */
+
+._masthead_1voa8_44 {
+  margin-bottom: var(--s5);
+}
+._shellApp_1voa8_34 ._masthead_1voa8_44 {
+  /* The grid supplies the rhythm; a bottom margin here would double it and
+     round the frame's corners off against the bar below. */
+  margin-bottom: 0;
+  border-radius: 0;
+  border-width: 0 0 1px;
+}
+
+._head_1voa8_55 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headMain_106hk_30 {
+._headMain_1voa8_62 {
   min-width: 0;
   flex: 1 1 320px;
 }
 
-._wordmark_106hk_35 {
+._wordmark_1voa8_67 {
   color: var(--accent);
-  font-size: var(--fs-s);
   margin-bottom: var(--s3);
 }
 
-._title_106hk_41 {
+/* The compact rendition's two-row face. Sized from the shared knob so the app
+   bar, the deck credit and this all read from one number. */
+._wordmarkCompact_1voa8_74 {
+  font-size: var(--wordmark-block, 10px);
+  margin-bottom: var(--s2);
+}
+
+._title_1voa8_79 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2106,27 +2144,30 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
+._titleCompact_1voa8_89 {
+  font-size: var(--fs-l);
+}
 
-._subtitle_106hk_52 {
+._subtitle_1voa8_93 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_106hk_58 {
+._facts_1voa8_99 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_106hk_65 {
+._themes_1voa8_106 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_106hk_71 {
+._toc_1voa8_112 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2143,23 +2184,34 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_106hk_71 a {
+._toc_1voa8_112 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_106hk_71 a:hover {
+._toc_1voa8_112 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_106hk_98 > * + * {
+._container_1voa8_139 > * + * {
   margin-top: var(--s5);
+}
+
+/* The board's own region. It is the only thing that scrolls, and it must be
+   allowed to be shorter than its content for that to be true. */
+._containerApp_1voa8_145 {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+._containerApp_1voa8_145 > * + * {
+  margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_106hk_104 {
+._footer_1voa8_156 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2172,42 +2224,44 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-/* The `<noscript>` note Python renders into the root element. It is the only
-   markup left that Python writes, and it exists precisely for the case where
-   none of this file's JavaScript ran. */
-.noscript {
-  max-width: 60ch;
-  margin: var(--s6) auto;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel);
-  color: var(--muted);
-  font-size: var(--fs-s);
+
+/* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
+   safe-area inset so it clears the home indicator on a notched phone. */
+._footerSlim_1voa8_172 {
+  margin-top: 0;
+  padding: var(--s2) var(--s4);
+  padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
+  min-height: var(--tap);
 }
 
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_106hk_65,
-  ._toc_106hk_71 {
+  ._themes_1voa8_106,
+  ._toc_1voa8_112 {
     display: none;
   }
-  ._page_106hk_11 {
+  ._page_1voa8_16 {
     max-width: none;
     padding: 0;
+  }
+  /* An app surface printed is just a document — release the viewport lock so
+     the content flows onto as many sheets as it needs instead of one. */
+  ._shellApp_1voa8_34 {
+    height: auto;
+    display: block;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_106hk_11 ._masthead_106hk_19 {
+  ._page_1voa8_16 ._masthead_1voa8_44 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_106hk_104 {
+  ._footer_1voa8_156 {
     color: var(--muted);
   }
 }

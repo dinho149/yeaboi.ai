@@ -1,0 +1,209 @@
+/*
+ * The shared page shell: masthead, contents, body column, footer.
+ *
+ * Lifted wholesale out of export/export.module.css when the boards, the gate
+ * and the deck stopped inventing their own headers. The class names are
+ * unchanged from that file on purpose — the print block below matches on them,
+ * and renaming during a move is how a lift stops being a lift.
+ *
+ * Two audiences, one file. A report is read on a screen and then, often enough,
+ * printed or saved to PDF for someone who was not in the room — so every rule
+ * here is checked against `@media print` at the bottom, where the controls
+ * disappear, the dark surfaces flatten to paper, and nothing is allowed to
+ * break across a page mid-card.
+ */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--s5) var(--s4) var(--s6);
+}
+
+/* ── App variant ──────────────────────────────────────────────────
+   A live board is 100dvh and scrolls inside itself, not by moving the window.
+   Four rows: masthead, app bar, the board, the credit.
+
+   `minmax(0, 1fr)` rather than `1fr` on row 3 is the whole trick. A grid track
+   is `auto`-minimum by default, which means "at least as tall as the content" —
+   so a board full of cards would push the footer off the bottom instead of
+   scrolling. The 0 minimum is what keeps the `min-height: 0` chain intact all
+   the way down to the board's own `overflow-y: auto`.
+
+   `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
+   the visible viewport, and most people open a tunnel link on a phone. */
+.shellApp {
+  max-width: none;
+  padding: 0;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/* ── Masthead ─────────────────────────────────────────────────── */
+
+.masthead {
+  margin-bottom: var(--s5);
+}
+.shellApp .masthead {
+  /* The grid supplies the rhythm; a bottom margin here would double it and
+     round the frame's corners off against the bar below. */
+  margin-bottom: 0;
+  border-radius: 0;
+  border-width: 0 0 1px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s5);
+  flex-wrap: wrap;
+}
+.headMain {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.wordmark {
+  color: var(--accent);
+  margin-bottom: var(--s3);
+}
+
+/* The compact rendition's two-row face. Sized from the shared knob so the app
+   bar, the deck credit and this all read from one number. */
+.wordmarkCompact {
+  font-size: var(--wordmark-block, 10px);
+  margin-bottom: var(--s2);
+}
+
+.title {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+  /* Deliberately not the accent. The accent is on the wordmark directly above
+     it, and two accent-coloured lines stacked read as one block of colour with
+     no hierarchy — the title's job is to be the most legible thing here. */
+  color: var(--text);
+}
+.titleCompact {
+  font-size: var(--fs-l);
+}
+
+.subtitle {
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s3);
+}
+
+.themes {
+  flex: none;
+}
+
+/* ── Contents ─────────────────────────────────────────────────── */
+
+.toc {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  padding: var(--s2) var(--s3);
+  margin-bottom: var(--s5);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.toc a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--accent);
+}
+
+/* ── Body ─────────────────────────────────────────────────────── */
+
+.container > * + * {
+  margin-top: var(--s5);
+}
+
+/* The board's own region. It is the only thing that scrolls, and it must be
+   allowed to be shorter than its content for that to be true. */
+.containerApp {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.containerApp > * + * {
+  margin-top: 0;
+}
+
+/* ── Footer ───────────────────────────────────────────────────── */
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s6);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
+   safe-area inset so it clears the home indicator on a notched phone. */
+.footerSlim {
+  margin-top: 0;
+  padding: var(--s2) var(--s4);
+  padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
+  min-height: var(--tap);
+}
+
+/* ── Print ────────────────────────────────────────────────────── */
+
+@media print {
+  .themes,
+  .toc {
+    display: none;
+  }
+  .page {
+    max-width: none;
+    padding: 0;
+  }
+  /* An app surface printed is just a document — release the viewport lock so
+     the content flows onto as many sheets as it needs instead of one. */
+  .shellApp {
+    height: auto;
+    display: block;
+  }
+  /* Two classes deliberately: `.masthead` sits on the same element as the
+     primitive's own `.frame`, which sets these in a different file — equal
+     specificity would leave the winner up to bundle order. */
+  .page .masthead {
+    /* The window chrome is a screen device. On paper it is a box around the
+       title that costs a centimetre of the first page and says nothing. */
+    border: none;
+    box-shadow: none;
+    background: none;
+  }
+  .footer {
+    color: var(--muted);
+  }
+}
