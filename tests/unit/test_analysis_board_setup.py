@@ -121,6 +121,26 @@ class TestScreen:
         assert stripe > 0  # it IS highlighted
         assert stripe < 140 // 2 + 20  # but nowhere near edge to edge
 
+    def test_focus_bar_starts_at_the_row_not_the_left_margin(self):
+        # Bounded on BOTH sides: styling from column 0 ran the bar out under the
+        # page indent, so it bled past the content on the left.
+        console = Console(file=io.StringIO(), width=140, height=44, legacy_windows=False)
+        panel = _build_analysis_board_setup_screen({}, selected=0, width=140, height=44)
+        row = next(
+            line
+            for line in console.render_lines(panel, console.options, pad=True)
+            if "Jira Base URL" in "".join(seg.text for seg in line)
+        )
+        col = 0
+        for seg in row:
+            if seg.style and "rgb(44,52,68)" in str(seg.style):
+                break
+            col += seg.cell_length
+        assert col > 4, "the bar should start after the page indent, not at the margin"
+        # And it starts exactly where the row's own content does.
+        text = "".join(seg.text for seg in row)
+        assert text.index("○") == col
+
     def test_only_the_focused_row_is_striped(self):
         console = Console(file=io.StringIO(), width=140, height=44, legacy_windows=False)
         panel = _build_analysis_board_setup_screen({}, selected=1, width=140, height=44)

@@ -786,6 +786,10 @@ def _build_component_select_screen(
 
 _BOARD_TRACKERS = ("Jira", "Azure DevOps")
 
+# Left margin on a field row. Named because the focus bar has to start exactly
+# where it ends — styling from column 0 would run the bar out into the margin.
+_BOARD_ROW_INDENT = PAD + "  "
+
 
 def board_setup_fields(tracker: int) -> list[dict]:
     """The credential fields for tracker index ``tracker`` (0=Jira, 1=Azure DevOps).
@@ -892,7 +896,7 @@ def _build_analysis_board_setup_screen(
     for i, field in enumerate(fields):
         focused = i == selected and editing is None
         env = field["env_var"]
-        row = Text(PAD + "  ", justify="left", no_wrap=True, overflow="ellipsis")
+        row = Text(_BOARD_ROW_INDENT, justify="left", no_wrap=True, overflow="ellipsis")
         marker_style = theme.accent if str(values.get(env, "")).strip() else theme.muted
         row.append("● " if str(values.get(env, "")).strip() else "○ ", style=marker_style)
         row.append(field["label"].ljust(label_w), style=theme.value if focused else theme.muted)
@@ -918,8 +922,9 @@ def _build_analysis_board_setup_screen(
         body[i].append(" " * max(0, stripe_w - body[i].cell_len))
         # stylize(), NOT .style: a Text's `style` also paints the padding Rich adds
         # out to the full line width, which is what made the bar span the terminal.
-        # stylize covers the characters only, so it stops at the block's edge.
-        body[i].stylize(f"on {_SETTINGS_FOCUS_BG}")
+        # Starting at the indent's end keeps it off the left margin too, so the bar
+        # is exactly the row — bounded on both sides.
+        body[i].stylize(f"on {_SETTINGS_FOCUS_BG}", len(_BOARD_ROW_INDENT))
 
     # Where-to-get-it hint for the focused field only — the full stack of hints
     # would bury the fields themselves.
