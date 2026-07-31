@@ -1,14 +1,18 @@
 """Tests for the shared served-document headers and the policy builder.
 
 Every yeaboi surface a browser can reach goes through ``web.security``. These
-tests are the record of what that header set is, and of the two policies that
-predate the module keeping their exact shape as they moved.
+tests are the record of what that header set is and why each loose directive in
+``BOARD_CSP`` is loose — the board policy is the only one that names anything
+other than ``'self'``, and each exception is a fact about the boards rather
+than a convenience.
 """
 
 from __future__ import annotations
 
+from yeaboi.music import CHANNELS
 from yeaboi.web.security import (
     ARTIFACT_CSP,
+    BOARD_CSP,
     DOCUMENT_HEADERS,
     GATE_CSP,
     policy,
@@ -124,6 +128,55 @@ class TestSendDocument:
         handler = _FakeHandler()
         send_document(handler, 200, b"x", "text/html", csp=GATE_CSP)
         assert dict(handler.headers)["Content-Security-Policy"] == GATE_CSP
+
+
+class TestBoardPolicy:
+    """The board policy's three loose directives, and why each one is loose."""
+
+    def test_denies_everything_by_default(self):
+        assert _directives(BOARD_CSP)["default-src"] == "'none'"
+
+    def test_does_not_allow_eval(self):
+        assert "unsafe-eval" not in BOARD_CSP
+
+    def test_talks_only_to_its_own_origin(self):
+        # The transport is long polling, not SSE and not a WebSocket, and every
+        # request is built from a relative path in runtime/api.ts. 'self' costs
+        # the boards nothing.
+        assert _directives(BOARD_CSP)["connect-src"] == "'self'"
+
+    def test_allows_its_own_images_for_the_invite_qr(self):
+        # GET /api/qr answers with image/svg+xml from the board itself. It is
+        # not a data URI, so dropping 'self' would silently blank the one thing
+        # a host shows a teammate.
+        assert _directives(BOARD_CSP)["img-src"] == "'self' data:"
+
+    def test_allows_https_media_for_the_radio(self):
+        assert _directives(BOARD_CSP)["media-src"] == "https:"
+
+    def test_every_radio_channel_is_https(self):
+        """``media-src https:`` is only sufficient while every station is https.
+
+        A scheme-source rather than an origin allowlist because one channel is a
+        redirector that lands on a different host, and CSP re-checks the
+        redirect target rather than the URL we wrote. This test is what keeps
+        the directive honest as stations change.
+        """
+        for channel in CHANNELS:
+            assert channel["url"].startswith("https://"), channel
+
+    def test_https_is_the_only_named_exception(self):
+        # Every other directive stays 'self' or narrower. Written as its own
+        # assertion because the gate and artifact policies are checked with a
+        # blanket "no 'http' anywhere", which the board cannot pass.
+        loose = {name: value for name, value in _directives(BOARD_CSP).items() if "http" in value}
+        assert loose == {"media-src": "https:"}
+
+    def test_base_and_form_targets_are_locked_down(self):
+        directives = _directives(BOARD_CSP)
+        assert directives["base-uri"] == "'none'"
+        assert directives["form-action"] == "'none'"
+        assert directives["frame-ancestors"] == "'none'"
 
 
 class TestArtifactAndGateAreUnchanged:

@@ -80,6 +80,33 @@ ARTIFACT_CSP = policy(connect_src="'none'", form_action="'none'")
 # into a URL. Denying it turns that into a no-op instead.
 GATE_CSP = policy(connect_src="'self'", form_action="'none'")
 
+# The live boards. Three directives are looser than the artifact's, and each one
+# is a fact about the boards rather than a convenience:
+#
+# connect-src 'self' — the transport is long polling, not SSE and not a
+#   WebSocket (``retro/server.py`` explains why: a Cloudflare quick tunnel
+#   buffers a streaming body until the origin finishes it). Every request is a
+#   complete same-origin fetch built from a relative path in ``runtime/api.ts``,
+#   so 'self' costs the boards nothing.
+#
+# img-src 'self' data: — the invite QR is `<img src="/api/qr?token=…">`, served
+#   as image/svg+xml by the board itself. It is *not* a data URI, so dropping
+#   'self' here would silently blank the one thing a host shows a teammate.
+#   `data:` still covers the inlined duck sprites.
+#
+# media-src https: — both boards play internet radio from ``yeaboi.music``.
+#   An allowlist of the CHANNELS origins looks tidier and would break: one of
+#   them is a redirector that lands on a different host, and CSP re-checks the
+#   redirect target rather than the URL you wrote. `https:` is the narrowest
+#   directive that survives that, and ``test_web_security`` pins every channel
+#   URL to https so it stays sufficient as stations change.
+BOARD_CSP = policy(
+    connect_src="'self'",
+    img_src="'self' data:",
+    media_src="https:",
+    form_action="'none'",
+)
+
 
 def send_headers(
     handler: BaseHTTPRequestHandler,

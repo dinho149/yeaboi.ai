@@ -14,7 +14,7 @@ import pytest
 
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.server import JoinLimiter, PokerServer
-from yeaboi.web.security import DOCUMENT_HEADERS
+from yeaboi.web.security import BOARD_CSP, DOCUMENT_HEADERS
 
 
 def _tickets(n: int = 3) -> list[dict]:
@@ -686,3 +686,15 @@ class TestSecurityHeaders:
         headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
         for name, value in DOCUMENT_HEADERS:
             assert headers[name] == value, name
+
+    def test_document_carries_the_board_policy(self, running_server):
+        srv, _ = running_server
+        csp = _get(f"http://127.0.0.1:{srv.port}/").headers["Content-Security-Policy"]
+        assert csp == BOARD_CSP
+
+    def test_json_responses_do_not_carry_a_policy(self, running_server):
+        # A CSP governs what a *page* may load. On the long poll — the busiest
+        # response the board sends — it would be bytes per request for nothing.
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
+        assert headers["Content-Security-Policy"] is None
