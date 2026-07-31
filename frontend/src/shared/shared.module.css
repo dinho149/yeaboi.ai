@@ -145,6 +145,9 @@
   box-shadow: var(--shadow-2);
 }
 .popoverLeft { right: auto; left: 0; }
+/* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
+   control bar, where a downward panel would be off-screen entirely. */
+.popoverAbove { top: auto; bottom: calc(100% + var(--s2)); }
 .popover[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */

@@ -22,9 +22,18 @@ describe('resolveColor', () => {
     expect(resolveColor('', AURORA)).toBeUndefined();
   });
 
-  it('looks a role up in the active palette', () => {
-    expect(resolveColor('accent2', AURORA)).toBe('#6ff0d0');
-    expect(resolveColor('muted', AURORA)).toBe('#8fc9be');
+  it('resolves a role to the token that carries it, not to a frozen hex', () => {
+    // Both roles become custom properties rather than hexes, and for two
+    // different reasons.
+    //
+    // An accent resolves to the deck's own property, so a heading follows the
+    // palette automatically when T cycles it — and follows the *contrast-
+    // corrected* value applyPalette wrote, not the raw one.
+    expect(resolveColor('accent2', AURORA)).toBe('var(--deck-accent2, var(--accent2))');
+    // A surface role belongs to the site theme now: pinning aurora's pale mint
+    // would put near-white text on a light page.
+    expect(resolveColor('muted', AURORA)).toBe('var(--muted)');
+    expect(resolveColor('fg', AURORA)).toBe('var(--text)');
   });
 
   it('passes a hex through, lowercased', () => {
@@ -44,15 +53,23 @@ describe('applyPalette', () => {
     document.documentElement.removeAttribute('data-deck-theme');
   });
 
-  it('maps the six roles onto the design tokens', () => {
+  it('maps only the accent roles, onto deck-private properties', () => {
     applyPalette('aurora', AURORA);
     const root = document.documentElement;
-    expect(root.style.getPropertyValue('--bg')).toBe(AURORA.bg1);
     expect(root.style.getPropertyValue('--deck-glow')).toBe(AURORA.bg2);
-    expect(root.style.getPropertyValue('--text')).toBe(AURORA.fg);
-    expect(root.style.getPropertyValue('--muted')).toBe(AURORA.muted);
-    expect(root.style.getPropertyValue('--accent')).toBe(AURORA.accent);
-    expect(root.style.getPropertyValue('--accent2')).toBe(AURORA.accent2);
+    expect(root.style.getPropertyValue('--deck-accent')).toBe(AURORA.accent);
+    expect(root.style.getPropertyValue('--deck-accent2')).toBe(AURORA.accent2);
+  });
+
+  it('leaves the surface to the site theme', () => {
+    // The reason the deck had no light mode, and the reason `@media print`
+    // could never reach it: inline properties on <html> outrank any stylesheet
+    // rule, so a palette that owned --bg silently overruled both.
+    applyPalette('aurora', AURORA);
+    const root = document.documentElement;
+    for (const token of ['--bg', '--text', '--muted', '--panel', '--line', '--dim']) {
+      expect(root.style.getPropertyValue(token), token).toBe('');
+    }
   });
 
   it('records the palette under its own attribute, not data-theme', () => {

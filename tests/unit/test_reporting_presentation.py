@@ -9,6 +9,7 @@ JSON island — and the bundle's own deployment guards live in
 """
 
 import json
+import re
 
 from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import DeliveredItem, DeliveryReport
@@ -161,7 +162,10 @@ class TestDeckPayload:
 
     def test_font_preset_and_scale_are_resolved(self):
         data = presentation.deck_payload(_report(), style=DeckStyle(font_family="classic", font_scale="large"))
-        assert data["style"]["fontFamily"] == 'Georgia, "Times New Roman", Times, serif'
+        # A token, not a stack: every preset names one now, so a deck picks its
+        # face out of the design layer like every other surface. The `pptx`
+        # column still carries "Georgia" — PowerPoint has no custom properties.
+        assert data["style"]["fontFamily"] == "var(--font-serif)"
         assert data["style"]["fontScale"] == 1.15
 
     def test_a_hand_built_style_with_a_bogus_preset_still_exports(self):
@@ -222,9 +226,16 @@ class TestBuildPresentationHtml:
     def test_declares_the_reporting_accent_and_the_deck_palette(self):
         html = presentation.build_presentation_html(_report(), theme="aurora")
         assert 'data-mode="reporting"' in html
-        # Not `data-theme`: that attribute already means one of the five *site*
-        # palettes, and a deck theme named "midnight" is a different thing.
-        assert 'data-deck-theme="aurora"' in html
+        # No second theme attribute. There was one — `data-deck-theme` — back
+        # when a deck palette owned the whole surface and needed somewhere to
+        # say so without colliding with `data-theme`. A deck palette contributes
+        # an accent now, the site theme owns the surface, and the palette's name
+        # is recorded on the element at runtime by palette.ts.
+        # Scoped to the opening tag: the inlined bundle mentions both names,
+        # because palette.ts still records the palette on the element at
+        # runtime. What changed is that the *server* no longer writes either.
+        tag = re.search(r"<html[^>]*>", html).group(0)
+        assert tag == '<html lang="en" data-mode="reporting">'
         assert "data-theme=" not in html.split("<style>")[0]
 
     def test_title_names_the_project(self):

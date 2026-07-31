@@ -166,6 +166,15 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
 
+  /* Two more faces, for the slide deck's prose only.
+     The reporting mode lets a host pick a typeface for a deck they are about to
+     present, and two of the four presets are genuinely not the system face.
+     They live here rather than as literal stacks in reporting/style.py so the
+     deck names a token like every other surface, and so swapping a stack is one
+     edit in the design layer instead of one in a Python dict. */
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+  --font-rounded: "Trebuchet MS", Verdana, "Segoe UI", sans-serif;
+
   /* Tracking for the two mono registers. Labels are set uppercase and wide so
      they read as furniture rather than content; the eyebrow is wider still.
      Both are lifted from yeaboi.ai (site.css `.eyebrow`, `.brand`). */
@@ -975,7 +984,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_jt86r_17 {
+._appbar_11h04_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -987,13 +996,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_jt86r_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_jt86r_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_11h04_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_11h04_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_jt86r_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_jt86r_35 {
+._brandTitle_11h04_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_11h04_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1002,11 +1011,11 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_jt86r_44 { flex: 1; }
-._tools_jt86r_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_11h04_44 { flex: 1; }
+._tools_11h04_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
-._iconBtn_jt86r_48 {
+._iconBtn_11h04_48 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1025,8 +1034,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._iconBtn_jt86r_48:hover { border-color: var(--accent); }
-._iconBtnCompact_jt86r_68 {
+._iconBtn_11h04_48:hover { border-color: var(--accent); }
+._iconBtnCompact_11h04_68 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s1);
@@ -1035,14 +1044,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      touch screen, which is where most of these boards are actually used. */
   opacity: 0.72;
 }
-._iconBtnCompact_jt86r_68:hover, ._iconBtnCompact_jt86r_68:focus-visible { opacity: 1; }
-._iconBtnActive_jt86r_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-._iconBtnPrimary_jt86r_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
-._iconBtnPrimary_jt86r_79:hover { filter: brightness(1.08); }
-._iconBtnDanger_jt86r_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._iconGlyph_jt86r_82 { font-size: var(--fs-m); line-height: 1; }
+._iconBtnCompact_11h04_68:hover, ._iconBtnCompact_11h04_68:focus-visible { opacity: 1; }
+._iconBtnActive_11h04_78 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._iconBtnPrimary_11h04_79 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._iconBtnPrimary_11h04_79:hover { filter: brightness(1.08); }
+._iconBtnDanger_11h04_81 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._iconGlyph_11h04_82 { font-size: var(--fs-m); line-height: 1; }
 
-._primaryBtn_jt86r_84 {
+._primaryBtn_11h04_84 {
   min-height: var(--tap);
   padding: 0 var(--s4);
   background: var(--accent);
@@ -1053,9 +1062,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-weight: 600;
   cursor: pointer;
 }
-._primaryBtn_jt86r_84:hover { filter: brightness(1.08); }
+._primaryBtn_11h04_84:hover { filter: brightness(1.08); }
 
-._preset_jt86r_97 {
+._preset_11h04_97 {
   min-height: var(--tap);
   padding: 0 var(--s3);
   background: var(--panel-2);
@@ -1066,12 +1075,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-family: var(--font-mono);
   cursor: pointer;
 }
-._preset_jt86r_97:hover { border-color: var(--accent); }
+._preset_11h04_97:hover { border-color: var(--accent); }
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_jt86r_111 { display: contents; }
-._popoverAnchor_jt86r_112 { position: relative; display: inline-flex; }
-._tbtn_jt86r_113 {
+._popoverGroup_11h04_111 { display: contents; }
+._popoverAnchor_11h04_112 { position: relative; display: inline-flex; }
+._tbtn_11h04_113 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1086,10 +1095,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_jt86r_113:hover { border-color: var(--accent); }
-._tbtnOpen_jt86r_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_11h04_113:hover { border-color: var(--accent); }
+._tbtnOpen_11h04_129 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_jt86r_111 {
+._popover_11h04_111 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1105,18 +1114,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_jt86r_147 { right: auto; left: 0; }
-._popover_jt86r_111[hidden] { display: none; }
+._popoverLeft_11h04_147 { right: auto; left: 0; }
+/* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
+   control bar, where a downward panel would be off-screen entirely. */
+._popoverAbove_11h04_150 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_11h04_111[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_jt86r_151 {
+._fieldLabel_11h04_154 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_jt86r_158, ._textInput_jt86r_158, ._numberInput_jt86r_158 {
+._select_11h04_161, ._textInput_11h04_161, ._numberInput_11h04_161 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1126,14 +1138,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_jt86r_158 { flex: 1; min-width: 0; }
-._numberInput_jt86r_158 { width: 5.5rem; font-family: var(--font-mono); }
-._range_jt86r_170 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_11h04_161 { flex: 1; min-width: 0; }
+._numberInput_11h04_161 { width: 5.5rem; font-family: var(--font-mono); }
+._range_11h04_173 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_jt86r_173 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_jt86r_174 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_jt86r_175 {
+._musicPanel_11h04_176 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_11h04_177 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_11h04_178 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1143,13 +1155,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_jt86r_185 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_jt86r_186 { opacity: 1; }
+._viz_11h04_188 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_11h04_189 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_jt86r_189 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_jt86r_190 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_jt86r_191 {
+._timerPanel_11h04_192 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_11h04_193 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_11h04_194 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1159,9 +1171,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_jt86r_201 { color: var(--danger); }
+._timerDone_11h04_204 { color: var(--danger); }
 
-._confetti_jt86r_203 {
+._confetti_11h04_206 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1171,9 +1183,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_jt86r_213 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_jt86r_214 { display: flex; gap: var(--s2); }
-._swatch_jt86r_214 {
+._themeSwitcher_11h04_216 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_11h04_217 { display: flex; gap: var(--s2); }
+._swatch_11h04_217 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -1182,8 +1194,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_jt86r_224 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_jt86r_225 {
+._swatchOn_11h04_227 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_11h04_228 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -1193,22 +1205,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_jt86r_235 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_jt86r_236 { display: inline-flex; align-items: center; }
-._stacked_jt86r_237 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_jt86r_237:first-child { margin-left: 0; }
-._presenceMore_jt86r_239 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_jt86r_240 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_11h04_238 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_11h04_239 { display: inline-flex; align-items: center; }
+._stacked_11h04_240 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_11h04_240:first-child { margin-left: 0; }
+._presenceMore_11h04_242 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_11h04_243 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_jt86r_242 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_jt86r_243 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_jt86r_244 { flex: 1; }
-._rosterYou_jt86r_245 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_jt86r_246 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_11h04_245 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_11h04_246 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_11h04_247 { flex: 1; }
+._rosterYou_11h04_248 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_11h04_249 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_jt86r_249 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_jt86r_250 {
+._avatarGrid_11h04_252 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_11h04_253 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -1218,23 +1230,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_jt86r_260 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_11h04_263 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_jt86r_263 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_jt86r_264 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
-._inviteCode_jt86r_265 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_jt86r_266 {
+._invite_11h04_266 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_11h04_267 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_11h04_268 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_11h04_269 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_jt86r_273 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_11h04_276 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_jt86r_276 {
+._copyField_11h04_279 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -1248,7 +1260,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_jt86r_290 {
+._copyValue_11h04_293 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -1256,10 +1268,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_jt86r_298 { flex: none; }
+._copyBtn_11h04_301 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_jt86r_301 {
+._toast_11h04_304 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -1274,7 +1286,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_jt86r_316 {
+._modal_11h04_319 {
   /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
      Only the skin is ours. */
   border: 1px solid var(--line);
@@ -1285,14 +1297,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_jt86r_316::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_jt86r_328 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_jt86r_329 { font-size: var(--fs-l); margin: 0; }
-._modalActions_jt86r_330 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_11h04_319::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_11h04_331 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_11h04_332 { font-size: var(--fs-l); margin: 0; }
+._modalActions_11h04_333 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_jt86r_334 {
+._srOnly_11h04_337 {
   position: absolute;
   width: 1px;
   height: 1px;

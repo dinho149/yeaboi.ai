@@ -22,6 +22,7 @@ import { useDuckPulse } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import type { DeckBoot, DeckPalette } from './boot';
 import { Brand, Controls } from './Chrome';
+import { setTheme as persistTheme, storedTheme, type Theme } from '../runtime/theme';
 import { applyPalette, nextTheme, resolveColor } from './palette';
 import { Slide } from './Slide';
 import styles from './deck.module.css';
@@ -45,6 +46,13 @@ export function App({ boot }: { boot: DeckBoot }) {
   const total = Math.max(slides.length, 1);
   const [index, setIndex] = useState(0);
   const [theme, setTheme] = useState(boot.theme);
+  // The site palette, shared with every other yeaboi surface. main.tsx already
+  // applied it before the first paint; this is the state behind the picker.
+  const [siteTheme, setSiteTheme] = useState<Theme>(() => storedTheme() ?? 'midnight');
+  const chooseSite = useCallback((next: Theme) => {
+    setSiteTheme(next);
+    persistTheme(next);
+  }, []);
 
   const names = useMemo(() => Object.keys(boot.palettes), [boot.palettes]);
   // A payload always carries the palette it names, but this is a file that can
@@ -52,8 +60,11 @@ export function App({ boot }: { boot: DeckBoot }) {
   const palette = (boot.palettes[theme] ?? boot.palettes[names[0] ?? '']) as DeckPalette | undefined;
 
   useEffect(() => {
+    // `siteTheme` is a dependency, not noise: applyPalette derives each accent
+    // against the resolved --bg, so a surface change has to re-run it or the
+    // accent stays corrected for the palette that is no longer showing.
     if (palette) applyPalette(theme, palette);
-  }, [theme, palette]);
+  }, [theme, palette, siteTheme]);
 
   const go = useCallback(
     (by: number) => setIndex((at) => Math.max(0, Math.min(total - 1, at + by))),
@@ -100,7 +111,7 @@ export function App({ boot }: { boot: DeckBoot }) {
   return (
     <div className={styles['app']} style={vars}>
       <p className={styles['rail']}>{boot.project}</p>
-      <Brand generated={boot.generated} duck={duck} />
+      <Brand credit={boot.chrome.footer} generated={boot.generated} duck={duck} />
 
       {/* The whole slide is the live region: on a deck, "what changed" and
           "what is on screen" are the same thing. */}
@@ -115,6 +126,8 @@ export function App({ boot }: { boot: DeckBoot }) {
         onNext={() => go(1)}
         onTheme={cycle}
         nextThemeName={nextTheme(names, theme)}
+        siteTheme={siteTheme}
+        onSiteTheme={chooseSite}
       />
 
       {style.footer ? <p className={cx(styles['corner'], styles['cornerLeft'])}>{style.footer}</p> : null}
