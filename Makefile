@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry preview-analysis clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,9 @@ run: ## Run the yeaboi CLI (use ARGS="--flag" to pass arguments)
 
 run-dry: ## Run the TUI with fake delays — no LLM calls
 	$(UV) run yeaboi --dry-run $(ARGS)
+
+preview-analysis: ## Page through every Analysis screen with fake data (no credentials)
+	$(UV) run python scripts/preview_analysis.py $(ARGS)
 
 eval: ## Run golden dataset evaluators
 	$(UV) run pytest tests/golden/ -v
