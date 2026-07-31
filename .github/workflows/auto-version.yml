@@ -152,6 +152,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Show the SDK's own output. Without this the action prints only
+          # `Running Claude Code via SDK (full output hidden for security)` and a
+          # bare `is_error: true` with no message — which is why the two model
+          # outages below each took a round of blind guessing to diagnose. The
+          # prompt and diff here are public repo content, so there is nothing to
+          # hide; keep this on so the next failure reports itself.
+          show_full_output: true
           # Semver classification is mechanical (labels always win; the bump is a
           # script; the changelog paragraph is short) — routed to Haiku for cost.
           # If wrong-level bumps appear, promote to claude-sonnet-5 (one line).
