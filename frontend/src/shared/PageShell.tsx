@@ -20,11 +20,18 @@
  * `document` is the original: a centred column that grows with its content and
  * scrolls the window. Exports and any other page that is fundamentally a file.
  *
- * `app` is for the live boards, which are `100dvh` and scroll *inside*. It lays
- * out a four-row grid — masthead / bar / content / footer — where only row 3
- * scrolls. `minmax(0, 1fr)` on that row is load-bearing: it is what keeps the
- * `min-height: 0` chain intact down to the board's own scroller, which would
- * otherwise refuse to shrink below its content and push the footer off-screen.
+ * `app` is for the live boards. The masthead and the credit sit in the normal
+ * document flow and **scroll away**; between them is a region that is exactly
+ * one viewport tall, holding the sticky app bar and the board itself. So the
+ * page opens on its identity, one flick of the wheel puts the board full-screen
+ * with only the toolbar still pinned, and the chrome is still there when you
+ * scroll back for it. See `.appRegion` for why that needs no measurement.
+ *
+ * It was a `100dvh` grid first, with the masthead and credit locked to the top
+ * and bottom edges. Nothing was wrong with the mechanics and everything was
+ * wrong with the result: a board is the one surface where a visitor is going to
+ * be looking at the same page for forty minutes, and spending a permanent fifth
+ * of the viewport on a wordmark they read once is a bad trade.
  *
  * ## Density
  *
@@ -44,6 +51,7 @@ import { Duck, Eyebrow, TerminalFrame, Wordmark } from '../design/primitives';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { cx } from '../runtime/cx';
 import type { PageChrome } from './chrome';
+import { Credit } from './Credit';
 import styles from './PageShell.module.css';
 
 /**
@@ -111,6 +119,40 @@ export function PageShell({
   const nav = chrome.nav ?? [];
   const app = variant === 'app';
 
+  const body = (
+    <>
+      {/* Sticky only on an app surface, and only because the masthead above it
+          now leaves: the toolbar carries invite, theme, music and the timer,
+          and a board whose controls scrolled off the top would trade one
+          annoyance for a worse one. A document's contents nav does its own
+          sticking, below. */}
+      {app && bar ? <div className={styles['barSticky']}>{bar}</div> : bar}
+
+      {nav.length ? (
+        <nav className={styles['toc']} aria-label="Contents">
+          {nav.map(([id, label]) => (
+            <a key={id} href={`#${id}`}>
+              {label}
+            </a>
+          ))}
+        </nav>
+      ) : null}
+
+      <main className={cx(styles['container'], app && styles['containerApp'])}>{children}</main>
+    </>
+  );
+
+  const footer = (
+    <footer className={cx(styles['footer'], app && styles['footerSlim'])}>
+      {/* The mascot, at rest. On an export a duck that reacted to something
+          would be lying: nothing in a file is live. On a board the reactive
+          duck already lives in the toolbar, and a second animated one in the
+          footer would compete with it. */}
+      <Duck size={app ? 24 : 40} />
+      <Credit>{chrome.footer}</Credit>
+    </footer>
+  );
+
   return (
     <div className={cx(styles['page'], app && styles['shellApp'], className)} {...data}>
       <TerminalFrame title={chrome.frame} className={styles['masthead']}>
@@ -142,35 +184,23 @@ export function PageShell({
         </div>
       </TerminalFrame>
 
-      {bar}
-
-      {nav.length ? (
-        <nav className={styles['toc']} aria-label="Contents">
-          {nav.map(([id, label]) => (
-            <a key={id} href={`#${id}`}>
-              {label}
-            </a>
-          ))}
-        </nav>
-      ) : null}
-
-      <main className={cx(styles['container'], app && styles['containerApp'])}>{children}</main>
-
-      <footer className={cx(styles['footer'], app && styles['footerSlim'])}>
-        {/* The mascot, at rest. On an export a duck that reacted to something
-            would be lying: nothing in a file is live. On a board the reactive
-            duck already lives in the toolbar, and a second animated one in the
-            footer would compete with it. */}
-        <Duck size={app ? 24 : 40} />
-        {/* The credit is text, not a link, and deliberately so: the bundle must
-            contain no external URL at all. `test_bundle_fetches_nothing` greps
-            for one because it cannot tell an <a href> from a fetch in minified
-            output, and a live report is worth more than a clickable byline.
-            The Markdown twin, which is not under that constraint, links it.
-            Now that the boards wear this footer too, the rule binds retro.js
-            and poker.js as well. */}
-        <span>{chrome.footer}</span>
-      </footer>
+      {/* The credit joins the region on an app surface rather than trailing it.
+          That is what makes the arithmetic come out: the document is then taller
+          than the viewport by exactly the masthead, so scrolling to the end puts
+          the bar at the top and the credit on the bottom edge with nothing
+          hidden. Left outside, the last few pixels of scroll would slide the
+          board's column headings under the sticky bar. */}
+      {app ? (
+        <div className={styles['appRegion']}>
+          {body}
+          {footer}
+        </div>
+      ) : (
+        <>
+          {body}
+          {footer}
+        </>
+      )}
     </div>
   );
 }

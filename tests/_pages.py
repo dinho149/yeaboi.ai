@@ -25,6 +25,17 @@ from __future__ import annotations
 import json
 import re
 
+# The byline every surface wears, and the one external URL a bundle may
+# contain. Mirrors ``CREDIT_URL`` in ``frontend/src/shared/Credit.tsx``.
+#
+# Tests that assert "no external origin appears anywhere" blank a *single*
+# occurrence of this before they scan, rather than widening their pattern to
+# allow the host: a link is a place to go rather than something the page loads,
+# so it changes nothing about a document opened over ``file://`` with no network
+# — and blanking one occurrence means a second one, which is what an ``<img
+# src>`` or a real fetch would look like, still fails.
+CREDIT_URL = "https://yeaboi.ai"
+
 _ISLAND_RE = re.compile(r'<script type="application/json" id="yeaboi-data">(.*?)</script>', re.S)
 _ASSET_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>", re.S)
 _LINK_RE = re.compile(r"<link\b[^>]*>", re.I)

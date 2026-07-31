@@ -10,7 +10,7 @@
 
 import { Duck, Wordmark, type DuckState } from '../design/primitives';
 import type { Theme } from '../runtime/theme';
-import { Button, Popover, ThemeSwitcher } from '../shared';
+import { Button, Credit, Popover, ThemeSwitcher } from '../shared';
 import styles from './deck.module.css';
 
 export interface ControlsProps {
@@ -92,12 +92,15 @@ export function Brand({ credit, generated, duck }: { credit: string; generated: 
           surface's footer, rather than being assembled here. The wordmark stays
           a separate mark beside it: it is the *brand*, and gluing it into the
           middle of a server-supplied sentence would mean parsing that sentence.
-          Text, never a link — `test_bundle_fetches_nothing` greps minified
-          output for a URL and cannot tell an <a href> from a fetch. */}
+
+          Only the sentence is the link, not the whole cluster: a deck is driven
+          with the arrow keys from a couple of metres away, and an anchor
+          wrapping the duck and the date as well would make the corner a large
+          target for a click that was aimed at the slide. */}
       <span className={styles['brandMark']}>
         <Wordmark text="yeaboi" label="yeaboi.ai" className={styles['brandWordmark']} />
       </span>
-      <span className={styles['brandCredit']}>{credit}</span>
+      <Credit className={styles['brandCredit']}>{credit}</Credit>
       <span className={styles['brandDate']}>{generated}</span>
     </div>
   );

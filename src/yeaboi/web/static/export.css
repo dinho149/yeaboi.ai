@@ -1753,7 +1753,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  */
 
 /* ── App bar ──────────────────────────────────────────────────── */
-._appbar_118bc_17 {
+._appbar_xfy31_17 {
   display: flex;
   align-items: center;
   gap: var(--s4);
@@ -1765,13 +1765,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* The duck. Its own slot rather than inside .brand, so the wordmark's baseline
    alignment is not thrown off by a 30px sprite sharing the row. */
-._brandMark_118bc_29 { display: inline-flex; flex: none; align-items: center; }
-._brand_118bc_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
+._brandMark_xfy31_29 { display: inline-flex; flex: none; align-items: center; }
+._brand_xfy31_27 { display: flex; align-items: baseline; gap: var(--s3); min-width: 0; }
 /* The block-glyph face, at a size that reads as a wordmark and not as a title.
    Its own colour comes from .wordmark (var(--accent)); the size is set here
    because it is a layout decision, not a property of the typeface. */
-._brandTitle_118bc_34 { font-size: var(--wordmark-block, 10px); }
-._brandSub_118bc_35 {
+._brandTitle_xfy31_34 { font-size: var(--wordmark-block, 10px); }
+._brandSub_xfy31_35 {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
@@ -1780,13 +1780,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._spacer_118bc_44 { flex: 1; }
-._tools_118bc_45 { display: flex; align-items: center; gap: var(--s2); }
+._spacer_xfy31_44 { flex: 1; }
+._tools_xfy31_45 { display: flex; align-items: center; gap: var(--s2); }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 /* One block. Button.tsx records what the five it replaced disagreed about, and
    which value won where they did. */
-._btn_118bc_50 {
+._btn_xfy31_50 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1808,59 +1808,59 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
 }
-._btn_118bc_50:hover:not(:disabled) { border-color: var(--accent); }
+._btn_xfy31_50:hover:not(:disabled) { border-color: var(--accent); }
 /* :disabled, not an .is-disabled class — the attribute is what stops the click,
    so styling anything else can show an enabled-looking button that does not
    respond. Every deleted block that handled this at all used 0.4–0.45. */
-._btn_118bc_50:disabled { opacity: 0.45; cursor: default; }
+._btn_xfy31_50:disabled { opacity: 0.45; cursor: default; }
 
 /* Sizes. `m` is the base rule and has no class. */
-._btnS_118bc_79 {
+._btnS_xfy31_79 {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
   padding: 0 var(--s2);
   font-size: var(--fs-2xs);
 }
-._btnL_118bc_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
+._btnL_xfy31_85 { padding: 0 var(--s4); font-size: var(--fs-m); }
 
-._btnPrimary_118bc_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
+._btnPrimary_xfy31_87 { background: var(--accent); color: var(--ink); border-color: transparent; font-weight: 600; }
 /* Hold the transparent border: the base :hover sets --accent, which would draw
    a ring in the fill's own colour. */
-._btnPrimary_118bc_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
-._btnDanger_118bc_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-._btnDanger_118bc_91:hover:not(:disabled) { border-color: var(--danger); }
+._btnPrimary_xfy31_87:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+._btnDanger_xfy31_91 { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+._btnDanger_xfy31_91:hover:not(:disabled) { border-color: var(--danger); }
 
 /* The deck's nav arrows: circular, unfilled, furniture until you reach for it. */
-._btnPill_118bc_95 {
+._btnPill_xfy31_95 {
   padding: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--muted);
   font-size: var(--fs-l);
 }
-._btnPill_118bc_95:hover:not(:disabled) { color: var(--text); }
+._btnPill_xfy31_95:hover:not(:disabled) { color: var(--text); }
 
 /* Retro's card actions: on the card, with no chrome of their own. Dimmed but
    present at rest — a hover-only control does not exist on a touchscreen, which
    is where most of these boards are actually used. */
-._btnBare_118bc_107 {
+._btnBare_xfy31_107 {
   padding: 0;
   background: none;
   border-color: transparent;
   color: var(--muted);
   opacity: 0.65;
 }
-._btnBare_118bc_107:hover:not(:disabled), ._btnBare_118bc_107:focus-visible {
+._btnBare_xfy31_107:hover:not(:disabled), ._btnBare_xfy31_107:focus-visible {
   border-color: transparent;
   color: var(--text);
   opacity: 1;
 }
 
-._btnActive_118bc_120 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._btnActive_xfy31_120 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 /* A bare control that has opened something, or is asking a question, is no
    longer dimmed background furniture — but it has no border to ring, so it
    takes a fill instead. */
-._btnBare_118bc_107._btnActive_118bc_120 {
+._btnBare_xfy31_107._btnActive_xfy31_120 {
   background: var(--panel-2);
   border-color: transparent;
   box-shadow: none;
@@ -1870,29 +1870,45 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Everyone present has voted. The one moment the poker console asks for
    attention. Neutralised by the global reduced-motion guard in tokens.css. */
-._btnAttention_118bc_134:not(:disabled) { animation: _btnPulse_118bc_1 1.6s ease-in-out infinite; }
-@keyframes _btnPulse_118bc_1 {
+._btnAttention_xfy31_134:not(:disabled) { animation: _btnPulse_xfy31_1 1.6s ease-in-out infinite; }
+@keyframes _btnPulse_xfy31_1 {
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 }
 
-._btnBlock_118bc_139 { width: 100%; }
+._btnBlock_xfy31_139 { width: 100%; }
 
 /* Dimmed at rest like .btnBare, but keeping its border: IconButton's compact
    in-card glyphs, which sit on a card rather than in a toolbar. */
-._btnDim_118bc_143 { opacity: 0.72; }
-._btnDim_118bc_143:hover, ._btnDim_118bc_143:focus-visible { opacity: 1; }
+._btnDim_xfy31_143 { opacity: 0.72; }
+._btnDim_xfy31_143:hover, ._btnDim_xfy31_143:focus-visible { opacity: 1; }
 
-._iconGlyph_118bc_146 { font-size: var(--fs-m); line-height: 1; }
+._iconGlyph_xfy31_146 { font-size: var(--fs-m); line-height: 1; }
 
 /* A `.btn` showing a value rather than an action — "5m", "🎲", "Stop". Only the
    face differs, because a number set in the prose face beside another number
    set in mono reads as two different kinds of quantity. */
-._preset_118bc_151 { font-family: var(--font-mono); }
+._preset_xfy31_151 { font-family: var(--font-mono); }
+
+/* ── Credit ───────────────────────────────────────────────────────
+   The byline link. It inherits everything — colour, face, size, tracking —
+   from whichever footer it is sitting in, because it is the *same string* the
+   surface was already showing and becoming clickable should not make it louder.
+   The underline is held back to hover for the same reason: on a slide deck's
+   corner and a board's status strip it would read as a fifth rule line. */
+._credit_xfy31_159 {
+  color: inherit;
+  text-decoration: none;
+}
+._credit_xfy31_159:hover,
+._credit_xfy31_159:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
 
 /* ── Toolbar popover ──────────────────────────────────────────── */
-._popoverGroup_118bc_154 { display: contents; }
-._popoverAnchor_118bc_155 { position: relative; display: inline-flex; }
-._tbtn_118bc_156 {
+._popoverGroup_xfy31_170 { display: contents; }
+._popoverAnchor_xfy31_171 { position: relative; display: inline-flex; }
+._tbtn_xfy31_172 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1907,10 +1923,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-m);
   line-height: 1;
 }
-._tbtn_118bc_156:hover { border-color: var(--accent); }
-._tbtnOpen_118bc_172 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+._tbtn_xfy31_172:hover { border-color: var(--accent); }
+._tbtnOpen_xfy31_188 { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 
-._popover_118bc_154 {
+._popover_xfy31_170 {
   position: absolute;
   top: calc(100% + var(--s2));
   right: 0;
@@ -1926,21 +1942,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-radius: var(--r-m);
   box-shadow: var(--shadow-2);
 }
-._popoverLeft_118bc_190 { right: auto; left: 0; }
+._popoverLeft_xfy31_206 { right: auto; left: 0; }
 /* Opens upward, for a trigger sitting on the bottom edge — the slide deck's
    control bar, where a downward panel would be off-screen entirely. */
-._popoverAbove_118bc_193 { top: auto; bottom: calc(100% + var(--s2)); }
-._popover_118bc_154[hidden] { display: none; }
+._popoverAbove_xfy31_209 { top: auto; bottom: calc(100% + var(--s2)); }
+._popover_xfy31_170[hidden] { display: none; }
 
 /* ── Form controls ────────────────────────────────────────────── */
-._fieldLabel_118bc_197 {
+._fieldLabel_xfy31_213 {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
-._select_118bc_204, ._textInput_118bc_204, ._numberInput_118bc_204 {
+._select_xfy31_220, ._textInput_xfy31_220, ._numberInput_xfy31_220 {
   min-height: var(--tap);
   padding: 0 var(--s2);
   background: var(--bg);
@@ -1950,14 +1966,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font: inherit;
   font-size: var(--fs-s);
 }
-._textInput_118bc_204 { flex: 1; min-width: 0; }
-._numberInput_118bc_204 { width: 5.5rem; font-family: var(--font-mono); }
-._range_118bc_216 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
+._textInput_xfy31_220 { flex: 1; min-width: 0; }
+._numberInput_xfy31_220 { width: 5.5rem; font-family: var(--font-mono); }
+._range_xfy31_232 { flex: 1; accent-color: var(--accent); min-height: var(--tap); }
 
 /* ── Music ────────────────────────────────────────────────────── */
-._musicPanel_118bc_219 { display: flex; flex-direction: column; gap: var(--s3); }
-._musicRow_118bc_220 { display: flex; align-items: center; gap: var(--s2); }
-._musicPlay_118bc_221 {
+._musicPanel_xfy31_235 { display: flex; flex-direction: column; gap: var(--s3); }
+._musicRow_xfy31_236 { display: flex; align-items: center; gap: var(--s2); }
+._musicPlay_xfy31_237 {
   min-width: var(--tap);
   min-height: var(--tap);
   border-radius: var(--r-pill);
@@ -1967,13 +1983,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   font-size: var(--fs-m);
 }
-._viz_118bc_231 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
-._vizOn_118bc_232 { opacity: 1; }
+._viz_xfy31_247 { width: 34px; height: 22px; opacity: 0; transition: opacity var(--dur-base) var(--ease); }
+._vizOn_xfy31_248 { opacity: 1; }
 
 /* ── Timer ────────────────────────────────────────────────────── */
-._timerPanel_118bc_235 { display: flex; flex-direction: column; gap: var(--s3); }
-._presetRow_118bc_236 { display: flex; gap: var(--s2); flex-wrap: wrap; }
-._timerReadout_118bc_237 {
+._timerPanel_xfy31_251 { display: flex; flex-direction: column; gap: var(--s3); }
+._presetRow_xfy31_252 { display: flex; gap: var(--s2); flex-wrap: wrap; }
+._timerReadout_xfy31_253 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1983,9 +1999,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 /* Finished state is carried by colour AND the words "time's up", not by the
    old infinite blink alone — motion is suppressed for anyone who asked for it. */
-._timerDone_118bc_247 { color: var(--danger); }
+._timerDone_xfy31_263 { color: var(--danger); }
 
-._confetti_118bc_249 {
+._confetti_xfy31_265 {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -1995,9 +2011,9 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Themes ───────────────────────────────────────────────────── */
-._themeSwitcher_118bc_259 { display: flex; flex-direction: column; gap: var(--s3); }
-._swatches_118bc_260 { display: flex; gap: var(--s2); }
-._swatch_118bc_260 {
+._themeSwitcher_xfy31_275 { display: flex; flex-direction: column; gap: var(--s3); }
+._swatches_xfy31_276 { display: flex; gap: var(--s2); }
+._swatch_xfy31_276 {
   position: relative;
   width: var(--tap);
   height: var(--tap);
@@ -2006,8 +2022,8 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   cursor: pointer;
   padding: 0;
 }
-._swatchOn_118bc_270 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
-._swatchDot_118bc_271 {
+._swatchOn_xfy31_286 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+._swatchDot_xfy31_287 {
   position: absolute;
   right: 3px;
   bottom: 3px;
@@ -2017,22 +2033,22 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Presence ─────────────────────────────────────────────────── */
-._presence_118bc_281 { display: flex; align-items: center; gap: var(--s2); }
-._avatarStack_118bc_282 { display: inline-flex; align-items: center; }
-._stacked_118bc_283 { margin-left: -8px; border: 2px solid var(--panel); }
-._stacked_118bc_283:first-child { margin-left: 0; }
-._presenceMore_118bc_285 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
-._typing_118bc_286 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
+._presence_xfy31_297 { display: flex; align-items: center; gap: var(--s2); }
+._avatarStack_xfy31_298 { display: inline-flex; align-items: center; }
+._stacked_xfy31_299 { margin-left: -8px; border: 2px solid var(--panel); }
+._stacked_xfy31_299:first-child { margin-left: 0; }
+._presenceMore_xfy31_301 { font-size: var(--fs-xs); color: var(--muted); margin-left: var(--s2); font-family: var(--font-mono); }
+._typing_xfy31_302 { font-size: var(--fs-xs); color: var(--muted); font-style: italic; }
 
-._roster_118bc_288 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-._rosterRow_118bc_289 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
-._rosterName_118bc_290 { flex: 1; }
-._rosterYou_118bc_291 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
-._rosterEmpty_118bc_292 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
+._roster_xfy31_304 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+._rosterRow_xfy31_305 { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-s); }
+._rosterName_xfy31_306 { flex: 1; }
+._rosterYou_xfy31_307 { color: var(--accent); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; }
+._rosterEmpty_xfy31_308 { color: var(--muted); font-size: var(--fs-s); margin: 0; }
 
 /* ── Profile ──────────────────────────────────────────────────── */
-._avatarGrid_118bc_295 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
-._avatarChoice_118bc_296 {
+._avatarGrid_xfy31_311 { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+._avatarChoice_xfy31_312 {
   width: 38px;
   height: 38px;
   border-radius: var(--r-s);
@@ -2042,23 +2058,23 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   font-size: var(--fs-l);
   line-height: 1;
 }
-._avatarChoiceOn_118bc_306 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+._avatarChoiceOn_xfy31_322 { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* ── Invite ───────────────────────────────────────────────────── */
-._invite_118bc_309 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-._qr_118bc_310 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
-._inviteCode_118bc_311 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
-._codeValue_118bc_312 {
+._invite_xfy31_325 { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
+._qr_xfy31_326 { width: 200px; height: 200px; border-radius: var(--r-s); background: var(--paper); }
+._inviteCode_xfy31_327 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+._codeValue_xfy31_328 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   /* Wide tracking: these get read aloud and typed by hand, and 0/O and 1/I are
      the entire failure mode. */
   letter-spacing: 0.14em;
 }
-._inviteUrl_118bc_319 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
+._inviteUrl_xfy31_335 { font-size: var(--fs-2xs); color: var(--muted); word-break: break-all; text-align: center; margin: 0; }
 
 /* ── Copy field ───────────────────────────────────────────────── */
-._copyField_118bc_322 {
+._copyField_xfy31_338 {
   display: grid;
   /* Label and button size to content; the value takes the rest and is the only
      column allowed to wrap, so a long tunnel hostname never pushes the copy
@@ -2072,7 +2088,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border: 1px solid var(--line);
   border-radius: var(--r-s);
 }
-._copyValue_118bc_336 {
+._copyValue_xfy31_352 {
   min-width: 0;
   font-size: var(--fs-2xs);
   color: var(--text);
@@ -2080,10 +2096,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      overflows rather than wrapping. */
   word-break: break-all;
 }
-._copyBtn_118bc_344 { flex: none; }
+._copyBtn_xfy31_360 { flex: none; }
 
 /* ── Toast ────────────────────────────────────────────────────── */
-._toast_118bc_347 {
+._toast_xfy31_363 {
   /* Inside the invite panel's flow rather than fixed to the viewport: it is
      about the panel it appears in, and a floating toast on a live board would
      be one more thing overlapping the cards. */
@@ -2098,7 +2114,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 }
 
 /* ── Modal ────────────────────────────────────────────────────── */
-._modal_118bc_362 {
+._modal_xfy31_378 {
   /* A <dialog> is display:none until opened, and the UA stylesheet centres it.
      Only the skin is ours. */
   border: 1px solid var(--line);
@@ -2109,14 +2125,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   max-width: min(92vw, 440px);
   box-shadow: var(--shadow-2);
 }
-._modal_118bc_362::backdrop { background: rgb(0 0 0 / 55%); }
-._modalBody_118bc_374 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
-._modalTitle_118bc_375 { font-size: var(--fs-l); margin: 0; }
-._modalActions_118bc_376 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
+._modal_xfy31_378::backdrop { background: rgb(0 0 0 / 55%); }
+._modalBody_xfy31_390 { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+._modalTitle_xfy31_391 { font-size: var(--fs-l); margin: 0; }
+._modalActions_xfy31_392 { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 
 /* Visually hidden but reachable by assistive tech. Not `display:none`, which
    removes it from the accessibility tree along with everything else. */
-._srOnly_118bc_380 {
+._srOnly_xfy31_396 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2142,38 +2158,76 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
  * break across a page mid-card.
  */
 
-._page_1voa8_16 {
+._page_yfz1p_16 {
   max-width: 1100px;
   margin: 0 auto;
   padding: var(--s5) var(--s4) var(--s6);
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is 100dvh and scrolls inside itself, not by moving the window.
-   Four rows: masthead, app bar, the board, the credit.
+   A live board in three parts: a masthead that scrolls away, a region exactly
+   one viewport tall holding the sticky bar and the board, and a credit under
+   it. The window scrolls; the region does not move within it.
 
-   `minmax(0, 1fr)` rather than `1fr` on row 3 is the whole trick. A grid track
-   is `auto`-minimum by default, which means "at least as tall as the content" —
-   so a board full of cards would push the footer off the bottom instead of
-   scrolling. The 0 minimum is what keeps the `min-height: 0` chain intact all
-   the way down to the board's own `overflow-y: auto`.
-
-   `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
-   the visible viewport, and most people open a tunnel link on a phone. */
-._shellApp_1voa8_34 {
+   The shell itself sets no height at all. Everything below depends on that. */
+._shellApp_yfz1p_28 {
   max-width: none;
   padding: 0;
-  height: 100dvh;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/*
+ * One viewport, without measuring anything.
+ *
+ * Neither the bar nor the credit is a constant height — `.appbar` wraps to two
+ * and three lines on a phone — so "board = 100dvh minus the furniture" cannot
+ * be written as a `calc()`, and reaching for a ResizeObserver to publish the
+ * numbers as custom properties is a lot of machinery for a layout question.
+ *
+ * It is not needed. `min-height: 100dvh` on a flex column holding the bar, the
+ * board *and* the credit makes the three of them exactly one viewport, and
+ * `flex: 1` hands the board whatever the other two did not take. The arithmetic
+ * is the browser's.
+ *
+ * What falls out of it is the behaviour this variant exists for. The document
+ * is taller than the viewport by exactly the masthead — nothing else is outside
+ * this box — so the page scrolls by that much and no more. Scrolled to the end,
+ * the board has the whole screen with the bar on its top edge and the credit on
+ * its bottom, both fully visible; scroll back and the identity is still there.
+ * Leaving the credit outside would add its height to the scroll, and those last
+ * pixels would drag the board's column headings under the sticky bar.
+ *
+ * `min-height`, not `height`: a phone stacks the columns, and a board that
+ * genuinely needs more than a viewport must be allowed to have it.
+ *
+ * `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
+ * the visible viewport, and most people open a tunnel link on a phone.
+ *
+ * `--app-inset-bottom` is for a surface that puts something `position: fixed`
+ * along the bottom edge — poker's host console is a bottom sheet on a phone.
+ * The region has to stop short of it, or anything sticky parked at the region's
+ * bottom (poker's card deck) parks *underneath* the sheet. The surface sets the
+ * property on its own root and it inherits down; nothing else needs to know.
+ */
+._appRegion_yfz1p_66 {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--app-inset-bottom, 0px));
+}
+
+/* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
+   rule — so it needs no treatment beyond the offset and a layer to sit in. */
+._barSticky_yfz1p_74 {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
 }
 
 /* ── Masthead ─────────────────────────────────────────────────── */
 
-._masthead_1voa8_44 {
+._masthead_yfz1p_82 {
   margin-bottom: var(--s5);
 }
-._shellApp_1voa8_34 ._masthead_1voa8_44 {
+._shellApp_yfz1p_28 ._masthead_yfz1p_82 {
   /* The grid supplies the rhythm; a bottom margin here would double it and
      round the frame's corners off against the bar below. */
   margin-bottom: 0;
@@ -2181,31 +2235,31 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-width: 0 0 1px;
 }
 
-._head_1voa8_55 {
+._head_yfz1p_93 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--s5);
   flex-wrap: wrap;
 }
-._headMain_1voa8_62 {
+._headMain_yfz1p_100 {
   min-width: 0;
   flex: 1 1 320px;
 }
 
-._wordmark_1voa8_67 {
+._wordmark_yfz1p_105 {
   color: var(--accent);
   margin-bottom: var(--s3);
 }
 
 /* The compact rendition's two-row face. Sized from the shared knob so the app
    bar, the deck credit and this all read from one number. */
-._wordmarkCompact_1voa8_74 {
+._wordmarkCompact_yfz1p_112 {
   font-size: var(--wordmark-block, 10px);
   margin-bottom: var(--s2);
 }
 
-._title_1voa8_79 {
+._title_yfz1p_117 {
   font-size: var(--fs-xl);
   font-weight: 700;
   line-height: 1.2;
@@ -2215,30 +2269,30 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      no hierarchy — the title's job is to be the most legible thing here. */
   color: var(--text);
 }
-._titleCompact_1voa8_89 {
+._titleCompact_yfz1p_127 {
   font-size: var(--fs-l);
 }
 
-._subtitle_1voa8_93 {
+._subtitle_yfz1p_131 {
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
-._facts_1voa8_99 {
+._facts_yfz1p_137 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
   margin-top: var(--s3);
 }
 
-._themes_1voa8_106 {
+._themes_yfz1p_144 {
   flex: none;
 }
 
 /* ── Contents ─────────────────────────────────────────────────── */
 
-._toc_1voa8_112 {
+._toc_yfz1p_150 {
   position: sticky;
   top: 0;
   z-index: var(--z-rail);
@@ -2255,34 +2309,36 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
-._toc_1voa8_112 a {
+._toc_yfz1p_150 a {
   color: var(--muted);
   text-decoration: none;
 }
-._toc_1voa8_112 a:hover {
+._toc_yfz1p_150 a:hover {
   color: var(--accent);
 }
 
 /* ── Body ─────────────────────────────────────────────────────── */
 
-._container_1voa8_139 > * + * {
+._container_yfz1p_177 > * + * {
   margin-top: var(--s5);
 }
 
-/* The board's own region. It is the only thing that scrolls, and it must be
-   allowed to be shorter than its content for that to be true. */
-._containerApp_1voa8_145 {
+/* The board. Takes the viewport the bar left over, and must be allowed to be
+   shorter than its content — that is what lets the columns scroll inside it
+   rather than growing past it. */
+._containerApp_yfz1p_184 {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-._containerApp_1voa8_145 > * + * {
+._containerApp_yfz1p_184 > * + * {
   margin-top: 0;
 }
 
 /* ── Footer ───────────────────────────────────────────────────── */
 
-._footer_1voa8_156 {
+._footer_yfz1p_196 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -2298,7 +2354,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* A 100dvh app cannot spend 90px on a byline. One line, small duck, and the
    safe-area inset so it clears the home indicator on a notched phone. */
-._footerSlim_1voa8_172 {
+._footerSlim_yfz1p_212 {
   margin-top: 0;
   padding: var(--s2) var(--s4);
   padding-bottom: max(var(--s2), env(safe-area-inset-bottom));
@@ -2308,31 +2364,35 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* ── Print ────────────────────────────────────────────────────── */
 
 @media print {
-  ._themes_1voa8_106,
-  ._toc_1voa8_112 {
+  ._themes_yfz1p_144,
+  ._toc_yfz1p_150 {
     display: none;
   }
-  ._page_1voa8_16 {
+  ._page_yfz1p_16 {
     max-width: none;
     padding: 0;
   }
-  /* An app surface printed is just a document — release the viewport lock so
-     the content flows onto as many sheets as it needs instead of one. */
-  ._shellApp_1voa8_34 {
-    height: auto;
+  /* An app surface printed is just a document — release the viewport floor so
+     the content flows onto as many sheets as it needs instead of one, and let
+     the bar print where it actually sits rather than once per page. */
+  ._appRegion_yfz1p_66 {
+    min-height: 0;
     display: block;
+  }
+  ._barSticky_yfz1p_74 {
+    position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal
      specificity would leave the winner up to bundle order. */
-  ._page_1voa8_16 ._masthead_1voa8_44 {
+  ._page_yfz1p_16 ._masthead_yfz1p_82 {
     /* The window chrome is a screen device. On paper it is a box around the
        title that costs a centimetre of the first page and says nothing. */
     border: none;
     box-shadow: none;
     background: none;
   }
-  ._footer_1voa8_156 {
+  ._footer_yfz1p_196 {
     color: var(--muted);
   }
 }

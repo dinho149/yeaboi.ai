@@ -26,16 +26,19 @@
  */
 
 /* The height and the column belong to PageShell's `app` variant now — a
-   four-row grid of masthead, toolbar, this board, credit. What is left is the
-   surface it is painted on. */
+   scroll-away masthead, a one-viewport region holding the sticky toolbar and
+   this board, and a credit under it. What is left is the surface it is painted
+   on. */
 .app {
   background: var(--bg);
   color: var(--text);
 }
 
-/* Row 3. Poker scrolled the window before the shell existed; it scrolls in
-   here instead, which is what lets `deckZone` park against the top of the
-   credit rather than against the viewport. */
+/* The board's own scroller, inside the shell's viewport-tall region. Poker
+   scrolled the window before the shell existed; the window still scrolls, but
+   only far enough to take the masthead and the credit past. Everything else
+   moves in here, which is what lets `deckZone` park against the bottom of the
+   region rather than wherever the window happens to be. */
 .scroll {
   min-height: 0;
   flex: 1;
@@ -816,12 +819,16 @@
  * (the ☕, once ten cards wrap to two lines), and the credit in the shell's
  * final grid row.
  *
- * One fix for both, and it moved. It used to be an offset on `.deckZone`,
- * because the deck is sticky and parks against the *viewport* rather than the
- * content box, so padding on `.layout` did nothing. Now that the shell owns a
- * 100dvh grid, padding the grid itself shortens every row at once: the deck
- * sticks to the bottom of a shorter scroll region, and the credit sits above
- * the bar instead of under it.
+ * One fix for both, declared once. `--app-inset-bottom` is the shell's hook for
+ * exactly this: it shortens the viewport-tall region, so the deck sticks to the
+ * bottom of a scroll area that ends above the sheet. Reusing the same value as
+ * padding on this element then does the other half — the credit is the last
+ * thing in the document, and without it the end of the scroll would put the
+ * credit under the sheet too.
+ *
+ * It used to be an offset on `.deckZone` itself, which was wrong: the deck is
+ * sticky and parks against its scroll container, so an offset there fought the
+ * layout instead of describing it.
  *
  * Only for the host, because only the host has a console. `data-host` is set by
  * App from the same flag that renders it, so the two cannot disagree — it
@@ -829,7 +836,8 @@
  */
 @media (max-width: 1099px) {
   .app[data-host='true'] {
-    padding-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+    --app-inset-bottom: calc(var(--tap) + var(--s3) * 2 + env(safe-area-inset-bottom));
+    padding-bottom: var(--app-inset-bottom);
   }
 }
 

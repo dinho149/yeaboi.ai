@@ -16,6 +16,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 import { Duck, Eyebrow, TerminalFrame, useDuckPulse, Wordmark } from '../design/primitives';
 import { cx } from '../runtime/cx';
 import { Button } from './Button';
+import { Credit } from './Credit';
 import styles from './JoinGate.module.css';
 
 /** Codes are 8 characters from an unambiguous alphabet — see access.py. */
@@ -237,11 +238,13 @@ export function JoinGate({
       </TerminalFrame>
       {/* Sibling of the frame, not a child of the <main> inside it: a
           contentinfo landmark nested in main is an axe violation, and this
-          component is rendered bare in the a11y suite. The credit is text
-          rather than a link for the same reason it is on every other surface —
-          `test_bundle_fetches_nothing` cannot tell an <a href> from a fetch in
-          minified output. */}
-      <footer className={styles.foot}>{footer}</footer>
+          component is rendered bare in the a11y suite. */}
+      <footer className={styles.foot}>
+        {/* Opens in a new tab, which matters more here than anywhere else: the
+            visitor is mid-way through typing a share code, and a same-tab
+            navigation would throw the code away. */}
+        <Credit>{footer}</Credit>
+      </footer>
     </div>
   );
 }

@@ -20,23 +20,61 @@
 }
 
 /* ── App variant ──────────────────────────────────────────────────
-   A live board is 100dvh and scrolls inside itself, not by moving the window.
-   Four rows: masthead, app bar, the board, the credit.
+   A live board in three parts: a masthead that scrolls away, a region exactly
+   one viewport tall holding the sticky bar and the board, and a credit under
+   it. The window scrolls; the region does not move within it.
 
-   `minmax(0, 1fr)` rather than `1fr` on row 3 is the whole trick. A grid track
-   is `auto`-minimum by default, which means "at least as tall as the content" —
-   so a board full of cards would push the footer off the bottom instead of
-   scrolling. The 0 minimum is what keeps the `min-height: 0` chain intact all
-   the way down to the board's own `overflow-y: auto`.
-
-   `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
-   the visible viewport, and most people open a tunnel link on a phone. */
+   The shell itself sets no height at all. Everything below depends on that. */
 .shellApp {
   max-width: none;
   padding: 0;
-  height: 100dvh;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/*
+ * One viewport, without measuring anything.
+ *
+ * Neither the bar nor the credit is a constant height — `.appbar` wraps to two
+ * and three lines on a phone — so "board = 100dvh minus the furniture" cannot
+ * be written as a `calc()`, and reaching for a ResizeObserver to publish the
+ * numbers as custom properties is a lot of machinery for a layout question.
+ *
+ * It is not needed. `min-height: 100dvh` on a flex column holding the bar, the
+ * board *and* the credit makes the three of them exactly one viewport, and
+ * `flex: 1` hands the board whatever the other two did not take. The arithmetic
+ * is the browser's.
+ *
+ * What falls out of it is the behaviour this variant exists for. The document
+ * is taller than the viewport by exactly the masthead — nothing else is outside
+ * this box — so the page scrolls by that much and no more. Scrolled to the end,
+ * the board has the whole screen with the bar on its top edge and the credit on
+ * its bottom, both fully visible; scroll back and the identity is still there.
+ * Leaving the credit outside would add its height to the scroll, and those last
+ * pixels would drag the board's column headings under the sticky bar.
+ *
+ * `min-height`, not `height`: a phone stacks the columns, and a board that
+ * genuinely needs more than a viewport must be allowed to have it.
+ *
+ * `dvh`, not `vh`: on iOS Safari the collapsing URL bar makes 100vh taller than
+ * the visible viewport, and most people open a tunnel link on a phone.
+ *
+ * `--app-inset-bottom` is for a surface that puts something `position: fixed`
+ * along the bottom edge — poker's host console is a bottom sheet on a phone.
+ * The region has to stop short of it, or anything sticky parked at the region's
+ * bottom (poker's card deck) parks *underneath* the sheet. The surface sets the
+ * property on its own root and it inherits down; nothing else needs to know.
+ */
+.appRegion {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--app-inset-bottom, 0px));
+}
+
+/* Opaque already — `.appbar` carries `background: var(--panel)` and a bottom
+   rule — so it needs no treatment beyond the offset and a layer to sit in. */
+.barSticky {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
 }
 
 /* ── Masthead ─────────────────────────────────────────────────── */
@@ -140,9 +178,11 @@
   margin-top: var(--s5);
 }
 
-/* The board's own region. It is the only thing that scrolls, and it must be
-   allowed to be shorter than its content for that to be true. */
+/* The board. Takes the viewport the bar left over, and must be allowed to be
+   shorter than its content — that is what lets the columns scroll inside it
+   rather than growing past it. */
 .containerApp {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -187,11 +227,15 @@
     max-width: none;
     padding: 0;
   }
-  /* An app surface printed is just a document — release the viewport lock so
-     the content flows onto as many sheets as it needs instead of one. */
-  .shellApp {
-    height: auto;
+  /* An app surface printed is just a document — release the viewport floor so
+     the content flows onto as many sheets as it needs instead of one, and let
+     the bar print where it actually sits rather than once per page. */
+  .appRegion {
+    min-height: 0;
     display: block;
+  }
+  .barSticky {
+    position: static;
   }
   /* Two classes deliberately: `.masthead` sits on the same element as the
      primitive's own `.frame`, which sets these in a different file — equal

@@ -103,16 +103,23 @@ const BLANK = ' ';
 /**
  * Ceiling on a shadow wordmark's cell size.
  *
- * Six rows at this size is roughly a 95px block, which is a hero on a phone and
- * still a hero on a desktop. Without a cap a short word in a wide column — `plan`
- * is only 32 cells — would scale up until it dwarfed the heading under it.
+ * Six rows at this size is roughly a 72px block. Without a cap a short word in a
+ * wide column — `plan` is only 32 cells — would scale up until it dwarfed the
+ * heading under it.
+ *
+ * It was `1.1rem` and a ~105px block, which on a 1440×900 laptop put the
+ * masthead at a shade over 280px: a quarter of the window spent on the word
+ * `RETRO`. The face is *display* type — its whole job is to be recognised, and
+ * it is recognised at a glance well below the size at which it starts competing
+ * with the page. Six rows still read cleanly at 12px a cell; the rows are solid
+ * blocks, not strokes, and they hold long after ordinary type would go muddy.
  *
  * A custom property rather than a constant so a surface can tune the ceiling
  * from CSS. It is the *only* knob: the size itself is computed inline (see
  * below), which beats any class a caller could write, so a `font-size` in a
  * consumer's stylesheet would be silently ignored.
  */
-const SHADOW_MAX = 'var(--wordmark-max, 1.1rem)';
+const SHADOW_MAX = 'var(--wordmark-max, 0.75rem)';
 
 /**
  * How far `right` may slide left before a cell of one touches a cell of the other.

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 
-from tests._pages import assert_self_contained, island, markup
+from tests._pages import CREDIT_URL, assert_self_contained, island, markup
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
 from yeaboi.web.assets import read_asset
 from yeaboi.web.brand import MODE_LABELS, MODE_WORDMARKS
@@ -48,8 +48,13 @@ class TestGateDocument:
         links. The gate has no payload and no content, so the absence of any
         origin is checkable here and nowhere else. www.w3.org is excluded: it
         appears as an SVG xmlns, which is an identifier, not a retrieval.
+
+        The byline's link to the project site is blanked once before the scan —
+        see ``CREDIT_URL``. It is the destination of a click, not a load, and a
+        second occurrence would still fail here.
         """
-        assert not re.search(r"https?://(?!www\.w3\.org)", render_gate_page())
+        page = render_gate_page().replace(f'"{CREDIT_URL}"', '""', 1)
+        assert not re.search(r"https?://(?!www\.w3\.org)", page)
 
     def test_inlines_the_gate_bundle(self):
         page = render_gate_page()

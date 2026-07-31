@@ -18,6 +18,7 @@ import re
 
 import pytest
 
+from tests._pages import CREDIT_URL
 from yeaboi.web.assets import FAVICON_PATH, STATIC_DIR, json_island, read_asset, render_page
 
 # Every Vite entry that exists today. Grows one row per phase of the React
@@ -211,11 +212,30 @@ class TestBundlesAreShippable:
 
         Exports are opened over file:// where any external request fails, and
         the tunnel CSP allows no external origins at all.
+
+        The footer credit is the one exception, and it is exempted by *blanking
+        a single occurrence* rather than by widening the pattern. A link is a
+        place to go, not something the page loads: nothing is fetched, an export
+        opened from disk with no network renders identically, and the CSPs
+        govern requests and framing rather than where a click leads. Blanking
+        one occurrence keeps the guard's teeth — a second appearance of the same
+        string, which is what an ``<img src>`` or a real fetch to the site would
+        look like, still fails here.
         """
-        js = read_asset(f"{bundle}.js")
+        js = read_asset(f"{bundle}.js").replace(f'"{CREDIT_URL}"', '""', 1)
         assert not re.search(r"https?://(?!www\.w3\.org)", js), "bundle references an external URL"
         assert "import(" not in js, "dynamic import would emit a second file"
         assert "importScripts" not in js
+
+    @pytest.mark.parametrize("bundle", BUNDLES)
+    def test_every_surface_links_its_credit(self, bundle):
+        """Two-way: the exemption above must not become a place a URL can hide.
+
+        Every one of the five surfaces renders the byline, so every bundle must
+        contain the link — if one stops, the carve-out in the guard above is
+        exempting nothing and should go rather than sit there widening it.
+        """
+        assert CREDIT_URL in read_asset(f"{bundle}.js"), f"{bundle}.js has no credit link"
 
     @pytest.mark.parametrize("bundle", BUNDLES)
     def test_bundle_is_a_classic_script_not_a_module(self, bundle):
