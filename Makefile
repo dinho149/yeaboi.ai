@@ -112,6 +112,9 @@ web-check: ## What CI runs: typecheck, test, rebuild, fail if the committed bund
 	@echo "✓ committed bundles match the sources"
 
 web-dev: ## Vite dev server on :5399 with HMR, proxying /api to a running dev board
+	@echo "  frontend/dev/{retro,poker,deck,gate,export}.html on http://localhost:5399/"
+	@echo "  boards need ?token=<token> from 'make dev-board' or 'make dev-poker';"
+	@echo "  for poker, set YEABOI_DEV_API=http://127.0.0.1:5273 so /api proxies there."
 	cd frontend && npm run dev
 
 # --- Docs site (docs/ → yeaboi.ai via GitHub Pages) --------------------------

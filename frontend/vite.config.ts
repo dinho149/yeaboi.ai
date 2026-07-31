@@ -52,7 +52,15 @@ export default defineConfig(({ mode, command }) => {
       // the dev server and the board it proxies to would fight over it.
       port: 5399,
       strictPort: true,
-      proxy: { '/api': 'http://127.0.0.1:5173' },
+      // Retro's board is the default because it is the one most people are
+      // working on, but poker serves the same /api on :5273 — so the target is
+      // a variable rather than a constant:
+      //
+      //   YEABOI_DEV_API=http://127.0.0.1:5273 make web-dev
+      //
+      // Hardcoding retro's port is part of why poker drifted: pointing the dev
+      // server at the poker board meant editing this file.
+      proxy: { '/api': process.env['YEABOI_DEV_API'] ?? 'http://127.0.0.1:5173' },
     },
 
     build: {
