@@ -1525,9 +1525,7 @@ def _feedback_compose_key(
         compose["out"] = out
         compose["thread"].start()
         set_text_entry(False)
-        logger.info(
-            "feedback bubble: submitting %s/%s (%d chars, %d image(s))", kind, area, len(text), len(images)
-        )
+        logger.info("feedback bubble: submitting %s/%s (%d chars, %d image(s))", kind, area, len(text), len(images))
         return compose
     if key in ("up", "down"):
         step = 1 if key == "down" else -1

@@ -106,7 +106,10 @@ def main():
     ):
         parts.append(emit(const, trace(asset, MINI_WIDTH)))
         parts.append("\n")
-    OUT.write_text("".join(parts))
+    # The loop puts a blank line AFTER each block, including the last — which
+    # `ruff format --check` rejects as a trailing blank line, so trim it here
+    # rather than leaving every regeneration to fail CI.
+    OUT.write_text("".join(parts).rstrip("\n") + "\n")
     print("wrote", OUT)
 
 
