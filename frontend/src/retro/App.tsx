@@ -10,7 +10,8 @@
  * ## Three kinds of state, kept apart
  *
  * 1. **Server truth** — the snapshot, in the store, read through selectors.
- * 2. **Local UI** — composer text, focus author, grouping, which panel is open.
+ * 2. **Local UI** — focus author, grouping, which panel is open. (A card draft
+ *    is more local still: it lives in the column composer that owns it.)
  *    `useState` here, never derived from a snapshot.
  * 3. **Identity** — name, avatar, palette. `localStorage`, so a reload mid-retro
  *    puts you back as yourself rather than as a new anonymous participant.
@@ -28,6 +29,7 @@ import { useConfetti } from '../hooks/useConfetti';
 import { useCountdown } from '../hooks/useCountdown';
 import { useHeartbeat } from '../hooks/useHeartbeat';
 import { useHostBroadcast } from '../hooks/useHostBroadcast';
+import { useInvite } from '../hooks/useInvite';
 import { useMusic } from '../hooks/useMusic';
 import { apiUrl, loadSession, stripCredentialsFromUrl, type Session } from '../runtime/api';
 import { participantId, read, write } from '../runtime/storage';
@@ -46,6 +48,7 @@ import {
   ThemeSwitcher,
   TimerControls,
   TimerReadout,
+  Toast,
   Toolbar,
   Visualizer,
 } from '../shared';
@@ -56,7 +59,6 @@ import type { Participant, ReactionEvent, RetroCard, RetroState, TypingEntry } f
 import { createRetroActions } from './actions';
 import { Board } from './Board';
 import { CarriedStrip } from './CarriedStrip';
-import { Composer } from './Composer';
 import { FloatingEmoji } from './FloatingEmoji';
 import { FocusBar } from './FocusBar';
 import type { RetroBoot } from './boot';
@@ -121,10 +123,11 @@ export function App({ boot }: { boot: RetroBoot }) {
   const [theme, setLocalTheme] = useState<Theme>(() => storedTheme(THEME_KEYS.retro) ?? 'midnight');
   const [grouped, setGrouped] = useState(() => read('local', KEY.grouped) === '1');
   const [focus, setFocus] = useState('');
-  const [composerGrid, setComposerGrid] = useState<RetroGrids>('went_well');
-  const [composerText, setComposerText] = useState('');
-  const [focusNonce, setFocusNonce] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Fetched on open rather than read from the boot payload: the page is
+  // served unauthenticated, so a join code in the island would be readable
+  // by any LAN peer without a token. Also puts it on the clipboard.
+  const invite = useInvite(session, inviteOpen);
   const [musicBlocked, setMusicBlocked] = useState(false);
   const [typingGrid, setTypingGrid] = useState('');
   // Which emoji *this browser* has reacted with, per card. The server does not
@@ -142,15 +145,14 @@ export function App({ boot }: { boot: RetroBoot }) {
   useHeartbeat({ session, name, avatar, typingGrid, enabled: joined });
 
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onComposerText = useCallback(
-    (text: string) => {
-      setComposerText(text);
-      setTypingGrid(composerGrid);
-      clearTimeout(typingTimer.current);
-      typingTimer.current = setTimeout(() => setTypingGrid(''), TYPING_LINGER_MS);
-    },
-    [composerGrid]
-  );
+  // Which column you are writing into, reported by whichever column composer is
+  // being typed in. The linger is what stops the ghost card flickering out
+  // between two keystrokes.
+  const onTyping = useCallback((grid: RetroGrids) => {
+    setTypingGrid(grid);
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => setTypingGrid(''), TYPING_LINGER_MS);
+  }, []);
   useEffect(() => () => clearTimeout(typingTimer.current), []);
 
   const music = useMusic(boot.musicChannels);
@@ -269,13 +271,14 @@ export function App({ boot }: { boot: RetroBoot }) {
   }, [focus, stepFocus]);
 
   // ── Handlers ───────────────────────────────────────────────────────────
-  const submitCard = useCallback(() => {
-    const text = composerText;
-    if (!text.trim()) return;
-    setComposerText('');
-    setTypingGrid('');
-    void actions.addCard(composerGrid, text, name);
-  }, [actions, composerGrid, composerText, name]);
+  const addCard = useCallback(
+    (grid: RetroGrids, text: string) => {
+      if (!text.trim()) return;
+      setTypingGrid('');
+      void actions.addCard(grid, text, name);
+    },
+    [actions, name]
+  );
 
   const react = useCallback(
     async (cardId: string, emoji: string) => {
@@ -500,24 +503,12 @@ export function App({ boot }: { boot: RetroBoot }) {
         grouped={grouped}
         focus={focus}
         arrivals={arrivals}
-        onCompose={(grid) => {
-          setComposerGrid(grid);
-          setFocusNonce((n) => n + 1);
-        }}
+        onAddCard={addCard}
+        onTyping={onTyping}
         onEdit={(cardId, text) => void actions.editCard(cardId, text)}
         onDelete={(cardId) => void actions.deleteCard(cardId)}
         onReact={(cardId, emoji) => void react(cardId, emoji)}
         onMove={(cardId, grid, index) => void actions.moveCard(cardId, grid, index)}
-      />
-
-      <Composer
-        grid={composerGrid}
-        onGridChange={setComposerGrid}
-        text={composerText}
-        onTextChange={onComposerText}
-        onSubmit={submitCard}
-        locked={locked}
-        focusNonce={focusNonce}
       />
 
       <FloatingEmoji events={snapshot?.reaction_events ?? NO_EVENTS} />
@@ -537,9 +528,15 @@ export function App({ boot }: { boot: RetroBoot }) {
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
         <p className={styles['popNote']}>
-          Scan to open the retro, then enter the share code from the host&rsquo;s screen.
+          Scan the code, or send the link below — either way they land on the gate and enter the
+          share code.
         </p>
-        <InviteQR qrSrc={apiUrl(session, '/api/qr')} />
+        <Toast message={invite.notice} onDismiss={invite.dismiss} />
+        <InviteQR
+          qrSrc={apiUrl(session, '/api/qr')}
+          shareUrl={invite.invite?.shareUrl}
+          joinCode={invite.invite?.joinCode}
+        />
       </Modal>
     </div>
   );

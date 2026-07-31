@@ -1,30 +1,45 @@
 /**
  * A card's reactions: the counted ones as chips, the rest behind a picker.
  *
- * Split into two pieces, because putting them together produced the single
+ * Split into three pieces, because putting them together produced the single
  * ugliest thing on the board. The chips row was rendered under every card, and
  * it contained the "add a reaction" trigger — so a card with no reactions, which
  * is most cards, still showed a lone 🙂 floating in empty space below the
  * author line. It read as a rendering fault rather than a control.
  *
  * Now {@link ReactionChips} renders nothing at all when there is nothing to
- * count, and {@link ReactionAdd} sits in the card's action row with edit,
- * delete and the drag grip — which is where a control belongs and where the
- * eye already goes looking for one.
+ * count, and {@link ReactionTrigger} sits in the card's action row with edit,
+ * delete and the drag grip — which is where a control belongs and where the eye
+ * already goes looking for one.
  *
  * Showing only emoji that already have a count is what keeps cards readable —
- * eight zero-count chips per card would be more chrome than content. The picker
- * is a `role="menu"`, so a screen reader announces "menu, 8 items" rather than
- * eight loose buttons appearing from nowhere.
+ * sixteen zero-count chips per card would be more chrome than content. The tray
+ * is a `role="menu"`, so a screen reader announces "menu, 16 items" rather than
+ * sixteen loose buttons appearing from nowhere.
  *
- * The old implementation positioned a single shared `#rx-picker` element by
- * hand: `getBoundingClientRect`, clamp to `innerWidth`, flip above if it
- * overflowed the bottom. That existed only because the picker had to survive
- * the `innerHTML =` re-render that wiped the card every 1.2 s. Nothing wipes a
- * card here, so the picker can live inside it and be positioned by CSS.
+ * ## Why {@link ReactionTray} is in the card's flow, not floating over it
+ *
+ * It used to be `position: absolute`, hanging above the trigger. That looked
+ * right in isolation and was broken on the board: `.cards` is `overflow-y: auto`
+ * so each column is a scroll box, and a non-`visible` overflow on one axis
+ * forces the other to `auto` too — so the column clipped the panel on both
+ * axes. In a four-column layout the ~236px panel was wider than its ~250px
+ * column allowed for once right-anchored, and all you saw was the last couple
+ * of emoji. It was reported, reasonably, as "there are only 2 emojis".
+ *
+ * A tray in the flow simply cannot be clipped: it pushes the card taller, and
+ * the column scrolls to it like any other content. The alternatives were a
+ * portal with `getBoundingClientRect` (which is what the pre-React code did,
+ * and is only worth its cost when a re-render would otherwise destroy the
+ * panel — nothing does that here) or the top-layer `popover` attribute, which
+ * the older phones a tunnel link gets opened on do not have.
+ *
+ * The cost is that the trigger and the tray are no longer one component: the
+ * trigger belongs in the action row and the tray belongs below it, so the card
+ * owns the open state and renders the two in their two places.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 
 import { cx } from '../runtime/cx';
 import { REACTION_EMOJIS } from '../types/enums';
@@ -72,71 +87,55 @@ export function ReactionChips({ reactions, mine, onReact, disabled }: ReactionCh
   );
 }
 
-export interface ReactionAddProps {
-  mine: ReadonlySet<string>;
-  onReact(emoji: string): void;
+export interface ReactionTriggerProps {
+  open: boolean;
+  onToggle(): void;
+  /** Id of the tray, for `aria-controls`. */
+  trayId: string;
+  /** The card holds this, to put focus back after Escape closes the tray. */
+  buttonRef: RefObject<HTMLButtonElement>;
   disabled?: boolean;
 }
 
-export function ReactionAdd({ mine, onReact, disabled }: ReactionAddProps) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: Event): void => {
-      const wrap = wrapRef.current;
-      if (wrap && event.target instanceof Node && !wrap.contains(event.target)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return;
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener('pointerdown', dismiss, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', dismiss, true);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
+export function ReactionTrigger({ open, onToggle, trayId, buttonRef, disabled }: ReactionTriggerProps) {
   return (
-    <span className={styles['rxAddWrap']} ref={wrapRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={styles['act']}
-        disabled={disabled}
-        aria-label="Add a reaction"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span aria-hidden="true">☺</span>
-      </button>
+    <button
+      ref={buttonRef}
+      type="button"
+      className={cx(styles['act'], open && styles['actOn'])}
+      disabled={disabled}
+      aria-label="Add a reaction"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={trayId}
+      onClick={onToggle}
+    >
+      <span aria-hidden="true">☺</span>
+    </button>
+  );
+}
 
-      {open ? (
-        <div className={styles['rxPicker']} role="menu" aria-label="Reactions">
-          {REACTION_EMOJIS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              role="menuitem"
-              className={cx(styles['rxPick'], mine.has(emoji) && styles['rxChipMine'])}
-              aria-label={emoji}
-              onClick={() => {
-                onReact(emoji);
-                setOpen(false);
-                triggerRef.current?.focus();
-              }}
-            >
-              <span aria-hidden="true">{emoji}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </span>
+export interface ReactionTrayProps {
+  id: string;
+  mine: ReadonlySet<string>;
+  onPick(emoji: string): void;
+}
+
+export function ReactionTray({ id, mine, onPick }: ReactionTrayProps) {
+  return (
+    <div id={id} className={styles['rxTray']} role="menu" aria-label="Reactions">
+      {REACTION_EMOJIS.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          role="menuitem"
+          className={cx(styles['rxPick'], mine.has(emoji) && styles['rxChipMine'])}
+          aria-label={emoji}
+          onClick={() => onPick(emoji)}
+        >
+          <span aria-hidden="true">{emoji}</span>
+        </button>
+      ))}
+    </div>
   );
 }

@@ -37,7 +37,8 @@ export interface BoardProps {
   focus: string;
   /** Card ids that just arrived from a peer, for the entrance animation. */
   arrivals: ReadonlySet<string>;
-  onCompose(grid: RetroGrids): void;
+  onAddCard(grid: RetroGrids, text: string): void;
+  onTyping(grid: RetroGrids): void;
   onEdit(cardId: string, text: string): void;
   onDelete(cardId: string): void;
   onReact(cardId: string, emoji: string): void;
@@ -55,7 +56,8 @@ export function Board({
   grouped,
   focus,
   arrivals,
-  onCompose,
+  onAddCard,
+  onTyping,
   onEdit,
   onDelete,
   onReact,
@@ -127,7 +129,8 @@ export function Board({
             focus={focus}
             dropAt={drag?.target?.grid === grid ? drag.target : null}
             draggingId={drag?.cardId ?? null}
-            onCompose={() => onCompose(grid)}
+            onAddCard={(text) => onAddCard(grid, text)}
+            onTyping={() => onTyping(grid)}
             onEdit={onEdit}
             onDelete={onDelete}
             onReact={onReact}

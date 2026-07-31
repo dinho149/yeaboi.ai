@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { card } from '../test/retroState';
+import { REACTION_EMOJIS } from '../types/enums';
 import { CardView } from './CardView';
 
 function renderCard(overrides: Parameters<typeof card>[0] = {}, props: Partial<Parameters<typeof CardView>[0]> = {}) {
@@ -127,6 +128,55 @@ describe('CardView', () => {
 
     await user.click(screen.getByRole('menuitem', { name: 'Action items' }));
     expect(onMoveTo).toHaveBeenCalledWith('action_items');
+  });
+
+  it('asks before deleting, and only deletes when the confirmation is answered', async () => {
+    const user = userEvent.setup();
+    const { onDelete } = renderCard({ text: 'hard won', mine: true });
+
+    await user.click(screen.getByRole('button', { name: /^Delete card/ }));
+    // The ✕ is the question, not the answer: `delete_card` is a hard delete
+    // with no tombstone and no undo, and the ✕ sits pixels from the ✎.
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole('group', { name: 'Confirm delete' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /^Confirm delete card/ }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs out of a pending delete on Escape and on the keep button', async () => {
+    const user = userEvent.setup();
+    const { onDelete } = renderCard({ mine: true });
+
+    await user.click(screen.getByRole('button', { name: /^Delete card/ }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('group', { name: 'Confirm delete' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /^Delete card/ }));
+    await user.click(screen.getByRole('button', { name: 'Keep the card' }));
+    expect(screen.queryByRole('group', { name: 'Confirm delete' })).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('offers every reaction emoji in a tray inside the card', async () => {
+    const user = userEvent.setup();
+    const { container, onReact } = renderCard();
+
+    await user.click(screen.getByRole('button', { name: 'Add a reaction' }));
+    const tray = screen.getByRole('menu', { name: 'Reactions' });
+    expect([...tray.querySelectorAll('[role="menuitem"]')]).toHaveLength(REACTION_EMOJIS.length);
+
+    // The tray is a child of the card, in its flow. It used to be positioned
+    // over it, and the column's scroll box clipped it to the last couple of
+    // emoji — which is why this asserts on the *ancestry*, not just the count.
+    expect(container.querySelector('article')?.contains(tray)).toBe(true);
+    for (const property of ['position', 'right', 'bottom']) {
+      expect(tray.style.getPropertyValue(property)).toBe('');
+    }
+
+    await user.click(screen.getByRole('menuitem', { name: '🧠' }));
+    expect(onReact).toHaveBeenCalledWith('🧠');
+    expect(screen.queryByRole('menu', { name: 'Reactions' })).toBeNull();
   });
 
   it('renders card text as a text node, never as markup', () => {

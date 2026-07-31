@@ -113,7 +113,7 @@ describe('retro App', () => {
     expect(screen.getByRole('button', { name: 'Lock the board' })).toBeTruthy();
   });
 
-  it('posts a new card to the column the composer names', async () => {
+  it('posts a new card to the column its composer belongs to', async () => {
     seedIdentity();
     const user = userEvent.setup();
     const server = fakeServer();
@@ -121,8 +121,11 @@ describe('retro App', () => {
     render(<App boot={BOOT} />);
     await screen.findByText('Pairing paid off');
 
-    await user.click(screen.getByRole('radio', { name: 'Demos' }));
-    await user.type(screen.getByRole('textbox', { name: /Add a card to Demos/ }), 'a demo');
+    // No destination to pick any more: the column you write in *is* the
+    // destination. Each column carries its own composer, opened from its own
+    // "Add a card" row.
+    await user.click(screen.getByRole('button', { name: 'Add a card to Demos' }));
+    await user.type(screen.getByRole('textbox', { name: 'Add a card to Demos' }), 'a demo');
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => {
@@ -167,6 +170,9 @@ describe('retro App', () => {
     await screen.findByRole('alert');
     expect(screen.getByRole('alert').textContent).toContain('locked');
     expect(screen.queryByRole('textbox', { name: /Add a card/ })).toBeNull();
+    // The invitation goes with the box. A lock that left four "Add a card" rows
+    // on screen would be a board that looks writable and is not.
+    expect(screen.queryByRole('button', { name: /Add a card/ })).toBeNull();
   });
 
   it('has no axe violations on a live board', async () => {

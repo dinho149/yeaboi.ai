@@ -8,8 +8,8 @@
  *
  * 1. `100dvh`, never `100vh`. iOS Safari's `vh` excludes the retracting URL
  *    bar, so a `100vh` app shell is taller than the visible viewport and the
- *    composer sits under the browser chrome — on the exact devices a tunnel
- *    link is opened on.
+ *    bottom of every column — its composer included — sits under the browser
+ *    chrome, on the exact devices a tunnel link is opened on.
  * 2. Tap targets are `--tap` (32px) and never below `--tap-min` (24px, the
  *    WCAG 2.2 floor). The old `.act` buttons were about 13×20.
  * 3. Card actions stay visible at reduced opacity rather than appearing on
@@ -177,7 +177,7 @@
 .board {
   flex: 1;
   /* Without an explicit floor a flex child refuses to shrink below its content,
-     so the columns would push the composer off the bottom instead of scrolling. */
+     so the columns would grow past the viewport instead of scrolling inside it. */
   min-height: 0;
   display: grid;
   /* Weighted by card count — see the `weights` memo in Board.tsx. The fallback
@@ -187,6 +187,9 @@
   grid-template-columns: var(--col-weights, repeat(4, minmax(0, 1fr)));
   gap: var(--s3);
   padding: var(--s3) var(--s4);
+  /* Plus the home-indicator inset: with the board-wide composer gone, the
+     columns are the lowest thing on the screen. */
+  padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
   overflow: hidden;
   transition: grid-template-columns var(--dur-base) var(--ease);
 }
@@ -279,23 +282,6 @@
   color: var(--text);
   font-size: var(--fs-2xs);
 }
-/* Pushes the + to the right without making the count a flex:1 blob, which is
-   what used to stop the head from baseline-aligning. */
-.columnSpacer { flex: 1; }
-.columnAdd {
-  width: var(--tap);
-  height: var(--tap);
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--line);
-  border-radius: var(--r-s);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--fs-l);
-  cursor: pointer;
-}
-.columnAdd:hover { border-style: solid; border-color: var(--accent); color: var(--accent); }
 
 .cards {
   flex: 1;
@@ -384,7 +370,22 @@
   cursor: pointer;
 }
 .act:hover, .grip:hover, .act:focus-visible, .grip:focus-visible { opacity: 1; color: var(--text); }
-.actDanger:hover, .actDanger:focus-visible { color: var(--danger); }
+/* A control that has opened something, or is asking a question, is no longer
+   dimmed background furniture. */
+.actOn { opacity: 1; color: var(--text); background: var(--panel-2); }
+.actDanger:hover, .actDanger:focus-visible, .actDanger.actOn { color: var(--danger); }
+
+/* ── Delete confirmation ──────────────────────────────────────────────── */
+/* Replaces the control cluster in place rather than opening a dialog: the
+   question is about this card, and it is answered where it was asked. */
+.confirmRow { display: inline-flex; align-items: center; gap: var(--s1); }
+.confirmLabel {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
 
 .gripWrap { position: relative; display: inline-flex; }
 .grip {
@@ -443,8 +444,6 @@
    ReactionChips. The row used to be unconditional because it also held the
    "add" trigger, which left a lone 🙂 hanging under every unreacted card. */
 .reactions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-top: var(--s2); }
-/* The trigger now lives in the card's action row; the picker hangs off it. */
-.rxAddWrap { position: relative; display: inline-flex; }
 .rxChip, .rxPick {
   display: inline-flex;
   align-items: center;
@@ -461,101 +460,83 @@
   font-size: var(--fs-xs);
   cursor: pointer;
 }
-.rxChip:hover, .rxAdd:hover, .rxPick:hover { border-color: var(--accent); }
-.rxChip:disabled, .rxAdd:disabled { opacity: 0.5; cursor: default; }
+.rxChip:hover, .rxPick:hover { border-color: var(--accent); }
+.rxChip:disabled { opacity: 0.5; cursor: default; }
 .rxChipMine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
 .rxCount { font-family: var(--font-mono); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
 
-.rxPicker {
-  position: absolute;
-  /* Right-anchored: the trigger sits in the action row at the card's right
-     edge, so a left-anchored panel would hang off the board. */
-  right: 0;
-  bottom: calc(100% + var(--s1));
-  z-index: var(--z-popover);
-  display: flex;
-  flex-wrap: wrap;
+/*
+ * In the card's flow, deliberately — see the note in ReactionBar.tsx. This was
+ * `position: absolute` over the card, and the column (`.cards`, overflow-y:
+ * auto, which forces overflow-x: auto with it) clipped it to a couple of visible
+ * emoji. Nothing here may be positioned, or the clipping comes back.
+ *
+ * `auto-fill` rather than a wrap: sixteen emoji in a narrow column should be
+ * even rows of the same size, not a ragged last line.
+ */
+.rxTray {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
   gap: var(--s1);
-  max-width: 16rem;
+  margin-top: var(--s2);
   padding: var(--s2);
-  background: var(--panel);
+  background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--r-s);
-  box-shadow: var(--shadow-2);
 }
 
-/* ── Composer ─────────────────────────────────────────────────────────── */
-.composer {
+/* ── Column composer ──────────────────────────────────────────────────── */
+/*
+ * The column's own writing surface, pinned as its footer — a sibling of the
+ * scrolling `.cards`, so it never scrolls out of reach and a card lands
+ * directly above it. This replaced a bar pinned below the whole board plus a
+ * segmented destination picker; see ColumnComposer.tsx for why.
+ */
+.columnCompose {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
-  padding: var(--s3) var(--s4);
-  /* Plus the home-indicator inset, or the Add button sits under it. */
-  padding-bottom: calc(var(--s3) + env(safe-area-inset-bottom));
-  background: var(--panel);
-  border-top: 1px solid var(--line);
+  padding: var(--s2);
+  border-top: 1px solid var(--line-soft);
 }
-.composerLocked { margin: 0; text-align: center; color: var(--muted); font-size: var(--fs-s); }
-.composerRow { display: flex; align-items: flex-end; gap: var(--s2); }
-.composerBox {
-  flex: 1;
-  min-width: 0;
+/* Dashed and quiet at rest: it is an invitation, and four solid buttons across
+   the bottom of the board would compete with the cards. */
+.composeGhost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  width: 100%;
+  min-height: var(--tap);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.composeGhost:hover, .composeGhost:focus-visible {
+  border-style: solid;
+  border-color: var(--col-tone, var(--accent));
+  color: var(--text);
+}
+.composeBox {
+  width: 100%;
   min-height: var(--tap);
   max-height: 8rem;
   resize: vertical;
-  padding: var(--s2) var(--s3);
+  padding: var(--s2);
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--line);
+  /* The column's own colour, so an open composer belongs to the column it is
+     going to add to — the thing the segmented control used to have to say. */
+  border: 1px solid var(--col-tone, var(--accent));
   border-radius: var(--r-s);
   font: inherit;
   font-size: var(--fs-s);
 }
-.composerBox:focus-visible { border-color: var(--accent); }
-
-.segmented { display: flex; gap: var(--s1); overflow-x: auto; scrollbar-width: none; }
-.segmented::-webkit-scrollbar { display: none; }
-/* Each pill carries its column's `--col-tone`, set inline by Composer.tsx, so
-   choosing a destination is the same act as looking at the board. A dot rather
-   than a fill for the unselected ones: four filled pills under four coloured
-   columns would be twice as much colour as the board can carry. */
-.segment {
-  flex: 1 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--s2);
-  min-height: var(--tap-min);
-  padding: 0 var(--s3);
-  white-space: nowrap;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: none;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.segment::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: var(--r-pill);
-  background: var(--col-tone, var(--accent));
-  /* Dimmed until chosen, so the row reads as one control with one active
-     option rather than as four status lights. */
-  opacity: 0.45;
-}
-.segment:hover { border-color: var(--col-tone, var(--accent)); }
-.segmentOn {
-  background: color-mix(in srgb, var(--col-tone, var(--accent)) 16%, var(--panel));
-  border-color: var(--col-tone, var(--accent));
-  color: var(--text);
-  font-weight: 600;
-}
-.segmentOn::before { opacity: 1; }
+.composeActions { display: flex; justify-content: flex-end; gap: var(--s2); }
 
 /* ── Floating reaction overlay ────────────────────────────────────────── */
 .floatLayer {

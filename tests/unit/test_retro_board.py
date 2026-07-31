@@ -4,6 +4,8 @@ import threading
 
 from yeaboi.agent.state import RetroCard, RetroReport
 from yeaboi.retro.board import (
+    AVATARS,
+    REACTION_EMOJIS,
     RETRO_GRID_LABELS,
     RETRO_GRIDS,
     RetroBoard,
@@ -129,6 +131,19 @@ class TestRetroCardDefaults:
 
 
 class TestReactions:
+    def test_emoji_set_is_pinned_and_append_only(self):
+        # Nothing else pins this tuple: the codegen equality check in
+        # test_web_frontend_guards only proves enums.ts matches whatever is here,
+        # so an edit would otherwise sail through with zero review signal. The
+        # original eight must stay — store.py rehydrates persisted reactions
+        # without re-validating membership, so a removal makes old boards render
+        # an emoji the live counter no longer counts.
+        assert REACTION_EMOJIS[:8] == ("👍", "👎", "❤️", "🎉", "😂", "🔥", "😢", "🚀")
+        assert len(REACTION_EMOJIS) == 16
+        assert len(set(REACTION_EMOJIS)) == 16
+        # The rejection case below leans on this: 🦖 is an avatar, not a reaction.
+        assert not set(REACTION_EMOJIS) & set(AVATARS)
+
     def test_toggle_on_off(self):
         b = RetroBoard("s")
         c = b.add_card(grid="went_well", text="ci", author="Sam")

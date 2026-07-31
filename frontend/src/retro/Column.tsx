@@ -1,13 +1,15 @@
 /**
- * One retro column.
+ * One retro column: a head, a scrolling stack of cards, and its own composer.
  *
- * The `+` in the heading does not open a form here — it focuses the single
- * composer at the bottom of the screen with this column preselected. That is
- * the visible consequence of collapsing four textareas into one: the affordance
- * stays where you expect it, the writing surface stops being duplicated four
- * times, and the primary action lives in the thumb zone on a phone instead of
- * at the bottom of whichever column you happened to scroll.
+ * The composer is a *sibling* of the scrolling stack, not a child of it — see
+ * {@link ColumnComposer} for why that matters and why it replaced the single
+ * board-wide composer. The `+` that used to live in the head has gone with it:
+ * with a visible "Add a card" row pinned in the column, a second affordance for
+ * the same action ten centimetres above it is clutter, and two buttons in one
+ * column with the same accessible name are worse than clutter.
  */
+
+import { useState } from 'react';
 
 import { toneMix, toneVar } from '../design/tone';
 import { Ticker } from '../motion';
@@ -16,6 +18,7 @@ import { cx } from '../runtime/cx';
 import { RETRO_GRID_LABELS, type RetroGrids } from '../types/enums';
 import type { RetroCard } from '../types/board';
 import { CardView } from './CardView';
+import { ColumnComposer } from './ColumnComposer';
 import { GRID_TONE } from './gridTone';
 import type { DropTarget } from './useCardDrag';
 import motion from '../motion/motion.module.css';
@@ -42,7 +45,10 @@ export interface ColumnProps {
   /** Where a card would land if dropped now — `null` when not over this column. */
   dropAt: DropTarget | null;
   draggingId: string | null;
-  onCompose(): void;
+  /** A card written in this column's own composer. */
+  onAddCard(text: string): void;
+  /** Fired as you type into this column, for the peer "is writing" ghost. */
+  onTyping(): void;
   onEdit(cardId: string, text: string): void;
   onDelete(cardId: string): void;
   onReact(cardId: string, emoji: string): void;
@@ -74,13 +80,16 @@ export function Column({
   focus,
   dropAt,
   draggingId,
-  onCompose,
+  onAddCard,
+  onTyping,
   onEdit,
   onDelete,
   onReact,
   onMoveTo,
   onGripPointerDown,
 }: ColumnProps) {
+  const [composing, setComposing] = useState(false);
+  const [focusNonce, setFocusNonce] = useState(0);
   const label = RETRO_GRID_LABELS[grid];
   const visible = focus ? cards.filter((card) => card.author === focus) : cards;
 
@@ -143,17 +152,6 @@ export function Column({
           ·
         </span>
         <Ticker value={visible.length} className={styles['columnCount']} />
-        <span className={styles['columnSpacer']} />
-        {locked ? null : (
-          <button
-            type="button"
-            className={styles['columnAdd']}
-            aria-label={`Add a card to ${label}`}
-            onClick={onCompose}
-          >
-            <span aria-hidden="true">+</span>
-          </button>
-        )}
       </header>
 
       <div className={cx(styles['cards'], dropAt && styles['cardsOver'])} data-grid={grid}>
@@ -180,6 +178,21 @@ export function Column({
         {/* Trailing indicator, for a drop past the last card. */}
         {dropAt && dropAt.index >= slots ? <div className={styles['dropLine']} aria-hidden="true" /> : null}
       </div>
+
+      {locked ? null : (
+        <ColumnComposer
+          label={label}
+          open={composing}
+          focusNonce={focusNonce}
+          onOpen={() => {
+            setComposing(true);
+            setFocusNonce((n) => n + 1);
+          }}
+          onClose={() => setComposing(false)}
+          onSubmit={onAddCard}
+          onTyping={onTyping}
+        />
+      )}
 
       {/* The ghost above says this visually and is aria-hidden; this keeps the
           announcement without printing the same sentence twice on screen. */}

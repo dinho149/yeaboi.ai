@@ -72,7 +72,29 @@ RETRO_THEMES: tuple[str, ...] = ("midnight", "light", "solarized", "synthwave", 
 # types/enums.ts by the same codegen, so client and server agree). Reactions and
 # avatars from a LAN peer are rejected unless they're in these tuples — bounding
 # what can be stored and rendered.
-REACTION_EMOJIS: tuple[str, ...] = ("👍", "❤️", "🎉", "😂", "🔥", "😢", "🚀", "👀")
+#
+# Only ever *append* to REACTION_EMOJIS. store.py rehydrates persisted reactions
+# without re-validating membership, so dropping one leaves an old board's export
+# still rendering an emoji that the live counter (which filters by this tuple)
+# has stopped counting — the two disagree with nothing to point at.
+REACTION_EMOJIS: tuple[str, ...] = (
+    "👍",
+    "👎",
+    "❤️",
+    "🎉",
+    "😂",
+    "🔥",
+    "😢",
+    "🚀",
+    "👀",
+    "💯",
+    "🙌",
+    "🤔",
+    "🐛",
+    "✅",
+    "⚠️",
+    "🧠",
+)
 AVATARS: tuple[str, ...] = (
     "🤠",
     "👻",
