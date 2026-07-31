@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry demo demo-all demo-list demo-check demo-calibrate clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,24 @@ run: ## Run the yeaboi CLI (use ARGS="--flag" to pass arguments)
 
 run-dry: ## Run the TUI with fake delays — no LLM calls
 	$(UV) run yeaboi --dry-run $(ARGS)
+
+# Demo recording. Drives a real iTerm2 window with cliclick so the GIF shows
+# iTerm2's own rendering — see scripts/README-demo.md for the one-time setup
+# (two macOS permissions, a "Demo" profile, and one calibration pass).
+demo: ## Re-record docs/demo.gif — the README hero (needs setup, see scripts/README-demo.md)
+	$(UV) run python scripts/record_demo.py planning $(ARGS)
+
+demo-all: ## Re-record every demo scenario
+	$(UV) run python scripts/record_demo.py --all $(ARGS)
+
+demo-list: ## List the demo scenarios
+	$(UV) run python scripts/record_demo.py --list
+
+demo-check: ## Print a scenario's choreography without performing it
+	$(UV) run python scripts/record_demo.py $(or $(ARGS),--all) --dry-run
+
+demo-calibrate: ## Measure cell geometry for demo clicks (one-time, needs eyes on screen)
+	$(UV) run python scripts/record_demo.py --calibrate
 
 eval: ## Run golden dataset evaluators
 	$(UV) run pytest tests/golden/ -v

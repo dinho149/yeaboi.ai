@@ -38,7 +38,7 @@ make clean                # Remove build artifacts and caches
 Run a single test: `uv run pytest tests/unit/test_state.py -v`
 Run a single test class: `uv run pytest tests/unit/test_state.py::TestPriority -v`
 
-Terminal GIFs for the README: `asciinema rec docs/demo.cast -c "yeaboi --dry-run"` → `agg docs/demo.cast docs/demo.gif --theme github-dark` (install via `brew install asciinema agg`).
+Terminal GIFs for the README: `make demo` (hero) / `make demo-all` (every scenario). These record a **real iTerm2 window** — `asciinema`/`agg` and VHS all re-render with their own font engine, which loses the Nerd Font prompt glyphs, true-colour borders, and block-font titles the TUI depends on. Input is scripted with `cliclick`, so re-recording after a UI change is one command rather than a hand-performed retake — which is how the previous demo stayed frozen at PR #16 for so long. Scenarios are plain data in `scripts/record_demo.py`; `make demo-check` prints the choreography without performing it. One-time setup (two macOS permissions, a `Demo` iTerm2 profile, one `make demo-calibrate` pass) is in `scripts/README-demo.md`. A `WaitFor` timeout means the TUI was reworded and the demo is stale — fix the scenario, don't retry.
 
 ## Parallel Development (worktrees)
 
