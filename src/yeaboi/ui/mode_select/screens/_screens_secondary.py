@@ -888,6 +888,7 @@ def _build_analysis_board_setup_screen(
     label_w = max(len(f["label"]) for f in fields) + 2
     body: list[Text] = []
     row_regions: list[tuple[int, str, str, bool]] = []
+    striped: list[int] = []  # rows that get the focus bar, applied once the width is known
     for i, field in enumerate(fields):
         focused = i == selected and editing is None
         env = field["env_var"]
@@ -905,10 +906,20 @@ def _build_analysis_board_setup_screen(
             )
         )
         if focused or (editing is not None and editing[0] == env):
-            row.append(" " * max(0, width - 8 - row.cell_len))
-            row.style = f"on {_SETTINGS_FOCUS_BG}"
+            striped.append(i)
         row_regions.append((len(body), env, field["label"], field.get("masked", False)))
         body.append(row)
+
+    # The focus bar spans the FIELD BLOCK, not the terminal — a stripe running the
+    # full width reads as a separator rather than a cursor. Measured off the widest
+    # row so every row highlights to the same edge, the way the settings sections do.
+    stripe_w = max(r.cell_len for r in body) + 2
+    for i in striped:
+        body[i].append(" " * max(0, stripe_w - body[i].cell_len))
+        # stylize(), NOT .style: a Text's `style` also paints the padding Rich adds
+        # out to the full line width, which is what made the bar span the terminal.
+        # stylize covers the characters only, so it stops at the block's edge.
+        body[i].stylize(f"on {_SETTINGS_FOCUS_BG}")
 
     # Where-to-get-it hint for the focused field only — the full stack of hints
     # would bury the fields themselves.
@@ -930,14 +941,29 @@ def _build_analysis_board_setup_screen(
         missing = [f["label"] for f in fields if f.get("required") and not str(values.get(f["env_var"], "")).strip()]
         status.append(f"Still needed: {', '.join(missing)}", style=theme.muted)
 
-    # "Continue" rather than a new "Connect" label — it is already in the
-    # shared button palette, so the row keeps the app's green proceed verb.
-    actions = ["Continue", "Back"] if ready else ["Back"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
-    keys = Text(
-        PAD + "↑↓ field  ·  ←→ switch tracker  ·  enter edit  ·  esc back",
-        style=theme.dim,
-    )
+    # No Back button: the chrome's own back tab already covers leaving, so a second
+    # affordance for it is noise. "Continue" is the one thing this page adds, and
+    # only once there is something to continue to.
+    actions = ["Continue"] if ready else []
+    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel) if actions else (None, None, None)
+
+    # Controls ride in the bottom-left pocket beside "back" (_hint_tab), the same
+    # as the settings page — they don't take a body row of their own.
+    hint = Text(justify="left", no_wrap=True)  # drawn inside a chrome tab, so no body pad
+    if editing is not None:
+        hint.append("type to edit", style=theme.accent)
+        hint.append("  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  save  ·  ", style=theme.muted)
+        hint.append("Esc", style=theme.accent)
+        hint.append("  cancel  ·  '-' clears", style=theme.muted)
+    else:
+        hint.append("↑/↓", style=theme.accent)
+        hint.append("  pick field  ·  ", style=theme.muted)
+        hint.append("←/→", style=theme.accent)
+        hint.append("  switch tracker  ·  ", style=theme.muted)
+        hint.append("Enter", style=theme.accent)
+        hint.append("  edit", style=theme.muted)  # 'Esc back' dropped — the back tab covers it
 
     content = Group(
         Text(""),
@@ -956,13 +982,10 @@ def _build_analysis_board_setup_screen(
         Text(""),
         status,
         Text(""),
-        keys,
-        Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *([btn_top, btn_mid, btn_bot] if actions else []),
     )
     panel = build_page_panel(content, theme=theme, height=height)
+    panel._hint_tab = hint
     panel._board_actions = actions
     panel._row_regions = row_regions  # (body_index, env, label, masked) per field row
     panel._tab_regions = tab_regions  # (x0, x1, tracker_index) on the switch row

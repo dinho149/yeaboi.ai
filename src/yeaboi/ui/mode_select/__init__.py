@@ -5697,7 +5697,7 @@ def _run_analysis_board_setup(
     while True:
         panel = _render()
         fields = board_setup_fields(tracker)
-        actions = getattr(panel, "_board_actions", ["Back"])
+        actions = getattr(panel, "_board_actions", [])  # empty until the fields are complete
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if not key:
             continue
@@ -5754,13 +5754,15 @@ def _run_analysis_board_setup(
         elif key in ("down", "scroll_down"):
             if zone == "fields" and selected + 1 < len(fields):
                 selected += 1
-            else:
+            elif actions:
                 zone, action_sel = "actions", 0
         elif key in ("up", "scroll_up"):
             if zone == "actions":
                 zone, selected = "fields", len(fields) - 1
             else:
                 selected = max(0, selected - 1)
+        elif key in ("left", "right") and zone == "actions" and len(actions) < 2:
+            pass  # a single button has nowhere to move to
         elif key in ("left", "right") and zone == "actions":
             step = 1 if key == "right" else -1
             action_sel = (action_sel + step) % len(actions)
@@ -5775,10 +5777,8 @@ def _run_analysis_board_setup(
             if zone == "fields":
                 _begin_edit(selected)
                 continue
-            label = actions[action_sel]
-            if label == "Back":
-                logger.info("analysis board setup: cancelled")
-                return "cancel"
+            if not actions:
+                continue
             # "Continue" — re-check with the real board predicates rather than
             # trusting the required-fields tally, so a value that looks filled but
             # doesn't satisfy the checker says so here instead of failing later.

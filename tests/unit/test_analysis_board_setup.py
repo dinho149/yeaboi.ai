@@ -104,6 +104,40 @@ class TestScreen:
         assert "Nope, try again" in out
         assert "All set" not in out
 
+    def test_focus_bar_stops_at_the_field_block(self):
+        # A stripe running the full terminal width reads as a separator rather
+        # than a cursor. It must cover the rows and stop.
+        console = Console(file=io.StringIO(), width=140, height=44, legacy_windows=False)
+        panel = _build_analysis_board_setup_screen(
+            {"JIRA_BASE_URL": "https://acme.atlassian.net"}, selected=0, width=140, height=44
+        )
+        rows = [
+            line
+            for line in console.render_lines(panel, console.options, pad=True)
+            if "Jira Base URL" in "".join(seg.text for seg in line)
+        ]
+        assert rows, "the focused row should be on screen"
+        stripe = sum(seg.cell_length for seg in rows[0] if seg.style and "rgb(44,52,68)" in str(seg.style))
+        assert stripe > 0  # it IS highlighted
+        assert stripe < 140 // 2 + 20  # but nowhere near edge to edge
+
+    def test_only_the_focused_row_is_striped(self):
+        console = Console(file=io.StringIO(), width=140, height=44, legacy_windows=False)
+        panel = _build_analysis_board_setup_screen({}, selected=1, width=140, height=44)
+        striped = [
+            "".join(seg.text for seg in line).strip()
+            for line in console.render_lines(panel, console.options, pad=True)
+            if any(seg.style and "rgb(44,52,68)" in str(seg.style) for seg in line)
+        ]
+        assert len(striped) == 1
+        assert "Jira Email" in striped[0]
+
+    def test_controls_ride_in_the_chrome_tab_not_the_body(self):
+        # Same as the settings page: the hints go to the bottom-left pocket.
+        panel = _build_analysis_board_setup_screen({}, width=110, height=44)
+        assert "switch tracker" in panel._hint_tab.plain
+        assert "switch tracker" not in _render(values={})  # not a body row
+
     def test_is_not_a_raw_panel(self):
         # Every page must go through build_page_panel so it paints its own
         # background; a raw Panel would show the user's terminal theme through it.
@@ -181,9 +215,15 @@ class TestLoop:
         assert result == "cancel"
         assert saved == []
 
-    def test_back_button_cancels(self, monkeypatch):
-        # Nothing configured → the only button is Back, so down then Enter.
-        result, _ = _drive(["down", "down", "down", "down", "enter"], monkeypatch)
+    def test_there_is_no_back_button(self):
+        # Leaving is the chrome's back tab / Esc — a second affordance for it is
+        # noise, so the button row is empty until Continue earns its place.
+        panel = _build_analysis_board_setup_screen({}, width=110, height=44)
+        assert panel._board_actions == []
+        assert "Back" not in _render(values={})
+
+    def test_esc_is_the_way_out(self, monkeypatch):
+        result, _ = _drive(["down", "down", "esc"], monkeypatch)
         assert result == "cancel"
 
     def test_typing_a_value_saves_it(self, monkeypatch):
@@ -264,9 +304,11 @@ def test_every_tracker_renders_at_a_small_size(tracker):
 class TestTrackerSwitchKeys:
     """left/right flick between trackers while the field list has focus."""
 
-    def _last_frame(self, keys, monkeypatch) -> str:
+    def _last_frame(self, keys, monkeypatch, *, env=None) -> str:
         for var in (f["env_var"] for t in (0, 1) for f in board_setup_fields(t)):
             monkeypatch.delenv(var, raising=False)
+        for k, v in (env or {}).items():
+            monkeypatch.setenv(k, v)
         live = _Live()
         seq = iter(keys)
         console = Console(file=io.StringIO(), width=110, height=44, legacy_windows=False)
@@ -284,7 +326,19 @@ class TestTrackerSwitchKeys:
     def test_right_twice_comes_back_to_jira(self, monkeypatch):
         assert "Jira Base URL" in self._last_frame(["right", "right", "esc"], monkeypatch)
 
-    def test_left_right_still_move_between_buttons(self, monkeypatch):
-        # With focus on the button row, left/right must NOT change tracker.
-        out = self._last_frame(["down", "down", "down", "down", "right", "esc"], monkeypatch)
+    def test_left_right_do_not_switch_tracker_from_the_button_row(self, monkeypatch):
+        # A complete config puts Continue on screen; once focus drops onto it,
+        # left/right belong to the button row and must leave the tracker alone.
+        out = self._last_frame(
+            ["down", "down", "down", "down", "right", "esc"],
+            monkeypatch,
+            env=_JIRA_FULL,
+        )
         assert "Jira Base URL" in out
+        assert "Organization URL" not in out
+
+    def test_left_right_still_switch_when_there_is_no_button_row(self, monkeypatch):
+        # Nothing configured → no buttons, so down keeps focus in the fields and
+        # left/right stay on tracker duty all the way to the bottom of the list.
+        out = self._last_frame(["down", "down", "down", "down", "right", "esc"], monkeypatch)
+        assert "Organization URL" in out
