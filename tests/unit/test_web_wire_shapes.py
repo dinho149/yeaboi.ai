@@ -45,6 +45,7 @@ from yeaboi.poker.board import PokerBoard
 from yeaboi.reporting.presentation import deck_payload
 from yeaboi.reporting.style import DeckStyle
 from yeaboi.retro.board import RetroBoard
+from yeaboi.sharing.access import invite_payload
 
 FIXTURES = Path(__file__).resolve().parents[2] / "frontend" / "src" / "test" / "fixtures"
 
@@ -381,10 +382,26 @@ def _export_snapshots() -> dict[str, dict]:
     }
 
 
+def _invite_snapshot() -> dict:
+    """What ``GET /api/invite`` answers with, on both boards.
+
+    Built by the same :func:`invite_payload` the two handlers call, so this pins
+    the endpoint rather than a re-description of it. Headers stand in for a
+    request that arrived over the tunnel, which is the case that matters — that
+    is where the copied link goes to someone who cannot reach the LAN.
+    """
+    return invite_payload(
+        {"Host": "abc-def.trycloudflare.com", "X-Forwarded-Proto": "https"},
+        "127.0.0.1:5173",
+        "K3P9-2QXA",
+    )
+
+
 def _fixtures() -> dict[str, dict]:
     return {
         "deck": _deck_snapshot(),
         "retro": _retro_snapshot(),
+        "invite": _invite_snapshot(),
         **_poker_snapshots(),
         **_export_snapshots(),
     }

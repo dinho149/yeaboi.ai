@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 _JOIN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -19,6 +19,44 @@ def make_join_code() -> str:
     """Return an unambiguous, human-typable ``XXXX-XXXX`` access code."""
     raw = "".join(secrets.choice(_JOIN_ALPHABET) for _ in range(8))
     return f"{raw[:4]}-{raw[4:]}"
+
+
+def participant_url(headers: Mapping[str, str], fallback_host: str) -> str:
+    """Return the token-free URL a participant should open, as *they* would type it.
+
+    Built from the request rather than from the server's own address, because the
+    server has no idea what it is reachable as: the same process answers on a LAN
+    IP and on a ``trycloudflare.com`` hostname, and only the request knows which
+    one this visitor came in on.
+
+    The scheme comes from ``X-Forwarded-Proto``, which cloudflared sets. Without
+    it the tunnel URL would come out as ``http://`` — which does still work, via a
+    redirect, and is why this went unnoticed while the QR was the only consumer.
+    It stops being harmless once the same string is copied to the clipboard and
+    pasted into a chat, where it is read by a human and cached by a link
+    unfurler. A forged header can only mislabel a link the caller already has.
+    """
+    host = headers.get("Host") or fallback_host
+    scheme = "https" if (headers.get("X-Forwarded-Proto") or "").lower() == "https" else "http"
+    return f"{scheme}://{host}/"
+
+
+def invite_payload(headers: Mapping[str, str], fallback_host: str, join_code: str) -> dict[str, str]:
+    """The body of ``GET /api/invite`` on both live boards.
+
+    A function rather than two dict literals in two handlers so the wire fixture
+    in ``tests/unit/test_web_wire_shapes.py`` can build the real thing. A fixture
+    that reconstructs a payload by hand pins only the reconstruction, and would
+    keep passing while the endpoint it claims to describe drifts away from it.
+
+    Contains no secret: the join code is what the reader typed to get here, and
+    the URL is the one in their address bar. The host link, which is neither, is
+    never returned — see the handlers.
+    """
+    return {
+        "shareUrl": participant_url(headers, fallback_host),
+        "joinCode": join_code,
+    }
 
 
 class JoinLimiter:

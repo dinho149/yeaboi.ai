@@ -44,7 +44,7 @@ from urllib.parse import parse_qs, urlparse
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.page import build_board_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import make_join_code, make_token
+from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
 
@@ -191,7 +191,34 @@ class _RetroHandler(BaseHTTPRequestHandler):
                 return
             self._send_qr()
             return
+        if path == "/api/invite":  # the link + code to hand to a teammate
+            if not self._authed():
+                self._send_json(403, {"error": "forbidden"})
+                return
+            self._send_invite()
+            return
         self._send_json(404, {"error": "not found"})
+
+    def _send_invite(self) -> None:
+        """Answer ``GET /api/invite`` with what a participant needs to join.
+
+        Why an endpoint and not the boot payload: ``GET /`` is unauthenticated, so
+        everything in the JSON island is readable by any LAN peer without a token
+        (``retro/page.py`` says so at the top of ``board_config``). The join code
+        put there would be the gate handing out its own key.
+
+        Gated on the plain token rather than the admin secret. Anyone asking has
+        already typed this code to get in, so returning it to them reveals nothing
+        — and the alternative, admin-only, would mean the one person who does not
+        need the invite is the only one who can copy it.
+
+        The host link is deliberately absent. It carries the admin secret, and
+        every participant can read anything this endpoint returns.
+        """
+        fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
+        # RetroServer.display_code is an alias for join_code; the handler only
+        # ever sees the ThreadingHTTPServer, which carries the latter.
+        self._send_json(200, invite_payload(self.headers, fallback, self._join_code))
 
     def _serve_state(self) -> None:
         """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
@@ -217,8 +244,8 @@ class _RetroHandler(BaseHTTPRequestHandler):
         on the code gate — a scan alone does not grant access; the visitor still
         types the join code. Best-effort — 501 if segno is unavailable.
         """
-        host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = f"http://{host}/"
+        fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
+        url = participant_url(self.headers, fallback)
         try:
             import io
 

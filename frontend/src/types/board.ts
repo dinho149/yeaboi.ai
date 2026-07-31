@@ -188,6 +188,31 @@ export interface TicketView {
   final_points: number | null;
 }
 
+/**
+ * What `GET /api/invite` answers with, on both boards.
+ *
+ * Shared shape, one endpoint per server. It is a fetch rather than a field in
+ * the boot payload for a reason worth keeping written down: `GET /` is
+ * unauthenticated, so anything in the JSON island is readable by any LAN peer
+ * without a token — putting the join code there would be the gate handing out
+ * its own key.
+ *
+ * There is no host link here and there must never be one. It carries the admin
+ * secret, and every participant can read this response.
+ */
+export interface InviteInfo {
+  /** The code a teammate types on the gate, e.g. `"K3P9-2QXA"`. */
+  joinCode: string;
+  /**
+   * The token-free URL to hand out, as *this* visitor reached the board.
+   *
+   * Derived from the request, not from the server's own address: the same
+   * process answers on a LAN IP and on a `trycloudflare.com` hostname, and
+   * copying the wrong one to a remote teammate sends them nowhere.
+   */
+  shareUrl: string;
+}
+
 /** A rail row: enough to list and mark a ticket, never its body. */
 export interface TicketMeta {
   key: string;

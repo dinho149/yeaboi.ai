@@ -327,6 +327,53 @@ class TestQrEndpoint:
         assert b"<svg" in body  # segno inline SVG
 
 
+class TestInviteEndpoint:
+    """What the browser's invite panel copies to a teammate's clipboard."""
+
+    def test_token_gated(self, running_server):
+        srv, _ = running_server
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _get(f"http://127.0.0.1:{srv.port}/api/invite")
+        assert exc.value.code == 403
+
+    def test_returns_the_join_code_and_a_token_free_url(self, running_server):
+        srv, _ = running_server
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["joinCode"] == srv.join_code
+        assert body["shareUrl"].endswith("/")
+        assert "token=" not in body["shareUrl"]  # it is the *participant* link
+
+    def test_never_returns_the_host_link_or_the_admin_secret(self, running_server):
+        # The host link skips the gate and carries the admin secret, and every
+        # participant can read this response. Handing it out here would promote
+        # the whole room to host.
+        srv, _ = running_server
+        raw = _get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}").read().decode()
+        assert srv.admin_token not in raw
+        assert srv.token not in raw
+
+    def test_url_follows_the_host_header_so_a_tunnel_link_is_the_tunnel_link(self, running_server):
+        # The server answers on a LAN IP and on a trycloudflare hostname at once;
+        # only the request knows which one this visitor arrived on. Copying the
+        # LAN URL to a remote teammate is the bug this prevents.
+        srv, _ = running_server
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}",
+            headers={"Host": "abc-def.trycloudflare.com", "X-Forwarded-Proto": "https"},
+        )
+        body = json.load(urllib.request.urlopen(req, timeout=5))
+        assert body["shareUrl"] == "https://abc-def.trycloudflare.com/"
+
+    def test_falls_back_to_http_without_a_forwarded_proto(self, running_server):
+        srv, _ = running_server
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}",
+            headers={"Host": "192.168.1.20:8712"},
+        )
+        body = json.load(urllib.request.urlopen(req, timeout=5))
+        assert body["shareUrl"] == "http://192.168.1.20:8712/"
+
+
 class TestCardMutations:
     def test_edit_author_only(self, running_server):
         srv, _ = running_server

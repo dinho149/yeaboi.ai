@@ -50,7 +50,7 @@ from yeaboi.poker.page import build_poker_html
 # Reuse retro's LAN/share-code primitives verbatim — one implementation, two modes.
 from yeaboi.retro.server import encode_share_code, get_lan_ip
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import make_join_code, make_token
+from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
 
@@ -309,7 +309,24 @@ class _PokerHandler(BaseHTTPRequestHandler):
                 return
             self._send_qr()
             return
+        if path == "/api/invite":  # the link + code to hand to a teammate
+            if not self._authed():
+                self._send_json(403, {"error": "forbidden"})
+                return
+            self._send_invite()
+            return
         self._send_json(404, {"error": "not found"})
+
+    def _send_invite(self) -> None:
+        """Answer ``GET /api/invite`` with what a participant needs to join.
+
+        Same contract and same reasoning as retro's — see ``retro/server.py``.
+        The short version: the join code cannot ride the boot payload because
+        ``GET /`` is unauthenticated, and the host link is never returned because
+        it carries the admin secret.
+        """
+        fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
+        self._send_json(200, invite_payload(self.headers, fallback, self._join_code))
 
     def _serve_state(self) -> None:
         """Answer ``GET /api/state``, holding the request when ``?wait=`` is set.
@@ -332,8 +349,8 @@ class _PokerHandler(BaseHTTPRequestHandler):
         The Host header keeps it correct over both LAN and the Cloudflare tunnel;
         the QR is token-free so scanning it lands on the code gate.
         """
-        host = self.headers.get("Host") or f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = f"http://{host}/"
+        fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
+        url = participant_url(self.headers, fallback)
         try:
             import io
 

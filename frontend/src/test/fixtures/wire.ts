@@ -49,9 +49,10 @@
 
 import type { DeckBoot } from '../../deck/boot';
 import type { ExportBoot, ExportReport } from '../../export/boot';
-import type { PokerState, RetroState, TicketView } from '../../types/board';
+import type { InviteInfo, PokerState, RetroState, TicketView } from '../../types/board';
 
 import deckJson from './deck.json';
+import inviteJson from './invite.json';
 import exportAnonymizeJson from './export.anonymize.json';
 import exportPerformanceJson from './export.performance.json';
 import exportPlanJson from './export.plan.json';
@@ -81,6 +82,9 @@ export const POKER_REVEALED_WIRE = pokerRevealedJson as PokerState;
 
 /** The floor is open, viewed as the low voter (`duel.mine_role === 'low'`). */
 export const POKER_DUEL_WIRE = pokerDuelJson as PokerState;
+
+/** What `GET /api/invite` answers with — the participant link and the code. */
+export const INVITE_WIRE = inviteJson as InviteInfo;
 
 /** What `GET /api/ticket` answers with — display fields only. */
 export const TICKET_PEEK_WIRE = ticketPeekJson as TicketView;
@@ -126,6 +130,7 @@ void (pokerVotingJson satisfies Widened<PokerState>);
 void (pokerRevealedJson satisfies Widened<PokerState>);
 void (pokerDuelJson satisfies Widened<PokerState>);
 void (ticketPeekJson satisfies Widened<TicketView>);
+void (inviteJson satisfies Widened<InviteInfo>);
 void (deckJson satisfies Widened<DeckBoot>);
 void (exportAnonymizeJson satisfies Widened<BootOf<'anonymize'>>);
 void (exportPerformanceJson satisfies Widened<BootOf<'performance'>>);
