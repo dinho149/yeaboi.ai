@@ -14,6 +14,7 @@ import pytest
 
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.server import JoinLimiter, PokerServer
+from yeaboi.web.security import DOCUMENT_HEADERS
 
 
 def _tickets(n: int = 3) -> list[dict]:
@@ -669,3 +670,19 @@ class TestUrls:
         finally:
             srv.stop()
         srv.stop()  # idempotent
+
+
+class TestSecurityHeaders:
+    """Same shared header set as the retro board; see web/security.py."""
+
+    def test_document_carries_every_shared_header(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name
+
+    def test_api_responses_carry_them_too(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name

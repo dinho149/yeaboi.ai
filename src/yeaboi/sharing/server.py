@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from yeaboi.sharing.access import JoinLimiter, make_join_code, make_token
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
+from yeaboi.web.security import send_document
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +55,7 @@ class _OutputHandler(BaseHTTPRequestHandler):
         return bool(supplied) and secrets.compare_digest(supplied, token)
 
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        if csp is not None:
-            self.send_header("Content-Security-Policy", csp)
-        self.end_headers()
-        self.wfile.write(body)
+        send_document(self, code, body, content_type, csp=csp)
 
     def _json(self, code: int, payload: dict) -> None:
         self._send(code, json.dumps(payload).encode(), "application/json")

@@ -9,6 +9,7 @@ import pytest
 
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.server import JoinLimiter, RetroServer, make_token
+from yeaboi.web.security import DOCUMENT_HEADERS
 
 
 class TestJoinLimiter:
@@ -539,3 +540,29 @@ class TestNoSecretLogging:
         blob = "\n".join(r.getMessage() for r in caplog.records)
         assert srv.token not in blob
         assert srv.admin_token not in blob
+
+
+class TestSecurityHeaders:
+    """Every response carries the shared protective header set.
+
+    The board sent a bare ``Cache-Control`` for its whole life while the share
+    server — whose documents are inert — carried a full set. This is the
+    surface a stranger with the tunnel URL can type into, so it is the one that
+    wanted the headers most. See ``yeaboi/web/security.py``.
+    """
+
+    def test_document_carries_every_shared_header(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name
+
+    def test_api_responses_carry_them_too(self, running_server):
+        srv, _ = running_server
+        headers = _get(f"http://127.0.0.1:{srv.port}/api/state?token={srv.token}").headers
+        for name, value in DOCUMENT_HEADERS:
+            assert headers[name] == value, name
+
+    def test_board_may_not_be_framed(self, running_server):
+        srv, _ = running_server
+        assert _get(f"http://127.0.0.1:{srv.port}/").headers["X-Frame-Options"] == "DENY"

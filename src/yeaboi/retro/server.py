@@ -49,6 +49,7 @@ from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
+from yeaboi.web.security import send_document
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +119,11 @@ class _RetroHandler(BaseHTTPRequestHandler):
         return bool(admin) and secrets.compare_digest(admin, self._admin_token)
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        # The board used to send a Cache-Control and nothing else, while the
+        # share server — whose documents are inert — carried a full protective
+        # set. Backwards: this is the surface a stranger with the tunnel URL can
+        # type into. Both now go through one place. See yeaboi/web/security.py.
+        send_document(self, code, body, content_type)
 
     def _send_json(self, code: int, obj: dict) -> None:
         self._send(code, json.dumps(obj).encode(), "application/json")

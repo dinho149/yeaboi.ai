@@ -53,6 +53,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 from yeaboi.sharing.events import state_etag
+from yeaboi.web.security import send_document, send_headers
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from http.server import BaseHTTPRequestHandler
@@ -69,22 +70,18 @@ MAX_WAIT_SECONDS = 25.0
 
 def send_state(handler: BaseHTTPRequestHandler, snapshot: Mapping[str, object], etag: str, if_none_match: str) -> None:
     """Send ``snapshot`` as JSON, or a bare 304 when the client already has it."""
+    # Both branches carry the shared header set from web/security.py. This is the
+    # boards' busiest endpoint by a wide margin — every open board polls it
+    # continuously — and it wrote its own headers for long enough that it was the
+    # last place still sending a bare `Cache-Control: no-store`.
     if if_none_match and if_none_match == etag:
-        handler.send_response(304)
-        handler.send_header("ETag", etag)
-        handler.send_header("Cache-Control", "no-store")
         # A 304 is defined to carry no body, so its framing needs no
         # Content-Length — HTTP/1.1 keep-alive stays intact without one.
+        send_headers(handler, 304, extra=(("ETag", etag),))
         handler.end_headers()
         return
     body = json.dumps(snapshot).encode()
-    handler.send_response(200)
-    handler.send_header("Content-Type", "application/json")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Cache-Control", "no-store")
-    handler.send_header("ETag", etag)
-    handler.end_headers()
-    handler.wfile.write(body)
+    send_document(handler, 200, body, "application/json", extra=(("ETag", etag),))
 
 
 def serve_state(

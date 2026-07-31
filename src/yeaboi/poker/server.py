@@ -51,6 +51,7 @@ from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
 from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
+from yeaboi.web.security import send_document
 
 logger = logging.getLogger(__name__)
 
@@ -268,12 +269,9 @@ class _PokerHandler(BaseHTTPRequestHandler):
         return bool(admin) and secrets.compare_digest(admin, self._admin_token)
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        # Same header set as the retro board and the share server; see
+        # yeaboi/web/security.py for why they are no longer three copies.
+        send_document(self, code, body, content_type)
 
     def _send_json(self, code: int, obj: dict) -> None:
         self._send(code, json.dumps(obj).encode(), "application/json")

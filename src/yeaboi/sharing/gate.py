@@ -15,33 +15,14 @@ from functools import lru_cache
 
 from yeaboi.web.assets import render_page
 
+# The two policies this module's surfaces run under live in ``web.security``
+# alongside the board's, so that all three are written and reviewed together.
+# Re-exported here because the gate is where callers expect to find them.
+from yeaboi.web.security import ARTIFACT_CSP, GATE_CSP
+
 logger = logging.getLogger(__name__)
 
-# Shared base. `default-src 'none'` means every fetch type is denied unless
-# named below, so anything added to a bundle that reaches the network fails
-# closed. Inline style and script are unavoidable — the whole point of these
-# documents is that they are one file with no external references — but that is
-# the *only* concession: with no external origins there is nowhere to exfiltrate
-# to, and with no 'unsafe-eval' a payload cannot be assembled from a string.
-_CSP_BASE = (
-    "default-src 'none'; img-src data:; style-src 'unsafe-inline'; "
-    "script-src 'unsafe-inline'; font-src data:; "
-    # base-uri: a <base> tag injected into the document would silently retarget
-    # every relative URL on the page, including the join POST.
-    "base-uri 'none'; frame-ancestors 'none'"
-)
-
-# The artifact is a finished snapshot. It has no reason to talk to anything.
-ARTIFACT_CSP = f"{_CSP_BASE}; connect-src 'none'; form-action 'none'"
-
-# The gate does exactly one thing the artifact does not: POST the code back to
-# its own origin. 'self' is the narrowest policy that permits it.
-#
-# form-action stays 'none' — the <form> exists for Enter-key semantics and its
-# submit handler always calls preventDefault, so a real form navigation only
-# happens if the script is broken, in which case it would leak the typed code
-# into a URL. Denying it turns that into a no-op instead.
-GATE_CSP = f"{_CSP_BASE}; connect-src 'self'; form-action 'none'"
+__all__ = ["ARTIFACT_CSP", "GATE_CSP", "render_gate_page"]
 
 # Shown only when scripting is off. It is also the entire server-rendered body:
 # an unauthenticated visitor must learn nothing about what is behind the gate,
