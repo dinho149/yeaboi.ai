@@ -4631,6 +4631,21 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
         return retro_document(report, history=_history_for(report))
 
+    def get_editable_session(run):
+        """A correctable retro, when the run is still readable."""
+        report = _report(run.run_id)
+        if report is None:
+            return None
+        from yeaboi.artifacts.session import EditableSession
+
+        return EditableSession(
+            report,
+            kind="retro",
+            db_path=_ana_dbp,
+            run_id=run.run_id,
+            history=tuple(_history_for(report)),
+        )
+
     def delete_run(run):
         with RetroStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
@@ -4652,6 +4667,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
         files_export=files_export,
         get_document=get_document,
         get_share_document=get_share_document,
+        get_editable_session=get_editable_session,
         share_theme=RETRO_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_retro_page(console, live, read_key, frame_time, supports_timeout),
@@ -4747,6 +4763,21 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
         return reporting_document(report, history=_history_for(run))
 
+    def get_editable_session(run):
+        """A correctable reporting, when the run is still readable."""
+        report = _report(run.run_id)
+        if report is None:
+            return None
+        from yeaboi.artifacts.session import EditableSession
+
+        return EditableSession(
+            report,
+            kind="reporting",
+            db_path=_ana_dbp,
+            run_id=run.run_id,
+            history=tuple(_history_for(run)),
+        )
+
     def delete_run(run):
         with ReportingStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
@@ -4768,6 +4799,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
         files_export=files_export,
         get_document=get_document,
         get_share_document=get_share_document,
+        get_editable_session=get_editable_session,
         share_theme=REPORTING_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_reporting_page(console, live, read_key, frame_time, supports_timeout),

@@ -132,3 +132,65 @@ class TestYesterdayContext:
     def test_fully_empty_member_omitted(self):
         prev = _prev_report(summary="", blockers="", outlook="")
         assert yesterday_context(prev) == {}
+
+
+class TestCorrectionsFeedForward:
+    """A corrected standup tells the next one more than its text.
+
+    The corrected text already arrives on its own, because a corrected row
+    supersedes its parent. What the flag adds is that the team *looked at this
+    and disagreed* — which is the part worth not repeating.
+    """
+
+    def _edit(self, path):
+        from yeaboi.artifacts.edits import Edit
+
+        return Edit(edit_id="e1", op="set", path=path, value="x")
+
+    def test_a_corrected_member_is_flagged(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.insights import yesterday_context
+
+        report = StandupReport(member_updates=(MemberUpdate(name="Ada", summary="Landed login."),))
+        out = yesterday_context(report, corrections=(self._edit("member_updates[name=Ada].summary"),))
+        assert out["Ada"]["corrected"] == ["summary"]
+
+    def test_an_uncorrected_member_carries_no_flag(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.insights import yesterday_context
+
+        report = StandupReport(
+            member_updates=(MemberUpdate(name="Ada", summary="a"), MemberUpdate(name="Grace", summary="b"))
+        )
+        out = yesterday_context(report, corrections=(self._edit("member_updates[name=Ada].summary"),))
+        assert "corrected" not in out["Grace"]
+
+    def test_an_escaped_name_is_read_back_correctly(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.insights import yesterday_context
+
+        report = StandupReport(member_updates=(MemberUpdate(name="Ada Lovelace", summary="a"),))
+        out = yesterday_context(report, corrections=(self._edit("member_updates[name=Ada%20Lovelace].summary"),))
+        assert out["Ada Lovelace"]["corrected"] == ["summary"]
+
+    def test_a_document_level_correction_flags_nobody(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.insights import yesterday_context
+
+        report = StandupReport(member_updates=(MemberUpdate(name="Ada", summary="a"),))
+        out = yesterday_context(report, corrections=(self._edit("team_summary"),))
+        assert "corrected" not in out["Ada"]
+
+    def test_an_unparseable_path_is_skipped_not_raised(self):
+        # A standup must not fail because a correction from last week was
+        # recorded by an older version of the grammar.
+        from yeaboi.standup.insights import corrected_members
+
+        assert corrected_members((self._edit("member_updates["),)) == {}
+
+    def test_no_corrections_is_the_shape_it_always_was(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+        from yeaboi.standup.insights import yesterday_context
+
+        report = StandupReport(member_updates=(MemberUpdate(name="Ada", summary="a"),))
+        assert yesterday_context(report) == yesterday_context(report, corrections=())

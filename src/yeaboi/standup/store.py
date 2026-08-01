@@ -583,27 +583,37 @@ class StandupStore:
             logger.warning("Failed to deserialize standup report for %s: %s", session_id, exc)
             return None
 
-    def get_previous_report(self, session_id: str, before_date: str) -> StandupReport | None:
-        """Return the newest successful/partial report dated strictly BEFORE ``before_date``.
+    def get_previous_run(self, session_id: str, before_date: str) -> tuple[int, str, StandupReport] | None:
+        """Return ``(row id, origin, report)`` for the newest report before ``before_date``.
 
         Date-scoped (not run-scoped) so a same-day rerun never becomes
         "yesterday" — the engine uses this as the previous standup when
         comparing each member's update day-over-day.
+
+        The row id and origin ride along because a *corrected* previous standup
+        is worth more to the next run than a generated one: it says the team
+        looked at this and told us it was wrong, and the engine can go and read
+        exactly what they changed.
         """
         row = self._conn.execute(
-            "SELECT report_json FROM standup_history "
+            "SELECT id, origin, report_json FROM standup_history "
             "WHERE session_id = ? AND standup_date != '' AND standup_date < ? "
             "AND status IN ('success', 'partial') "
             "ORDER BY standup_date DESC, run_at DESC LIMIT 1",
             (session_id, before_date),
         ).fetchone()
-        if row is None or not row[0]:
+        if row is None or not row[2]:
             return None
         try:
-            return _dict_to_standup_report(json.loads(row[0]))
+            return int(row[0]), str(row[1] or "generated"), _dict_to_standup_report(json.loads(row[2]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize previous standup report for %s: %s", session_id, exc)
             return None
+
+    def get_previous_report(self, session_id: str, before_date: str) -> StandupReport | None:
+        """The previous standup's report alone. See :meth:`get_previous_run`."""
+        found = self.get_previous_run(session_id, before_date)
+        return found[2] if found else None
 
     def get_history(self, session_id: str, limit: int = 30) -> list[dict]:
         """Return recent run metadata (newest first) for a session.

@@ -37,7 +37,7 @@ def get_standup_summary_prompt(
             "documentation_activity": [ {kind,title,status,source,repository}, ... ],
             "in_progress": [ {kind,title,status,source}, ... ],
             "self_report": str, "coverage": dict,
-            "yesterday": {"summary","blockers","outlook"} | {},
+            "yesterday": {"summary","blockers","outlook","corrected"?} | {},
             "blocker_signals": [str, ...]}] — one entry per team member.
             The three activity lists are already classified; "in_progress" holds tickets
             currently assigned to them and in progress (possibly untouched in
@@ -105,6 +105,11 @@ def get_standup_summary_prompt(
         "'progress_note' relating today's evidence to it: what continued, what got finished, what "
         "appears stalled (e.g. 'Wrapped up the login work from yesterday; PSOT-14 is still in "
         "review.'). When 'yesterday' is empty, 'progress_note' MUST be an empty string.\n"
+        "- A 'yesterday' object may carry a 'corrected' list naming fields the TEAM edited on that "
+        "previous standup by hand. Those fields are what the team says is true; the text beside them "
+        "is already their correction, not the original. Treat that as a signal you got something "
+        "wrong about this person before and be correspondingly careful — do not restate the version "
+        "they replaced, and do not describe the correction itself as new activity.\n"
         "- Write a one-sentence 'outlook' predicting the member's likely focus for the day ahead, "
         "grounded ONLY in their in-progress tickets, open pull requests, and self-report. Phrase it "
         "as an expectation ('Likely to continue …'), never as fact. Use an empty string when there "
