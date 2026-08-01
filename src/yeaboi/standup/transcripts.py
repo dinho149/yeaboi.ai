@@ -1,0 +1,569 @@
+"""Find, read and parse standup meeting transcripts.
+
+Everything here is deterministic and offline — no LLM, no network. The job is
+to turn "a file somebody dropped in a folder" into ``(TranscriptSource, turns)``
+that the review pipeline can reason over, and to be honest about what was
+skipped rather than silently reviewing nothing.
+
+Two sources, by design:
+
+- the **managed** folder ``~/.yeaboi/transcripts`` (``paths.get_transcripts_dir``).
+  It sits under ``ROOT_DIR``, so ``fs_policy`` already allows it and dropping a
+  file there needs no consent prompt.
+- an optional **external** folder from ``standup_config.transcript_dir`` (a
+  Zoom/Teams/Granola recordings folder). That one is outside the sandbox, so it
+  goes through ``fs_policy.resolve_and_check`` and can legitimately be denied —
+  notably on the unattended scheduled run, where nobody is present to consent.
+  A denial degrades to "managed folder only" plus a warning; it is never fatal.
+
+Attribution is by DATE, not by directory: a transcript is matched to the standup
+it discusses, so the managed folder stays flat and the user has nothing to get
+right beyond dropping the file.
+
+The "already reviewed" ledger is keyed by **content hash**, not path, so
+renaming or re-dropping a file never re-spends an LLM call while genuinely
+editing it does. Files are never moved or rewritten — the database is the
+bookkeeping precisely so the user's folder stays theirs.
+
+# See docs: "Guardrails" — the filesystem sandbox layer (fs_policy)
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+from yeaboi.agent.state import TranscriptSource
+
+logger = logging.getLogger(__name__)
+
+TRANSCRIPT_SUFFIXES: tuple[str, ...] = (".txt", ".md", ".vtt", ".srt", ".json")
+
+# Read ceiling per file. Mirrors analysis/doc_quality._READ_CHARS: an explicit
+# limit that is REPORTED (source.truncated) rather than a silent trim.
+_MAX_CHARS = 100_000
+# Refuse to even open anything larger — a 200 MB "transcript" is a mistake, and
+# stat() is free next to reading it.
+_MAX_BYTES = 5_000_000
+_MAX_FILES_PER_SWEEP = 10
+# How far back an automatic sweep will look. Long enough to cover a holiday
+# weekend or a week off, short enough that dropping an old archive folder in
+# doesn't trigger a month of reviews.
+_LOOKBACK_DAYS = 14
+
+# Below this share of speaker-labelled lines we stop trusting attribution and
+# mark the source "unlabelled" — the review then restricts what such a
+# transcript is allowed to conclude (see transcript_review).
+_LABELLED_LINE_RATIO = 0.6
+_MIN_LABELLED_LINES = 2
+
+# "Alice:", "Alice Smith (00:14):", "  Bob Jones  :" — a speaker label opening a
+# turn. Bounded name length and a required colon keep it from eating prose lines
+# that merely contain a colon ("Note: we shipped").
+_SPEAKER_RE = re.compile(r"^\s*([^\s:][^:\n]{0,48}?)\s*(?:\(\d{1,2}:\d{2}(?::\d{2})?\))?\s*:\s+(.*)$")
+# A speaker label must look like a name, not a sentence — reject anything with
+# terminal punctuation or too many words.
+_MAX_SPEAKER_WORDS = 5
+
+_VTT_TIMING_RE = re.compile(r"-->")
+_VTT_VOICE_RE = re.compile(r"<v\s+([^>]+?)\s*>(.*?)(?:</v>)?\s*$", re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_SRT_INDEX_RE = re.compile(r"^\d+$")
+
+_ISO_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+_COMPACT_DATE_RE = re.compile(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)")
+_TEXT_DATE_RE = re.compile(
+    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b",
+    re.IGNORECASE,
+)
+_MONTHS = {
+    m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)
+}
+# Only the head of the file is scanned for a date — a date deep in the body is
+# far more likely to be someone saying "let's ship by 2026-09-01".
+_DATE_SCAN_CHARS = 2_000
+
+_MD_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|#{1,6}\s+|>\s?)")
+
+
+@dataclass(frozen=True)
+class TranscriptTurn:
+    """One contiguous stretch of speech attributed to one raw speaker label."""
+
+    speaker: str = ""  # the raw label from the file; "" when unattributed
+    text: str = ""
+    index: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+
+
+def content_hash(path: Path) -> str:
+    """Return a stable content hash for the "already reviewed" ledger.
+
+    Content-keyed rather than path-keyed on purpose: a rename must not re-spend
+    an LLM call, and an edit genuinely is new material.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65_536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:32]
+
+
+def _fmt_of(path: Path) -> str:
+    return path.suffix.lower().lstrip(".")
+
+
+# ---------------------------------------------------------------------------
+# Parsing — one function per format, all pure, none of them raise
+# ---------------------------------------------------------------------------
+
+
+def _looks_like_speaker(label: str) -> bool:
+    """Reject sentence-shaped 'labels' so prose with a colon isn't split."""
+    label = label.strip()
+    if not label or len(label.split()) > _MAX_SPEAKER_WORDS:
+        return False
+    return not label.endswith((".", "!", "?", ",", ";"))
+
+
+def _parse_labelled_lines(text: str) -> tuple[TranscriptTurn, ...]:
+    """Parse ``Speaker: said something`` lines; unlabelled lines continue the turn.
+
+    Shared by .txt/.md and used as the fallback inside the caption formats,
+    which frequently carry the same convention inside their cue payloads.
+    """
+    turns: list[dict] = []
+    for raw_line in text.splitlines():
+        line = _MD_PREFIX_RE.sub("", raw_line).strip()
+        if not line:
+            continue
+        match = _SPEAKER_RE.match(line)
+        if match and _looks_like_speaker(match.group(1)):
+            speaker, said = match.group(1).strip(), match.group(2).strip()
+            # Consecutive lines from one speaker read as one turn.
+            if turns and turns[-1]["speaker"] == speaker:
+                turns[-1]["text"] = f"{turns[-1]['text']} {said}".strip()
+            else:
+                turns.append({"speaker": speaker, "text": said})
+        elif turns:
+            turns[-1]["text"] = f"{turns[-1]['text']} {line}".strip()
+        else:
+            # Leading prose before any speaker label — keep it, unattributed.
+            turns.append({"speaker": "", "text": line})
+    return tuple(
+        TranscriptTurn(speaker=t["speaker"], text=t["text"], index=i) for i, t in enumerate(turns) if t["text"]
+    )
+
+
+def _parse_vtt(text: str) -> tuple[TranscriptTurn, ...]:
+    """WebVTT: drop the header, NOTE blocks, cue ids and timing lines."""
+    lines: list[str] = []
+    skipping_note = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            skipping_note = False
+            continue
+        if line.upper().startswith("WEBVTT"):
+            continue
+        if line.startswith("NOTE"):
+            skipping_note = True
+            continue
+        if skipping_note or _VTT_TIMING_RE.search(line):
+            continue
+        voice = _VTT_VOICE_RE.match(line)
+        if voice:
+            lines.append(f"{voice.group(1).strip()}: {_TAG_RE.sub('', voice.group(2)).strip()}")
+            continue
+        stripped = _TAG_RE.sub("", line).strip()
+        # A bare cue identifier (no spoken content) carries nothing.
+        if not stripped or _SRT_INDEX_RE.match(stripped):
+            continue
+        lines.append(stripped)
+    return _parse_labelled_lines("\n".join(lines))
+
+
+def _parse_srt(text: str) -> tuple[TranscriptTurn, ...]:
+    """SubRip: same as VTT minus the header, with numeric index lines."""
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not _SRT_INDEX_RE.match(line.strip()) and not _VTT_TIMING_RE.search(line)
+    ]
+    return _parse_labelled_lines("\n".join(_TAG_RE.sub("", line) for line in lines))
+
+
+_JSON_SPEAKER_KEYS = ("speaker", "participant", "name", "from", "speaker_name", "user")
+_JSON_TEXT_KEYS = ("text", "content", "words", "value", "transcript", "message")
+
+
+def _json_entry_to_turn(entry: dict) -> tuple[str, str]:
+    speaker = next((str(entry[k]).strip() for k in _JSON_SPEAKER_KEYS if entry.get(k)), "")
+    text = ""
+    for key in _JSON_TEXT_KEYS:
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            break
+        # Deepgram/AssemblyAI style: a list of word objects.
+        if isinstance(value, list):
+            words = [str(w.get("text", w.get("word", ""))) for w in value if isinstance(w, dict)]
+            if words:
+                text = " ".join(w for w in words if w).strip()
+                break
+    return speaker, text
+
+
+def _parse_json(text: str) -> tuple[TranscriptTurn, ...]:
+    """Three concrete shapes plus a dump-to-text fallback.
+
+    "JSON" is not a transcript format, so this handles the shapes vendors
+    actually emit and degrades to unlabelled text rather than pretending to
+    support arbitrary JSON.
+    """
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("transcripts: JSON did not parse — falling back to raw text")
+        return _parse_labelled_lines(text)
+
+    entries: list[dict] = []
+    # "Recognised" is tracked separately from "produced turns": an empty
+    # segments list is a valid EMPTY transcript, and dumping "[]" back through
+    # the text parser would invent a turn out of punctuation.
+    recognised = False
+    if isinstance(data, list):
+        entries = [e for e in data if isinstance(e, dict)]
+        recognised = True
+    elif isinstance(data, dict):
+        for key in ("segments", "transcript", "monologues", "results", "utterances", "entries"):
+            value = data.get(key)
+            if isinstance(value, list):
+                entries = [e for e in value if isinstance(e, dict)]
+                recognised = True
+                break
+
+    turns: list[TranscriptTurn] = []
+    for entry in entries:
+        speaker, said = _json_entry_to_turn(entry)
+        # Rev.ai "monologues" nest their content under "elements".
+        if not said and isinstance(entry.get("elements"), list):
+            said = " ".join(str(el.get("value", "")) for el in entry["elements"] if isinstance(el, dict)).strip()
+        if said:
+            turns.append(TranscriptTurn(speaker=speaker, text=said, index=len(turns)))
+    if turns or recognised:
+        return tuple(turns)
+
+    logger.warning("transcripts: JSON had no recognised transcript shape — falling back to raw text")
+    return _parse_labelled_lines(text if not isinstance(data, str) else data)
+
+
+def parse(text: str, fmt: str) -> tuple[TranscriptTurn, ...]:
+    """Parse transcript text into turns. Never raises; unknown format → text rules."""
+    try:
+        if fmt == "vtt":
+            return _parse_vtt(text)
+        if fmt == "srt":
+            return _parse_srt(text)
+        if fmt == "json":
+            return _parse_json(text)
+        return _parse_labelled_lines(text)
+    except Exception as exc:  # a malformed file must never break a standup
+        logger.warning("transcripts: parse failed for fmt=%s: %s", fmt, exc)
+        return ()
+
+
+# ---------------------------------------------------------------------------
+# Date attribution
+# ---------------------------------------------------------------------------
+
+
+def _valid_date(year: int, month: int, day: int) -> str:
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return ""
+
+
+def _scan_date(text: str) -> str:
+    match = _ISO_DATE_RE.search(text)
+    if match:
+        found = _valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        if found:
+            return found
+    match = _TEXT_DATE_RE.search(text)
+    if match:
+        month = _MONTHS.get(match.group(1)[:3].lower(), 0)
+        if month:
+            found = _valid_date(int(match.group(3)), month, int(match.group(2)))
+            if found:
+                return found
+    return ""
+
+
+def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
+    """Work out which standup a transcript covers, most reliable signal first.
+
+    Filename → structured JSON field → head of the content → file mtime. A date
+    in the future is not a standup that happened, so it falls back to mtime.
+    """
+    today = today or date.today()
+
+    def _clamp(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            return value if date.fromisoformat(value) <= today else ""
+        except ValueError:
+            return ""
+
+    # 1. The filename — what an export tool and a human both tend to get right.
+    stem = path.stem
+    match = _ISO_DATE_RE.search(stem) or _COMPACT_DATE_RE.search(stem)
+    if match:
+        found = _clamp(_valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3))))
+        if found:
+            return found
+
+    head = text[:_DATE_SCAN_CHARS]
+
+    # 2. A structured date field, for the JSON shapes that carry one.
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            data = None
+        if isinstance(data, dict):
+            for key in ("date", "start_time", "meeting_date", "created_at", "started_at"):
+                value = data.get(key)
+                if isinstance(value, str):
+                    found = _clamp(_scan_date(value))
+                    if found:
+                        return found
+
+    # 3. A date in the head of the file (a VTT NOTE block, a markdown title).
+    found = _clamp(_scan_date(head))
+    if found:
+        return found
+
+    # 4. mtime. Weakest signal, so it is logged — a wrong date reviews the wrong
+    #    report, and that is worth being able to trace afterwards.
+    try:
+        stamp = datetime.fromtimestamp(path.stat().st_mtime).date()
+    except OSError:
+        return ""
+    inferred = min(stamp, today).isoformat()
+    logger.info("transcripts: %s has no date — using mtime %s", path.name, inferred)
+    return inferred
+
+
+# ---------------------------------------------------------------------------
+# Reading one file
+# ---------------------------------------------------------------------------
+
+
+def read_transcript(
+    path: Path, *, external: bool = False, today: date | None = None
+) -> tuple[TranscriptSource, tuple[TranscriptTurn, ...]]:
+    """Read and parse one transcript. Returns an empty turn tuple on failure.
+
+    The sandbox check runs even for the managed folder: a symlink inside
+    ``~/.yeaboi/transcripts`` pointing at ``~/.ssh/id_rsa`` resolves outside the
+    allowed tree, and ``resolve_and_check`` is what catches that.
+    """
+    from yeaboi.fs_policy import resolve_and_check
+
+    resolved = resolve_and_check(path, mode="read", context="Standup — transcript review")
+    raw = resolved.read_text(encoding="utf-8", errors="replace")
+    truncated = len(raw) > _MAX_CHARS
+    if truncated:
+        logger.warning("transcripts: %s exceeded %d chars — reviewing the head only", path.name, _MAX_CHARS)
+        raw = raw[:_MAX_CHARS]
+
+    fmt = _fmt_of(resolved)
+    turns = parse(raw, fmt)
+    labelled = sum(1 for t in turns if t.speaker)
+    attribution = (
+        "labelled"
+        if turns and labelled >= _MIN_LABELLED_LINES and labelled / len(turns) >= _LABELLED_LINE_RATIO
+        else "unlabelled"
+    )
+    speakers = tuple(dict.fromkeys(t.speaker for t in turns if t.speaker))
+
+    source = TranscriptSource(
+        path=str(resolved),
+        filename=resolved.name,
+        fmt=fmt,
+        covered_date=infer_date(resolved, raw, today=today),
+        char_count=len(raw),
+        truncated=truncated,
+        speakers=speakers,
+        attribution=attribution,
+        external=external,
+    )
+    logger.info(
+        "transcripts: read %s (fmt=%s date=%s turns=%d speakers=%d attribution=%s)",
+        source.filename,
+        fmt,
+        source.covered_date,
+        len(turns),
+        len(speakers),
+        attribution,
+    )
+    return source, turns
+
+
+def to_prompt_text(turns: tuple[TranscriptTurn, ...], *, limit: int) -> str:
+    """Render turns as ``Speaker: text`` lines, keeping the TAIL within the limit.
+
+    The tail, not the head: the end of a standup is where the corrections land
+    ("oh, and I also did…"), which is exactly the material this feature exists
+    to catch.
+    """
+    lines = [f"{t.speaker}: {t.text}" if t.speaker else t.text for t in turns]
+    text = "\n".join(lines)
+    if len(text) <= limit:
+        return text
+    clipped = text[-limit:]
+    return "…(earlier discussion omitted)…\n" + clipped[clipped.find("\n") + 1 :]
+
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+
+
+def _candidate_files(directory: Path, *, recurse: bool) -> list[Path]:
+    """List plausible transcript files in a directory, newest name order last."""
+    try:
+        entries = sorted(directory.rglob("*") if recurse else directory.iterdir())
+    except OSError as exc:
+        logger.warning("transcripts: cannot list %s: %s", directory, exc)
+        return []
+    out: list[Path] = []
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            if not entry.is_file():
+                continue
+            if entry.suffix.lower() not in TRANSCRIPT_SUFFIXES:
+                logger.debug("transcripts: skipping %s (unsupported suffix)", entry.name)
+                continue
+            if entry.stat().st_size > _MAX_BYTES:
+                logger.warning("transcripts: skipping %s (larger than %d bytes)", entry.name, _MAX_BYTES)
+                continue
+        except OSError as exc:
+            logger.warning("transcripts: cannot stat %s: %s", entry, exc)
+            continue
+        out.append(entry)
+    return out
+
+
+def external_dir(config: dict | None) -> str:
+    """The configured external transcript folder, or "" when unset."""
+    return str((config or {}).get("transcript_dir") or "").strip()
+
+
+def discover(
+    session_id: str,
+    *,
+    config: dict | None = None,
+    before_date: str = "",
+    db_path: Path | None = None,
+    today: date | None = None,
+    include_reviewed: bool = False,
+) -> tuple[list[tuple[Path, bool]], list[str]]:
+    """Find unreviewed transcripts worth reviewing.
+
+    Returns ``([(path, is_external), ...], warnings)``. Deliberately returns
+    warnings rather than raising: a denied external folder, an unreadable file
+    or a missing directory must degrade the sweep, never fail the standup that
+    is about to run.
+
+    ``before_date`` restricts to transcripts covering EARLIER standups (the
+    automatic pre-standup sweep); blank means "any date" (an on-demand review).
+    """
+    from yeaboi.paths import get_db_path, get_transcripts_dir
+    from yeaboi.standup.store import StandupStore
+
+    warnings: list[str] = []
+    today = today or date.today()
+
+    directories: list[tuple[Path, bool]] = [(get_transcripts_dir(), False)]
+    configured = external_dir(config)
+    if configured:
+        from yeaboi.fs_policy import SandboxViolationError, resolve_and_check
+
+        try:
+            directories.append(
+                (resolve_and_check(configured, mode="read", context="Standup — transcript folder"), True)
+            )
+        except SandboxViolationError as exc:
+            # The scheduled run is non-interactive, so it cannot consent. Say so
+            # once, with the exception's own actionable message, instead of
+            # quietly reviewing nothing week after week.
+            logger.warning("transcripts: external folder denied: %s", exc)
+            warnings.append(f"Transcript folder skipped — {exc}")
+
+    seen_hashes: set[str] = set()
+    if not include_reviewed:
+        with StandupStore(db_path or get_db_path()) as store:
+            seen_hashes = store.reviewed_transcript_hashes(session_id)
+
+    cutoff = ""
+    if before_date:
+        try:
+            cutoff = (date.fromisoformat(before_date) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+        except ValueError:
+            cutoff = ""
+
+    dated: list[tuple[str, Path, bool]] = []
+    for directory, is_external in directories:
+        if not directory.is_dir():
+            if is_external:
+                warnings.append(f"Transcript folder not found: {directory}")
+            continue
+        for path in _candidate_files(directory, recurse=is_external):
+            try:
+                digest = content_hash(path)
+            except OSError as exc:
+                logger.warning("transcripts: cannot hash %s: %s", path, exc)
+                continue
+            if digest in seen_hashes:
+                logger.debug("transcripts: skipping %s (already reviewed)", path.name)
+                continue
+            try:
+                head = path.read_text(encoding="utf-8", errors="replace")[:_DATE_SCAN_CHARS]
+            except OSError as exc:
+                logger.warning("transcripts: cannot read %s: %s", path, exc)
+                continue
+            covered = infer_date(path, head, today=today)
+            if before_date and not (cutoff <= covered < before_date):
+                logger.debug("transcripts: skipping %s (covers %s, outside window)", path.name, covered)
+                continue
+            dated.append((covered, path, is_external))
+
+    dated.sort(key=lambda item: (item[0], item[1].name))
+    if len(dated) > _MAX_FILES_PER_SWEEP:
+        dropped = len(dated) - _MAX_FILES_PER_SWEEP
+        logger.warning("transcripts: %d transcript(s) beyond the per-sweep cap were deferred", dropped)
+        warnings.append(f"{dropped} more transcript(s) found — they will be reviewed on the next run.")
+        dated = dated[:_MAX_FILES_PER_SWEEP]
+
+    logger.info(
+        "transcripts: discovered %d transcript(s) for session=%s before=%s",
+        len(dated),
+        session_id,
+        before_date or "-",
+    )
+    return [(path, is_external) for _covered, path, is_external in dated], warnings

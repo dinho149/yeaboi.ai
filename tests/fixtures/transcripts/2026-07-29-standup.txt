@@ -1,0 +1,4 @@
+Alice (09:31): I picked up YB-14 yesterday.
+It took most of the afternoon.
+Bob: Nice. I reviewed two pull requests.
+Alice: Also, I updated the runbook in Confluence.

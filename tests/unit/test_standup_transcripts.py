@@ -1,0 +1,454 @@
+"""Unit tests for standup transcript discovery, reading and parsing."""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from yeaboi.standup import transcripts
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "transcripts"
+
+
+@pytest.fixture
+def db_path(tmp_path):
+    return tmp_path / "sessions.db"
+
+
+@pytest.fixture
+def managed(tmp_path, monkeypatch):
+    """Point the managed transcript folder at a temp dir."""
+    d = tmp_path / "transcripts"
+    d.mkdir()
+    monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", d)
+    return d
+
+
+def _copy(name: str, into: Path) -> Path:
+    dest = into / name
+    dest.write_bytes((FIXTURES / name).read_bytes())
+    return dest
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseText:
+    def test_speaker_lines_become_turns(self):
+        turns = transcripts.parse("Alice: hello\nBob: hi there\n", "txt")
+        assert [(t.speaker, t.text) for t in turns] == [("Alice", "hello"), ("Bob", "hi there")]
+
+    def test_timestamped_labels(self):
+        turns = transcripts.parse("Alice (09:31): I picked up YB-14.\n", "txt")
+        assert turns[0].speaker == "Alice"
+        assert turns[0].text == "I picked up YB-14."
+
+    def test_continuation_lines_join_the_turn(self):
+        turns = transcripts.parse("Alice: one\ntwo\nthree\nBob: other\n", "txt")
+        assert turns[0].text == "one two three"
+        assert len(turns) == 2
+
+    def test_consecutive_same_speaker_merges(self):
+        turns = transcripts.parse("Alice: one\nAlice: two\n", "txt")
+        assert len(turns) == 1
+        assert turns[0].text == "one two"
+
+    def test_prose_with_a_colon_is_not_a_speaker(self):
+        """'Note: we shipped' is a sentence, not a speaker label."""
+        turns = transcripts.parse("Alice: hello\nNote that we shipped it, finally: yes.\n", "txt")
+        assert len(turns) == 1
+        assert "finally" in turns[0].text
+
+    def test_leading_prose_kept_unattributed(self):
+        turns = transcripts.parse("some preamble\nAlice: hello\n", "txt")
+        assert turns[0].speaker == ""
+        assert turns[0].text == "some preamble"
+
+    def test_markdown_bullets_stripped(self):
+        turns = transcripts.parse("- **Alice**: shipped it\n", "md")
+        assert turns[0].text == "shipped it"
+
+    def test_empty_text(self):
+        assert transcripts.parse("", "txt") == ()
+
+    def test_indices_are_sequential(self):
+        turns = transcripts.parse("Alice: a\nBob: b\nCarol: c\n", "txt")
+        assert [t.index for t in turns] == [0, 1, 2]
+
+
+class TestParseVtt:
+    def test_voice_tags(self):
+        turns = transcripts.parse((FIXTURES / "2026-07-30-standup.vtt").read_text(), "vtt")
+        assert [t.speaker for t in turns] == ["Alice", "Bob", "Alice"]
+        assert "design doc" in turns[2].text
+
+    def test_header_notes_and_timings_dropped(self):
+        text = "\n".join(t.text for t in transcripts.parse((FIXTURES / "2026-07-30-standup.vtt").read_text(), "vtt"))
+        assert "WEBVTT" not in text
+        assert "-->" not in text
+        assert "Recorded" not in text
+
+    def test_plain_cues_fall_back_to_name_colon(self):
+        vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nAlice: I shipped it.\n"
+        turns = transcripts.parse(vtt, "vtt")
+        assert turns[0].speaker == "Alice"
+
+
+class TestParseSrt:
+    def test_index_and_timing_lines_dropped(self):
+        turns = transcripts.parse((FIXTURES / "2026-07-27-standup.srt").read_text(), "srt")
+        assert [t.speaker for t in turns] == ["Alice", "Bob"]
+        assert "00:00" not in turns[0].text
+
+
+class TestParseJson:
+    def test_segments_shape(self):
+        turns = transcripts.parse((FIXTURES / "2026-07-26-standup.json").read_text(), "json")
+        assert [t.speaker for t in turns] == ["Alice", "Bob"]
+        assert "YB-20" in turns[0].text
+
+    def test_flat_list_shape(self):
+        turns = transcripts.parse('[{"participant": "Alice", "content": "hi"}]', "json")
+        assert (turns[0].speaker, turns[0].text) == ("Alice", "hi")
+
+    def test_monologues_elements_shape(self):
+        raw = '{"monologues": [{"speaker": "Alice", "elements": [{"value": "hello "}, {"value": "world"}]}]}'
+        turns = transcripts.parse(raw, "json")
+        assert turns[0].speaker == "Alice"
+        assert "hello" in turns[0].text and "world" in turns[0].text
+
+    def test_malformed_json_falls_back_to_text(self):
+        turns = transcripts.parse((FIXTURES / "malformed.json").read_text(), "json")
+        assert turns  # degraded, not empty — never raises
+
+    def test_unrecognised_shape_falls_back(self):
+        turns = transcripts.parse('{"nothing": "useful"}', "json")
+        assert isinstance(turns, tuple)
+
+    def test_empty_list(self):
+        assert transcripts.parse("[]", "json") == ()
+
+
+# ---------------------------------------------------------------------------
+# Date attribution
+# ---------------------------------------------------------------------------
+
+
+class TestInferDate:
+    def test_iso_in_filename_wins(self, tmp_path):
+        p = tmp_path / "2026-07-30-standup.txt"
+        p.write_text("meeting on 2020-01-01")
+        assert transcripts.infer_date(p, p.read_text(), today=date(2026, 8, 1)) == "2026-07-30"
+
+    def test_compact_date_in_filename(self, tmp_path):
+        p = tmp_path / "standup20260730.txt"
+        p.write_text("hello")
+        assert transcripts.infer_date(p, "hello", today=date(2026, 8, 1)) == "2026-07-30"
+
+    def test_json_date_field(self, tmp_path):
+        p = tmp_path / "meeting.json"
+        raw = '{"date": "2026-07-26", "segments": []}'
+        p.write_text(raw)
+        assert transcripts.infer_date(p, raw, today=date(2026, 8, 1)) == "2026-07-26"
+
+    def test_date_in_head_of_content(self, tmp_path):
+        p = tmp_path / "meeting.txt"
+        raw = "Standup notes for Jul 29, 2026\nAlice: hi"
+        p.write_text(raw)
+        assert transcripts.infer_date(p, raw, today=date(2026, 8, 1)) == "2026-07-29"
+
+    def test_falls_back_to_mtime(self, tmp_path):
+        import os
+        import time
+
+        p = tmp_path / "meeting.txt"
+        p.write_text("Alice: hi")
+        stamp = time.mktime(date(2026, 7, 20).timetuple())
+        os.utime(p, (stamp, stamp))
+        assert transcripts.infer_date(p, "Alice: hi", today=date(2026, 8, 1)) == "2026-07-20"
+
+    def test_future_date_in_filename_is_rejected(self, tmp_path):
+        """A future date is not a standup that happened."""
+        import os
+        import time
+
+        p = tmp_path / "2099-01-01-standup.txt"
+        p.write_text("Alice: hi")
+        stamp = time.mktime(date(2026, 7, 20).timetuple())
+        os.utime(p, (stamp, stamp))
+        assert transcripts.infer_date(p, "Alice: hi", today=date(2026, 8, 1)) == "2026-07-20"
+
+    def test_impossible_date_ignored(self, tmp_path):
+        p = tmp_path / "2026-13-45-standup.txt"
+        p.write_text("Alice: hi")
+        assert transcripts.infer_date(p, "Alice: hi", today=date(2026, 8, 1)) != "2026-13-45"
+
+    def test_date_deep_in_body_ignored(self, tmp_path):
+        """A date far into the transcript is usually someone naming a deadline."""
+        p = tmp_path / "meeting.txt"
+        raw = ("Alice: filler line\n" * 400) + "Bob: let's ship by 2020-01-01\n"
+        p.write_text(raw)
+        assert transcripts.infer_date(p, raw, today=date(2026, 8, 1)) != "2020-01-01"
+
+
+# ---------------------------------------------------------------------------
+# Reading
+# ---------------------------------------------------------------------------
+
+
+class TestReadTranscript:
+    def test_reads_and_describes(self, managed):
+        path = _copy("2026-07-30-standup.vtt", managed)
+        source, turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.fmt == "vtt"
+        assert source.covered_date == "2026-07-30"
+        assert source.filename == "2026-07-30-standup.vtt"
+        assert source.attribution == "labelled"
+        assert source.speakers == ("Alice", "Bob")
+        assert source.truncated is False
+        assert source.external is False
+        assert len(turns) == 3
+
+    def test_external_flag_recorded(self, managed):
+        path = _copy("2026-07-29-standup.txt", managed)
+        source, _ = transcripts.read_transcript(path, external=True, today=date(2026, 8, 1))
+        assert source.external is True
+
+    def test_unlabelled_transcript_is_marked(self, managed):
+        path = _copy("unlabelled.txt", managed)
+        source, turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.attribution == "unlabelled"
+        assert source.speakers == ()
+        assert turns
+
+    def test_oversized_content_is_truncated_and_reported(self, managed, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_CHARS", 100)
+        path = managed / "big.txt"
+        path.write_text("Alice: " + ("word " * 500))
+        source, _ = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.truncated is True
+        assert source.char_count == 100
+
+    def test_symlink_escaping_the_managed_dir_is_denied(self, managed):
+        """The sandbox check runs even inside ~/.yeaboi — a symlink can escape it.
+
+        Targets ~/.ssh rather than a tmp_path file on purpose: conftest
+        whitelists pytest's basetemp, so a link inside it proves nothing.
+        """
+        from yeaboi.fs_policy import SandboxViolationError
+
+        link = managed / "sneaky.txt"
+        link.symlink_to(Path.home() / ".ssh" / "id_rsa")
+        with pytest.raises(SandboxViolationError):
+            transcripts.read_transcript(link, today=date(2026, 8, 1))
+
+    def test_invalid_utf8_does_not_raise(self, managed):
+        path = managed / "binary.txt"
+        path.write_bytes(b"Alice: hi \xff\xfe there")
+        source, turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.char_count > 0
+        assert turns
+
+
+class TestContentHash:
+    def test_stable_for_same_content(self, tmp_path):
+        a, b = tmp_path / "a.txt", tmp_path / "b.txt"
+        a.write_text("same")
+        b.write_text("same")
+        assert transcripts.content_hash(a) == transcripts.content_hash(b)
+
+    def test_changes_with_content(self, tmp_path):
+        p = tmp_path / "a.txt"
+        p.write_text("one")
+        first = transcripts.content_hash(p)
+        p.write_text("two")
+        assert transcripts.content_hash(p) != first
+
+
+class TestToPromptText:
+    def test_renders_speaker_lines(self):
+        turns = transcripts.parse("Alice: hi\nBob: hello\n", "txt")
+        assert transcripts.to_prompt_text(turns, limit=1000) == "Alice: hi\nBob: hello"
+
+    def test_keeps_the_tail_when_over_limit(self):
+        """Corrections land at the END of a standup — that is what must survive."""
+        turns = transcripts.parse("\n".join(f"Alice: line {i}" for i in range(500)), "txt")
+        out = transcripts.to_prompt_text(turns, limit=200)
+        assert len(out) <= 260  # limit plus the elision marker
+        assert "line 499" in out
+        assert "omitted" in out
+
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+
+
+class TestDiscover:
+    def test_finds_managed_transcripts(self, managed, db_path):
+        _copy("2026-07-30-standup.vtt", managed)
+        found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["2026-07-30-standup.vtt"]
+        assert warnings == []
+
+    def test_orders_by_covered_date(self, managed, db_path):
+        for name in ("2026-07-30-standup.vtt", "2026-07-28-standup.md", "2026-07-29-standup.txt"):
+            _copy(name, managed)
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == [
+            "2026-07-28-standup.md",
+            "2026-07-29-standup.txt",
+            "2026-07-30-standup.vtt",
+        ]
+
+    def test_skips_unsupported_suffixes(self, managed, db_path):
+        (managed / "notes.pdf").write_text("nope")
+        (managed / "recording.m4a").write_bytes(b"nope")
+        _copy("2026-07-30-standup.vtt", managed)
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["2026-07-30-standup.vtt"]
+
+    def test_skips_dotfiles(self, managed, db_path):
+        (managed / ".hidden.txt").write_text("Alice: hi")
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert found == []
+
+    def test_skips_oversized_files(self, managed, db_path, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_BYTES", 10)
+        _copy("2026-07-30-standup.vtt", managed)
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert found == []
+
+    def test_skips_already_reviewed_content(self, managed, db_path):
+        from yeaboi.standup.store import StandupStore
+
+        path = _copy("2026-07-30-standup.vtt", managed)
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1",
+                path=str(path),
+                content_hash=transcripts.content_hash(path),
+                covered_date="2026-07-30",
+                review_id=1,
+            )
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert found == []
+
+    def test_renamed_file_is_still_skipped(self, managed, db_path):
+        """Content-keyed bookkeeping: renaming must not re-spend an LLM call."""
+        from yeaboi.standup.store import StandupStore
+
+        path = _copy("2026-07-30-standup.vtt", managed)
+        digest = transcripts.content_hash(path)
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1", path=str(path), content_hash=digest, covered_date="2026-07-30", review_id=1
+            )
+        path.rename(managed / "2026-07-30-renamed.vtt")
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert found == []
+
+    def test_include_reviewed_overrides(self, managed, db_path):
+        from yeaboi.standup.store import StandupStore
+
+        path = _copy("2026-07-30-standup.vtt", managed)
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1",
+                path=str(path),
+                content_hash=transcripts.content_hash(path),
+                covered_date="2026-07-30",
+                review_id=1,
+            )
+        found, _ = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1), include_reviewed=True)
+        assert len(found) == 1
+
+    def test_before_date_excludes_today_and_the_future(self, managed, db_path):
+        _copy("2026-07-30-standup.vtt", managed)
+        found, _ = transcripts.discover("s1", db_path=db_path, before_date="2026-07-30", today=date(2026, 8, 1))
+        assert found == []
+
+    def test_before_date_includes_earlier_dates(self, managed, db_path):
+        _copy("2026-07-30-standup.vtt", managed)
+        found, _ = transcripts.discover("s1", db_path=db_path, before_date="2026-07-31", today=date(2026, 8, 1))
+        assert len(found) == 1
+
+    def test_lookback_window_excludes_ancient_transcripts(self, managed, db_path):
+        path = managed / "2026-01-05-standup.txt"
+        path.write_text("Alice: old news")
+        found, _ = transcripts.discover("s1", db_path=db_path, before_date="2026-07-31", today=date(2026, 8, 1))
+        assert found == []
+
+    def test_per_sweep_cap_defers_the_rest_and_says_so(self, managed, db_path, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_FILES_PER_SWEEP", 2)
+        for day in (26, 27, 28, 29):
+            (managed / f"2026-07-{day}-standup.txt").write_text("Alice: hi")
+        found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert len(found) == 2
+        assert any("next run" in w for w in warnings)
+
+    def test_missing_managed_dir_is_created_not_fatal(self, tmp_path, monkeypatch, db_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "never-made")
+        found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert found == []
+        assert warnings == []
+
+
+class TestDiscoverExternalDir:
+    def test_allowed_external_dir_is_swept(self, managed, db_path, tmp_path, monkeypatch):
+        outside = tmp_path / "meetings"
+        outside.mkdir()
+        _copy("2026-07-30-standup.vtt", outside)
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", str(outside))
+        found, warnings = transcripts.discover(
+            "s1", config={"transcript_dir": str(outside)}, db_path=db_path, today=date(2026, 8, 1)
+        )
+        assert [(p.name, ext) for p, ext in found] == [("2026-07-30-standup.vtt", True)]
+        assert warnings == []
+
+    def test_external_dir_recurses_one_level(self, managed, db_path, tmp_path, monkeypatch):
+        outside = tmp_path / "meetings" / "2026-07"
+        outside.mkdir(parents=True)
+        _copy("2026-07-30-standup.vtt", outside)
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", str(tmp_path / "meetings"))
+        found, _ = transcripts.discover(
+            "s1",
+            config={"transcript_dir": str(tmp_path / "meetings")},
+            db_path=db_path,
+            today=date(2026, 8, 1),
+        )
+        assert len(found) == 1
+
+    def test_denied_external_dir_degrades_with_a_warning(self, managed, db_path, tmp_path, monkeypatch):
+        """The scheduled run cannot consent — say so once, don't silently do nothing."""
+        monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
+        outside = tmp_path / "not-allowed"
+        outside.mkdir()
+        _copy("2026-07-30-standup.vtt", managed)
+        found, warnings = transcripts.discover(
+            "s1", config={"transcript_dir": str(outside)}, db_path=db_path, today=date(2026, 8, 1)
+        )
+        # The managed folder still worked.
+        assert [p.name for p, _ in found] == ["2026-07-30-standup.vtt"]
+        assert any("Transcript folder skipped" in w for w in warnings)
+        assert any("YEABOI_ALLOWED_PATHS" in w for w in warnings)
+
+    def test_missing_external_dir_warns(self, managed, db_path, tmp_path, monkeypatch):
+        gone = tmp_path / "gone"
+        monkeypatch.setenv("YEABOI_ALLOWED_PATHS", str(tmp_path))
+        found, warnings = transcripts.discover(
+            "s1", config={"transcript_dir": str(gone)}, db_path=db_path, today=date(2026, 8, 1)
+        )
+        assert found == []
+        assert any("not found" in w for w in warnings)
+
+    def test_blank_config_dir_is_ignored(self, managed, db_path):
+        found, warnings = transcripts.discover(
+            "s1", config={"transcript_dir": "   "}, db_path=db_path, today=date(2026, 8, 1)
+        )
+        assert warnings == []
+        assert found == []

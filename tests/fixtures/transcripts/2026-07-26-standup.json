@@ -1,0 +1,4 @@
+{"date": "2026-07-26", "segments": [
+  {"speaker": "Alice", "text": "I closed YB-20 and started YB-21."},
+  {"speaker": "Bob", "text": "I fixed the flaky test in the payments repo."}
+]}
