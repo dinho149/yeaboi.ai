@@ -107,15 +107,65 @@ def name_mask(review: TranscriptReview, report: StandupReport | None = None) -> 
     return mapping
 
 
+# Given names that are also technical vocabulary. Masking these would corrupt
+# the very text they appear in ("merged into main"), so a member whose name
+# collides with one keeps only their full-name masking.
+_NAME_TOKEN_STOPLIST = frozenset(
+    {
+        "main",
+        "master",
+        "test",
+        "prod",
+        "dev",
+        "api",
+        "web",
+        "app",
+        "core",
+        "data",
+        "base",
+        "will",
+        "may",
+        "mark",
+        "bill",
+        "rob",
+        "art",
+        "june",
+        "april",
+        "may",
+    }
+)
+_MIN_TOKEN_LEN = 3
+
+
+def _mask_aliases(mask: dict[str, str]) -> list[tuple[str, str]]:
+    """Expand the name→label mask to the forms that actually appear in prose.
+
+    Summaries are LLM-written and refer to people by GIVEN NAME ("Omar also
+    reviewed the IRSA trust PR"), so masking only the full name leaks first
+    names onto a public repository. Surnames are deliberately NOT expanded:
+    they collide with technical vocabulary far more often (a teammate called
+    Main, a repo called Popa), and a corrupted issue body is its own problem.
+    """
+    aliases: dict[str, str] = {}
+    for name, label in mask.items():
+        if not name.strip():
+            continue
+        aliases[name] = label
+        first = name.strip().split()[0]
+        if len(first) >= _MIN_TOKEN_LEN and first.lower() not in _NAME_TOKEN_STOPLIST:
+            # Never let a token override a longer full-name entry.
+            aliases.setdefault(first, label)
+    # Longest first so "Alice Curtis" is replaced before a bare "Alice".
+    return sorted(aliases.items(), key=lambda kv: len(kv[0]), reverse=True)
+
+
 def scrub(text: str, mask: dict[str, str]) -> str:
     """Apply the full publication scrub: names, home paths, then secrets."""
     from yeaboi.redaction import redact
 
     out = text or ""
-    # Longest first so "Alice Curtis" is replaced before a bare "Alice".
-    for name in sorted(mask, key=len, reverse=True):
-        if name.strip():
-            out = re.sub(rf"\b{re.escape(name)}\b", mask[name], out)
+    for name, label in _mask_aliases(mask):
+        out = re.sub(rf"\b{re.escape(name)}\b", label, out)
     # feedback._relativize_home only rewrites a string that IS a path; here the
     # home directory appears mid-sentence, so replace every occurrence. A public
     # issue must never carry the reporter's username.

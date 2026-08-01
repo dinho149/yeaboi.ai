@@ -55,6 +55,11 @@ class TestVocabulary:
             ("opened a pull request in acme/infra", "pull_request"),
             ("commented on the design doc", "comment"),
             ("reviewed Bob's PR", "review"),
+            # "comment" must outrank "review": a review comment is a comment,
+            # and "review" appears constantly inside object names.
+            ("review comments on PR 48780", "comment"),
+            ("comments on the Access Audit Review page", "comment"),
+            ("approved the pull request", "review"),
             ("logged 3 hours against the ticket", "worklog"),
             ("pushed a commit", "commit"),
             ("moved the work item to done", "ticket"),
@@ -306,6 +311,75 @@ class TestCapabilityGap:
             _claim(system_hint="github", artifact_hint="comment on the pull request"), report=_report()
         )
         assert d is None or d.category.id != "capability_gap_in_supported_source"
+
+
+class TestAutomationFalsePositive:
+    """Grounded in the report's OWN notice — the rule can only fire where
+    standup already admits it dropped something from a member's credit."""
+
+    def _report_with_notice(self, **over):
+        base = dict(
+            warnings=(
+                "Excluded 31 review item(s) posted under 'Alice' that look automated (matched 'wiz') "
+                "— service-hook activity is not credited as personal work.",
+            ),
+            activity_counts=(("jira", 3), ("azdo_repos", 40)),
+        )
+        base.update(over)
+        return _report(**base)
+
+    def test_fires_for_reviews_excluded_as_automation(self):
+        d = gap_taxonomy.classify(
+            _claim(system_hint="azure_repos", artifact_hint="reviewed the terraform PRs"),
+            report=self._report_with_notice(),
+        )
+        assert d.category.id == "automation_filter_false_positive"
+        assert d.category.scope == gap_taxonomy.SCOPE_PRODUCT
+
+    def test_does_not_fire_without_an_automation_notice(self):
+        d = gap_taxonomy.classify(
+            _claim(system_hint="azure_repos", artifact_hint="reviewed the terraform PRs"),
+            report=_report(activity_counts=(("azdo_repos", 40),)),
+        )
+        assert d is None or d.category.id != "automation_filter_false_positive"
+
+    def test_does_not_fire_for_a_different_member(self):
+        d = gap_taxonomy.classify(
+            _claim(member="Bob", system_hint="azure_repos", artifact_hint="reviewed the PRs"),
+            report=_report(
+                member_updates=(MemberUpdate(name="Alice"), MemberUpdate(name="Bob")),
+                warnings=(
+                    "Excluded 31 review item(s) posted under 'Alice' that look automated "
+                    "— service-hook activity is not credited as personal work.",
+                ),
+                activity_counts=(("azdo_repos", 40),),
+            ),
+        )
+        assert d is None or d.category.id != "automation_filter_false_positive"
+
+    def test_configured_marker_in_the_claim_also_fires(self):
+        d = gap_taxonomy.classify(
+            _claim(system_hint="azure_repos", artifact_hint="the wiz remediation work"),
+            report=self._report_with_notice(),
+            config={"automation_markers": "wiz"},
+        )
+        assert d.category.id == "automation_filter_false_positive"
+
+    def test_beats_the_capability_manifest(self):
+        """The item WAS collected — reporting 'we don't fetch that' would send
+        the maintainer down the wrong path."""
+        d = gap_taxonomy.classify(
+            _claim(system_hint="azure_repos", artifact_hint="commented on the pull request"),
+            report=self._report_with_notice(),
+        )
+        assert d.category.id == "automation_filter_false_positive"
+
+    def test_unrelated_artifact_does_not_fire(self):
+        d = gap_taxonomy.classify(
+            _claim(system_hint="jira", artifact_hint="moved the ticket to done", matched_key=""),
+            report=self._report_with_notice(),
+        )
+        assert d is None or d.category.id != "automation_filter_false_positive"
 
 
 class TestSummaryDroppedIt:

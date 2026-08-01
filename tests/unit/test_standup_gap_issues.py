@@ -170,6 +170,39 @@ class TestNameMasking:
         assert gap_issues.scrub("Alice Curtis shipped it", mask) == "Engineer A shipped it"
 
 
+class TestScrubGivenNames:
+    """Summaries are LLM-written and use given names — masking only the full
+    name leaked first names onto a public repo."""
+
+    def test_masks_a_bare_given_name(self):
+        mask = {"Omar Din": "Engineer F"}
+        assert gap_issues.scrub("Omar also reviewed the IRSA trust PR", mask) == (
+            "Engineer F also reviewed the IRSA trust PR"
+        )
+
+    def test_full_name_still_wins_over_the_token(self):
+        mask = {"Omar Din": "Engineer F"}
+        assert gap_issues.scrub("Omar Din shipped it", mask) == "Engineer F shipped it"
+
+    def test_surnames_are_not_expanded(self):
+        """A teammate called Main must not corrupt "merged into main"."""
+        mask = {"Nikolai Main": "Engineer E"}
+        out = gap_issues.scrub("Nikolai merged the PR into main", mask)
+        assert out == "Engineer E merged the PR into main"
+
+    def test_technical_given_names_are_left_alone(self):
+        mask = {"Main Person": "Engineer A"}
+        assert "main" in gap_issues.scrub("merged into main", mask)
+
+    def test_short_given_names_are_not_expanded(self):
+        mask = {"Bo Li": "Engineer A"}
+        assert gap_issues.scrub("the bo tree", mask) == "the bo tree"
+
+    def test_substring_of_a_longer_word_is_untouched(self):
+        mask = {"Omar Din": "Engineer F"}
+        assert "Omarion" in gap_issues.scrub("Omarion is a different word", mask)
+
+
 class TestScrub:
     def test_relativizes_home(self):
         from pathlib import Path

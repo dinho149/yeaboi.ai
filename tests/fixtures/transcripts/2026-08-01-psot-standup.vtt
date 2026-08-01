@@ -1,0 +1,60 @@
+WEBVTT
+
+NOTE PSOT Sprint 113 - Q3 · Daily standup
+NOTE Recorded 2026-08-01
+
+1
+00:00:02.000 --> 00:00:11.000
+<v Omar Din>Morning everyone. Day 8 of 10 and the burn-up still says we're behind, so let's keep this tight. I'll go round the report.</v>
+
+2
+00:00:11.500 --> 00:00:22.000
+<v Omar Din>For me it says I closed PSOT-1611, PSOT-1610 and PSOT-1607, and that the 1610 monitoring fix went out across the estate. That's right.</v>
+
+3
+00:00:22.500 --> 00:00:34.000
+<v Nikolai Main>Omar, one thing though. It's not crediting you for the Wiz reviews. You approved thirty-odd of those remediation PRs yesterday and the report dropped every one of them.</v>
+
+4
+00:00:34.500 --> 00:00:45.000
+<v Omar Din>Yeah, it thinks they're a service hook because the branch name has wiz in it. Those were me sat there approving them one at a time, so that's real work being thrown away.</v>
+
+5
+00:00:45.500 --> 00:00:55.000
+<v Alexandru Popa>Mine says Teleport admin lock-down is done and that I edited the access audit page, which is correct.</v>
+
+6
+00:00:55.500 --> 00:01:08.000
+<v Alexandru Popa>But I also spent most of yesterday afternoon replying to comments on that Confluence recertification page — there was a long thread with the data platform team. None of that shows up anywhere.</v>
+
+7
+00:01:08.500 --> 00:01:18.000
+<v Gabor Koroesi>Same kind of thing for me. PSOT-1595 and the trusted browser one are done, that's all correct.</v>
+
+8
+00:01:18.500 --> 00:01:30.000
+<v Gabor Koroesi>The bit it misses is that I logged about six hours against PSOT-1596 in Jira yesterday. The time's in there, the report just doesn't look at it.</v>
+
+9
+00:01:30.500 --> 00:01:42.000
+<v Ahmet Ince>My IRSA PRs in tf-eks-iam and tf-amazon-integration are both there, good. But I left a pile of review comments on Nikolai's Jenkins governance PR and that's nowhere in mine.</v>
+
+10
+00:01:42.500 --> 00:01:52.000
+<v Nikolai Main>Right, I saw those. Useful comments too. My side shows the commits and the merge on 48780, so the PR itself came through fine.</v>
+
+11
+00:01:52.500 --> 00:02:04.000
+<v Nikolai Main>What's missing for me is the incident on Thursday evening. I was in the Slack channel for about two hours walking the on-call through the audit stream alerts. Nothing tracked that at all.</v>
+
+12
+00:02:04.500 --> 00:02:15.000
+<v Daniel Daraban>Mine just says no activity detected, which looks bad but is fair enough — I was interviewing candidates all day and then in the architecture review.</v>
+
+13
+00:02:15.500 --> 00:02:24.000
+<v Omar Din>That's fine, that's not work the tooling could ever see. Nothing to fix there.</v>
+
+14
+00:02:24.500 --> 00:02:36.000
+<v Omar Din>Okay. Two days left. Gabor, keep pushing 1596. Ahmet, get 1568 out of review. I'll pick up 1613 once the audit window question is answered.</v>

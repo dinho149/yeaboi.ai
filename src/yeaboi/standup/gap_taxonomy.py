@@ -103,6 +103,14 @@ CATEGORIES: tuple[GapCategory, ...] = (
         Q_FEATURE,
     ),
     GapCategory(
+        "automation_filter_false_positive",
+        "Real work was excluded as service-hook automation",
+        SCOPE_PRODUCT,
+        "Bug",
+        "high",
+        Q_INACCURATE,
+    ),
+    GapCategory(
         "evidence_cap_truncation",
         "The evidence list hit its cap, so real activity was cut from the report",
         SCOPE_PRODUCT,
@@ -200,13 +208,15 @@ KNOWN_UNSUPPORTED: dict[str, str] = {
 # request: on Azure Repos, PRs are fetched and their comments are not, so
 # resolving that phrase to "pull_request" would hide a real capability gap.
 _ARTIFACT_KEYWORDS: tuple[tuple[str, str], ...] = (
-    # Activities first.
-    ("review", "review"),
-    ("approv", "review"),
+    # Activities first. "comment" outranks "review": a REVIEW COMMENT is a
+    # comment, and the word "review" turns up constantly inside object names
+    # ("the Access Audit Review page"), so letting it win misfiled real cases.
     ("comment", "comment"),
     ("discussion", "comment"),
     ("thread", "comment"),
     ("replied", "comment"),
+    ("review", "review"),
+    ("approv", "review"),
     ("worklog", "worklog"),
     ("work log", "worklog"),
     ("time log", "worklog"),
@@ -395,6 +405,19 @@ def artifact_kind(hint: str) -> str:
     return "unknown"
 
 
+def artifact_is_unfetched(system_hint: str, artifact_hint: str) -> bool:
+    """True when the manifest says this kind of activity is never collected.
+
+    Used to stop an evidence key from CONFIRMING a claim about a different
+    artifact: a Jira ticket appearing in the evidence does not confirm that the
+    worklog against it was captured, because worklogs are not fetched at all.
+    """
+    system = normalize_system(system_hint)
+    if system in ("none", "unknown"):
+        return False
+    return CAPABILITY_MANIFEST.get((system, artifact_kind(artifact_hint))) == NOT_FETCHED
+
+
 def fingerprint(category_id: str, systems: tuple[str, ...], kind: str, scope_token: str = "") -> str:
     """A stable dedup key for one gap.
 
@@ -444,6 +467,29 @@ def failed_sources(report: StandupReport) -> set[str]:
         if any(word in reason.lower() for word in _FAILURE_WORDS):
             failed.add(source)
     return failed
+
+
+# Wording the automation partitioner uses when it drops activity from a member's
+# credit (standup/automation.py notice_lines). Matching the report's own notice
+# is what makes this rule a fact rather than an inference.
+_AUTOMATION_NOTICE_MARKERS = ("look automated", "service-hook automation", "looks automated")
+
+
+def automation_excluded_members(report: StandupReport) -> set[str]:
+    """Members whose activity the report says it excluded as automation.
+
+    Read off the notices the run already surfaced, so the rule can only fire
+    where standup itself admits it dropped something.
+    """
+    members = {m.name for m in report.member_updates}
+    excluded: set[str] = set()
+    for warning in report.warnings:
+        if not any(marker in warning.lower() for marker in _AUTOMATION_NOTICE_MARKERS):
+            continue
+        for name in members:
+            if name and name in warning:
+                excluded.add(name)
+    return excluded
 
 
 def _member(report: StandupReport, name: str):
@@ -609,7 +655,30 @@ def classify(
             evidence=(f"{label} was not among the sources examined ({reason}).",),
         )
 
-    # 4. The source ran, but the named repository/project is outside the scope.
+    # 4. The source ran AND the item was fetched, but the automation partitioner
+    #    dropped it from this member's credit. Checked BEFORE the scope and
+    #    capability rules: the activity really was collected, so reporting it as
+    #    "we don't fetch that" would send the maintainer down the wrong path.
+    if claim.member and claim.member in automation_excluded_members(report):
+        markers = [m.strip().lower() for m in str((config or {}).get("automation_markers", "")).split(",") if m.strip()]
+        said = f"{claim.artifact_hint} {claim.claim}".lower()
+        if kind in ("review", "comment") or any(marker in said for marker in markers):
+            return Diagnosis(
+                _BY_ID["automation_filter_false_positive"],
+                (system,),
+                kind,
+                detail=(
+                    f"{label} {kind_label} by this member were excluded as service-hook automation, "
+                    "and the team says they were real work."
+                ),
+                root_cause=(
+                    "The automation partitioner (standup/automation.py) classified genuine activity as "
+                    "a service hook, so it was collected and then dropped from the member's credit."
+                ),
+                evidence=("The report's notices record excluded automation for this member.",),
+            )
+
+    # 5. The source ran, but the named repository/project is outside the scope.
     named = _named_repository(claim.artifact_hint, claim.claim)
     if named and system in ("github", "azdo_repos", "local_git"):
         scope = configured_scope(config)
@@ -625,7 +694,7 @@ def classify(
                 evidence=(f"Configured scope: {', '.join(sorted(scope)) or 'none'}.",),
             )
 
-    # 5. The source ran and is healthy, but this KIND of activity is never
+    # 6. The source ran and is healthy, but this KIND of activity is never
     #    fetched — a real capability gap, and the most actionable finding here.
     if CAPABILITY_MANIFEST.get((system, kind)) == NOT_FETCHED:
         return Diagnosis(
@@ -640,7 +709,7 @@ def classify(
             evidence=(f"{label} was scanned successfully; {kind_label} are not among what it collects.",),
         )
 
-    # 6. The source ran, the kind IS fetched, and the item is in the evidence —
+    # 7. The source ran, the kind IS fetched, and the item is in the evidence —
     #    so the collector did its job and the written summary dropped it.
     if claim.member:
         evidence = _evidence_for(report, claim.member, system)
@@ -658,7 +727,7 @@ def classify(
                     ),
                     evidence=(f"{claim.matched_key} is present in the member's {label} evidence.",),
                 )
-        # 7. The category's evidence list is exactly at its cap while more
+        # 8. The category's evidence list is exactly at its cap while more
         #    activity was counted — items were provably cut.
         member = _member(report, claim.member)
         if member is not None and len(evidence) >= evidence_cap:

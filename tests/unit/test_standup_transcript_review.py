@@ -194,6 +194,40 @@ class TestClampClaims:
         )
         assert claims[0].status == "matched"
 
+    def test_key_does_not_confirm_an_unfetched_artifact(self):
+        """ "I logged six hours against YB-12" is not confirmed by YB-12 being in
+        the evidence: the ticket is tracked, the worklog is not."""
+        claims, _ = self._clamp(
+            [
+                {
+                    "member": "Alice",
+                    "claim": "logged six hours against YB-12",
+                    "quote": "I finished the login redirect and moved YB-12 to done",
+                    "status": "matched",
+                    "matched_key": "YB-12",
+                    "system_hint": "jira",
+                    "artifact_hint": "time logged against the ticket",
+                }
+            ]
+        )
+        assert claims[0].status == "missing"
+
+    def test_key_still_confirms_a_fetched_artifact(self):
+        claims, _ = self._clamp(
+            [
+                {
+                    "member": "Alice",
+                    "claim": "closed YB-12",
+                    "quote": "I finished the login redirect and moved YB-12 to done",
+                    "status": "missing",
+                    "matched_key": "YB-12",
+                    "system_hint": "jira",
+                    "artifact_hint": "moved the ticket to done",
+                }
+            ]
+        )
+        assert claims[0].status == "matched"
+
     def test_matched_is_downgraded_when_the_key_is_absent(self):
         claims, _ = self._clamp(
             [

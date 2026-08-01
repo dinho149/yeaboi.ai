@@ -223,11 +223,21 @@ def clamp_claims(
         if status not in _VALID_STATUS:
             status = "unclear"
 
+        system_hint = str(entry.get("system_hint", "")).strip()
+        artifact_hint = str(entry.get("artifact_hint", "")).strip()
         matched_key = str(entry.get("matched_key", "")).strip()
         if matched_key and member:
             # Re-derive the verdict from the evidence. The model's matched/missing
             # answer only survives where it offered no key to check.
             present = matched_key.lower() in _evidence_keys(report, member)
+            # …but a key only CONFIRMS the claim when the thing claimed is a kind
+            # standup actually fetches. "I logged six hours against PSOT-1596"
+            # is not confirmed by PSOT-1596 being in the evidence: the ticket is
+            # tracked, the worklog is not, and treating that as matched silently
+            # swallowed a real capability gap.
+            claimed = artifact_hint or str(entry.get("claim", ""))
+            if present and gap_taxonomy.artifact_is_unfetched(system_hint, claimed):
+                present = False
             if status in ("matched", "missing"):
                 status = "matched" if present else "missing"
 
@@ -247,8 +257,8 @@ def clamp_claims(
                 quote=quote[:240],
                 status=status,
                 matched_key=matched_key,
-                system_hint=str(entry.get("system_hint", "")).strip(),
-                artifact_hint=str(entry.get("artifact_hint", "")).strip(),
+                system_hint=system_hint,
+                artifact_hint=artifact_hint,
                 source_path=source_path,
             )
         )
