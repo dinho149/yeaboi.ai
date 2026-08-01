@@ -2793,6 +2793,51 @@ def _build_standup_screen(
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
+# Button labels for the saved-setup gate. The driver imports these too, so the
+# click-hit-testing (button_click) can't drift from what was drawn.
+_SAVED_SETUP_ACTIONS = ["Use saved", "Change", "Back"]
+
+
+def _build_standup_saved_setup_screen(
+    rows: list[tuple[str, str]],
+    *,
+    action_sel: int = 0,
+    width: int = 80,
+    height: int = 24,
+) -> Panel:
+    """Build the Generate gate: reuse the saved setup, or walk the pickers again.
+
+    ``rows`` are plain ``(label, value)`` strings built by the caller — this
+    builder decides the colours, so the summary never carries presentation.
+    """
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    body: list[Text] = []
+    for label, value in rows:
+        row = Text(_PAD + "  ")
+        row.append(f"{label:<10}", style=theme.muted)
+        row.append(value, style=theme.value)
+        body.append(row)
+    viewport_h = calc_viewport(height, header_h=7, action_h=4)
+    body.extend(Text("") for _ in range(max(0, viewport_h - len(body))))
+    btn_top, btn_mid, btn_bot = build_action_buttons(_SAVED_SETUP_ACTIONS, action_sel)
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + "Use your saved setup?", style="bold white"),
+        Text(_PAD + "←/→ move · Enter choose · Esc cancel", style=theme.muted),
+        Text(""),
+        Group(*body[:viewport_h]),
+        Text(""),
+        btn_top,
+        btn_mid,
+        btn_bot,
+    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
+
+
 def _build_standup_team_source_screen(
     sources: list[tuple[str, str]],
     checked: set[int],

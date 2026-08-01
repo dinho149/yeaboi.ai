@@ -1,5 +1,7 @@
 """Interaction tests for the Standup Generate source/member/update sequence."""
 
+import pytest
+
 from yeaboi.standup.store import StandupStore
 from yeaboi.ui import mode_select
 
@@ -11,6 +13,12 @@ class _Console:
 class _Live:
     def update(self, _renderable):
         pass
+
+
+@pytest.fixture(autouse=True)
+def _isolated_store(monkeypatch, tmp_path):
+    """Keep the flow (which now reads saved config) off the real ~/.yeaboi store."""
+    monkeypatch.setattr(mode_select, "_ana_dbp", tmp_path / "sessions.db")
 
 
 def test_generate_confirms_team_before_update_and_engine(monkeypatch):
@@ -202,6 +210,70 @@ def test_documentation_picker_offers_notion_with_token_and_no_root(monkeypatch, 
     assert captured["sources"] == [("notion", "Notion")]
     with StandupStore(db) as store:
         assert store.load_config("s1")["documentation_sources"] == ["notion"]
+
+
+class TestSavedSetupGate:
+    """Generate offers the saved setup instead of re-walking every picker."""
+
+    def _wire(self, monkeypatch, calls, *, rows, choice):
+        monkeypatch.setattr(mode_select, "_standup_saved_setup", lambda _session: rows)
+        monkeypatch.setattr(
+            mode_select,
+            "_run_standup_saved_setup_confirm",
+            lambda *args: calls.append("gate") or choice,
+        )
+        for name in ("team", "code", "documentation"):
+            monkeypatch.setattr(
+                mode_select,
+                f"_standup_{name}_configure",
+                lambda *args, _n=name: (calls.append(_n) or True, "saved"),
+            )
+        monkeypatch.setattr(
+            mode_select,
+            "_standup_read_line",
+            lambda *args, **kwargs: calls.append("update") or "",
+        )
+        monkeypatch.setattr(
+            mode_select,
+            "_standup_generate",
+            lambda session_id, on_progress=None: calls.append("engine") or "Generated.",
+        )
+
+    def test_use_saved_skips_every_picker(self, monkeypatch):
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="use")
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result == "Generated."
+        assert calls == ["gate", "update", "engine"]
+
+    def test_change_runs_the_full_sequence(self, monkeypatch):
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="change")
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result == "Generated."
+        assert calls == ["gate", "team", "code", "documentation", "update", "engine"]
+
+    def test_cancel_stops_before_the_update_prompt(self, monkeypatch):
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="cancel")
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result is None
+        assert calls == ["gate"]
+
+    def test_no_saved_setup_never_opens_the_gate(self, monkeypatch):
+        calls = []
+        self._wire(monkeypatch, calls, rows=None, choice="use")
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result == "Generated."
+        assert calls == ["team", "code", "documentation", "update", "engine"]
 
 
 def test_team_confirmation_persists_scope(monkeypatch, tmp_path):

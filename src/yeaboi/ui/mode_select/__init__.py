@@ -2332,12 +2332,13 @@ def _standup_export(session_id: str, data: dict) -> str:
 def _standup_generate_flow(
     console: Console, live, read_key, frame_time, supports_timeout, session_id: str
 ) -> str | None:
-    """Confirm sources/team, ask for the user's update, then generate.
+    """Offer the saved setup, confirm sources/team, ask for the user's update, then generate.
 
-    Returns a status message on success, or None if the user pressed Esc at the
-    update prompt (cancel — no run). Source/member cancellation returns its
-    explanatory message and also prevents a run. Pressing Enter with an empty
-    update skips the self-report and generates with inference.
+    Returns a status message on success, or None if the user cancelled — at the
+    saved-setup gate or at the update prompt (no run either way). Source/member
+    cancellation returns its explanatory message and also prevents a run.
+    Pressing Enter with an empty update skips the self-report and generates with
+    inference.
     """
     from datetime import date
 
@@ -2345,45 +2346,66 @@ def _standup_generate_flow(
     from yeaboi.standup.store import StandupStore
     from yeaboi.ui.shared._attachments import referenced_images
 
-    # Mirror Analysis mode on every interactive run: confirm tracker sources,
-    # discover their roster, then confirm the authoritative member subset.
-    # Confirmed choices are persisted immediately, so cancelling the later
-    # My Update prompt still leaves the new defaults ready for scheduled runs.
-    team_ok, team_message = _standup_team_configure(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        session_id,
-    )
-    if not team_ok:
-        logger.info("standup generate: stopped during team selection (session=%s)", session_id)
-        return team_message
+    # Nothing here changes what the engine reads — it already resolves saved
+    # config on its own. This only skips re-asking: when every applicable step
+    # was confirmed on an earlier run, offer those answers instead of walking
+    # the five pickers again.
+    saved_rows = _standup_saved_setup(session_id)
+    reuse = False
+    if saved_rows is not None:
+        choice = _run_standup_saved_setup_confirm(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            saved_rows,
+        )
+        logger.info("standup generate: saved setup -> %s (session=%s)", choice, session_id)
+        if choice == "cancel":
+            return None  # Esc/Back → cancel the whole Generate
+        reuse = choice == "use"
 
-    code_ok, code_message = _standup_code_configure(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        session_id,
-    )
-    if not code_ok:
-        logger.info("standup generate: stopped during repository selection (session=%s)", session_id)
-        return code_message
+    if not reuse:
+        # Mirror Analysis mode: confirm tracker sources, discover their roster,
+        # then confirm the authoritative member subset. Confirmed choices are
+        # persisted immediately, so cancelling the later My Update prompt still
+        # leaves the new defaults ready for scheduled runs.
+        team_ok, team_message = _standup_team_configure(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            session_id,
+        )
+        if not team_ok:
+            logger.info("standup generate: stopped during team selection (session=%s)", session_id)
+            return team_message
 
-    documentation_ok, documentation_message = _standup_documentation_configure(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        session_id,
-    )
-    if not documentation_ok:
-        logger.info("standup generate: stopped during documentation selection (session=%s)", session_id)
-        return documentation_message
+        code_ok, code_message = _standup_code_configure(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            session_id,
+        )
+        if not code_ok:
+            logger.info("standup generate: stopped during repository selection (session=%s)", session_id)
+            return code_message
+
+        documentation_ok, documentation_message = _standup_documentation_configure(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            session_id,
+        )
+        if not documentation_ok:
+            logger.info("standup generate: stopped during documentation selection (session=%s)", session_id)
+            return documentation_message
 
     attachments: list[str] = []
     update = _standup_read_line(
@@ -2711,6 +2733,159 @@ def _run_standup_member_select(
                 message = "Select at least one team member."
                 continue
             return [roster[idx] for idx in sorted(checked)]
+        elif key in ("esc", "q"):
+            return "cancel"
+
+
+def _standup_source_labels(keys) -> str:
+    """Render stored source keys as the names the pickers showed."""
+    names = {
+        "jira": "Jira",
+        "azure_devops": "Azure DevOps",
+        "github": "GitHub",
+        "confluence": "Confluence",
+        "notion": "Notion",
+    }
+    return ", ".join(names.get(key, key) for key in keys)
+
+
+def _standup_member_summary(members: list[str], *, shown: int = 3) -> str:
+    """Name the roster being reused, so "use saved" is an informed choice."""
+    if len(members) <= shown:
+        return ", ".join(members)
+    return f"{', '.join(members[:shown])} +{len(members) - shown} more"
+
+
+def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
+    """Summarise a reusable saved setup, or None when Generate must ask.
+
+    Returns ``(label, value)`` rows only once every *applicable* step has been
+    confirmed at least once. A step whose integration isn't configured at all
+    (no Confluence/Notion, say) is skipped by the flow itself and so is not
+    required here — its ``*_configured`` flag would never be set.
+    """
+    from yeaboi.config import (
+        get_azure_devops_org_url,
+        get_azure_devops_project,
+        get_confluence_space_key,
+        get_github_token,
+        get_jira_project_key,
+        get_notion_root_page_id,
+        get_notion_token,
+        get_standup_github_repo,
+    )
+    from yeaboi.standup.store import StandupStore
+
+    if not session_id:
+        return None
+    try:
+        with StandupStore(_ana_dbp) as store:
+            config = store.load_config(session_id) or {}
+    except Exception:
+        logger.warning("standup: could not load the saved setup", exc_info=True)
+        return None
+    if not config:
+        return None
+
+    # What each picker would offer today. Walking the pickers used to self-heal a
+    # removed integration (they only ever list what is currently configured), so
+    # reusing a saved answer is only safe while it is still a subset of these.
+    trackers_available = {
+        *(("jira",) if get_jira_project_key() else ()),
+        *(("azure_devops",) if get_azure_devops_project() else ()),
+    }
+    code_available = {
+        *(("github",) if get_github_token() or get_standup_github_repo() else ()),
+        *(("azure_devops",) if get_azure_devops_org_url() else ()),
+    }
+    docs_available = {
+        *(("confluence",) if get_confluence_space_key() else ()),
+        *(("notion",) if get_notion_root_page_id() or get_notion_token() else ()),
+    }
+
+    # Team. Mirrors the guard in _standup_team_configure: with no tracker at all
+    # there is nothing to reuse, and that function's "open Settings first"
+    # message is the more useful thing for the user to see.
+    if not trackers_available:
+        return None
+    trackers = list(config.get("tracker_sources", ()))
+    members = list(config.get("team_members", ()))
+    if not config.get("roster_configured") or not members:
+        return None
+    if not trackers or not set(trackers) <= trackers_available:
+        return None
+    rows = [
+        ("Trackers", _standup_source_labels(trackers)),
+        ("Members", _standup_member_summary(members)),
+    ]
+
+    # Code scope. Applicable only when an integration exists — otherwise
+    # _standup_code_configure returns early and never sets the flag.
+    if code_available:
+        if not config.get("code_scope_configured"):
+            return None
+        if not set(config.get("code_sources", ())) <= code_available:
+            return None
+        github = list(config.get("github_repositories", ()))
+        projects = list(config.get("azdo_projects", ()))
+        parts = []
+        if github:
+            parts.append(f"{len(github)} GitHub repo(s)")
+        if projects:
+            parts.append(f"{len(projects)} Azure project(s)")
+        rows.append(("Code", " · ".join(parts) or "none"))
+
+    # Documentation. An empty selection is a real answer here (the picker allows
+    # it), so the flag is the signal, not the list.
+    if docs_available:
+        if not config.get("documentation_scope_configured"):
+            return None
+        docs = list(config.get("documentation_sources", ()))
+        if not set(docs) <= docs_available:
+            return None
+        rows.append(("Docs", _standup_source_labels(docs) or "none"))
+    return rows
+
+
+def _run_standup_saved_setup_confirm(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    rows: list[tuple[str, str]],
+) -> str:
+    """Offer the saved setup before Generate re-walks every picker.
+
+    Returns "use" (skip straight to the update prompt), "change" (run the
+    pickers as before) or "cancel" (no run at all).
+    """
+    from yeaboi.ui.mode_select.screens._screens_secondary import (
+        _SAVED_SETUP_ACTIONS,
+        _build_standup_saved_setup_screen,
+    )
+
+    outcomes = ("use", "change", "cancel")
+    sel = 0
+    while True:
+        w, h = console.size
+        panel = _build_standup_saved_setup_screen(rows, action_sel=sel, width=w, height=max(10, h - 1))
+        live.update(panel)
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if not key:  # idle tick / consumed mouse event
+            continue
+        clicked = parse_click(key)
+        if clicked is not None:
+            idx = button_click(console, panel, *clicked, _SAVED_SETUP_ACTIONS)
+            if idx is not None:
+                return outcomes[idx]
+            continue
+        if key in ("left", "up"):
+            sel = (sel - 1) % len(outcomes)
+        elif key in ("right", "down"):
+            sel = (sel + 1) % len(outcomes)
+        elif key in ("enter", " "):
+            return outcomes[sel]
         elif key in ("esc", "q"):
             return "cancel"
 

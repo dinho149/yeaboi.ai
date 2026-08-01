@@ -7,6 +7,8 @@ from yeaboi.agent.state import MemberUpdate, StandupReport
 from yeaboi.ui import mode_select
 from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
 from yeaboi.ui.mode_select.screens._screens_secondary import (
+    _SAVED_SETUP_ACTIONS,
+    _build_standup_saved_setup_screen,
     _build_standup_screen,
     _build_standup_team_member_screen,
     _build_standup_team_source_screen,
@@ -111,6 +113,36 @@ class TestBuildStandupScreen:
         data = {"report": _report(), "schedule": {}}
         for sel in range(4):  # Generate, Team, Identity, Back
             assert isinstance(_build_standup_screen(data, width=80, height=24, action_sel=sel), Panel)
+
+    def test_saved_setup_gate_renders_summary_and_every_button(self):
+        panel = _build_standup_saved_setup_screen(
+            [("Trackers", "Jira"), ("Members", "Alice, Bob"), ("Docs", "Confluence")],
+            action_sel=0,
+            width=90,
+            height=28,
+        )
+        assert isinstance(panel, Panel)
+        from rich.console import Console
+
+        console = Console(width=100, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        out = cap.get()
+        assert "Use your saved setup?" in out
+        assert "Trackers" in out and "Alice, Bob" in out
+        for label in _SAVED_SETUP_ACTIONS:
+            assert label in out
+
+    def test_saved_setup_gate_buttons_are_registered(self):
+        from yeaboi.ui.shared._components import _BTN_COLORS
+
+        for label in _SAVED_SETUP_ACTIONS:
+            assert label in _BTN_COLORS
+
+    def test_saved_setup_gate_selection_variants(self):
+        rows = [("Trackers", "Jira")]
+        for sel in range(len(_SAVED_SETUP_ACTIONS)):
+            assert isinstance(_build_standup_saved_setup_screen(rows, action_sel=sel, width=80, height=24), Panel)
 
     def test_team_source_picker_renders_saved_selection(self):
         panel = _build_standup_team_source_screen(
