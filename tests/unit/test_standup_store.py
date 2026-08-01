@@ -336,6 +336,80 @@ class TestSavedRunsHub:
         assert latest is not None
         assert latest.member_updates[0].self_report == ""
 
+    def test_evidence_round_trips_as_dataclasses(self, db_path):
+        from yeaboi.agent.state import ActivityEvidence
+
+        report = _make_report(
+            member_updates=(
+                MemberUpdate(
+                    name="Me",
+                    summary="x",
+                    code_evidence=(
+                        ActivityEvidence(
+                            kind="commit",
+                            key="78e4201d",
+                            title="Fix login redirect",
+                            url="https://g/c1",
+                            repository="yeaboi/web",
+                            timestamp="2026-07-30T09:15:00",
+                        ),
+                    ),
+                ),
+            )
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        (row,) = latest.member_updates[0].code_evidence
+        assert isinstance(row, ActivityEvidence)
+        assert (row.key, row.title, row.repository) == ("78e4201d", "Fix login redirect", "yeaboi/web")
+        assert latest.member_updates[0].ticketing_evidence == ()
+
+    def test_pr_children_round_trip_nested(self, db_path):
+        from yeaboi.agent.state import ActivityEvidence
+
+        report = _make_report(
+            member_updates=(
+                MemberUpdate(
+                    name="Me",
+                    summary="x",
+                    code_evidence=(
+                        ActivityEvidence(
+                            kind="pr",
+                            key="!91",
+                            title="Enable SSO",
+                            url="https://a/pr/91",
+                            status="merged",
+                            children=(ActivityEvidence(kind="commit", key="aaa1", title="Fix", url="https://a/c1"),),
+                        ),
+                    ),
+                ),
+            )
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            latest = store.get_latest_report("s1")
+        (pr,) = latest.member_updates[0].code_evidence
+        (child,) = pr.children
+        assert isinstance(child, ActivityEvidence)
+        assert (child.kind, child.key, child.children) == ("commit", "aaa1", ())
+
+    def test_old_report_json_without_evidence_deserializes(self, db_path):
+        """Reports persisted before the *_evidence fields existed still load."""
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report())
+            (raw,) = store._conn.execute("SELECT report_json FROM standup_history").fetchone()
+            d = json.loads(raw)
+            for m in d["member_updates"]:
+                for field in ("ticketing_evidence", "code_evidence", "documentation_evidence"):
+                    m.pop(field, None)
+            store._conn.execute("UPDATE standup_history SET report_json = ?", (json.dumps(d),))
+            latest = store.get_latest_report("s1")
+        assert latest is not None
+        assert latest.member_updates[0].code_evidence == ()
+
     def test_activity_window_round_trips(self, db_path):
         report = _make_report(activity_window="Fri 2026-07-17 00:00 → now")
         with StandupStore(db_path) as store:

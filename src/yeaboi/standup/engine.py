@@ -27,7 +27,7 @@ import logging
 import re
 from datetime import date
 
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
 from yeaboi.standup.store import StandupStore
 
@@ -393,11 +393,17 @@ def _group_activity_by_author(
                 {
                     "kind": item.get("kind", ""),
                     "title": item.get("title", ""),
+                    "summary": item.get("summary", ""),
                     "status": item.get("status", ""),
                     "source": item.get("source", ""),
                     "key": item.get("key", ""),
                     "url": item.get("url", ""),
                     "repository": item.get("repository", ""),
+                    "timestamp": item.get("timestamp", ""),
+                    # PR items carry these; commits match against them so a
+                    # PR's commits can fold under it (_nest_pr_commits).
+                    "pr_id": item.get("pr_id", ""),
+                    "branch": item.get("branch", ""),
                 }
             )
     return grouped
@@ -490,6 +496,118 @@ def _member_links(acts: list[dict]) -> tuple[tuple[str, str], ...]:
     return tuple(links)
 
 
+# Commit → PR association lives in title text only: collectors emit pr_id and
+# branch on PR items, but a commit names its PR solely via its subject. The
+# real-world formats, one pattern each: GitHub/AzDO merge commits
+# ("Merge pull request #91 …" / "Merge pull request 48806 …"), AzDO squash
+# merges ("Merged PR 123: Title"), and parenthesised references — GitHub squash
+# merges end in "(#91)" and the collector's own PR-branch scan appends
+# "(PR #91)". All are gated on a matching PR existing in the same repository's
+# window, so a stray "(#12)" in prose cannot fold a commit under nothing.
+_PR_NUMBER_RES = (
+    re.compile(r"Merge pull request #?(\d+)"),
+    re.compile(r"Merged PR (\d+):"),
+    re.compile(r"\((?:PR )?#(\d+)\)"),
+)
+_MERGE_BRANCH_RE = re.compile(r"Merge pull request .*? from (\S+)")
+
+
+def _nest_pr_commits(acts: list[dict]) -> list[dict]:
+    """Fold commits under the PR they belong to; unmatched commits stay put.
+
+    A merged PR arrives as one ``pr`` item plus its merge/branch commits — as
+    flat rows they read as N separate pieces of work. Matching is per
+    repository, by PR number from the commit title, falling back to the merge
+    subject's source branch against the PR's ``branch``. Copies the PR dicts
+    (adding ``children``) rather than mutating the caller's items — the same
+    acts list also feeds ``_member_links`` and the counts.
+    """
+    out: list[dict] = []
+    prs_by_number: dict[tuple[str, str], dict] = {}
+    prs_by_branch: dict[tuple[str, str], dict] = {}
+    for a in acts:
+        if a.get("kind") == "pr":
+            a = {**a, "children": []}
+            repo = str(a.get("repository") or "")
+            if a.get("pr_id"):
+                prs_by_number[(repo, str(a["pr_id"]))] = a
+            if a.get("branch"):
+                prs_by_branch[(repo, str(a["branch"]))] = a
+        out.append(a)
+    if not prs_by_number and not prs_by_branch:
+        return acts
+
+    kept: list[dict] = []
+    for a in out:
+        if a.get("kind") != "commit":
+            kept.append(a)
+            continue
+        repo = str(a.get("repository") or "")
+        title = str(a.get("title") or "")
+        parent = None
+        for pattern in _PR_NUMBER_RES:
+            if (match := pattern.search(title)) and (parent := prs_by_number.get((repo, match.group(1)))):
+                break
+            parent = None
+        if parent is None and (match := _MERGE_BRANCH_RE.search(title)):
+            # GitHub merge subjects say "from <owner>/<branch>" while the PR
+            # item's branch is the bare head ref — try both spellings.
+            ref = match.group(1)
+            parent = prs_by_branch.get((repo, ref))
+            if parent is None and "/" in ref:
+                parent = prs_by_branch.get((repo, ref.split("/", 1)[1]))
+        if parent is None:
+            kept.append(a)
+        else:
+            parent["children"].append(a)
+    return kept
+
+
+def _member_evidence(acts: list[dict], cap: int = 8) -> tuple[ActivityEvidence, ...]:
+    """Structured evidence rows from a member's grouped activity.
+
+    Unlike ``_member_links`` this keeps the title, kind, repository, and status
+    the collectors fetched, and keeps URL-less items (an in-progress ticket with
+    no link still says something). Rows are ordered newest-first — the day's
+    movement (a ticket landing in Done) belongs in the visible top rows, while
+    carried WIP (which Jira stamps with an empty timestamp) folds. Deduped in
+    that order — by URL when there is one, else by (kind, key, title) — so the
+    latest event for a ticket is the one that survives.
+    """
+    # Timestamps are ISO-8601 strings, so string comparison is chronological.
+    # Descending puts the empty string — timestamp-less carried WIP — last, and
+    # the sort is stable, so equal stamps keep collector order.
+    ordered = sorted(acts, key=lambda a: str(a.get("timestamp") or ""), reverse=True)
+    seen: set[str] = set()
+    rows: list[ActivityEvidence] = []
+    for a in ordered:
+        url = (a.get("url") or "").strip()
+        dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
+        if dedupe in seen:
+            continue
+        seen.add(dedupe)
+        rows.append(
+            ActivityEvidence(
+                kind=str(a.get("kind") or ""),
+                key=str(a.get("key") or "").strip(),
+                # Jira update/comment titles are action phrases ("updated KEY
+                # '…'"); the clean ticket summary travels separately and wins.
+                title=str(a.get("summary") or a.get("title") or "").strip(),
+                url=url,
+                repository=str(a.get("repository") or "").strip(),
+                status=str(a.get("status") or "").strip(),
+                timestamp=str(a.get("timestamp") or "").strip(),
+                # Commits folded under a PR (_nest_pr_commits) become one level
+                # of children — same ordering/dedupe rules, tighter cap. Child
+                # dicts never carry children themselves, so this terminates.
+                children=_member_evidence(a["children"], cap=6) if a.get("children") else (),
+            )
+        )
+        if len(rows) >= cap:
+            break
+    return tuple(rows)
+
+
 def _member_source(has_self_report: bool, has_activity: bool) -> str:
     """Classify a MemberUpdate's provenance for rendering (✍ tags etc.)."""
     if has_self_report:
@@ -526,13 +644,18 @@ def _fallback_category_summary(category: str, acts: list[dict], coverage: str) -
 def _fallback_summary(acts: list[dict]) -> str:
     """Deterministic summary from grouped items: fresh activity first, then WIP.
 
-    A member whose only signal is in-progress tickets (kind="wip") reads
-    "Continuing work on: …" — being quiet in the window is not "no activity"
-    when they have assigned in-flight work.
+    The member summary renders as the card's headline, so it stays a one-liner:
+    the first two titles plus a count, with the full detail left to the
+    category summaries and evidence rows. A member whose only signal is
+    in-progress tickets (kind="wip") reads "Continuing work on: …" — being
+    quiet in the window is not "no activity" when they have assigned in-flight
+    work.
     """
-    fresh = "; ".join(a["title"] for a in acts if a.get("title") and a.get("kind") != "wip")[:400]
+    fresh = [a["title"] for a in acts if a.get("title") and a.get("kind") != "wip"]
     if fresh:
-        return fresh
+        head = "; ".join(fresh[:2])
+        more = len(fresh) - 2
+        return (f"{head}; and {more} more" if more > 0 else head)[:400]
     wip = "; ".join(a["title"] for a in acts if a.get("title") and a.get("kind") == "wip")[:400]
     if wip:
         return f"Continuing work on: {wip}"[:400]
@@ -618,6 +741,9 @@ def _build_fallback_member_updates(
                 ),
                 ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
                 ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
+                ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
+                code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
+                documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
             )
         )
     # Self-reporters missing from the grouping (shouldn't happen — run_standup
@@ -690,9 +816,12 @@ def _summarize_members(
     coverage = dict(category_coverage) or {category: categories.COVERED for category in categories.CATEGORIES}
 
     def _for_llm(acts: list[dict]) -> list[dict]:
-        # URLs (and the keys they duplicate — titles already carry ticket ids)
-        # are for rendering links, not reasoning; strip them to keep the prompt lean.
-        return [{k: v for k, v in a.items() if k not in ("url", "key")} for a in acts]
+        # URLs (and the keys they duplicate — titles already carry ticket ids,
+        # as does the standalone summary field) are for rendering links, not
+        # reasoning; strip them to keep the prompt lean. pr_id/branch/timestamp
+        # exist only so evidence rows can fold and sort — same treatment.
+        rendering_only = ("url", "key", "summary", "pr_id", "branch", "timestamp")
+        return [{k: v for k, v in a.items() if k not in rendering_only} for a in acts]
 
     # WIP (assigned in-progress tickets, possibly untouched in the window) is a
     # separate payload list so the LLM can distinguish "did" from "is doing".
@@ -842,6 +971,9 @@ def _summarize_members(
                 ticketing_summary=ticketing_summary,
                 ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
                 ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
+                ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
+                code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
+                documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
             )
         )
 

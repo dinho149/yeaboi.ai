@@ -874,6 +874,13 @@ class TestWipFlow:
         ]
         assert engine._fallback_summary(acts) == "shipped fix"
 
+    def test_fallback_summary_is_a_headline_not_a_wall(self):
+        # The summary renders as the card's headline: two titles + a count,
+        # with the rest left to the category summaries and evidence rows.
+        acts = [{"kind": "commit", "title": f"change {i}"} for i in range(5)]
+        assert engine._fallback_summary(acts) == "change 0; change 1; and 3 more"
+        assert engine._fallback_summary(acts[:2]) == "change 0; change 1"
+
     def test_llm_payload_splits_activity_and_in_progress(self, monkeypatch, db_path, seeded_session):
         items = [
             {"author": "Alice", "kind": "commit", "title": "login page", "source": "github"},
@@ -921,7 +928,9 @@ class TestWipFlow:
         monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **kw: object())
         engine.run_standup(seeded_session, db_path=db_path, dry_run=True, deliver=False)
         alice = next(m for m in captured["members"] if m["name"] == "Alice")
-        assert "url" not in alice["code_activity"][0] and "key" not in alice["code_activity"][0]
+        item = alice["code_activity"][0]
+        # Rendering-only fields must not spend prompt tokens.
+        assert not {"url", "key", "summary", "pr_id", "branch", "timestamp"} & set(item)
 
     def test_confidence_excludes_wip_from_activity_count(self, monkeypatch, db_path, seeded_session):
         items = [
@@ -1039,6 +1048,283 @@ class TestMemberLinks:
         report = engine.run_standup(seeded_session, db_path=db_path, dry_run=True, deliver=False)
         alice = next(m for m in report.member_updates if m.name == "Alice")
         assert alice.links == (("PSOT-9", "https://x.atlassian.net/browse/PSOT-9"),)
+
+
+class TestMemberEvidence:
+    def test_keeps_title_kind_repo_status_and_dedupes_by_url(self):
+        acts = [
+            {
+                "kind": "commit",
+                "title": "Fix login redirect",
+                "key": "78e4201d",
+                "url": "https://g/c1",
+                "repository": "yeaboi/web",
+                "status": "",
+                "timestamp": "2026-07-30T09:15:00",
+            },
+            {"kind": "commit", "title": "Fix login redirect", "key": "78e4201d", "url": "https://g/c1"},
+        ]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 1
+        row = rows[0]
+        assert (row.kind, row.key, row.title) == ("commit", "78e4201d", "Fix login redirect")
+        assert (row.repository, row.timestamp) == ("yeaboi/web", "2026-07-30T09:15:00")
+
+    def test_urlless_items_survive_and_dedupe_by_identity(self):
+        # Unlike _member_links, an in-progress ticket with no URL still says something.
+        acts = [
+            {"kind": "wip", "title": "Widen audit windows", "key": "PSOT-1613"},
+            {"kind": "wip", "title": "Widen audit windows", "key": "PSOT-1613"},
+        ]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 1
+        assert rows[0].url == ""
+
+    def test_caps_at_eight_preserving_order(self):
+        acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 8
+        assert rows[0].key == "#0" and rows[7].key == "#7"
+
+    def test_prefers_clean_summary_over_action_title(self):
+        # Jira update/comment titles are action phrases ("updated KEY '…'");
+        # the collector also sends the raw ticket summary, which the row shows.
+        acts = [
+            {
+                "kind": "update",
+                "title": "updated PSOT-1492 'Wiz Part 1 Q3 2026'",
+                "summary": "Wiz Part 1 Q3 2026",
+                "key": "PSOT-1492",
+                "url": "https://j/browse/PSOT-1492",
+            }
+        ]
+        rows = engine._member_evidence(acts)
+        assert rows[0].title == "Wiz Part 1 Q3 2026"
+
+    def test_orders_newest_first_with_timestampless_wip_last(self):
+        # The day's movement belongs in the visible top rows; carried WIP
+        # (which Jira stamps with an empty timestamp) folds.
+        acts = [
+            {"kind": "wip", "title": "Carried ticket", "key": "PSOT-1", "url": "https://j/1", "timestamp": ""},
+            {
+                "kind": "update",
+                "title": "Old move",
+                "key": "PSOT-2",
+                "url": "https://j/2",
+                "timestamp": "2026-07-30T08:00:00",
+            },
+            {
+                "kind": "update",
+                "title": "Fresh move",
+                "key": "PSOT-3",
+                "url": "https://j/3",
+                "timestamp": "2026-07-31T17:00:00",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert [r.key for r in rows] == ["PSOT-3", "PSOT-2", "PSOT-1"]
+
+    def test_same_ticket_latest_event_wins_dedupe(self):
+        # A Done transition and the issue's own row share a URL; the later
+        # event (the issue row, stamped with issue.updated) is the one kept —
+        # so a finished ticket shows its clean title and final status.
+        acts = [
+            {
+                "kind": "update",
+                "title": "moved PSOT-9 'Fix login' to Done",
+                "summary": "Fix login",
+                "key": "PSOT-9",
+                "url": "https://j/browse/PSOT-9",
+                "status": "Done",
+                "timestamp": "2026-07-31T15:00:00",
+            },
+            {
+                "kind": "issue",
+                "title": "Fix login",
+                "key": "PSOT-9",
+                "url": "https://j/browse/PSOT-9",
+                "status": "Done",
+                "timestamp": "2026-07-31T15:00:05",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 1
+        assert (rows[0].kind, rows[0].title, rows[0].status) == ("issue", "Fix login", "Done")
+
+    def test_pr_children_become_nested_evidence_newest_first(self):
+        acts = [
+            {
+                "kind": "pr",
+                "key": "!91",
+                "title": "Widen deploy checkboxes",
+                "url": "https://a/pr/91",
+                "repository": "acme/infra",
+                "status": "merged",
+                "timestamp": "2026-07-31T16:00:00",
+                "children": [
+                    {
+                        "kind": "commit",
+                        "key": "aaa1",
+                        "title": "old",
+                        "url": "https://a/c1",
+                        "timestamp": "2026-07-31T10:00:00",
+                    },
+                    {
+                        "kind": "commit",
+                        "key": "aaa2",
+                        "title": "new",
+                        "url": "https://a/c2",
+                        "timestamp": "2026-07-31T12:00:00",
+                    },
+                ],
+            }
+        ]
+        rows = engine._member_evidence(acts)
+        assert [c.key for c in rows[0].children] == ["aaa2", "aaa1"]
+        assert rows[0].children[0].children == ()
+
+    def test_grouping_carries_timestamp_and_summary(self):
+        items = [
+            {
+                "author": "Alice",
+                "kind": "update",
+                "title": "moved PSOT-9 'a' to Done",
+                "summary": "a",
+                "source": "jira",
+                "key": "PSOT-9",
+                "url": "https://j/browse/PSOT-9",
+                "repository": "",
+                "timestamp": "2026-07-30T09:15:00",
+            }
+        ]
+        grouped = engine._group_activity_by_author(items, ["Alice"])
+        assert grouped["Alice"][0]["timestamp"] == "2026-07-30T09:15:00"
+        assert grouped["Alice"][0]["summary"] == "a"
+
+    def test_evidence_lands_on_fallback_member_updates(self):
+        grouped = {
+            "Alice": [
+                {
+                    "kind": "commit",
+                    "title": "Fix login",
+                    "key": "78e4201d",
+                    "url": "https://g/c1",
+                    "repository": "yeaboi/web",
+                },
+                {
+                    "kind": "update",
+                    "title": "moved PSOT-9",
+                    "key": "PSOT-9",
+                    "url": "https://j/browse/PSOT-9",
+                    "source": "jira",
+                },
+            ],
+        }
+        updates = engine._build_fallback_member_updates(grouped, {})
+        alice = updates[0]
+        assert [e.key for e in alice.code_evidence] == ["78e4201d"]
+        assert [e.key for e in alice.ticketing_evidence] == ["PSOT-9"]
+        assert alice.documentation_evidence == ()
+
+
+def _pr_act(**over):
+    base = {
+        "kind": "pr",
+        "key": "!91",
+        "pr_id": 91,
+        "branch": "feat/login",
+        "title": "Enable SSO",
+        "url": "https://a/pr/91",
+        "repository": "acme/web",
+        "status": "merged",
+        "timestamp": "2026-07-31T16:00:00",
+    }
+    base.update(over)
+    return base
+
+
+def _commit_act(title, **over):
+    base = {
+        "kind": "commit",
+        "key": "aaaa0001",
+        "title": title,
+        "url": "https://a/c/1",
+        "repository": "acme/web",
+        "timestamp": "2026-07-31T14:00:00",
+    }
+    base.update(over)
+    return base
+
+
+class TestNestPrCommits:
+    def test_merge_number_folds_commit_under_pr(self):
+        acts = [_pr_act(), _commit_act("Merge pull request 91 from feat/login (web)")]
+        nested = engine._nest_pr_commits(acts)
+        assert [a["kind"] for a in nested] == ["pr"]
+        assert [c["title"] for c in nested[0]["children"]] == ["Merge pull request 91 from feat/login (web)"]
+
+    def test_github_pr_suffix_matches(self):
+        # The github PR-branch scan appends "(PR #N)" to each commit subject.
+        acts = [_pr_act(key="#91"), _commit_act("Fix redirect loop (PR #91)")]
+        nested = engine._nest_pr_commits(acts)
+        assert len(nested) == 1
+        assert len(nested[0]["children"]) == 1
+
+    def test_github_squash_merge_suffix_matches(self):
+        # Squash-merged default-branch commits end in "(#N)", no "PR" word.
+        acts = [_pr_act(key="#91"), _commit_act("Fix redirect loop (#91)")]
+        nested = engine._nest_pr_commits(acts)
+        assert len(nested) == 1
+        assert len(nested[0]["children"]) == 1
+
+    def test_azdo_squash_merge_subject_matches(self):
+        # AzDO squash merges read "Merged PR 123: Title (repo)".
+        acts = [_pr_act(key="!91"), _commit_act("Merged PR 91: Fix redirect loop (web)")]
+        nested = engine._nest_pr_commits(acts)
+        assert len(nested) == 1
+        assert len(nested[0]["children"]) == 1
+
+    def test_branch_fallback_when_number_is_another_pr(self):
+        # The merge subject names a PR that is not in the window; the source
+        # branch still identifies the one that is.
+        acts = [_pr_act(pr_id=91, branch="feat/login"), _commit_act("Merge pull request 90 from feat/login")]
+        nested = engine._nest_pr_commits(acts)
+        assert len(nested) == 1
+        assert len(nested[0]["children"]) == 1
+
+    def test_branch_fallback_strips_the_github_owner_prefix(self):
+        # Real GitHub merge subjects say "from <owner>/<branch>" while the PR
+        # item's branch is the bare head ref.
+        acts = [_pr_act(pr_id=91, branch="feat/login"), _commit_act("Merge pull request 90 from octo/feat/login")]
+        nested = engine._nest_pr_commits(acts)
+        assert len(nested) == 1
+        assert len(nested[0]["children"]) == 1
+
+    def test_wrong_repo_stays_top_level(self):
+        acts = [_pr_act(), _commit_act("Merge pull request 91 from feat/login", repository="acme/other")]
+        nested = engine._nest_pr_commits(acts)
+        assert [a["kind"] for a in nested] == ["pr", "commit"]
+        assert nested[0]["children"] == []
+
+    def test_plain_commit_and_non_code_kinds_stay_put(self):
+        review = {"kind": "review", "key": "r1", "title": "approved", "repository": "acme/web"}
+        acts = [_pr_act(), _commit_act("Hotfix the flaky retry"), review]
+        nested = engine._nest_pr_commits(acts)
+        assert [a["kind"] for a in nested] == ["pr", "commit", "review"]
+
+    def test_no_prs_returns_acts_unchanged(self):
+        acts = [_commit_act("Merge pull request 91 from feat/login")]
+        assert engine._nest_pr_commits(acts) is acts
+
+    def test_caller_items_are_not_mutated(self):
+        # The same acts also feed _member_links and the counts — the PR dict is
+        # copied, and the input list keeps every item.
+        pr = _pr_act()
+        commit = _commit_act("Merge pull request 91 from feat/login")
+        acts = [pr, commit]
+        engine._nest_pr_commits(acts)
+        assert "children" not in pr
+        assert acts == [pr, commit]
 
 
 class TestActivityCount:

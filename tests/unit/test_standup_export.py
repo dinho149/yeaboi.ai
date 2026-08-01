@@ -1,7 +1,7 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
 from tests._pages import assert_self_contained, island
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 from yeaboi.standup import export
 from yeaboi.standup.export import (
     _leftover_links,
@@ -208,7 +208,8 @@ class TestRuns:
                 MemberUpdate(name="Alice", summary="moved PSOT-1", ticketing_links=(("PSOT-1", self.URL),)),
             ),
         )
-        assert island(build_standup_html(rep))["report"]["members"][0]["summary"] == runs
+        # The member summary ships as bullet fragments (one run-list each).
+        assert island(build_standup_html(rep))["report"]["members"][0]["summary"] == [runs]
 
     def test_bold_and_link_can_share_a_sentence(self):
         runs = _team_summary_runs("Alice shipped PSOT-1.", {"PSOT-1": self.URL}, ["Alice"])[0]
@@ -334,7 +335,7 @@ class TestHtml:
             )
         )
         member = island(build_standup_html(rep))["report"]["members"][0]
-        assert {"s": "PSOT-1", "href": "https://x.atlassian.net/browse/PSOT-1"} in member["summary"]
+        assert {"s": "PSOT-1", "href": "https://x.atlassian.net/browse/PSOT-1"} in member["summary"][0]
         # The key is inline in the prose, so it is not repeated as a chip.
         assert member["categories"][0]["links"] == []
 
@@ -734,7 +735,9 @@ class TestCardReadability:
             ),
         )
         member = island(build_standup_html(rep))["report"]["members"][0]
-        assert member["categories"] == [{"label": "Code", "items": [], "links": [["PR 42", "https://g/pull/42"]]}]
+        assert member["categories"] == [
+            {"label": "Code", "items": [], "links": [["PR 42", "https://g/pull/42"]], "evidence": []}
+        ]
 
     def test_bullets_still_linkify_ticket_keys(self):
         rep = _report(
@@ -750,3 +753,287 @@ class TestCardReadability:
         )
         category = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]
         assert category["items"][0][0] == {"s": "PSOT-9", "href": "https://j/browse/PSOT-9"}
+
+
+def _evidence(**over) -> ActivityEvidence:
+    base = dict(
+        kind="commit",
+        key="78e4201d",
+        title="Fix login redirect",
+        url="https://g/c1",
+        repository="yeaboi/web",
+        status="",
+        timestamp="2026-07-30T09:15:00",
+    )
+    base.update(over)
+    return ActivityEvidence(**base)
+
+
+class TestEvidence:
+    """Structured evidence rows: the SHA-chip replacement."""
+
+    def test_evidence_travels_with_renamed_keys(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    code_summary="Merged the login fix.",
+                    code_activity_count=1,
+                    code_evidence=(_evidence(),),
+                ),
+            ),
+        )
+        category = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]
+        assert category["evidence"] == [
+            {
+                "kind": "commit",
+                "key": "78e4201d",
+                "title": "Fix login redirect",
+                "url": "https://g/c1",
+                "repo": "yeaboi/web",
+                "status": "",
+                "time": "2026-07-30T09:15:00",
+                "children": [],
+            }
+        ]
+
+    def test_hostile_url_degrades_but_row_survives(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    code_activity_count=1,
+                    code_evidence=(_evidence(url="javascript:alert(1)"),),
+                ),
+            ),
+        )
+        row = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]["evidence"][0]
+        assert row["url"] == ""
+        assert row["title"] == "Fix login redirect"
+
+    def test_category_earns_column_on_evidence_alone(self):
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="x", code_evidence=(_evidence(),)),),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert [c["label"] for c in member["categories"]] == ["Code"]
+
+    def test_evidence_payload_tolerates_plain_dicts(self):
+        # A report that round-tripped through a generic asdict/JSON path hands
+        # the exporter dicts, not dataclasses.
+        as_dict = {
+            "kind": "pr",
+            "key": "#91",
+            "title": "Enable SSO",
+            "url": "https://g/pr/91",
+            "repository": "yeaboi/web",
+            "status": "merged",
+            "timestamp": "",
+        }
+        assert export._evidence_payload([as_dict])[0]["repo"] == "yeaboi/web"
+
+    def test_markdown_renders_nested_evidence_bullets_with_cap(self):
+        rows = tuple(_evidence(key=f"#{i}", url=f"https://g/pr/{i}", title=f"Change {i}") for i in range(6))
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    code_summary="Merged six PRs.",
+                    code_activity_count=6,
+                    code_evidence=rows,
+                ),
+            ),
+        )
+        md = build_standup_markdown(rep)
+        assert "- **Code:** Merged six PRs." in md
+        assert "  - [#0](https://g/pr/0) Change 0 · yeaboi/web" in md
+        assert "  - [#3](https://g/pr/3) Change 3 · yeaboi/web" in md
+        assert "#4" not in md  # capped at 4 rows
+        assert "  - …and 2 more" in md
+
+    def test_markdown_legacy_report_keeps_ref_join(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    code_summary="Merged the login fix.",
+                    code_links=(("78e4201d", "https://g/c1"),),
+                    code_activity_count=1,
+                ),
+            ),
+        )
+        md = build_standup_markdown(rep)
+        assert "- **Code:** Merged the login fix. — [78e4201d](https://g/c1)" in md
+
+
+class TestEvidenceChildren:
+    """Commits folded under their PR — the breakdown, not N flat rows."""
+
+    def _pr_with_commits(self, n=2):
+        commits = tuple(
+            _evidence(key=f"aaa{i}", title=f"Commit {i}", url=f"https://g/c/{i}", timestamp=f"2026-07-31T1{i}:00:00")
+            for i in range(n)
+        )
+        return _evidence(
+            kind="pr", key="!91", title="Enable SSO", url="https://g/pr/91", status="merged", children=commits
+        )
+
+    def test_children_travel_nested_with_renamed_keys(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice", summary="x", code_activity_count=3, code_evidence=(self._pr_with_commits(),)
+                ),
+            ),
+        )
+        row = island(build_standup_html(rep))["report"]["members"][0]["categories"][0]["evidence"][0]
+        assert [c["key"] for c in row["children"]] == ["aaa0", "aaa1"]
+        assert row["children"][0]["repo"] == "yeaboi/web"
+        assert row["children"][0]["children"] == []
+
+    def test_markdown_pr_line_carries_commit_breakdown(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    code_summary="Merged the SSO PR.",
+                    code_activity_count=5,
+                    code_evidence=(self._pr_with_commits(4),),
+                ),
+            ),
+        )
+        md = build_standup_markdown(rep)
+        assert "  - [!91](https://g/pr/91) Enable SSO · yeaboi/web — merged — 4 commits" in md
+        assert "    - [aaa0](https://g/c/0) Commit 0" in md
+        assert "    - [aaa2](https://g/c/2) Commit 2" in md
+        assert "aaa3" not in md  # child cap of 3
+        assert "    - …and 1 more" in md
+
+    def test_markdown_escapes_brackets_when_a_title_is_the_link_label(self):
+        # Tracker titles travel inside [ ] now (doc rows, first mentions); a
+        # bracketed title must not corrupt the link syntax on Notion/GitHub.
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    documentation_summary="Edited the runbook.",
+                    documentation_activity_count=1,
+                    documentation_evidence=(
+                        _evidence(kind="page", key="42", title="[Draft] MFA Runbook", url="https://c/p", repository=""),
+                    ),
+                ),
+            ),
+        )
+        md = build_standup_markdown(rep)
+        assert "[\\[Draft\\] MFA Runbook](https://c/p)" in md
+
+    def test_markdown_doc_row_links_the_title_not_the_page_id(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="x",
+                    documentation_summary="Edited the runbook.",
+                    documentation_activity_count=1,
+                    documentation_evidence=(
+                        _evidence(kind="page", key="1892385692", title="MFA Runbook", url="https://c/p", repository=""),
+                    ),
+                ),
+            ),
+        )
+        md = build_standup_markdown(rep)
+        assert "  - [MFA Runbook](https://c/p)" in md
+        assert "1892385692" not in md
+
+
+class TestSummaryBullets:
+    """The member intro ships as terse clause bullets, one run-list each."""
+
+    def test_multi_clause_summary_becomes_bullets(self):
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="Closed the login work; continuing the audit fix."),),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert [runs[0]["s"] for runs in member["summary"]] == ["Closed the login work", "continuing the audit fix."]
+
+    def test_markdown_multi_clause_summary_is_a_list(self):
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="Closed the login work; continuing the audit fix."),),
+        )
+        md = build_standup_markdown(rep)
+        assert "- Closed the login work" in md
+        assert "- continuing the audit fix." in md
+
+
+class TestFirstMentionTitles:
+    """The first linked mention of a ticket in a card carries its title."""
+
+    def _report_with_titles(self, summary, outlook=""):
+        return _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary=summary,
+                    outlook=outlook,
+                    ticketing_summary="Ticket movement.",
+                    ticketing_links=(("PSOT-9", "https://j/browse/PSOT-9"),),
+                    ticketing_activity_count=1,
+                    ticketing_evidence=(
+                        _evidence(kind="update", key="PSOT-9", title="Fix login", url="https://j/browse/PSOT-9"),
+                    ),
+                ),
+            ),
+        )
+
+    def test_first_mention_titled_then_bare(self):
+        rep = self._report_with_titles("Closed PSOT-9.", outlook="Nothing left on PSOT-9.")
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        first = next(r for r in member["summary"][0] if r.get("href"))
+        again = next(r for r in member["outlook"] if r.get("href"))
+        assert first["s"] == "PSOT-9 Fix login"
+        assert again["s"] == "PSOT-9"
+
+    def test_markdown_gets_the_same_enrichment(self):
+        md = build_standup_markdown(self._report_with_titles("Closed PSOT-9."))
+        assert "[PSOT-9 Fix login](https://j/browse/PSOT-9)" in md
+
+    def test_key_without_a_collected_title_stays_bare(self):
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="Closed PSOT-9.",
+                    ticketing_links=(("PSOT-9", "https://j/browse/PSOT-9"),),
+                    ticketing_activity_count=1,
+                ),
+            ),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        linked = next(r for r in member["summary"][0] if r.get("href"))
+        assert linked["s"] == "PSOT-9"
+
+    def test_long_titles_are_trimmed(self):
+        long_title = "A" * 90
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="Closed PSOT-9.",
+                    ticketing_links=(("PSOT-9", "https://j/browse/PSOT-9"),),
+                    ticketing_activity_count=1,
+                    ticketing_evidence=(
+                        _evidence(kind="update", key="PSOT-9", title=long_title, url="https://j/browse/PSOT-9"),
+                    ),
+                ),
+            ),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        linked = next(r for r in member["summary"][0] if r.get("href"))
+        assert linked["s"].endswith("…")
+        assert len(linked["s"]) <= len("PSOT-9 ") + 60

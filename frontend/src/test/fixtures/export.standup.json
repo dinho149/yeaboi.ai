@@ -79,6 +79,28 @@
       {
         "categories": [
           {
+            "evidence": [
+              {
+                "children": [],
+                "key": "YB-1",
+                "kind": "issue",
+                "repo": "",
+                "status": "Done",
+                "time": "2026-07-13T09:00:00",
+                "title": "SSO login flow",
+                "url": "https://example.invalid/browse/YB-1"
+              },
+              {
+                "children": [],
+                "key": "YB-2",
+                "kind": "wip",
+                "repo": "",
+                "status": "In Progress",
+                "time": "",
+                "title": "MFA enrolment",
+                "url": "https://example.invalid/browse/YB-2"
+              }
+            ],
             "items": [
               [
                 {
@@ -99,6 +121,49 @@
             ]
           },
           {
+            "evidence": [
+              {
+                "children": [
+                  {
+                    "children": [],
+                    "key": "0a1b2c3d",
+                    "kind": "commit",
+                    "repo": "acme/web",
+                    "status": "",
+                    "time": "2026-07-13T13:10:00",
+                    "title": "Wire the SSO callback",
+                    "url": "https://example.invalid/commit/0a1b2c3d"
+                  },
+                  {
+                    "children": [],
+                    "key": "4e5f6071",
+                    "kind": "commit",
+                    "repo": "acme/web",
+                    "status": "",
+                    "time": "2026-07-13T12:40:00",
+                    "title": "Add the SAML config",
+                    "url": "https://example.invalid/commit/4e5f6071"
+                  }
+                ],
+                "key": "#91",
+                "kind": "pr",
+                "repo": "acme/web",
+                "status": "merged",
+                "time": "2026-07-13T14:32:00",
+                "title": "Enable SSO",
+                "url": "https://example.invalid/pull/91"
+              },
+              {
+                "children": [],
+                "key": "78e4201d",
+                "kind": "commit",
+                "repo": "acme/web",
+                "status": "",
+                "time": "2026-07-13T11:05:00",
+                "title": "Fix login redirect",
+                "url": "https://example.invalid/commit/78e4201d"
+              }
+            ],
             "items": [
               [
                 {
@@ -150,23 +215,25 @@
           },
           {
             "href": "https://example.invalid/browse/YB-2",
-            "s": "YB-2"
+            "s": "YB-2 MFA enrolment"
           },
           {
             "s": " from the last standup."
           }
         ],
         "summary": [
-          {
-            "s": "Shipped "
-          },
-          {
-            "href": "https://example.invalid/browse/YB-1",
-            "s": "YB-1"
-          },
-          {
-            "s": " behind a flag."
-          }
+          [
+            {
+              "s": "Shipped "
+            },
+            {
+              "href": "https://example.invalid/browse/YB-1",
+              "s": "YB-1 SSO login flow"
+            },
+            {
+              "s": " behind a flag."
+            }
+          ]
         ]
       },
       {
@@ -191,9 +258,11 @@
           }
         ],
         "summary": [
-          {
-            "s": "Waiting on review."
-          }
+          [
+            {
+              "s": "Waiting on review."
+            }
+          ]
         ]
       },
       {
@@ -207,9 +276,11 @@
         "links": [],
         "name": "Quiet",
         "summary": [
-          {
-            "s": "No activity detected."
-          }
+          [
+            {
+              "s": "No activity detected."
+            }
+          ]
         ]
       }
     ],

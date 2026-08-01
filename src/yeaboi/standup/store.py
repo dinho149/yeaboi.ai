@@ -22,7 +22,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,28 @@ def _standup_report_to_json(report: StandupReport) -> str:
     return json.dumps(asdict(report), ensure_ascii=False)
 
 
+def _dict_to_evidence(items: object) -> tuple[ActivityEvidence, ...]:
+    """Rebuild an evidence tuple from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        ActivityEvidence(
+            kind=str(e.get("kind", "")),
+            key=str(e.get("key", "")),
+            title=str(e.get("title", "")),
+            url=str(e.get("url", "")),
+            repository=str(e.get("repository", "")),
+            status=str(e.get("status", "")),
+            timestamp=str(e.get("timestamp", "")),
+            # One level deep in practice (commits under a PR); recursion keeps
+            # the rebuild honest either way.
+            children=_dict_to_evidence(e.get("children")),
+        )
+        for e in items
+        if isinstance(e, dict)
+    )
+
+
 def _dict_to_standup_report(d: dict) -> StandupReport:
     """Reconstruct a StandupReport from a JSON-parsed dict.
 
@@ -124,6 +146,9 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
             ticketing_summary=m.get("ticketing_summary", ""),
             ticketing_links=tuple((str(li[0]), str(li[1])) for li in m.get("ticketing_links", ()) if len(li) == 2),
             ticketing_activity_count=int(m.get("ticketing_activity_count", 0)),
+            ticketing_evidence=_dict_to_evidence(m.get("ticketing_evidence")),
+            code_evidence=_dict_to_evidence(m.get("code_evidence")),
+            documentation_evidence=_dict_to_evidence(m.get("documentation_evidence")),
         )
         for m in d.get("member_updates", ())
     )

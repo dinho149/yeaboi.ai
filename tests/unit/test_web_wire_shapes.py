@@ -201,6 +201,7 @@ def _export_snapshots() -> dict[str, dict]:
     """
     from tests._pages import island
     from yeaboi.agent.state import (
+        ActivityEvidence,
         AnonymizedOutput,
         MemberUpdate,
         OneOnOnePrep,
@@ -335,9 +336,63 @@ def _export_snapshots() -> dict[str, dict]:
                     ("YB-2", "https://example.invalid/browse/YB-2"),
                 ),
                 ticketing_activity_count=4,
+                ticketing_evidence=(
+                    ActivityEvidence(
+                        kind="issue",
+                        key="YB-1",
+                        title="SSO login flow",
+                        url="https://example.invalid/browse/YB-1",
+                        status="Done",
+                        timestamp="2026-07-13T09:00:00",
+                    ),
+                    ActivityEvidence(
+                        kind="wip",
+                        key="YB-2",
+                        title="MFA enrolment",
+                        url="https://example.invalid/browse/YB-2",
+                        status="In Progress",
+                    ),
+                ),
                 code_summary="Merged three pull requests.",
                 code_links=(("Enable SSO", "https://example.invalid/pull/91"),),
                 code_activity_count=3,
+                code_evidence=(
+                    ActivityEvidence(
+                        kind="pr",
+                        key="#91",
+                        title="Enable SSO",
+                        url="https://example.invalid/pull/91",
+                        repository="acme/web",
+                        status="merged",
+                        timestamp="2026-07-13T14:32:00",
+                        children=(
+                            ActivityEvidence(
+                                kind="commit",
+                                key="0a1b2c3d",
+                                title="Wire the SSO callback",
+                                url="https://example.invalid/commit/0a1b2c3d",
+                                repository="acme/web",
+                                timestamp="2026-07-13T13:10:00",
+                            ),
+                            ActivityEvidence(
+                                kind="commit",
+                                key="4e5f6071",
+                                title="Add the SAML config",
+                                url="https://example.invalid/commit/4e5f6071",
+                                repository="acme/web",
+                                timestamp="2026-07-13T12:40:00",
+                            ),
+                        ),
+                    ),
+                    ActivityEvidence(
+                        kind="commit",
+                        key="78e4201d",
+                        title="Fix login redirect",
+                        url="https://example.invalid/commit/78e4201d",
+                        repository="acme/web",
+                        timestamp="2026-07-13T11:05:00",
+                    ),
+                ),
                 documentation_summary="No documentation activity detected.",
                 progress_note="Still on YB-2 from the last standup.",
                 outlook="Likely to close YB-2 today.",

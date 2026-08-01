@@ -620,6 +620,9 @@ def _version_editor_items(
                 "author_email": by.get("email", "") or "",
                 "kind": "page",
                 "title": f"edited '{title}'",
+                # The clean page title travels separately: evidence rendering
+                # shows what the page IS, not what happened to it.
+                "summary": title,
                 "timestamp": (version.get("when", "") or "")[:19],
                 "key": page_id,
                 "url": url,
@@ -826,6 +829,7 @@ def confluence_recent_pages(
                             "author_email": (created_by.get("email", "") or ""),
                             "kind": "page-created",
                             "title": f"created '{title}'",
+                            "summary": title,
                             "timestamp": (history.get("createdDate", "") or "")[:19],
                             "key": page_id,
                             "url": page_url,
