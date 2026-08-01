@@ -158,11 +158,109 @@ jobs:
             echo "::notice::no src/yeaboi changes; skipping version bump."
           fi
 
+      # Every claude-code-action run in this repo has died on `401 OAuth access
+      # token is invalid` since 2026-07-30 — auto-version, claude-review, all of
+      # them. The first diagnosis blamed the Haiku alias (PR #120) only because
+      # the action hid the message; the credential was the fault the whole time,
+      # and Haiku was simply the first workflow to be noticed. Rotating the
+      # secret on 2026-07-31 did not clear it either, which is the signature of a
+      # value that is not a Claude Code OAuth token at all rather than one that
+      # has merely expired.
+      #
+      # This step catches that class before a turn is spent, and — unlike the
+      # action itself, which skips on any workflow-file edit — it still runs on
+      # the PR that changes this file, so a fix here is testable before it lands.
+      #
+      # It NEVER prints the secret or any substring of it. GitHub masks the exact
+      # value but not a prefix of it, so every test below reduces to a boolean
+      # first.
+      #
+      # Deliberately narrow: it fails only on shapes that CANNOT be a working
+      # credential (absent, whitespace- or quote-wrapped, or a Console API key
+      # sitting in the OAuth secret). A well-formed but expired/revoked token
+      # still goes through to the action, which now reports its own 401 thanks to
+      # show_full_output. Anything stricter — an allowlist of known-good prefixes
+      # — would turn the next change to Anthropic's token format into a false red
+      # on every PR, which is the failure mode this file keeps relearning.
+      - name: Preflight the Claude credential
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          APIKEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -uo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          if [ -z "$OAUTH" ] && [ -z "$APIKEY" ]; then
+            fail "No Claude credential in this repository's Actions secrets. Set one: 'claude setup-token' then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN', or 'gh secret set ANTHROPIC_API_KEY' with a Console key."
+          fi
+
+          # Both credentials get the mangled-paste checks. A newline-bearing
+          # Console key fails exactly as opaquely as a newline-bearing OAuth
+          # token, so checking only one of them leaves half the door open.
+          #
+          # NOTE for future edits: never add `set -x` to this step, and never
+          # echo $STRIPPED. GitHub masks the *exact* secret string it was given;
+          # a whitespace-stripped near-copy of it is NOT masked and would print
+          # in the clear.
+          for VAR in OAUTH APIKEY; do
+            VAL="${!VAR}"
+            [ -n "$VAL" ] || continue
+            NAME="CLAUDE_CODE_OAUTH_TOKEN"
+            [ "$VAR" = "APIKEY" ] && NAME="ANTHROPIC_API_KEY"
+
+            # A stray newline or space survives a paste into the secrets UI and
+            # produces exactly the same opaque 401 as a wrong token.
+            STRIPPED=$(printf '%s' "$VAL" | tr -d '[:space:]')
+            if [ "${#STRIPPED}" -ne "${#VAL}" ]; then
+              fail "$NAME contains whitespace — a newline or space came along with the paste. Re-set it, taking care to send no trailing newline."
+            fi
+            case "$VAL" in
+              '"'*|"'"*)
+                fail "$NAME is wrapped in quotes. Store the raw value with no surrounding quotes." ;;
+            esac
+          done
+
+          # Only meaningful for the OAuth slot, and only when that slot is the
+          # one being used: if ANTHROPIC_API_KEY is also set we do not hard-fail,
+          # because which input the action prefers is an assumption we have not
+          # observed here (see the note on the action inputs below) and a wrong
+          # assumption that reds every PR is worse than a missed diagnosis.
+          case "$OAUTH" in
+            sk-ant-api*)
+              MSG="CLAUDE_CODE_OAUTH_TOKEN holds an Anthropic Console API key (sk-ant-api...), not a Claude Code OAuth token (sk-ant-oat...). The API rejects that with a 401. Either run 'claude setup-token' and re-set CLAUDE_CODE_OAUTH_TOKEN, or move this value to the ANTHROPIC_API_KEY secret — this workflow reads both."
+              if [ -n "$APIKEY" ]; then echo "::warning::$MSG"; else fail "$MSG"; fi ;;
+          esac
+
+          # Length is the fastest way to tell a truncated paste, or a whole
+          # terminal banner captured instead of just the token, apart from a
+          # clean value the API simply refuses. It is one integer about a
+          # high-entropy string and every token of a given kind is roughly the
+          # same size, so it identifies nothing — but it is the difference
+          # between "GitHub holds a mangled copy" and "the account revoked it",
+          # which is otherwise indistinguishable from the outside.
+          echo "::notice::Claude credential present and well-formed (oauth=$([ -n "$OAUTH" ] && echo yes || echo no) len=${#OAUTH}, api_key=$([ -n "$APIKEY" ] && echo yes || echo no) len=${#APIKEY}). If the step after this one still fails with 401, the stored value is intact and the token was revoked or minted against the wrong account — re-mint it rather than re-pasting."
+
       - name: Classify & bump with Claude
+        id: claude
         if: steps.guard.outputs.skip == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Second accepted credential, so a Console API key is a usable fallback
+          # when the subscription OAuth token is the thing that broke. Empty
+          # unless the secret exists; the action passes each through as its own
+          # env var.
+          #
+          # UNVERIFIED: the SDK is *believed* to prefer CLAUDE_CODE_OAUTH_TOKEN
+          # when both are set, which would mean a stale OAuth token is not
+          # rescued by adding a key beside it and you must clear it to fall
+          # through. Not observed here — every run in this repo's history has
+          # anthropic_api_key empty, so nothing has ever exercised the
+          # precedence. Treat it as an assumption until a probe says otherwise;
+          # the incident this file documents was caused by exactly this kind of
+          # confidently-stated guess.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Show the SDK's own output. Without this the action prints only
           # `Running Claude Code via SDK (full output hidden for security)` and a
           # bare `is_error: true` with no message — which is why the two model
@@ -185,13 +283,20 @@ jobs:
           # script; the changelog paragraph is short) — routed to Haiku for cost.
           # If wrong-level bumps appear, promote to claude-sonnet-5 (one line).
           #
-          # Pin the DATED model id, not the bare `claude-haiku-4-5` alias. The
-          # alias stopped resolving between 2026-07-29 and 2026-07-30: every run
-          # from then on died on turn 1 in ~2s with total_cost_usd 0, while every
-          # sibling workflow on claude-sonnet-5 kept passing with the same OAuth
-          # token — and this file hadn't changed. The action hides SDK output
-          # (`Running Claude Code via SDK (full output hidden for security)`), so
-          # the only symptom is a bare `is_error: true` with no message.
+          # Pin the DATED model id rather than the bare `claude-haiku-4-5` alias.
+          # Keep the pin, but do NOT trust the story that used to be written here:
+          # it claimed the alias stopped resolving between 2026-07-29 and
+          # 2026-07-30 because runs died on turn 1 in ~2s with total_cost_usd 0
+          # while sonnet-5 siblings passed. That was wrong on both halves — the
+          # error was `401 OAuth access token is invalid`, and the sonnet-5
+          # siblings were not passing, they were taking their skip branches. The
+          # symptom read as model-shaped only because the action hid the SDK
+          # output; show_full_output above is what finally printed the 401.
+          #
+          # The lesson, not the pin, is the load-bearing part: turn-1 + ~2s +
+          # zero cost is the signature of an AUTH failure, not a model one. Check
+          # `apiKeySource` and `api_error_status` in the run log before touching
+          # this line.
           claude_args: '--model claude-haiku-4-5-20251001 --max-turns 15 --allowedTools "Bash,Read,Edit,Write"'
           prompt: |
             You are the release-versioning bot for this repository. Pull request #${{ github.event.pull_request.number }} is open; decide whether and how to bump the project version. The version lives only in pyproject.toml. Changelog-only mode: ${{ steps.guard.outputs.changelog_only || 'false' }}.
@@ -227,3 +332,31 @@ jobs:
             6. Post one short PR comment naming the level, the new version, and a one-sentence reason.
 
             Rules: only ever edit pyproject.toml and src/yeaboi/changelog_data.json; never bump more than once; keep the comment to one or two lines.
+
+      # The preflight above cannot catch a well-formed token that has expired or
+      # been revoked — only the API can. When that happens the action fails with
+      # a wall of SDK JSON whose one useful line is `"api_error_status": 401`,
+      # and the check just reads "Action failed with error", which is what sent
+      # the last investigation after the model instead of the token. Restate it
+      # as an annotation with the remediation attached.
+      #
+      # `failure()` is required, not decorative: a step-level `if:` that names no
+      # status function is implicitly ANDed with success(), which would stop this
+      # from ever running. `failure()` rather than `always()` so it stays quiet
+      # on cancellation — this workflow sets cancel-in-progress, so cancels are
+      # routine on any PR that gets a follow-up push.
+      #
+      # The log path is the action's internal temp file, so it can move under the
+      # floating @v1 tag. If it does, say so rather than going quietly no-op —
+      # a diagnostic that silently stops diagnosing is the exact failure class
+      # this whole branch exists to remove.
+      - name: Explain an auth failure
+        if: failure() && steps.claude.conclusion == 'failure'
+        run: |
+          set -uo pipefail
+          LOG="${RUNNER_TEMP}/claude-execution-output.json"
+          if [ ! -f "$LOG" ]; then
+            echo "::warning::No SDK log at $LOG — could not classify this failure. The action may have moved the file; check the step output above and update this path."
+          elif grep -q '"api_error_status": *401' "$LOG"; then
+            echo "::error::Claude rejected this repository's credential with HTTP 401. The secret exists and is well-formed, so it has expired or been revoked. Fix: run 'claude setup-token' on a machine logged into the Claude subscription, then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}'. This same secret backs claude-review, ci-sentinel, dependabot-auto, security-scan, backlog-groomer, flaky-test-hunter, feedback-remediation and claude — they are all down until it is replaced."
+          fi
