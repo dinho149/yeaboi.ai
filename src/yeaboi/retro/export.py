@@ -27,7 +27,7 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import RetroReport
-from yeaboi.artifacts.render import annotations_markdown, with_annotations
+from yeaboi.artifacts.render import annotations_markdown, edit_map, row_anchor, with_annotations
 from yeaboi.retro.board import CARRIED_STATUS_LABELS, RETRO_GRID_LABELS, RETRO_GRIDS
 
 logger = logging.getLogger(__name__)
@@ -116,9 +116,15 @@ def build_retro_markdown(report: RetroReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _card_payload(card) -> dict:
+def _card_payload(card, *, editable: bool = False, list_field: str = "cards") -> dict:
     """One card as data: its text, who wrote it, and what the room did to it."""
     out: dict = {"text": card.text, "reactions": [[emoji, count] for emoji, count in card.reactions if count]}
+    if editable and card.id:
+        # Addressed by id, not by text — the text is the editable field, and a
+        # key that moves when you edit it is not a key.
+        anchor = row_anchor(list_field, "id", card.id)
+        out["anchor"] = anchor
+        out["edit"] = edit_map(anchor, card, ("text",))
     # A card the AI facilitator wrote is attributed as such, never to a person —
     # `origin` is the fact, and `author` on those rows is the literal "AI".
     if card.origin == "ai":
@@ -128,7 +134,9 @@ def _card_payload(card) -> dict:
     return out
 
 
-def retro_export_args(report: RetroReport, *, history: Sequence[dict] = ()) -> dict[str, object]:
+def retro_export_args(
+    report: RetroReport, *, history: Sequence[dict] = (), editable: bool = False
+) -> dict[str, object]:
     """Return the chrome + payload keyword arguments for one retro document.
 
     See :func:`yeaboi.standup.export.standup_export_args` for why this is split
@@ -140,7 +148,10 @@ def retro_export_args(report: RetroReport, *, history: Sequence[dict] = ()) -> d
     # Every column, including the empty ones, in board order. Whether an empty
     # column gets a card or a footnote is a layout question, and layout is the
     # bundle's; sending only the filled ones would decide it here.
-    columns = [{"grid": grid, "cards": [_card_payload(c) for c in by_grid.get(grid, [])]} for grid in RETRO_GRIDS]
+    columns = [
+        {"grid": grid, "cards": [_card_payload(c, editable=editable) for c in by_grid.get(grid, [])]}
+        for grid in RETRO_GRIDS
+    ]
 
     args = dict(
         mode="retro",
@@ -155,7 +166,14 @@ def retro_export_args(report: RetroReport, *, history: Sequence[dict] = ()) -> d
             "kind": "retro",
             "columns": columns,
             "participants": list(report.participants),
-            "carried": [{"status": c.status or "pending", "text": c.text} for c in report.carried_action_items],
+            "carried": [
+                {
+                    "status": c.status or "pending",
+                    "text": c.text,
+                    **(_card_payload(c, editable=True, list_field="carried_action_items") if editable else {}),
+                }
+                for c in report.carried_action_items
+            ],
             "trend": trend(
                 history,
                 date_key="retro_date",

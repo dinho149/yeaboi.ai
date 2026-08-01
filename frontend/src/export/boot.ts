@@ -75,6 +75,9 @@ export interface RoadmapProject {
   themes?: string[];
   description?: string;
   rationale?: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 /** A titled run of bullets — the shape all three performance artifacts share. */
@@ -112,6 +115,9 @@ export interface RetroCard {
   ai?: boolean;
   /** `[emoji, count]`, non-zero counts only. */
   reactions: Array<[string, number]>;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 /**
@@ -131,6 +137,9 @@ export interface RetroColumn {
 export interface CarriedItem {
   status: CarriedStatuses;
   text: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface DeliveredItem {
@@ -138,6 +147,9 @@ export interface DeliveredItem {
   title: string;
   status: string;
   assignee?: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface ReportTheme {
@@ -348,15 +360,21 @@ export interface Annotated {
 
 export type ExportReport = (
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
-  | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
+  | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[]; edit?: EditMap }
   | {
       kind: 'performance';
       engineer: string;
       /** The one free-prose block an artifact may open with (sprint work, overall assessment). */
-      lead?: { title: string; text: string };
+      lead?: {
+        title: string;
+        text: string;
+        /** Which artifact field this prose is, for the editor. Served docs only. */
+        field?: string;
+      };
       sections: PerfSection[];
       footnote?: string;
       warnings: string[];
+      edit?: EditMap;
     }
   | {
       kind: 'poker';
@@ -372,6 +390,7 @@ export type ExportReport = (
       /** Last sprint's action items and the progress recorded against them. */
       carried: CarriedItem[];
       trend: Trend | null;
+      edit?: EditMap;
     }
   | {
       kind: 'reporting';

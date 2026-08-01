@@ -31,10 +31,9 @@ import {
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
 import { cx } from '../../runtime/cx';
-import type { ComponentChildren } from 'preact';
-
-import type { EditMap, EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
-import { Editable, EditableSlot } from '../editing/Editable';
+import type { EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import { EditableSlot } from '../editing/Editable';
+import { Field } from '../editing/Field';
 import { EvidenceList } from './Evidence';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
@@ -138,33 +137,6 @@ function Note({ label, runs, tone: chipTone }: { label: string; runs: Run[]; ton
       <Chip {...(chipTone ? { tone: chipTone } : {})}>{label}</Chip>
       <RichText runs={runs} />
     </p>
-  );
-}
-
-/**
- * Wrap a rendered region so it can be corrected, when the document is served
- * editable and the payload told us where this field lives.
- *
- * Returns the children untouched otherwise, which is every file on disk — so
- * every call site below reads as one extra line rather than as a branch.
- */
-function Field({
-  edit,
-  field,
-  label,
-  children,
-}: {
-  edit: EditMap | undefined;
-  field: string;
-  label: string;
-  children: ComponentChildren;
-}) {
-  const target = edit?.[field];
-  if (!target) return <>{children}</>;
-  return (
-    <Editable path={target.path} label={label} value={target.value}>
-      {children}
-    </Editable>
   );
 }
 

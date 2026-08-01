@@ -40,7 +40,14 @@ function Body({ report }: { report: ExportReport }) {
     case 'anonymize':
       return <Anonymize markdown={report.markdown} warnings={report.warnings} />;
     case 'roadmap':
-      return <Roadmap summary={report.summary} projects={report.projects} warnings={report.warnings} />;
+      return (
+        <Roadmap
+          summary={report.summary}
+          projects={report.projects}
+          warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
+        />
+      );
     case 'performance':
       return (
         <Performance
@@ -49,6 +56,7 @@ function Body({ report }: { report: ExportReport }) {
           sections={report.sections}
           {...(report.footnote ? { footnote: report.footnote } : {})}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'poker':
@@ -75,6 +83,7 @@ function Body({ report }: { report: ExportReport }) {
           emoji={report.emoji}
           trend={report.trend}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'plan':

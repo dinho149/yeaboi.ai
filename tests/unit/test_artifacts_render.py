@@ -146,3 +146,78 @@ class TestTheTwoRenderersAgree:
 
             _pytest.skip("frontend/ is not present in this checkout")
         assert f"const HEADING = '{NOTES_HEADING}'" in source.read_text(encoding="utf-8")
+
+
+class TestEveryEditableModeOffersItsPaths:
+    """The payload half of the round trip, for each mode that has one.
+
+    Standup has an end-to-end test of its own; this is the breadth check —
+    that every other correctable report actually hands the browser somewhere to
+    write, and that no file export does.
+    """
+
+    def cases(self):
+        from yeaboi.agent.state import (
+            DeliveredItem,
+            DeliveryReport,
+            OneOnOnePrep,
+            RetroCard,
+            RetroReport,
+            RoadmapAnalysis,
+            RoadmapProject,
+        )
+        from yeaboi.performance.export import prep_export_args
+        from yeaboi.reporting.export import reporting_export_args
+        from yeaboi.retro.export import retro_export_args
+        from yeaboi.roadmap.export import roadmap_export_args
+
+        return [
+            (
+                "reporting",
+                reporting_export_args,
+                DeliveryReport(headline="Good", delivered_items=(DeliveredItem(key="YB-1", title="Thing"),)),
+                "headline",
+            ),
+            (
+                "roadmap",
+                roadmap_export_args,
+                RoadmapAnalysis(summary="s", projects=(RoadmapProject(name="Payments", description="d"),)),
+                "summary",
+            ),
+            ("prep", prep_export_args, OneOnOnePrep(engineer="Ada", activity_summary="x"), "activity_summary"),
+            (
+                "retro",
+                retro_export_args,
+                RetroReport(cards=(RetroCard(id="c1", grid="went_well", text="good"),)),
+                None,
+            ),
+        ]
+
+    def test_a_served_document_carries_paths_and_raw_values(self):
+        for name, args_for, artifact, field in self.cases():
+            payload = args_for(artifact, editable=True)["report"]
+            if field is None:
+                target = payload["columns"][0]["cards"][0]["edit"]["text"]
+            else:
+                target = payload["edit"][field]
+            assert target["path"], f"{name} sent no path"
+            assert isinstance(target["value"], str), f"{name} sent no raw value"
+
+    def test_a_file_export_carries_none_of_it(self):
+        import json
+
+        for name, args_for, artifact, _ in self.cases():
+            assert '"edit"' not in json.dumps(args_for(artifact)["report"]), f"{name} file export leaked edit paths"
+
+    def test_a_row_path_is_one_the_server_accepts(self):
+        from yeaboi.agent.state import RetroCard, RetroReport
+        from yeaboi.artifacts.edits import Edit, apply_edits
+        from yeaboi.artifacts.registry import ARTIFACTS
+        from yeaboi.retro.export import retro_export_args
+
+        artifact = RetroReport(cards=(RetroCard(id="c1", grid="went_well", text="good"),))
+        path = retro_export_args(artifact, editable=True)["report"]["columns"][0]["cards"][0]["edit"]["text"]["path"]
+        out, results = apply_edits(
+            artifact, (Edit(edit_id="e1", op="set", path=path, value="great"),), ARTIFACTS["retro"]
+        )
+        assert results[0].applied and out.cards[0].text == "great"

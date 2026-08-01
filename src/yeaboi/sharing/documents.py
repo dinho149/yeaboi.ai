@@ -145,15 +145,15 @@ def _payload_builder(kind: str, *, history=()):
         if kind == "reporting":
             from yeaboi.reporting.export import reporting_export_args
 
-            return reporting_export_args(artifact, history=history)
+            return reporting_export_args(artifact, history=history, editable=True)
         if kind == "retro":
             from yeaboi.retro.export import retro_export_args
 
-            return retro_export_args(artifact, history=history)
+            return retro_export_args(artifact, history=history, editable=True)
         if kind == "roadmap":
             from yeaboi.roadmap.export import roadmap_export_args
 
-            return roadmap_export_args(artifact)
+            return roadmap_export_args(artifact, editable=True)
         if kind.startswith("performance_"):
             from yeaboi.performance import export
 
@@ -162,7 +162,7 @@ def _payload_builder(kind: str, *, history=()):
                 "performance_completion": export.completion_export_args,
                 "performance_review": export.review_export_args,
             }
-            return builders[kind](artifact)
+            return builders[kind](artifact, editable=True)
         raise ValueError(f"no payload builder for {kind!r}")
 
     return lambda artifact: export_payload(**args_for(artifact))

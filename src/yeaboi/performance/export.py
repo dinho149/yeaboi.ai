@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
-from yeaboi.artifacts.render import annotations_markdown, with_annotations
+from yeaboi.artifacts.render import annotations_markdown, edit_map, with_annotations
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,9 @@ def _perf_args(
     footnote: str = "",
     warnings: Sequence[str] = (),
     artifact: object = None,
+    editable: bool = False,
+    editable_fields: Sequence[str] = (),
+    lead_field: str = "",
 ) -> dict[str, object]:
     """Build the chrome + payload arguments for any one of the three artifacts.
 
@@ -140,9 +143,15 @@ def _perf_args(
         "warnings": list(warnings),
     }
     if lead and lead[1]:
-        report["lead"] = {"title": lead[0], "text": lead[1]}
+        # The lead block names the artifact field it came from when the
+        # document is editable — three artifacts share this shape and each
+        # calls its prose something different, so the component would
+        # otherwise have to guess which key of `edit` belongs to it.
+        report["lead"] = {"title": lead[0], "text": lead[1], **({"field": lead_field} if editable else {})}
     if footnote:
         report["footnote"] = footnote
+    if editable and artifact is not None:
+        report["edit"] = edit_map("", artifact, editable_fields)
 
     args = dict(
         mode="performance",
@@ -165,7 +174,7 @@ def _perf_page(args: dict[str, object], *, markdown_name: str, document_title: s
     return export_page(**args, markdown_name=markdown_name, document_title=document_title)  # type: ignore[arg-type]
 
 
-def prep_export_args(prep: OneOnOnePrep) -> dict[str, object]:
+def prep_export_args(prep: OneOnOnePrep, *, editable: bool = False) -> dict[str, object]:
     """Chrome + payload arguments for a 1:1 prep."""
     return _perf_args(
         engineer=prep.engineer,
@@ -183,6 +192,9 @@ def prep_export_args(prep: OneOnOnePrep) -> dict[str, object]:
         ],
         warnings=prep.warnings,
         artifact=prep,
+        editable=editable,
+        lead_field="activity_summary",
+        editable_fields=("activity_summary",),
     )
 
 
@@ -190,7 +202,7 @@ def build_prep_html(prep: OneOnOnePrep, *, markdown_name: str = "", document_tit
     return _perf_page(prep_export_args(prep), markdown_name=markdown_name, document_title=document_title)
 
 
-def completion_export_args(record: OneOnOneRecord) -> dict[str, object]:
+def completion_export_args(record: OneOnOneRecord, *, editable: bool = False) -> dict[str, object]:
     """Chrome + payload arguments for a completed 1:1."""
     return _perf_args(
         engineer=record.engineer,
@@ -208,6 +220,9 @@ def completion_export_args(record: OneOnOneRecord) -> dict[str, object]:
         ],
         warnings=record.warnings,
         artifact=record,
+        editable=editable,
+        lead_field="email_summary",
+        editable_fields=("email_subject", "email_summary"),
     )
 
 
@@ -215,7 +230,7 @@ def build_completion_html(record: OneOnOneRecord, *, markdown_name: str = "", do
     return _perf_page(completion_export_args(record), markdown_name=markdown_name, document_title=document_title)
 
 
-def review_export_args(review: SixMonthReview) -> dict[str, object]:
+def review_export_args(review: SixMonthReview, *, editable: bool = False) -> dict[str, object]:
     """Chrome + payload arguments for a six-month review."""
     return _perf_args(
         engineer=review.engineer,
@@ -232,6 +247,9 @@ def review_export_args(review: SixMonthReview) -> dict[str, object]:
         footnote=f"Framework: {review.framework_used}" if review.framework_used else "",
         warnings=review.warnings,
         artifact=review,
+        editable=editable,
+        lead_field="overall",
+        editable_fields=("overall",),
     )
 
 

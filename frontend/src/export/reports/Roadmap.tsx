@@ -22,7 +22,9 @@ import {
   ProseBullets,
   SegmentBar,
 } from '../../design/primitives';
-import type { RoadmapProject } from '../boot';
+import type { EditMap, RoadmapProject } from '../boot';
+import { EditableSlot } from '../editing/Editable';
+import { Field } from '../editing/Field';
 import styles from './reports.module.css';
 
 /** `large` is the only distinguished value; the engine treats everything else as small. */
@@ -76,7 +78,11 @@ function Project({ project }: { project: RoadmapProject }) {
         </div>
       }
     >
-      {project.description ? <ProseBullets text={project.description} /> : null}
+      {project.description ? (
+        <Field edit={project.edit} field="description" label={`${project.name}'s description`}>
+          <ProseBullets text={project.description} />
+        </Field>
+      ) : null}
       {project.rationale ? (
         <p className={styles['why']}>
           <Chip tone="accent">Why now</Chip>
@@ -91,10 +97,12 @@ export function Roadmap({
   summary,
   projects,
   warnings,
+  edit,
 }: {
   summary: string;
   projects: RoadmapProject[];
   warnings: string[];
+  edit?: EditMap;
 }) {
   const bySize = new Map<string, number>();
   const byQuarter = new Map<string, number>();
@@ -106,7 +114,12 @@ export function Roadmap({
 
   return (
     <>
-      {summary ? <blockquote className={styles['lede']}>{summary}</blockquote> : null}
+      <EditableSlot anchor="" label="this roadmap" />
+      {summary ? (
+        <Field edit={edit} field="summary" label="the roadmap summary">
+          <blockquote className={styles['lede']}>{summary}</blockquote>
+        </Field>
+      ) : null}
 
       {projects.length ? (
         <section id="projects">
