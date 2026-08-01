@@ -245,6 +245,46 @@ def image_data_uri(path: str | Path) -> str:
 # ---------------------------------------------------------------------------
 
 
+def export_payload(
+    *,
+    mode: str,
+    title: str,
+    wordmark: str,
+    report: Mapping[str, object],
+    subtitle: str = "",
+    facts: Sequence[tuple[str, str]] = (),
+    badges: Sequence[str] = (),
+    nav: Sequence[tuple[str, str]] = (),
+    footer: str = "",
+) -> dict[str, object]:
+    """Return the ``{chrome, report}`` boot payload for one exported report.
+
+    Split out of :func:`export_page` because the payload now has a second
+    consumer. A file on disk is rendered once and never changes, so building it
+    inside the page renderer was fine; an *editable* shared document re-derives
+    the same payload on every change and pushes it down the long poll, and it has
+    no HTML to build. The page renderer is now the thin one: this function owns
+    the shape, ``export_page`` owns the document around it.
+
+    Keeping one builder is what stops the two from drifting — an edited report
+    and its exported file have to draw identically, and they now do so because
+    they are literally the same dict.
+    """
+    # The chrome dict is built in web/brand.py, because the live boards and the
+    # share gate now draw the same masthead from the same shape.
+    chrome = build_chrome(
+        mode=mode,
+        title=title,
+        wordmark=wordmark,
+        subtitle=subtitle,
+        facts=facts,
+        badges=badges,
+        nav=nav,
+        footer=footer,
+    )
+    return {"chrome": chrome, "report": dict(report)}
+
+
 def export_page(
     *,
     mode: str,
@@ -258,6 +298,7 @@ def export_page(
     footer: str = "",
     markdown_name: str = "",
     document_title: str = "",
+    noscript: str = "",
 ) -> str:
     """Render one exported report as a self-contained React page.
 
@@ -293,6 +334,10 @@ def export_page(
             distinguish it from the four others the reader has open, so it wants
             the date or the sprint too. Empty means "use ``title`` for both",
             which is what every file export does.
+        noscript: Replacement text for the no-JavaScript note, for a page with
+            no sibling Markdown file to point at. A shared editable document is
+            the case: it is served, not written, so ``markdown_name`` would name
+            a file nobody wrote. Wins over ``markdown_name`` when both are given.
 
     **On JavaScript.** These pages render client-side, so with scripting off
     they would be blank. That is a real regression from the string-templated
@@ -301,12 +346,11 @@ def export_page(
     several of them already, and ``markdown_name`` puts its name in front of
     anyone who lands on the page without a runtime.
     """
-    # The chrome dict is built in web/brand.py, because the live boards and the
-    # share gate now draw the same masthead from the same shape.
-    chrome = build_chrome(
+    data = export_payload(
         mode=mode,
         title=title,
         wordmark=wordmark,
+        report=report,
         subtitle=subtitle,
         facts=facts,
         badges=badges,
@@ -314,9 +358,11 @@ def export_page(
         footer=footer,
     )
 
-    noscript = ""
-    if markdown_name:
-        noscript = (
+    body = ""
+    if noscript:
+        body = f'<noscript><p class="noscript">{_e(noscript)}</p></noscript>'
+    elif markdown_name:
+        body = (
             '<noscript><p class="noscript">This report is drawn in the browser. '
             f"With JavaScript off, the same content is in <code>{_e(markdown_name)}</code>, "
             "written beside this file.</p></noscript>"
@@ -325,7 +371,7 @@ def export_page(
     return render_page(
         bundle="export",
         title=document_title or title,
-        data={"chrome": chrome, "report": dict(report)},
-        body=noscript,
+        data=data,
+        body=body,
         html_attrs=f'data-mode="{_e(mode)}"',
     )
