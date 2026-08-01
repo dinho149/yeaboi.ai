@@ -1,9 +1,16 @@
 """SQLite store for the Daily Standup mode.
 
-Persists three things in the shared ~/.scrum-agent/sessions.db:
-- ``standup_config``  — per-session schedule + delivery preferences
-- ``standup_history`` — every run's serialized StandupReport + delivery status
-- ``standup_updates`` — user-typed "my update" text, consumed verbatim by the engine
+Persists six things in the shared ~/.scrum-agent/sessions.db:
+- ``standup_config``      — per-session schedule + delivery preferences
+- ``standup_history``     — every run's serialized StandupReport + delivery status
+- ``standup_updates``     — user-typed "my update" text, consumed verbatim by the engine
+- ``standup_reviews``     — serialized TranscriptReview per audited standup
+- ``standup_transcripts`` — which transcripts have been reviewed, keyed by CONTENT
+  hash rather than path, so a renamed file isn't re-reviewed and an edited one is.
+  The DB is the bookkeeping precisely so we never move or rewrite the user's files.
+- ``standup_gap_issues``  — the gap→GitHub-issue dedup ledger. Deliberately NOT
+  session-scoped: the review loop improves yeaboi itself, so the same gap raised
+  in two different projects belongs on the same issue.
 
 Follows the exact patterns used by TeamProfileStore (team_profile.py): a separate
 store class opening its own connection to the same DB, autocommit mode, context
@@ -18,11 +25,20 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport, annotations_from
+from yeaboi.agent.state import (
+    ActivityEvidence,
+    MemberUpdate,
+    StandupGap,
+    StandupReport,
+    TranscriptClaim,
+    TranscriptReview,
+    TranscriptSource,
+    annotations_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +69,8 @@ CREATE TABLE IF NOT EXISTS standup_config (
     documentation_scope_configured INTEGER NOT NULL DEFAULT 0,
     automation_markers TEXT NOT NULL DEFAULT '',
     automation_handling TEXT NOT NULL DEFAULT 'exclude',
+    transcript_dir    TEXT NOT NULL DEFAULT '',
+    transcript_review_enabled INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -81,6 +99,43 @@ CREATE TABLE IF NOT EXISTS standup_updates (
     update_text  TEXT NOT NULL DEFAULT '',
     images_json  TEXT NOT NULL DEFAULT '[]',
     created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS standup_reviews (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT NOT NULL,
+    run_id       INTEGER NOT NULL DEFAULT 0,
+    standup_date TEXT NOT NULL DEFAULT '',
+    reviewed_at  TEXT NOT NULL,
+    review_json  TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'drafted',
+    warnings_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS standup_transcripts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT NOT NULL,
+    path         TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL,
+    covered_date TEXT NOT NULL DEFAULT '',
+    reviewed_at  TEXT NOT NULL,
+    review_id    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(session_id, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_standup_transcripts_date
+    ON standup_transcripts (session_id, covered_date);
+CREATE TABLE IF NOT EXISTS standup_gap_issues (
+    fingerprint  TEXT PRIMARY KEY,
+    category     TEXT NOT NULL DEFAULT '',
+    title        TEXT NOT NULL DEFAULT '',
+    issue_number INTEGER NOT NULL DEFAULT 0,
+    issue_url    TEXT NOT NULL DEFAULT '',
+    state        TEXT NOT NULL DEFAULT 'drafted',
+    via          TEXT NOT NULL DEFAULT '',
+    first_seen_at TEXT NOT NULL DEFAULT '',
+    filed_at     TEXT NOT NULL DEFAULT '',
+    last_seen_at TEXT NOT NULL DEFAULT '',
+    last_commented_at TEXT NOT NULL DEFAULT '',
+    occurrences  INTEGER NOT NULL DEFAULT 0,
+    last_review_id INTEGER NOT NULL DEFAULT 0
 );"""
 
 
@@ -186,6 +241,111 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
 
 
 # ---------------------------------------------------------------------------
+# Serialisation helpers — TranscriptReview <-> JSON
+# ---------------------------------------------------------------------------
+
+
+def _review_to_json(review: TranscriptReview) -> str:
+    """Serialize a TranscriptReview to a JSON string."""
+    return json.dumps(asdict(review), ensure_ascii=False)
+
+
+def _dict_to_claims(items: object) -> tuple[TranscriptClaim, ...]:
+    """Rebuild a claim tuple from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        TranscriptClaim(
+            member=str(c.get("member", "")),
+            claim=str(c.get("claim", "")),
+            quote=str(c.get("quote", "")),
+            status=str(c.get("status", "")),
+            matched_key=str(c.get("matched_key", "")),
+            system_hint=str(c.get("system_hint", "")),
+            artifact_hint=str(c.get("artifact_hint", "")),
+            source_path=str(c.get("source_path", "")),
+        )
+        for c in items
+        if isinstance(c, dict)
+    )
+
+
+def _dict_to_gaps(items: object) -> tuple[StandupGap, ...]:
+    """Rebuild a gap tuple from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        StandupGap(
+            fingerprint=str(g.get("fingerprint", "")),
+            category=str(g.get("category", "")),
+            scope=str(g.get("scope", "")),
+            title=str(g.get("title", "")),
+            detail=str(g.get("detail", "")),
+            root_cause=str(g.get("root_cause", "")),
+            priority=str(g.get("priority", "medium")),
+            confidence=str(g.get("confidence", "medium")),
+            feedback_kind=str(g.get("feedback_kind", "Improvement")),
+            members=tuple(str(m) for m in g.get("members", ())),
+            claims=_dict_to_claims(g.get("claims")),
+            evidence=tuple(str(e) for e in g.get("evidence", ())),
+            next_steps=tuple(str(s) for s in g.get("next_steps", ())),
+            affected_systems=tuple(str(s) for s in g.get("affected_systems", ())),
+            remedy=str(g.get("remedy", "")),
+        )
+        for g in items
+        if isinstance(g, dict)
+    )
+
+
+def _dict_to_sources(items: object) -> tuple[TranscriptSource, ...]:
+    """Rebuild a transcript-source tuple from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        TranscriptSource(
+            path=str(s.get("path", "")),
+            filename=str(s.get("filename", "")),
+            fmt=str(s.get("fmt", "")),
+            covered_date=str(s.get("covered_date", "")),
+            char_count=int(s.get("char_count", 0) or 0),
+            truncated=bool(s.get("truncated", False)),
+            speakers=tuple(str(sp) for sp in s.get("speakers", ())),
+            attribution=str(s.get("attribution", "labelled")),
+            external=bool(s.get("external", False)),
+        )
+        for s in items
+        if isinstance(s, dict)
+    )
+
+
+def _dict_to_review(d: dict) -> TranscriptReview:
+    """Reconstruct a TranscriptReview from a JSON-parsed dict.
+
+    ``.get()`` with a default for every field, so a review serialized by an
+    older version still deserializes — see CLAUDE.md "Frozen dataclass
+    backward compatibility".
+    """
+    return TranscriptReview(
+        review_id=int(d.get("review_id", 0) or 0),
+        session_id=str(d.get("session_id", "")),
+        standup_date=str(d.get("standup_date", "")),
+        run_id=int(d.get("run_id", 0) or 0),
+        reviewed_at=str(d.get("reviewed_at", "")),
+        sources=_dict_to_sources(d.get("sources")),
+        claims=_dict_to_claims(d.get("claims")),
+        gaps=_dict_to_gaps(d.get("gaps")),
+        config_suggestions=_dict_to_gaps(d.get("config_suggestions")),
+        accuracy_note=str(d.get("accuracy_note", "")),
+        claims_matched=int(d.get("claims_matched", 0) or 0),
+        claims_missing=int(d.get("claims_missing", 0) or 0),
+        claims_contradicted=int(d.get("claims_contradicted", 0) or 0),
+        untracked_count=int(d.get("untracked_count", 0) or 0),
+        llm_mode=str(d.get("llm_mode", "")),
+        warnings=tuple(str(w) for w in d.get("warnings", ())),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
 
@@ -256,6 +416,13 @@ class StandupStore:
                ADD COLUMN automation_markers TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN automation_handling TEXT NOT NULL DEFAULT 'exclude'""",
+            # Standup transcript review (standup/transcripts.py): an optional
+            # external drop folder alongside the managed ~/.yeaboi/transcripts,
+            # and the kill switch for the automatic sweep inside run_standup.
+            """ALTER TABLE standup_config
+               ADD COLUMN transcript_dir TEXT NOT NULL DEFAULT ''""",
+            """ALTER TABLE standup_config
+               ADD COLUMN transcript_review_enabled INTEGER NOT NULL DEFAULT 1""",
         ):
             try:
                 self._conn.execute(statement)
@@ -309,6 +476,8 @@ class StandupStore:
         documentation_scope_configured: bool = False,
         automation_markers: str = "",
         automation_handling: str = "exclude",
+        transcript_dir: str = "",
+        transcript_review_enabled: bool = True,
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
@@ -317,6 +486,13 @@ class StandupStore:
         identity list across tools (GitHub handle, Jira display name, …) used
         for alias-aware activity attribution. ``automation_markers`` /
         ``automation_handling`` tune service-hook detection (standup/automation.py).
+        ``transcript_dir`` is an optional EXTERNAL transcript folder (the managed
+        ~/.yeaboi/transcripts is always swept); ``transcript_review_enabled``
+        turns the automatic sweep inside run_standup off.
+
+        NOTE: this writes EVERY column, so a caller that omits a keyword resets
+        it to the default. Every full-pass call site must therefore pass every
+        field — enforced by tests/unit/test_standup_config_call_sites.py.
         """
         now = self._now()
         channels_json = json.dumps(delivery_channels)
@@ -341,8 +517,9 @@ class StandupStore:
                     repo_path, my_aliases, tracker_sources, team_members, roster_configured,
                     code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured,
                     documentation_sources, documentation_scope_configured,
-                    automation_markers, automation_handling, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    automation_markers, automation_handling,
+                    transcript_dir, transcript_review_enabled, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -364,6 +541,8 @@ class StandupStore:
                    documentation_scope_configured = excluded.documentation_scope_configured,
                    automation_markers = excluded.automation_markers,
                    automation_handling = excluded.automation_handling,
+                   transcript_dir = excluded.transcript_dir,
+                   transcript_review_enabled = excluded.transcript_review_enabled,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -387,6 +566,8 @@ class StandupStore:
                 int(documentation_scope_configured),
                 automation_markers,
                 automation_handling or "exclude",
+                transcript_dir,
+                int(transcript_review_enabled),
                 now,
                 now,
             ),
@@ -426,7 +607,8 @@ class StandupStore:
             "SELECT session_id, enabled, time, timezone, weekdays, delivery_channels, repo_path, lead_minutes, "
             "my_aliases, tracker_sources, team_members, roster_configured, "
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
-            "documentation_sources, documentation_scope_configured, automation_markers, automation_handling "
+            "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
+            "transcript_dir, transcript_review_enabled "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -486,6 +668,10 @@ class StandupStore:
             "documentation_scope_configured": bool(row[18]),
             "automation_markers": row[19] or "",
             "automation_handling": row[20] or "exclude",
+            "transcript_dir": row[21] or "",
+            # Default ON: a row written before this column existed still gets the
+            # sweep, which is the behaviour a user who drops a transcript expects.
+            "transcript_review_enabled": bool(row[22]) if row[22] is not None else True,
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────
@@ -744,6 +930,221 @@ class StandupStore:
             except (json.JSONDecodeError, TypeError, KeyError) as exc:
                 logger.warning("Failed to deserialize a standup report: %s", exc)
         return reports
+
+    def get_run_row_by_date(self, session_id: str, standup_date: str) -> int:
+        """Return the history row id of the newest usable run ON a date, or 0.
+
+        Scoped like ``get_previous_report`` (success/partial only) so a
+        transcript review audits the run the team actually saw, not a failed
+        attempt from the same morning.
+        """
+        row = self._conn.execute(
+            "SELECT id FROM standup_history "
+            "WHERE session_id = ? AND standup_date = ? AND status IN ('success', 'partial') "
+            "ORDER BY run_at DESC LIMIT 1",
+            (session_id, standup_date),
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    # ── Transcript reviews ────────────────────────────────────────────────
+
+    def record_review(self, review: TranscriptReview, *, status: str = "drafted") -> int:
+        """Persist a transcript review and return its row id."""
+        cursor = self._conn.execute(
+            """INSERT INTO standup_reviews
+                   (session_id, run_id, standup_date, reviewed_at, review_json, status, warnings_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                review.session_id,
+                review.run_id,
+                review.standup_date,
+                review.reviewed_at or self._now(),
+                _review_to_json(review),
+                status,
+                json.dumps(list(review.warnings)),
+            ),
+        )
+        review_id = int(cursor.lastrowid or 0)
+        logger.info(
+            "Recorded transcript review: session=%s date=%s id=%d gaps=%d suggestions=%d",
+            review.session_id,
+            review.standup_date,
+            review_id,
+            len(review.gaps),
+            len(review.config_suggestions),
+        )
+        return review_id
+
+    def get_review(self, review_id: int) -> TranscriptReview | None:
+        """Return one review by row id, or None if missing/corrupt."""
+        row = self._conn.execute("SELECT id, review_json FROM standup_reviews WHERE id = ?", (review_id,)).fetchone()
+        if row is None or not row[1]:
+            return None
+        try:
+            review = _dict_to_review(json.loads(row[1]))
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to deserialize transcript review id=%s: %s", review_id, exc)
+            return None
+        # The id is assigned by SQLite on insert, so the serialized copy predates
+        # it; hand callers back a review that knows its own row.
+        return replace(review, review_id=int(row[0]))
+
+    def get_reviews(self, session_id: str, limit: int = 30) -> list[dict]:
+        """Return recent review metadata (newest first) for a session."""
+        rows = self._conn.execute(
+            "SELECT id, run_id, standup_date, reviewed_at, status FROM standup_reviews "
+            "WHERE session_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+        return [{"id": r[0], "run_id": r[1], "standup_date": r[2], "reviewed_at": r[3], "status": r[4]} for r in rows]
+
+    def get_latest_review(self, session_id: str) -> TranscriptReview | None:
+        """Return the most recent transcript review for a session, or None."""
+        row = self._conn.execute(
+            "SELECT id FROM standup_reviews WHERE session_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return self.get_review(int(row[0])) if row else None
+
+    def set_review_status(self, review_id: int, status: str) -> None:
+        """Update a review's filing status ('drafted' | 'filed' | 'partial')."""
+        self._conn.execute("UPDATE standup_reviews SET status = ? WHERE id = ?", (status, review_id))
+
+    # ── Transcript bookkeeping ────────────────────────────────────────────
+
+    def mark_transcript_reviewed(
+        self, session_id: str, *, path: str, content_hash: str, covered_date: str, review_id: int
+    ) -> None:
+        """Record that a transcript has been reviewed, keyed by content hash.
+
+        Content-keyed on purpose: renaming or re-dropping the same file must not
+        re-spend an LLM call, while editing it genuinely is new material.
+        """
+        self._conn.execute(
+            """INSERT INTO standup_transcripts
+                   (session_id, path, content_hash, covered_date, reviewed_at, review_id)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(session_id, content_hash) DO UPDATE SET
+                   path = excluded.path,
+                   covered_date = excluded.covered_date,
+                   reviewed_at = excluded.reviewed_at,
+                   review_id = excluded.review_id""",
+            (session_id, path, content_hash, covered_date, self._now(), review_id),
+        )
+
+    def reviewed_transcript_hashes(self, session_id: str) -> set[str]:
+        """Return the content hashes already reviewed for a session."""
+        rows = self._conn.execute(
+            "SELECT content_hash FROM standup_transcripts WHERE session_id = ?", (session_id,)
+        ).fetchall()
+        return {r[0] for r in rows}
+
+    # ── Gap → GitHub issue ledger (cross-session by design) ───────────────
+
+    def get_gap_issue(self, fingerprint: str) -> dict | None:
+        """Return the issue ledger row for a gap fingerprint, or None."""
+        row = self._conn.execute(
+            "SELECT fingerprint, category, title, issue_number, issue_url, state, via, "
+            "first_seen_at, filed_at, last_seen_at, last_commented_at, occurrences, last_review_id "
+            "FROM standup_gap_issues WHERE fingerprint = ?",
+            (fingerprint,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "fingerprint": row[0],
+            "category": row[1],
+            "title": row[2],
+            "issue_number": int(row[3] or 0),
+            "issue_url": row[4] or "",
+            "state": row[5] or "drafted",
+            "via": row[6] or "",
+            "first_seen_at": row[7] or "",
+            "filed_at": row[8] or "",
+            "last_seen_at": row[9] or "",
+            "last_commented_at": row[10] or "",
+            "occurrences": int(row[11] or 0),
+            "last_review_id": int(row[12] or 0),
+        }
+
+    def upsert_gap_issue(
+        self,
+        fingerprint: str,
+        *,
+        category: str = "",
+        title: str = "",
+        issue_number: int | None = None,
+        issue_url: str | None = None,
+        state: str | None = None,
+        via: str | None = None,
+        filed_at: str | None = None,
+        last_commented_at: str | None = None,
+        review_id: int = 0,
+        bump_occurrence: bool = True,
+    ) -> dict:
+        """Insert or update a gap's ledger row and return it.
+
+        Every optional field uses COALESCE-on-NULL semantics: passing None keeps
+        whatever is stored. That matters most for ``filed_at`` and
+        ``issue_number`` — a later "seen again" must never erase the fact that
+        the gap already has an issue, which is exactly how dedup would silently
+        start filing duplicates.
+        """
+        now = self._now()
+        self._conn.execute(
+            """INSERT INTO standup_gap_issues
+                   (fingerprint, category, title, issue_number, issue_url, state, via,
+                    first_seen_at, filed_at, last_seen_at, last_commented_at, occurrences, last_review_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(fingerprint) DO UPDATE SET
+                   category = excluded.category,
+                   title = excluded.title,
+                   issue_number = COALESCE(?, standup_gap_issues.issue_number),
+                   issue_url = COALESCE(?, standup_gap_issues.issue_url),
+                   state = COALESCE(?, standup_gap_issues.state),
+                   via = COALESCE(?, standup_gap_issues.via),
+                   filed_at = COALESCE(?, standup_gap_issues.filed_at),
+                   last_commented_at = COALESCE(?, standup_gap_issues.last_commented_at),
+                   last_seen_at = excluded.last_seen_at,
+                   occurrences = standup_gap_issues.occurrences + ?,
+                   last_review_id = excluded.last_review_id""",
+            (
+                fingerprint,
+                category,
+                title,
+                issue_number or 0,
+                issue_url or "",
+                state or "drafted",
+                via or "",
+                now,
+                filed_at or "",
+                now,
+                last_commented_at or "",
+                1 if bump_occurrence else 0,
+                review_id,
+                issue_number,
+                issue_url,
+                state,
+                via,
+                filed_at,
+                last_commented_at,
+                1 if bump_occurrence else 0,
+            ),
+        )
+        row = self.get_gap_issue(fingerprint)
+        return row if row is not None else {}
+
+    def get_gap_issues(self, limit: int = 50) -> list[dict]:
+        """Return the gap ledger, most recently seen first (cross-session)."""
+        rows = self._conn.execute(
+            "SELECT fingerprint FROM standup_gap_issues ORDER BY last_seen_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        out: list[dict] = []
+        for (fingerprint,) in rows:
+            entry = self.get_gap_issue(fingerprint)
+            if entry is not None:
+                out.append(entry)
+        return out
 
     def get_all_history(self, limit: int = 100) -> list[dict]:
         """Return recent standup run metadata across ALL sessions (for cadence + the hub)."""

@@ -1,8 +1,17 @@
 """Unit tests for the Daily Standup SQLite store."""
 
+from dataclasses import replace
+
 import pytest
 
-from yeaboi.agent.state import MemberUpdate, StandupReport
+from yeaboi.agent.state import (
+    MemberUpdate,
+    StandupGap,
+    StandupReport,
+    TranscriptClaim,
+    TranscriptReview,
+    TranscriptSource,
+)
 from yeaboi.standup.store import StandupStore
 
 
@@ -626,3 +635,259 @@ class TestGetPreviousReport:
         with StandupStore(db_path) as store:
             store.record_run(_make_report(date="2026-07-09", session_id="other"))
             assert store.get_previous_report("s1", "2026-07-10") is None
+
+
+# ---------------------------------------------------------------------------
+# Transcript review — reviews, transcript bookkeeping, and the gap→issue ledger
+# ---------------------------------------------------------------------------
+
+
+def _make_review(**overrides) -> TranscriptReview:
+    base = dict(
+        session_id="s1",
+        standup_date="2026-07-10",
+        run_id=0,
+        reviewed_at="2026-07-10T11:00:00+00:00",
+        sources=(
+            TranscriptSource(
+                path="/tmp/t.vtt",
+                filename="t.vtt",
+                fmt="vtt",
+                covered_date="2026-07-10",
+                char_count=120,
+                speakers=("Alice",),
+            ),
+        ),
+        claims=(
+            TranscriptClaim(
+                member="Alice",
+                claim="also commented on the design doc",
+                quote="I also commented on the design doc",
+                status="missing",
+                system_hint="confluence",
+                artifact_hint="comment on a page",
+            ),
+        ),
+        gaps=(
+            StandupGap(
+                fingerprint="abc123",
+                category="capability_gap_in_supported_source",
+                scope="product",
+                title="Standup misses Confluence page comments",
+                members=("Alice",),
+                affected_systems=("confluence",),
+                next_steps=("Fetch page comments in collector.py",),
+            ),
+        ),
+        config_suggestions=(
+            StandupGap(
+                fingerprint="def456",
+                category="scope_gap_repository",
+                scope="config",
+                title="acme/infra is not in your code scope",
+                remedy="Add acme/infra via Standup -> Configure -> Code",
+            ),
+        ),
+        claims_matched=3,
+        claims_missing=1,
+        llm_mode="llm",
+        warnings=("one warning",),
+    )
+    base.update(overrides)
+    return TranscriptReview(**base)
+
+
+class TestTranscriptReviews:
+    def test_round_trips(self, db_path):
+        review = _make_review()
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(review)
+            loaded = store.get_review(review_id)
+        assert loaded is not None
+        # review_id is assigned on insert, so compare the rest field-for-field.
+        assert replace(loaded, review_id=0) == review
+        assert loaded.review_id == review_id
+
+    def test_nested_gaps_and_claims_rebuild_as_dataclasses(self, db_path):
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(_make_review())
+            loaded = store.get_review(review_id)
+        assert isinstance(loaded.gaps[0], StandupGap)
+        assert isinstance(loaded.claims[0], TranscriptClaim)
+        assert isinstance(loaded.sources[0], TranscriptSource)
+        assert loaded.gaps[0].affected_systems == ("confluence",)
+        assert loaded.config_suggestions[0].scope == "config"
+
+    def test_old_review_json_without_new_keys_deserializes(self, db_path):
+        import json
+
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(_make_review())
+            (raw,) = store._conn.execute("SELECT review_json FROM standup_reviews").fetchone()
+            stripped = json.loads(raw)
+            for key in ("gaps", "config_suggestions", "sources", "claims", "llm_mode", "untracked_count"):
+                stripped.pop(key, None)
+            store._conn.execute("UPDATE standup_reviews SET review_json = ?", (json.dumps(stripped),))
+            loaded = store.get_review(review_id)
+        assert loaded is not None
+        assert loaded.gaps == ()
+        assert loaded.config_suggestions == ()
+        assert loaded.sources == ()
+        assert loaded.llm_mode == ""
+
+    def test_corrupt_json_returns_none(self, db_path):
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(_make_review())
+            store._conn.execute("UPDATE standup_reviews SET review_json = 'garbage'")
+            assert store.get_review(review_id) is None
+
+    def test_get_review_missing_returns_none(self, db_path):
+        with StandupStore(db_path) as store:
+            assert store.get_review(999) is None
+
+    def test_latest_and_list(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_review(_make_review(standup_date="2026-07-09", reviewed_at="2026-07-09T11:00:00+00:00"))
+            store.record_review(_make_review(standup_date="2026-07-10", reviewed_at="2026-07-10T11:00:00+00:00"))
+            latest = store.get_latest_review("s1")
+            rows = store.get_reviews("s1")
+        assert latest.standup_date == "2026-07-10"
+        assert [r["standup_date"] for r in rows] == ["2026-07-10", "2026-07-09"]
+        assert rows[0]["status"] == "drafted"
+
+    def test_status_update(self, db_path):
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(_make_review())
+            store.set_review_status(review_id, "filed")
+            assert store.get_reviews("s1")[0]["status"] == "filed"
+
+    def test_other_session_ignored(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_review(_make_review(session_id="other"))
+            assert store.get_latest_review("s1") is None
+
+
+class TestRunRowByDate:
+    def test_returns_newest_run_on_the_date(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10"))
+            second = store.record_run(_make_report(date="2026-07-10"))
+            assert store.get_run_row_by_date("s1", "2026-07-10") == second
+
+    def test_failed_run_ignored(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10"), status="failed")
+            assert store.get_run_row_by_date("s1", "2026-07-10") == 0
+
+    def test_no_run_returns_zero(self, db_path):
+        with StandupStore(db_path) as store:
+            assert store.get_run_row_by_date("s1", "2026-07-10") == 0
+
+
+class TestTranscriptBookkeeping:
+    def test_marks_and_lists_hashes(self, db_path):
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1", path="/tmp/a.vtt", content_hash="h1", covered_date="2026-07-10", review_id=1
+            )
+            assert store.reviewed_transcript_hashes("s1") == {"h1"}
+
+    def test_same_content_at_a_new_path_is_not_re_reviewed(self, db_path):
+        # Renaming a transcript must not re-spend an LLM call: the key is content.
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1", path="/tmp/a.vtt", content_hash="h1", covered_date="2026-07-10", review_id=1
+            )
+            store.mark_transcript_reviewed(
+                "s1", path="/tmp/renamed.vtt", content_hash="h1", covered_date="2026-07-10", review_id=2
+            )
+            rows = store._conn.execute("SELECT path, review_id FROM standup_transcripts").fetchall()
+        assert rows == [("/tmp/renamed.vtt", 2)]
+
+    def test_hashes_are_session_scoped(self, db_path):
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed(
+                "s1", path="/tmp/a.vtt", content_hash="h1", covered_date="2026-07-10", review_id=1
+            )
+            assert store.reviewed_transcript_hashes("other") == set()
+
+
+class TestGapIssueLedger:
+    def test_insert_then_read(self, db_path):
+        with StandupStore(db_path) as store:
+            store.upsert_gap_issue("fp1", category="integration_missing", title="Slack", review_id=3)
+            entry = store.get_gap_issue("fp1")
+        assert entry["category"] == "integration_missing"
+        assert entry["state"] == "drafted"
+        assert entry["occurrences"] == 1
+        assert entry["last_review_id"] == 3
+
+    def test_recurrence_bumps_occurrences(self, db_path):
+        with StandupStore(db_path) as store:
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            assert store.get_gap_issue("fp1")["occurrences"] == 3
+
+    def test_recurrence_preserves_filed_state(self, db_path):
+        """A later 'seen again' must never erase the issue number — that is how
+        dedup would silently start filing duplicates onto a public repo."""
+        with StandupStore(db_path) as store:
+            store.upsert_gap_issue(
+                "fp1",
+                category="c",
+                title="t",
+                issue_number=42,
+                issue_url="https://example/42",
+                state="filed",
+                via="api",
+                filed_at="2026-07-10T00:00:00+00:00",
+            )
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            entry = store.get_gap_issue("fp1")
+        assert entry["issue_number"] == 42
+        assert entry["issue_url"] == "https://example/42"
+        assert entry["state"] == "filed"
+        assert entry["filed_at"] == "2026-07-10T00:00:00+00:00"
+        assert entry["occurrences"] == 2
+
+    def test_bump_occurrence_can_be_suppressed(self, db_path):
+        with StandupStore(db_path) as store:
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            store.upsert_gap_issue("fp1", category="c", title="t", state="filed", bump_occurrence=False)
+            assert store.get_gap_issue("fp1")["occurrences"] == 1
+
+    def test_missing_returns_none(self, db_path):
+        with StandupStore(db_path) as store:
+            assert store.get_gap_issue("nope") is None
+
+    def test_ledger_is_not_session_scoped(self, db_path):
+        """The loop improves yeaboi itself, so the same gap in two projects is one issue."""
+        with StandupStore(db_path) as store:
+            store.upsert_gap_issue("fp1", category="c", title="t")
+            store.upsert_gap_issue("fp2", category="c2", title="t2")
+            assert {e["fingerprint"] for e in store.get_gap_issues()} == {"fp1", "fp2"}
+
+
+class TestTranscriptConfig:
+    def test_round_trips(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config(
+                "s1",
+                enabled=True,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                transcript_dir="/tmp/meetings",
+                transcript_review_enabled=False,
+            )
+            cfg = store.load_config("s1")
+        assert cfg["transcript_dir"] == "/tmp/meetings"
+        assert cfg["transcript_review_enabled"] is False
+
+    def test_defaults_to_enabled(self, db_path):
+        with StandupStore(db_path) as store:
+            store.save_config("s1", enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+            cfg = store.load_config("s1")
+        assert cfg["transcript_dir"] == ""
+        assert cfg["transcript_review_enabled"] is True

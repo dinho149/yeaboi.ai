@@ -138,6 +138,11 @@ ENV_FILE = DEFAULT_ROOT_DIR / ".env"
 REPL_HISTORY = ROOT_DIR / "repl-history"
 BIN_DIR = ROOT_DIR / "bin"  # app-managed helper binaries (e.g. cloudflared for retro tunnels)
 ATTACHMENTS_DIR = ROOT_DIR / "attachments"  # screenshots pasted into TUI textboxes (Ctrl+V)
+# Managed drop folder for standup meeting transcripts. Flat, not per-session:
+# a transcript is attributed to a standup by DATE, not by directory. Living
+# under ROOT_DIR is the point — fs_policy already allows this tree, so dropping
+# a file here needs no path-consent prompt (an external dir does).
+TRANSCRIPTS_DIR = ROOT_DIR / "transcripts"
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +431,18 @@ def get_attachments_dir(scope_id: str) -> Path:
     d = ATTACHMENTS_DIR / _safe_key(scope_id, "misc")
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def get_transcripts_dir() -> Path:
+    """Return the managed standup-transcript drop folder, creating it if needed.
+
+    Drop a meeting transcript here and the next standup run reviews it (see
+    ``standup/transcripts.py``). Flat by design: files are matched to a standup
+    by the date in their filename/content, so per-session subdirectories would
+    only add a step the user has to get right.
+    """
+    TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    return TRANSCRIPTS_DIR
 
 
 def migrate_root_dir() -> None:

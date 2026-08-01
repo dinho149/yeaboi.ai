@@ -36,6 +36,8 @@ _CONFIG_DEFAULTS = {
     "documentation_scope_configured": False,
     "automation_markers": "",
     "automation_handling": "exclude",
+    "transcript_dir": "",
+    "transcript_review_enabled": True,
 }
 
 
@@ -160,6 +162,8 @@ def _standup_config_set(
     documentation_sources: list | None,
     automation_markers: str | None,
     automation_handling: str | None,
+    transcript_dir: str | None,
+    transcript_review_enabled: bool | None,
 ) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
@@ -179,6 +183,13 @@ def _standup_config_set(
         from yeaboi.fs_policy import resolve_and_check
 
         resolve_and_check(repo_path, mode="read", context="standup repo_path")
+    if transcript_dir:
+        # Same reasoning as repo_path: the transcript sweep later reads files out
+        # of this directory, so it must clear the sandbox before it is persisted
+        # — otherwise every scheduled run would fail the check silently instead.
+        from yeaboi.fs_policy import resolve_and_check
+
+        resolve_and_check(transcript_dir, mode="read", context="standup transcript_dir")
     if automation_handling is not None and automation_handling not in VALID_AUTOMATION_HANDLING:
         raise ValueError(
             f"automation_handling must be one of {', '.join(VALID_AUTOMATION_HANDLING)}, got {automation_handling!r}"
@@ -242,6 +253,12 @@ def _standup_config_set(
             ),
             "automation_handling": (
                 current.get("automation_handling", "exclude") if automation_handling is None else automation_handling
+            ),
+            "transcript_dir": (current.get("transcript_dir", "") if transcript_dir is None else transcript_dir),
+            "transcript_review_enabled": (
+                current.get("transcript_review_enabled", True)
+                if transcript_review_enabled is None
+                else transcript_review_enabled
             ),
         }
         store.save_config(resolved, **merged)
@@ -335,6 +352,8 @@ def register(app) -> None:
         documentation_sources: list[str] | None = None,
         automation_markers: str | None = None,
         automation_handling: str | None = None,
+        transcript_dir: str | None = None,
+        transcript_review_enabled: bool | None = None,
     ) -> dict:
         """Update a session's standup configuration; omitted fields keep their current value.
         time is HH:MM (the meeting time), weekdays like '1-5' or '1,3,5', delivery_channels from
@@ -346,6 +365,9 @@ def register(app) -> None:
         automation_markers is a comma-separated list of content signatures (e.g. 'wiz') marking
         service-hook/bot comments posted under a member's identity; automation_handling is
         'exclude' (drop detected automation from member credit, with a notice) or 'off'.
+        transcript_dir is an optional EXTERNAL folder of standup meeting transcripts (the
+        managed ~/.yeaboi/transcripts folder is always swept); transcript_review_enabled
+        turns off the automatic transcript review that runs before each standup.
         NOTE: this saves the config only — installing the OS schedule (launchd/cron) is
         machine-local and done from the yeaboi TUI. Blank session_id = most recent session."""
         return await run_readonly(
@@ -367,4 +389,6 @@ def register(app) -> None:
             documentation_sources,
             automation_markers,
             automation_handling,
+            transcript_dir,
+            transcript_review_enabled,
         )

@@ -3171,6 +3171,8 @@ def _standup_team_configure(
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -3333,6 +3335,8 @@ def _standup_code_configure(
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     return True, (
         f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
@@ -3429,6 +3433,8 @@ def _standup_documentation_configure(
             documentation_scope_configured=True,
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
@@ -3720,6 +3726,7 @@ def _run_standup_schedule_wizard(
             lead_minutes=lead_val,
             weekdays=weekdays,
             delivery_channels=channels,
+            timezone=existing.get("timezone", ""),
             repo_path=existing.get("repo_path", ""),
             my_aliases=existing.get("my_aliases", ""),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -3734,6 +3741,8 @@ def _run_standup_schedule_wizard(
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
             automation_markers=existing.get("automation_markers", ""),
             automation_handling=existing.get("automation_handling", "exclude"),
+            transcript_dir=existing.get("transcript_dir", ""),
+            transcript_review_enabled=existing.get("transcript_review_enabled", True),
         )
     msg = install_schedule(session_id, time_val, weekdays, lead_val) if enabled else remove_schedule(session_id)
     logger.info("standup schedule wizard: saved session=%s enabled=%s -> %s", session_id, enabled, msg)
@@ -3807,6 +3816,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             lead_minutes=int(existing.get("lead_minutes", 10)),
             weekdays=existing.get("weekdays", "1-5"),
             delivery_channels=existing.get("delivery_channels", ["terminal"]),
+            timezone=existing.get("timezone", ""),
             repo_path=repo_in,
             my_aliases=aliases_in.strip(),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -3821,6 +3831,8 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
             automation_markers=existing.get("automation_markers", ""),
             automation_handling=existing.get("automation_handling", "exclude"),
+            transcript_dir=existing.get("transcript_dir", ""),
+            transcript_review_enabled=existing.get("transcript_review_enabled", True),
         )
     logger.info("standup identity: saved (session=%s)", session_id)
     return "Identity saved."

@@ -419,6 +419,132 @@ class StandupReport:
     annotations: tuple[Annotation, ...] = ()
 
 
+# See docs: "Session Management" — Daily Standup transcript-review artifacts
+#
+# After the standup MEETING, a transcript of it is the only place the report
+# gets fact-checked out loud ("yes, but I also did 4 and 5"). The transcript
+# review absorbs that correction and works out WHY the work was invisible, so
+# each root cause can become a GitHub issue against yeaboi itself. The review is
+# a SIBLING artifact, never a field on StandupReport: standup_history is an
+# append-only record of what was said at the time, and reports must not grow a
+# field that every older serialized report lacks.
+#
+# Same rules as every artifact here: FROZEN, every field defaulted, collections
+# as tuples so asdict() round-trips (see CLAUDE.md "Frozen dataclass backward
+# compatibility").
+@dataclass(frozen=True)
+class TranscriptSource:
+    """One transcript file that fed a review."""
+
+    path: str = ""
+    filename: str = ""
+    fmt: str = ""  # txt | md | vtt | srt | json
+    covered_date: str = ""  # ISO date of the standup this transcript is FOR
+    char_count: int = 0
+    truncated: bool = False  # hit the read cap — the tail was not reviewed
+    speakers: tuple[str, ...] = ()  # raw speaker labels found, pre-attribution
+    attribution: str = "labelled"  # "labelled" | "unlabelled" (too few speaker labels to trust)
+    external: bool = False  # came from the configured external dir, not the managed one
+
+
+@dataclass(frozen=True)
+class TranscriptClaim:
+    """One thing a person said they did, checked against what the report knew.
+
+    ``quote`` is verbatim transcript text and is what makes the claim
+    falsifiable: the review drops any claim whose quote is not literally present
+    in the transcript, which is the single strongest guard against an invented
+    gap reaching a public issue tracker.
+    """
+
+    member: str = ""  # resolved roster name; "" when attribution failed
+    claim: str = ""  # what they said they did, in the model's words
+    quote: str = ""  # verbatim supporting transcript text (clipped)
+    status: str = ""  # matched | missing | contradicted
+    matched_key: str = ""  # the evidence key it corresponds to, when one was offered
+    # jira | azure_devops | github | azure_repos | local_git | confluence | notion | none | unknown
+    system_hint: str = ""
+    artifact_hint: str = ""  # free text from the model — never fingerprinted, see gap_taxonomy
+    source_path: str = ""  # which transcript it came from
+
+
+@dataclass(frozen=True)
+class StandupGap:
+    """One diagnosed reason standup missed (or misstated) real work.
+
+    ``scope`` decides what happens next and is the whole point of the taxonomy:
+    "config" means the user can fix it by configuring standup, so it stays local
+    as a suggestion; "product" means yeaboi is at fault and no amount of
+    configuring helps, so it becomes a drafted GitHub issue. "none" is counted
+    only (work with no digital footprint is expected, not a defect).
+    """
+
+    fingerprint: str = ""  # stable dedup key — see gap_taxonomy.fingerprint
+    category: str = ""  # a gap_taxonomy GapCategory id
+    scope: str = ""  # config | product | none
+    title: str = ""
+    detail: str = ""
+    root_cause: str = ""
+    priority: str = "medium"  # critical | high | medium | low
+    confidence: str = "medium"  # high | medium | low
+    feedback_kind: str = "Improvement"  # maps to feedback.FEEDBACK_TYPES for the issue title prefix
+    members: tuple[str, ...] = ()
+    claims: tuple[TranscriptClaim, ...] = ()
+    evidence: tuple[str, ...] = ()  # human-readable "why we believe this" lines
+    next_steps: tuple[str, ...] = ()
+    affected_systems: tuple[str, ...] = ()
+    remedy: str = ""  # for config gaps: the exact thing the user should change
+
+
+@dataclass(frozen=True)
+class TranscriptReview:
+    """The audit of one standup report against the meeting that discussed it."""
+
+    review_id: int = 0
+    session_id: str = ""
+    standup_date: str = ""  # the date the reviewed transcripts cover
+    run_id: int = 0  # standup_history.id of the audited run; 0 when no run matched
+    reviewed_at: str = ""
+    sources: tuple[TranscriptSource, ...] = ()
+    claims: tuple[TranscriptClaim, ...] = ()
+    gaps: tuple[StandupGap, ...] = ()  # scope="product" — these draft GitHub issues
+    config_suggestions: tuple[StandupGap, ...] = ()  # scope="config" — never filed
+    accuracy_note: str = ""
+    claims_matched: int = 0
+    claims_missing: int = 0
+    claims_contradicted: int = 0
+    untracked_count: int = 0  # claims with no digital footprint — expected, not a defect
+    llm_mode: str = ""  # "llm" | "deterministic"
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GapIssueLink:
+    """What happened to one gap on GitHub — the dedup ledger's public half."""
+
+    fingerprint: str = ""
+    issue_number: int = 0  # 0 for the browser path, which cannot learn the number
+    issue_url: str = ""
+    state: str = ""  # drafted | filed | commented | browser | skipped | failed | blocked
+    filed_at: str = ""
+    last_commented_at: str = ""
+    occurrences: int = 0
+    via: str = ""  # "api" | "browser" | ""
+    message: str = ""  # human status line, including why a filing was skipped/blocked
+
+
+@dataclass(frozen=True)
+class IssueFilingResult:
+    """Outcome of one explicit "file these" act. Never raised, always reported."""
+
+    review_id: int = 0
+    links: tuple[GapIssueLink, ...] = ()
+    filed: int = 0
+    commented: int = 0
+    skipped: int = 0
+    warnings: tuple[str, ...] = ()
+
+
 # See docs: "Session Management" — Retro mode artifacts
 #
 # The Retro (retrospective) mode produces a RetroReport: every sticky card the
