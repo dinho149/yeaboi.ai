@@ -1365,6 +1365,17 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
 
 
 def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
+    # Route this run's records to ~/.yeaboi/logs/standup/ like every other
+    # standup entry point (CLAUDE.md "Observability" — each mode logs to its own
+    # directory). Only the --standup-run scheduler path did this before, so a
+    # `yeaboi standup` run left nothing behind in the standup log.
+    from yeaboi.logging_setup import mode_log
+
+    with mode_log("standup"):
+        return _cmd_standup_inner(args, console)
+
+
+def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
     from yeaboi.standup.engine import run_standup
     from yeaboi.standup.render import format_standup_rich
 
@@ -1485,6 +1496,13 @@ def _format_review_text(review, console: "Console") -> None:
 
 def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
     """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
+    from yeaboi.logging_setup import mode_log
+
+    with mode_log("standup"):
+        return _cmd_standup_review_inner(args, console)
+
+
+def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> int:
     from yeaboi.paths import get_db_path
     from yeaboi.standup.engine import file_transcript_issues, run_transcript_review
     from yeaboi.standup.store import StandupStore
