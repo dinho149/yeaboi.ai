@@ -21,6 +21,7 @@
 import type { Run } from '../design/primitives';
 import type { Tone } from '../design/tone';
 import { requireBoot } from '../runtime/boot';
+import type { EditPerson, EditRow } from './editing/state';
 import type { PageChrome } from '../shared/chrome';
 import type { CarriedStatuses, RetroGrids } from '../types/enums';
 
@@ -477,9 +478,28 @@ export type ExportReport = (
 ) &
   Annotated;
 
+/**
+ * Present only on a tunnel-served editable document.
+ *
+ * **Absent for a file on disk**, and that absence is the whole switch: `main.tsx`
+ * never reaches the edit stack without it, so an export written to disk runs no
+ * network code. `tests/_pages.assert_inert` checks that from the other side.
+ *
+ * Carries no secret. `GET /` is unauthenticated for the gate, and the same
+ * renderer writes documents to disk — a token here would be in both.
+ */
+export interface EditBoot {
+  revision: number;
+  /** False once the host has closed editing: history shows, affordances do not. */
+  editable: boolean;
+  edits: EditRow[];
+  people: EditPerson[];
+}
+
 export interface ExportBoot {
   chrome: ExportChrome;
   report: ExportReport;
+  editing?: EditBoot;
 }
 
 export function readExportBoot(): ExportBoot {

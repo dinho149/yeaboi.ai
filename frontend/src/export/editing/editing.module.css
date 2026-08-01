@@ -1,0 +1,131 @@
+/* Editing affordances. Tokens only — test_web_frontend_guards forbids literal
+   colours in a component stylesheet, and every width query has to sit on the
+   breakpoint scale declared in design/tokens.css. */
+
+.wrap {
+  position: relative;
+}
+
+.wrap[data-edited='1'] {
+  border-block-end: 1px dashed var(--line-strong);
+}
+
+.trigger,
+.edited,
+.add {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 var(--space-1);
+}
+
+.trigger:hover,
+.edited:hover,
+.add:hover {
+  color: var(--fg);
+}
+
+.trigger:focus-visible,
+.edited:focus-visible,
+.add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pencil is quiet until the region is hovered or something in it has focus.
+   A document covered in always-visible controls stops reading as a document. */
+.trigger {
+  opacity: 0;
+}
+
+.wrap:hover .trigger,
+.trigger:focus-visible {
+  opacity: 1;
+}
+
+.editor {
+  display: block;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.error {
+  display: block;
+  margin-block-start: var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.busy {
+  margin-inline-start: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.list {
+  display: block;
+}
+
+.addRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-block-start: var(--space-2);
+}
+
+.slot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.name {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+/* Visually hidden but read aloud. Every state this file signals with a shape or
+   a border also carries a word, because a dotted underline is invisible to a
+   screen reader and to a monochrome printout alike. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* An editable document prints as a document: the affordances are not part of
+   what anyone wants on paper. */
+@media print {
+  .trigger,
+  .addRow,
+  .slot,
+  .busy {
+    display: none;
+  }
+}

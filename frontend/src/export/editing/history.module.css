@@ -1,0 +1,142 @@
+/* The edit history dock. Tokens only, and every breakpoint on the declared
+   scale in design/tokens.css. */
+
+.dock {
+  position: sticky;
+  bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-block-start: var(--space-7);
+}
+
+.people {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.panel {
+  width: 100%;
+  max-width: 34rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Said in words, not implied by an icon: every name in this panel was typed by
+   whoever held the link. */
+.caveat {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.identity {
+  margin-block-end: var(--space-4);
+}
+
+.identityRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.label {
+  display: block;
+  margin-block-end: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.nameInput {
+  flex: 1 1 12rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+.avatars {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.avatarPick {
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: var(--space-1);
+}
+
+.avatarPick[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-2);
+}
+
+.what,
+.value,
+.meta,
+.filter,
+.empty,
+.closed {
+  margin: 0;
+}
+
+.value {
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  gap: var(--space-3);
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.where,
+.clear,
+.revert {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.empty,
+.closed {
+  color: var(--muted);
+}
+
+@media print {
+  .dock {
+    display: none;
+  }
+}

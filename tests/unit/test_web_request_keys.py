@@ -36,6 +36,11 @@ pytestmark = pytest.mark.skipif(not FRONTEND.is_dir(), reason="frontend sources 
 PAIRS = [
     ("poker/actions.ts", "src/yeaboi/poker/server.py"),
     ("retro/actions.ts", "src/yeaboi/retro/server.py"),
+    # The editable shared document. Its presence heartbeat goes through an
+    # actions.ts rather than through hooks/useHeartbeat precisely so this guard
+    # can see it — the shared hook spells its wire keys inside itself, which is
+    # why the boards' own heartbeat keys are invisible here.
+    ("export/actions.ts", "src/yeaboi/sharing/server.py"),
 ]
 
 # Merged into every body by postJSON, so no action names them itself.

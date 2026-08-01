@@ -484,6 +484,69 @@ def _boot_snapshots() -> dict[str, dict]:
     }
 
 
+def _editable_snapshot() -> dict[str, dict]:
+    """One editable shared document, after a correction of every shape.
+
+    The response direction for the edit surface. It matters more than most
+    fixtures here: a dropped field on this frame does not fail a request, it
+    renders a document whose history panel is missing the thing somebody is
+    looking for, and only for whoever opened the tunnel link.
+
+    Ids and timestamps are supplied rather than generated so the fixture is
+    stable without needing a `_normalise` rule — the same discipline the poker
+    snapshots use, and one fewer place for a rule to go stale.
+    """
+    from yeaboi.agent.state import MemberUpdate, StandupReport
+    from yeaboi.artifacts.edits import Edit
+    from yeaboi.sharing.documents import editable_share
+
+    report = StandupReport(
+        date="2026-01-01",
+        team_summary="The team shipped auth.",
+        member_updates=(MemberUpdate(name="Ada", summary="Landed login.", blockers="staging db"),),
+    )
+    share = editable_share(report, kind="standup", ref="standup:1")
+    at = "2026-01-01T00:00:00+00:00"
+    share.document.apply(
+        Edit(
+            edit_id="edit0001",
+            op="set",
+            path="member_updates[name=Ada].blockers",
+            value="unblocked",
+            author="Grace",
+            avatar="🦊",
+            pid="pid-1",
+            at=at,
+        )
+    )
+    share.document.apply(
+        Edit(
+            edit_id="edit0002",
+            op="note",
+            path="member_updates[name=Ada]",
+            value="was on call all week",
+            author="Grace",
+            avatar="🦊",
+            pid="pid-1",
+            at=at,
+        )
+    )
+    share.document.apply(
+        Edit(
+            edit_id="edit0003",
+            op="field",
+            label="Risk owner",
+            value="Grace",
+            author="Ada",
+            avatar="🐙",
+            pid="pid-2",
+            at=at,
+        )
+    )
+    share.document.heartbeat("pid-2", name="Ada", avatar="🐙", editing="team_summary")
+    return {"editable": share.snapshot("pid-1")}
+
+
 def _fixtures() -> dict[str, dict]:
     return {
         "deck": _deck_snapshot(),
@@ -492,6 +555,7 @@ def _fixtures() -> dict[str, dict]:
         **_boot_snapshots(),
         **_poker_snapshots(),
         **_export_snapshots(),
+        **_editable_snapshot(),
     }
 
 

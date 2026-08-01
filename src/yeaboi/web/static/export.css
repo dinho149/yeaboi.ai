@@ -2598,3 +2598,145 @@ ul._memberSummary_i8p5a_319 {
     color: var(--muted);
   }
 }
+/* The edit history dock. Tokens only, and every breakpoint on the declared
+   scale in design/tokens.css. */
+
+._dock_17360_4 {
+  position: sticky;
+  bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-block-start: var(--space-7);
+}
+
+._people_17360_14 {
+  display: flex;
+  gap: var(--space-1);
+}
+
+._panel_17360_19 {
+  width: 100%;
+  max-width: 34rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  padding: var(--space-4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Said in words, not implied by an icon: every name in this panel was typed by
+   whoever held the link. */
+._caveat_17360_32 {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+._identity_17360_38 {
+  margin-block-end: var(--space-4);
+}
+
+._identityRow_17360_42 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+._label_17360_49 {
+  display: block;
+  margin-block-end: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+._nameInput_17360_56 {
+  flex: 1 1 12rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+._avatars_17360_66 {
+  display: flex;
+  gap: var(--space-1);
+}
+
+._avatarPick_17360_71 {
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-md);
+  padding: var(--space-1);
+}
+
+._avatarPick_17360_71[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+._list_17360_84 {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+._row_17360_92 {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-2);
+}
+
+._what_17360_97,
+._value_17360_98,
+._meta_17360_99,
+._filter_17360_100,
+._empty_17360_101,
+._closed_17360_102 {
+  margin: 0;
+}
+
+._value_17360_98 {
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+._meta_17360_99 {
+  display: flex;
+  gap: var(--space-3);
+  margin-block-start: var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+._where_17360_121,
+._clear_17360_122,
+._revert_17360_123 {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+._empty_17360_101,
+._closed_17360_102 {
+  color: var(--muted);
+}
+
+@media print {
+  ._dock_17360_4 {
+    display: none;
+  }
+}

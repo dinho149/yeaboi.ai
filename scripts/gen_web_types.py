@@ -31,6 +31,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from yeaboi.artifacts.edits import EDIT_OPS
 from yeaboi.poker.board import DUEL_STATUSES, POKER_DECK, POKER_PHASES
 from yeaboi.retro.board import (
     AVATARS,
@@ -208,6 +209,13 @@ def render() -> str:
             "DUEL_STATUSES",
             DUEL_STATUSES,
             "The open floor's lifecycle. The browser renders a different panel for each.",
+        ),
+        _tuple_const(
+            "EDIT_OPS",
+            EDIT_OPS,
+            "What one correction does to a shared artifact. Server-validated, so it is "
+            "generated rather than shipped in a boot payload — a payload would win at "
+            "runtime and let a stale bundle offer an op the server rejects.",
         ),
         _block_glyphs(),
         _wordmark_samples(),

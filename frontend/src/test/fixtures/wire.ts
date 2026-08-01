@@ -52,9 +52,11 @@ import type { GateBoot } from '../../gate/boot';
 import type { PokerBoot } from '../../poker/boot';
 import type { RetroBoot } from '../../retro/boot';
 import type { ExportBoot, ExportReport } from '../../export/boot';
+import type { EditDocState } from '../../export/editing/state';
 import type { InviteInfo, PokerState, RetroState, TicketView } from '../../types/board';
 
 import deckJson from './deck.json';
+import editableJson from './editable.json';
 import gateBootJson from './gate.boot.json';
 import inviteJson from './invite.json';
 import exportAnonymizeJson from './export.anonymize.json';
@@ -150,3 +152,8 @@ void (exportReportingJson satisfies Widened<BootOf<'reporting'>>);
 void (exportRetroJson satisfies Widened<BootOf<'retro'>>);
 void (exportRoadmapJson satisfies Widened<BootOf<'roadmap'>>);
 void (exportStandupJson satisfies Widened<BootOf<'standup'>>);
+
+// The editable shared document's `/api/state` frame. The one fixture here that
+// is both a response *and* a document: it carries the same {chrome, report} an
+// export does, plus the edit log and who is present.
+void (editableJson satisfies Widened<EditDocState>);

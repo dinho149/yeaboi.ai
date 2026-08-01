@@ -267,3 +267,46 @@ class TestBundlesAreShippable:
         """Two-way check — adding an entry without listing it here skips its guards."""
         on_disk = {p.stem for p in STATIC_DIR.glob("*.js")}
         assert on_disk == set(BUNDLES)
+
+
+class TestExportedFilesAreInert:
+    """The edit stack ships in the bundle; it must never switch itself on.
+
+    `import()` is banned by `test_bundle_fetches_nothing` and `cssCodeSplit` is
+    off, so there is no lazy path and never can be — the editing code is in every
+    exported file whether that file wants it or not. What keeps the file inert is
+    that `main.tsx` reaches the edit stack only through the boot payload's
+    `editing` key, and an exporter never writes one.
+    """
+
+    def test_the_bundle_really_does_contain_the_edit_stack(self):
+        # The premise. If this ever stops being true the rest of the class is
+        # asserting something vacuous.
+        source = (STATIC_DIR / "export.js").read_text(encoding="utf-8")
+        assert "/api/edit" in source
+
+    def test_no_exported_report_carries_an_editing_session(self):
+        """Asserted over the committed boot payloads of all ten exports.
+
+        Those fixtures are read straight out of the rendered pages by
+        ``test_web_wire_shapes``, so this checks the real documents rather than a
+        re-derivation of them.
+        """
+        import json
+
+        fixtures = STATIC_DIR.parents[3] / "frontend/src/test/fixtures"
+        pages = sorted(fixtures.glob("export.*.json"))
+        assert pages, "no export fixtures found — this test is checking nothing"
+        for page in pages:
+            payload = json.loads(page.read_text(encoding="utf-8"))
+            assert "editing" not in payload, f"{page.name} carries an editing session"
+
+    def test_a_served_editable_document_does(self):
+        # The other half: a guard nobody has seen distinguish two cases is a
+        # guard nobody knows works.
+        from tests._pages import island
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.sharing.documents import editable_share, render_editable_page
+
+        share = editable_share(StandupReport(date="2026-01-01"), kind="standup")
+        assert "editing" in island(render_editable_page(share))
