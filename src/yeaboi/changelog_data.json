@@ -2,6 +2,31 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.48.0",
+      "date": "2026-08-01",
+      "summary": "Daily Standup no longer walks you through five pickers on every run — tracker sources, team members, code sources, repositories, and documentation sources — when you've already told it once. Generate now opens with a summary of your saved setup and three buttons: Use Saved goes straight to \"Your update for today\", Change lets you adjust any settings (still pre-selected from last time), and Back cancels. The gate only appears when there's something to reuse; first runs and incomplete setups are unchanged.",
+      "highlights": [
+        {
+          "text": "Standup Generate offers your saved setup on every run: Use Saved, Change, or Back",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "The summary shows your configured trackers, team, code sources, and docs without scrolling",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Saved selections are still pre-selected if you choose Change, and are self-healed if an integration is removed",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.47.1",
       "date": "2026-08-02",
       "summary": "Copying an invite link now gives you one working URL instead of a broken two-line clipboard payload. Teammates clicking a stale link now get a clear \"That invite link is out of date\" message instead of a confusing error, and the code is preserved in the URL fragment so it stays out of server logs and referer headers. The fix applies to both live retro and planning poker boards and Share Online exports across all modes.",
