@@ -2328,6 +2328,137 @@ ul._memberSummary_i8p5a_319 {
   white-space: nowrap;
   border: 0;
 }
+/* Editing affordances. Tokens only — test_web_frontend_guards forbids literal
+   colours in a component stylesheet, and every width query has to sit on the
+   breakpoint scale declared in design/tokens.css. */
+
+._wrap_106rh_5 {
+  position: relative;
+}
+
+._wrap_106rh_5[data-edited='1'] {
+  border-block-end: 1px dashed var(--line-strong);
+}
+
+._trigger_106rh_13,
+._edited_106rh_14,
+._add_106rh_15 {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 var(--space-1);
+}
+
+._trigger_106rh_13:hover,
+._edited_106rh_14:hover,
+._add_106rh_15:hover {
+  color: var(--fg);
+}
+
+._trigger_106rh_13:focus-visible,
+._edited_106rh_14:focus-visible,
+._add_106rh_15:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The pencil is quiet until the region is hovered or something in it has focus.
+   A document covered in always-visible controls stops reading as a document. */
+._trigger_106rh_13 {
+  opacity: 0;
+}
+
+._wrap_106rh_5:hover ._trigger_106rh_13,
+._trigger_106rh_13:focus-visible {
+  opacity: 1;
+}
+
+._editor_106rh_48 {
+  display: block;
+}
+
+._input_106rh_52 {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+._actions_106rh_62 {
+  display: flex;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+._error_106rh_68 {
+  display: block;
+  margin-block-start: var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+._busy_106rh_75 {
+  margin-inline-start: var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+._list_106rh_81 {
+  display: block;
+}
+
+._addRow_106rh_85 {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-block-start: var(--space-2);
+}
+
+._slot_106rh_92 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+._name_106rh_99 {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font: inherit;
+  padding: var(--space-2);
+}
+
+/* Visually hidden but read aloud. Every state this file signals with a shape or
+   a border also carries a word, because a dotted underline is invisible to a
+   screen reader and to a monochrome printout alike. */
+._srOnly_106rh_111 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* An editable document prints as a document: the affordances are not part of
+   what anyone wants on paper. */
+@media print {
+  ._trigger_106rh_13,
+  ._addRow_106rh_85,
+  ._slot_106rh_92,
+  ._busy_106rh_75 {
+    display: none;
+  }
+}
 /*
  * The shared page shell: masthead, contents, body column, footer.
  *

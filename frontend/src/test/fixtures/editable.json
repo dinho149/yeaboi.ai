@@ -117,10 +117,21 @@
       "trendText": ""
     },
     "coverage": [],
+    "edit": {
+      "confidence_rationale": {
+        "path": "confidence_rationale",
+        "value": ""
+      },
+      "team_summary": {
+        "path": "team_summary",
+        "value": "The team shipped auth."
+      }
+    },
     "images": [],
     "kind": "standup",
     "members": [
       {
+        "anchor": "member_updates[name=Ada]",
         "blockers": [
           {
             "s": "unblocked"
@@ -132,6 +143,36 @@
           0,
           0
         ],
+        "edit": {
+          "blockers": {
+            "path": "member_updates[name=Ada].blockers",
+            "value": "unblocked"
+          },
+          "code_summary": {
+            "path": "member_updates[name=Ada].code_summary",
+            "value": ""
+          },
+          "documentation_summary": {
+            "path": "member_updates[name=Ada].documentation_summary",
+            "value": ""
+          },
+          "outlook": {
+            "path": "member_updates[name=Ada].outlook",
+            "value": ""
+          },
+          "progress_note": {
+            "path": "member_updates[name=Ada].progress_note",
+            "value": ""
+          },
+          "summary": {
+            "path": "member_updates[name=Ada].summary",
+            "value": "Landed login."
+          },
+          "ticketing_summary": {
+            "path": "member_updates[name=Ada].ticketing_summary",
+            "value": ""
+          }
+        },
         "footnotes": [],
         "links": [],
         "name": "Ada",

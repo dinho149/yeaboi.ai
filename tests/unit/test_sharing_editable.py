@@ -427,3 +427,55 @@ class TestReadOnlyShareIsUnchanged:
 
     def test_a_bad_code_is_still_refused(self, plain):
         assert Client(plain).post("/api/join", {"code": "WRON-GXXX"}, token="")[0] == 403
+
+
+class TestTheEditPathsReachTheBrowser:
+    """A correctable region needs its path *and* the raw value beside it.
+
+    Without the value the browser would have to reconstruct a field from what it
+    drew, and for standup that is impossible in principle — `_team_summary_runs`
+    shreds prose into sentences of link-runs and has no inverse.
+    """
+
+    def test_a_served_standup_carries_paths_and_raw_values(self):
+        share = editable_share(report(), kind="standup")
+        frame = share.snapshot()
+        assert frame["report"]["edit"]["team_summary"] == {
+            "path": "team_summary",
+            "value": "The team shipped auth.",
+        }
+        member = frame["report"]["members"][0]
+        assert member["anchor"] == "member_updates[name=Ada]"
+        assert member["edit"]["blockers"]["value"] == "staging db"
+
+    def test_a_file_export_carries_none_of_it(self):
+        from tests._pages import island
+        from yeaboi.standup.export import build_standup_html
+
+        payload = island(build_standup_html(report()))["report"]
+        assert "edit" not in payload
+        assert "anchor" not in payload["members"][0]
+
+    def test_a_path_from_the_payload_is_one_the_server_accepts(self):
+        # The round trip this whole design turns on: the browser sends back the
+        # path it was handed, and it addresses the artifact rather than the
+        # drawing it came from.
+        share = editable_share(report(), kind="standup")
+        path = share.snapshot()["report"]["members"][0]["edit"]["blockers"]["path"]
+        share.document.apply(an_edit(op="set", path=path, value="unblocked"))
+        assert share.document.current().member_updates[0].blockers == "unblocked"
+
+    def test_the_raw_value_is_what_a_compare_and_swap_needs(self):
+        # An editor sends back the value it was shown as `base`. If the payload
+        # handed it the *drawn* text, every CAS would fail.
+        share = editable_share(report(), kind="standup")
+        target = share.snapshot()["report"]["edit"]["team_summary"]
+        share.document.apply(an_edit(op="set", path=target["path"], value="Corrected.", base=target["value"]))
+        assert share.document.current().team_summary == "Corrected."
+
+    def test_an_edit_is_visible_in_the_very_next_frame(self):
+        share = editable_share(report(), kind="standup")
+        share.document.apply(an_edit(op="set", path="team_summary", value="Corrected."))
+        frame = share.snapshot()
+        assert frame["report"]["edit"]["team_summary"]["value"] == "Corrected."
+        assert "Corrected." in json.dumps(frame["report"]["summary"])

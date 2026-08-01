@@ -200,6 +200,9 @@ export interface StandupMember {
   counts: [number, number, number];
   /** Leftover general links. Legacy reports carry no per-category ones. */
   links: EvidenceLink[];
+  /** This member's path, for hanging a note or a field off them. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface PlanFeature {
@@ -398,6 +401,7 @@ export type ExportReport = (
       emoji: Record<string, string>;
       trend: Trend | null;
       warnings: string[];
+      edit?: EditMap;
     }
   | {
       kind: 'standup';
@@ -488,6 +492,26 @@ export type ExportReport = (
  * Carries no secret. `GET /` is unauthenticated for the gate, and the same
  * renderer writes documents to disk — a token here would be in both.
  */
+/**
+ * Where one editable region lives, and what it currently says.
+ *
+ * `path` addresses the **artifact**, not this payload. The two are not the same
+ * shape and cannot be: `_team_summary_runs` shreds prose into sentences of link
+ * runs with no inverse, so an editor opened on what is drawn could never hand
+ * back something the server can store. `value` is the raw field, which is what
+ * the editor opens on and what the server replaces.
+ *
+ * Present only on a document served editable. A file export has no `edit` keys
+ * at all, which is what keeps a downloaded report byte-for-byte what it was.
+ */
+export interface EditTarget {
+  path: string;
+  value: string;
+}
+
+/** The editable fields of one payload node, keyed by artifact field name. */
+export type EditMap = Record<string, EditTarget>;
+
 export interface EditBoot {
   revision: number;
   /** False once the host has closed editing: history shows, affordances do not. */

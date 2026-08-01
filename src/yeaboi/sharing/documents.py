@@ -138,7 +138,10 @@ def _payload_builder(kind: str, *, history=()):
         if kind == "standup":
             from yeaboi.standup.export import standup_export_args
 
-            return standup_export_args(artifact, history=history)
+            # `editable=True` is what adds the per-region {path, value} maps.
+            # A file export never asks for them, which is why a downloaded
+            # report stays byte-for-byte what it was.
+            return standup_export_args(artifact, history=history, editable=True)
         if kind == "reporting":
             from yeaboi.reporting.export import reporting_export_args
 
