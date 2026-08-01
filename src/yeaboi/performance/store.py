@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS performance_one_on_ones (
     on_date          TEXT NOT NULL DEFAULT '',
     report_json      TEXT NOT NULL DEFAULT '',
     action_items_json TEXT NOT NULL DEFAULT '[]',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS performance_reviews (
@@ -50,6 +55,11 @@ CREATE TABLE IF NOT EXISTS performance_reviews (
     period_start TEXT NOT NULL DEFAULT '',
     period_end   TEXT NOT NULL DEFAULT '',
     report_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS performance_notes (

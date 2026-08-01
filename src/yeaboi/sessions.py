@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 20  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection  # noqa: E501
+CURRENT_SCHEMA_VERSION = 21  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -700,6 +700,31 @@ class SessionStore:
                 logger.info("Migration v20: added Analysis run feature selection")
             except sqlite3.OperationalError:
                 pass  # column already exists (pre-rebase lineage) — nothing to do
+
+        if from_version < 21:
+            # v21: browser-editable shared artifacts. The append-only edit log
+            # gets its own table; each history table learns where a row came
+            # from, so a corrected report can be told from a generated one.
+            from yeaboi.artifacts.store import _ARTIFACT_EDITS_SCHEMA
+
+            self._conn.executescript(_ARTIFACT_EDITS_SCHEMA)
+            # `origin` and not a new `status` value: get_previous_report filters
+            # status IN ('success','partial'), so a third status would silently
+            # drop every corrected standup out of the next day's comparison.
+            for table in (
+                "standup_history",
+                "retro_history",
+                "reporting_history",
+                "roadmap_history",
+                "performance_one_on_ones",
+                "performance_reviews",
+            ):
+                for column, kind, default in (("origin", "TEXT", "'generated'"), ("edited_from_id", "INTEGER", "0")):
+                    try:
+                        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind} NOT NULL DEFAULT {default}")
+                    except sqlite3.OperationalError:
+                        pass  # column already exists — the block stays idempotent
+            logger.info("Migration v21: created artifact_edits and edit-provenance columns")
 
     # ── Token usage persistence ──────────────────────────────────────────
 

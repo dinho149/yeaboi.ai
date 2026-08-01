@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS standup_history (
     sprint_day      INTEGER NOT NULL DEFAULT 0,
     confidence_pct  INTEGER NOT NULL DEFAULT 0,
     report_json     TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0,
     delivery_status TEXT NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'success',
     error           TEXT NOT NULL DEFAULT ''
@@ -537,14 +542,16 @@ class StandupStore:
         delivery_status: dict[str, bool] | None = None,
         status: str = "success",
         error: str = "",
+        origin: str = "generated",
+        edited_from_id: int = 0,
     ) -> int:
         """Persist a completed standup run and return its history row id."""
         report_json = _standup_report_to_json(report)
         cursor = self._conn.execute(
             """INSERT INTO standup_history
                    (session_id, run_at, standup_date, sprint_day, confidence_pct,
-                    report_json, delivery_status, status, error)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    report_json, delivery_status, status, error, origin, edited_from_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 report.session_id,
                 self._now(),
@@ -555,6 +562,8 @@ class StandupStore:
                 json.dumps(delivery_status or {}),
                 status,
                 error,
+                origin,
+                edited_from_id,
             ),
         )
         logger.info("Recorded standup run: session=%s date=%s status=%s", report.session_id, report.date, status)

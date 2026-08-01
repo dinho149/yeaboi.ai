@@ -36,7 +36,12 @@ CREATE TABLE IF NOT EXISTS retro_history (
     retro_date   TEXT NOT NULL DEFAULT '',
     project_name TEXT NOT NULL DEFAULT '',
     card_count   INTEGER NOT NULL DEFAULT 0,
-    report_json  TEXT NOT NULL DEFAULT ''
+    report_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0
 );"""
 
 
@@ -131,13 +136,14 @@ class RetroStore:
 
     # ── Run history ───────────────────────────────────────────────────────
 
-    def record_run(self, report: RetroReport) -> int:
+    def record_run(self, report: RetroReport, *, origin: str = "generated", edited_from_id: int = 0) -> int:
         """Persist a completed retro and return its history row id."""
         report_json = _retro_report_to_json(report)
         cursor = self._conn.execute(
             """INSERT INTO retro_history
-                   (session_id, run_at, retro_date, project_name, card_count, report_json)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+                   (session_id, run_at, retro_date, project_name, card_count, report_json,
+                    origin, edited_from_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 report.session_id,
                 self._now(),
@@ -145,6 +151,8 @@ class RetroStore:
                 report.project_name,
                 len(report.cards),
                 report_json,
+                origin,
+                edited_from_id,
             ),
         )
         logger.info(

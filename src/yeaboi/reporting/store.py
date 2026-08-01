@@ -37,7 +37,12 @@ CREATE TABLE IF NOT EXISTS reporting_history (
     period_end   TEXT NOT NULL DEFAULT '',
     project_name TEXT NOT NULL DEFAULT '',
     item_count   INTEGER NOT NULL DEFAULT 0,
-    report_json  TEXT NOT NULL DEFAULT ''
+    report_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0
 );"""
 
 
@@ -145,12 +150,15 @@ class ReportingStore:
 
     # ── Run history ───────────────────────────────────────────────────────
 
-    def record_run(self, report: DeliveryReport, *, session_id: str = "") -> int:
+    def record_run(
+        self, report: DeliveryReport, *, session_id: str = "", origin: str = "generated", edited_from_id: int = 0
+    ) -> int:
         """Persist a generated delivery report and return its history row id."""
         cursor = self._conn.execute(
             """INSERT INTO reporting_history
-                   (session_id, run_at, period, period_end, project_name, item_count, report_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (session_id, run_at, period, period_end, project_name, item_count, report_json,
+                    origin, edited_from_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session_id,
                 self._now(),
@@ -159,6 +167,8 @@ class ReportingStore:
                 report.project_name,
                 len(report.delivered_items),
                 _report_to_json(report),
+                origin,
+                edited_from_id,
             ),
         )
         logger.info(
