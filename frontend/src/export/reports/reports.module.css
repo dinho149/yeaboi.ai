@@ -321,6 +321,12 @@
   font-size: var(--fs-s);
   line-height: 1.6;
 }
+/* The intro renders as terse clause bullets (a ul), one thought per line. */
+ul.memberSummary {
+  display: grid;
+  gap: calc(var(--s1) / 2);
+  padding-left: 1.1em;
+}
 .since {
   margin: var(--s2) 0 0;
   color: var(--muted);
@@ -335,14 +341,141 @@
   gap: var(--s3);
   margin-top: var(--s3);
 }
+/* The border colour is set inline per category tone, so Tickets / Code / Docs
+   land in consistently colour-coded positions across every card. */
+.category {
+  border-left: 2px solid var(--line);
+  padding-left: var(--s2);
+}
 .category > * + * {
   margin-top: var(--s2);
+}
+.categoryHead {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
 }
 
 .chipRow {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
+}
+
+/* The jump strip above the member cards: who's here, who's blocked, one glance. */
+.memberStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+.memberJump {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+.memberJump:hover {
+  border-color: var(--line-strong);
+}
+.memberJumpBlocked {
+  border-color: var(--danger);
+}
+.memberJumpFlag {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+/* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
+.evidence {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
+   fold would render fully open with a lying "+ N more" button. */
+.evidence[hidden] {
+  display: none;
+}
+.evidenceRow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--s2);
+  font-size: var(--fs-xs);
+}
+.evidenceRef {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.evidenceTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evidenceMeta {
+  grid-column: 2 / -1;
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+}
+/* Board status with its glyph — colour comes inline via toneVar; the word is
+   always beside it (never colour alone). */
+.evidenceStatus {
+  white-space: nowrap;
+}
+/* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
+.commitToggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.commitToggle:hover {
+  color: var(--text);
+}
+.evidenceChildren {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+  list-style: none;
+}
+/* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
+.evidenceChildren[hidden] {
+  display: none;
+}
+.moreToggle {
+  margin-top: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.moreToggle:hover {
+  color: var(--text);
 }
 
 .note {

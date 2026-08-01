@@ -872,6 +872,9 @@ class TestMemberUpdate:
             "ticketing_summary": "",
             "ticketing_links": (),
             "ticketing_activity_count": 0,
+            "ticketing_evidence": (),
+            "code_evidence": (),
+            "documentation_evidence": (),
         }
 
     def test_self_report_defaults_empty(self):

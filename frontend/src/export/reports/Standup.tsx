@@ -30,7 +30,9 @@ import {
   StatTile,
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
+import { cx } from '../../runtime/cx';
 import type { EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import { EvidenceList } from './Evidence';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
 
@@ -52,6 +54,13 @@ const COVERAGE_TONE: Record<string, Tone> = {
 
 /** The three activity categories, in the order every part of this page uses. */
 const CATEGORY_TONES: readonly Tone[] = ['accent', 'accent2', 'info'];
+/** Payload category labels → the same tones, so the count chips, the activity
+ * bars, and the category blocks all speak one colour language. */
+const CATEGORY_TONE_BY_LABEL: Record<string, Tone> = {
+  Ticketing: 'accent',
+  Code: 'accent2',
+  Documentation: 'info',
+};
 /** Legend headings. Always plural — they label a series, not a count. */
 const CATEGORY_LABELS = ['Tickets', 'Code', 'Docs'] as const;
 /** `[singular, plural]` for the count chips. "Code" is uncountable either way. */
@@ -63,6 +72,16 @@ const CATEGORY_NOUNS: ReadonlyArray<readonly [string, string]> = [
 
 function tone(map: Record<string, Tone>, key: string): Tone {
   return map[key] ?? 'low';
+}
+
+/** Anchor-safe member id for the jump strip, `#m-ada-lovelace`. */
+function memberSlug(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'member'
+  );
 }
 
 /** Evidence that is not already an inline link in the prose, as chips. */
@@ -79,10 +98,17 @@ function Links({ links }: { links: EvidenceLink[] }) {
   );
 }
 
-function Category({ category }: { category: StandupCategory }) {
+function Category({ category, slug }: { category: StandupCategory; slug: string }) {
+  const categoryTone = tone(CATEGORY_TONE_BY_LABEL, category.label);
+  const evidence = category.evidence ?? [];
   return (
-    <div className={styles['category']}>
-      <Eyebrow>{category.label}</Eyebrow>
+    <div className={styles['category']} style={{ borderLeftColor: toneVar(categoryTone) }}>
+      <span className={styles['categoryHead']}>
+        {/* The tone anchors the block to its count chip and activity-bar segment;
+            the Eyebrow word rides beside the colour, per the house rule. */}
+        <i className={styles['dot']} style={{ background: toneVar(categoryTone) }} aria-hidden="true" />
+        <Eyebrow>{category.label}</Eyebrow>
+      </span>
       {category.items.length ? (
         <ul className={styles['bullets']}>
           {category.items.map((runs, index) => (
@@ -92,7 +118,12 @@ function Category({ category }: { category: StandupCategory }) {
           ))}
         </ul>
       ) : null}
-      <Links links={category.links} />
+      {evidence.length ? (
+        <EvidenceList items={evidence} id={`ev-${slug}-${category.label.toLowerCase()}`} />
+      ) : (
+        // Legacy reports predate structured evidence — keep their chips.
+        <Links links={category.links} />
+      )}
     </div>
   );
 }
@@ -111,12 +142,16 @@ function Member({ member }: { member: StandupMember }) {
   const chips = member.counts
     .map((count, i) => {
       const [singular, plural] = CATEGORY_NOUNS[i] as readonly [string, string];
-      return { count, noun: count === 1 ? singular : plural };
+      return { count, noun: count === 1 ? singular : plural, chipTone: CATEGORY_TONES[i] as Tone };
     })
     .filter(({ count }) => count > 0);
+  const slug = memberSlug(member.name);
 
   return (
-    <div className={member.blockers ? `${styles['member']} ${styles['blocked']}` : styles['member']}>
+    <div
+      id={`m-${slug}`}
+      className={member.blockers ? `${styles['member']} ${styles['blocked']}` : styles['member']}
+    >
       <div className={styles['memberHead']}>
         <span className={styles['person']}>
           <Avatar name={member.name} size={26} />
@@ -124,8 +159,8 @@ function Member({ member }: { member: StandupMember }) {
           {member.own ? <Chip tone="accent">you</Chip> : null}
         </span>
         <div className={styles['chips']}>
-          {chips.map(({ count, noun }) => (
-            <Chip key={noun}>
+          {chips.map(({ count, noun, chipTone }) => (
+            <Chip key={noun} tone={chipTone}>
               {count} {noun}
             </Chip>
           ))}
@@ -133,9 +168,20 @@ function Member({ member }: { member: StandupMember }) {
         </div>
       </div>
 
-      <p className={styles['memberSummary']}>
-        {member.summary.length ? <RichText runs={member.summary} /> : 'No activity detected.'}
-      </p>
+      {/* The blocker leads the card: it is the one thing on this page somebody
+          has to act on, and it must not sit below three categories of prose. */}
+      {member.blockers ? <Note label="Blocker" runs={member.blockers} tone="danger" /> : null}
+      {member.summary.length ? (
+        <ul className={styles['memberSummary']}>
+          {member.summary.map((runs, index) => (
+            <li key={index}>
+              <RichText runs={runs} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles['memberSummary']}>No activity detected.</p>
+      )}
       {member.progressNote ? (
         <p className={styles['since']}>
           <span aria-hidden="true">↺</span> <em>Since last standup:</em>{' '}
@@ -147,7 +193,7 @@ function Member({ member }: { member: StandupMember }) {
       {member.categories.length ? (
         <div className={styles['categories']}>
           {member.categories.map((category) => (
-            <Category key={category.label} category={category} />
+            <Category key={category.label} category={category} slug={slug} />
           ))}
         </div>
       ) : null}
@@ -158,13 +204,35 @@ function Member({ member }: { member: StandupMember }) {
       ))}
 
       {member.outlook ? <Note label="Outlook" runs={member.outlook} /> : null}
-      {member.blockers ? <Note label="Blocker" runs={member.blockers} tone="danger" /> : null}
       {member.selfReport ? (
         <p className={styles['quote']}>
           <span aria-hidden="true">✍</span> <RichText runs={member.selfReport} />
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Who's in this standup, at a glance — avatar pills that jump to each card.
+ * Blocked members are marked with the word, not the ring alone.
+ */
+function MemberStrip({ members }: { members: StandupMember[] }) {
+  if (members.length < 2) return null;
+  return (
+    <nav className={styles['memberStrip']} aria-label="Jump to member">
+      {members.map((member) => (
+        <a
+          key={member.name}
+          className={cx(styles['memberJump'], member.blockers && styles['memberJumpBlocked'])}
+          href={`#m-${memberSlug(member.name)}`}
+        >
+          <Avatar name={member.name} size={18} />
+          <span>{member.name}</span>
+          {member.blockers ? <span className={styles['memberJumpFlag']}>blocked</span> : null}
+        </a>
+      ))}
+    </nav>
   );
 }
 
@@ -283,6 +351,7 @@ export function Standup({
 
       <section id="updates">
         <h2 className={styles['h2']}>Updates</h2>
+        <MemberStrip members={members} />
         {members.length ? (
           members.map((member) => <Member key={member.name} member={member} />)
         ) : (

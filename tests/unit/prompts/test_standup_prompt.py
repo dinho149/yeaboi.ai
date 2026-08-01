@@ -49,6 +49,24 @@ class TestStandupSummaryPrompt:
         assert '"members"' in p
         assert '"team_summary"' in p
 
+    def test_member_summary_is_terse_clauses_with_keys_only(self):
+        # The member summary renders as intro bullets, one per clause — the
+        # prompt must demand short semicolon-separated clauses and ban
+        # restating ticket titles (they render as evidence rows, and the
+        # exporter appends the title to each first key mention itself).
+        p = _prompt()
+        assert "2-4 TERSE CLAUSES separated by semicolons" in p
+        assert "at most 10 words" in p
+        assert "refer to tickets by key only" in p
+        assert "NEVER restate a ticket's title" in p
+
+    def test_continuing_is_reserved_for_in_progress(self):
+        # A rank drag or field edit must not be narrated as work the person is
+        # "continuing" — that word belongs to their assigned in-progress list.
+        p = _prompt()
+        assert "RESERVED for 'in_progress' items" in p
+        assert "never as work the person is continuing or carrying" in p
+
     def test_empty_counts(self):
         p = _prompt(activity_counts=[])
         assert "no activity sources reported" in p

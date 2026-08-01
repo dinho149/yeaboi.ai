@@ -397,6 +397,9 @@ class TestJiraChangelogItems:
         assert updates[0]["author"] == "Bob"
         assert updates[0]["author_email"] == "bob@corp.com"
         assert updates[0]["title"] == "moved PROJ-1 'Fix login' to In Review"
+        # The clean ticket summary rides alongside the action-phrase title so
+        # evidence rows can show what the ticket IS, not what happened to it.
+        assert updates[0]["summary"] == "Fix login"
         assert updates[0]["status"] == "In Review"
 
     def test_generic_edit_by_assignee_suppressed(self, monkeypatch):
@@ -421,6 +424,81 @@ class TestJiraChangelogItems:
         # Alice is the assignee (already credited via the issue item); only Carol's edit shows.
         assert [u["author"] for u in updates] == ["Carol"]
         assert updates[0]["title"] == "updated PROJ-1 'Fix login'"
+        assert updates[0]["summary"] == "Fix login"
+
+    def test_rank_only_edit_is_not_activity(self, monkeypatch):
+        # Dragging a card up the board writes a Rank changelog entry (on
+        # neighbours too) — board mechanics, not work someone did on a ticket.
+        issue = _jira_issue()
+        issue.changelog = SimpleNamespace(
+            histories=[
+                SimpleNamespace(
+                    author=SimpleNamespace(displayName="Bob", emailAddress=""),
+                    created=self._NOW,
+                    items=[SimpleNamespace(field="Rank", toString="Ranked higher")],
+                )
+            ]
+        )
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        assert [i for i in items if i["kind"] == "update"] == []
+
+    def test_sprint_field_rewrite_is_not_activity(self, monkeypatch):
+        # Completing a sprint rewrites the Sprint field on every open ticket,
+        # with the sprint-closer as the actor of all of them.
+        issue = _jira_issue()
+        issue.changelog = SimpleNamespace(
+            histories=[
+                SimpleNamespace(
+                    author=SimpleNamespace(displayName="Bob", emailAddress=""),
+                    created=self._NOW,
+                    items=[SimpleNamespace(field="Sprint", toString="Sprint 43")],
+                )
+            ]
+        )
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        assert [i for i in items if i["kind"] == "update"] == []
+
+    def test_meaningful_edit_alongside_rank_still_counts(self, monkeypatch):
+        # Grooming often reorders too — a description edit in the same history
+        # entry keeps it as real activity.
+        issue = _jira_issue()
+        issue.changelog = SimpleNamespace(
+            histories=[
+                SimpleNamespace(
+                    author=SimpleNamespace(displayName="Bob", emailAddress=""),
+                    created=self._NOW,
+                    items=[
+                        SimpleNamespace(field="Rank", toString="Ranked higher"),
+                        SimpleNamespace(field="description", toString="tightened AC"),
+                    ],
+                )
+            ]
+        )
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        updates = [i for i in items if i["kind"] == "update"]
+        assert [u["title"] for u in updates] == ["updated PROJ-1 'Fix login'"]
+
+    def test_status_move_with_rank_alongside_still_counts(self, monkeypatch):
+        issue = _jira_issue()
+        issue.changelog = SimpleNamespace(
+            histories=[
+                SimpleNamespace(
+                    author=SimpleNamespace(displayName="Bob", emailAddress=""),
+                    created=self._NOW,
+                    items=[
+                        SimpleNamespace(field="Rank", toString="Ranked higher"),
+                        SimpleNamespace(field="status", toString="Done"),
+                    ],
+                )
+            ]
+        )
+        self._client(monkeypatch, [issue])
+        items = jira_recent_activity("PROJ", days=1)
+        updates = [i for i in items if i["kind"] == "update"]
+        assert [u["status"] for u in updates] == ["Done"]
 
     def test_out_of_window_history_ignored(self, monkeypatch):
         issue = _jira_issue()
@@ -454,6 +532,7 @@ class TestJiraChangelogItems:
         assert len(comments) == 1
         assert comments[0]["author"] == "Dana"
         assert comments[0]["title"] == "commented on PROJ-1 'Fix login'"
+        assert comments[0]["summary"] == "Fix login"
         assert "secret detail" not in str(comments)
 
     def test_gdpr_hidden_email_defaults_empty(self, monkeypatch):
@@ -953,6 +1032,9 @@ class TestConfluenceMultiEditor:
         # Eve once (lastUpdated), Omar from version history, Old Editor out of window.
         assert authors == ["Eve", "Omar"]
         assert items[1]["title"] == "edited 'Runbook'"
+        # The clean page title rides alongside the action phrase so evidence
+        # rows can link the page by name instead of showing a numeric id.
+        assert items[1]["summary"] == "Runbook"
         assert items[1]["author_email"] == "omar@corp.com"
 
     def test_analysis_discovery_can_skip_version_history(self, monkeypatch):
@@ -1124,6 +1206,7 @@ class TestConfluenceMultiEditor:
         assert len(created) == 1
         assert created[0]["author"] == "Nia"
         assert created[0]["title"] == "created 'Runbook'"
+        assert created[0]["summary"] == "Runbook"
 
     def test_app_account_editors_skipped(self, monkeypatch):
         # Cloud automation/app users edit pages too — they must not be credited.

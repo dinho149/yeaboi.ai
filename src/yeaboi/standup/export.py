@@ -157,7 +157,37 @@ def _ticket_key_map(report: StandupReport) -> dict[str, str]:
     return key_map
 
 
-def _runs(text: str, key_map: Mapping[str, str], names: re.Pattern[str] | None = None) -> list[dict]:
+_TICKET_TITLE_MAX = 60
+
+
+def _ticket_title_map(report: StandupReport) -> dict[str, str]:
+    """Map ticket keys to their collected titles for first-mention enrichment.
+
+    Harvested from the structured evidence rows — deterministic collector data,
+    never LLM output. The first non-empty title per key wins, trimmed so an
+    enriched link stays a phrase rather than a paragraph.
+    """
+    titles: dict[str, str] = {}
+    for m in report.member_updates:
+        for field in ("ticketing_evidence", "code_evidence", "documentation_evidence"):
+            for e in getattr(m, field, ()) or ():
+                key = _ev_field(e, "key")
+                title = _ev_field(e, "title")
+                if not title or key in titles or not _TICKET_KEY_RE.fullmatch(key):
+                    continue
+                if len(title) > _TICKET_TITLE_MAX:
+                    title = title[: _TICKET_TITLE_MAX - 1].rstrip() + "…"
+                titles[key] = title
+    return titles
+
+
+def _runs(
+    text: str,
+    key_map: Mapping[str, str],
+    names: re.Pattern[str] | None = None,
+    titles: Mapping[str, str] | None = None,
+    seen: set[str] | None = None,
+) -> list[dict]:
     """Split prose into ``{s, href?, strong?}`` runs: ticket keys link, member names bold.
 
     **This is what replaced the escape-then-substitute pair.** There used to be
@@ -191,7 +221,15 @@ def _runs(text: str, key_map: Mapping[str, str], names: re.Pattern[str] | None =
         # safe_url even here: the fallback branch of `_ticket_key_map` builds a
         # URL from configured Jira base, and a hostile one must not become a link.
         elif url := safe_url(key_map.get(span) or ""):
-            runs.append({"s": span, "href": url})
+            if titles is not None and seen is not None and span in titles and span not in seen:
+                # The first mention of a ticket in this document scope (one
+                # member card) carries its title inline — "PSOT-14 Fix login" —
+                # so a reader never meets a bare id cold; later mentions stay
+                # bare keys so enumerations don't balloon.
+                seen.add(span)
+                runs.append({"s": f"{span} {titles[span]}", "href": url})
+            else:
+                runs.append({"s": span, "href": url})
         else:
             runs.append({"s": span})
         pos = match.end()
@@ -200,13 +238,19 @@ def _runs(text: str, key_map: Mapping[str, str], names: re.Pattern[str] | None =
     return runs
 
 
+def _md_label(text: str) -> str:
+    """Neutralise link-label syntax — tracker titles now travel inside ``[…]``,
+    and an unescaped bracket or newline would corrupt the link."""
+    return text.replace("[", "\\[").replace("]", "\\]").replace("\n", " ")
+
+
 def _md_runs(runs: Sequence[Mapping]) -> str:
     """Render runs as Markdown — the other consumer of the same structure."""
     out: list[str] = []
     for run in runs:
         s = str(run.get("s", ""))
         if run.get("href"):
-            s = f"[{s}]({run['href']})"
+            s = f"[{_md_label(s)}]({run['href']})"
         if run.get("strong"):
             s = f"**{s}**"
         out.append(s)
@@ -219,7 +263,58 @@ def _md_link(label: str, url: str) -> str:
     A Markdown link becomes an `<a href>` on Notion/Confluence/GitHub, so it
     needs the same allowlist the HTML path gets from `safeUrl`.
     """
-    return f"[{label or url}]({safe})" if (safe := safe_url(url)) else (label or url)
+    return f"[{_md_label(label or url)}]({safe})" if (safe := safe_url(url)) else (label or url)
+
+
+# Markdown shows fewer evidence rows than the HTML (which folds its overflow
+# behind a toggle) — a static document has no fold, so it stays shorter.
+_MD_EVIDENCE_CAP = 4
+
+
+# Commit breakdowns under a PR bullet stay short — the PR line is the unit of
+# work; its commits are supporting detail.
+_MD_CHILD_CAP = 3
+
+# Kinds whose key is a machine id (Confluence page id, Notion UUID) — the
+# title is the human handle, so it becomes the link text and the id is dropped.
+_DOC_KINDS = frozenset({"page", "page-created"})
+
+
+def _md_evidence_lines(evidence: Sequence[object]) -> list[str]:
+    """Evidence as nested Markdown sub-bullets: linked key, title, repo, status."""
+    lines: list[str] = []
+    for e in evidence[:_MD_EVIDENCE_CAP]:
+        key = _ev_field(e, "key")
+        title = _ev_field(e, "title")
+        url = _ev_field(e, "url")
+        if _ev_field(e, "kind") in _DOC_KINDS:
+            label = title or key
+            line = _md_link(label, url) if url else label
+        else:
+            head = _md_link(key or title, url) if url else (key or title)
+            line = f"{head} {title}" if title and key else head
+        if repo := _ev_field(e, "repository"):
+            line += f" · {repo}"
+        if status := _ev_field(e, "status"):
+            line += f" — {status}"
+        children = _ev_children(e)
+        if children:
+            line += f" — {len(children)} commit{'s' if len(children) != 1 else ''}"
+        if line.strip():
+            lines.append(f"  - {line.strip()}")
+        for c in children[:_MD_CHILD_CAP]:
+            c_key = _ev_field(c, "key")
+            c_title = _ev_field(c, "title")
+            c_url = _ev_field(c, "url")
+            c_head = _md_link(c_key or c_title, c_url) if c_url else (c_key or c_title)
+            c_line = f"{c_head} {c_title}" if c_title and c_key else c_head
+            if c_line.strip():
+                lines.append(f"    - {c_line.strip()}")
+        if (c_extra := len(children) - _MD_CHILD_CAP) > 0:
+            lines.append(f"    - …and {c_extra} more")
+    if (extra := len(evidence) - _MD_EVIDENCE_CAP) > 0:
+        lines.append(f"  - …and {extra} more")
+    return lines
 
 
 def _links_payload(pairs: Sequence[tuple[str, str]]) -> list[list[str]]:
@@ -230,6 +325,49 @@ def _links_payload(pairs: Sequence[tuple[str, str]]) -> list[list[str]]:
     evidence a reader is being shown.
     """
     return [[label or url, safe_url(url)] for label, url in pairs or ()]
+
+
+def _ev_field(evidence: object, field: str) -> str:
+    """Read one ActivityEvidence field, tolerant of dataclass or dict.
+
+    The standup store rebuilds proper dataclasses, but a report that came
+    through a generic ``asdict``/JSON round-trip hands us plain dicts — the
+    export must not care which it got.
+    """
+    if isinstance(evidence, Mapping):
+        return str(evidence.get(field, "") or "").strip()
+    return str(getattr(evidence, field, "") or "").strip()
+
+
+def _ev_children(evidence: object) -> Sequence[object]:
+    """The nested commit rows of a PR evidence item, dict- or dataclass-shaped."""
+    if isinstance(evidence, Mapping):
+        children = evidence.get("children")
+    else:
+        children = getattr(evidence, "children", ())
+    return children if isinstance(children, (list, tuple)) else ()
+
+
+def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
+    """Structured evidence rows for the browser: words and numbers, no markup.
+
+    Same URL rule as ``_links_payload``: an unsafe scheme degrades the URL to
+    ``""`` but the row survives — the kind/key/title are what the reader is
+    being shown evidence *of*.
+    """
+    return [
+        {
+            "kind": _ev_field(e, "kind"),
+            "key": _ev_field(e, "key"),
+            "title": _ev_field(e, "title"),
+            "url": safe_url(_ev_field(e, "url")),
+            "repo": _ev_field(e, "repository"),
+            "status": _ev_field(e, "status"),
+            "time": _ev_field(e, "timestamp"),
+            "children": _evidence_payload(_ev_children(e)),
+        }
+        for e in evidence or ()
+    ]
 
 
 def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -303,6 +441,7 @@ def _team_summary_runs(text: str, key_map: Mapping[str, str], member_names: Sequ
 def build_standup_markdown(report: StandupReport) -> str:
     """Return the standup as a Markdown document (per-member sections, inline ticket links)."""
     key_map = _ticket_key_map(report)
+    titles = _ticket_title_map(report)
     member_names = [m.name for m in report.member_updates]
     lines: list[str] = [
         f"# Daily Standup — {report.date}",
@@ -330,34 +469,59 @@ def build_standup_markdown(report: StandupReport) -> str:
         # old six-column table, which wrapped into tall rows on Notion/Confluence.
         for m in report.member_updates:
             is_own = bool(m.self_report) or m.source == "self-reported"
+            # First mention of a ticket within this member's section carries
+            # its title inline — same rule as the HTML card.
+            seen: set[str] = set()
             lines.append(f"### {m.name} (you)" if is_own else f"### {m.name}")
             lines.append("")
-            overview = _md_runs(_runs(m.summary, key_map)) if m.summary else "_No activity detected._"
-            lines.append(overview)
+            fragments = _summary_bullets(m.summary)
+            if not fragments:
+                lines.append("_No activity detected._")
+            elif len(fragments) == 1:
+                lines.append(_md_runs(_runs(fragments[0], key_map, titles=titles, seen=seen)))
+            else:
+                lines += [f"- {_md_runs(_runs(f, key_map, titles=titles, seen=seen))}" for f in fragments]
             lines.append("")
             if getattr(m, "progress_note", ""):
-                lines.append(f"- **Since last standup:** {_md_runs(_runs(m.progress_note, key_map))}")
+                note = _md_runs(_runs(m.progress_note, key_map, titles=titles, seen=seen))
+                lines.append(f"- **Since last standup:** {note}")
 
             def _refs(pairs: Sequence[tuple[str, str]]) -> str:
                 return " · ".join(_md_link(label, url) for label, url in pairs)
 
             bullets: list[str] = []
-            for label, text, links in (
-                ("Ticketing", getattr(m, "ticketing_summary", ""), getattr(m, "ticketing_links", ())),
-                ("Code", getattr(m, "code_summary", ""), getattr(m, "code_links", ())),
-                ("Docs", getattr(m, "documentation_summary", ""), getattr(m, "documentation_links", ())),
+            for label, text, links, evidence in (
+                (
+                    "Ticketing",
+                    getattr(m, "ticketing_summary", ""),
+                    getattr(m, "ticketing_links", ()),
+                    getattr(m, "ticketing_evidence", ()),
+                ),
+                ("Code", getattr(m, "code_summary", ""), getattr(m, "code_links", ()), getattr(m, "code_evidence", ())),
+                (
+                    "Docs",
+                    getattr(m, "documentation_summary", ""),
+                    getattr(m, "documentation_links", ()),
+                    getattr(m, "documentation_evidence", ()),
+                ),
             ):
-                if not text and not links:
+                if not text and not links and not evidence:
                     continue
-                value = _md_runs(_runs(text, key_map)) if text else ""
+                value = _md_runs(_runs(text, key_map, titles=titles, seen=seen)) if text else ""
+                if evidence:
+                    # Structured evidence renders as nested sub-bullets below;
+                    # the old "— refs" join would repeat the same URLs inline.
+                    bullets.append(f"- **{label}:** {value}".rstrip())
+                    bullets += _md_evidence_lines(evidence)
+                    continue
                 leftovers = _leftover_links(text, links)
                 if leftovers:
                     value = f"{value} — {_refs(leftovers)}" if value else _refs(leftovers)
                 bullets.append(f"- **{label}:** {value}")
             if getattr(m, "outlook", ""):
-                bullets.append(f"- **Outlook:** {_md_runs(_runs(m.outlook, key_map))}")
+                bullets.append(f"- **Outlook:** {_md_runs(_runs(m.outlook, key_map, titles=titles, seen=seen))}")
             if m.blockers:
-                bullets.append(f"- **Blocker:** {_md_runs(_runs(m.blockers, key_map))}")
+                bullets.append(f"- **Blocker:** {_md_runs(_runs(m.blockers, key_map, titles=titles, seen=seen))}")
             # Legacy reports carry only the general links tuple.
             category_links = (
                 *(getattr(m, "ticketing_links", ()) or ()),
@@ -403,20 +567,41 @@ def build_standup_markdown(report: StandupReport) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _category_payload(label: str, summary: str, links: Sequence[tuple[str, str]], key_map: Mapping[str, str]) -> dict:
-    """One labelled list inside a member card: bullet runs plus leftover evidence."""
+def _category_payload(
+    label: str,
+    summary: str,
+    links: Sequence[tuple[str, str]],
+    key_map: Mapping[str, str],
+    evidence: Sequence[object] = (),
+    titles: Mapping[str, str] | None = None,
+    seen: set[str] | None = None,
+) -> dict:
+    """One labelled list inside a member card: bullet runs plus its evidence.
+
+    ``evidence`` is the structured form (kind/key/title/repo); the renderer
+    prefers it and falls back to the bare ``links`` chips only for legacy
+    reports that predate it.
+    """
     return {
         "label": label,
-        "items": [_runs(fragment, key_map) for fragment in _summary_bullets(summary)],
+        "items": [_runs(fragment, key_map, titles=titles, seen=seen) for fragment in _summary_bullets(summary)],
         "links": _links_payload(_leftover_links(summary, links)),
+        "evidence": _evidence_payload(evidence),
     }
 
 
-def _member_payload(m: MemberUpdate, key_map: Mapping[str, str]) -> dict:
+def _member_payload(m: MemberUpdate, key_map: Mapping[str, str], titles: Mapping[str, str] | None = None) -> dict:
     """One member as data: their prose, their evidence, and what they are stuck on."""
+    # First mention of a ticket in THIS card carries its title inline; the set
+    # is consumed in the card's visual order (the blocker note leads the card),
+    # so "first" means first thing the reader meets.
+    seen: set[str] = set()
+
+    def runs(text: str) -> list[dict]:
+        return _runs(text, key_map, titles=titles, seen=seen)
+
     out: dict = {
         "name": m.name,
-        "summary": _runs(m.summary, key_map),
         # Order matters: ticketing, code, docs — the same order as the chips and
         # the team-activity bars, so a reader compares like with like.
         "counts": [
@@ -430,41 +615,57 @@ def _member_payload(m: MemberUpdate, key_map: Mapping[str, str]) -> dict:
     }
     if bool(m.self_report) or m.source == "self-reported":
         out["own"] = True
-    if getattr(m, "progress_note", ""):
-        out["progressNote"] = _runs(m.progress_note, key_map)
-    if getattr(m, "outlook", ""):
-        out["outlook"] = _runs(m.outlook, key_map)
     if m.blockers:
-        out["blockers"] = _runs(m.blockers, key_map)
-    if m.self_report:
-        # The verbatim quote gets linkified too — people type bare ticket keys.
-        out["selfReport"] = _runs(m.self_report, key_map)
+        out["blockers"] = runs(m.blockers)
+    # Terse clauses, one bullet each — the same fragmenting the team summary
+    # and the category items get.
+    out["summary"] = [runs(fragment) for fragment in _summary_bullets(m.summary)]
+    if getattr(m, "progress_note", ""):
+        out["progressNote"] = runs(m.progress_note)
 
     # A category earns a column when it has real activity or evidence links; one
     # with prose but neither becomes a footnote, so a quiet category never
     # squeezes the busy ones into narrow strips. The wording is preserved
     # either way — "source not configured" must stay distinguishable from
     # "no activity detected".
-    for label, summary, links, count in (
+    for label, summary, links, count, evidence in (
         (
             "Ticketing",
             getattr(m, "ticketing_summary", ""),
             getattr(m, "ticketing_links", ()),
             getattr(m, "ticketing_activity_count", 0),
+            getattr(m, "ticketing_evidence", ()),
         ),
-        ("Code", getattr(m, "code_summary", ""), getattr(m, "code_links", ()), getattr(m, "code_activity_count", 0)),
+        (
+            "Code",
+            getattr(m, "code_summary", ""),
+            getattr(m, "code_links", ()),
+            getattr(m, "code_activity_count", 0),
+            getattr(m, "code_evidence", ()),
+        ),
         (
             "Documentation",
             getattr(m, "documentation_summary", ""),
             getattr(m, "documentation_links", ()),
             getattr(m, "documentation_activity_count", 0),
+            getattr(m, "documentation_evidence", ()),
         ),
     ):
-        block = _category_payload(label, summary, links, key_map) if (count or links) else None
-        if block and (block["items"] or block["links"]):
+        block = (
+            _category_payload(label, summary, links, key_map, evidence, titles=titles, seen=seen)
+            if (count or links or evidence)
+            else None
+        )
+        if block and (block["items"] or block["links"] or block["evidence"]):
             out["categories"].append(block)
         elif summary:
-            out["footnotes"].append({"label": label, "runs": _runs(summary, key_map)})
+            out["footnotes"].append({"label": label, "runs": runs(summary)})
+
+    if getattr(m, "outlook", ""):
+        out["outlook"] = runs(m.outlook)
+    if m.self_report:
+        # The verbatim quote gets linkified too — people type bare ticket keys.
+        out["selfReport"] = runs(m.self_report)
 
     # Legacy reports carry only the general links tuple — surface what is not
     # already an inline anchor in the prose.
@@ -487,7 +688,8 @@ def build_standup_html(report: StandupReport, *, history: Sequence[dict] = (), d
     from yeaboi.html_theme import export_page, image_data_uri, trend
 
     key_map = _ticket_key_map(report)
-    members = [_member_payload(m, key_map) for m in report.member_updates]
+    titles = _ticket_title_map(report)
+    members = [_member_payload(m, key_map, titles) for m in report.member_updates]
     # Screenshots pasted into "My Update". Embedded rather than referenced: the
     # files live under ~/.yeaboi and get pruned, so a path would go stale.
     images = [uri for p in report.images if (uri := image_data_uri(p))]

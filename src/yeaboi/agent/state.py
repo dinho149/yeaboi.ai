@@ -271,6 +271,30 @@ class Sprint:
 # store. Every field has a default so old serialized reports still deserialize
 # (see CLAUDE.md "Frozen dataclass backward compatibility").
 @dataclass(frozen=True)
+class ActivityEvidence:
+    """One attributable activity item kept as structured evidence.
+
+    The collectors already fetch a title, kind, and repository for every commit,
+    PR, and ticket; this keeps them past the point where ``MemberUpdate.*_links``
+    narrows each item to a bare ``(label, url)`` pair — so an export can say
+    "[commit] 78e4201 Fix login redirect · yeaboi/web" instead of a naked SHA.
+    Evidence is for rendering only; the LLM never sees it (engine._for_llm).
+    """
+
+    # commit | pr | review | comment | issue | update | work_item | wip | page | page-created
+    # — produced by the collectors, not validated
+    kind: str = ""
+    key: str = ""  # short handle: "#91", "YB-12", sha[:8]
+    title: str = ""  # commit subject / PR title / ticket summary
+    url: str = ""
+    repository: str = ""  # repo slug or source container; "" for tickets
+    status: str = ""  # "merged", "In Progress", a review state, or ""
+    timestamp: str = ""  # ISO-8601 or ""
+    # Commits folded under their PR row (one level deep); () everywhere else.
+    children: tuple[ActivityEvidence, ...] = ()
+
+
+@dataclass(frozen=True)
 class MemberUpdate:
     """One team member's standup update for a given day."""
 
@@ -292,6 +316,11 @@ class MemberUpdate:
     ticketing_summary: str = ""  # Jira/Azure Boards progress, including assigned in-progress work
     ticketing_links: tuple[tuple[str, str], ...] = ()
     ticketing_activity_count: int = 0
+    # Structured evidence per category — additive alongside the *_links pairs,
+    # which still feed the TUI, the ticket-key linkifier, and legacy exports.
+    ticketing_evidence: tuple[ActivityEvidence, ...] = ()
+    code_evidence: tuple[ActivityEvidence, ...] = ()
+    documentation_evidence: tuple[ActivityEvidence, ...] = ()
 
 
 @dataclass(frozen=True)

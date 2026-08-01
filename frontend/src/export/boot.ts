@@ -153,19 +153,40 @@ export interface ReportTheme {
  */
 export type EvidenceLink = [string, string];
 
+/**
+ * One structured activity reference: what a bare `EvidenceLink` chip used to
+ * flatten to a `(sha8, url)` pair. `url` is `""` when the exporter's scheme
+ * allowlist rejected it — the row survives for the same reason the chip did.
+ * `kind` is engine-produced, not validated; an unknown one renders muted.
+ */
+export interface EvidenceItem {
+  kind: string;
+  key: string;
+  title: string;
+  url: string;
+  repo: string;
+  status: string;
+  time: string;
+  /** Commits folded under their PR row; `[]` everywhere else. */
+  children: EvidenceItem[];
+}
+
 /** One labelled list inside a member card: Ticketing, Code, or Documentation. */
 export interface StandupCategory {
   label: string;
   /** Bullet fragments, each already split by the shared prose splitter. */
   items: Run[][];
   links: EvidenceLink[];
+  /** Structured evidence; `[]` on legacy reports, which fall back to `links`. */
+  evidence: EvidenceItem[];
 }
 
 export interface StandupMember {
   name: string;
   /** They wrote this themselves, rather than it being derived from activity. */
   own?: boolean;
-  summary: Run[];
+  /** Terse clauses, one bullet each — same fragmenting as the team summary. */
+  summary: Run[][];
   progressNote?: Run[];
   /** Only the categories with real activity or evidence. */
   categories: StandupCategory[];

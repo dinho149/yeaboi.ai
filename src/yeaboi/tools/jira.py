@@ -886,13 +886,22 @@ def jira_assignee_roster(project_key: str = "", days: int = 30) -> list[dict]:
     return list(members.values())
 
 
+# Board mechanics, not work: dragging a card reorders Rank (on neighbours the
+# actor never touched, too), and completing/starting a sprint rewrites the
+# Sprint field across every open ticket with the sprint-closer as the actor.
+# A changelog entry touching ONLY these fields must not become standup
+# activity — it credited people with "updated PSOT-X" for reordering a board.
+_MECHANICAL_FIELDS = frozenset({"rank", "sprint"})
+
+
 def _changelog_items(issue, summary: str, assignee_name: str, cutoff: datetime) -> list[dict]:
     """Emit one item per in-window changelog event, credited to the ACTUAL actor.
 
     Status transitions get a specific "moved … to <status>" title. All other
     field edits collapse to at most one generic "updated …" item per author —
     and that generic item is skipped for the assignee, who is already credited
-    via the ``issue`` item.
+    via the ``issue`` item. Entries that touched only mechanical fields
+    (``_MECHANICAL_FIELDS``) are skipped entirely.
     """
     try:
         histories = list(getattr(getattr(issue, "changelog", None), "histories", None) or [])
@@ -909,9 +918,15 @@ def _changelog_items(issue, summary: str, assignee_name: str, cutoff: datetime) 
         if not author_name:
             continue
         status_to = ""
+        meaningful = False
         for change in getattr(history, "items", None) or []:
-            if getattr(change, "field", "") == "status":
+            field = getattr(change, "field", "") or ""
+            if field == "status":
                 status_to = getattr(change, "toString", "") or ""
+            if field.lower() not in _MECHANICAL_FIELDS:
+                meaningful = True
+        if not meaningful:
+            continue
         base = {
             "author": author_name,
             "author_email": author_email,
@@ -919,6 +934,9 @@ def _changelog_items(issue, summary: str, assignee_name: str, cutoff: datetime) 
             "timestamp": (getattr(history, "created", "") or "")[:19],
             "key": issue.key,
             "url": _issue_url(issue.key),
+            # The action-phrase title below buries the ticket summary in quotes;
+            # evidence rendering needs it clean, so it also travels on its own.
+            "summary": summary,
         }
         if status_to:
             out.append({**base, "title": f"moved {issue.key} '{summary}' to {status_to}", "status": status_to})
@@ -953,6 +971,7 @@ def _comment_items(issue, summary: str, cutoff: datetime) -> list[dict]:
                 "author_email": author_email,
                 "kind": "comment",
                 "title": f"commented on {issue.key} '{summary}'",
+                "summary": summary,
                 "timestamp": (getattr(comment, "created", "") or "")[:19],
                 "key": issue.key,
                 "url": _issue_url(issue.key),
