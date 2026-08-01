@@ -1778,6 +1778,8 @@ def _collect_standup_data(message: str = "") -> dict:
         "config": None,
         "report": None,
         "schedule": {},
+        "review": None,
+        "gap_issues": [],
     }
     try:
         from yeaboi.sessions import SessionStore, make_display_name
@@ -1800,6 +1802,10 @@ def _collect_standup_data(message: str = "") -> dict:
         with StandupStore(_ana_dbp) as store:
             data["config"] = store.load_config(session_id)
             data["report"] = store.get_latest_report(session_id)
+            # The most recent transcript review + the gap→issue ledger, so the
+            # Transcript Review card can show which gaps are already filed.
+            data["review"] = store.get_latest_review(session_id)
+            data["gap_issues"] = store.get_gap_issues(limit=50)
         # The engine resolves "Me" to the user's real tracker identity (e.g. their
         # Jira displayName) — the report's my_name drives the "My Update" row.
         if data["report"] is not None and data["report"].my_name:
@@ -2481,6 +2487,135 @@ def _standup_generate_flow(
         time.sleep(1 / 30)
     thread.join()
     return result_box[0]
+
+
+def _standup_review_flow(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str | None:
+    """Review standup meeting transcripts, then offer to file the gaps found.
+
+    Two deliberate steps. The review always runs and only ever DRAFTS; filing to
+    a public GitHub repo needs a separate confirmation that shows what will be
+    published. Returns a status message, or None when the user backs out.
+    """
+    import threading
+
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+
+    # Point the sweep at an extra folder for this run if the user wants one.
+    # Empty (just Enter) = sweep the managed folder only, which is the common case.
+    extra_dir = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Extra transcript folder (Enter for ~/.yeaboi/transcripts)",
+        step="Transcript review  —  where to look",
+        default="",
+        box_rows=5,
+    )
+    if extra_dir is None:
+        logger.info("standup review: cancelled at folder prompt (session=%s)", session_id)
+        return None
+    extra_dir = extra_dir.strip()
+    if extra_dir:
+        # Ask BEFORE the read so a path outside the sandbox gets an Allow/Deny
+        # popup rather than an exception (same as the performance transcript flow).
+        from yeaboi.ui.shared._consent import _preflight_path_consent
+
+        if not _preflight_path_consent(console, live, read_key, frame_time, supports_timeout, extra_dir, mode="read"):
+            return "Transcript folder not allowed — review cancelled."
+
+    progress: list[str] = ["Starting"]
+    result_box: list = [None]
+
+    def _worker() -> None:
+        try:
+            from yeaboi.standup.engine import run_transcript_review
+
+            result_box[0] = run_transcript_review(session_id, transcript_dir=extra_dir, on_progress=progress.append)
+        except Exception as e:  # a review must never crash the TUI
+            logger.error("standup review failed: %s", e, exc_info=True)
+            result_box[0] = e
+
+    thread = threading.Thread(target=_worker, name="standup-review", daemon=True)
+    thread.start()
+    start = time.monotonic()
+    while thread.is_alive():
+        elapsed = time.monotonic() - start
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                list(progress), width=w, height=max(10, h - 1), elapsed=elapsed, anim_tick=elapsed
+            )
+        )
+        time.sleep(1 / 30)
+    thread.join()
+
+    review = result_box[0]
+    if isinstance(review, Exception):
+        return f"Transcript review failed: {review}"
+    if review is None:
+        return "Transcript review produced no result — see logs."
+
+    summary = f"Reviewed {len(review.sources)} transcript(s) · {len(review.gaps)} gap(s)"
+    if review.config_suggestions:
+        summary += f" · {len(review.config_suggestions)} to fix in config"
+    if not review.gaps:
+        return summary
+    filed = _standup_file_issues_confirm(console, live, read_key, frame_time, supports_timeout, session_id, review)
+    return f"{summary}. {filed}" if filed else summary
+
+
+def _standup_file_issues_confirm(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str, review
+) -> str:
+    """Show what would be published, then file only on an explicit yes.
+
+    The confirmation renders the FINAL redacted body — names masked, home paths
+    stripped, secrets removed — because that is what actually lands on a public
+    repository, and a preview of the raw text would be misleading.
+    """
+    from yeaboi.standup import gap_issues
+
+    lines = [f"{len(review.gaps)} gap(s) would be filed to {gap_issues.FEEDBACK_REPO} (a PUBLIC repo):", ""]
+    blocked = 0
+    for gap in review.gaps:
+        body = gap_issues.build_gap_issue_body(gap, review)
+        leak = gap_issues.leak_check(body)
+        if leak:
+            blocked += 1
+            lines.append(f"  ✗ {gap.title} — blocked, still looks like it contains {leak}")
+            continue
+        lines.append(f"  • [{gap.feedback_kind}] {gap.title}")
+        for claim in gap.claims[:1]:
+            if claim.quote:
+                masked = gap_issues.scrub(claim.quote, gap_issues.name_mask(review))
+                lines.append(f'      evidence: "{masked[:120]}"')
+    lines += ["", "Member names are masked and secrets removed. File them now?"]
+
+    answer = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Type 'yes' to file on GitHub (Enter to skip)",
+        step="\n".join(lines),
+        default="",
+        box_rows=5,
+    )
+    if answer is None or answer.strip().lower() not in ("y", "yes"):
+        logger.info("standup review: filing declined (session=%s)", session_id)
+        return "Nothing filed — the drafts are saved locally."
+
+    from yeaboi.standup.engine import file_transcript_issues
+
+    result = file_transcript_issues(review.review_id, session_id=session_id)
+    message = f"Filed {result.filed}, commented {result.commented}"
+    if result.skipped:
+        message += f", skipped {result.skipped}"
+    logger.info("standup review: %s (session=%s)", message, session_id)
+    return message + "."
 
 
 def _ask_regen_feedback(console: Console, live, read_key, frame_time, supports_timeout, label: str) -> str | None:
@@ -5304,7 +5439,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
         if data.get("report") is not None:
@@ -5432,6 +5567,15 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     proceed = f"Generate failed: {e}"
                 data = _collect_standup_data(message=proceed if proceed is not None else "")
                 anon, anon_instruction = None, ""  # new report → drop any stale mask
+                _reset_to_overview()
+            elif act == "Review":  # audit past standups against their meeting transcripts
+                logger.info("standup: Review pressed (session=%s)", session_id)
+                try:
+                    msg = _standup_review_flow(console, live, read_key, frame_time, supports_timeout, session_id)
+                except Exception as e:  # never let a review crash the TUI
+                    logger.error("standup review flow failed: %s", e, exc_info=True)
+                    msg = f"Transcript review failed: {e}"
+                data = _collect_standup_data(message=msg or "")
                 _reset_to_overview()
             elif act == "Export":  # pick a destination (files / Notion / Confluence)
                 logger.info("standup: Export pressed (session=%s)", session_id)

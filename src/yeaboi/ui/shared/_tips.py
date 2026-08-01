@@ -76,8 +76,9 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
     ),
     FeatureTip(
         "standup",
-        "☀️ Tip: Standup detects team activity and drafts a daily summary for you",
+        "☀️ Tip: Drop a standup recording in ~/.yeaboi/transcripts — Standup learns what it missed",
         mode_key="daily-standup",
+        is_new=True,
     ),
     FeatureTip(
         "retro-board",

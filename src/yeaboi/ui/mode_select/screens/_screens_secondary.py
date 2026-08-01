@@ -2716,7 +2716,17 @@ def _build_standup_screen(
         strip = None
         banner = None
         header_h = 6
-    viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
+    # The action bar wraps when it outgrows the terminal, so its height has to
+    # be measured rather than assumed — six buttons come to well over 80
+    # columns, and a hardcoded action_h=4 would draw the overflow row off the
+    # bottom of the panel (reachable with the arrow keys, invisible on screen).
+    _actions = (
+        actions
+        if actions is not None
+        else (["Generate", "Review", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"])
+    )
+    action_h = action_rows_height(_actions, width)
+    viewport_h = calc_viewport(height, header_h=header_h, action_h=action_h)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
     # Scroll offsets identify renderable items, not terminal rows. Find the
@@ -2754,9 +2764,7 @@ def _build_standup_screen(
     for _ in range(max(0, viewport_h - visible_h)):
         padded_lines.append(Text(""))
 
-    if actions is None:
-        actions = ["Generate", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+    action_lines = build_action_rows(_actions, action_sel, width=width)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2788,9 +2796,7 @@ def _build_standup_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *action_lines,
     )
 
     return build_page_panel(content, theme=STANDUP_THEME, height=height)

@@ -1002,3 +1002,146 @@ class TestDayOverDayScreen:
         out = cap.get()
         assert "▲" not in out
         assert "▼" not in out
+
+
+def _render(panel, width: int) -> str:
+    """Render a panel to plain text for content assertions."""
+    import io
+
+    from rich.console import Console
+
+    buf = io.StringIO()
+    Console(file=buf, width=width, force_terminal=False).print(panel)
+    return buf.getvalue()
+
+
+def _review(**over):
+    from yeaboi.agent.state import StandupGap, TranscriptClaim, TranscriptReview, TranscriptSource
+
+    base = dict(
+        standup_date="2026-07-30",
+        accuracy_note="Claims checked: 1 confirmed by the evidence.",
+        sources=(TranscriptSource(filename="2026-07-30-standup.vtt"),),
+        gaps=(
+            StandupGap(
+                fingerprint="fp1",
+                scope="product",
+                title="Standup misses Confluence comments",
+                root_cause="The Confluence collector reads page edits but not comments.",
+                priority="high",
+                claims=(TranscriptClaim(member="Alice", quote="I also commented on the design doc"),),
+            ),
+        ),
+        config_suggestions=(
+            StandupGap(
+                scope="config",
+                title="acme/infra is outside your code scope",
+                remedy="Add acme/infra via Standup -> Configure -> Code",
+            ),
+        ),
+    )
+    base.update(over)
+    return TranscriptReview(**base)
+
+
+def _review_data(**over) -> dict:
+    data = {
+        "session_name": "demo",
+        "report": _report(),
+        "schedule": {},
+        "my_name": "Alice",
+        "review": _review(),
+        "gap_issues": [{"fingerprint": "fp1", "issue_number": 42, "occurrences": 3}],
+    }
+    data.update(over)
+    return data
+
+
+class TestTranscriptReviewCard:
+    def test_card_absent_until_a_review_exists(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" not in standup_card_order({"report": _report()})
+
+    def test_card_present_once_reviewed(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" in standup_card_order(_review_data())
+
+    def test_teaser_counts_gaps_suggestions_and_filed(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", _review_data())
+        assert "1 gap" in teaser
+        assert "1 to fix in config" in teaser
+        assert "1 filed" in teaser
+
+    def test_overview_shows_the_card(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=30), 100)
+        assert "Transcript Review" in out
+
+    def test_detail_separates_product_gaps_from_config_fixes(self):
+        panel = _build_standup_screen(_review_data(), width=100, height=40, view="gaps")
+        out = _render(panel, 100)
+        assert "Gaps in standup itself" in out
+        assert "Standup misses Confluence comments" in out
+        assert "Fix in your configuration" in out
+        assert "Add acme/infra" in out
+
+    def test_detail_shows_the_quote_and_issue_number(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=40, view="gaps"), 100)
+        assert "I also commented on the design doc" in out
+        assert "#42" in out
+
+    def test_detail_empty_state(self):
+        data = _review_data(review=_review(gaps=(), config_suggestions=()), gap_issues=[])
+        out = _render(_build_standup_screen(data, width=100, height=30, view="gaps"), 100)
+        assert "No gaps found" in out
+
+    def test_detail_with_many_gaps_still_renders(self):
+        from yeaboi.agent.state import StandupGap
+
+        gaps = tuple(
+            StandupGap(fingerprint=f"fp{i}", scope="product", title=f"Gap {i}", priority="medium") for i in range(8)
+        )
+        data = _review_data(review=_review(gaps=gaps))
+        assert isinstance(_build_standup_screen(data, width=80, height=24, view="gaps"), Panel)
+
+    def test_renders_at_80_columns_without_overflow(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, view="gaps"), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+
+class TestActionRowWrapping:
+    """Six standup actions outgrow an 80-column terminal, so the bar must wrap —
+    a clipped button is reachable with the arrow keys and invisible on screen."""
+
+    ACTIONS = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
+
+    def test_every_button_is_drawn_at_80_columns(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS), 80)
+        for label in self.ACTIONS:
+            assert label in out, f"{label} was clipped off the panel"
+
+    def test_no_line_exceeds_the_width(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+    def test_wide_terminal_keeps_one_row(self):
+        from yeaboi.ui.shared._components import action_rows_height
+
+        assert action_rows_height(self.ACTIONS, 200) == 4
+
+    def test_narrow_terminal_takes_the_extra_height_from_the_viewport(self):
+        from yeaboi.ui.shared._components import action_rows_height
+
+        assert action_rows_height(self.ACTIONS, 80) > 4
+
+    def test_default_actions_include_review(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=30), 100)
+        assert "Review" in out
+
+    def test_selection_across_every_action(self):
+        for sel in range(len(self.ACTIONS)):
+            panel = _build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS, action_sel=sel)
+            assert isinstance(panel, Panel)
