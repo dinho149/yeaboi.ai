@@ -83,8 +83,13 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
         port = 54321
         display_code = "ABCD-2345"
 
-        def __init__(self, document):
+        def __init__(self, document, *, editable=None, on_edit=None):
             self.document = document
+            self.editable = editable
+            self.on_edit = on_edit
+
+        def set_public_url(self, url):
+            self.public_url = url
 
         def start(self):
             events.append("server-start")

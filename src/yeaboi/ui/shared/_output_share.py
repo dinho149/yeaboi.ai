@@ -11,6 +11,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
+from yeaboi.sharing.editable import EditableShare
 from yeaboi.sharing.server import OutputShareServer, ShareDocument
 from yeaboi.ui.shared._animations import loading_border_color
 from yeaboi.ui.shared._click import button_click, parse_click
@@ -126,8 +127,19 @@ def run_output_share(
     document: ShareDocument,
     theme: Theme,
     title_fn: Callable,
-) -> None:
-    """Start a code-gated server+tunnel and own them until the user leaves."""
+    editable: EditableShare | None = None,
+    on_edit: Callable | None = None,
+) -> int:
+    """Start a code-gated server+tunnel and own them until the user leaves.
+
+    With ``editable`` the shared document is correctable: teammates who join can
+    fix what the run got wrong, and this screen shows a live count of what they
+    have changed. Returns how many corrections were recorded, so the caller can
+    decide whether to commit them — this function deliberately does not, because
+    its teardown also runs on Esc, on Back and on any exception, and a path that
+    rewrites the host's stored report from a crash handler is not one anybody
+    asked for.
+    """
     from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
 
     state: dict[str, object] = {
@@ -150,7 +162,7 @@ def run_output_share(
         server: OutputShareServer | None = None
         tunnel: CloudflareTunnel | None = None
         try:
-            server = OutputShareServer(document)
+            server = OutputShareServer(document, editable=editable, on_edit=on_edit)
             server.start()
             _set(server=server, status="Setting up Cloudflare sharing (first use may download ~40 MB)…")
             binary = ensure_cloudflared()
@@ -171,6 +183,7 @@ def run_output_share(
                 tunnel.stop()
                 _set(done=True)
                 return
+            server.set_public_url(public_url.rstrip("/") + "/")
             _set(
                 public_url=public_url.rstrip("/") + "/",
                 status="Sharing is live.",
@@ -199,10 +212,18 @@ def run_output_share(
             done = bool(snapshot["done"])
             if active:
                 actions = ["Copy Invite", "Stop Sharing", "Back"]
+                if editable is not None and editable.document.edits():
+                    actions.insert(1, "Discard Edits")
             else:
                 actions = ["Back"]
                 sel = 0
             status = error or str(snapshot["status"])
+            if editable is not None and active:
+                count = len(editable.document.edits())
+                if count:
+                    who = editable.document.editors()
+                    people = f" by {len(who)} " + ("person" if len(who) == 1 else "people")
+                    status = f"Sharing is live — {count} " + ("edit" if count == 1 else "edits") + people + "."
             if leaving and not done:
                 status = "Cancelling setup and cleaning up…"
 
@@ -253,6 +274,12 @@ def run_output_share(
                     invite = f"{snapshot['public_url']}\nAccess code: {server.display_code}"  # type: ignore[union-attr]
                     message = "Copied invite to clipboard." if copy_text(invite) else "Couldn't copy — see logs."
                     logger.info("output sharing invite copy requested (mode=%s)", document.source_mode)
+                elif action == "Discard Edits" and editable is not None:
+                    while editable.document.drop_last() is not None:
+                        pass
+                    message = "Discarded every correction made in this session."
+                    logger.info("output sharing edits discarded (mode=%s)", document.source_mode)
+                    sel = 0
                 elif action in ("Stop Sharing", "Back"):
                     cancel.set()
                     leaving = True
@@ -278,4 +305,6 @@ def run_output_share(
             tunnel.stop()  # type: ignore[union-attr]
         if server is not None:
             server.stop()  # type: ignore[union-attr]
-        logger.info("output sharing closed (mode=%s)", document.source_mode)
+        recorded = len(editable.document.edits()) if editable is not None else 0
+        logger.info("output sharing closed (mode=%s, edits=%d)", document.source_mode, recorded)
+    return recorded
