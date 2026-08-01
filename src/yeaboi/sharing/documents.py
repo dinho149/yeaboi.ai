@@ -10,6 +10,7 @@ from the four others the reader has open.
 
 from __future__ import annotations
 
+from yeaboi.sharing.editable import EditableShare
 from yeaboi.sharing.server import ShareDocument
 
 
@@ -113,3 +114,110 @@ def roadmap_document(analysis, *, anon=None) -> ShareDocument:
     from yeaboi.roadmap.export import build_roadmap_html
 
     return ShareDocument(title=title, html=build_roadmap_html(analysis, document_title=title), source_mode="roadmap")
+
+
+# ---------------------------------------------------------------------------
+# Editable shares
+# ---------------------------------------------------------------------------
+#
+# The read-only adapters above hand over finished HTML. An editable share cannot:
+# its document is rebuilt from the corrected artifact on every request, so what
+# crosses this boundary is a *payload builder* rather than a page.
+#
+# Each entry pairs an artifact kind with the same `<mode>_export_args` the file
+# export uses. That is the point — a shared correction and the .html someone
+# downloads afterwards are drawn from one builder, so they cannot disagree about
+# what the document says.
+
+
+def _payload_builder(kind: str, *, history=()):
+    """Return ``artifact -> {chrome, report}`` for one artifact kind."""
+    from yeaboi.html_theme import export_payload
+
+    def args_for(artifact):
+        if kind == "standup":
+            from yeaboi.standup.export import standup_export_args
+
+            return standup_export_args(artifact, history=history)
+        if kind == "reporting":
+            from yeaboi.reporting.export import reporting_export_args
+
+            return reporting_export_args(artifact, history=history)
+        if kind == "retro":
+            from yeaboi.retro.export import retro_export_args
+
+            return retro_export_args(artifact, history=history)
+        if kind == "roadmap":
+            from yeaboi.roadmap.export import roadmap_export_args
+
+            return roadmap_export_args(artifact)
+        if kind.startswith("performance_"):
+            from yeaboi.performance import export
+
+            builders = {
+                "performance_prep": export.prep_export_args,
+                "performance_completion": export.completion_export_args,
+                "performance_review": export.review_export_args,
+            }
+            return builders[kind](artifact)
+        raise ValueError(f"no payload builder for {kind!r}")
+
+    return lambda artifact: export_payload(**args_for(artifact))
+
+
+def editable_share(artifact, *, kind: str, ref: str = "", share_id: str = "", history=()) -> EditableShare:
+    """Wrap an artifact as a correctable share, or raise for an uneditable kind."""
+    import secrets
+
+    from yeaboi.artifacts.registry import spec_for
+    from yeaboi.sharing.editable import EditableDocument
+
+    spec = spec_for(kind)
+    if spec is None:
+        raise ValueError(f"{kind!r} is not an editable artifact")
+    document = EditableDocument(artifact, spec, kind=kind, ref=ref, share_id=share_id)
+    return EditableShare(
+        document=document,
+        payload=_payload_builder(kind, history=history),
+        title=spec.label,
+        source_mode=spec.mode,
+        # Per-share, so the hashed addresses in one document's log cannot be
+        # matched against another's.
+        salt=secrets.token_hex(16),
+    )
+
+
+def render_editable_page(share: EditableShare, pid: str = "") -> str:
+    """Render the corrected document as a self-contained, editable page.
+
+    The boot payload gains one key the file export never carries — ``editing`` —
+    and that key is the whole switch: a document written to disk does not have
+    it, so `main.tsx` never reaches the edit stack and the file stays inert.
+    """
+    from yeaboi.web.assets import render_page
+    from yeaboi.web.brand import accent_mode
+
+    frame = share.snapshot(pid)
+    data = {
+        "chrome": frame["chrome"],
+        "report": frame["report"],
+        "editing": {
+            "revision": frame["revision"],
+            "editable": frame["editable"],
+            "edits": frame["edits"],
+            "people": frame["people"],
+        },
+    }
+    return render_page(
+        bundle="export",
+        title=share.title,
+        data=data,
+        # A served document has no sibling Markdown file, so naming one would
+        # point a reader at something nobody wrote.
+        body=(
+            '<noscript><p class="noscript">This document is drawn in the browser and can be '
+            "edited by anyone holding this link. With JavaScript off it cannot be shown — ask "
+            "whoever shared it for the exported file.</p></noscript>"
+        ),
+        html_attrs=f'data-mode="{accent_mode(share.source_mode)}"',
+    )
