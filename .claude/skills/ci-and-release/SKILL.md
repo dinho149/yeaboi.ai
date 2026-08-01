@@ -42,6 +42,22 @@ Workflows in `.github/workflows/`:
 
 Merge gating: the `main-branch` ruleset requires the five ci.yml checks (Unit tests, Integration & contract tests, Lint, Format check, Security scan) to pass before **any** PR can merge; auto-merge (enabled repo-wide) fires only when they're green. Golden evaluators stay non-blocking by design.
 
+### When a Claude workflow fails
+
+Nine workflows share **one** credential, `CLAUDE_CODE_OAUTH_TOKEN` in the repo's *Actions* secret store. When it goes bad they all fail at once, and because `anthropics/claude-code-action` hides SDK output by default most of them fail *silently* — a bare `is_error: true` with no reason. Read the signature before touching prompts or models:
+
+| Signature in the run log | Means |
+|---|---|
+| `num_turns: 1`, `duration_ms` ≈ 2000, `total_cost_usd: 0`, `apiKeySource: "none"` | **auth**, not the model |
+| `"api_error_status": 401` / `"error": "authentication_failed"` | the token is expired, revoked, or the wrong kind |
+| a green check on a PR that edits the workflow file itself | the action **skipped** — it requires the file to be byte-identical to the copy on `main`, and reports the skip as success |
+
+Fix: `claude setup-token` on a machine logged into the Claude subscription, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. The value must be a Claude Code OAuth token (`sk-ant-oat…`), **not** a Console API key (`sk-ant-api…`) — the API rejects a Console key in that secret with the same `401 OAuth access token is invalid`, so "I rotated it and it still fails" usually means the wrong kind of token was pasted. A Console key belongs in `ANTHROPIC_API_KEY`, which `auto-version.yml` and `claude-review.yml` also read. `CLAUDE_CODE_OAUTH_TOKEN` is *believed* to win when both are set — meaning you'd clear it to fall through — but that precedence has never been exercised here and is an assumption, not an observation.
+
+`auto-version.yml` preflights the credential's *shape* before spending a turn, and annotates a 401 with the remediation. That preflight is plain shell, so unlike the action it still runs on a PR that edits the workflow. It deliberately does not validate the prefix against an allowlist — it only rejects shapes that cannot work — so a future change to Anthropic's token format won't red every PR.
+
+**2026-07-30 incident, for calibration:** this exact 401 took every Claude workflow down and was misdiagnosed twice — first as a stale Haiku alias (PR #120 pinned the dated model id, which changed nothing), then as a token that needed rotating (it was rotated, and still failed). The tell was there the whole time, behind `show_full_output`.
+
 Dependabot notes: updates arrive **grouped** (one weekly PR per ecosystem; security updates grouped too — see `.github/dependabot.yml`). Pip Dependabot PRs carry the `semver:patch` label so merging one publishes a patch release — a merged dependency/CVE fix reaches PyPI users instead of sitting unreleased. Three mechanics to know:
 - **Auth via `workflow_run`, not the Dependabot secret store.** Dependabot-triggered runs can only read a *separate* Dependabot secrets store, which the Claude GitHub App does **not** populate (it provisions `CLAUDE_CODE_OAUTH_TOKEN` only into the *Actions* store). So `dependabot-auto.yml` triggers on `workflow_run` (after CI) instead of on Dependabot's `pull_request` event — a `workflow_run` job runs from the default branch with the normal Actions secrets, using the App's token directly. **No Dependabot secret needs to be created or kept in sync.** The PR is resolved from the CI run's head SHA; Claude derives the bumped packages from the PR title + diff (no `fetch-metadata`, which needs the avoided Dependabot context).
 - **Labels must pre-exist.** Dependabot only *applies* labels that already exist in the repo — `dependencies`/`security`/`ci`/`semver:patch` are created; if one is deleted, Dependabot silently skips it.
