@@ -42,11 +42,11 @@ Terminal GIFs for the README: `asciinema rec docs/demo.cast -c "yeaboi --dry-run
 
 ## Parallel Development (worktrees)
 
-Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout.
+Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout. Creating a worktree fetches `origin` and cuts the new branch from latest `origin/main` (and fast-forwards the main checkout's `main` when that is safe), so it does not inherit a stale local base. Reusing an existing branch leaves it untouched — the script reports how far behind it is; rebase it with `/sync-main`.
 
 ```bash
-make wt-new NAME=my-feature       # create worktree + open VS Code with claude auto-running
-make wt-headless NAME=my-feature  # create worktree WITHOUT VS Code (for background-agent work)
+make wt-new NAME=my-feature       # create worktree off latest origin/main + open VS Code with claude auto-running
+make wt-headless NAME=my-feature  # same, WITHOUT VS Code (for background-agent work)
 make wt-list                      # list worktrees (branch, clean/dirty, path)
 make wt-rm NAME=my-feature        # remove worktree dir + branch
 ```
