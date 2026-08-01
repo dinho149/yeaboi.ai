@@ -193,6 +193,22 @@ CAPABILITIES: dict[str, dict] = {
         "cli": Exempt("headless callers anonymize via the anonymize_text MCP tool"),
         "skill": Exempt("post-processing action, not a guided workflow"),
     },
+    "artifact-editing": {
+        # Reader-authored corrections to a generated artifact. The browser half
+        # is an action on the existing Share Online screen; the engine and the
+        # MCP tools give it real headless reach, so an agent can fix a wrong
+        # name before the report goes out and gets the same validation, caps and
+        # allowlist the teammate in the browser would have.
+        "engines": {
+            ("yeaboi.artifacts.engine", "artifact_fields"),
+            ("yeaboi.artifacts.engine", "artifact_edit_history"),
+            ("yeaboi.artifacts.engine", "apply_artifact_edits"),
+        },
+        "mcp_tools": {"artifact_fields", "artifact_edit_history", "artifact_edit_apply"},
+        "tui_mode": Exempt("editing happens on the shared browser document during a Share Online session"),
+        "cli": Exempt("a JSON-patch flag would be an unusable surface; headless callers use the MCP tools"),
+        "skill": Exempt("correcting one field is a single MCP call, not a multi-step guided workflow"),
+    },
     "output-sharing": {
         "engines": Exempt("transport over already-generated HTML artifacts, not an artifact-generation pipeline"),
         "mcp_tools": Exempt(
