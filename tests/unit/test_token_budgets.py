@@ -44,6 +44,13 @@ ANALYZER_PROMPT_CHAR_BUDGET = 20_000  # ~5 000 tokens
 FEATURE_PROMPT_CHAR_BUDGET = 15_000  # ~3 750 tokens
 STORY_PROMPT_CHAR_BUDGET = 20_000  # ~5 000 tokens
 SPRINT_PROMPT_CHAR_BUDGET = 15_000  # ~3 750 tokens
+STANDUP_PROMPT_CHAR_BUDGET = 30_000  # ~7 500 tokens — scales with team size
+# The transcript review embeds a whole meeting, so its budget is dominated by
+# transcripts._TRANSCRIPT_PROMPT_CHARS (60 000) rather than by the instructions.
+# The budget is that ceiling plus room for the instructions and the member
+# evidence index — it catches the instructions or the evidence block running
+# away, which the transcript clip alone would not.
+STANDUP_REVIEW_PROMPT_CHAR_BUDGET = 90_000  # ~22 500 tokens
 
 # Rough chars-per-token ratio for Claude/GPT-4 English prose.
 _CHARS_PER_TOKEN = 4
@@ -306,3 +313,128 @@ class TestSprintPlannerPromptBudget:
             stories_block=large_backlog,
         )
         _assert_budget("sprint_planner_prompt_30_stories", prompt, SPRINT_PROMPT_CHAR_BUDGET)
+
+
+class TestStandupPromptBudget:
+    """The daily standup summary — one call, scaling with team size."""
+
+    def _members(self, count: int) -> list[dict]:
+        return [
+            {
+                "name": f"Engineer {i}",
+                "ticketing_activity": [
+                    {
+                        "kind": "issue",
+                        "title": f"YB-{i}{j} implement the thing",
+                        "status": "In Progress",
+                        "source": "jira",
+                    }
+                    for j in range(4)
+                ],
+                "code_activity": [
+                    {
+                        "kind": "commit",
+                        "title": f"fix the {j} case",
+                        "status": "",
+                        "source": "github",
+                        "repository": "acme/web",
+                    }
+                    for j in range(6)
+                ],
+                "documentation_activity": [],
+                "in_progress": [],
+                "self_report": "",
+                "coverage": {"ticketing": "covered", "code": "covered", "documentation": "not_configured"},
+                "yesterday": {"summary": "continued the thing", "blockers": "", "outlook": "ship it"},
+                "blocker_signals": [],
+            }
+            for i in range(count)
+        ]
+
+    def test_typical_team_under_budget(self):
+        from yeaboi.prompts.standup import get_standup_summary_prompt
+
+        prompt = get_standup_summary_prompt(
+            sprint_name="Sprint 5",
+            sprint_day=3,
+            sprint_total_days=10,
+            confidence_label="At risk",
+            confidence_rationale="behind the ideal burn",
+            members=self._members(5),
+            activity_counts=[("jira", 20), ("github", 30)],
+        )
+        _assert_budget("standup_summary_prompt", prompt, STANDUP_PROMPT_CHAR_BUDGET)
+
+    def test_large_team_under_budget(self):
+        from yeaboi.prompts.standup import get_standup_summary_prompt
+
+        prompt = get_standup_summary_prompt(
+            sprint_name="Sprint 5",
+            sprint_day=3,
+            sprint_total_days=10,
+            confidence_label="At risk",
+            confidence_rationale="behind the ideal burn",
+            members=self._members(12),
+            activity_counts=[("jira", 60), ("github", 90)],
+        )
+        _assert_budget("standup_summary_prompt_12_members", prompt, STANDUP_PROMPT_CHAR_BUDGET)
+
+
+class TestStandupReviewPromptBudget:
+    """The transcript review — one call per audited standup date.
+
+    Dominated by the transcript clip, so the assertion guards the parts that
+    could grow without anyone noticing: the instruction block and the per-member
+    evidence index.
+    """
+
+    def _members(self, count: int, evidence_each: int) -> list[dict]:
+        return [
+            {
+                "name": f"Engineer {i}",
+                "summary": "shipped the login redirect and reviewed two pull requests",
+                "ticketing_summary": "closed YB-12, moved YB-13 to in progress",
+                "code_summary": "six commits across acme/web",
+                "documentation_summary": "",
+                "evidence": [
+                    {
+                        "kind": "commit",
+                        "key": f"a1b2c3d{j}",
+                        "title": "fix the login redirect when the session cookie is stale",
+                        "repository": "acme/web",
+                        "status": "merged",
+                    }
+                    for j in range(evidence_each)
+                ],
+            }
+            for i in range(count)
+        ]
+
+    def test_realistic_review_under_budget(self):
+        from yeaboi.prompts.standup_review import get_transcript_review_prompt
+        from yeaboi.standup.transcript_review import _EVIDENCE_PER_MEMBER, _TRANSCRIPT_PROMPT_CHARS
+
+        prompt = get_transcript_review_prompt(
+            standup_date="2026-07-30",
+            transcript="Engineer 0: I finished the login redirect.\n" * 400,
+            members=self._members(8, _EVIDENCE_PER_MEMBER),
+            report_summary="the team shipped login and started the payments work",
+        )
+        assert len(prompt) < _TRANSCRIPT_PROMPT_CHARS + 60_000  # sanity on the sizing model
+        _assert_budget("standup_review_prompt", prompt, STANDUP_REVIEW_PROMPT_CHAR_BUDGET)
+
+    def test_max_transcript_and_large_team_under_budget(self):
+        """The worst realistic case: a fully-clipped transcript and a big roster."""
+        from yeaboi.prompts.standup_review import get_transcript_review_prompt
+        from yeaboi.standup.transcript_review import (
+            _MAX_TOTAL_EVIDENCE,
+            _TRANSCRIPT_PROMPT_CHARS,
+        )
+
+        prompt = get_transcript_review_prompt(
+            standup_date="2026-07-30",
+            transcript="x" * _TRANSCRIPT_PROMPT_CHARS,
+            members=self._members(12, _MAX_TOTAL_EVIDENCE // 12),
+            report_summary="the team shipped login",
+        )
+        _assert_budget("standup_review_prompt_max", prompt, STANDUP_REVIEW_PROMPT_CHAR_BUDGET)
