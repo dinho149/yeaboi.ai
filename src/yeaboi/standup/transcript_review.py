@@ -273,10 +273,17 @@ def diagnose(
     *,
     report: StandupReport,
     config: dict | None = None,
-) -> tuple[tuple[StandupGap, ...], tuple[StandupGap, ...], int]:
-    """Group claims by root cause. Returns (product_gaps, config_suggestions, untracked)."""
+) -> tuple[tuple[StandupGap, ...], tuple[StandupGap, ...], int, int]:
+    """Group claims by root cause.
+
+    Returns ``(product_gaps, config_suggestions, untracked, unclassified)``.
+    ``unclassified`` is reported rather than discarded: a claim the ladder could
+    not diagnose is a limit of the diagnosis, and saying so is more honest than
+    a review that quietly implies everything was accounted for.
+    """
     grouped: dict[str, tuple[gap_taxonomy.Diagnosis, list[TranscriptClaim]]] = {}
     untracked = 0
+    unclassified = 0
 
     for claim in claims:
         if claim.status == "matched":
@@ -286,6 +293,7 @@ def diagnose(
         else:
             diagnosis = gap_taxonomy.classify(claim, report=report, config=config)
         if diagnosis is None:
+            unclassified += 1
             continue
         if diagnosis.category.scope == gap_taxonomy.SCOPE_NONE:
             untracked += 1
@@ -303,7 +311,7 @@ def diagnose(
 
     product = tuple(g for g in gaps if g.scope == gap_taxonomy.SCOPE_PRODUCT)[:_MAX_GAPS_PER_REVIEW]
     suggestions = tuple(g for g in gaps if g.scope == gap_taxonomy.SCOPE_CONFIG)[:_MAX_GAPS_PER_REVIEW]
-    return product, suggestions, untracked
+    return product, suggestions, untracked, unclassified
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +319,8 @@ def diagnose(
 # ---------------------------------------------------------------------------
 
 
-def _accuracy_note(matched: int, missing: int, contradicted: int, untracked: int) -> str:
-    if not (matched or missing or contradicted or untracked):
+def _accuracy_note(matched: int, missing: int, contradicted: int, untracked: int, unclassified: int = 0) -> str:
+    if not (matched or missing or contradicted or untracked or unclassified):
         return "No concrete work claims were found in the transcript."
     parts = [f"{matched} confirmed by the evidence"]
     if missing:
@@ -321,6 +329,8 @@ def _accuracy_note(matched: int, missing: int, contradicted: int, untracked: int
         parts.append(f"{contradicted} the team contradicted")
     if untracked:
         parts.append(f"{untracked} with no digital footprint")
+    if unclassified:
+        parts.append(f"{unclassified} the review could not attribute to a cause")
     return "Claims checked: " + ", ".join(parts) + "."
 
 
@@ -429,7 +439,7 @@ def review_transcripts(
     )
     warnings.extend(notes)
 
-    gaps, suggestions, untracked = diagnose(claims, report=report, config=config)
+    gaps, suggestions, untracked, unclassified = diagnose(claims, report=report, config=config)
 
     matched = sum(1 for c in claims if c.status == "matched")
     missing = sum(1 for c in claims if c.status == "missing")
@@ -455,7 +465,7 @@ def review_transcripts(
         claims=claims,
         gaps=gaps,
         config_suggestions=suggestions,
-        accuracy_note=_accuracy_note(matched, missing, contradicted, untracked),
+        accuracy_note=_accuracy_note(matched, missing, contradicted, untracked, unclassified),
         claims_matched=matched,
         claims_missing=missing,
         claims_contradicted=contradicted,

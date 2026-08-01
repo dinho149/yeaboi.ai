@@ -134,8 +134,62 @@ class TestIntegrationMissing:
         d = gap_taxonomy.classify(_claim(system_hint="confluence"), report=_report())
         assert d is None or d.category.id != "integration_missing"
 
-    def test_unknown_system_produces_nothing(self):
-        assert gap_taxonomy.classify(_claim(system_hint="unknown"), report=_report()) is None
+    def test_unknown_system_with_no_category_clue_produces_nothing(self):
+        claim = _claim(system_hint="unknown", artifact_hint="a thing", claim="I did a thing")
+        assert gap_taxonomy.classify(claim, report=_report()) is None
+
+
+class TestUnknownSystemInference:
+    """The model is told never to guess a system, so "unknown" is the honest
+    answer for "commented on the design doc". The ladder resolves it from the
+    artifact's CATEGORY and the run's own configuration, or not at all."""
+
+    def test_resolves_when_exactly_one_source_serves_the_category(self):
+        # Only Confluence is scanned for documentation.
+        d = gap_taxonomy.classify(
+            _claim(system_hint="unknown", artifact_hint="comment on the design doc"), report=_report()
+        )
+        assert d.category.id == "capability_gap_in_supported_source"
+        assert d.systems == ("confluence",)
+
+    def test_stays_ambiguous_when_two_sources_serve_the_category(self):
+        report = _report(activity_counts=(("confluence", 2), ("notion", 1)))
+        d = gap_taxonomy.classify(
+            _claim(system_hint="unknown", artifact_hint="comment on the design doc"), report=report
+        )
+        assert d is None
+
+    def test_no_source_for_the_category_is_a_config_gap(self):
+        report = _report(activity_counts=(("jira", 3),))
+        d = gap_taxonomy.classify(
+            _claim(system_hint="unknown", artifact_hint="updated the runbook page"), report=report
+        )
+        assert d.category.id == "source_not_configured"
+        assert d.scope_token == "documentation"
+        assert "Confluence" in d.remedy and "Notion" in d.remedy
+
+    def test_code_category_inferred_from_the_object(self):
+        report = _report(activity_counts=(("github", 5),))
+        d = gap_taxonomy.classify(
+            _claim(system_hint="unknown", artifact_hint="opened a pull request", matched_key=""),
+            report=report,
+        )
+        # GitHub PRs are fetched, so no capability gap — but it resolved the system.
+        assert d is None or d.systems == ("github",)
+
+    @pytest.mark.parametrize(
+        ("hint", "expected"),
+        [
+            ("commented on the design doc", "documentation"),
+            ("updated the runbook", "documentation"),
+            ("opened a pull request", "code"),
+            ("pushed a commit", "code"),
+            ("moved the ticket", "ticketing"),
+            ("talked to a customer", ""),
+        ],
+    )
+    def test_category_inference(self, hint, expected):
+        assert gap_taxonomy.infer_category(hint) == expected
 
 
 class TestUntrackedWork:

@@ -5,13 +5,23 @@ flags and stays untouched; this file covers the new headless mode runners.
 """
 
 import argparse
+import io
+import json
 import os
 
 import pytest
 
 from yeaboi.agent.state import DeliveryReport, OneOnOnePrep, OneOnOneRecord, SixMonthReview, StandupReport
 from yeaboi.beta import BETA_TAG, PERFORMANCE_BETA_NOTICE, PERFORMANCE_BETA_PHRASE
-from yeaboi.cli import _cmd_analyze, _cmd_perf, _cmd_report, _cmd_standup, _run_subcommand, build_parser
+from yeaboi.cli import (
+    _cmd_analyze,
+    _cmd_perf,
+    _cmd_report,
+    _cmd_standup,
+    _cmd_standup_review,
+    _run_subcommand,
+    build_parser,
+)
 
 
 def _console(buf=None):
@@ -278,6 +288,7 @@ class TestStandupCommand:
             azdo_projects,
             azdo_repositories,
             documentation_sources,
+            review_transcripts,
         ):
             captured.update(
                 session_id=session_id,
@@ -291,6 +302,7 @@ class TestStandupCommand:
                 azdo_projects=azdo_projects,
                 azdo_repositories=azdo_repositories,
                 documentation_sources=documentation_sources,
+                review_transcripts=review_transcripts,
             )
             return StandupReport(team_summary="fine")
 
@@ -310,6 +322,7 @@ class TestStandupCommand:
             "azdo_projects": None,
             "azdo_repositories": None,
             "documentation_sources": None,
+            "review_transcripts": True,
         }
 
 
@@ -941,3 +954,126 @@ class TestSeedAllowedPaths:
         monkeypatch.delenv("YEABOI_ALLOWED_PATHS", raising=False)
         self._seed()
         assert "YEABOI_ALLOWED_PATHS" not in os.environ
+
+
+class TestStandupReviewCommand:
+    def _args(self, *argv):
+        return build_parser().parse_args(["standup-review", *argv])
+
+    def _patch(self, monkeypatch, review, filing=None):
+        from yeaboi.agent.state import IssueFilingResult
+
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        monkeypatch.setattr("yeaboi.standup.engine.run_transcript_review", lambda *a, **k: review)
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.file_transcript_issues",
+            lambda rid, **kw: seen.update(review_id=rid) or (filing or IssueFilingResult(filed=1)),
+        )
+        return seen
+
+    def _review(self, **over):
+        from yeaboi.agent.state import StandupGap, TranscriptReview
+
+        base = dict(
+            review_id=3,
+            standup_date="2026-07-30",
+            accuracy_note="Claims checked: 1 confirmed by the evidence.",
+            gaps=(
+                StandupGap(
+                    fingerprint="fp1",
+                    scope="product",
+                    title="Standup misses Confluence comments",
+                    root_cause="the collector reads pages but not comments",
+                ),
+            ),
+        )
+        base.update(over)
+        return TranscriptReview(**base)
+
+    def test_registered_as_a_subcommand(self):
+        assert self._args().command == "standup-review"
+
+    def test_text_output_lists_gaps(self, monkeypatch, capsys):
+        self._patch(monkeypatch, self._review())
+        buf = io.StringIO()
+        assert _cmd_standup_review(self._args(), _console(buf)) == 0
+        out = buf.getvalue()
+        assert "Standup misses Confluence comments" in out
+        assert "--file-issues" in out  # tells you how to actually file it
+
+    def test_json_output(self, monkeypatch, capsys):
+        self._patch(monkeypatch, self._review())
+        assert _cmd_standup_review(self._args("--format", "json"), _console()) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["gaps"][0]["title"] == "Standup misses Confluence comments"
+
+    def test_does_not_file_by_default(self, monkeypatch):
+        seen = self._patch(monkeypatch, self._review())
+        _cmd_standup_review(self._args(), _console())
+        assert seen == {}
+
+    def test_file_issues_reaches_the_filing_entry_point(self, monkeypatch):
+        seen = self._patch(monkeypatch, self._review())
+        buf = io.StringIO()
+        _cmd_standup_review(self._args("--file-issues"), _console(buf))
+        assert seen == {"review_id": 3}
+        assert "Filed 1" in buf.getvalue()
+
+    def test_file_issues_with_no_gaps_says_so(self, monkeypatch, capsys):
+        seen = self._patch(monkeypatch, self._review(gaps=()))
+        _cmd_standup_review(self._args("--file-issues"), _console())
+        assert seen == {}
+        assert "Nothing to file" in capsys.readouterr().err
+
+    def test_config_suggestions_are_shown_as_never_filed(self, monkeypatch):
+        from yeaboi.agent.state import StandupGap
+
+        self._patch(
+            monkeypatch,
+            self._review(
+                gaps=(),
+                config_suggestions=(
+                    StandupGap(scope="config", title="acme/infra is outside your scope", remedy="Add it."),
+                ),
+            ),
+        )
+        buf = io.StringIO()
+        _cmd_standup_review(self._args(), _console(buf))
+        out = buf.getvalue()
+        assert "never filed" in out
+        assert "Add it." in out
+
+    def test_strict_exits_3_on_warnings(self, monkeypatch):
+        self._patch(monkeypatch, self._review(warnings=("AI unavailable",)))
+        assert _cmd_standup_review(self._args("--strict"), _console()) == 3
+
+    def test_warnings_go_to_stderr(self, monkeypatch, capsys):
+        self._patch(monkeypatch, self._review(warnings=("AI unavailable",)))
+        _cmd_standup_review(self._args(), _console())
+        assert "AI unavailable" in capsys.readouterr().err
+
+    def test_no_session_exits_2(self, monkeypatch, capsys):
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "")
+        assert _cmd_standup_review(self._args(), _console()) == 2
+        assert "no session found" in capsys.readouterr().err
+
+    def test_list_gaps_reads_the_ledger(self, monkeypatch, tmp_path):
+        from yeaboi.paths import get_db_path
+        from yeaboi.standup.store import StandupStore
+
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        with StandupStore(get_db_path()) as store:
+            store.upsert_gap_issue("fp1", category="c", title="A tracked gap", issue_number=7, state="filed")
+        buf = io.StringIO()
+        assert _cmd_standup_review(self._args("--list-gaps"), _console(buf)) == 0
+        assert "A tracked gap" in buf.getvalue()
+        assert "#7" in buf.getvalue()
+
+
+class TestStandupTranscriptFlag:
+    def test_review_is_on_by_default(self):
+        assert build_parser().parse_args(["standup"]).review_transcripts is True
+
+    def test_no_transcript_review_turns_it_off(self):
+        assert build_parser().parse_args(["standup", "--no-transcript-review"]).review_transcripts is False

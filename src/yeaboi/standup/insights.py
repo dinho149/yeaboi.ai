@@ -189,32 +189,55 @@ def corrected_members(corrections: Sequence[object]) -> dict[str, list[str]]:
     return out
 
 
-def yesterday_context(previous_report: StandupReport | None, *, corrections: Sequence[object] = ()) -> dict[str, dict]:
+def yesterday_context(
+    previous_report: StandupReport | None,
+    transcript_corrections: dict[str, list[str]] | None = None,
+    *,
+    corrections: Sequence[object] = (),
+) -> dict[str, dict]:
     """Per-member comparison context distilled from the previous standup report.
 
     Returns ``{name: {"summary": ..., "blockers": ..., "outlook": ...}}`` with
     each value clipped to keep the LLM prompt bounded; members with a fully
     empty previous update are omitted. ``{}`` when there is no previous report.
 
-    When the previous standup was **corrected by the team**, the affected members
-    carry a ``corrected`` list naming the fields they fixed. The corrected text
-    itself already feeds forward for free — a corrected row supersedes its parent
-    in ``get_previous_run`` — but that alone only stops the model repeating a
-    wrong *fact*. The flag is what lets the prompt say the team looked at this
-    and disagreed, which is the part worth not repeating.
+    Two different kinds of correction reach this function, and they stay
+    separate because they mean different things to the prompt:
+
+    ``corrections`` (keyword) is the previous run's **edit log** — fields the
+    team fixed by hand. The affected members carry a ``corrected`` list naming
+    those fields. The corrected text itself already feeds forward for free — a
+    corrected row supersedes its parent in ``get_previous_run`` — but that alone
+    only stops the model repeating a wrong *fact*. The flag is what lets the
+    prompt say the team looked at this and disagreed.
+
+    ``transcript_corrections`` is work a member stated in the last standup
+    MEETING that the last report missed (see ``standup/transcript_review.py``).
+    They are fed FORWARD rather than written back into yesterday's stored
+    report: ``standup_history`` is an append-only record of what was said at the
+    time, and rewriting it to make today tidy would falsify that record. A
+    member with a transcript correction but no previous update still gets an
+    entry — the correction is the only thing we know about their yesterday.
     """
-    if previous_report is None:
-        return {}
     fixed = corrected_members(corrections)
     context: dict[str, dict] = {}
-    for member in previous_report.member_updates:
-        entry: dict = {
-            "summary": _clip(member.summary, _YESTERDAY_CLIP),
-            "blockers": _clip(member.blockers, _YESTERDAY_CLIP),
-            "outlook": _clip(getattr(member, "outlook", ""), _YESTERDAY_CLIP),
-        }
-        if any(entry.values()):
-            if member.name in fixed:
-                entry["corrected"] = sorted(set(fixed[member.name]))
-            context[member.name] = entry
+    if previous_report is not None:
+        for member in previous_report.member_updates:
+            entry: dict = {
+                "summary": _clip(member.summary, _YESTERDAY_CLIP),
+                "blockers": _clip(member.blockers, _YESTERDAY_CLIP),
+                "outlook": _clip(getattr(member, "outlook", ""), _YESTERDAY_CLIP),
+            }
+            if any(entry.values()):
+                if member.name in fixed:
+                    entry["corrected"] = sorted(set(fixed[member.name]))
+                context[member.name] = entry
+    for name, items in (transcript_corrections or {}).items():
+        # Filter AFTER clipping: a whitespace-only string is truthy but clips to
+        # nothing, and an empty "correction" in the prompt is worse than none.
+        clipped = [c for item in items if (c := _clip(item, _YESTERDAY_CLIP).strip())][:_MAX_SIGNALS_PER_MEMBER]
+        if not clipped:
+            continue
+        entry = context.setdefault(name, {"summary": "", "blockers": "", "outlook": ""})
+        entry["corrections"] = clipped
     return context

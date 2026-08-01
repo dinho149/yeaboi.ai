@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 
+from yeaboi.agent.state import MemberUpdate, StandupGap, TranscriptClaim, TranscriptReview
 from yeaboi.sessions import SessionStore
 from yeaboi.standup import engine
 from yeaboi.standup.collector import ActivityBundle
@@ -789,6 +790,9 @@ class TestProgressCallback:
             seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10), on_progress=phases.append
         )
         assert phases == [
+            # The transcript sweep runs first so yesterday's corrections are in
+            # hand before today's activity is collected and summarised.
+            "Reviewing meeting transcripts",
             "Collecting recent activity",
             "Reading sprint progress",
             "Resolving team & identities",
@@ -1536,3 +1540,190 @@ class TestDayOverDay:
         assert alice.progress_note == ""  # no true yesterday → clamp wins
         assert "Earlier rerun today" not in self._prompt_text(captured)
         assert report.confidence_trend == ""  # same-day pct filtered from the trend
+
+
+class TestTranscriptReviewSweep:
+    """The automatic pre-standup transcript sweep wired into run_standup."""
+
+    def _patch_llm(self, monkeypatch, captured: dict):
+        llm_json = json.dumps(
+            {"members": [{"name": "Alice", "summary": "s", "progress_note": "p"}], "team_summary": "ok"}
+        )
+
+        def _fake_invoke(self, m):
+            captured["prompt"] = m
+            return _FakeResp(llm_json)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: type("L", (), {"invoke": _fake_invoke})())
+
+    def _prompt_text(self, captured: dict) -> str:
+        return str(captured.get("prompt", ""))
+
+    def test_disabled_by_kwarg_skips_the_sweep(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        called = []
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: called.append(1) or [],
+        )
+        engine.run_standup(
+            seeded_session,
+            deliver=False,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            review_transcripts=False,
+        )
+        assert called == []
+
+    def test_disabled_by_config_skips_the_sweep(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                transcript_review_enabled=False,
+            )
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        called = []
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: called.append(1) or [],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert called == []
+
+    def test_a_raising_sweep_is_never_fatal(self, monkeypatch, db_path, seeded_session):
+        """This sits on the standup critical path — it must not break a standup."""
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+
+        def _boom(*a, **k):
+            raise RuntimeError("transcripts exploded")
+
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", _boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert report.date == "2026-07-10"
+        assert any("Transcript review skipped" in w for w in report.warnings)
+
+    def test_corrections_reach_the_summary_prompt(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import StandupReport as _Report
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.record_run(
+                _Report(
+                    date="2026-07-09",
+                    session_id=seeded_session,
+                    member_updates=(MemberUpdate(name="Alice", summary="Did the login work"),),
+                )
+            )
+        _patch_common(
+            monkeypatch,
+            items=[{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}],
+            counts=[("github", 1)],
+        )
+        captured: dict = {}
+        self._patch_llm(monkeypatch, captured)
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: [
+                TranscriptReview(
+                    standup_date="2026-07-09",
+                    claims=(TranscriptClaim(member="Alice", claim="also shipped the alerting PR", status="missing"),),
+                )
+            ],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert "also shipped the alerting PR" in self._prompt_text(captured)
+
+    def test_findings_become_notices_capped(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[("github", 1)])
+        self._patch_llm(monkeypatch, {})
+        gaps = tuple(StandupGap(title=f"Gap number {i}", scope="product") for i in range(6))
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: [TranscriptReview(standup_date="2026-07-09", gaps=gaps)],
+        )
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        notices = [w for w in report.warnings if "Gap number" in w]
+        assert len(notices) == engine._MAX_TRANSCRIPT_NOTICES
+        assert any("and 3 more transcript-review" in w for w in report.warnings)
+
+    def test_sweep_runs_before_activity_collection(self, monkeypatch, db_path, seeded_session):
+        """Corrections must be in hand BEFORE today's summaries are written."""
+        order: list[str] = []
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        original = engine.collector.collect_recent_activity
+        monkeypatch.setattr(
+            engine.collector,
+            "collect_recent_activity",
+            lambda **kw: order.append("collect") or original(**kw),
+        )
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: order.append("review") or [],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert order[:2] == ["review", "collect"]
+
+
+class TestTranscriptEntryPoints:
+    def test_review_with_no_transcripts_says_so(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        review = engine.run_transcript_review(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+        assert review.gaps == ()
+        assert any("No unreviewed transcripts" in w for w in review.warnings)
+
+    def test_review_has_no_file_issues_parameter(self):
+        """Structural guarantee: the drafting entry point cannot publish."""
+        import inspect
+
+        assert "file_issues" not in inspect.signature(engine.run_transcript_review).parameters
+
+    def test_review_reports_progress(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        phases: list[str] = []
+        engine.run_transcript_review(
+            seeded_session, db_path=db_path, today=date(2026, 7, 10), on_progress=phases.append
+        )
+        assert "Reading transcripts" in phases
+
+    def test_progress_callback_failure_is_swallowed(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+
+        def _boom(phase):
+            raise RuntimeError("ui died")
+
+        review = engine.run_transcript_review(
+            seeded_session, db_path=db_path, today=date(2026, 7, 10), on_progress=_boom
+        )
+        assert review is not None
+
+    def test_filing_without_a_review_is_reported_not_raised(self, db_path):
+        result = engine.file_transcript_issues(0, session_id="nope", db_path=db_path)
+        assert result.filed == 0
+        assert any("No transcript review found" in w for w in result.warnings)
+
+    def test_filing_delegates_to_gap_issues(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import IssueFilingResult
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(
+                TranscriptReview(session_id=seeded_session, gaps=(StandupGap(fingerprint="fp1"),))
+            )
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.gap_issues.file_review_gaps",
+            lambda review, **kw: seen.update(review=review, kw=kw) or IssueFilingResult(filed=1),
+        )
+        result = engine.file_transcript_issues(review_id, db_path=db_path)
+        assert result.filed == 1
+        assert seen["review"].review_id == review_id

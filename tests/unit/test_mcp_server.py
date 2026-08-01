@@ -39,6 +39,8 @@ EXPECTED_TOOLS = {
     "standup_history",
     "standup_members",
     "standup_repositories",
+    "standup_review",
+    "standup_gaps",
     "standup_config_get",
     "standup_config_set",
     "report_delivery",

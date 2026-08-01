@@ -323,6 +323,59 @@ _SYSTEM_CATEGORY = {
 }
 
 
+# Which standup category an artifact belongs to, inferred from the OBJECT named
+# rather than the activity. "commented on the design doc" is a comment (the
+# kind) about documentation (the category) — the model is told never to guess a
+# system, so this is how an honest "unknown" still gets diagnosed instead of
+# vanishing. Order matters; first hit wins.
+_CATEGORY_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("confluence", "documentation"),
+    ("notion", "documentation"),
+    ("runbook", "documentation"),
+    ("wiki", "documentation"),
+    ("design doc", "documentation"),
+    ("doc", "documentation"),
+    ("page", "documentation"),
+    ("spec", "documentation"),
+    ("readme", "documentation"),
+    ("pull request", "code"),
+    ("merge request", "code"),
+    (" pr ", "code"),
+    ("commit", "code"),
+    ("branch", "code"),
+    ("repo", "code"),
+    ("code review", "code"),
+    ("jira", "ticketing"),
+    ("ticket", "ticketing"),
+    ("issue", "ticketing"),
+    ("work item", "ticketing"),
+    ("story", "ticketing"),
+    ("backlog", "ticketing"),
+)
+
+# Which sources serve each category — the inverse of _SYSTEM_CATEGORY.
+_CATEGORY_SYSTEMS: dict[str, tuple[str, ...]] = {
+    "ticketing": ("jira", "azure_devops"),
+    "code": ("github", "azdo_repos", "local_git"),
+    "documentation": ("confluence", "notion"),
+}
+
+_CATEGORY_LABELS = {
+    "ticketing": "ticket tracking",
+    "code": "code hosting",
+    "documentation": "documentation",
+}
+
+
+def infer_category(hint: str) -> str:
+    """Infer the standup category (ticketing/code/documentation) from a hint."""
+    text = f" {(hint or '').strip().lower()} "
+    for needle, category in _CATEGORY_KEYWORDS:
+        if needle in text:
+            return category
+    return ""
+
+
 def normalize_system(hint: str) -> str:
     """Map a model's system hint onto a collector source key."""
     key = (hint or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -474,9 +527,42 @@ def classify(
     if system == "none":
         return Diagnosis(_BY_ID["untracked_work"], (), kind, detail=claim.claim)
 
+    scanned_now = scanned_sources(report)
+
     if system == "unknown":
-        logger.debug("gap_taxonomy: unclassified claim (system hint %r)", claim.system_hint)
-        return None
+        # The model is told never to guess a system, so "unknown" is the honest
+        # answer for "commented on the design doc" — Confluence or Notion? Rather
+        # than drop the claim, infer from the CATEGORY the artifact belongs to
+        # and this run's own configuration. Only an unambiguous answer is used.
+        category = infer_category(claim.artifact_hint or claim.claim)
+        if not category:
+            logger.debug("gap_taxonomy: unclassified claim (system hint %r)", claim.system_hint)
+            return None
+        candidates = [s for s in _CATEGORY_SYSTEMS[category] if s in scanned_now]
+        if len(candidates) == 1:
+            system = candidates[0]
+            logger.info("gap_taxonomy: resolved unknown system to %s via %s category", system, category)
+        elif not candidates:
+            # Nothing serving that category was scanned at all — a config gap
+            # naming the category, which is more useful than naming no system.
+            category_label = _CATEGORY_LABELS[category]
+            options = ", ".join(_SYSTEM_LABELS[s] for s in _CATEGORY_SYSTEMS[category])
+            return Diagnosis(
+                _BY_ID["source_not_configured"],
+                (),
+                kind,
+                scope_token=category,
+                detail=f"No {category_label} source was scanned for this standup.",
+                root_cause=(
+                    f"Work discussed as {category_label} could not be seen because no "
+                    f"{category_label} source is connected."
+                ),
+                remedy=f"Connect one of {options} for standup (Standup → Configure).",
+                evidence=(f"Sources scanned: {', '.join(sorted(scanned_now)) or 'none'}.",),
+            )
+        else:
+            logger.debug("gap_taxonomy: %s category is ambiguous (%s)", category, candidates)
+            return None
 
     label = _SYSTEM_LABELS.get(system, KNOWN_UNSUPPORTED.get(system, system))
     kind_label = _ARTIFACT_LABELS.get(kind, "activity")
@@ -492,7 +578,7 @@ def classify(
             evidence=(f"{label} is not among the sources standup can read.",),
         )
 
-    scanned = scanned_sources(report)
+    scanned = scanned_now
     skipped = skipped_sources(report)
     failed = failed_sources(report)
 

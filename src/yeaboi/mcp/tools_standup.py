@@ -64,6 +64,7 @@ def _standup_run(
     azdo_projects: list | None,
     azdo_repositories: list | None,
     documentation_sources: list | None,
+    review_transcripts: bool,
 ):
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.standup.engine import run_standup
@@ -71,6 +72,7 @@ def _standup_run(
     resolved = resolve_session_id(session_id)
     return run_standup(
         resolved,
+        review_transcripts=review_transcripts,
         deliver=deliver,
         days=days or None,
         channels=_validated_channels(channels),
@@ -82,6 +84,54 @@ def _standup_run(
         azdo_repositories=azdo_repositories,
         documentation_sources=documentation_sources,
     )
+
+
+def _standup_review(
+    session_id: str,
+    transcript_paths: list | None,
+    transcript_dir: str,
+    standup_date: str,
+    max_transcripts: int,
+    include_reviewed: bool,
+    file_issues: bool,
+):
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+    from yeaboi.standup.engine import file_transcript_issues, run_transcript_review
+
+    if transcript_dir:
+        # Sandbox check at write time, same as repo_path: the sweep reads files
+        # out of this folder, so it must clear the policy before we try.
+        from yeaboi.fs_policy import resolve_and_check
+
+        resolve_and_check(transcript_dir, mode="read", context="standup transcript_dir")
+
+    resolved = resolve_session_id(session_id)
+    review = run_transcript_review(
+        resolved,
+        transcript_paths=transcript_paths,
+        transcript_dir=transcript_dir,
+        standup_date=standup_date,
+        max_transcripts=max_transcripts,
+        include_reviewed=include_reviewed,
+    )
+    if not file_issues:
+        return review
+    # Filing is a separate, explicit act — the review itself never publishes.
+    filing = file_transcript_issues(review.review_id, session_id=resolved)
+    return {"review": review, "filing": filing}
+
+
+def _standup_gaps(session_id: str, limit: int) -> dict:
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.store import StandupStore
+
+    resolved = resolve_session_id(session_id)
+    with StandupStore(get_db_path()) as store:
+        reviews = store.get_reviews(resolved, limit=limit)
+        latest = store.get_latest_review(resolved)
+        ledger = store.get_gap_issues(limit=limit)
+    return {"session_id": resolved, "reviews": reviews, "latest_review": latest, "gap_issues": ledger}
 
 
 def _standup_members(session_id: str, tracker_sources: list | None) -> dict:
@@ -283,6 +333,7 @@ def register(app) -> None:
         azdo_projects: list[str] | None = None,
         azdo_repositories: list[str] | None = None,
         documentation_sources: list[str] | None = None,
+        review_transcripts: bool = True,
     ) -> dict:
         """Run a Daily Standup: collect team activity (Jira/AzDO/GitHub/git/docs), score sprint
         confidence, and summarize per member. Returns the report for you to present; deliver=true
@@ -293,7 +344,9 @@ def register(app) -> None:
         code scope without changing it. azdo_repositories is a legacy compatibility override.
         documentation_sources selects
         Confluence/Notion providers without changing saved config. days overrides the activity look-back
-        window. Blank session_id = most recent session."""
+        window. review_transcripts (default true) first reviews any unreviewed standup meeting
+        transcripts covering earlier dates, so yesterday's corrections inform today's report; it
+        drafts issues locally and never writes to GitHub. Blank session_id = most recent session."""
         return await run_engine(
             ctx,
             _standup_run,
@@ -308,7 +361,51 @@ def register(app) -> None:
             azdo_projects,
             azdo_repositories,
             documentation_sources,
+            review_transcripts,
         )
+
+    @app.tool()
+    async def standup_review(
+        ctx: Context,
+        session_id: str = "",
+        transcript_paths: list[str] | None = None,
+        transcript_dir: str = "",
+        standup_date: str = "",
+        max_transcripts: int = 5,
+        include_reviewed: bool = False,
+        file_issues: bool = False,
+    ) -> dict:
+        """Review standup meeting transcripts against the reports they discussed, to find what
+        standup missed and why. Reads .txt/.md/.vtt/.srt/.json transcripts from ~/.yeaboi/transcripts
+        (and the configured transcript_dir), checks what each person said they did against the
+        evidence the report actually had, and diagnoses each gap: a missing integration, an
+        unconfigured source, a capability the collectors lack, or a summary that dropped what it
+        collected. Product-level gaps are drafted as GitHub issues against the yeaboi repo; config
+        gaps come back as suggestions with an exact remedy and are never filed.
+        transcript_paths reviews specific files instead of sweeping. standup_date attributes
+        transcripts whose own date cannot be inferred. max_transcripts caps distinct standup DATES
+        (one AI call each). include_reviewed re-reviews transcripts already processed.
+        file_issues=true WRITES PUBLIC GITHUB ISSUES — always ask the user before enabling it;
+        the default drafts them locally so they can be reviewed first.
+        Blank session_id = most recent session."""
+        return await run_engine(
+            ctx,
+            _standup_review,
+            session_id,
+            transcript_paths,
+            transcript_dir,
+            standup_date,
+            max_transcripts,
+            include_reviewed,
+            file_issues,
+        )
+
+    @app.tool()
+    async def standup_gaps(session_id: str = "", limit: int = 30) -> dict:
+        """List past standup transcript reviews and the gap→GitHub-issue ledger for a session.
+        Shows which diagnosed gaps have been filed, which recurred, and their issue numbers —
+        read-only. Blank session_id = most recent session."""
+        return await run_readonly(_standup_gaps, session_id, limit)
 
     @app.tool()
     async def standup_members(session_id: str = "", tracker_sources: list[str] | None = None) -> dict:

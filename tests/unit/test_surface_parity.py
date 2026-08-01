@@ -91,7 +91,11 @@ CAPABILITIES: dict[str, dict] = {
         "skill": Exempt("agents call the session tools directly — no guided workflow needed"),
     },
     "standup": {
-        "engines": {("yeaboi.standup.engine", "run_standup")},
+        "engines": {
+            ("yeaboi.standup.engine", "run_standup"),
+            ("yeaboi.standup.engine", "run_transcript_review"),
+            ("yeaboi.standup.engine", "file_transcript_issues"),
+        },
         "mcp_tools": {
             "standup_run",
             "standup_history",
@@ -99,9 +103,18 @@ CAPABILITIES: dict[str, dict] = {
             "standup_config_set",
             "standup_members",
             "standup_repositories",
+            "standup_review",
+            "standup_gaps",
         },
         "tui_mode": "daily-standup",
-        "cli": {"standup", "--standup-run", "--standup-session", "--standup-output", "--standup-interactive"},
+        "cli": {
+            "standup",
+            "standup-review",
+            "--standup-run",
+            "--standup-session",
+            "--standup-output",
+            "--standup-interactive",
+        },
         "skill": "standup",
     },
     "reporting": {
@@ -281,6 +294,10 @@ HIDDEN_PARAMS: dict[str, dict[str, str]] = {
 # into the engine's arguments.
 TOOL_ONLY_PARAMS: dict[str, set[str]] = {
     "plan_generate": {"description", "answers", "team_size", "sprint_length_weeks", "project_context"},
+    # file_issues is an adapter over the SECOND engine entry point
+    # (file_transcript_issues): run_transcript_review deliberately has no such
+    # param, so the drafting path structurally cannot publish.
+    "standup_review": {"file_issues"},
 }
 
 # ---------------------------------------------------------------------------
@@ -295,6 +312,7 @@ TOOL_ONLY_PARAMS: dict[str, set[str]] = {
 CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "report": ("yeaboi.reporting.engine", "run_delivery_report"),
     "standup": ("yeaboi.standup.engine", "run_standup"),
+    "standup-review": ("yeaboi.standup.engine", "run_transcript_review"),
     "perf prep": ("yeaboi.performance.engine", "run_one_on_one_prep"),
     "perf complete": ("yeaboi.performance.engine", "complete_one_on_one"),
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
@@ -305,6 +323,9 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
 CLI_RENAMES: dict[str, dict[str, str]] = {
     "report": {"session": "session_id", "label": "period_label_override"},
     "standup": {"session": "session_id"},
+    # --transcript/--date carry explicit dest= in cli.py, so only --session
+    # needs a rename here.
+    "standup-review": {"session": "session_id"},
     "perf prep": {"session": "session_id"},
     "perf complete": {"session": "session_id"},
     "perf review": {"session": "session_id", "months": "period_months"},
@@ -330,6 +351,9 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
         "schedule",
         "list_members",
     },  # schedule/list-members are adapters, not run_standup params
+    # file-issues drives the separate file_transcript_issues entry point;
+    # list-gaps is a store read.
+    "standup-review": {"format", "strict", "file_issues", "list_gaps"},
     "perf prep": {"strict"},
     "perf complete": {"strict"},
     "perf review": {"strict"},

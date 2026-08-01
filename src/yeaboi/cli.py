@@ -495,7 +495,9 @@ def build_parser() -> argparse.ArgumentParser:
     # optional, so bare `yeaboi` and `yeaboi --<flag>` parse unchanged).
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
-    subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,poker,analyze}")
+    subparsers = parser.add_subparsers(
+        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze}"
+    )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
     report_p.add_argument(
@@ -602,8 +604,68 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["install", "remove", "status"],
         help="Manage the OS schedule (launchd/cron) that runs the standup daily, instead of running one now",
     )
+    standup_p.add_argument(
+        "--no-transcript-review",
+        dest="review_transcripts",
+        action="store_false",
+        default=True,
+        help="Skip the pre-standup review of any unreviewed meeting transcripts",
+    )
     standup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     standup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # ── standup-review ────────────────────────────────────────────────────
+    # A sibling subcommand rather than `standup review`: `standup` is a leaf
+    # parser and converting it into a parser-of-parsers would break the
+    # existing `yeaboi standup --deliver` form.
+    review_p = subparsers.add_parser(
+        "standup-review",
+        help="Review standup meeting transcripts to find what standup missed, and why",
+    )
+    review_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
+    review_p.add_argument(
+        "--transcript",
+        dest="transcript_paths",
+        nargs="+",
+        metavar="PATH",
+        help="Review specific transcript files instead of sweeping the transcript folders",
+    )
+    review_p.add_argument(
+        "--transcript-dir",
+        default="",
+        metavar="DIR",
+        help="An extra transcript folder for this run (~/.yeaboi/transcripts is always swept)",
+    )
+    review_p.add_argument(
+        "--date",
+        dest="standup_date",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="Attribute transcripts to this standup date when their own date can't be inferred",
+    )
+    review_p.add_argument(
+        "--max-transcripts",
+        type=int,
+        default=5,
+        help="Cap on distinct standup dates reviewed (one AI call each)",
+    )
+    review_p.add_argument(
+        "--include-reviewed",
+        action="store_true",
+        help="Re-review transcripts that have already been processed",
+    )
+    review_p.add_argument(
+        "--file-issues",
+        action="store_true",
+        help="File the drafted gaps as GitHub issues (writes to a PUBLIC repo; off by default)",
+    )
+    review_p.add_argument(
+        "--list-gaps",
+        action="store_true",
+        help="List past reviews and the gap→issue ledger instead of running a review",
+    )
+    review_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    review_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     perf_p = subparsers.add_parser(
         "perf",
@@ -1217,6 +1279,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
     handlers = {
         "report": _cmd_report,
         "standup": _cmd_standup,
+        "standup-review": _cmd_standup_review,
         "perf": _cmd_perf,
         "retro": _cmd_retro,
         "poker": _cmd_poker,
@@ -1348,6 +1411,7 @@ def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,
         documentation_sources=args.documentation_sources,
+        review_transcripts=args.review_transcripts,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
@@ -1392,6 +1456,97 @@ def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_
     lead_minutes = int(config.get("lead_minutes", 10))
     console.print(install_schedule(session_id, standup_time, weekdays, lead_minutes))
     return 0
+
+
+def _format_review_text(review, console: "Console") -> None:
+    """Print a transcript review as scannable text."""
+    console.print(f"[bold]Transcript review — {review.standup_date or 'unknown date'}[/bold]")
+    if review.sources:
+        console.print("Read: " + ", ".join(s.filename for s in review.sources))
+    if review.accuracy_note:
+        console.print(review.accuracy_note)
+    if review.gaps:
+        console.print("\n[bold]Gaps in standup itself[/bold] (drafted as GitHub issues)")
+        for gap in review.gaps:
+            # Parentheses, not brackets: Rich reads [high/high] as markup and
+            # silently swallows it.
+            console.print(f"  • {gap.title}  ({gap.priority} priority, {gap.confidence} confidence)  {gap.fingerprint}")
+            if gap.root_cause:
+                console.print(f"    {gap.root_cause}")
+    if review.config_suggestions:
+        console.print("\n[bold]Fix in your configuration[/bold] (never filed)")
+        for gap in review.config_suggestions:
+            console.print(f"  • {gap.title}")
+            if gap.remedy:
+                console.print(f"    → {gap.remedy}")
+    if not review.gaps and not review.config_suggestions:
+        console.print("\nNo gaps found — the report matched what the team said.")
+
+
+def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
+    """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.engine import file_transcript_issues, run_transcript_review
+    from yeaboi.standup.store import StandupStore
+
+    logging.getLogger(__name__).info("standup-review (list_gaps=%s file=%s)", args.list_gaps, args.file_issues)
+    session_id = _resolve_cli_session(args.session)
+    if not session_id:
+        print("Error: no session found to review transcripts for.", file=sys.stderr)
+        return 2
+
+    if args.list_gaps:
+        # The dedup ledger, so it is possible to SEE dedup working rather than
+        # having to trust it.
+        with StandupStore(get_db_path()) as store:
+            reviews = store.get_reviews(session_id, limit=30)
+            ledger = store.get_gap_issues(limit=50)
+        if args.format == "json":
+            print(_json_dump({"reviews": reviews, "gap_issues": ledger}))
+            return 0
+        console.print(f"[bold]{len(reviews)} review(s)[/bold]")
+        for row in reviews:
+            console.print(f"  {row['standup_date'] or '?'}  run={row['run_id'] or '-'}  {row['status']}")
+        console.print(f"\n[bold]{len(ledger)} tracked gap(s)[/bold]")
+        for entry in ledger:
+            issue = f"#{entry['issue_number']}" if entry["issue_number"] else entry["state"]
+            console.print(f"  {entry['fingerprint']}  {issue}  ×{entry['occurrences']}  {entry['title']}")
+        return 0
+
+    review = run_transcript_review(
+        session_id,
+        transcript_paths=args.transcript_paths,
+        transcript_dir=args.transcript_dir,
+        standup_date=args.standup_date,
+        max_transcripts=args.max_transcripts,
+        include_reviewed=args.include_reviewed,
+    )
+    for warning in review.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+
+    filing = None
+    if args.file_issues:
+        if not review.gaps:
+            print("Nothing to file — no gaps in standup itself were diagnosed.", file=sys.stderr)
+        else:
+            filing = file_transcript_issues(review.review_id, session_id=session_id)
+            for warning in filing.warnings:
+                print(f"⚠ {warning}", file=sys.stderr)
+
+    if args.format == "json":
+        print(_json_dump({"review": review, "filing": filing} if filing else review))
+    else:
+        _format_review_text(review, console)
+        if filing:
+            console.print(f"\nFiled {filing.filed}, commented {filing.commented}, skipped {filing.skipped}.")
+            for link in filing.links:
+                if link.issue_url:
+                    console.print(f"  {link.issue_url}")
+        elif review.gaps:
+            console.print("\nRun again with --file-issues to file these on GitHub.")
+
+    warnings = list(review.warnings) + list(filing.warnings if filing else [])
+    return _strict_exit(args.strict, warnings)
 
 
 def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:

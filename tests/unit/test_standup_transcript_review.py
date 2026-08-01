@@ -657,3 +657,36 @@ class TestCarryForward:
         corrections, warnings = transcript_review.carry_forward([self._review()], None)
         assert corrections == {}
         assert warnings
+
+
+class TestUnclassifiedIsReported:
+    """A claim the ladder cannot diagnose is counted, not quietly discarded."""
+
+    def test_counted_in_the_accuracy_note(self, monkeypatch, llm_on):
+        _mock_llm(
+            monkeypatch,
+            {
+                "claims": [
+                    {
+                        "member": "Alice",
+                        "claim": "did a thing",
+                        "quote": "I also commented on the design doc",
+                        "status": "missing",
+                        "system_hint": "unknown",
+                        "artifact_hint": "a thing",
+                    }
+                ]
+            },
+        )
+        review = transcript_review.review_transcripts(
+            "s1", report=_report(), sources=_sources(), standup_date="2026-07-30"
+        )
+        assert review.gaps == ()
+        assert "could not attribute to a cause" in review.accuracy_note
+
+    def test_diagnose_returns_the_unclassified_count(self):
+        from yeaboi.agent.state import TranscriptClaim
+
+        claims = (TranscriptClaim(member="Alice", status="missing", system_hint="unknown", artifact_hint="a thing"),)
+        _gaps, _suggestions, _untracked, unclassified = transcript_review.diagnose(claims, report=_report())
+        assert unclassified == 1
