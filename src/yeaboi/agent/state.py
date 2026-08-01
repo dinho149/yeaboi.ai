@@ -260,6 +260,70 @@ class Sprint:
     story_ids: tuple[str, ...]
 
 
+# Shared by every artifact a reader can correct in the browser. It lives here
+# rather than in yeaboi.artifacts because it is *part of the artifact* — it
+# serializes with it, exports with it, and has to deserialize out of a
+# report_json written before the field existed, which is the whole reason every
+# field is defaulted.
+@dataclass(frozen=True)
+class Annotation:
+    """Something a reader added that the generated schema had no room for.
+
+    Two shapes behind one dataclass, told apart by ``kind``:
+
+    * ``note`` — free text hung off a section or a row; ``label`` is empty.
+    * ``field`` — a named value the schema never had, e.g. "Risk owner: Ada".
+
+    ``kind`` is an explicit discriminator rather than "an empty label means a
+    note", because a sentinel is a rule a reader has to be told, and the first
+    person to add a field with no name would silently create a note.
+
+    ``anchor`` is the path of the thing this hangs off — a member, a project, a
+    section — or ``""`` for the document as a whole. It is deliberately the same
+    grammar the edits use, so a renderer has one way to ask "what belongs here".
+    """
+
+    kind: str = "note"
+    anchor: str = ""
+    label: str = ""
+    text: str = ""
+    author: str = ""
+    avatar: str = ""
+    at: str = ""
+
+
+def annotations_from(value: object) -> tuple[Annotation, ...]:
+    """Rebuild an annotation tuple from JSON-parsed dicts (missing → empty).
+
+    One helper rather than the same six ``.get()`` blocks copied into six mode
+    stores. Tolerant in the house style: anything that is not a sequence of
+    dicts deserializes to ``()`` rather than raising, so a report written by a
+    version that had never heard of annotations still loads.
+
+    Accepts a tuple as well as a list, which is not pedantry: the JSON path
+    hands over a list, but ``asdict`` rebuilds each container with
+    ``type(obj)(...)`` and so hands over a *tuple*. Anonymize reconstructs from
+    exactly that tree, so a list-only check would have dropped every annotation
+    from a masked artifact — silently, and only on the path meant to make
+    something safe to publish.
+    """
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(
+        Annotation(
+            kind=str(a.get("kind", "note")),
+            anchor=str(a.get("anchor", "")),
+            label=str(a.get("label", "")),
+            text=str(a.get("text", "")),
+            author=str(a.get("author", "")),
+            avatar=str(a.get("avatar", "")),
+            at=str(a.get("at", "")),
+        )
+        for a in value
+        if isinstance(a, dict)
+    )
+
+
 # See docs: "Session Management" — Daily Standup mode artifacts
 #
 # The Daily Standup mode produces a StandupReport for a given day: one
@@ -350,6 +414,9 @@ class StandupReport:
     my_name: str = ""  # the standup user's resolved display name (drives the "My Update" row)
     warnings: tuple[str, ...] = ()  # surfaced problems (missing API key, source 401/403) — shown, never silent
     images: tuple[str, ...] = ()  # screenshot paths pasted into "My Update" — embedded in exports
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 # See docs: "Session Management" — Retro mode artifacts
@@ -410,6 +477,9 @@ class RetroReport:
     # prior run's action_items grid; the Prep↔Completion carry-forward loop for retro
     # (mirrors Performance mode). Empty when there was no prior retro for the session.
     carried_action_items: tuple[RetroCard, ...] = ()
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
     def by_grid(self) -> dict[str, list[RetroCard]]:
         """Group this report's cards by grid key, preserving insertion order."""
@@ -558,6 +628,9 @@ class OneOnOnePrep:
     carried_action_items: tuple[str, ...] = ()  # open actions from the previous 1:1
     activity_summary: str = ""  # short prose summary of the sprint work reviewed
     warnings: tuple[str, ...] = ()
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -577,6 +650,9 @@ class OneOnOneRecord:
     action_items: tuple[str, ...] = ()  # agreed next steps → carried into next prep
     highlights: tuple[str, ...] = ()  # key discussion points recorded
     warnings: tuple[str, ...] = ()
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -598,6 +674,9 @@ class SixMonthReview:
     overall: str = ""  # overall summary paragraph
     framework_used: str = ""  # "default" | imported template name
     warnings: tuple[str, ...] = ()
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -664,6 +743,9 @@ class DeliveryReport:
     supporting_signals: tuple[SupportingSignal, ...] = ()  # code/docs corroboration (deterministic)
     warnings: tuple[str, ...] = ()
     generated_at: str = ""
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -732,6 +814,9 @@ class RoadmapAnalysis:
     projects: tuple[RoadmapProject, ...] = ()
     warnings: tuple[str, ...] = ()
     generated_at: str = ""  # ISO timestamp
+    # Reader-authored additions; see Annotation. Defaulted so a report stored
+    # before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 # See docs: "Scrum Standards" — prompt quality rating

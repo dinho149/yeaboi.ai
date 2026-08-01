@@ -20,7 +20,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import RetroCard, RetroReport
+from yeaboi.agent.state import RetroCard, RetroReport, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ def _dict_to_retro_report(d: dict) -> RetroReport:
         participants=tuple(d.get("participants", ())),
         generated_at=d.get("generated_at", ""),
         carried_action_items=carried,
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

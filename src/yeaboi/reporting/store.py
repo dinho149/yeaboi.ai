@@ -20,7 +20,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal
+from yeaboi.agent.state import DeliveredItem, DeliveryReport, SupportingSignal, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,7 @@ def _dict_to_report(d: dict) -> DeliveryReport:
         supporting_signals=signals,
         warnings=tuple(d.get("warnings", ())),
         generated_at=d.get("generated_at", ""),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

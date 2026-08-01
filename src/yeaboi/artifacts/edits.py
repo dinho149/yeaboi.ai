@@ -60,9 +60,11 @@ logger = logging.getLogger(__name__)
 OP_SET = "set"
 OP_APPEND = "append"
 OP_REMOVE = "remove"
+OP_NOTE = "note"
+OP_FIELD = "field"
 OP_REVERT = "revert"
 
-EDIT_OPS = (OP_SET, OP_APPEND, OP_REMOVE, OP_REVERT)
+EDIT_OPS = (OP_SET, OP_APPEND, OP_REMOVE, OP_NOTE, OP_FIELD, OP_REVERT)
 """The complete op vocabulary, validated server-side.
 
 Mirrored into ``frontend/src/types/enums.ts`` by ``scripts/gen_web_types.py``
@@ -75,6 +77,15 @@ MAX_AUTHOR = 60
 
 MAX_NEWLINES = 40
 """A correction is prose, not a document. Past this it is a layout attack."""
+
+MAX_LABEL = 80
+"""Longest name for a reader-added field. A label, not a sentence."""
+
+MAX_ANNOTATION = 2000
+MAX_ANNOTATIONS = 100
+"""How many notes and fields one document may carry, in total. High enough that
+a real team never meets it, low enough that a joiner with the link cannot turn a
+standup into an unreadable wall."""
 
 # C0 controls minus \n and \t, plus DEL. A browser cannot type these; something
 # that sends them is either broken or probing what the log renderer does with
@@ -101,6 +112,7 @@ class Edit:
     path: str = ""
     value: str = ""
     base: str = ""
+    label: str = ""
     target: str = ""
     author: str = ""
     avatar: str = ""
@@ -188,7 +200,26 @@ def validate(edit: Edit, spec: ArtifactSpec) -> Edit:
     if edit.op == OP_REVERT:
         if not edit.target:
             raise EditError("revert needs a target")
-        return replace(edit, author=author, path="", value="", base="")
+        return replace(edit, author=author, path="", value="", base="", label="")
+
+    if edit.op in (OP_NOTE, OP_FIELD):
+        if not spec.annotatable:
+            raise EditError(f"{spec.label} does not take notes")
+        # An empty path means the document as a whole; anything else is an
+        # anchor, and only its *shape* can be checked here — whether it points
+        # at a row that still exists is a question about an artifact this
+        # function has never seen, and is answered at materialisation.
+        anchor = render_path(parse_path(edit.path)) if edit.path else ""
+        text = _clean(edit.value, MAX_ANNOTATION)
+        if not text:
+            raise EditError("value is empty")
+        _check_injection(text)
+        label = _clean(edit.label, MAX_LABEL) if edit.op == OP_FIELD else ""
+        if edit.op == OP_FIELD:
+            if not label:
+                raise EditError("a field needs a name")
+            _check_injection(label)
+        return replace(edit, author=author, path=anchor, value=text, label=label, base="", target="")
 
     segments = parse_path(edit.path)  # PathError is an EditError to the caller: both are ValueError
     chain = tuple(seg.field for seg in segments)
@@ -224,9 +255,48 @@ def validate(edit: Edit, spec: ArtifactSpec) -> Edit:
     )
 
 
+def _apply_annotation(tree: dict, edit: Edit, spec: ArtifactSpec) -> EditResult:
+    """Attach a note or a named field to the document or to one row inside it."""
+
+    def failed(reason: str) -> EditResult:
+        return EditResult(edit_id=edit.edit_id, applied=False, reason=reason)
+
+    if edit.path:
+        # The anchor has to still point at something. A note left on a member
+        # who is no longer in the report is not rendered anywhere, so recording
+        # it as applied would be a lie the history then repeats.
+        try:
+            target = resolve(tree, parse_path(edit.path), dict(spec.list_keys))
+        except PathError:
+            return failed("malformed")
+        if target is None or not target.exists() or not isinstance(target.get(), dict):
+            return failed("missing")
+
+    existing = tree.setdefault("annotations", [])
+    if not isinstance(existing, list):
+        return failed("not editable")
+    if len(existing) >= MAX_ANNOTATIONS:
+        return failed("full")
+    existing.append(
+        {
+            "kind": edit.op,
+            "anchor": edit.path,
+            "label": edit.label,
+            "text": edit.value,
+            "author": edit.author,
+            "avatar": edit.avatar,
+            "at": edit.at,
+        }
+    )
+    return EditResult(edit_id=edit.edit_id, applied=True)
+
+
 def _apply_one(tree: dict, edit: Edit, spec: ArtifactSpec) -> EditResult:
     def failed(reason: str) -> EditResult:
         return EditResult(edit_id=edit.edit_id, applied=False, reason=reason)
+
+    if edit.op in (OP_NOTE, OP_FIELD):
+        return _apply_annotation(tree, edit, spec)
 
     try:
         segments = parse_path(edit.path)

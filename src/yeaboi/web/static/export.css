@@ -357,6 +357,946 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   [data-print-hide] { display: none !important; }
 }
 /*
+ * Report bodies. One module for all of them: they are the same document
+ * grammar — a heading, some bullets, some cards — wearing different data, and
+ * splitting them per report would make that grammar drift.
+ *
+ * The typography rule the whole file follows: **mono is structure, the
+ * proportional face is only what a person or a model wrote.** So section
+ * headings, indices and labels are mono; bullets, descriptions and summaries
+ * are not. It is the inversion of the usual hierarchy and it is true to a
+ * product whose primary surface is a terminal.
+ */
+
+/* ── Document grammar ─────────────────────────────────────────── */
+
+._h2_i8p5a_15 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-s);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin: 0 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+
+._bullets_i8p5a_27 {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text);
+  font-size: var(--fs-s);
+  line-height: 1.65;
+}
+._bullets_i8p5a_27 li + li {
+  margin-top: var(--s1);
+}
+._bullets_i8p5a_27 li::marker {
+  color: var(--accent);
+}
+
+._lede_i8p5a_41 {
+  margin: 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  /* The accent edge, not a full tint: this is the model's one-line reading of
+     the whole document, and it should look quoted rather than alarming. */
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-m);
+  background: var(--panel);
+  font-size: var(--fs-m);
+  line-height: 1.6;
+}
+
+._empty_i8p5a_54 {
+  color: var(--muted);
+  font-style: italic;
+}
+
+._footnote_i8p5a_59 {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+}
+
+/* A counted breakdown: bar directly over its key, as one block. Two separate
+   margins let a legend drift toward the section under it and read as that
+   section's caption instead of this one's. */
+._split_i8p5a_69 {
+  margin: var(--s4) 0;
+}
+._split_i8p5a_69 > * + * {
+  margin-top: var(--s2);
+}
+
+._trend_i8p5a_76 {
+  margin-bottom: var(--s4);
+}
+
+/* A row of people. `inline-flex` per name so an avatar never separates from the
+   name it belongs to across a wrap. */
+._people_i8p5a_82 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: 0 0 var(--s4);
+  font-size: var(--fs-s);
+}
+._person_i8p5a_90 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+}
+
+/* ── Performance ──────────────────────────────────────────────── */
+
+._identity_i8p5a_99 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: var(--fs-m);
+}
+
+/* ── Roadmap ──────────────────────────────────────────────────── */
+
+/* Side by side where there is room. A breakdown of three projects does not
+   need 1100px of track, and two of them stacked full-width dominate the
+   section they are supposed to introduce. */
+._mixes_i8p5a_112 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+}
+._mix_i8p5a_112 > * + * {
+  margin-top: var(--s2);
+}
+
+._projects_i8p5a_122 {
+  display: grid;
+  gap: var(--s3);
+}
+
+._project_i8p5a_122 {
+  border-left: 2px solid var(--accent);
+}
+
+._projectIndex_i8p5a_131 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  margin-right: var(--s2);
+}
+
+._chips_i8p5a_138 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  justify-content: flex-end;
+}
+@media (max-width: 699px) {
+  /* Own line, under the title. Sharing the row costs the title half its width
+     and reflows "Billing revamp" onto two lines to make room for four chips —
+     the title is the thing being read. `.cardHeader` wraps; this is what asks
+     it to. */
+  ._chips_i8p5a_138 {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+}
+
+._why_i8p5a_155 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+/* ── Poker ────────────────────────────────────────────────────── */
+
+._votes_i8p5a_167 {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+}
+._vote_i8p5a_167 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skipped is muted, not struck through or red. The room decided not to estimate
+   it; that is an outcome, and styling it as damage misreports the meeting. */
+._skipped_i8p5a_183 {
+  color: var(--dim);
+  font-style: italic;
+}
+
+._notes_i8p5a_188 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+
+._transcript_i8p5a_194 {
+  font-size: var(--fs-s);
+}
+
+/* ── Retro ────────────────────────────────────────────────────── */
+
+/* `auto-fit` rather than four fixed tracks: on a board where only two columns
+   have cards, four tracks would leave half the page empty to preserve an
+   arrangement that no longer describes anything. */
+._columns_i8p5a_203 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+/* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
+   board reads — so a column is the same colour in the meeting and in the file. */
+._column_i8p5a_203 {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--col-tone, var(--accent));
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+._columnTitle_i8p5a_219 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--col-tone, var(--text));
+}
+._count_i8p5a_231 {
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+._column_i8p5a_203 ._bullets_i8p5a_27 li::marker {
+  color: var(--col-tone, var(--accent));
+}
+
+._byline_i8p5a_239 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+._reactions_i8p5a_246 {
+  margin-left: var(--s1);
+}
+._status_i8p5a_249 {
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+/* ── Standup ──────────────────────────────────────────────────── */
+
+._confidence_i8p5a_256 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0;
+}
+._rationale_i8p5a_263 {
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Per-member bars, scaled against the busiest member. The name column is a
+   fixed share so the bars all start at the same x and can be compared. */
+._activity_i8p5a_270 {
+  margin: var(--s4) 0;
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+._activity_i8p5a_270 > * + * {
+  margin-top: var(--s2);
+}
+._activityRow_i8p5a_280 {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--s3);
+}
+._activityName_i8p5a_286 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+._activityTotal_i8p5a_292 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  color: var(--dim);
+}
+
+._member_i8p5a_299 {
+  margin-bottom: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+/* A blocked member is the one thing on this page somebody has to act on. */
+._blocked_i8p5a_308 {
+  border-left-color: var(--danger);
+}
+._memberHead_i8p5a_311 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+._memberSummary_i8p5a_319 {
+  margin: 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* The intro renders as terse clause bullets (a ul), one thought per line. */
+ul._memberSummary_i8p5a_319 {
+  display: grid;
+  gap: calc(var(--s1) / 2);
+  padding-left: 1.1em;
+}
+._since_i8p5a_330 {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+/* `auto-fit`, so two active categories share the width instead of leaving a
+   third of the card empty to preserve a three-column shape. */
+._categories_i8p5a_338 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+/* The border colour is set inline per category tone, so Tickets / Code / Docs
+   land in consistently colour-coded positions across every card. */
+._category_i8p5a_346 {
+  border-left: 2px solid var(--line);
+  padding-left: var(--s2);
+}
+._category_i8p5a_346 > * + * {
+  margin-top: var(--s2);
+}
+._categoryHead_i8p5a_353 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+._chipRow_i8p5a_359 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+/* The jump strip above the member cards: who's here, who's blocked, one glance. */
+._memberStrip_i8p5a_366 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+._memberJump_i8p5a_372 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+._memberJump_i8p5a_372:hover {
+  border-color: var(--line-strong);
+}
+._memberJumpBlocked_i8p5a_387 {
+  border-color: var(--danger);
+}
+._memberJumpFlag_i8p5a_390 {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+/* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
+._evidence_i8p5a_399 {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
+   fold would render fully open with a lying "+ N more" button. */
+._evidence_i8p5a_399[hidden] {
+  display: none;
+}
+._evidenceRow_i8p5a_411 {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--s2);
+  font-size: var(--fs-xs);
+}
+._evidenceRef_i8p5a_418 {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+._evidenceTitle_i8p5a_422 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+._evidenceMeta_i8p5a_427 {
+  grid-column: 2 / -1;
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+}
+/* Board status with its glyph — colour comes inline via toneVar; the word is
+   always beside it (never colour alone). */
+._evidenceStatus_i8p5a_434 {
+  white-space: nowrap;
+}
+/* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
+._commitToggle_i8p5a_438 {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+._commitToggle_i8p5a_438:hover {
+  color: var(--text);
+}
+._evidenceChildren_i8p5a_452 {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+  list-style: none;
+}
+/* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
+._evidenceChildren_i8p5a_452[hidden] {
+  display: none;
+}
+._moreToggle_i8p5a_465 {
+  margin-top: var(--s1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+._moreToggle_i8p5a_465:hover {
+  color: var(--text);
+}
+
+._note_i8p5a_188 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+._quote_i8p5a_491 {
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r-s) var(--r-s) 0;
+  background: var(--card);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+  /* The one place a person's own words are shown verbatim — their line breaks
+     are the only formatting they get. */
+  white-space: pre-wrap;
+}
+
+._screenshot_i8p5a_504 {
+  display: block;
+  max-width: 100%;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+._details_i8p5a_512 {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.8;
+}
+._coverage_i8p5a_519 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-right: var(--s3);
+  white-space: nowrap;
+}
+._dot_i8p5a_526 {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+._dim_i8p5a_531 {
+  color: var(--dim);
+}
+
+/* ── Reporting ────────────────────────────────────────────────── */
+
+/* The host's chosen decoration, held at the reader's text size rather than the
+   heading's tracking — an emoji does not letter-space, it just drifts. */
+._headingEmoji_i8p5a_539 {
+  margin-right: var(--s2);
+  letter-spacing: 0;
+}
+
+/* ── Plan ─────────────────────────────────────────────────────── */
+
+._cardId_i8p5a_546 {
+  margin-right: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  /* An id is one token. Wrapping "T-2" onto two lines makes a table column
+     twice as tall to save four pixels of width. */
+  white-space: nowrap;
+}
+
+._feature_i8p5a_557,
+._story_i8p5a_558,
+._sprint_i8p5a_559 {
+  margin-bottom: var(--s3);
+}
+/* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
+._story_i8p5a_558 {
+  border-left: 2px solid var(--story-tone, var(--line-strong));
+}
+._storyText_i8p5a_566 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+  font-style: italic;
+  line-height: 1.6;
+}
+._storyGroup_i8p5a_573 {
+  margin-bottom: var(--s5);
+}
+._storyGroup_i8p5a_573 > .eyebrow {
+  display: block;
+  margin-bottom: var(--s2);
+}
+
+/* Given/When/Then, one criterion per row, the label in the mono voice so the
+   three clauses stay readable as prose. */
+._criteria_i8p5a_583 {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+._criteria_i8p5a_583 li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--s2);
+  align-items: baseline;
+}
+._criteria_i8p5a_583 li + li {
+  margin-top: var(--s1);
+}
+._criteria_i8p5a_583 b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+._dod_i8p5a_604 {
+  margin-top: var(--s3);
+}
+._dod_i8p5a_604 ul {
+  margin: var(--s2) 0 0;
+  padding-left: 1.1rem;
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+/* Struck through rather than dropped: which items a story is *exempt* from is
+   a decision worth showing. */
+._exempt_i8p5a_615 {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+._fields_i8p5a_620 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0;
+}
+._field_i8p5a_620 > * + * {
+  margin-top: var(--s2);
+}
+
+._target_i8p5a_630 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+
+._capacity_i8p5a_639 {
+  margin-top: var(--s4);
+}
+._capacity_i8p5a_639 > * + * {
+  margin-top: var(--s3);
+}
+
+._sprintGoal_i8p5a_646 {
+  margin: 0 0 var(--s3);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* A sprint that lost capacity to leave or holidays says so on its edge. */
+._reduced_i8p5a_652 {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+}
+._reducedNote_i8p5a_655 {
+  margin: var(--s2) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+}
+
+._taskGroup_i8p5a_661 {
+  margin-bottom: var(--s5);
+}
+._taskGroup_i8p5a_661 > .eyebrow {
+  display: block;
+}
+/* The story the tasks decompose, in its own case — see Plan.tsx. */
+._groupSubject_i8p5a_668 {
+  margin: var(--s1) 0 var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+}
+/* Own line under the description — a test plan run inline turns every row into
+   a paragraph and the table stops being scannable. */
+._taskNote_i8p5a_676 {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+}
+
+/* ── Anonymize: a re-published document ───────────────────────── */
+
+._document_i8p5a_686 {
+  font-size: var(--fs-s);
+  line-height: 1.7;
+}
+._document_i8p5a_686 > * + * {
+  margin-top: var(--s3);
+}
+/* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
+   section we wrote. These headings are the original author's own words, and
+   transforming them is both presumptuous and lossy: "iOS migration" comes back
+   as "IOS MIGRATION". */
+._document_i8p5a_686 h2,
+._document_i8p5a_686 h3,
+._document_i8p5a_686 h4,
+._document_i8p5a_686 h5,
+._document_i8p5a_686 h6 {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-top: var(--s5);
+  margin-bottom: var(--s2);
+}
+._document_i8p5a_686 h2 { font-size: var(--fs-m); }
+._document_i8p5a_686 h3 { font-size: var(--fs-s); }
+._document_i8p5a_686 h4,
+._document_i8p5a_686 h5,
+._document_i8p5a_686 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_i8p5a_686 ul,
+._document_i8p5a_686 ol {
+  padding-left: 1.2rem;
+}
+._document_i8p5a_686 li + li {
+  margin-top: var(--s1);
+}
+._document_i8p5a_686 li::marker {
+  color: var(--accent);
+}
+._document_i8p5a_686 code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: var(--r-s);
+  background: var(--card);
+  color: var(--accent2);
+}
+._document_i8p5a_686 a {
+  color: var(--accent);
+}
+
+._quote_i8p5a_491 {
+  margin: 0;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+
+._code_i8p5a_742 {
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  /* The block scrolls, the page does not. A wide code sample otherwise makes
+     the whole document scroll sideways on a phone. */
+  overflow-x: auto;
+}
+._code_i8p5a_742 code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+._rule_i8p5a_761 {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: var(--s5) 0;
+}
+
+/* ── Team profile: generated blocks ───────────────────────────── */
+
+._blocks_i8p5a_769 > * + * {
+  margin-top: var(--s4);
+}
+
+/* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
+   accent — it groups within a section rather than announcing a new one. */
+._h3_i8p5a_775 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin: 0 0 var(--s2);
+}
+._kvWrap_i8p5a_784 > * + * {
+  margin-top: var(--s2);
+}
+
+/* Label and value on one baseline. A `<dl>` rather than a table: these are
+   facts about one thing, not rows that compare with each other. */
+._kv_i8p5a_784 {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  font-size: var(--fs-s);
+}
+._kv_i8p5a_784 > div {
+  display: grid;
+  grid-template-columns: minmax(0, 14rem) 1fr;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+._kv_i8p5a_784 > div:last-child {
+  border-bottom: none;
+}
+._kv_i8p5a_784 dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+._kv_i8p5a_784 dd {
+  margin: 0;
+  line-height: 1.6;
+  min-width: 0;
+}
+@media (max-width: 699px) {
+  ._kv_i8p5a_784 > div {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+}
+
+._cell_i8p5a_825 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Bounded rather than fluid: a proportion bar is only comparable down a column
+   if every row draws the same track. */
+._cellBar_i8p5a_834 {
+  width: 90px;
+  flex: none;
+}
+._cellNote_i8p5a_838 {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+._cellPerson_i8p5a_842 {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+._profileCards_i8p5a_848 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+._profileProse_i8p5a_853 {
+  font-size: var(--fs-s);
+}
+
+/* A caveat reads as a qualification of the section, not as one of its
+   findings. */
+._note_i8p5a_188 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  line-height: 1.6;
+}
+
+/* A finding worth stopping on. The rule and the wash are both derived from the
+   tone the payload sent, so a recommendation and a bottleneck read alike. */
+._callout_i8p5a_869 {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  padding: var(--s3);
+  font-size: var(--fs-s);
+}
+._callout_i8p5a_869 > * + * {
+  margin-top: var(--s2);
+}
+._callout_i8p5a_869 p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── Print ────────────────────────────────────────────────────── */
+
+@media print {
+  /* A card split across a page break loses its border on one side and reads as
+     two half-finished things. */
+  ._project_i8p5a_122,
+  ._column_i8p5a_203,
+  ._lede_i8p5a_41,
+  ._callout_i8p5a_869 {
+    break-inside: avoid;
+  }
+  ._h3_i8p5a_775 {
+    break-after: avoid;
+  }
+  ._h2_i8p5a_15 {
+    break-after: avoid;
+  }
+}
+
+/* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
+   the rules live with the other report sections rather than in a file of their
+   own. Tokens only — no literal colours (test_web_frontend_guards). */
+._annotations_i8p5a_907 {
+  margin-block-start: var(--space-7);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-5);
+}
+
+._annotationList_i8p5a_913 {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+._annotation_i8p5a_907 {
+  border-inline-start: 2px solid var(--line-strong);
+  padding-inline-start: var(--space-4);
+}
+
+._annotationBody_i8p5a_926 {
+  margin: 0;
+}
+
+._annotationMeta_i8p5a_930 {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+._annotationWhen_i8p5a_938 {
+  font-variant-numeric: tabular-nums;
+}
+/*
  * Styling for the shared primitives.
  *
  * One module for the whole set rather than twelve files: they are a single
@@ -967,908 +1907,6 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 @keyframes _zzz-drift_1mh3f_1 {
   0%, 100% { transform: translateY(0) rotate(-8deg); opacity: 0.55; }
   50% { transform: translateY(-22%) rotate(6deg); opacity: 1; }
-}
-/*
- * Report bodies. One module for all of them: they are the same document
- * grammar — a heading, some bullets, some cards — wearing different data, and
- * splitting them per report would make that grammar drift.
- *
- * The typography rule the whole file follows: **mono is structure, the
- * proportional face is only what a person or a model wrote.** So section
- * headings, indices and labels are mono; bullets, descriptions and summaries
- * are not. It is the inversion of the usual hierarchy and it is true to a
- * product whose primary surface is a terminal.
- */
-
-/* ── Document grammar ─────────────────────────────────────────── */
-
-._h2_17g3f_15 {
-  font-family: var(--font-mono);
-  font-size: var(--fs-s);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--accent);
-  margin: 0 0 var(--s3);
-  padding-bottom: var(--s2);
-  border-bottom: 1px solid var(--line);
-}
-
-._bullets_17g3f_27 {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--text);
-  font-size: var(--fs-s);
-  line-height: 1.65;
-}
-._bullets_17g3f_27 li + li {
-  margin-top: var(--s1);
-}
-._bullets_17g3f_27 li::marker {
-  color: var(--accent);
-}
-
-._lede_17g3f_41 {
-  margin: 0;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  /* The accent edge, not a full tint: this is the model's one-line reading of
-     the whole document, and it should look quoted rather than alarming. */
-  border-left: 2px solid var(--accent);
-  border-radius: var(--r-m);
-  background: var(--panel);
-  font-size: var(--fs-m);
-  line-height: 1.6;
-}
-
-._empty_17g3f_54 {
-  color: var(--muted);
-  font-style: italic;
-}
-
-._footnote_17g3f_59 {
-  color: var(--dim);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.06em;
-}
-
-/* A counted breakdown: bar directly over its key, as one block. Two separate
-   margins let a legend drift toward the section under it and read as that
-   section's caption instead of this one's. */
-._split_17g3f_69 {
-  margin: var(--s4) 0;
-}
-._split_17g3f_69 > * + * {
-  margin-top: var(--s2);
-}
-
-._trend_17g3f_76 {
-  margin-bottom: var(--s4);
-}
-
-/* A row of people. `inline-flex` per name so an avatar never separates from the
-   name it belongs to across a wrap. */
-._people_17g3f_82 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s1) var(--s3);
-  margin: 0 0 var(--s4);
-  font-size: var(--fs-s);
-}
-._person_17g3f_90 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-  white-space: nowrap;
-}
-
-/* ── Performance ──────────────────────────────────────────────── */
-
-._identity_17g3f_99 {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  margin: 0;
-  font-size: var(--fs-m);
-}
-
-/* ── Roadmap ──────────────────────────────────────────────────── */
-
-/* Side by side where there is room. A breakdown of three projects does not
-   need 1100px of track, and two of them stacked full-width dominate the
-   section they are supposed to introduce. */
-._mixes_17g3f_112 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--s4);
-  margin-bottom: var(--s5);
-}
-._mix_17g3f_112 > * + * {
-  margin-top: var(--s2);
-}
-
-._projects_17g3f_122 {
-  display: grid;
-  gap: var(--s3);
-}
-
-._project_17g3f_122 {
-  border-left: 2px solid var(--accent);
-}
-
-._projectIndex_17g3f_131 {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--dim);
-  margin-right: var(--s2);
-}
-
-._chips_17g3f_138 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  justify-content: flex-end;
-}
-@media (max-width: 699px) {
-  /* Own line, under the title. Sharing the row costs the title half its width
-     and reflows "Billing revamp" onto two lines to make room for four chips —
-     the title is the thing being read. `.cardHeader` wraps; this is what asks
-     it to. */
-  ._chips_17g3f_138 {
-    flex-basis: 100%;
-    justify-content: flex-start;
-  }
-}
-
-._why_17g3f_155 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s2);
-  margin: var(--s3) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-
-/* ── Poker ────────────────────────────────────────────────────── */
-
-._votes_17g3f_167 {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s1) var(--s3);
-}
-._vote_17g3f_167 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Skipped is muted, not struck through or red. The room decided not to estimate
-   it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_17g3f_183 {
-  color: var(--dim);
-  font-style: italic;
-}
-
-._notes_17g3f_188 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--s3);
-}
-
-._transcript_17g3f_194 {
-  font-size: var(--fs-s);
-}
-
-/* ── Retro ────────────────────────────────────────────────────── */
-
-/* `auto-fit` rather than four fixed tracks: on a board where only two columns
-   have cards, four tracks would leave half the page empty to preserve an
-   arrangement that no longer describes anything. */
-._columns_17g3f_203 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--s3);
-  margin-bottom: var(--s4);
-}
-
-/* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
-   board reads — so a column is the same colour in the meeting and in the file. */
-._column_17g3f_203 {
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-top: 2px solid var(--col-tone, var(--accent));
-  border-radius: var(--r-m);
-  background: var(--panel);
-}
-._columnTitle_17g3f_219 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s2);
-  margin: 0 0 var(--s3);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--col-tone, var(--text));
-}
-._count_17g3f_231 {
-  font-variant-numeric: tabular-nums;
-  color: var(--dim);
-}
-._column_17g3f_203 ._bullets_17g3f_27 li::marker {
-  color: var(--col-tone, var(--accent));
-}
-
-._byline_17g3f_239 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
-._reactions_17g3f_246 {
-  margin-left: var(--s1);
-}
-._status_17g3f_249 {
-  font-family: var(--font-mono);
-  color: var(--muted);
-}
-
-/* ── Standup ──────────────────────────────────────────────────── */
-
-._confidence_17g3f_256 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2);
-  margin: var(--s3) 0;
-}
-._rationale_17g3f_263 {
-  color: var(--muted);
-  font-size: var(--fs-s);
-}
-
-/* Per-member bars, scaled against the busiest member. The name column is a
-   fixed share so the bars all start at the same x and can be compared. */
-._activity_17g3f_270 {
-  margin: var(--s4) 0;
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel);
-}
-._activity_17g3f_270 > * + * {
-  margin-top: var(--s2);
-}
-._activityRow_17g3f_280 {
-  display: grid;
-  grid-template-columns: minmax(0, 8rem) 1fr auto;
-  align-items: center;
-  gap: var(--s3);
-}
-._activityName_17g3f_286 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-xs);
-}
-._activityTotal_17g3f_292 {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-xs);
-  color: var(--dim);
-}
-
-._member_17g3f_299 {
-  margin-bottom: var(--s3);
-  padding: var(--s4);
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--line-strong);
-  border-radius: var(--r-m);
-  background: var(--panel);
-}
-/* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_17g3f_308 {
-  border-left-color: var(--danger);
-}
-._memberHead_17g3f_311 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s2);
-  margin-bottom: var(--s3);
-}
-._memberSummary_17g3f_319 {
-  margin: 0;
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-/* The intro renders as terse clause bullets (a ul), one thought per line. */
-ul._memberSummary_17g3f_319 {
-  display: grid;
-  gap: calc(var(--s1) / 2);
-  padding-left: 1.1em;
-}
-._since_17g3f_330 {
-  margin: var(--s2) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
-
-/* `auto-fit`, so two active categories share the width instead of leaving a
-   third of the card empty to preserve a three-column shape. */
-._categories_17g3f_338 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--s3);
-  margin-top: var(--s3);
-}
-/* The border colour is set inline per category tone, so Tickets / Code / Docs
-   land in consistently colour-coded positions across every card. */
-._category_17g3f_346 {
-  border-left: 2px solid var(--line);
-  padding-left: var(--s2);
-}
-._category_17g3f_346 > * + * {
-  margin-top: var(--s2);
-}
-._categoryHead_17g3f_353 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-}
-
-._chipRow_17g3f_359 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-}
-
-/* The jump strip above the member cards: who's here, who's blocked, one glance. */
-._memberStrip_17g3f_366 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-  margin-bottom: var(--s3);
-}
-._memberJump_17g3f_372 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-  padding: 2px var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: var(--card);
-  color: var(--text);
-  font-size: var(--fs-xs);
-  text-decoration: none;
-}
-._memberJump_17g3f_372:hover {
-  border-color: var(--line-strong);
-}
-._memberJumpBlocked_17g3f_387 {
-  border-color: var(--danger);
-}
-._memberJumpFlag_17g3f_390 {
-  color: var(--danger);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: var(--track-label);
-  text-transform: uppercase;
-}
-
-/* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
-._evidence_17g3f_399 {
-  display: grid;
-  gap: var(--s1);
-  margin: var(--s2) 0 0;
-  padding: 0;
-  list-style: none;
-}
-/* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
-   fold would render fully open with a lying "+ N more" button. */
-._evidence_17g3f_399[hidden] {
-  display: none;
-}
-._evidenceRow_17g3f_411 {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: var(--s2);
-  font-size: var(--fs-xs);
-}
-._evidenceRef_17g3f_418 {
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-._evidenceTitle_17g3f_422 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-._evidenceMeta_17g3f_427 {
-  grid-column: 2 / -1;
-  color: var(--dim);
-  font-size: var(--fs-2xs);
-}
-/* Board status with its glyph — colour comes inline via toneVar; the word is
-   always beside it (never colour alone). */
-._evidenceStatus_17g3f_434 {
-  white-space: nowrap;
-}
-/* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
-._commitToggle_17g3f_438 {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  text-decoration: underline dashed;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-._commitToggle_17g3f_438:hover {
-  color: var(--text);
-}
-._evidenceChildren_17g3f_452 {
-  display: grid;
-  grid-column: 1 / -1;
-  gap: var(--s1);
-  margin: var(--s1) 0 0;
-  padding: 0 0 0 var(--s3);
-  border-left: 1px solid var(--line);
-  list-style: none;
-}
-/* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._evidenceChildren_17g3f_452[hidden] {
-  display: none;
-}
-._moreToggle_17g3f_465 {
-  margin-top: var(--s1);
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  text-decoration: underline dashed;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-._moreToggle_17g3f_465:hover {
-  color: var(--text);
-}
-
-._note_17g3f_188 {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s2);
-  margin: var(--s3) 0 0;
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-
-._quote_17g3f_491 {
-  margin: var(--s3) 0 0;
-  padding: var(--s2) var(--s3);
-  border-left: 2px solid var(--accent);
-  border-radius: 0 var(--r-s) var(--r-s) 0;
-  background: var(--card);
-  font-size: var(--fs-s);
-  line-height: 1.6;
-  /* The one place a person's own words are shown verbatim — their line breaks
-     are the only formatting they get. */
-  white-space: pre-wrap;
-}
-
-._screenshot_17g3f_504 {
-  display: block;
-  max-width: 100%;
-  margin-bottom: var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-}
-
-._details_17g3f_512 {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  font-size: var(--fs-xs);
-  line-height: 1.8;
-}
-._coverage_17g3f_519 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s1);
-  margin-right: var(--s3);
-  white-space: nowrap;
-}
-._dot_17g3f_526 {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-._dim_17g3f_531 {
-  color: var(--dim);
-}
-
-/* ── Reporting ────────────────────────────────────────────────── */
-
-/* The host's chosen decoration, held at the reader's text size rather than the
-   heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_17g3f_539 {
-  margin-right: var(--s2);
-  letter-spacing: 0;
-}
-
-/* ── Plan ─────────────────────────────────────────────────────── */
-
-._cardId_17g3f_546 {
-  margin-right: var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.06em;
-  color: var(--dim);
-  /* An id is one token. Wrapping "T-2" onto two lines makes a table column
-     twice as tall to save four pixels of width. */
-  white-space: nowrap;
-}
-
-._feature_17g3f_557,
-._story_17g3f_558,
-._sprint_17g3f_559 {
-  margin-bottom: var(--s3);
-}
-/* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_17g3f_558 {
-  border-left: 2px solid var(--story-tone, var(--line-strong));
-}
-._storyText_17g3f_566 {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-s);
-  font-style: italic;
-  line-height: 1.6;
-}
-._storyGroup_17g3f_573 {
-  margin-bottom: var(--s5);
-}
-._storyGroup_17g3f_573 > .eyebrow {
-  display: block;
-  margin-bottom: var(--s2);
-}
-
-/* Given/When/Then, one criterion per row, the label in the mono voice so the
-   three clauses stay readable as prose. */
-._criteria_17g3f_583 {
-  margin: var(--s3) 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-._criteria_17g3f_583 li {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--s2);
-  align-items: baseline;
-}
-._criteria_17g3f_583 li + li {
-  margin-top: var(--s1);
-}
-._criteria_17g3f_583 b {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-._dod_17g3f_604 {
-  margin-top: var(--s3);
-}
-._dod_17g3f_604 ul {
-  margin: var(--s2) 0 0;
-  padding-left: 1.1rem;
-  font-size: var(--fs-xs);
-  line-height: 1.7;
-}
-/* Struck through rather than dropped: which items a story is *exempt* from is
-   a decision worth showing. */
-._exempt_17g3f_615 {
-  text-decoration: line-through;
-  opacity: 0.5;
-}
-
-._fields_17g3f_620 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--s4);
-  margin: var(--s4) 0;
-}
-._field_17g3f_620 > * + * {
-  margin-top: var(--s2);
-}
-
-._target_17g3f_630 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s2);
-  margin: var(--s3) 0 0;
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-
-._capacity_17g3f_639 {
-  margin-top: var(--s4);
-}
-._capacity_17g3f_639 > * + * {
-  margin-top: var(--s3);
-}
-
-._sprintGoal_17g3f_646 {
-  margin: 0 0 var(--s3);
-  font-size: var(--fs-s);
-  line-height: 1.6;
-}
-/* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_17g3f_652 {
-  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
-}
-._reducedNote_17g3f_655 {
-  margin: var(--s2) 0 0;
-  color: var(--warn);
-  font-size: var(--fs-2xs);
-}
-
-._taskGroup_17g3f_661 {
-  margin-bottom: var(--s5);
-}
-._taskGroup_17g3f_661 > .eyebrow {
-  display: block;
-}
-/* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_17g3f_668 {
-  margin: var(--s1) 0 var(--s2);
-  color: var(--muted);
-  font-size: var(--fs-s);
-  line-height: 1.5;
-}
-/* Own line under the description — a test plan run inline turns every row into
-   a paragraph and the table stops being scannable. */
-._taskNote_17g3f_676 {
-  display: block;
-  margin-top: var(--s1);
-  color: var(--dim);
-  font-size: var(--fs-2xs);
-  line-height: 1.5;
-}
-
-/* ── Anonymize: a re-published document ───────────────────────── */
-
-._document_17g3f_686 {
-  font-size: var(--fs-s);
-  line-height: 1.7;
-}
-._document_17g3f_686 > * + * {
-  margin-top: var(--s3);
-}
-/* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
-   section we wrote. These headings are the original author's own words, and
-   transforming them is both presumptuous and lossy: "iOS migration" comes back
-   as "IOS MIGRATION". */
-._document_17g3f_686 h2,
-._document_17g3f_686 h3,
-._document_17g3f_686 h4,
-._document_17g3f_686 h5,
-._document_17g3f_686 h6 {
-  font-family: var(--font-mono);
-  letter-spacing: 0.06em;
-  color: var(--accent);
-  margin-top: var(--s5);
-  margin-bottom: var(--s2);
-}
-._document_17g3f_686 h2 { font-size: var(--fs-m); }
-._document_17g3f_686 h3 { font-size: var(--fs-s); }
-._document_17g3f_686 h4,
-._document_17g3f_686 h5,
-._document_17g3f_686 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_17g3f_686 ul,
-._document_17g3f_686 ol {
-  padding-left: 1.2rem;
-}
-._document_17g3f_686 li + li {
-  margin-top: var(--s1);
-}
-._document_17g3f_686 li::marker {
-  color: var(--accent);
-}
-._document_17g3f_686 code {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-  padding: 1px 4px;
-  border-radius: var(--r-s);
-  background: var(--card);
-  color: var(--accent2);
-}
-._document_17g3f_686 a {
-  color: var(--accent);
-}
-
-._quote_17g3f_491 {
-  margin: 0;
-  padding-left: var(--s3);
-  border-left: 2px solid var(--line-strong);
-  color: var(--muted);
-}
-
-._code_17g3f_742 {
-  margin: 0;
-  padding: var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-m);
-  background: var(--panel-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  line-height: 1.5;
-  /* The block scrolls, the page does not. A wide code sample otherwise makes
-     the whole document scroll sideways on a phone. */
-  overflow-x: auto;
-}
-._code_17g3f_742 code {
-  background: none;
-  padding: 0;
-  color: inherit;
-}
-
-._rule_17g3f_761 {
-  border: none;
-  border-top: 1px solid var(--line);
-  margin: var(--s5) 0;
-}
-
-/* ── Team profile: generated blocks ───────────────────────────── */
-
-._blocks_17g3f_769 > * + * {
-  margin-top: var(--s4);
-}
-
-/* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
-   accent — it groups within a section rather than announcing a new one. */
-._h3_17g3f_775 {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-  margin: 0 0 var(--s2);
-}
-._kvWrap_17g3f_784 > * + * {
-  margin-top: var(--s2);
-}
-
-/* Label and value on one baseline. A `<dl>` rather than a table: these are
-   facts about one thing, not rows that compare with each other. */
-._kv_17g3f_784 {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  font-size: var(--fs-s);
-}
-._kv_17g3f_784 > div {
-  display: grid;
-  grid-template-columns: minmax(0, 14rem) 1fr;
-  gap: var(--s3);
-  padding: var(--s2) 0;
-  border-bottom: 1px solid var(--line);
-}
-._kv_17g3f_784 > div:last-child {
-  border-bottom: none;
-}
-._kv_17g3f_784 dt {
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-._kv_17g3f_784 dd {
-  margin: 0;
-  line-height: 1.6;
-  min-width: 0;
-}
-@media (max-width: 699px) {
-  ._kv_17g3f_784 > div {
-    grid-template-columns: 1fr;
-    gap: var(--s1);
-  }
-}
-
-._cell_17g3f_825 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-  flex-wrap: wrap;
-  min-width: 0;
-}
-/* Bounded rather than fluid: a proportion bar is only comparable down a column
-   if every row draws the same track. */
-._cellBar_17g3f_834 {
-  width: 90px;
-  flex: none;
-}
-._cellNote_17g3f_838 {
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
-._cellPerson_17g3f_842 {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s2);
-}
-
-._profileCards_17g3f_848 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--s3);
-}
-._profileProse_17g3f_853 {
-  font-size: var(--fs-s);
-}
-
-/* A caveat reads as a qualification of the section, not as one of its
-   findings. */
-._note_17g3f_188 {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-xs);
-  font-style: italic;
-  line-height: 1.6;
-}
-
-/* A finding worth stopping on. The rule and the wash are both derived from the
-   tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_17g3f_869 {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--warn);
-  border-radius: var(--r2);
-  padding: var(--s3);
-  font-size: var(--fs-s);
-}
-._callout_17g3f_869 > * + * {
-  margin-top: var(--s2);
-}
-._callout_17g3f_869 p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-/* ── Print ────────────────────────────────────────────────────── */
-
-@media print {
-  /* A card split across a page break loses its border on one side and reads as
-     two half-finished things. */
-  ._project_17g3f_122,
-  ._column_17g3f_203,
-  ._lede_17g3f_41,
-  ._callout_17g3f_869 {
-    break-inside: avoid;
-  }
-  ._h3_17g3f_775 {
-    break-after: avoid;
-  }
-  ._h2_17g3f_15 {
-    break-after: avoid;
-  }
 }
 /*
  * Styling for the shared board components.

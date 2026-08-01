@@ -22,7 +22,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
+from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         my_name=d.get("my_name", ""),
         warnings=tuple(d.get("warnings", ())),
         images=tuple(d.get("images", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

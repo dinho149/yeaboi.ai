@@ -900,3 +900,41 @@ ul.memberSummary {
     break-after: avoid;
   }
 }
+
+/* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
+   the rules live with the other report sections rather than in a file of their
+   own. Tokens only — no literal colours (test_web_frontend_guards). */
+.annotations {
+  margin-block-start: var(--space-7);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--space-5);
+}
+
+.annotationList {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.annotation {
+  border-inline-start: 2px solid var(--line-strong);
+  padding-inline-start: var(--space-4);
+}
+
+.annotationBody {
+  margin: 0;
+}
+
+.annotationMeta {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.annotationWhen {
+  font-variant-numeric: tabular-nums;
+}

@@ -24,7 +24,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ def _dict_to_prep(d: dict) -> OneOnOnePrep:
         carried_action_items=tuple(d.get("carried_action_items", ())),
         activity_summary=d.get("activity_summary", ""),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
@@ -102,6 +103,7 @@ def _dict_to_record(d: dict) -> OneOnOneRecord:
         action_items=tuple(d.get("action_items", ())),
         highlights=tuple(d.get("highlights", ())),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
@@ -123,6 +125,7 @@ def _dict_to_review(d: dict) -> SixMonthReview:
         overall=d.get("overall", ""),
         framework_used=d.get("framework_used", ""),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

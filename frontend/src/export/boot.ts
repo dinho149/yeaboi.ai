@@ -310,7 +310,39 @@ export interface ProfileSection {
   blocks: Block[];
 }
 
-export type ExportReport =
+/**
+ * Something a reader added to a generated report that its schema had no room for.
+ *
+ * Two shapes, told apart by `kind`: a `note` is free text, a `field` is a named
+ * value (`label` carries the name). Attribution is **self-declared** — the
+ * author typed it into their own browser — so a renderer must never draw a
+ * verified badge beside it.
+ *
+ * `anchor` is the edit-path of the row this hangs off, or `''` for the document
+ * as a whole.
+ */
+export interface AnnotationRow {
+  kind: string;
+  anchor: string;
+  label: string;
+  text: string;
+  author: string;
+  avatar: string;
+  at: string;
+}
+
+/**
+ * Carried by every report, and absent whenever a document has none.
+ *
+ * Intersected into the union rather than repeated on nine members: narrowing on
+ * `kind` still works through an intersection, so `Report.tsx` keeps its
+ * exhaustiveness guard while every report gains the key for free.
+ */
+export interface Annotated {
+  annotations?: AnnotationRow[];
+}
+
+export type ExportReport = (
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
   | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
   | {
@@ -441,7 +473,9 @@ export type ExportReport =
       /** What the analysis could and could not read. Shown before the numbers. */
       coverage: string[];
       sections: ProfileSection[];
-    };
+    }
+) &
+  Annotated;
 
 export interface ExportBoot {
   chrome: ExportChrome;

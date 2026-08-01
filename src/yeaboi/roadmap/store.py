@@ -29,7 +29,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
 
-from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject
+from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject, annotations_from
 from yeaboi.roadmap.ingest import RoadmapSource
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,7 @@ def _dict_to_analysis(d: dict) -> RoadmapAnalysis:
         projects=projects,
         warnings=tuple(d.get("warnings", ())),
         generated_at=d.get("generated_at", ""),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
