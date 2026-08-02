@@ -155,10 +155,14 @@ def _build_analysis_review_screen(
 # 2-space content indent for every secondary screen: headings then land at the
 # title's column and value rows one level in, matching the Settings screen. This
 # is the single knob — all these screens indent via _PAD (and size via len(_PAD)).
-# This module's own tighter page pad. Distinct from the shared four-space PAD
-# (imported above), which the reporting/analysis setup screens use — do not
-# collapse the two: several layouts are measured against one or the other.
-_PAD = "  "
+# One page pad, shared with the rest of the app.
+#
+# This was its own tighter two-space value, which meant every screen in this file
+# put its body text two columns left of its own title art and button row — both of
+# which come from _components.py at the four-space PAD. The results views made it
+# worse by importing the shared PAD directly, so a single screen mixed both.
+# Kept as a name because 240-odd call sites read better than a rename would.
+_PAD = PAD
 
 
 def _link_lines(
@@ -652,17 +656,28 @@ def _analysis_card_grid(
     width: int,
     columns: int | None = None,
 ) -> Table:
-    """Responsive card grid shared by every Analysis setup selector."""
+    """Responsive card grid shared by every Analysis setup selector.
+
+    Indented to PAD like every other body element — the grid used to sit hard
+    against the panel padding while the header and hints above it were four
+    columns further in. Columns are given an explicit width rather than
+    ``ratio=1``: Rich hands the division's remainder to the last column, so on an
+    odd inner width the right-hand card came out a cell wider than the left.
+    """
     ncols = columns or (2 if width >= 88 else 1)
     ncols = max(1, min(ncols, max(1, len(cards))))
-    grid = Table.grid(expand=True, padding=(0, 1))
+    # Panel borders (2) + the page panel's own padding (4) + our PAD either side.
+    inner = max(ncols * 8, width - 6 - 2 * len(PAD))
+    gap = 1  # Table.grid padding, between columns only
+    col_w = max(4, (inner - gap * (ncols - 1)) // ncols)
+    grid = Table.grid(padding=(0, gap))
     for _ in range(ncols):
-        grid.add_column(ratio=1)
+        grid.add_column(width=col_w)
     for start in range(0, len(cards), ncols):
         row = list(cards[start : start + ncols])
         row.extend(Text("") for _ in range(ncols - len(row)))
         grid.add_row(*row)
-    return grid
+    return Padding(grid, (0, 0, 0, len(PAD)))
 
 
 def _analysis_setup_header(
@@ -1285,14 +1300,19 @@ def _build_analysis_setup_review_screen(
     """Final, non-destructive review of the exact Analysis engine payload."""
     theme = ANALYSIS_THEME
 
-    def _summary(title: str, value: str, symbol: str) -> Panel:
-        head = Text()
-        head.append(f"{symbol} ", style=theme.accent_bright)
-        head.append(title, style=f"bold {theme.accent_bright}")
+    def _summary(title: str, value: str, body_lines: int) -> Panel:
+        """One review card, padded to ``body_lines`` so a row ends level.
+
+        No leading glyph and no accent on the heading: the four cards are peers
+        being read, not options being chosen, and the glyphs (✦ ◆ ● ◷) fall back
+        to whatever the terminal has — ✦ came out as "+" and ◷ as "☉".
+        """
+        body = (value or "None").split("\n")
+        body.extend("" for _ in range(max(0, body_lines - len(body))))
         return Panel(
-            Group(head, Text(value or "None", style="white")),
+            Group(Text(title, style=theme.value), *(Text(line, style=theme.desc) for line in body)),
             box=rich.box.ROUNDED,
-            border_style=theme.accent,
+            border_style=theme.sep,
             style=_ANALYSIS_CARD_BG,
             padding=(0, 1),
             expand=True,
@@ -1317,11 +1337,15 @@ def _build_analysis_setup_review_screen(
     settings = f"{depth.title()} · {window_days} days"
     if model:
         settings += f"\nModel: {model}"
+    # One height for all four: a card is as tall as its value, so "Run settings"
+    # (which carries a model line) used to sit a row deeper than "People" beside it.
+    _values = (_summarize(feature_names), source_value, people_value, settings)
+    _body_lines = max(len(v.split("\n")) for v in _values)
     cards = [
-        _summary("Analysis areas", _summarize(feature_names), "✦"),
-        _summary("Sources and scope", source_value, "◆"),
-        _summary("People", people_value, "●"),
-        _summary("Run settings", settings, "◷"),
+        _summary("Analysis areas", _values[0], _body_lines),
+        _summary("Sources and scope", _values[1], _body_lines),
+        _summary("People", _values[2], _body_lines),
+        _summary("Run settings", _values[3], _body_lines),
     ]
     if width < 88 or height < 30:
         compact = []
