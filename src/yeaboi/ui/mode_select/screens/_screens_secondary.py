@@ -1313,7 +1313,9 @@ def _build_analysis_setup_review_screen(
             Group(Text(title, style=theme.value), *(Text(line, style=theme.desc) for line in body)),
             box=rich.box.ROUNDED,
             border_style=theme.sep,
-            style=_ANALYSIS_CARD_BG,
+            # No _ANALYSIS_CARD_BG here: its green tint (rgb(13,31,27)) is what
+            # still read as coloured even after the heading went neutral. Letting
+            # the page background through leaves only the border to define them.
             padding=(0, 1),
             expand=True,
         )
@@ -1356,15 +1358,20 @@ def _build_analysis_setup_review_screen(
             ("Settings", settings.replace("\n", " · ")),
         ):
             line = Text()
-            line.append(f"{label:<10}", style=f"bold {theme.accent_bright}")
-            line.append(value or "None", style="white")
+            line.append(f"{label:<10}", style=theme.value)
+            line.append(value or "None", style=theme.desc)
             compact.append(line)
-        summary_renderable = Panel(
-            Group(*compact),
-            box=rich.box.ROUNDED,
-            border_style=theme.accent,
-            style=_ANALYSIS_CARD_BG,
-            padding=(0, 1),
+        # Same treatment as the wide card grid: neutral border, page background,
+        # indented to PAD — the narrow fallback should not look like a different
+        # screen from the one it replaces.
+        summary_renderable = Padding(
+            Panel(
+                Group(*compact),
+                box=rich.box.ROUNDED,
+                border_style=theme.sep,
+                padding=(0, 1),
+            ),
+            (0, 0, 0, len(PAD)),
         )
     else:
         summary_renderable = _analysis_card_grid(cards, width=width)
