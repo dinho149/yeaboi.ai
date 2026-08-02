@@ -680,6 +680,12 @@ def _analysis_card_grid(
     return Padding(grid, (0, 0, 0, len(PAD)))
 
 
+# The setup steps in the order you meet them, for the breadcrumb trail. Optional
+# screens (Azure projects, Model) are absent on purpose — they only appear when
+# they actually run, and are appended by name when they do.
+_ANALYSIS_SETUP_TRAIL: tuple[str, ...] = ("Areas", "Sources", "Depth", "Time window", "People", "Review")
+
+
 def _analysis_setup_header(
     section: str, help_text: str, *, message: str = "", brand: str = "ANALYSIS SETUP", theme=None
 ) -> list:
@@ -692,8 +698,35 @@ def _analysis_setup_header(
     # PAD, not _PAD: this file's _PAD is 2 and the shared PAD is 4, so the header
     # used to sit two columns left of both the wordmark above it and the option
     # rows below — reading as an outdent rather than a heading.
+    #
+    # The trail shows the whole setup, not just where you are: steps already done
+    # read dim, the current one is lit, the rest are muted. Matching on the
+    # section name keeps every caller unchanged; a step outside the canonical
+    # order (the optional Azure-projects and Model screens) still lights up on
+    # its own by falling through to the tail.
+    trail = list(_ANALYSIS_SETUP_TRAIL)
+    upper = section.upper()
+    here = next((i for i, name in enumerate(trail) if name.upper() == upper), None)
+    # Only Analysis's own canonical steps get the trail. Reporting borrows this
+    # header with its own brand and step names, and an optional screen (Azure
+    # projects, Model) has no fixed place in the order — showing either against
+    # Analysis's trail would state something untrue, so both keep the plain crumb.
+    show_trail = here is not None and brand == "ANALYSIS SETUP"
+    crumbs = Text(PAD, justify="left", no_wrap=True, overflow="ellipsis")
+    crumbs.append(brand, style=f"bold {theme.accent_bright}")
+    crumbs.append("  ›  ", style=theme.dim)
+    if not show_trail:
+        crumbs.append(upper, style=f"bold {theme.accent_bright}")
+    else:
+        for i, name in enumerate(trail):
+            if i:
+                crumbs.append("  ·  ", style=theme.dim)
+            if i == here:
+                crumbs.append(name.upper(), style=f"bold {theme.accent_bright}")
+            else:
+                crumbs.append(name, style=theme.dim if i < here else theme.muted)
     out: list = [
-        Text(PAD + f"{brand}  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
+        crumbs,
         Text(PAD + help_text, style=theme.muted),
     ]
     if message:
