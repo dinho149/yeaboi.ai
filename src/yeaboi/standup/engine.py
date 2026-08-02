@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
-    from yeaboi.agent.state import IssueFilingResult, TranscriptReview, TranscriptSource
+    from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
 from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
 from yeaboi.standup.store import StandupStore
 
@@ -1314,6 +1314,22 @@ def run_standup(
                 "finding(s) — run `yeaboi standup-review --list-gaps` to see them all."
             )
 
+    # AFTER the cap above, deliberately: a day with three findings must not
+    # truncate away the reason the fourth one was never checked at all.
+    #
+    # Gated on level, not on existence. report.warnings is a BROADCAST surface —
+    # it reaches Slack, email and the exports — and "you forgot a file" does not
+    # belong in a team channel over a single miss. A persistent one does, because
+    # by then the feature is quietly doing nothing.
+    try:
+        from yeaboi.standup import transcripts as _transcripts
+
+        nudge = _transcripts.transcript_nudge(session_id, config=config, db_path=db_path, today=today)
+        if nudge and nudge.level != "invite":
+            warnings.append(nudge.message)
+    except Exception as e:  # a nudge must never break a standup
+        logger.warning("standup: transcript nudge failed: %s", e)
+
     report = StandupReport(
         date=date_str,
         session_id=session_id,
@@ -1378,6 +1394,27 @@ def run_standup(
         status,
     )
     return report
+
+
+def transcript_nudge(session_id: str, *, db_path=None, today: date | None = None) -> TranscriptNudge:
+    """Which standups were never checked against their meeting, and how loudly to say so.
+
+    Deterministic and offline — two indexed queries, no LLM — because the TUI
+    calls it on every hub refresh. Nothing is stored: the answer is a set
+    difference between the dates a standup ran and the dates a transcript was
+    reviewed for, both already in the database, so there is no "last nudged"
+    state to migrate or get wrong.
+
+    Returns a falsy ``TranscriptNudge`` when there is nothing to say, which is
+    the normal case.
+    """
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup import transcripts as _transcripts
+
+    resolved_db = db_path or get_db_path()
+    with StandupStore(resolved_db) as store:
+        config = store.load_config(session_id) or {}
+    return _transcripts.transcript_nudge(session_id, config=config, db_path=resolved_db, today=today)
 
 
 def import_transcript(

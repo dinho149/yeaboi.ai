@@ -1361,6 +1361,71 @@ class TestTranscriptReviewCard:
         assert not [line for line in out.splitlines() if len(line) > 80]
 
 
+class TestUncheckedStandupCard:
+    """A nudge earns the card on the same terms a review does: it IS a result."""
+
+    def _nudge(self, **over):
+        from yeaboi.agent.state import TranscriptNudge
+
+        base = dict(
+            missed_dates=("2026-07-31", "2026-07-30", "2026-07-29"),
+            streak=3,
+            standup_count=3,
+            level="invite",
+            message="No transcript for the 2026-07-31 standup — drop the recording in ~/.yeaboi/transcripts.",
+        )
+        base.update(over)
+        return TranscriptNudge(**base)
+
+    def _data(self, **over):
+        base = {"review": None, "gap_issues": [], "nudge": self._nudge()}
+        base.update(over)
+        return _review_data(**base)
+
+    def test_card_appears_with_a_nudge_and_no_review(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" in standup_card_order(self._data())
+
+    def test_card_still_absent_with_neither(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" not in standup_card_order({"report": _report(), "nudge": None})
+
+    def test_teaser_counts_the_unchecked_standups(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", self._data())
+        assert "3 standups unchecked" in teaser
+        assert "2026-07-29" in teaser  # the oldest
+
+    def test_a_real_review_still_wins_the_teaser(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", _review_data(nudge=self._nudge()))
+        assert "1 gap" in teaser
+
+    def test_detail_shows_the_message_and_the_dates(self):
+        out = _render(_build_standup_screen(self._data(), width=100, height=30, view="gaps"), 100)
+        assert "drop the recording" in out
+        assert "2026-07-31" in out
+        assert "Press Review" in out
+
+    def test_detail_caps_a_long_list_of_dates(self):
+        nudge = self._nudge(missed_dates=tuple(f"2026-07-{d:02d}" for d in range(31, 11, -1)))
+        out = _render(_build_standup_screen(self._data(nudge=nudge), width=100, height=40, view="gaps"), 100)
+        assert "and 12 more" in out
+
+    def test_empty_state_survives_when_there_is_no_nudge(self):
+        data = _review_data(review=None, gap_issues=[], nudge=None)
+        out = _render(_build_standup_screen(data, width=100, height=30, view="gaps"), 100)
+        assert "No standup transcript has been reviewed yet" in out
+
+    def test_renders_at_80_columns_without_overflow(self):
+        out = _render(_build_standup_screen(self._data(), width=80, height=30, view="gaps"), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+
 class TestActionRowWrapping:
     """Six standup actions outgrow an 80-column terminal, so the bar must wrap —
     a clipped button is reachable with the arrow keys and invisible on screen."""

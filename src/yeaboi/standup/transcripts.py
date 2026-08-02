@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from yeaboi.agent.state import TranscriptSource
+from yeaboi.agent.state import TranscriptNudge, TranscriptSource
 
 logger = logging.getLogger(__name__)
 
@@ -457,6 +457,142 @@ def to_prompt_text(turns: tuple[TranscriptTurn, ...], *, limit: int) -> str:
         return text
     clipped = text[-limit:]
     return "…(earlier discussion omitted)…\n" + clipped[clipped.find("\n") + 1 :]
+
+
+# ---------------------------------------------------------------------------
+# "You never checked that standup against its meeting"
+# ---------------------------------------------------------------------------
+
+# Standups a brand-new user gets before we mention transcripts at all. Greeting
+# somebody's first week with a chore is how a feature gets switched off.
+_NUDGE_GRACE_RUNS = 3
+# Consecutive unchecked standups before the wording firms up and the line starts
+# reaching Slack and email. Comfortably above the grace period on purpose: the
+# first thing anyone hears must be the quiet, TUI-only invite, never a broadcast.
+_NUDGE_REMINDER_STREAK = 5
+# …and before it stops asking altogether and offers the off switch instead.
+# Reachable inside the _LOOKBACK_DAYS window (~10 weekday standups), or the
+# escalated wording could never actually fire.
+_NUDGE_ESCALATE_STREAK = 8
+
+
+def missing_transcript_dates(
+    session_id: str,
+    *,
+    db_path: Path | None = None,
+    before_date: str = "",
+    today: date | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...], bool]:
+    """Standups with no transcript. Returns ``(missed, ran, ever_reviewed)``.
+
+    Both tuples are newest-first, so the caller can walk ``ran`` to find the
+    consecutive-miss streak. A pure set difference over two indexed queries — no
+    LLM, no file I/O, no network — because the TUI calls this on every hub
+    refresh.
+
+    The window is the same ``_LOOKBACK_DAYS`` the sweep uses, and the population
+    is *dates a standup ran*, not calendar days, so weekends, holidays and a
+    week off cost nothing.
+    """
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.store import StandupStore
+
+    today = today or date.today()
+    horizon = before_date or (today + timedelta(days=1)).isoformat()
+    try:
+        since = (date.fromisoformat(horizon) - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+    except ValueError:
+        return (), (), False
+
+    with StandupStore(db_path or get_db_path()) as store:
+        ran = store.run_dates(session_id, since=since, before=horizon)
+        reviewed = store.reviewed_dates(session_id)
+    missed = tuple(sorted(ran - reviewed, reverse=True))
+    return missed, tuple(sorted(ran, reverse=True)), bool(reviewed)
+
+
+def transcript_nudge(
+    session_id: str,
+    *,
+    config: dict | None = None,
+    db_path: Path | None = None,
+    today: date | None = None,
+) -> TranscriptNudge:
+    """Should we say anything about missing transcripts? Usually not.
+
+    Rate limiting here is STRUCTURAL rather than stateful: a nudge only ever
+    rides on a report, there is at most one report per run, and ``level`` is a
+    pure function of the streak — so re-running standup twice in a day produces
+    the identical line instead of ratcheting. And because the sweep runs before
+    the report's warnings are assembled, a transcript dropped this morning is
+    already recorded by the time this is computed, so it self-clears in the same
+    run that would otherwise have complained.
+    """
+    if config is not None and not config.get("transcript_review_enabled", True):
+        # The opt-out already exists; a nudge for a feature you turned off is
+        # just noise.
+        logger.debug("transcript nudge: review disabled for session=%s", session_id)
+        return TranscriptNudge(session_id=session_id)
+
+    missed, ran, ever = missing_transcript_dates(session_id, db_path=db_path, today=today)
+    standup_count = len(ran)
+    if not missed or not standup_count:
+        logger.debug("transcript nudge: nothing missed for session=%s", session_id)
+        return TranscriptNudge(session_id=session_id, standup_count=standup_count, ever_reviewed=ever)
+
+    # Consecutive misses counting back from the MOST RECENT standup: a team that
+    # transcribed yesterday is not behind, whatever last month looked like.
+    missed_set = set(missed)
+    streak = 0
+    for day in ran:
+        if day not in missed_set:
+            break
+        streak += 1
+
+    # ``ever`` gates only the GRACE PERIOD, not the ladder. Someone who has never
+    # reviewed a transcript is exactly who most needs to reach the escalated
+    # wording eventually — that is where the off switch is offered — so they
+    # climb the same rungs as everybody else once the grace period is over.
+    if not ever and standup_count < _NUDGE_GRACE_RUNS:
+        logger.debug("transcript nudge: still in the grace period for session=%s", session_id)
+        return TranscriptNudge(session_id=session_id, standup_count=standup_count, ever_reviewed=ever)
+
+    if streak < _NUDGE_REMINDER_STREAK:
+        level = "invite"
+        message = (
+            f"No transcript for the {missed[0]} standup — drop the recording in ~/.yeaboi/transcripts "
+            "and the next run will check what it missed."
+        )
+    elif streak < _NUDGE_ESCALATE_STREAK:
+        level = "reminder"
+        message = (
+            f"{len(missed)} standups since {missed[-1]} were never checked against their meetings — "
+            "drop transcripts in ~/.yeaboi/transcripts, or point Standup at your recordings folder."
+        )
+    else:
+        level = "escalated"
+        message = (
+            f"{len(missed)} standups have gone unchecked. If your team doesn't record standups, turn this "
+            "off in Standup › Review › Change my transcript folders."
+        )
+
+    logger.info(
+        "transcript nudge: session=%s level=%s streak=%d missed=%d of %d standup(s)",
+        session_id,
+        level,
+        streak,
+        len(missed),
+        standup_count,
+    )
+    return TranscriptNudge(
+        session_id=session_id,
+        missed_dates=missed,
+        streak=streak,
+        standup_count=standup_count,
+        ever_reviewed=ever,
+        level=level,
+        message=message,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1806,6 +1806,11 @@ def _collect_standup_data(message: str = "") -> dict:
             # Transcript Review card can show which gaps are already filed.
             data["review"] = store.get_latest_review(session_id)
             data["gap_issues"] = store.get_gap_issues(limit=50)
+        # Two indexed SELECTs, once per hub refresh (never per frame): which
+        # standups ran without ever being checked against their meeting.
+        from yeaboi.standup import transcripts as _transcripts
+
+        data["nudge"] = _transcripts.transcript_nudge(session_id, config=data.get("config"), db_path=_ana_dbp)
         # The engine resolves "Me" to the user's real tracker identity (e.g. their
         # Jira displayName) — the report's my_name drives the "My Update" row.
         if data["report"] is not None and data["report"].my_name:

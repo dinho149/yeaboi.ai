@@ -1039,6 +1039,46 @@ class StandupStore:
         ).fetchall()
         return {r[0] for r in rows}
 
+    def reviewed_dates(self, session_id: str, *, since: str = "") -> set[str]:
+        """Standup dates that a transcript was reviewed FOR.
+
+        ``mark_transcript_reviewed`` fires for every source in a group regardless
+        of what the review concluded, so this table means exactly "a transcript
+        covering that date was read" — a stronger predicate than
+        ``standup_reviews``, which can hold a review with no report behind it.
+        Backed by ``idx_standup_transcripts_date``.
+        """
+        sql = "SELECT DISTINCT covered_date FROM standup_transcripts WHERE session_id = ? AND covered_date != ''"
+        params: list = [session_id]
+        if since:
+            sql += " AND covered_date >= ?"
+            params.append(since)
+        return {r[0] for r in self._conn.execute(sql, params).fetchall()}
+
+    def run_dates(self, session_id: str, *, since: str = "", before: str = "") -> set[str]:
+        """Distinct dates a standup actually ran, over a half-open ``[since, before)``.
+
+        Counts only ``success``/``partial`` runs — the same scoping
+        ``get_run_row_by_date`` uses to decide a report exists at all, so a
+        failed run is never something to be reproached for not transcribing.
+
+        Deliberately not built on ``get_history``: that limit is in ROWS while
+        this question is in DAYS, so a team that reruns standup twice a day
+        would silently shorten the window.
+        """
+        sql = (
+            "SELECT DISTINCT standup_date FROM standup_history "
+            "WHERE session_id = ? AND standup_date != '' AND status IN ('success', 'partial')"
+        )
+        params: list = [session_id]
+        if since:
+            sql += " AND standup_date >= ?"
+            params.append(since)
+        if before:
+            sql += " AND standup_date < ?"
+            params.append(before)
+        return {r[0] for r in self._conn.execute(sql, params).fetchall()}
+
     # ── Gap → GitHub issue ledger (cross-session by design) ───────────────
 
     def get_gap_issue(self, fingerprint: str) -> dict | None:

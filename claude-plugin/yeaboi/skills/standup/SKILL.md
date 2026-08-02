@@ -45,6 +45,12 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    Use `standup_gaps` to read back past reviews and see which gaps are already
    filed, which recurred, and their issue numbers.
 
+   `standup_gaps` also returns `nudge` — the standups that ran but were never
+   checked against their meeting. When `nudge.level` is set, say which dates went
+   unchecked and offer to review a transcript for them. When it is `"escalated"`,
+   the team has gone many standups without one: offer to turn the feature off
+   (`transcript_review_enabled: false`) rather than asking again.
+
 5. **Configuration.** To view or change the standup setup (time, weekdays,
    delivery channels, member aliases, user name, tracker sources, and selected
    team), use `standup_config_get` / `standup_config_set`. Call

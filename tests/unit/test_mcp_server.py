@@ -426,6 +426,20 @@ class TestEngineTools:
         call_tool("standup_review")
         assert captured["transcript_text"] == ""
 
+    def test_standup_gaps_carries_the_unchecked_nudge(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.agent.state import TranscriptNudge
+
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.transcript_nudge",
+            lambda sid, **kw: TranscriptNudge(
+                session_id=sid, missed_dates=("2026-07-30",), streak=4, level="reminder", message="4 unchecked"
+            ),
+        )
+        payload = call_tool("standup_gaps")
+        assert payload["ok"] is True
+        assert payload["data"]["nudge"]["level"] == "reminder"
+        assert payload["data"]["nudge"]["missed_dates"] == ["2026-07-30"]
+
     def test_report_delivery_validates_period(self, tmp_db, provider_mode):
         payload = call_tool("report_delivery", {"period": "fortnight"})
         assert payload["ok"] is False

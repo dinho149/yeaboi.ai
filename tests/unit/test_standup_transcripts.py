@@ -473,6 +473,146 @@ class TestDiscoverExternalDir:
         assert found == []
 
 
+class TestTranscriptNudge:
+    """ "A standup ran on date D but no transcript covering D was ever reviewed."
+
+    The whole signal is a set difference over two indexed queries — nothing is
+    stored, so there is no "last nudged" state to migrate or get wrong.
+    """
+
+    def _seed(self, db_path, *, ran=(), reviewed=(), status="success", session="s1"):
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            for day in ran:
+                store.record_run(StandupReport(session_id=session, date=day), status=status)
+            for i, day in enumerate(reviewed):
+                # Hash keyed by date: the ledger is content-keyed, so a reused
+                # hash would UPDATE an earlier row instead of adding one.
+                store.mark_transcript_reviewed(
+                    session, path=f"/t/{day}.vtt", content_hash=f"h-{day}", covered_date=day, review_id=i + 1
+                )
+
+    def _nudge(self, db_path, *, config=None, today=date(2026, 8, 1), session="s1"):
+        return transcripts.transcript_nudge(session, config=config, db_path=db_path, today=today)
+
+    def test_no_standups_means_nothing_to_say(self, db_path):
+        assert not self._nudge(db_path)
+
+    def test_a_fully_transcribed_history_is_quiet(self, db_path):
+        days = ["2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
+        self._seed(db_path, ran=days, reviewed=days)
+        assert not self._nudge(db_path)
+
+    def test_a_new_user_gets_a_grace_period(self, db_path):
+        """Greeting somebody's first week with a chore is how a feature gets turned off."""
+        self._seed(db_path, ran=["2026-07-30", "2026-07-31"])
+        assert not self._nudge(db_path)
+
+    def test_invite_after_the_grace_period(self, db_path):
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"])
+        nudge = self._nudge(db_path)
+        assert nudge.level == "invite"
+        assert "2026-07-31" in nudge.message
+
+    def test_the_first_thing_anyone_hears_is_the_quiet_invite(self, db_path):
+        """The invite tier is TUI-only; the reminder tier broadcasts. A user must
+        never meet this feature for the first time in their team's Slack."""
+        self._seed(db_path, ran=[f"2026-07-{d}" for d in range(27, 32)][:4])
+        assert self._nudge(db_path).level == "invite"
+
+    def test_reminder_at_the_streak_threshold(self, db_path):
+        """Someone who has used the feature before, then stopped."""
+        self._seed(
+            db_path,
+            ran=["2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30"],
+            reviewed=["2026-07-25"],
+        )
+        nudge = self._nudge(db_path)
+        assert nudge.level == "reminder"
+        assert nudge.streak == 5
+
+    def test_escalation_offers_the_off_switch(self, db_path):
+        """After enough misses the honest reading is 'this team doesn't record
+        standups' — so stop asking and point at the setting."""
+        days = [f"2026-07-{d}" for d in range(22, 31)]
+        self._seed(db_path, ran=days, reviewed=["2026-07-21"])
+        nudge = self._nudge(db_path)
+        assert nudge.level == "escalated"
+        assert "turn this off" in nudge.message
+
+    def test_the_streak_counts_back_from_the_most_recent_standup(self, db_path):
+        """A team that transcribed yesterday is not behind, whatever last month
+        looked like."""
+        self._seed(
+            db_path,
+            ran=["2026-07-24", "2026-07-25", "2026-07-28", "2026-07-29", "2026-07-30"],
+            reviewed=["2026-07-30"],
+        )
+        nudge = self._nudge(db_path)
+        assert nudge.streak == 0
+        assert nudge.level == "invite"  # there are older misses, but nothing urgent
+
+    def test_a_transcript_this_morning_self_clears_the_streak(self, db_path):
+        """The sweep runs before the report's warnings are assembled, so a file
+        dropped this morning is already recorded by the time this is computed."""
+        self._seed(
+            db_path,
+            ran=[f"2026-07-{d}" for d in range(26, 32)],
+            reviewed=["2026-07-25"],
+        )
+        assert self._nudge(db_path).level == "reminder"
+        self._seed(db_path, reviewed=["2026-07-31"])
+        assert self._nudge(db_path).streak == 0
+
+    def test_the_opt_out_silences_it(self, db_path):
+        """The off switch already exists; a nudge for a disabled feature is noise."""
+        self._seed(db_path, ran=[f"2026-07-{d}" for d in range(22, 31)])
+        assert not self._nudge(db_path, config={"transcript_review_enabled": False})
+
+    def test_enabled_config_still_nudges(self, db_path):
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"])
+        assert self._nudge(db_path, config={"transcript_review_enabled": True})
+
+    def test_failed_runs_are_not_held_against_the_user(self, db_path):
+        """You can't transcribe a standup that never produced a report."""
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"], status="error")
+        assert not self._nudge(db_path)
+
+    def test_the_window_ignores_ancient_standups(self, db_path):
+        self._seed(db_path, ran=["2026-01-05", "2026-01-06", "2026-01-07"])
+        assert not self._nudge(db_path)
+
+    def test_weekends_and_time_off_cost_nothing(self, db_path):
+        """The population is dates a standup RAN, not calendar days."""
+        self._seed(db_path, ran=["2026-07-24", "2026-07-31"], reviewed=["2026-07-24", "2026-07-31"])
+        assert not self._nudge(db_path)
+
+    def test_a_rerun_on_the_same_day_does_not_ratchet(self, db_path):
+        """Rate limiting is structural: level is a pure function of the streak."""
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"])
+        first = self._nudge(db_path)
+        self._seed(db_path, ran=["2026-07-31"])  # standup run again the same day
+        second = self._nudge(db_path)
+        assert first.level == second.level
+        assert first.message == second.message
+
+    def test_missed_dates_are_newest_first(self, db_path):
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"])
+        assert self._nudge(db_path).missed_dates == ("2026-07-31", "2026-07-30", "2026-07-29")
+
+    def test_other_sessions_do_not_leak_in(self, db_path):
+        self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"], session="other")
+        assert not self._nudge(db_path, session="s1")
+
+    def test_bool_is_the_has_something_to_say_test(self, db_path):
+        from yeaboi.agent.state import TranscriptNudge
+
+        assert not TranscriptNudge()
+        assert TranscriptNudge(level="invite", message="x")
+
+
 class TestNormalizeDroppedPath:
     """A path dragged from Finder arrives quoted (Terminal) or escaped (iTerm2)."""
 

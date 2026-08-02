@@ -95,6 +95,7 @@ CAPABILITIES: dict[str, dict] = {
             ("yeaboi.standup.engine", "run_standup"),
             ("yeaboi.standup.engine", "run_transcript_review"),
             ("yeaboi.standup.engine", "import_transcript"),
+            ("yeaboi.standup.engine", "transcript_nudge"),
             ("yeaboi.standup.engine", "file_transcript_issues"),
         },
         "mcp_tools": {

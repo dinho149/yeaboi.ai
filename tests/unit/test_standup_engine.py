@@ -1674,6 +1674,88 @@ class TestTranscriptReviewSweep:
         assert order[:2] == ["review", "collect"]
 
 
+class TestNudgeInTheReport:
+    """The nudge rides on report.warnings — a BROADCAST surface (Slack, email,
+    exports), which is why a single miss stays out of it."""
+
+    def _seed_misses(self, db_path, session, days, *, status="success"):
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            for day in days:
+                store.record_run(StandupReport(session_id=session, date=day), status=status)
+
+    def _run(self, monkeypatch, db_path, seeded_session, today=date(2026, 7, 10)):
+        _patch_common(monkeypatch, items=[], counts=[])
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda *a, **k: [])
+        return engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=today)
+
+    def test_a_persistent_miss_reaches_the_report(self, monkeypatch, db_path, seeded_session):
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert any("never checked against their meetings" in w or "gone unchecked" in w for w in report.warnings)
+
+    def test_a_single_miss_stays_out_of_the_broadcast(self, monkeypatch, db_path, seeded_session):
+        """ "You forgot a file" does not belong in a team Slack channel."""
+        self._seed_misses(db_path, seeded_session, ["2026-07-07", "2026-07-08", "2026-07-09"])
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert not any("transcript" in w.lower() and "unchecked" in w.lower() for w in report.warnings)
+
+    def test_the_nudge_survives_the_notice_cap(self, monkeypatch, db_path, seeded_session):
+        """A day with three findings must not truncate away the reason a fourth
+        standup was never checked at all."""
+        from yeaboi.agent.state import TranscriptReview
+
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        noisy = [TranscriptReview(warnings=tuple(f"finding {i}" for i in range(8)))]
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda *a, **k: noisy)
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.carry_forward", lambda r, p: ({}, list(noisy[0].warnings))
+        )
+        _patch_common(monkeypatch, items=[], counts=[])
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert any("gone unchecked" in w or "never checked" in w for w in report.warnings)
+
+    def test_the_opt_out_silences_it(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                transcript_review_enabled=False,
+            )
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert not any("unchecked" in w for w in report.warnings)
+
+    def test_a_broken_nudge_never_breaks_a_standup(self, monkeypatch, db_path, seeded_session):
+        def _boom(*a, **k):
+            raise RuntimeError("db gone")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.transcript_nudge", _boom)
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert report is not None
+
+
+class TestTranscriptNudgeEntryPoint:
+    def test_returns_a_falsy_nudge_when_there_is_nothing_to_say(self, db_path, seeded_session):
+        assert not engine.transcript_nudge(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+
+    def test_reads_config_so_the_opt_out_applies(self, monkeypatch, db_path, seeded_session):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcripts.transcript_nudge",
+            lambda sid, **kw: seen.update(kw) or None,
+        )
+        engine.transcript_nudge(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+        assert "config" in seen
+
+
 class TestImportTranscript:
     """Text that never was a file — a paste, a pipe, an agent argument."""
 

@@ -1546,7 +1546,7 @@ def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
 
 def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> int:
     from yeaboi.paths import get_db_path
-    from yeaboi.standup.engine import file_transcript_issues, run_transcript_review
+    from yeaboi.standup.engine import file_transcript_issues, run_transcript_review, transcript_nudge
     from yeaboi.standup.store import StandupStore
 
     logging.getLogger(__name__).info("standup-review (list_gaps=%s file=%s)", args.list_gaps, args.file_issues)
@@ -1571,6 +1571,11 @@ def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> i
         for entry in ledger:
             issue = f"#{entry['issue_number']}" if entry["issue_number"] else entry["state"]
             console.print(f"  {entry['fingerprint']}  {issue}  ×{entry['occurrences']}  {entry['title']}")
+        nudge = transcript_nudge(session_id)
+        if nudge:
+            console.print(f"\n[bold]{len(nudge.missed_dates)} unchecked standup(s)[/bold]")
+            console.print("  " + ", ".join(nudge.missed_dates[:14]))
+            console.print(f"  {nudge.message}")
         return 0
 
     paths, transcript_text = _resolve_review_inputs(args)

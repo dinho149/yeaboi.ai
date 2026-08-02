@@ -448,6 +448,36 @@ class TranscriptSource:
 
 
 @dataclass(frozen=True)
+class TranscriptNudge:
+    """Standups that were never checked against their meeting.
+
+    DERIVED, never stored: the whole thing is a set difference between the dates
+    a standup ran and the dates a transcript was reviewed for, both already in
+    the database. That is deliberate — a "last nudged at" column would be state
+    to migrate, to reset, and to get wrong, and the honest answer is recomputable
+    at any moment.
+
+    ``level`` is the anti-nag policy in one word, and it escalates toward the
+    EXIT rather than toward volume: after enough unchecked standups the honest
+    reading is that this team does not record theirs, so the wording turns into
+    an offer to switch the feature off rather than a louder version of the same
+    request.
+    """
+
+    session_id: str = ""
+    missed_dates: tuple[str, ...] = ()  # newest first
+    streak: int = 0  # consecutive unchecked standup dates, counting back from the newest
+    standup_count: int = 0  # standups in the window — the denominator
+    ever_reviewed: bool = False  # has this session EVER reviewed a transcript
+    level: str = ""  # "" | invite | reminder | escalated
+    message: str = ""
+
+    def __bool__(self) -> bool:
+        """True when there is something to say, so callers read ``if nudge:``."""
+        return bool(self.level)
+
+
+@dataclass(frozen=True)
 class TranscriptClaim:
     """One thing a person said they did, checked against what the report knew.
 

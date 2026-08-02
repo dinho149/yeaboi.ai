@@ -126,7 +126,9 @@ def standup_card_order(data: dict) -> list[str]:
     order += ["activity"]
     # Only when a transcript has actually been reviewed — an empty card would
     # advertise a feature the user hasn't used rather than report a result.
-    if data.get("review") is not None:
+    # A nudge IS a result ("3 standups went unchecked"), so it earns the card on
+    # the same terms rather than being an exception to them.
+    if data.get("review") is not None or data.get("nudge"):
         order.append("gaps")
     order += ["schedule"]
     if report.warnings:
@@ -230,7 +232,11 @@ def standup_card_teaser(key: str, data: dict) -> str:
         return f"{state} · {config.get('time', '—')} · {config.get('weekdays', '—')}"
     if key == "gaps":
         review = data.get("review")
+        nudge = data.get("nudge")
         if review is None:
+            if nudge:
+                n = len(nudge.missed_dates)
+                return f"{n} standup{'s' if n != 1 else ''} unchecked · oldest {nudge.missed_dates[-1]}"[:_TEASER_W]
             return "Not reviewed yet"
         parts = [f"{len(review.gaps)} gap{'s' if len(review.gaps) != 1 else ''}"]
         if review.config_suggestions:
@@ -577,11 +583,25 @@ def _detail_gaps(ctx: _StandupCtx, data: dict) -> None:
     and carry an exact remedy.
     """
     review = data.get("review")
+    nudge = data.get("nudge")
     theme = ctx.theme
     if review is None:
         ctx.heading("Transcript Review")
+        if nudge:
+            ctx.wrapped(nudge.message, theme.warn)
+            ctx.blank()
+            shown = nudge.missed_dates[:8]
+            ctx.line(f"    Unchecked: {', '.join(shown)}", theme.dim)
+            if len(nudge.missed_dates) > len(shown):
+                ctx.line(f"    …and {len(nudge.missed_dates) - len(shown)} more", theme.dim)
+            ctx.blank()
+            ctx.wrapped(
+                "Press Review to paste a transcript, or to point Standup at your recordings folder.", theme.muted
+            )
+            return
         ctx.wrapped(
-            "No standup transcript has been reviewed yet. Drop one in ~/.yeaboi/transcripts and press Review.",
+            "No standup transcript has been reviewed yet. Press Review to paste one, "
+            "or to point Standup at the folder your recordings land in.",
             theme.muted,
         )
         return

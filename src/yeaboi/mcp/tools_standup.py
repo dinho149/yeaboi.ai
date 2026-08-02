@@ -9,7 +9,7 @@ import re
 # stringified type hints (PEP 563) of tool functions against this namespace.
 from mcp.server.fastmcp import Context
 
-from yeaboi.mcp.runtime import run_engine, run_readonly
+from yeaboi.mcp.runtime import run_engine, run_readonly, to_jsonable
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,7 @@ def _standup_review(
 def _standup_gaps(session_id: str, limit: int) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
+    from yeaboi.standup.engine import transcript_nudge
     from yeaboi.standup.store import StandupStore
 
     resolved = resolve_session_id(session_id)
@@ -133,7 +134,17 @@ def _standup_gaps(session_id: str, limit: int) -> dict:
         reviews = store.get_reviews(resolved, limit=limit)
         latest = store.get_latest_review(resolved)
         ledger = store.get_gap_issues(limit=limit)
-    return {"session_id": resolved, "reviews": reviews, "latest_review": latest, "gap_issues": ledger}
+    # to_jsonable only converts a TOP-LEVEL dataclass; nested inside this dict
+    # both of these would fall to default=str and reach the agent as their str()
+    # repr instead of a structured object (same as tools_poker/tools_reporting).
+    return {
+        "session_id": resolved,
+        "reviews": reviews,
+        "latest_review": to_jsonable(latest) if latest is not None else None,
+        "gap_issues": ledger,
+        # Which standups ran without ever being checked against their meeting.
+        "nudge": to_jsonable(transcript_nudge(resolved)),
+    }
 
 
 def _standup_members(session_id: str, tracker_sources: list | None) -> dict:

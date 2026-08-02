@@ -812,6 +812,67 @@ class TestTranscriptBookkeeping:
             assert store.reviewed_transcript_hashes("other") == set()
 
 
+class TestReviewedAndRunDates:
+    """The two set-difference halves behind the "unchecked standup" signal."""
+
+    def _mark(self, store, day, *, session="s1", i=1):
+        store.mark_transcript_reviewed(
+            session, path=f"/t/{day}.vtt", content_hash=f"h-{day}", covered_date=day, review_id=i
+        )
+
+    def test_reviewed_dates_are_distinct(self, db_path):
+        with StandupStore(db_path) as store:
+            self._mark(store, "2026-07-10")
+            store.mark_transcript_reviewed(
+                "s1", path="/t/b.vtt", content_hash="h2", covered_date="2026-07-10", review_id=2
+            )
+            assert store.reviewed_dates("s1") == {"2026-07-10"}
+
+    def test_reviewed_dates_honour_since(self, db_path):
+        with StandupStore(db_path) as store:
+            self._mark(store, "2026-01-05")
+            self._mark(store, "2026-07-10")
+            assert store.reviewed_dates("s1", since="2026-07-01") == {"2026-07-10"}
+
+    def test_reviewed_dates_are_session_scoped(self, db_path):
+        with StandupStore(db_path) as store:
+            self._mark(store, "2026-07-10")
+            assert store.reviewed_dates("other") == set()
+
+    def test_reviewed_dates_skip_blank_dates(self, db_path):
+        with StandupStore(db_path) as store:
+            store.mark_transcript_reviewed("s1", path="/t/x", content_hash="hx", covered_date="", review_id=1)
+            assert store.reviewed_dates("s1") == set()
+
+    def test_run_dates_are_distinct_per_day(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10"))
+            store.record_run(_make_report(date="2026-07-10"))
+            store.record_run(_make_report(date="2026-07-11"))
+            assert store.run_dates("s1") == {"2026-07-10", "2026-07-11"}
+
+    def test_run_dates_count_partial_but_not_failed(self, db_path):
+        """Same scoping as get_run_row_by_date: a failed run produced no report,
+        so it is not something to be reproached for not transcribing."""
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10"), status="partial")
+            store.record_run(_make_report(date="2026-07-11"), status="failed")
+            store.record_run(_make_report(date="2026-07-12"), status="error")
+            assert store.run_dates("s1") == {"2026-07-10"}
+
+    def test_run_dates_window_is_half_open(self, db_path):
+        with StandupStore(db_path) as store:
+            for day in ("2026-07-09", "2026-07-10", "2026-07-11"):
+                store.record_run(_make_report(date=day))
+            got = store.run_dates("s1", since="2026-07-10", before="2026-07-11")
+            assert got == {"2026-07-10"}
+
+    def test_run_dates_are_session_scoped(self, db_path):
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report(date="2026-07-10"))
+            assert store.run_dates("other") == set()
+
+
 class TestGapIssueLedger:
     def test_insert_then_read(self, db_path):
         with StandupStore(db_path) as store:
