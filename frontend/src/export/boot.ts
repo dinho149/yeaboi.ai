@@ -194,6 +194,26 @@ export interface StandupCategory {
   evidence: EvidenceItem[];
 }
 
+/**
+ * One deterministic engineering-practice observation about a member's day —
+ * "this PR carries no ticket reference", with the PR attached.
+ *
+ * `rule` is engine-produced, not validated (same treatment as `EvidenceItem.kind`
+ * and the confidence label): an id this bundle doesn't recognise renders with
+ * the muted fallback tone rather than failing a build, so the server can add a
+ * rule without a coordinated release. `title` and `detail` ship as words — the
+ * component supplies the colour, never the payload.
+ */
+export interface StandupPractice {
+  rule: string;
+  title: string;
+  detail: Run[];
+  /** The items observed, so the reader can check the claim in one click. */
+  evidence: EvidenceLink[];
+  /** The same rule fired in the previous standup — a pattern, not a one-off. */
+  repeat?: boolean;
+}
+
 export interface StandupMember {
   name: string;
   /** They wrote this themselves, rather than it being derived from activity. */
@@ -207,6 +227,8 @@ export interface StandupMember {
   footnotes: Array<{ label: string; runs: Run[] }>;
   outlook?: Run[];
   blockers?: Run[];
+  /** Absent when nothing fired, or when detection is off for this team. */
+  practices?: StandupPractice[];
   selfReport?: Run[];
   /** `[tickets, code, docs]` — the order the chips and the activity bars use. */
   counts: [number, number, number];
@@ -460,10 +482,18 @@ export type ExportReport = (
       coverage: Array<[string, string]>;
       /** `[source, reason]` for the sources that were not read at all. */
       skipped: Array<[string, string]>;
+      /** Team rollup. `count` is MEMBERS with that signal, not signal count. */
+      practices: Array<{ rule: string; count: number; title: string }>;
       /** Screenshots, embedded as `data:` URIs so the file stays portable. */
       images: string[];
       trend: Trend | null;
       warnings: string[];
+      /**
+       * A live share server is behind this page and will accept a verdict on a
+       * practice signal. Absent for every written export — a file has nowhere
+       * to send one, and the controls must not appear where they'd do nothing.
+       */
+      correctable?: boolean;
     }
   | {
       kind: 'plan';

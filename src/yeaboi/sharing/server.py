@@ -10,6 +10,7 @@ only when the browser presents the strong token obtained from ``/api/join``.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import secrets
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from yeaboi.artifacts.edits import Edit, EditError
@@ -38,15 +40,57 @@ logger = logging.getLogger(__name__)
 # everything would have widened the unauthenticated route for no reason.
 _MAX_BODY = 1024
 _MAX_EDIT_BODY = 8192
+# A verdict carries a free-text note, so its body cannot share the join route's
+# cap — but it is one sentence, not a document.
+_MAX_VOTE_BODY = 4096
+_MAX_NOTE_CHARS = 500
 
 
 @dataclass(frozen=True)
 class ShareDocument:
-    """One immutable HTML snapshot exposed by :class:`OutputShareServer`."""
+    """One HTML snapshot exposed by :class:`OutputShareServer`.
+
+    Immutable in the ordinary case, and deliberately so. ``corrections`` is the
+    single exception: a standup whose practice signals the reader may answer,
+    carrying what the server needs to record that answer and rebuild the page.
+    None means a finished snapshot — no POST route, no looser CSP.
+    """
 
     title: str
     html: str
     source_mode: str
+    corrections: CorrectionTarget | None = None
+
+    @property
+    def votable(self) -> bool:
+        return self.corrections is not None
+
+
+@dataclass(frozen=True)
+class CorrectionTarget:
+    """Where a verdict cast in the browser lands, and how to redraw after it.
+
+    The share server holds no store and no session of its own — it serves one
+    string. This is the whole of what a correctable document adds: the identity
+    of the run being corrected, and a callable that re-renders it from whatever
+    the store now holds. ``rerender`` returns the new HTML, so the server never
+    has to know how a standup is built.
+    """
+
+    session_id: str
+    run_id: int
+    rerender: Callable[[], str]
+    db_path: Path | None = None
+
+
+def _with_html(document: ShareDocument, html: str) -> ShareDocument:
+    """The same document carrying freshly rendered markup.
+
+    ``ShareDocument`` is frozen, so a correction replaces it rather than mutating
+    it — the handler swaps the server's reference, and a request already writing
+    the old body finishes writing a consistent one.
+    """
+    return dataclasses.replace(document, html=html)
 
 
 class _OutputHandler(BaseHTTPRequestHandler):
@@ -150,7 +194,11 @@ class _OutputHandler(BaseHTTPRequestHandler):
                 self._send(200, page.encode(), "text/html; charset=utf-8", csp=EDIT_CSP)
                 return
             document = self.server.document  # type: ignore[attr-defined]
-            self._send(200, document.html.encode(), "text/html; charset=utf-8", csp=ARTIFACT_CSP)
+            # A correctable page needs connect-src 'self' to send its verdict;
+            # a finished one keeps 'none'. The document decides, so a share with
+            # nothing to answer never gets the looser policy.
+            csp = EDIT_CSP if document.votable else ARTIFACT_CSP
+            self._send(200, document.html.encode(), "text/html; charset=utf-8", csp=csp)
             return
         # The gate ran without a CSP until now — an omission, not a decision.
         # It is the one page here that executes a bundle *and* talks back to the
@@ -324,12 +372,22 @@ class _OutputHandler(BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "state": share.snapshot(str(payload.get("pid", ""))[:64])})
             return
 
-        if path != "/api/join":
-            self._json(404, {"error": "not found"})
+        # A correctable standup: not an editable document, so it has no `share`,
+        # but it does take a write from the browser. Its own route for that
+        # reason — the edit routes above all refuse when `share is None`.
+        if path == "/api/practice-vote":
+            if (payload := self._read_body(_MAX_VOTE_BODY)) is not None:
+                self._practice_vote(payload)
             return
-        payload = self._read_body(_MAX_BODY)
-        if payload is None:
+
+        if path == "/api/join":
+            if (payload := self._read_body(_MAX_BODY)) is not None:
+                self._join(payload)
             return
+
+        self._json(404, {"error": "not found"})
+
+    def _join(self, payload: dict) -> None:
         ip = self.client_address[0]
         limiter = self.server.join_limiter  # type: ignore[attr-defined]
         if limiter.blocked(ip):
@@ -343,6 +401,74 @@ class _OutputHandler(BaseHTTPRequestHandler):
             return
         limiter.record_failure(ip)
         self._json(403, {"error": "bad code"})
+
+    def _practice_vote(self, payload: dict) -> None:
+        """Record a reader's verdict on one practice signal, then redraw the page.
+
+        Token-gated like the artifact itself: the gate is the only unauthenticated
+        POST here, and this one writes to the host's database.
+
+        The write goes through ``practice_feedback.apply_verdict`` — the same call
+        the TUI and the MCP tool make — so a verdict cast from a browser cannot
+        mean something different from one cast at the terminal.
+        """
+        document = self.server.document  # type: ignore[attr-defined]
+        target = document.corrections
+        if target is None:
+            self._json(404, {"error": "not found"})
+            return
+        if not self._authed():
+            self._json(403, {"error": "not authorised"})
+            return
+
+        from yeaboi.standup import practice_feedback
+        from yeaboi.standup.habits import ALL_RULES
+        from yeaboi.standup.store import StandupStore
+
+        member = str(payload.get("member", "")).strip()
+        rule = str(payload.get("rule", "")).strip()
+        verdict = str(payload.get("verdict", "")).strip()
+        note = str(payload.get("note", ""))[:_MAX_NOTE_CHARS]
+        # Validated against the engine's own vocabulary rather than trusted: this
+        # body crossed a public tunnel.
+        if not member or rule not in ALL_RULES or verdict not in practice_feedback.VERDICTS:
+            self._json(400, {"error": "bad vote"})
+            return
+
+        db_path = target.db_path
+        if db_path is None:
+            from yeaboi.paths import get_db_path
+
+            db_path = get_db_path()
+        try:
+            with StandupStore(db_path) as store:
+                applied = practice_feedback.apply_verdict(
+                    store,
+                    session_id=target.session_id,
+                    member=member,
+                    rule=rule,
+                    verdict=verdict,
+                    note=note,
+                    run_id=target.run_id,
+                )
+        except Exception:  # a shared page must not be able to crash the host's TUI
+            logger.warning("share: practice vote failed", exc_info=True)
+            self._json(500, {"error": "could not record"})
+            return
+
+        if applied:
+            # Rebuild once, here, so every later reader is served the corrected
+            # report rather than the snapshot the vote was cast against.
+            self.server.document = document = _with_html(document, target.rerender())  # type: ignore[attr-defined]
+            logger.info("share: practice %s recorded for %s (%s)", verdict, member, rule)
+        self._json(
+            200,
+            {
+                "ok": True,
+                "applied": applied,
+                "reason": "" if applied else "that signal has already been answered",
+            },
+        )
 
 
 class OutputShareServer:

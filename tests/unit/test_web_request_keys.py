@@ -41,6 +41,12 @@ PAIRS = [
     # can see it — the shared hook spells its wire keys inside itself, which is
     # why the boards' own heartbeat keys are invisible here.
     ("export/actions.ts", "src/yeaboi/sharing/server.py"),
+    # The other thing an export can send back: a reader's verdict on a practice
+    # signal. Same server, separate module — an edit answers with fresh state
+    # through the board runtime, a vote is a bare token-carrying POST. Same
+    # guard for the same reason: a mistyped key here would drop the note and
+    # record an unexplained verdict.
+    ("export/vote.ts", "src/yeaboi/sharing/server.py"),
 ]
 
 # Merged into every body by postJSON, so no action names them itself.

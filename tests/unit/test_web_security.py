@@ -254,3 +254,17 @@ class TestEditPolicy:
         from yeaboi.web.security import EDIT_CSP
 
         assert EDIT_CSP != BOARD_CSP
+
+    def test_it_differs_from_the_artifact_in_exactly_one_directive(self):
+        """The claim the policy's comment makes, pinned as a whole-policy diff.
+
+        The assertions above each check one directive they expected to think
+        about. This one catches the directive nobody thought about: loosen
+        anything here beyond connect-src and it fails, whether or not a test
+        exists for that directive by name.
+        """
+        from yeaboi.web.security import EDIT_CSP
+
+        artifact, editable = _directives(ARTIFACT_CSP), _directives(EDIT_CSP)
+        differing = {k for k in artifact.keys() | editable.keys() if artifact.get(k) != editable.get(k)}
+        assert differing == {"connect-src"}

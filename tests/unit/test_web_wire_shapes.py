@@ -198,7 +198,18 @@ def _export_snapshots() -> dict[str, dict]:
     poker ticket, an AI-authored retro card, an empty retro column, a trend with
     two points. An interface's optionality is only pinned by a fixture that has
     the thing, and by another that does not.
+
+    **Pinned against the environment.** The standup exporter linkifies bare
+    ticket keys found in prose against ``get_jira_base_url()``, so a fixture
+    naming a key that has no evidence link renders one way on a machine with
+    JIRA_BASE_URL set and another way without it — and rewrites itself on every
+    run in whichever process saw the other. The snapshot is a committed artifact,
+    so it is pinned here rather than left to whatever the suite happens to have
+    loaded by this point.
     """
+    import os
+    from unittest.mock import patch
+
     from tests._pages import island
     from yeaboi.agent.state import (
         ActivityEvidence,
@@ -208,6 +219,7 @@ def _export_snapshots() -> dict[str, dict]:
         PokerReport,
         PokerTicketResult,
         PokerVote,
+        PracticeSignal,
         RetroCard,
         RetroReport,
         RoadmapAnalysis,
@@ -396,6 +408,27 @@ def _export_snapshots() -> dict[str, dict]:
                 documentation_summary="No documentation activity detected.",
                 progress_note="Still on YB-2 from the last standup.",
                 outlook="Likely to close YB-2 today.",
+                # Two members carry practices and one does not, so the payload's
+                # optionality is pinned from both sides.
+                practices=(
+                    PracticeSignal(
+                        rule="untracked-work",
+                        title="Untracked work",
+                        detail=(
+                            "#91 'Enable SSO' carries no ticket reference in the branch, title, "
+                            "or description. Link a ticket (or raise one) so the work counts "
+                            "toward sprint scope."
+                        ),
+                        evidence=(("#91", "https://example.invalid/pull/91"),),
+                    ),
+                    PracticeSignal(
+                        rule="commit-messages",
+                        title="Thin commit messages",
+                        detail="3 commits have subjects that name no outcome ('fix', 'wip', 'update').",
+                        evidence=(("78e4201d", "https://example.invalid/commit/78e4201d"),),
+                        repeat=True,
+                    ),
+                ),
             ),
             MemberUpdate(
                 name="Grace",
@@ -403,6 +436,14 @@ def _export_snapshots() -> dict[str, dict]:
                 source="combined",
                 blockers="Nobody has picked up the MFA review.",
                 self_report="Paired with Ada on auth.",
+                practices=(
+                    PracticeSignal(
+                        rule="wip-sprawl",
+                        title="Spread thin",
+                        detail="4 tickets in progress at once (YB-2, YB-5, YB-7, YB-9).",
+                        evidence=(("YB-2", "https://example.invalid/browse/YB-2"),),
+                    ),
+                ),
             ),
             MemberUpdate(name="Quiet", summary="No activity detected.", source="inferred"),
         ),
@@ -411,6 +452,7 @@ def _export_snapshots() -> dict[str, dict]:
         category_coverage=(("ticketing", "covered"), ("documentation", "not_configured")),
         skipped_sources=(("notion", "NOTION_ROOT_PAGE_ID not set"),),
         warnings=("Jira was reachable for 12 of 14 days.",),
+        practice_rollup=(("untracked-work", 1), ("wip-sprawl", 1), ("commit-messages", 1)),
     )
     standup_history = [
         {"standup_date": "2026-07-13", "confidence_pct": 68, "status": "success"},
@@ -424,17 +466,22 @@ def _export_snapshots() -> dict[str, dict]:
         warnings=("2 names could not be matched.",),
     )
 
-    return {
-        "export.poker": island(build_poker_html(poker)),
-        "export.retro": island(build_retro_html(retro, history=history)),
-        "export.reporting": island(build_report_html(_delivery_report())),
-        "export.roadmap": island(build_roadmap_html(roadmap)),
-        "export.performance": island(build_prep_html(prep)),
-        "export.anonymize": island(build_anonymized_html(masked, title="Retro")),
-        "export.standup": island(build_standup_html(standup, history=standup_history)),
-        "export.plan": island(build_export_html(_plan_state())),
-        "export.profile": island(_team_profile_page()),
-    }
+    # See the docstring: the standup exporter reads a Jira base URL to linkify
+    # bare ticket keys in prose, so every snapshot is taken with it pinned to a
+    # fixed value. Patched at the environment rather than at the getter so any
+    # other exporter that grows the same dependency is covered too.
+    with patch.dict(os.environ, {"JIRA_BASE_URL": "https://example.invalid"}):
+        return {
+            "export.poker": island(build_poker_html(poker)),
+            "export.retro": island(build_retro_html(retro, history=history)),
+            "export.reporting": island(build_report_html(_delivery_report())),
+            "export.roadmap": island(build_roadmap_html(roadmap)),
+            "export.performance": island(build_prep_html(prep)),
+            "export.anonymize": island(build_anonymized_html(masked, title="Retro")),
+            "export.standup": island(build_standup_html(standup, history=standup_history)),
+            "export.plan": island(build_export_html(_plan_state())),
+            "export.profile": island(_team_profile_page()),
+        }
 
 
 def _invite_snapshot() -> dict:

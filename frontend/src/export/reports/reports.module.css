@@ -488,6 +488,124 @@ ul.memberSummary {
   line-height: 1.6;
 }
 
+/* Practice signals: deliberately quieter than .note, and much quieter than the
+   blocker. These are coaching nudges about how work landed, not something to
+   stop the sprint for, and the person named is reading them. */
+.practices {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+.practiceList {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.practice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+/* The repeat marker is a word, never colour alone — a second day running is a
+   different fact from a one-off and has to survive greyscale. */
+.practiceRepeat {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.practiceRollup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+}
+
+/* The two answers, on a correctable share only. Quieter than the signal they
+   sit under: disputing a nudge should look as low-stakes as it is. They take
+   the full row so a long signal sentence never wraps around them. */
+.practiceVotes,
+.practiceAsk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  margin: 0;
+}
+.practiceAsk {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s1);
+}
+.practiceAskRow {
+  display: flex;
+  gap: var(--s2);
+}
+.practiceAskLabel {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.practiceVote,
+.practiceSend {
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+.practiceVote:hover:not(:disabled),
+.practiceSend:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.practiceVote:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.practiceSend {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.practiceInput {
+  width: 100%;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.practiceInput:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* What replaces a signal the reader removed. Not an error, so not a warn tone —
+   it is a receipt for something that worked. */
+.practiceResolved,
+.practiceOutcome {
+  width: 100%;
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+  font-style: italic;
+}
+
 .quote {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);

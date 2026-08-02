@@ -209,6 +209,39 @@
             "s": " today."
           }
         ],
+        "practices": [
+          {
+            "detail": [
+              {
+                "s": "#91 'Enable SSO' carries no ticket reference in the branch, title, or description. Link a ticket (or raise one) so the work counts toward sprint scope."
+              }
+            ],
+            "evidence": [
+              [
+                "#91",
+                "https://example.invalid/pull/91"
+              ]
+            ],
+            "rule": "untracked-work",
+            "title": "Untracked work"
+          },
+          {
+            "detail": [
+              {
+                "s": "3 commits have subjects that name no outcome ('fix', 'wip', 'update')."
+              }
+            ],
+            "evidence": [
+              [
+                "78e4201d",
+                "https://example.invalid/commit/78e4201d"
+              ]
+            ],
+            "repeat": true,
+            "rule": "commit-messages",
+            "title": "Thin commit messages"
+          }
+        ],
         "progressNote": [
           {
             "s": "Still on "
@@ -252,6 +285,51 @@
         "links": [],
         "name": "Grace",
         "own": true,
+        "practices": [
+          {
+            "detail": [
+              {
+                "s": "4 tickets in progress at once ("
+              },
+              {
+                "href": "https://example.invalid/browse/YB-2",
+                "s": "YB-2 MFA enrolment"
+              },
+              {
+                "s": ", "
+              },
+              {
+                "href": "https://example.invalid/browse/YB-5",
+                "s": "YB-5"
+              },
+              {
+                "s": ", "
+              },
+              {
+                "href": "https://example.invalid/browse/YB-7",
+                "s": "YB-7"
+              },
+              {
+                "s": ", "
+              },
+              {
+                "href": "https://example.invalid/browse/YB-9",
+                "s": "YB-9"
+              },
+              {
+                "s": ")."
+              }
+            ],
+            "evidence": [
+              [
+                "YB-2",
+                "https://example.invalid/browse/YB-2"
+              ]
+            ],
+            "rule": "wip-sprawl",
+            "title": "Spread thin"
+          }
+        ],
         "selfReport": [
           {
             "s": "Paired with Ada on auth."
@@ -282,6 +360,23 @@
             }
           ]
         ]
+      }
+    ],
+    "practices": [
+      {
+        "count": 1,
+        "rule": "untracked-work",
+        "title": "Untracked work"
+      },
+      {
+        "count": 1,
+        "rule": "wip-sprawl",
+        "title": "Spread thin"
+      },
+      {
+        "count": 1,
+        "rule": "commit-messages",
+        "title": "Thin commit messages"
       }
     ],
     "skipped": [

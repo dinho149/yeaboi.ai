@@ -370,7 +370,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_1xdoh_15 {
+._h2_1u9h2_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -382,21 +382,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_1xdoh_27 {
+._bullets_1u9h2_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_1xdoh_27 li + li {
+._bullets_1u9h2_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_1xdoh_27 li::marker {
+._bullets_1u9h2_27 li::marker {
   color: var(--accent);
 }
 
-._lede_1xdoh_41 {
+._lede_1u9h2_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -409,12 +409,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._empty_1xdoh_54 {
+._empty_1u9h2_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_1xdoh_59 {
+._footnote_1u9h2_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -424,20 +424,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_1xdoh_69 {
+._split_1u9h2_69 {
   margin: var(--s4) 0;
 }
-._split_1xdoh_69 > * + * {
+._split_1u9h2_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_1xdoh_76 {
+._trend_1u9h2_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_1xdoh_82 {
+._people_1u9h2_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -445,7 +445,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_1xdoh_90 {
+._person_1u9h2_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -454,7 +454,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_1xdoh_99 {
+._identity_1u9h2_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -467,33 +467,33 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_1xdoh_112 {
+._mixes_1u9h2_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_1xdoh_112 > * + * {
+._mix_1u9h2_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_1xdoh_122 {
+._projects_1u9h2_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_1xdoh_122 {
+._project_1u9h2_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_1xdoh_131 {
+._projectIndex_1u9h2_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_1xdoh_138 {
+._chips_1u9h2_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
@@ -504,13 +504,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_1xdoh_138 {
+  ._chips_1u9h2_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_1xdoh_155 {
+._why_1u9h2_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -522,12 +522,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_1xdoh_167 {
+._votes_1u9h2_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_1xdoh_167 {
+._vote_1u9h2_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -538,18 +538,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_1xdoh_183 {
+._skipped_1u9h2_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_1xdoh_188 {
+._notes_1u9h2_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_1xdoh_194 {
+._transcript_1u9h2_194 {
   font-size: var(--fs-s);
 }
 
@@ -558,7 +558,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_1xdoh_203 {
+._columns_1u9h2_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -567,14 +567,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_1xdoh_203 {
+._column_1u9h2_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_1xdoh_219 {
+._columnTitle_1u9h2_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -586,75 +586,75 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_1xdoh_231 {
+._count_1u9h2_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_1xdoh_203 ._bullets_1xdoh_27 li::marker {
+._column_1u9h2_203 ._bullets_1u9h2_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_1xdoh_239 {
+._byline_1u9h2_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_1xdoh_246 {
+._reactions_1u9h2_246 {
   margin-left: var(--s1);
 }
-._status_1xdoh_249 {
+._status_1u9h2_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_1xdoh_256 {
+._confidence_1u9h2_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_1xdoh_263 {
+._rationale_1u9h2_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_1xdoh_270 {
+._activity_1u9h2_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_1xdoh_270 > * + * {
+._activity_1u9h2_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_1xdoh_280 {
+._activityRow_1u9h2_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_1xdoh_286 {
+._activityName_1u9h2_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_1xdoh_292 {
+._activityTotal_1u9h2_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_1xdoh_299 {
+._member_1u9h2_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -663,10 +663,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_1xdoh_308 {
+._blocked_1u9h2_308 {
   border-left-color: var(--danger);
 }
-._memberHead_1xdoh_311 {
+._memberHead_1u9h2_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -674,18 +674,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_1xdoh_319 {
+._memberSummary_1u9h2_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* The intro renders as terse clause bullets (a ul), one thought per line. */
-ul._memberSummary_1xdoh_319 {
+ul._memberSummary_1u9h2_319 {
   display: grid;
   gap: calc(var(--s1) / 2);
   padding-left: 1.1em;
 }
-._since_1xdoh_330 {
+._since_1u9h2_330 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -693,7 +693,7 @@ ul._memberSummary_1xdoh_319 {
 
 /* `auto-fit`, so two active categories share the width instead of leaving a
    third of the card empty to preserve a three-column shape. */
-._categories_1xdoh_338 {
+._categories_1u9h2_338 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--s3);
@@ -701,33 +701,33 @@ ul._memberSummary_1xdoh_319 {
 }
 /* The border colour is set inline per category tone, so Tickets / Code / Docs
    land in consistently colour-coded positions across every card. */
-._category_1xdoh_346 {
+._category_1u9h2_346 {
   border-left: 2px solid var(--line);
   padding-left: var(--s2);
 }
-._category_1xdoh_346 > * + * {
+._category_1u9h2_346 > * + * {
   margin-top: var(--s2);
 }
-._categoryHead_1xdoh_353 {
+._categoryHead_1u9h2_353 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
 }
 
-._chipRow_1xdoh_359 {
+._chipRow_1u9h2_359 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
 /* The jump strip above the member cards: who's here, who's blocked, one glance. */
-._memberStrip_1xdoh_366 {
+._memberStrip_1u9h2_366 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberJump_1xdoh_372 {
+._memberJump_1u9h2_372 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -739,13 +739,13 @@ ul._memberSummary_1xdoh_319 {
   font-size: var(--fs-xs);
   text-decoration: none;
 }
-._memberJump_1xdoh_372:hover {
+._memberJump_1u9h2_372:hover {
   border-color: var(--line-strong);
 }
-._memberJumpBlocked_1xdoh_387 {
+._memberJumpBlocked_1u9h2_387 {
   border-color: var(--danger);
 }
-._memberJumpFlag_1xdoh_390 {
+._memberJumpFlag_1u9h2_390 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -754,7 +754,7 @@ ul._memberSummary_1xdoh_319 {
 }
 
 /* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
-._evidence_1xdoh_399 {
+._evidence_1u9h2_399 {
   display: grid;
   gap: var(--s1);
   margin: var(--s2) 0 0;
@@ -763,37 +763,37 @@ ul._memberSummary_1xdoh_319 {
 }
 /* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
    fold would render fully open with a lying "+ N more" button. */
-._evidence_1xdoh_399[hidden] {
+._evidence_1u9h2_399[hidden] {
   display: none;
 }
-._evidenceRow_1xdoh_411 {
+._evidenceRow_1u9h2_411 {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--s2);
   font-size: var(--fs-xs);
 }
-._evidenceRef_1xdoh_418 {
+._evidenceRef_1u9h2_418 {
   font-family: var(--font-mono);
   white-space: nowrap;
 }
-._evidenceTitle_1xdoh_422 {
+._evidenceTitle_1u9h2_422 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._evidenceMeta_1xdoh_427 {
+._evidenceMeta_1u9h2_427 {
   grid-column: 2 / -1;
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
 /* Board status with its glyph — colour comes inline via toneVar; the word is
    always beside it (never colour alone). */
-._evidenceStatus_1xdoh_434 {
+._evidenceStatus_1u9h2_434 {
   white-space: nowrap;
 }
 /* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
-._commitToggle_1xdoh_438 {
+._commitToggle_1u9h2_438 {
   padding: 0;
   border: 0;
   background: none;
@@ -804,10 +804,10 @@ ul._memberSummary_1xdoh_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._commitToggle_1xdoh_438:hover {
+._commitToggle_1u9h2_438:hover {
   color: var(--text);
 }
-._evidenceChildren_1xdoh_452 {
+._evidenceChildren_1u9h2_452 {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--s1);
@@ -817,10 +817,10 @@ ul._memberSummary_1xdoh_319 {
   list-style: none;
 }
 /* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._evidenceChildren_1xdoh_452[hidden] {
+._evidenceChildren_1u9h2_452[hidden] {
   display: none;
 }
-._moreToggle_1xdoh_465 {
+._moreToggle_1u9h2_465 {
   margin-top: var(--s1);
   padding: 0;
   border: 0;
@@ -832,11 +832,11 @@ ul._memberSummary_1xdoh_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._moreToggle_1xdoh_465:hover {
+._moreToggle_1u9h2_465:hover {
   color: var(--text);
 }
 
-._note_1xdoh_188 {
+._note_1u9h2_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -846,7 +846,125 @@ ul._memberSummary_1xdoh_319 {
   line-height: 1.6;
 }
 
-._quote_1xdoh_491 {
+/* Practice signals: deliberately quieter than .note, and much quieter than the
+   blocker. These are coaching nudges about how work landed, not something to
+   stop the sprint for, and the person named is reading them. */
+._practices_1u9h2_494 {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+._practiceList_1u9h2_499 {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+._practice_1u9h2_494 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+/* The repeat marker is a word, never colour alone — a second day running is a
+   different fact from a one-off and has to survive greyscale. */
+._practiceRepeat_1u9h2_517 {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+._practiceRollup_1u9h2_524 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+}
+
+/* The two answers, on a correctable share only. Quieter than the signal they
+   sit under: disputing a nudge should look as low-stakes as it is. They take
+   the full row so a long signal sentence never wraps around them. */
+._practiceVotes_1u9h2_535,
+._practiceAsk_1u9h2_536 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  margin: 0;
+}
+._practiceAsk_1u9h2_536 {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s1);
+}
+._practiceAskRow_1u9h2_549 {
+  display: flex;
+  gap: var(--s2);
+}
+._practiceAskLabel_1u9h2_553 {
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+._practiceVote_1u9h2_535,
+._practiceSend_1u9h2_561 {
+  padding: 2px var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-2xs);
+  cursor: pointer;
+}
+._practiceVote_1u9h2_535:hover:not(:disabled),
+._practiceSend_1u9h2_561:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+._practiceVote_1u9h2_535:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+._practiceSend_1u9h2_561 {
+  border-color: var(--accent);
+  color: var(--text);
+}
+._practiceInput_1u9h2_584 {
+  width: 100%;
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+._practiceInput_1u9h2_584:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* What replaces a signal the reader removed. Not an error, so not a warn tone —
+   it is a receipt for something that worked. */
+._practiceResolved_1u9h2_600,
+._practiceOutcome_1u9h2_601 {
+  width: 100%;
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+  font-style: italic;
+}
+
+._quote_1u9h2_609 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -859,7 +977,7 @@ ul._memberSummary_1xdoh_319 {
   white-space: pre-wrap;
 }
 
-._screenshot_1xdoh_504 {
+._screenshot_1u9h2_622 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -867,26 +985,26 @@ ul._memberSummary_1xdoh_319 {
   border-radius: var(--r-m);
 }
 
-._details_1xdoh_512 {
+._details_1u9h2_630 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_1xdoh_519 {
+._coverage_1u9h2_637 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_1xdoh_526 {
+._dot_1u9h2_644 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_1xdoh_531 {
+._dim_1u9h2_649 {
   color: var(--dim);
 }
 
@@ -894,14 +1012,14 @@ ul._memberSummary_1xdoh_319 {
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_1xdoh_539 {
+._headingEmoji_1u9h2_657 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_1xdoh_546 {
+._cardId_1u9h2_664 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -912,57 +1030,57 @@ ul._memberSummary_1xdoh_319 {
   white-space: nowrap;
 }
 
-._feature_1xdoh_557,
-._story_1xdoh_558,
-._sprint_1xdoh_559 {
+._feature_1u9h2_675,
+._story_1u9h2_676,
+._sprint_1u9h2_677 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_1xdoh_558 {
+._story_1u9h2_676 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_1xdoh_566 {
+._storyText_1u9h2_684 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_1xdoh_573 {
+._storyGroup_1u9h2_691 {
   margin-bottom: var(--s5);
 }
-._storyGroup_1xdoh_573 > .eyebrow {
+._storyGroup_1u9h2_691 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_1xdoh_583 {
+._criteria_1u9h2_701 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_1xdoh_583 li {
+._criteria_1u9h2_701 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_1xdoh_583 li + li {
+._criteria_1u9h2_701 li + li {
   margin-top: var(--s1);
 }
-._criteria_1xdoh_583 b {
+._criteria_1u9h2_701 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_1xdoh_604 {
+._dod_1u9h2_722 {
   margin-top: var(--s3);
 }
-._dod_1xdoh_604 ul {
+._dod_1u9h2_722 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -970,22 +1088,22 @@ ul._memberSummary_1xdoh_319 {
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_1xdoh_615 {
+._exempt_1u9h2_733 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_1xdoh_620 {
+._fields_1u9h2_738 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_1xdoh_620 > * + * {
+._field_1u9h2_738 > * + * {
   margin-top: var(--s2);
 }
 
-._target_1xdoh_630 {
+._target_1u9h2_748 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -994,36 +1112,36 @@ ul._memberSummary_1xdoh_319 {
   line-height: 1.6;
 }
 
-._capacity_1xdoh_639 {
+._capacity_1u9h2_757 {
   margin-top: var(--s4);
 }
-._capacity_1xdoh_639 > * + * {
+._capacity_1u9h2_757 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_1xdoh_646 {
+._sprintGoal_1u9h2_764 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_1xdoh_652 {
+._reduced_1u9h2_770 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_1xdoh_655 {
+._reducedNote_1u9h2_773 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_1xdoh_661 {
+._taskGroup_1u9h2_779 {
   margin-bottom: var(--s5);
 }
-._taskGroup_1xdoh_661 > .eyebrow {
+._taskGroup_1u9h2_779 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_1xdoh_668 {
+._groupSubject_1u9h2_786 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1031,7 +1149,7 @@ ul._memberSummary_1xdoh_319 {
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_1xdoh_676 {
+._taskNote_1u9h2_794 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1041,44 +1159,44 @@ ul._memberSummary_1xdoh_319 {
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_1xdoh_686 {
+._document_1u9h2_804 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_1xdoh_686 > * + * {
+._document_1u9h2_804 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_1xdoh_686 h2,
-._document_1xdoh_686 h3,
-._document_1xdoh_686 h4,
-._document_1xdoh_686 h5,
-._document_1xdoh_686 h6 {
+._document_1u9h2_804 h2,
+._document_1u9h2_804 h3,
+._document_1u9h2_804 h4,
+._document_1u9h2_804 h5,
+._document_1u9h2_804 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_1xdoh_686 h2 { font-size: var(--fs-m); }
-._document_1xdoh_686 h3 { font-size: var(--fs-s); }
-._document_1xdoh_686 h4,
-._document_1xdoh_686 h5,
-._document_1xdoh_686 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_1xdoh_686 ul,
-._document_1xdoh_686 ol {
+._document_1u9h2_804 h2 { font-size: var(--fs-m); }
+._document_1u9h2_804 h3 { font-size: var(--fs-s); }
+._document_1u9h2_804 h4,
+._document_1u9h2_804 h5,
+._document_1u9h2_804 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1u9h2_804 ul,
+._document_1u9h2_804 ol {
   padding-left: 1.2rem;
 }
-._document_1xdoh_686 li + li {
+._document_1u9h2_804 li + li {
   margin-top: var(--s1);
 }
-._document_1xdoh_686 li::marker {
+._document_1u9h2_804 li::marker {
   color: var(--accent);
 }
-._document_1xdoh_686 code {
+._document_1u9h2_804 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1086,18 +1204,18 @@ ul._memberSummary_1xdoh_319 {
   background: var(--card);
   color: var(--accent2);
 }
-._document_1xdoh_686 a {
+._document_1u9h2_804 a {
   color: var(--accent);
 }
 
-._quote_1xdoh_491 {
+._quote_1u9h2_609 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_1xdoh_742 {
+._code_1u9h2_860 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1110,13 +1228,13 @@ ul._memberSummary_1xdoh_319 {
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_1xdoh_742 code {
+._code_1u9h2_860 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_1xdoh_761 {
+._rule_1u9h2_879 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
@@ -1124,13 +1242,13 @@ ul._memberSummary_1xdoh_319 {
 
 /* ── Team profile: generated blocks ───────────────────────────── */
 
-._blocks_1xdoh_769 > * + * {
+._blocks_1u9h2_887 > * + * {
   margin-top: var(--s4);
 }
 
 /* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
    accent — it groups within a section rather than announcing a new one. */
-._h3_1xdoh_775 {
+._h3_1u9h2_893 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -1139,48 +1257,48 @@ ul._memberSummary_1xdoh_319 {
   color: var(--muted);
   margin: 0 0 var(--s2);
 }
-._kvWrap_1xdoh_784 > * + * {
+._kvWrap_1u9h2_902 > * + * {
   margin-top: var(--s2);
 }
 
 /* Label and value on one baseline. A `<dl>` rather than a table: these are
    facts about one thing, not rows that compare with each other. */
-._kv_1xdoh_784 {
+._kv_1u9h2_902 {
   display: grid;
   gap: 0;
   margin: 0;
   font-size: var(--fs-s);
 }
-._kv_1xdoh_784 > div {
+._kv_1u9h2_902 > div {
   display: grid;
   grid-template-columns: minmax(0, 14rem) 1fr;
   gap: var(--s3);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-._kv_1xdoh_784 > div:last-child {
+._kv_1u9h2_902 > div:last-child {
   border-bottom: none;
 }
-._kv_1xdoh_784 dt {
+._kv_1u9h2_902 dt {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._kv_1xdoh_784 dd {
+._kv_1u9h2_902 dd {
   margin: 0;
   line-height: 1.6;
   min-width: 0;
 }
 @media (max-width: 699px) {
-  ._kv_1xdoh_784 > div {
+  ._kv_1u9h2_902 > div {
     grid-template-columns: 1fr;
     gap: var(--s1);
   }
 }
 
-._cell_1xdoh_825 {
+._cell_1u9h2_943 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1189,32 +1307,32 @@ ul._memberSummary_1xdoh_319 {
 }
 /* Bounded rather than fluid: a proportion bar is only comparable down a column
    if every row draws the same track. */
-._cellBar_1xdoh_834 {
+._cellBar_1u9h2_952 {
   width: 90px;
   flex: none;
 }
-._cellNote_1xdoh_838 {
+._cellNote_1u9h2_956 {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._cellPerson_1xdoh_842 {
+._cellPerson_1u9h2_960 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._profileCards_1xdoh_848 {
+._profileCards_1u9h2_966 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
-._profileProse_1xdoh_853 {
+._profileProse_1u9h2_971 {
   font-size: var(--fs-s);
 }
 
 /* A caveat reads as a qualification of the section, not as one of its
    findings. */
-._note_1xdoh_188 {
+._note_1u9h2_188 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1224,17 +1342,17 @@ ul._memberSummary_1xdoh_319 {
 
 /* A finding worth stopping on. The rule and the wash are both derived from the
    tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_1xdoh_869 {
+._callout_1u9h2_987 {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
   border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
-._callout_1xdoh_869 > * + * {
+._callout_1u9h2_987 > * + * {
   margin-top: var(--s2);
 }
-._callout_1xdoh_869 p {
+._callout_1u9h2_987 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -1245,16 +1363,16 @@ ul._memberSummary_1xdoh_319 {
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_1xdoh_122,
-  ._column_1xdoh_203,
-  ._lede_1xdoh_41,
-  ._callout_1xdoh_869 {
+  ._project_1u9h2_122,
+  ._column_1u9h2_203,
+  ._lede_1u9h2_41,
+  ._callout_1u9h2_987 {
     break-inside: avoid;
   }
-  ._h3_1xdoh_775 {
+  ._h3_1u9h2_893 {
     break-after: avoid;
   }
-  ._h2_1xdoh_15 {
+  ._h2_1u9h2_15 {
     break-after: avoid;
   }
 }
@@ -1262,13 +1380,13 @@ ul._memberSummary_1xdoh_319 {
 /* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
    the rules live with the other report sections rather than in a file of their
    own. Tokens only — no literal colours (test_web_frontend_guards). */
-._annotations_1xdoh_907 {
+._annotations_1u9h2_1025 {
   margin-block-start: var(--s6);
   border-block-start: 1px solid var(--line);
   padding-block-start: var(--s5);
 }
 
-._annotationList_1xdoh_913 {
+._annotationList_1u9h2_1031 {
   display: grid;
   gap: var(--s3);
   margin: 0;
@@ -1276,16 +1394,16 @@ ul._memberSummary_1xdoh_319 {
   list-style: none;
 }
 
-._annotation_1xdoh_907 {
+._annotation_1u9h2_1025 {
   border-inline-start: 2px solid var(--line-strong);
   padding-inline-start: var(--s4);
 }
 
-._annotationBody_1xdoh_926 {
+._annotationBody_1u9h2_1044 {
   margin: 0;
 }
 
-._annotationMeta_1xdoh_930 {
+._annotationMeta_1u9h2_1048 {
   display: flex;
   gap: var(--s2);
   margin: var(--s1) 0 0;
@@ -1293,11 +1411,11 @@ ul._memberSummary_1xdoh_319 {
   font-size: var(--fs-s);
 }
 
-._annotationWhen_1xdoh_938 {
+._annotationWhen_1u9h2_1056 {
   font-variant-numeric: tabular-nums;
 }
 
-._annotationWhere_1xdoh_942 {
+._annotationWhere_1u9h2_1060 {
   font-style: italic;
 }
 /*

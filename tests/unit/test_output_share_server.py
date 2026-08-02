@@ -228,6 +228,51 @@ def editable_server():
         server.stop()
 
 
+# ---------------------------------------------------------------------------
+# Correctable shares — a standup whose reader can answer a practice signal
+# ---------------------------------------------------------------------------
+
+
+def _standup_run(db_path, *, handles=("url:https://x/pull/91",)):
+    """One stored standup with a single practice signal, and its run id."""
+    from yeaboi.agent.state import MemberUpdate, PracticeSignal, StandupReport
+    from yeaboi.standup.store import StandupStore
+
+    signal = PracticeSignal(
+        rule="untracked-work",
+        title="Untracked work",
+        detail="#91 carries no ticket reference.",
+        evidence=(("#91", "https://x/pull/91"),),
+        handles=handles,
+    )
+    report = StandupReport(
+        session_id="s1",
+        date="2026-08-02",
+        member_updates=(MemberUpdate(name="Alice", summary="login page", practices=(signal,)),),
+        practice_rollup=(("untracked-work", 1),),
+    )
+    with StandupStore(db_path) as store:
+        return store.record_run(report)
+
+
+@pytest.fixture
+def correctable_server(tmp_path):
+    from yeaboi.sharing.documents import standup_document
+    from yeaboi.standup.store import StandupStore
+
+    db = tmp_path / "sessions.db"
+    run_id = _standup_run(db)
+    with StandupStore(db) as store:
+        report = store.get_run_by_id(run_id)
+    server = OutputShareServer(standup_document(report, session_id="s1", run_id=run_id, db_path=db))
+    server.start()
+    server.db_path = db  # type: ignore[attr-defined]
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
 def test_the_invite_carries_the_join_code_and_not_the_url(editable_server):
     """`invite_payload` takes four positional arguments, and order is everything.
 
@@ -243,3 +288,144 @@ def test_the_invite_carries_the_join_code_and_not_the_url(editable_server):
         body = json.loads(response.read())
     assert body["joinCode"] == editable_server.join_code
     assert "://" not in body["joinCode"]
+
+
+def _join(server) -> str:
+    with _post(server, server.display_code) as response:
+        return json.loads(response.read())["token"]
+
+
+def _vote(server, token: str, **body):
+    request = urllib.request.Request(
+        f"{server.local_url}api/practice-vote?token={token}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    return urllib.request.urlopen(request, timeout=2)  # noqa: S310 - loopback test server
+
+
+def test_a_correctable_share_gets_the_looser_policy(correctable_server):
+    token = _join(correctable_server)
+    with urllib.request.urlopen(f"{correctable_server.local_url}?token={token}", timeout=2) as response:  # noqa: S310
+        csp = response.headers["Content-Security-Policy"]
+    # connect-src is the whole difference between a snapshot and a page that
+    # can send a verdict; everything else stays as locked down as before.
+    assert "connect-src 'self'" in csp
+    assert "default-src 'none'" in csp
+
+
+def test_a_finished_snapshot_still_cannot_talk(share_server):
+    token = _join(share_server)
+    with urllib.request.urlopen(f"{share_server.local_url}?token={token}", timeout=2) as response:  # noqa: S310
+        assert "connect-src 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_a_thumbs_down_records_the_verdict_and_redraws_the_page(correctable_server):
+    from yeaboi.standup import practice_feedback
+    from yeaboi.standup.store import StandupStore
+
+    token = _join(correctable_server)
+    with _vote(
+        correctable_server,
+        token,
+        member="Alice",
+        rule="untracked-work",
+        verdict="down",
+        note="that PR is the spike ticket",
+    ) as response:
+        assert json.loads(response.read())["applied"] is True
+
+    db = correctable_server.db_path
+    with StandupStore(db) as store:
+        assert store.get_latest_report("s1").member_updates[0].practices == ()
+        assert practice_feedback.load(store, "s1").is_excused("untracked-work", "url:https://x/pull/91")
+
+    # The next reader must get the corrected report, not the snapshot the vote
+    # was cast against.
+    with urllib.request.urlopen(f"{correctable_server.local_url}?token={token}", timeout=2) as response:  # noqa: S310
+        assert "Untracked work" not in response.read().decode()
+
+
+def test_a_thumbs_up_confirms_without_removing(correctable_server):
+    token = _join(correctable_server)
+    with _vote(correctable_server, token, member="Alice", rule="untracked-work", verdict="up") as response:
+        assert json.loads(response.read())["applied"] is True
+    from yeaboi.standup.store import StandupStore
+
+    with StandupStore(correctable_server.db_path) as store:
+        assert len(store.get_latest_report("s1").member_updates[0].practices) == 1
+
+
+def test_voting_twice_reports_it_rather_than_writing_again(correctable_server):
+    token = _join(correctable_server)
+    _vote(correctable_server, token, member="Alice", rule="untracked-work", verdict="down").close()
+    with _vote(correctable_server, token, member="Alice", rule="untracked-work", verdict="down") as response:
+        payload = json.loads(response.read())
+    # Two people reading the same page is an ordinary race, not a failure.
+    assert payload["applied"] is False
+    assert payload["reason"]
+
+
+def test_a_vote_without_the_token_is_refused(correctable_server):
+    _join(correctable_server)  # a valid token exists, but this request omits it
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        _vote(correctable_server, "", member="Alice", rule="untracked-work", verdict="down")
+    assert excinfo.value.code == 403
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"member": "", "rule": "untracked-work", "verdict": "down"},
+        {"member": "Alice", "rule": "vibes", "verdict": "down"},
+        {"member": "Alice", "rule": "untracked-work", "verdict": "maybe"},
+    ],
+)
+def test_a_malformed_vote_is_rejected(correctable_server, body):
+    # This body crossed a public tunnel, so the vocabulary is checked against
+    # the engine's own rather than trusted.
+    token = _join(correctable_server)
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        _vote(correctable_server, token, **body)
+    assert excinfo.value.code == 400
+
+
+def test_a_finished_snapshot_has_no_vote_route(share_server):
+    token = _join(share_server)
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        _vote(share_server, token, member="Alice", rule="untracked-work", verdict="down")
+    assert excinfo.value.code == 404
+
+
+def test_the_connection_survives_a_rejected_body(correctable_server):
+    """A refused POST must not poison the next request on the same connection.
+
+    HTTP/1.1 keep-alive means an unread body is parsed as the following request
+    line — the reader gets "501 Unsupported method" on a page that worked a
+    moment ago. Every early return drains first; this is what proves it.
+    """
+    import http.client
+
+    token = _join(correctable_server)
+    conn = http.client.HTTPConnection("127.0.0.1", correctable_server.port, timeout=2)
+    try:
+        conn.request(
+            "POST",
+            f"/api/practice-vote?token={token}",
+            body=json.dumps({"member": "Alice", "rule": "vibes", "verdict": "down"}),
+            headers={"Content-Type": "application/json"},
+        )
+        assert conn.getresponse().read() is not None
+        # Same connection, valid request. Without the drain this is a 501.
+        conn.request(
+            "POST",
+            f"/api/practice-vote?token={token}",
+            body=json.dumps({"member": "Alice", "rule": "untracked-work", "verdict": "up"}),
+            headers={"Content-Type": "application/json"},
+        )
+        second = conn.getresponse()
+        assert second.status == 200
+        assert json.loads(second.read())["applied"] is True
+    finally:
+        conn.close()

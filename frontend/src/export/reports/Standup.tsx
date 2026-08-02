@@ -16,6 +16,8 @@
  * unrecognised one should go muted rather than fail a build.
  */
 
+import { useState } from 'react';
+
 import {
   Avatar,
   Chip,
@@ -31,9 +33,18 @@ import {
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
 import { cx } from '../../runtime/cx';
-import type { EditMap, EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import type {
+  EditMap,
+  EvidenceLink,
+  Run,
+  StandupCategory,
+  StandupMember,
+  StandupPractice,
+  Trend,
+} from '../boot';
 import { EditableSlot } from '../editing/Editable';
 import { Field } from '../editing/Field';
+import { votePractice, type Verdict } from '../vote';
 import { EvidenceList } from './Evidence';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
@@ -130,6 +141,165 @@ function Category({ category, slug }: { category: StandupCategory; slug: string 
   );
 }
 
+/**
+ * Practice signals — the deterministic coaching notes from `standup/habits.py`.
+ *
+ * Tone by rule, with the same `?? 'low'` fallback the confidence and coverage
+ * maps use: rule ids are *produced* by the engine, not validated against
+ * anything, so one this bundle has never heard of renders muted instead of
+ * failing a build. The label comes down in the payload rather than living here
+ * twice — the engine owns that vocabulary.
+ *
+ * Nothing here is louder than the blocker chip above it. These are nudges.
+ */
+const PRACTICE_TONE: Record<string, Tone> = {
+  'untracked-work': 'warn',
+  'untracked-docs': 'warn',
+  'board-not-updated': 'warn',
+  'wip-sprawl': 'info',
+  'large-change': 'info',
+  'no-pull-request': 'warn',
+  'commit-messages': 'low',
+};
+
+/**
+ * One signal, plus — on a correctable share — the two answers to it.
+ *
+ * The person best placed to say "that PR is the spike ticket, it just doesn't
+ * name it" is usually the teammate reading this, not the host at their terminal.
+ * So the controls live next to the claim they dispute.
+ *
+ * A thumbs-down asks for an optional reason *before* sending, rather than after.
+ * Sending twice would not work: the first call removes the signal from the run,
+ * so a follow-up carrying the note would find nothing to attach it to.
+ */
+function Practice({
+  member,
+  practice,
+  correctable,
+}: {
+  member: string;
+  practice: StandupPractice;
+  correctable: boolean;
+}) {
+  const [state, setState] = useState<'idle' | 'asking' | 'sending' | 'done'>('idle');
+  const [note, setNote] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [hidden, setHidden] = useState(false);
+
+  const send = async (verdict: Verdict, why: string) => {
+    setState('sending');
+    try {
+      const result = await votePractice(member, practice.rule, verdict, why);
+      if (!result.applied) {
+        setOutcome(result.reason || 'That signal has already been answered.');
+        setState('done');
+        return;
+      }
+      if (verdict === 'down') setHidden(true);
+      else setOutcome('Thanks — confirmed.');
+      setState('done');
+    } catch {
+      // fetch rejects only on transport failure: the host closed the share, or
+      // the tunnel dropped. Say so plainly rather than looking like a refusal.
+      setOutcome('Could not reach the standup — it may have stopped sharing.');
+      setState('done');
+    }
+  };
+
+  // A thumbs-down removes the signal from the report itself, so the card goes
+  // with it. The line that replaces it is the receipt.
+  if (hidden) {
+    return (
+      <li className={cx(styles['practice'], styles['practiceResolved'])}>
+        Hidden — thanks. It won&rsquo;t come back.
+      </li>
+    );
+  }
+
+  return (
+    <li className={styles['practice']}>
+      <Chip tone={tone(PRACTICE_TONE, practice.rule)}>{practice.title}</Chip>
+      {practice.repeat ? <span className={styles['practiceRepeat']}>again today</span> : null}
+      <RichText runs={practice.detail} />
+      <Links links={practice.evidence} />
+      {correctable && state !== 'done' ? (
+        state === 'asking' ? (
+          <div className={styles['practiceAsk']}>
+            <label className={styles['practiceAskLabel']} htmlFor={`why-${member}-${practice.rule}`}>
+              What did we get wrong? (optional)
+            </label>
+            <input
+              id={`why-${member}-${practice.rule}`}
+              className={styles['practiceInput']}
+              value={note}
+              maxLength={500}
+              placeholder="e.g. that PR is the spike ticket, it just doesn't name it"
+              onInput={(event) => setNote((event.target as HTMLInputElement).value)}
+            />
+            <div className={styles['practiceAskRow']}>
+              <button type="button" className={styles['practiceSend']} onClick={() => void send('down', note)}>
+                Send
+              </button>
+              <button type="button" className={styles['practiceVote']} onClick={() => setState('idle')}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className={styles['practiceVotes']}>
+            <span className={styles['practiceAskLabel']}>Is this right?</span>
+            <button
+              type="button"
+              className={styles['practiceVote']}
+              disabled={state === 'sending'}
+              onClick={() => void send('up', '')}
+            >
+              <span aria-hidden="true">▲</span> Yes
+            </button>
+            <button
+              type="button"
+              className={styles['practiceVote']}
+              disabled={state === 'sending'}
+              onClick={() => setState('asking')}
+            >
+              <span aria-hidden="true">▼</span> No, and hide it
+            </button>
+          </p>
+        )
+      ) : null}
+      {outcome ? <p className={styles['practiceOutcome']}>{outcome}</p> : null}
+    </li>
+  );
+}
+
+function Practices({
+  member,
+  practices,
+  correctable,
+}: {
+  member: string;
+  practices: StandupPractice[];
+  correctable: boolean;
+}) {
+  if (!practices.length) return null;
+  return (
+    <div className={styles['practices']}>
+      <Eyebrow>Practices</Eyebrow>
+      <ul className={styles['practiceList']}>
+        {practices.map((practice) => (
+          <Practice
+            key={practice.rule}
+            member={member}
+            practice={practice}
+            correctable={correctable}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** A labelled one-liner: "Outlook", "Blocker", "Since last standup". */
 function Note({ label, runs, tone: chipTone }: { label: string; runs: Run[]; tone?: Tone }) {
   return (
@@ -140,7 +310,7 @@ function Note({ label, runs, tone: chipTone }: { label: string; runs: Run[]; ton
   );
 }
 
-function Member({ member }: { member: StandupMember }) {
+function Member({ member, correctable }: { member: StandupMember; correctable: boolean }) {
   const chips = member.counts
     .map((count, i) => {
       const [singular, plural] = CATEGORY_NOUNS[i] as readonly [string, string];
@@ -210,6 +380,12 @@ function Member({ member }: { member: StandupMember }) {
           {footnote.label} — <RichText runs={footnote.runs} />
         </p>
       ))}
+
+      {/* After the categories: the reader has just seen what shipped, which is
+          the context that makes "and no ticket behind it" mean anything. */}
+      {member.practices?.length ? (
+        <Practices member={member.name} practices={member.practices} correctable={correctable} />
+      ) : null}
 
       {member.outlook ? (
         <Field edit={member.edit} field="outlook" label={`${member.name}'s outlook`}>
@@ -289,9 +465,11 @@ export function Standup({
   activityWindow,
   coverage,
   skipped,
+  practices,
   images,
   trend,
   warnings,
+  correctable = false,
 }: {
   sprint: { name: string; day: number; total: number };
   confidence: { label: string; pct: number; text: string; trend: string; trendText: string; rationale: string };
@@ -303,9 +481,12 @@ export function Standup({
   activityWindow: string;
   coverage: Array<[string, string]>;
   skipped: Array<[string, string]>;
+  practices: Array<{ rule: string; count: number; title: string }>;
   images: string[];
   trend: Trend | null;
   warnings: string[];
+  /** A share server is behind this page and will accept a verdict. */
+  correctable?: boolean;
 }) {
   const confidenceTone = tone(CONFIDENCE_TONE, confidence.label);
   const known = confidence.label && confidence.label !== 'Insufficient data';
@@ -347,6 +528,18 @@ export function Standup({
 
         <TrendCard trend={trend} endTone={confidenceTone} />
         <TeamActivity members={members} />
+        {practices?.length ? (
+          <p className={styles['practiceRollup']}>
+            <Eyebrow>Practices</Eyebrow>
+            {practices.map(({ rule, count, title }) => (
+              // The count is MEMBERS. Spelled out rather than left as a bare
+              // number beside a colour, so it can't be read as a score.
+              <Chip key={rule} tone={tone(PRACTICE_TONE, rule)}>
+                {title} · {count} {count === 1 ? 'member' : 'members'}
+              </Chip>
+            ))}
+          </p>
+        ) : null}
         <NoticeBlock title="Notices" items={warnings} />
       </section>
 
@@ -380,7 +573,9 @@ export function Standup({
         <h2 className={styles['h2']}>Updates</h2>
         <MemberStrip members={members} />
         {members.length ? (
-          members.map((member) => <Member key={member.name} member={member} />)
+          members.map((member) => (
+            <Member key={member.name} member={member} correctable={correctable} />
+          ))
         ) : (
           <p className={styles['empty']}>No individual updates.</p>
         )}

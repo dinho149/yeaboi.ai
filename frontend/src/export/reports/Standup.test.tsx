@@ -8,7 +8,7 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/preact';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 
 import type { EvidenceItem, StandupMember } from '../boot';
@@ -35,6 +35,7 @@ const BASE = {
   activityWindow: '',
   coverage: [] as Array<[string, string]>,
   skipped: [] as Array<[string, string]>,
+  practices: [] as Array<{ rule: string; count: number; title: string }>,
   images: [],
   trend: null,
   warnings: [],
@@ -417,6 +418,234 @@ describe('Standup PR commit breakdown', () => {
   it('has no axe violations with a breakdown open', async () => {
     const { container } = render(<Standup {...BASE} members={[memberWithEvidence([pr])]} />);
     fireEvent.click(screen.getByRole('button', { name: '▸ 2 commits' }));
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+describe('Standup practices', () => {
+  const untracked = {
+    rule: 'untracked-work',
+    title: 'Untracked work',
+    detail: [{ s: 'PR #91 carries no ticket reference.' }],
+    evidence: [['#91', 'https://example.invalid/pull/91']] as Array<[string, string]>,
+  };
+
+  it('renders a practice with its label and its evidence chip', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ practices: [untracked] })]} />
+    );
+    const block = container.querySelector('.practices');
+    expect(block?.textContent).toContain('Untracked work');
+    expect(block?.textContent).toContain('carries no ticket reference');
+    expect(block?.querySelector('a')?.getAttribute('href')).toBe('https://example.invalid/pull/91');
+  });
+
+  it('renders nothing when the member has no practices', () => {
+    const { container } = render(<Standup {...BASE} members={[member()]} />);
+    expect(container.querySelector('.practices')).toBeNull();
+  });
+
+  it('renders nothing when the field is absent entirely (legacy report)', () => {
+    const { practices: _dropped, ...legacy } = member({ practices: [untracked] });
+    const { container } = render(<Standup {...BASE} members={[legacy as StandupMember]} />);
+    expect(container.querySelector('.practices')).toBeNull();
+  });
+
+  it('renders an unknown rule id muted rather than throwing', () => {
+    // Rule ids are engine-produced, not validated: a server that ships a new
+    // rule must not break an older bundle.
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[member({ practices: [{ ...untracked, rule: 'invented-tomorrow' }] })]}
+      />
+    );
+    const chip = container.querySelector('.practices .chip');
+    expect(chip?.textContent).toBe('Untracked work');
+    expect(chip?.getAttribute('style')).toContain('var(--low)');
+  });
+
+  it('colours a known rule by its own tone', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ practices: [untracked] })]} />
+    );
+    expect(container.querySelector('.practices .chip')?.getAttribute('style')).toContain('var(--warn)');
+  });
+
+  it('marks a repeat with the word, not colour alone', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ practices: [{ ...untracked, repeat: true }] })]} />
+    );
+    expect(container.querySelector('.practiceRepeat')?.textContent).toBe('again today');
+  });
+
+  it('spells the rollup count as members, and hides it when empty', () => {
+    const { container, rerender } = render(
+      <Standup {...BASE} practices={[{ rule: 'untracked-work', count: 2, title: 'Untracked work' }]} />
+    );
+    expect(container.querySelector('.practiceRollup')?.textContent).toContain('Untracked work · 2 members');
+
+    rerender(<Standup {...BASE} />);
+    expect(container.querySelector('.practiceRollup')).toBeNull();
+  });
+
+  it('has no axe violations with practices rendered', async () => {
+    const { container } = render(
+      <Standup
+        {...BASE}
+        members={[member({ practices: [untracked] })]}
+        practices={[{ rule: 'untracked-work', count: 1, title: 'Untracked work' }]}
+      />
+    );
+    expect(await axe(container)).toHaveNoViolations();
+  });
+});
+
+/**
+ * The one place an export talks back.
+ *
+ * Every other bundle is inert by policy (`connect-src 'none'`), so these
+ * controls must appear only when the payload says a share server is behind the
+ * page — a button that silently does nothing is worse than no button.
+ */
+describe('Standup — correcting a practice signal', () => {
+  const untracked = {
+    rule: 'untracked-work',
+    title: 'Untracked work',
+    detail: [{ s: 'PR #91 carries no ticket reference.' }],
+    evidence: [] as Array<[string, string]>,
+  };
+
+  function withPractice(correctable: boolean) {
+    return render(
+      <Standup {...BASE} members={[member({ practices: [untracked] })]} correctable={correctable} />
+    );
+  }
+
+  function mockFetch(body: unknown, ok = true) {
+    const spy = vi.fn().mockResolvedValue({
+      ok,
+      json: async () => body,
+    });
+    vi.stubGlobal('fetch', spy);
+    return spy;
+  }
+
+  /** The [url, init] of the nth fetch, asserted present so strict mode is happy. */
+  function call(spy: ReturnType<typeof vi.fn>, index = 0): [string, { body: string }] {
+    const args = spy.mock.calls[index];
+    expect(args).toBeDefined();
+    return args as [string, { body: string }];
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('offers no controls on a written export', () => {
+    const { container } = withPractice(false);
+    expect(container.querySelector('.practiceVotes')).toBeNull();
+  });
+
+  it('offers no controls when the flag is absent entirely', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ practices: [untracked] })]} />
+    );
+    expect(container.querySelector('.practiceVotes')).toBeNull();
+  });
+
+  it('offers both answers on a correctable share', () => {
+    const { container } = withPractice(true);
+    expect(container.querySelector('.practiceVotes')?.textContent).toContain('Yes');
+    expect(container.querySelector('.practiceVotes')?.textContent).toContain('No, and hide it');
+  });
+
+  it('sends a thumbs-up immediately, with no note', async () => {
+    const spy = mockFetch({ ok: true, applied: true, reason: '' });
+    const { container } = withPractice(true);
+    fireEvent.click(screen.getByText(/Yes/));
+    await screen.findByText(/confirmed/);
+    const body = JSON.parse(call(spy)[1].body);
+    expect(body).toEqual({
+      member: 'Ada Lovelace',
+      rule: 'untracked-work',
+      verdict: 'up',
+      note: '',
+    });
+    // The signal was right, so it stays on the page.
+    expect(container.querySelector('.practice')?.textContent).toContain('Untracked work');
+  });
+
+  it('asks why before sending a thumbs-down, then hides the signal', async () => {
+    // One request, not two: the first call removes the signal from the run, so
+    // a follow-up carrying the note would find nothing to attach it to.
+    const spy = mockFetch({ ok: true, applied: true, reason: '' });
+    const { container } = withPractice(true);
+
+    fireEvent.click(screen.getByText(/No, and hide it/));
+    expect(spy).not.toHaveBeenCalled();
+
+    const input = container.querySelector('.practiceInput') as HTMLInputElement;
+    fireEvent.input(input, { target: { value: 'that PR is the spike ticket' } });
+    fireEvent.click(screen.getByText('Send'));
+
+    await screen.findByText(/Hidden/);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(call(spy)[1].body).note).toBe('that PR is the spike ticket');
+    expect(container.querySelector('.practice')?.textContent).not.toContain('carries no ticket');
+  });
+
+  it('sends an empty note when the reader skips the reason', async () => {
+    const spy = mockFetch({ ok: true, applied: true, reason: '' });
+    withPractice(true);
+    fireEvent.click(screen.getByText(/No, and hide it/));
+    fireEvent.click(screen.getByText('Send'));
+    await screen.findByText(/Hidden/);
+    expect(JSON.parse(call(spy)[1].body).note).toBe('');
+  });
+
+  it('lets the reader back out of a thumbs-down', () => {
+    const spy = mockFetch({ ok: true, applied: true, reason: '' });
+    const { container } = withPractice(true);
+    fireEvent.click(screen.getByText(/No, and hide it/));
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(container.querySelector('.practiceInput')).toBeNull();
+    expect(container.querySelector('.practiceVotes')).not.toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('carries the gate token so the vote authenticates', () => {
+    const spy = mockFetch({ ok: true, applied: true, reason: '' });
+    const search = window.location.search;
+    window.history.replaceState({}, '', '/?token=abc123');
+    try {
+      withPractice(true);
+      fireEvent.click(screen.getByText(/Yes/));
+      expect(call(spy)[0]).toContain('token=abc123');
+    } finally {
+      window.history.replaceState({}, '', search || '/');
+    }
+  });
+
+  it('says so when someone else answered first', async () => {
+    // Two people reading the same page is an ordinary race, not a failure —
+    // the signal must not silently disappear as though this reader removed it.
+    mockFetch({ ok: true, applied: false, reason: 'that signal has already been answered' });
+    const { container } = withPractice(true);
+    fireEvent.click(screen.getByText(/Yes/));
+    await screen.findByText(/already been answered/);
+    expect(container.querySelector('.practice')?.textContent).toContain('Untracked work');
+  });
+
+  it('reports a dropped tunnel as unreachable rather than as a refusal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')));
+    withPractice(true);
+    fireEvent.click(screen.getByText(/Yes/));
+    await screen.findByText(/stopped sharing/);
+  });
+
+  it('has no axe violations with the controls rendered', async () => {
+    const { container } = withPractice(true);
     expect(await axe(container)).toHaveNoViolations();
   });
 });

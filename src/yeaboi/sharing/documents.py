@@ -11,7 +11,7 @@ from the four others the reader has open.
 from __future__ import annotations
 
 from yeaboi.sharing.editable import EditableShare
-from yeaboi.sharing.server import ShareDocument
+from yeaboi.sharing.server import CorrectionTarget, ShareDocument
 
 
 def _masked_document(anon, title: str, mode: str) -> ShareDocument:
@@ -56,16 +56,51 @@ def analysis_document(
     return ShareDocument(title=title, html=html, source_mode="analysis")
 
 
-def standup_document(report, *, anon=None, history=()) -> ShareDocument:
-    """``history`` = StandupStore.get_history rows; feeds the confidence-trend chart."""
+def standup_document(report, *, anon=None, history=(), session_id="", run_id=0, db_path=None) -> ShareDocument:
+    """``history`` = StandupStore.get_history rows; feeds the confidence-trend chart.
+
+    Pass ``session_id``/``run_id`` to make the share *correctable*: the reader can
+    answer each practice signal, and a thumbs-down rewrites the stored run. Left
+    out, the share is the finished snapshot it has always been.
+
+    Never correctable while anonymized — the names on the page are masks, so a
+    verdict cast against one could not be matched back to a member.
+    """
     title = f"Daily Standup — {report.date}"
     if anon is not None:
         return _masked_document(anon, title, "standup")
     from yeaboi.standup.export import build_standup_html
 
+    corrections = None
+    if session_id and run_id:
+        corrections = _standup_corrections(session_id, run_id, db_path, title)
     return ShareDocument(
-        title=title, html=build_standup_html(report, history=history, document_title=title), source_mode="standup"
+        title=title,
+        html=build_standup_html(report, history=history, document_title=title, correctable=corrections is not None),
+        source_mode="standup",
+        corrections=corrections,
     )
+
+
+def _standup_corrections(session_id: str, run_id: int, db_path, title: str) -> CorrectionTarget:
+    """The redraw half of a correctable standup.
+
+    ``rerender`` re-reads the run rather than closing over the report object: a
+    verdict has just changed what the store holds, and serving the in-memory copy
+    would show the reader the very signal they just removed.
+    """
+
+    def rerender() -> str:
+        from yeaboi.paths import get_db_path
+        from yeaboi.standup.export import build_standup_html
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path or get_db_path()) as store:
+            report = store.get_run_by_id(run_id)
+            history = store.get_history(session_id, limit=30)
+        return build_standup_html(report, history=history, document_title=title, correctable=True)
+
+    return CorrectionTarget(session_id=session_id, run_id=run_id, rerender=rerender, db_path=db_path)
 
 
 def retro_document(report, *, anon=None, history=()) -> ShareDocument:
