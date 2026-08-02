@@ -398,6 +398,34 @@ class TestEngineTools:
         assert captured == {"session_id": seeded_session, "deliver": False, "days": None}
         assert payload["warnings"] == ["Jira skipped"]
 
+    def test_standup_review_passes_transcript_text_through(self, seeded_session, provider_mode, monkeypatch):
+        """An agent that already HAS the transcript shouldn't have to ask the
+        user to save it to a file first."""
+        from yeaboi.agent.state import TranscriptReview
+
+        captured: dict = {}
+
+        def fake_review(session_id, **kwargs):
+            captured.update(session_id=session_id, **kwargs)
+            return TranscriptReview(standup_date="2026-07-30")
+
+        monkeypatch.setattr("yeaboi.standup.engine.run_transcript_review", fake_review)
+        payload = call_tool("standup_review", {"transcript_text": "Alice: shipped auth"})
+        assert payload["ok"] is True
+        assert captured["transcript_text"] == "Alice: shipped auth"
+        assert payload["data"]["standup_date"] == "2026-07-30"
+
+    def test_standup_review_defaults_to_no_text(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.agent.state import TranscriptReview
+
+        captured: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_transcript_review",
+            lambda sid, **kw: captured.update(kw) or TranscriptReview(),
+        )
+        call_tool("standup_review")
+        assert captured["transcript_text"] == ""
+
     def test_report_delivery_validates_period(self, tmp_db, provider_mode):
         payload = call_tool("report_delivery", {"period": "fortnight"})
         assert payload["ok"] is False

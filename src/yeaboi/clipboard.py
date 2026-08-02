@@ -1,4 +1,4 @@
-"""OS clipboard image reader — powers Ctrl+V screenshot paste in TUI textboxes.
+"""OS clipboard bridge — image paste (Ctrl+V) plus text in both directions.
 
 Terminals cannot deliver image bytes through stdin: bracketed paste (see
 ``ui/shared/_input.py``) is text-only, and Cmd+V on macOS is intercepted by the
@@ -71,6 +71,41 @@ def copy_text(text: str) -> bool:
         logger.warning("clipboard copy helper %s exited %d", cmd[0], proc.returncode)
     logger.info("no clipboard copy helper available")
     return False
+
+
+def read_clipboard_text() -> str | None:
+    """Read plain text off the OS clipboard. Returns ``None`` when unavailable.
+
+    The mirror of :func:`copy_text`, and the ONLY workable way to paste a
+    transcript. Bracketed paste (``ui/shared/_input.py``) strips every newline
+    and caps at 10 000 chars, which would turn a standup into one unattributed
+    turn — see ``standup/transcripts.py`` for why that silently degrades a review.
+    Reading the clipboard directly keeps the line structure the parsers need.
+    """
+    if sys.platform == "darwin":
+        candidates: list[list[str]] = [["pbpaste"]]
+    elif sys.platform.startswith("linux"):
+        candidates = [["wl-paste", "--no-newline"], ["xclip", "-selection", "clipboard", "-o"]]
+    else:
+        logger.warning("clipboard text read unsupported on platform: %s", sys.platform)
+        return None
+
+    for cmd in candidates:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=_TIMEOUT_SECONDS)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.warning("clipboard read helper %s failed: %s", cmd[0], exc)
+            continue
+        if proc.returncode != 0:
+            logger.warning("clipboard read helper %s exited %d", cmd[0], proc.returncode)
+            continue
+        text = proc.stdout.decode("utf-8", errors="replace")
+        logger.info("clipboard text read: %d chars via %s", len(text), cmd[0])
+        return text
+    logger.info("no clipboard read helper available")
+    return None
 
 
 def copy_markdown_status(text: str) -> str:

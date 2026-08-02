@@ -391,6 +391,25 @@ class TestDiscover:
         assert len(found) == 2
         assert any("next run" in w for w in warnings)
 
+    def test_unwindowed_cap_keeps_the_newest(self, managed, db_path, monkeypatch):
+        """An on-demand review has no window, so oldest-first would spend the
+        whole budget on the oldest meetings on disk."""
+        monkeypatch.setattr(transcripts, "_MAX_FILES_PER_SWEEP", 2)
+        for day in (26, 27, 28, 29):
+            (managed / f"2026-07-{day}-standup.txt").write_text("Alice: hi")
+        found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["2026-07-28-standup.txt", "2026-07-29-standup.txt"]
+        assert any("newest" in w for w in warnings)
+
+    def test_windowed_sweep_cap_keeps_the_oldest(self, managed, db_path, monkeypatch):
+        """The automatic sweep IS windowed, so draining a backlog in order is right."""
+        monkeypatch.setattr(transcripts, "_MAX_FILES_PER_SWEEP", 2)
+        for day in (26, 27, 28, 29):
+            (managed / f"2026-07-{day}-standup.txt").write_text("Alice: hi")
+        found, warnings = transcripts.discover("s1", db_path=db_path, before_date="2026-07-31", today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["2026-07-26-standup.txt", "2026-07-27-standup.txt"]
+        assert any("oldest" in w for w in warnings)
+
     def test_missing_managed_dir_is_created_not_fatal(self, tmp_path, monkeypatch, db_path):
         monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "never-made")
         found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
@@ -452,3 +471,180 @@ class TestDiscoverExternalDir:
         )
         assert warnings == []
         assert found == []
+
+
+class TestNormalizeDroppedPath:
+    """A path dragged from Finder arrives quoted (Terminal) or escaped (iTerm2)."""
+
+    def test_strips_terminal_style_quotes_and_trailing_space(self):
+        raw = "'/Users/me/My Meetings/a.vtt' "
+        assert transcripts.normalize_dropped_path(raw) == "/Users/me/My Meetings/a.vtt"
+
+    def test_strips_double_quotes(self):
+        assert transcripts.normalize_dropped_path('"/tmp/a b.vtt"') == "/tmp/a b.vtt"
+
+    def test_unescapes_iterm_style_backslashes(self):
+        raw = "/Users/me/My\\ Meetings/a.vtt"
+        assert transcripts.normalize_dropped_path(raw) == "/Users/me/My Meetings/a.vtt"
+
+    def test_a_quoted_backslash_stays_literal(self):
+        assert transcripts.normalize_dropped_path("'/tmp/a\\ b.vtt'") == "/tmp/a\\ b.vtt"
+
+    def test_plain_path_is_untouched(self):
+        assert transcripts.normalize_dropped_path("  /tmp/a.vtt  ") == "/tmp/a.vtt"
+
+    def test_expands_a_tilde(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        assert transcripts.normalize_dropped_path("~/a.vtt") == str(tmp_path / "a.vtt")
+
+    def test_empty_stays_empty(self):
+        assert transcripts.normalize_dropped_path("   ") == ""
+
+
+class TestInferDateFromText:
+    def test_reads_an_iso_date_in_the_head(self):
+        got = transcripts.infer_date_from_text("Standup 2026-07-30\nAlice: hi", today=date(2026, 8, 1))
+        assert got == "2026-07-30"
+
+    def test_reads_a_json_date_field(self):
+        raw = '{"date": "2026-07-29", "segments": []}'
+        assert transcripts.infer_date_from_text(raw, fmt="json", today=date(2026, 8, 1)) == "2026-07-29"
+
+    def test_json_field_is_ignored_for_non_json_formats(self):
+        raw = '{"date": "2026-07-29"}'
+        assert transcripts.infer_date_from_text(raw, fmt="txt", today=date(2026, 8, 1)) == "2026-07-29"
+
+    def test_a_future_date_is_refused(self):
+        got = transcripts.infer_date_from_text("Ship by 2026-09-01", today=date(2026, 8, 1))
+        assert got == ""
+
+    def test_no_date_returns_blank(self):
+        assert transcripts.infer_date_from_text("Alice: hi", today=date(2026, 8, 1)) == ""
+
+
+class TestImportText:
+    def test_writes_a_date_stamped_file_into_the_managed_folder(self, managed):
+        path = transcripts.import_text("Alice: shipped auth", today=date(2026, 8, 1))
+        assert path.parent == managed
+        assert path.name == "2026-08-01-pasted.txt"
+        assert path.read_text() == "Alice: shipped auth\n"
+
+    def test_the_filename_date_is_what_makes_attribution_work(self, managed):
+        """infer_date reads the filename first — no sidecar metadata needed."""
+        path = transcripts.import_text("Alice: hi", covered_date="2026-07-29", today=date(2026, 8, 1))
+        source, _turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.covered_date == "2026-07-29"
+
+    def test_round_trips_to_labelled_attribution(self, managed):
+        """The paste path must not silently degrade what the review may conclude."""
+        text = "Alice: I shipped auth\nBob: I reviewed it\nCara: blocked on staging"
+        path = transcripts.import_text(text, today=date(2026, 8, 1))
+        source, turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
+        assert source.attribution == "labelled"
+        assert source.speakers == ("Alice", "Bob", "Cara")
+        assert len(turns) == 3
+
+    def test_no_banner_is_prepended(self, managed):
+        """A header line would land as an unattributed leading turn."""
+        path = transcripts.import_text("Alice: hi\nBob: hey", today=date(2026, 8, 1))
+        assert path.read_text().startswith("Alice:")
+
+    def test_infers_the_date_from_the_text_when_not_given(self, managed):
+        path = transcripts.import_text("Standup 2026-07-28\nAlice: hi", today=date(2026, 8, 1))
+        assert path.name.startswith("2026-07-28-")
+
+    def test_explicit_date_wins_over_the_text(self, managed):
+        path = transcripts.import_text(
+            "Standup 2026-07-28\nAlice: hi", covered_date="2026-07-30", today=date(2026, 8, 1)
+        )
+        assert path.name.startswith("2026-07-30-")
+
+    def test_a_future_explicit_date_is_clamped_to_today(self, managed):
+        path = transcripts.import_text("Alice: hi", covered_date="2027-01-01", today=date(2026, 8, 1))
+        assert path.name.startswith("2026-08-01-")
+
+    def test_a_malformed_explicit_date_raises(self, managed):
+        with pytest.raises(ValueError, match="Invalid covered_date"):
+            transcripts.import_text("Alice: hi", covered_date="last tuesday", today=date(2026, 8, 1))
+
+    def test_label_becomes_a_slug(self, managed):
+        path = transcripts.import_text("Alice: hi", label="Team Sync!! ", today=date(2026, 8, 1))
+        assert path.name == "2026-08-01-team-sync.txt"
+
+    def test_re_importing_identical_text_is_idempotent(self, managed):
+        first = transcripts.import_text("Alice: hi", today=date(2026, 8, 1))
+        second = transcripts.import_text("Alice: hi", today=date(2026, 8, 1))
+        assert first == second
+        assert len(list(managed.iterdir())) == 1
+
+    def test_different_text_on_the_same_day_gets_a_suffix(self, managed):
+        first = transcripts.import_text("Alice: hi", today=date(2026, 8, 1))
+        second = transcripts.import_text("Bob: hey", today=date(2026, 8, 1))
+        assert first.name == "2026-08-01-pasted.txt"
+        assert second.name == "2026-08-01-pasted-2.txt"
+
+    def test_blank_text_raises(self, managed):
+        with pytest.raises(ValueError, match="empty"):
+            transcripts.import_text("   \n  \n", today=date(2026, 8, 1))
+
+    def test_oversized_text_raises(self, managed, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_BYTES", 20)
+        with pytest.raises(ValueError, match="larger than"):
+            transcripts.import_text("Alice: " + "x" * 100, today=date(2026, 8, 1))
+
+    def test_imported_file_is_owner_only(self, managed):
+        path = transcripts.import_text("Alice: hi", today=date(2026, 8, 1))
+        assert path.stat().st_mode & 0o777 == 0o600
+
+    def test_an_import_is_discoverable(self, managed, db_path):
+        transcripts.import_text("Alice: hi", covered_date="2026-07-30", today=date(2026, 8, 1))
+        found, warnings = transcripts.discover("s1", db_path=db_path, today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["2026-07-30-pasted.txt"]
+        assert warnings == []
+
+
+class TestScanBounds:
+    """An external folder can be ~/Downloads or an Obsidian vault, and this walk
+    runs in front of a standup — it must degrade, not stall."""
+
+    def test_non_recursive_scan_stays_flat(self, tmp_path):
+        (tmp_path / "top.txt").write_text("Alice: hi")
+        (tmp_path / "nested").mkdir()
+        (tmp_path / "nested" / "deep.txt").write_text("Alice: hi")
+        found = transcripts._candidate_files(tmp_path, recurse=False)
+        assert [p.name for p in found] == ["top.txt"]
+
+    def test_recursive_scan_stops_at_the_depth_bound(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_SCAN_DEPTH", 2)
+        deep = tmp_path / "a" / "b" / "c"
+        deep.mkdir(parents=True)
+        (tmp_path / "a" / "shallow.txt").write_text("Alice: hi")
+        (deep / "buried.txt").write_text("Alice: hi")
+        found = transcripts._candidate_files(tmp_path, recurse=True)
+        assert [p.name for p in found] == ["shallow.txt"]
+
+    def test_recursive_scan_stops_at_the_entry_bound(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(transcripts, "_MAX_SCAN_ENTRIES", 5)
+        for i in range(20):
+            (tmp_path / f"file{i:02d}.txt").write_text("Alice: hi")
+        found = transcripts._candidate_files(tmp_path, recurse=True)
+        assert len(found) == 5
+
+    def test_recursive_scan_skips_dot_directories_wholesale(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".git" / "COMMIT_EDITMSG.txt").write_text("Alice: hi")
+        (tmp_path / "real.txt").write_text("Alice: hi")
+        found = transcripts._candidate_files(tmp_path, recurse=True)
+        assert [p.name for p in found] == ["real.txt"]
+
+    def test_unreadable_directory_is_skipped_not_fatal(self, tmp_path):
+        (tmp_path / "ok.txt").write_text("Alice: hi")
+        locked = tmp_path / "locked"
+        locked.mkdir()
+        (locked / "inner.txt").write_text("Alice: hi")
+        locked.chmod(0o000)
+        try:
+            found = transcripts._candidate_files(tmp_path, recurse=True)
+            assert [p.name for p in found] == ["ok.txt"]
+        finally:
+            locked.chmod(0o755)

@@ -1071,6 +1071,90 @@ class TestStandupReviewCommand:
         assert "#7" in buf.getvalue()
 
 
+class TestStandupReviewInputs:
+    """The positional form, stdin, and paths dragged out of a file manager."""
+
+    def _args(self, *argv):
+        return build_parser().parse_args(["standup-review", *argv])
+
+    def _capture(self, monkeypatch) -> dict:
+        from yeaboi.agent.state import TranscriptReview
+
+        seen: dict = {}
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_transcript_review",
+            lambda sid, **kw: seen.update(kw) or TranscriptReview(),
+        )
+        return seen
+
+    def test_positional_paths_reach_the_engine(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args("/tmp/a.vtt", "/tmp/b.vtt"), _console())
+        assert seen["transcript_paths"] == ["/tmp/a.vtt", "/tmp/b.vtt"]
+
+    def test_positional_and_flag_forms_combine(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args("/tmp/b.vtt", "--transcript", "/tmp/a.vtt"), _console())
+        assert set(seen["transcript_paths"]) == {"/tmp/a.vtt", "/tmp/b.vtt"}
+
+    def test_transcript_text_flag_reaches_the_engine(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args("--transcript-text", "Alice: hi"), _console())
+        assert seen["transcript_text"] == "Alice: hi"
+        assert seen["transcript_paths"] is None
+
+    def test_dash_reads_stdin(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        monkeypatch.setattr("sys.stdin", io.StringIO("Alice: shipped auth\nBob: reviewed"))
+        _cmd_standup_review(self._args("-"), _console())
+        assert seen["transcript_text"] == "Alice: shipped auth\nBob: reviewed"
+        # "-" must never reach the engine as a filename: sweep_and_review does a
+        # bare Path() on everything it is handed.
+        assert seen["transcript_paths"] is None
+
+    def test_dash_does_not_override_an_explicit_text_flag(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        monkeypatch.setattr("sys.stdin", io.StringIO("from stdin"))
+        _cmd_standup_review(self._args("-", "--transcript-text", "explicit"), _console())
+        assert seen["transcript_text"] == "explicit"
+
+    def test_a_terminal_dragged_path_is_unquoted(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args("'/tmp/My Meetings/a.vtt'"), _console())
+        assert seen["transcript_paths"] == ["/tmp/My Meetings/a.vtt"]
+
+    def test_an_iterm_dragged_path_is_unescaped(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args("/tmp/My\\ Meetings/a.vtt"), _console())
+        assert seen["transcript_paths"] == ["/tmp/My Meetings/a.vtt"]
+
+    def test_no_inputs_leaves_the_sweep_alone(self, monkeypatch):
+        seen = self._capture(monkeypatch)
+        _cmd_standup_review(self._args(), _console())
+        assert seen["transcript_paths"] is None
+        assert seen["transcript_text"] == ""
+
+    def test_import_is_named_so_the_user_can_see_which_day_it_hit(self, monkeypatch, capsys, tmp_path):
+        from yeaboi.agent.state import TranscriptReview, TranscriptSource
+
+        monkeypatch.setattr("yeaboi.cli._resolve_cli_session", lambda s: "sid")
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_transcript_review",
+            lambda sid, **kw: TranscriptReview(
+                sources=(
+                    TranscriptSource(
+                        filename="2026-07-30-pasted.txt", covered_date="2026-07-30", attribution="labelled"
+                    ),
+                )
+            ),
+        )
+        _cmd_standup_review(self._args("--transcript-text", "Alice: hi"), _console())
+        out = capsys.readouterr().out
+        assert "2026-07-30-pasted.txt" in out
+        assert "2026-07-30" in out
+
+
 class TestStandupTranscriptFlag:
     def test_review_is_on_by_default(self):
         assert build_parser().parse_args(["standup"]).review_transcripts is True

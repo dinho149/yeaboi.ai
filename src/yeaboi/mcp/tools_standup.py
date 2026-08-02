@@ -89,6 +89,7 @@ def _standup_run(
 def _standup_review(
     session_id: str,
     transcript_paths: list | None,
+    transcript_text: str,
     transcript_dir: str,
     standup_date: str,
     max_transcripts: int,
@@ -109,6 +110,7 @@ def _standup_review(
     review = run_transcript_review(
         resolved,
         transcript_paths=transcript_paths,
+        transcript_text=transcript_text,
         transcript_dir=transcript_dir,
         standup_date=standup_date,
         max_transcripts=max_transcripts,
@@ -369,6 +371,7 @@ def register(app) -> None:
         ctx: Context,
         session_id: str = "",
         transcript_paths: list[str] | None = None,
+        transcript_text: str = "",
         transcript_dir: str = "",
         standup_date: str = "",
         max_transcripts: int = 5,
@@ -382,8 +385,11 @@ def register(app) -> None:
         unconfigured source, a capability the collectors lack, or a summary that dropped what it
         collected. Product-level gaps are drafted as GitHub issues against the yeaboi repo; config
         gaps come back as suggestions with an exact remedy and are never filed.
-        transcript_paths reviews specific files instead of sweeping. standup_date attributes
-        transcripts whose own date cannot be inferred. max_transcripts caps distinct standup DATES
+        transcript_paths reviews specific files instead of sweeping. transcript_text reviews raw
+        transcript text you already have (a paste, a meeting-notes doc) — it is saved into
+        ~/.yeaboi/transcripts first and then reviewed like any other file, so there is no need to
+        ask the user to save it themselves. standup_date attributes transcripts whose own date
+        cannot be inferred, and for transcript_text it wins outright. max_transcripts caps distinct standup DATES
         (one AI call each). include_reviewed re-reviews transcripts already processed.
         file_issues=true WRITES PUBLIC GITHUB ISSUES — always ask the user before enabling it;
         the default drafts them locally so they can be reviewed first.
@@ -393,6 +399,7 @@ def register(app) -> None:
             _standup_review,
             session_id,
             transcript_paths,
+            transcript_text,
             transcript_dir,
             standup_date,
             max_transcripts,

@@ -623,12 +623,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Review standup meeting transcripts to find what standup missed, and why",
     )
     review_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
+    # A bare `yeaboi standup-review meeting.vtt` is the shape people reach for
+    # first, and it is what a dragged file produces.
+    review_p.add_argument(
+        "paths",
+        nargs="*",
+        metavar="PATH",
+        help="Transcript files to review (same as --transcript; '-' reads the transcript from stdin)",
+    )
     review_p.add_argument(
         "--transcript",
         dest="transcript_paths",
         nargs="+",
         metavar="PATH",
         help="Review specific transcript files instead of sweeping the transcript folders",
+    )
+    review_p.add_argument(
+        "--transcript-text",
+        default="",
+        metavar="TEXT",
+        help="Review transcript text directly; it is saved to ~/.yeaboi/transcripts first",
     )
     review_p.add_argument(
         "--transcript-dir",
@@ -1494,6 +1508,34 @@ def _format_review_text(review, console: "Console") -> None:
         console.print("\nNo gaps found — the report matched what the team said.")
 
 
+def _resolve_review_inputs(args: argparse.Namespace) -> tuple[list[str] | None, str]:
+    """Fold the positional paths, ``-`` and ``--transcript-text`` into engine args.
+
+    Returns ``(transcript_paths, transcript_text)``.
+
+    Stdin is resolved HERE rather than in the engine: ``sweep_and_review`` does a
+    bare ``Path(p)`` on everything it is handed, so a literal ``"-"`` would reach
+    it as a filename. Every path is run through ``normalize_dropped_path`` because
+    a file dragged from Finder arrives quoted (Terminal) or backslash-escaped
+    (iTerm2), and would otherwise fail as "not found".
+    """
+    from yeaboi.standup.transcripts import normalize_dropped_path
+
+    raw = [*(args.transcript_paths or []), *(getattr(args, "paths", None) or [])]
+    text = args.transcript_text or ""
+
+    paths: list[str] = []
+    for entry in raw:
+        if entry == "-":
+            if not text:
+                text = sys.stdin.read()
+            continue
+        cleaned = normalize_dropped_path(entry)
+        if cleaned:
+            paths.append(cleaned)
+    return (paths or None), text
+
+
 def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
     """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
     from yeaboi.logging_setup import mode_log
@@ -1531,14 +1573,22 @@ def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> i
             console.print(f"  {entry['fingerprint']}  {issue}  ×{entry['occurrences']}  {entry['title']}")
         return 0
 
+    paths, transcript_text = _resolve_review_inputs(args)
+
     review = run_transcript_review(
         session_id,
-        transcript_paths=args.transcript_paths,
+        transcript_paths=paths,
+        transcript_text=transcript_text,
         transcript_dir=args.transcript_dir,
         standup_date=args.standup_date,
         max_transcripts=args.max_transcripts,
         include_reviewed=args.include_reviewed,
     )
+    if transcript_text and review.sources:
+        # Name what landed: an import the user cannot see is an import they
+        # cannot tell went to the right day.
+        imported = review.sources[0]
+        print(f"Imported {imported.filename} — covers {imported.covered_date} ({imported.attribution})")
     for warning in review.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
 

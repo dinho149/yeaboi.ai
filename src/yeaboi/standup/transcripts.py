@@ -55,6 +55,12 @@ _MAX_FILES_PER_SWEEP = 10
 # weekend or a week off, short enough that dropping an old archive folder in
 # doesn't trigger a month of reviews.
 _LOOKBACK_DAYS = 14
+# Bounds on walking an EXTERNAL folder. That folder is somebody's real
+# recordings directory — legitimately ~/Downloads or a Zoom tree years deep —
+# and this walk runs on the critical path of a standup. Hitting a bound degrades
+# the sweep (and says so) rather than stalling the run that is about to happen.
+_MAX_SCAN_ENTRIES = 2_000
+_MAX_SCAN_DEPTH = 4
 
 # Below this share of speaker-labelled lines we stop trusting attribution and
 # mark the source "unlabelled" — the review then restricts what such a
@@ -310,34 +316,31 @@ def _scan_date(text: str) -> str:
     return ""
 
 
-def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
-    """Work out which standup a transcript covers, most reliable signal first.
+def _clamp_date(value: str, today: date) -> str:
+    """Return ``value`` only if it is a real date no later than ``today``.
 
-    Filename → structured JSON field → head of the content → file mtime. A date
-    in the future is not a standup that happened, so it falls back to mtime.
+    A date in the future is not a standup that happened — it is somebody saying
+    "let's ship by 2026-09-01" — so it is discarded rather than trusted.
+    """
+    if not value:
+        return ""
+    try:
+        return value if date.fromisoformat(value) <= today else ""
+    except ValueError:
+        return ""
+
+
+def infer_date_from_text(text: str, *, fmt: str = "txt", today: date | None = None) -> str:
+    """Which standup does this transcript TEXT cover? "" when it doesn't say.
+
+    Steps 2–3 of :func:`infer_date`, split out because pasted or piped text has
+    no ``Path`` to take a filename or an mtime from. ``infer_date`` calls this,
+    so the two can never drift.
     """
     today = today or date.today()
 
-    def _clamp(value: str) -> str:
-        if not value:
-            return ""
-        try:
-            return value if date.fromisoformat(value) <= today else ""
-        except ValueError:
-            return ""
-
-    # 1. The filename — what an export tool and a human both tend to get right.
-    stem = path.stem
-    match = _ISO_DATE_RE.search(stem) or _COMPACT_DATE_RE.search(stem)
-    if match:
-        found = _clamp(_valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3))))
-        if found:
-            return found
-
-    head = text[:_DATE_SCAN_CHARS]
-
-    # 2. A structured date field, for the JSON shapes that carry one.
-    if path.suffix.lower() == ".json":
+    # A structured date field, for the JSON shapes that carry one.
+    if fmt == "json":
         try:
             data = json.loads(text)
         except (json.JSONDecodeError, TypeError):
@@ -346,12 +349,31 @@ def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
             for key in ("date", "start_time", "meeting_date", "created_at", "started_at"):
                 value = data.get(key)
                 if isinstance(value, str):
-                    found = _clamp(_scan_date(value))
+                    found = _clamp_date(_scan_date(value), today)
                     if found:
                         return found
 
-    # 3. A date in the head of the file (a VTT NOTE block, a markdown title).
-    found = _clamp(_scan_date(head))
+    # A date in the head of the file (a VTT NOTE block, a markdown title).
+    return _clamp_date(_scan_date(text[:_DATE_SCAN_CHARS]), today)
+
+
+def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
+    """Work out which standup a transcript covers, most reliable signal first.
+
+    Filename → structured JSON field → head of the content → file mtime.
+    """
+    today = today or date.today()
+
+    # 1. The filename — what an export tool and a human both tend to get right.
+    stem = path.stem
+    match = _ISO_DATE_RE.search(stem) or _COMPACT_DATE_RE.search(stem)
+    if match:
+        found = _clamp_date(_valid_date(int(match.group(1)), int(match.group(2)), int(match.group(3))), today)
+        if found:
+            return found
+
+    # 2-3. Anything the content itself says.
+    found = infer_date_from_text(text, fmt=_fmt_of(path), today=today)
     if found:
         return found
 
@@ -438,19 +460,160 @@ def to_prompt_text(turns: tuple[TranscriptTurn, ...], *, limit: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Importing text that never was a file (a paste, a pipe, an MCP argument)
+# ---------------------------------------------------------------------------
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+# macOS Terminal drops a *quoted* path; iTerm2 drops a *backslash-escaped* one.
+_DRAG_ESCAPE_RE = re.compile(r"\\(.)")
+
+
+def _slug(label: str) -> str:
+    out = _SLUG_RE.sub("-", label.strip().lower()).strip("-")
+    return out[:40] or "pasted"
+
+
+def normalize_dropped_path(raw: str) -> str:
+    """Clean up a path the user dragged from a file manager into a prompt.
+
+    macOS Terminal produces ``'/Users/me/My Meetings/a.vtt' `` (quoted, trailing
+    space); iTerm2 produces ``/Users/me/My\\ Meetings/a.vtt`` (escaped). Both
+    otherwise reach ``Path()`` verbatim and fail as "not found", which reads like
+    the file is missing rather than like the prompt mangled it.
+    """
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    else:
+        # Only unescape an unquoted path: inside quotes a backslash is literal.
+        value = _DRAG_ESCAPE_RE.sub(r"\1", value)
+    return str(Path(value).expanduser()) if value else ""
+
+
+def import_text(
+    text: str,
+    *,
+    covered_date: str = "",
+    label: str = "",
+    today: date | None = None,
+) -> Path:
+    """Write pasted/piped transcript text into the managed folder; return the path.
+
+    The resolved date goes in the FILENAME, and that is the whole trick:
+    :func:`infer_date` reads the filename first, so a later sweep attributes the
+    import to the right standup without any sidecar metadata and without knowing
+    it was ever a paste.
+
+    The text is written VERBATIM — no header, no "imported by yeaboi" banner. A
+    banner line survives ``_MD_PREFIX_RE``, fails ``_SPEAKER_RE``, and lands as an
+    unattributed leading turn; on a short transcript that alone can drag the
+    labelled share under ``_LABELLED_LINE_RATIO`` and silently flip attribution to
+    "unlabelled", which narrows what the review is then allowed to conclude.
+
+    Raises ``ValueError`` on empty text, oversized text, or a malformed
+    ``covered_date``.
+    """
+    from yeaboi.fs_policy import resolve_and_check
+    from yeaboi.paths import get_transcripts_dir
+
+    body = text.strip("\n")
+    if not body.strip():
+        raise ValueError("Nothing to import — the transcript text is empty.")
+    payload = body.encode("utf-8") + b"\n"
+    if len(payload) > _MAX_BYTES:
+        raise ValueError(f"Transcript is larger than {_MAX_BYTES:,} bytes — save it to a file and use --transcript.")
+
+    today = today or date.today()
+    resolved_date = ""
+    if covered_date.strip():
+        try:
+            given = date.fromisoformat(covered_date.strip())
+        except ValueError as exc:
+            raise ValueError(f"Invalid covered_date {covered_date!r} — expected YYYY-MM-DD.") from exc
+        resolved_date = min(given, today).isoformat()  # a future date is not a standup that happened
+    resolved_date = resolved_date or infer_date_from_text(body, today=today) or today.isoformat()
+
+    directory = get_transcripts_dir()
+    stem = f"{resolved_date}-{_slug(label)}"
+
+    def _dest(name: str) -> Path:
+        # Not ceremony: this catches a symlinked ~/.yeaboi/transcripts pointing
+        # somewhere it shouldn't, exactly as read_transcript's check does.
+        return resolve_and_check(directory / name, mode="write", context="Standup — transcript import")
+
+    dest = _dest(f"{stem}.txt")
+    counter = 2
+    while dest.exists():
+        if dest.read_bytes() == payload:
+            # Re-pasting the same text is idempotent rather than littering.
+            logger.info("transcripts: import already present as %s", dest.name)
+            return dest
+        dest = _dest(f"{stem}-{counter}.txt")
+        counter += 1
+
+    dest.write_bytes(payload)
+    # The user never chose this location, and the file holds real names.
+    dest.chmod(0o600)
+    logger.info("transcripts: imported %d chars as %s (date=%s)", len(body), dest.name, resolved_date)
+    return dest
+
+
+# ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
 
 
-def _candidate_files(directory: Path, *, recurse: bool) -> list[Path]:
-    """List plausible transcript files in a directory, newest name order last."""
+def _scan_entries(directory: Path, *, recurse: bool) -> list[Path]:
+    """List file entries under ``directory``, bounded in depth and count.
+
+    Replaces ``rglob("*")``, which is unbounded in both directions. Dot-directories
+    are skipped wholesale (a ``.git`` or ``.Trash`` tree holds no transcripts and
+    can hold a hundred thousand files).
+    """
     try:
-        entries = sorted(directory.rglob("*") if recurse else directory.iterdir())
+        top = sorted(directory.iterdir())
     except OSError as exc:
         logger.warning("transcripts: cannot list %s: %s", directory, exc)
         return []
+    if not recurse:
+        return top
+
     out: list[Path] = []
-    for entry in entries:
+    visited = 0
+    queue: list[tuple[list[Path], int]] = [(top, 0)]
+    while queue:
+        entries, depth = queue.pop(0)
+        for entry in entries:
+            if visited >= _MAX_SCAN_ENTRIES:
+                logger.warning(
+                    "transcripts: stopped scanning %s after %d entries — point transcript_dir at a narrower folder",
+                    directory,
+                    _MAX_SCAN_ENTRIES,
+                )
+                return out
+            visited += 1
+            try:
+                is_dir = entry.is_dir()
+            except OSError as exc:
+                logger.warning("transcripts: cannot stat %s: %s", entry, exc)
+                continue
+            if not is_dir:
+                out.append(entry)
+                continue
+            if depth >= _MAX_SCAN_DEPTH or entry.name.startswith("."):
+                continue
+            try:
+                queue.append((sorted(entry.iterdir()), depth + 1))
+            except OSError as exc:
+                logger.warning("transcripts: cannot list %s: %s", entry, exc)
+    return out
+
+
+def _candidate_files(directory: Path, *, recurse: bool) -> list[Path]:
+    """List plausible transcript files in a directory, newest name order last."""
+    out: list[Path] = []
+    for entry in _scan_entries(directory, recurse=recurse):
         if entry.name.startswith("."):
             continue
         try:
@@ -556,9 +719,26 @@ def discover(
     dated.sort(key=lambda item: (item[0], item[1].name))
     if len(dated) > _MAX_FILES_PER_SWEEP:
         dropped = len(dated) - _MAX_FILES_PER_SWEEP
-        logger.warning("transcripts: %d transcript(s) beyond the per-sweep cap were deferred", dropped)
-        warnings.append(f"{dropped} more transcript(s) found — they will be reviewed on the next run.")
-        dated = dated[:_MAX_FILES_PER_SWEEP]
+        # WHICH end of the cap we keep depends on whether there is a window.
+        # The automatic sweep is bounded to the last _LOOKBACK_DAYS, so oldest
+        # first drains a backlog in order. An on-demand review has NO window —
+        # there, oldest-first would spend the entire budget on the oldest files
+        # on disk, which is exactly what happens the first time someone points
+        # transcript_dir at a folder holding a year of recordings.
+        if before_date:
+            dated, direction = dated[:_MAX_FILES_PER_SWEEP], "oldest"
+        else:
+            dated, direction = dated[-_MAX_FILES_PER_SWEEP:], "newest"
+        logger.warning(
+            "transcripts: %d transcript(s) beyond the per-sweep cap were deferred (kept the %s %d)",
+            dropped,
+            direction,
+            _MAX_FILES_PER_SWEEP,
+        )
+        warnings.append(
+            f"{dropped} more transcript(s) found — reviewing the {direction} {_MAX_FILES_PER_SWEEP}; "
+            "the rest wait for the next run."
+        )
 
     logger.info(
         "transcripts: discovered %d transcript(s) for session=%s before=%s",

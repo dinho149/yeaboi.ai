@@ -1674,6 +1674,139 @@ class TestTranscriptReviewSweep:
         assert order[:2] == ["review", "collect"]
 
 
+class TestImportTranscript:
+    """Text that never was a file — a paste, a pipe, an agent argument."""
+
+    @pytest.fixture
+    def managed(self, tmp_path, monkeypatch):
+        d = tmp_path / "transcripts"
+        d.mkdir()
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", d)
+        return d
+
+    def test_returns_a_source_describing_what_landed(self, managed):
+        source = engine.import_transcript(
+            "Alice: shipped auth\nBob: reviewed it\nCara: blocked", today=date(2026, 7, 10)
+        )
+        assert source.covered_date == "2026-07-10"
+        assert source.speakers == ("Alice", "Bob", "Cara")
+        # The part worth surfacing: it narrows what a review may conclude.
+        assert source.attribution == "labelled"
+
+    def test_writes_into_the_managed_folder(self, managed):
+        source = engine.import_transcript("Alice: hi", today=date(2026, 7, 10))
+        assert list(managed.iterdir()) == [managed / source.filename]
+
+    def test_explicit_date_lands_in_the_filename(self, managed):
+        source = engine.import_transcript("Alice: hi", covered_date="2026-07-08", today=date(2026, 7, 10))
+        assert source.filename.startswith("2026-07-08-")
+        assert source.covered_date == "2026-07-08"
+
+    def test_empty_text_raises(self, managed):
+        with pytest.raises(ValueError, match="empty"):
+            engine.import_transcript("   ", today=date(2026, 7, 10))
+
+
+class TestReviewFromText:
+    @pytest.fixture
+    def managed(self, tmp_path, monkeypatch):
+        d = tmp_path / "transcripts"
+        d.mkdir()
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", d)
+        return d
+
+    def test_pasted_text_is_imported_and_reviewed(self, monkeypatch, managed, db_path, seeded_session):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda sid, **kw: seen.update(kw) or [],
+        )
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: shipped auth\nBob: reviewed it",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        # It reaches the sweep as an explicit PATH — an import the user just made
+        # is reviewed now, not queued behind a folder backlog.
+        assert len(seen["transcript_paths"]) == 1
+        assert seen["transcript_paths"][0].endswith(".txt")
+        assert (managed / "2026-07-10-pasted.txt").exists()
+
+    def test_standup_date_attributes_the_paste(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda sid, **kw: [])
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            standup_date="2026-07-08",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert (managed / "2026-07-08-pasted.txt").exists()
+
+    def test_paste_is_prepended_to_explicit_paths(self, monkeypatch, managed, db_path, seeded_session, tmp_path):
+        other = tmp_path / "other.vtt"
+        other.write_text("WEBVTT")
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda sid, **kw: seen.update(kw) or [],
+        )
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_paths=[str(other)],
+            transcript_text="Alice: hi",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert len(seen["transcript_paths"]) == 2
+        assert seen["transcript_paths"][1] == str(other)
+
+    def test_a_rejected_paste_comes_back_as_a_warning_not_an_exception(self, managed, db_path, seeded_session):
+        """This surface never raises — a bad paste reads like any other reason
+        the review found nothing to say. Reachable as `--date 'last tuesday'`."""
+        review = engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            standup_date="last tuesday",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert review.gaps == ()
+        assert any("Invalid covered_date" in w for w in review.warnings)
+        assert list(managed.iterdir()) == []
+
+    def test_oversized_paste_is_a_warning_too(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcripts._MAX_BYTES", 20)
+        review = engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: " + "x" * 500,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert any("larger than" in w for w in review.warnings)
+
+    @pytest.mark.parametrize("blank", ["", "    \n   "])
+    def test_blank_text_does_not_trigger_an_import(self, blank, managed, db_path, seeded_session):
+        review = engine.run_transcript_review(
+            seeded_session, transcript_text=blank, db_path=db_path, today=date(2026, 7, 10)
+        )
+        assert list(managed.iterdir()) == []
+        assert any("No unreviewed transcripts" in w for w in review.warnings)
+
+    def test_import_progress_is_reported(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda sid, **kw: [])
+        phases: list[str] = []
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            on_progress=phases.append,
+        )
+        assert "Saving the pasted transcript" in phases
+
+
 class TestTranscriptEntryPoints:
     def test_review_with_no_transcripts_says_so(self, monkeypatch, db_path, seeded_session, tmp_path):
         monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")

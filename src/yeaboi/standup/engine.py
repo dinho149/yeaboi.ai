@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
-    from yeaboi.agent.state import IssueFilingResult, TranscriptReview
+    from yeaboi.agent.state import IssueFilingResult, TranscriptReview, TranscriptSource
 from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
 from yeaboi.standup.store import StandupStore
 
@@ -1380,10 +1380,51 @@ def run_standup(
     return report
 
 
+def import_transcript(
+    text: str,
+    *,
+    covered_date: str = "",
+    label: str = "",
+    today: date | None = None,
+) -> TranscriptSource:
+    """Save transcript TEXT into the managed folder and describe what landed.
+
+    The intake half of the review pipeline, for material that never was a file —
+    a clipboard paste, a piped stdin, an MCP argument. Everything downstream
+    still sees an ordinary file in ``~/.yeaboi/transcripts``, so nothing in the
+    sweep, the content-hash ledger or the date attribution needs to know a paste
+    happened.
+
+    Returns the same ``TranscriptSource`` a discovered file produces, so the
+    caller can confirm what actually landed ("covers 2026-08-01 · 4 speakers ·
+    labelled") rather than just "saved". Attribution is the part worth showing:
+    an unlabelled transcript narrows what the review is then allowed to conclude,
+    and the user can still fix that by re-copying with speaker names.
+
+    Raises ``ValueError`` on empty or oversized text, or a malformed
+    ``covered_date`` — an intake primitive with a clear input contract, whose
+    callers want the message.
+    """
+    from yeaboi.standup import transcripts as _transcripts
+
+    path = _transcripts.import_text(text, covered_date=covered_date, label=label, today=today)
+    source, _turns = _transcripts.read_transcript(path, today=today)
+    logger.info(
+        "import_transcript: %s covers %s (%s, %d speaker(s), %d chars)",
+        source.filename,
+        source.covered_date,
+        source.attribution,
+        len(source.speakers),
+        source.char_count,
+    )
+    return source
+
+
 def run_transcript_review(
     session_id: str,
     *,
     transcript_paths: list[str] | None = None,
+    transcript_text: str = "",
     transcript_dir: str = "",
     standup_date: str = "",
     max_transcripts: int = 5,
@@ -1407,10 +1448,15 @@ def run_transcript_review(
 
     Args:
         transcript_paths: explicit files to review, bypassing the folder sweep.
+        transcript_text: raw transcript text to import and review — a paste, a
+            pipe, an agent's argument. Saved via ``import_transcript`` first, so
+            it is reviewed exactly like a file the user dropped in themselves.
         transcript_dir: an external transcript folder for this run only; the
             managed ~/.yeaboi/transcripts folder is always swept as well.
         standup_date: the date to attribute transcripts to when their own date
-            cannot be inferred.
+            cannot be inferred. For ``transcript_text`` it is stronger than that:
+            somebody who passes both a date and the text means that date, so it
+            wins over a date found inside the text.
         max_transcripts: cap on distinct standup DATES reviewed in one call —
             each date costs one LLM call.
         include_reviewed: re-review transcripts already in the ledger.
@@ -1444,6 +1490,26 @@ def run_transcript_review(
         config = store.load_config(session_id) or {}
     if transcript_dir:
         config = {**config, "transcript_dir": transcript_dir}
+
+    if transcript_text.strip():
+        _notify("Saving the pasted transcript")
+        try:
+            imported = import_transcript(transcript_text, covered_date=standup_date, label="pasted", today=today)
+        except ValueError as exc:
+            # A bad paste is a user-input problem, not a pipeline failure — this
+            # surface never raises, so it comes back as a warning like every
+            # other reason a review found nothing to say.
+            logger.warning("run_transcript_review: import rejected: %s", exc)
+            return TranscriptReview(
+                session_id=session_id,
+                standup_date=standup_date,
+                reviewed_at=datetime.now(UTC).isoformat(),
+                llm_mode="deterministic",
+                warnings=(str(exc),),
+            )
+        # Explicit paths bypass the folder sweep, which is what we want: an
+        # import the user just made is reviewed now, not queued behind a backlog.
+        transcript_paths = [imported.path, *(transcript_paths or [])]
 
     _notify("Reading transcripts")
     reviews = _review.sweep_and_review(

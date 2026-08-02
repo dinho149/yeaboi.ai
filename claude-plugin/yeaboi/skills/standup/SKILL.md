@@ -27,6 +27,12 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    what each person said they did against the evidence the report actually had,
    and diagnoses each gap. Present the two halves separately, because they need
    different actions:
+
+   If the user pastes the transcript into the conversation, or you already have
+   the text from a meeting-notes document, pass it as `transcript_text` — it is
+   saved into `~/.yeaboi/transcripts` and reviewed like any other file. **Do not
+   ask them to save it somewhere first.** Pass `standup_date` alongside it when
+   the meeting was not today; for pasted text that date wins outright.
    - `gaps` are faults in yeaboi itself (a missing integration, a capability the
      collectors lack, a summary that dropped collected evidence). These are
      drafted as GitHub issues.

@@ -559,9 +559,20 @@ def sweep_and_review(
     dates = sorted(by_date)
     if len(dates) > max_dates:
         deferred = len(dates) - max_dates
-        logger.warning("transcript review: deferring %d date(s) beyond the per-sweep cap", deferred)
-        warnings.append(f"{deferred} older transcript date(s) will be reviewed on the next run.")
-        dates = dates[:max_dates]
+        # Same reasoning as the file cap in transcripts.discover: the windowed
+        # automatic sweep drains oldest-first, but an on-demand review has no
+        # window, so oldest-first would spend every LLM call of the budget on the
+        # oldest meetings on disk.
+        if before_date:
+            dates, direction = dates[:max_dates], "older"
+        else:
+            dates, direction = dates[-max_dates:], "other"
+        logger.warning(
+            "transcript review: deferring %d date(s) beyond the per-sweep cap (kept %s)",
+            deferred,
+            "oldest" if before_date else "newest",
+        )
+        warnings.append(f"{deferred} {direction} transcript date(s) will be reviewed on the next run.")
 
     reviews: list[TranscriptReview] = []
     with StandupStore(resolved_db) as store:

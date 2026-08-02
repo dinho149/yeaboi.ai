@@ -94,6 +94,7 @@ CAPABILITIES: dict[str, dict] = {
         "engines": {
             ("yeaboi.standup.engine", "run_standup"),
             ("yeaboi.standup.engine", "run_transcript_review"),
+            ("yeaboi.standup.engine", "import_transcript"),
             ("yeaboi.standup.engine", "file_transcript_issues"),
         },
         "mcp_tools": {
@@ -260,6 +261,7 @@ EXTRA_ENGINE_MODULES = {"yeaboi.agent.headless": SRC / "agent" / "headless.py"}
 PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "plan_generate": ("yeaboi.agent.headless", "run_planning_pipeline"),
     "standup_run": ("yeaboi.standup.engine", "run_standup"),
+    "standup_review": ("yeaboi.standup.engine", "run_transcript_review"),
     "report_delivery": ("yeaboi.reporting.engine", "run_delivery_report"),
     "perf_one_on_one_prep": ("yeaboi.performance.engine", "run_one_on_one_prep"),
     "perf_one_on_one_complete": ("yeaboi.performance.engine", "complete_one_on_one"),
@@ -352,8 +354,11 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
         "list_members",
     },  # schedule/list-members are adapters, not run_standup params
     # file-issues drives the separate file_transcript_issues entry point;
-    # list-gaps is a store read.
-    "standup-review": {"format", "strict", "file_issues", "list_gaps"},
+    # list-gaps is a store read. `paths` is the bare positional form of
+    # --transcript ("yeaboi standup-review meeting.vtt", and what a dragged file
+    # produces) — the handler folds it into transcript_paths, and a lone "-" into
+    # transcript_text.
+    "standup-review": {"format", "strict", "file_issues", "list_gaps", "paths"},
     "perf prep": {"strict"},
     "perf complete": {"strict"},
     "perf review": {"strict"},
