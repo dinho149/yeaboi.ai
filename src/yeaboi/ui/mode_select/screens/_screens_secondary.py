@@ -740,6 +740,10 @@ def _build_analysis_feature_screen(
             label_w=label_w,
         )
     ]
+    # "Analyse all" acts ON the four below rather than being a fifth peer, so a
+    # rule separates it from the things it toggles. Purely decorative — the
+    # cursor still indexes the option rows, so it must not join `rows`.
+    divider = Text(_PAD + "─" * (label_w + 4), style=theme.sep)
     for index, feature in enumerate(_ANALYSIS_FEATURE_KEYS, start=1):
         label, detail = _ANALYSIS_FEATURE_LABELS[feature]
         enabled = feature in runnable
@@ -764,7 +768,9 @@ def _build_analysis_feature_screen(
         _analysis_setup_title(width, height),
         Text(""),
         *header,
-        _analysis_toggle_viewport(rows, cursor, height=height),
+        rows[0],
+        divider,
+        _analysis_toggle_viewport(rows[1:], max(0, cursor - 1), height=height, header_h=13),
         Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
     )
     return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
@@ -805,7 +811,9 @@ def _build_component_select_screen(
     for ci, ckey in enumerate(rows_order):
         subs = grid.get(ckey, [])
         focused_row = ci == row_idx
-        header = Text(_PAD + "  ", justify="left")
+        # Flush with its own source rows below: the header sat two columns right
+        # of the things it labels, so the group read as indented under nothing.
+        header = Text(_PAD, justify="left")
         header.append(
             _COMPONENT_NAMES.get(ckey, ckey).upper(),
             style=f"bold {theme.accent_bright if focused_row else theme.accent}",
