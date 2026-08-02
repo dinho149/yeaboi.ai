@@ -3196,8 +3196,6 @@ def _build_standup_practice_review_screen(
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
-
-
 _SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable", "Remind"]
 
 

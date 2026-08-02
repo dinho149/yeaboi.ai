@@ -315,10 +315,10 @@ def _standup_config_set(
         )
     if habit_detection is not None and habit_detection not in VALID_HABIT_HANDLING:
         raise ValueError(f"habit_detection must be one of {', '.join(VALID_HABIT_HANDLING)}, got {habit_detection!r}")
-    # Raises on an unknown rule id rather than silently dropping it — a typo'd
-    # rule would otherwise read as "that rule is switched off".
     if habit_ai_match is not None and habit_ai_match not in VALID_HABIT_HANDLING:
         raise ValueError(f"habit_ai_match must be one of {', '.join(VALID_HABIT_HANDLING)}, got {habit_ai_match!r}")
+    # Raises on an unknown rule id rather than silently dropping it — a typo'd
+    # rule would otherwise read as "that rule is switched off".
     normalized_rules = None if habit_rules is None else validate_habit_rules(habit_rules)
     resolved = resolve_session_id(session_id)
     with StandupStore(get_db_path()) as store:

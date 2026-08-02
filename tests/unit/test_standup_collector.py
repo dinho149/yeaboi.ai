@@ -374,6 +374,32 @@ class TestReferenceTickets:
         assert [t["key"] for t in bundle.reference_tickets] == ["PROJ-9"]
         assert bundle.reference_tickets[0]["source"] == SOURCE_JIRA
 
+    def test_turning_practices_off_does_not_buy_the_context(self, monkeypatch):
+        """The switch has to save the money, not just hide the output.
+
+        ``ticket_context=False`` is what the engine passes when
+        ``habit_detection`` is off. It must skip the open-ticket search AND stop
+        asking for description/AC/DoD on the activity itself — otherwise a team
+        that turned the feature off still pays two extra round trips per tracker
+        on every single run.
+        """
+        asked: dict[str, object] = {}
+
+        def _activity(project, days=1, since=None, **kw):
+            asked["include_ticket_text"] = kw.get("include_ticket_text")
+            return [{"author": "Alice", "kind": "issue", "title": "t"}]
+
+        def _open(*a, **k):
+            raise AssertionError("open tickets fetched with practice detection off")
+
+        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", _activity)
+        monkeypatch.setattr("yeaboi.tools.jira.jira_open_tickets", _open)
+        bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ", ticket_context=False)
+
+        assert bundle.reference_tickets == []
+        assert asked["include_ticket_text"] is False
+        assert bundle.total() == 1  # the activity itself is untouched
+
     def test_a_failing_context_fetch_never_costs_the_activity(self, monkeypatch):
         # This runs inside the source fetcher, AFTER its activity succeeded —
         # letting it raise would make _run_source discard that activity.

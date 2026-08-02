@@ -457,10 +457,19 @@ class _OutputHandler(BaseHTTPRequestHandler):
             return
 
         if applied:
+            logger.info("share: practice %s recorded for %s (%s)", verdict, member, rule)
             # Rebuild once, here, so every later reader is served the corrected
             # report rather than the snapshot the vote was cast against.
-            self.server.document = document = _with_html(document, target.rerender())  # type: ignore[attr-defined]
-            logger.info("share: practice %s recorded for %s (%s)", verdict, member, rule)
+            #
+            # Its own try: the verdict is already committed by this point, so a
+            # re-render that raises must not turn a recorded vote into a 500 and
+            # an aborted connection. Serving the stale page is the recoverable
+            # failure — the reader is told their vote landed, and the next reader
+            # to open the link gets a page built from the store either way.
+            try:
+                self.server.document = _with_html(document, target.rerender())  # type: ignore[attr-defined]
+            except Exception:
+                logger.warning("share: could not re-render after a practice vote", exc_info=True)
         self._json(
             200,
             {

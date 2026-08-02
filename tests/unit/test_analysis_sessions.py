@@ -544,10 +544,10 @@ class TestAnalysisResumeContract:
         assert mode_select._load_ana_session("Platform") is None
 
 
-class TestMigrationV21:
+class TestMigrationV23:
     """Standup practice config reaches a database migrated ahead of StandupStore.
 
-    Covers v22 (habit_ai_match) too: both migrations run off the same v20 base.
+    Covers v24 (habit_ai_match) too: both migrations run off the same v20 base.
     """
 
     def _v20_db(self, db_path: Path) -> None:

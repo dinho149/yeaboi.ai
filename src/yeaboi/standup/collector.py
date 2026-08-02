@@ -173,6 +173,7 @@ def collect_recent_activity(
     notion_root: str = "",
     on_progress=None,
     cache_db_path=None,
+    ticket_context: bool = True,
 ) -> ActivityBundle:
     """Gather and normalize recent activity from all enabled sources.
 
@@ -183,6 +184,14 @@ def collect_recent_activity(
     Each source's helper already degrades to [] on error; this function adds the
     ``source`` tag, tallies counts, and guards the lazy import so a missing SDK
     (ImportError) simply skips that source.
+
+    ``ticket_context`` buys the two things only practice detection reads: each
+    ticket's description/acceptance-criteria/definition-of-done, and a search for
+    the open tickets nobody touched today (``bundle.reference_tickets``). It is
+    real money — a second Jira search over 200 issues with full text, a second
+    Azure WIQL plus batch fetch — so a team that has turned practice detection
+    off must not pay it. Off means the standup is exactly as expensive as it was
+    before this existed.
     """
     enabled = _resolve_sources(
         sources,
@@ -317,8 +326,9 @@ def collect_recent_activity(
         def _jira() -> list[dict]:
             from yeaboi.tools.jira import jira_open_tickets, jira_recent_activity
 
-            items = jira_recent_activity(jira_project, days=days, since=since, include_ticket_text=True)
-            _add_reference_tickets(lambda: jira_open_tickets(jira_project), SOURCE_JIRA)
+            items = jira_recent_activity(jira_project, days=days, since=since, include_ticket_text=ticket_context)
+            if ticket_context:
+                _add_reference_tickets(lambda: jira_open_tickets(jira_project), SOURCE_JIRA)
             return items
 
         fetchers[SOURCE_JIRA] = _jira
@@ -328,8 +338,9 @@ def collect_recent_activity(
         def _azdo() -> list[dict]:
             from yeaboi.tools.azure_devops import azdevops_open_work_items, azdevops_recent_activity
 
-            items = azdevops_recent_activity(azdo_project, days=days, since=since, include_ticket_text=True)
-            _add_reference_tickets(lambda: azdevops_open_work_items(azdo_project), SOURCE_AZDO)
+            items = azdevops_recent_activity(azdo_project, days=days, since=since, include_ticket_text=ticket_context)
+            if ticket_context:
+                _add_reference_tickets(lambda: azdevops_open_work_items(azdo_project), SOURCE_AZDO)
             return items
 
         fetchers[SOURCE_AZDO] = _azdo

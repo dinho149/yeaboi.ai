@@ -745,9 +745,14 @@ _STANDUP_WIP_FIELDS = "summary,assignee,status"
 def _standup_text_fields(jira: JIRA) -> tuple[str, str, str]:
     """Return (extra ``fields=`` suffix, acceptance id, definition-of-done id).
 
-    The suffix is "" when the instance has neither custom field and the
-    discovery call failed — in which case the caller simply asks for the base
-    fields and the ticket text comes back empty.
+    The suffix always contains at least ``description`` — that one is a built-in
+    field, so it needs no discovery and cannot be missing. Only the acceptance
+    and definition-of-done ids are per-instance custom fields, and either may
+    come back "" when discovery fails or the instance has no such field; the
+    ticket text is then just the description.
+
+    That is why the caller can treat ``suffix != base fields`` as "we asked for
+    the long form": it is true whenever ticket text was requested at all.
     """
     acceptance, dod = _discover_text_fields(jira)
     return ",".join(f for f in ("description", acceptance, dod) if f), acceptance, dod

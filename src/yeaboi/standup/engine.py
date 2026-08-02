@@ -1213,6 +1213,11 @@ def run_standup(
     def collection_progress(message: str) -> None:
         _notify(f"Collecting · {message}")
 
+    # Only practice detection reads ticket prose and the open-ticket pool, and
+    # both cost an extra round trip per tracker. Asked once, here, so turning the
+    # feature off makes the standup cheaper and not merely quieter.
+    practices_wanted = habits.enabled(config)
+
     if days is None:
         since = collector.previous_working_day_start(today)
         activity_window = f"{since:%a %Y-%m-%d} 00:00 → now"
@@ -1221,6 +1226,7 @@ def run_standup(
             sources=enabled_sources,
             on_progress=collection_progress,
             cache_db_path=db_path,
+            ticket_context=practices_wanted,
             **source_params,
         )
     else:
@@ -1230,6 +1236,7 @@ def run_standup(
             sources=enabled_sources,
             on_progress=collection_progress,
             cache_db_path=db_path,
+            ticket_context=practices_wanted,
             **source_params,
         )
 

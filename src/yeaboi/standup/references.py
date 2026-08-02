@@ -69,7 +69,18 @@ _SUBJECT_TAIL_RE = re.compile(r"\s*\((?:PR #\d+|[^()]{1,60})\)\s*$")
 
 # Kinds whose ``key`` is a tracker handle rather than a sha or PR number. The
 # prefix/id gates are built from these and only these.
-_TRACKER_KINDS = frozenset({"issue", "wip", "work_item", "update", "comment"})
+# ``ticket_context`` belongs here for the same reason the rest do: these items
+# came back from Jira/Azure themselves, key and all. Leaving it out made the gate
+# a function of *board activity* rather than of what the tracker contains, so on
+# a day nobody moved a ticket the prefixes went empty and a commit titled
+# "PROJ-12 fix login" read as untracked work — an accusation aimed at a named
+# person, produced by a quiet Monday.
+_TRACKER_KINDS = frozenset({"issue", "wip", "work_item", "update", "comment", "ticket_context"})
+
+# The subset whose keys are Azure Boards ids, for the bare ``#1234`` gate. A Jira
+# ``ticket_context`` key ("PROJ-12") is filtered out by the isdigit() check below
+# rather than by kind, so one membership list serves both trackers.
+_WORK_ITEM_KINDS = frozenset({"work_item", "wip", "ticket_context"})
 
 
 def find_ticket_keys(text: str) -> tuple[str, ...]:
@@ -100,7 +111,7 @@ def tracker_work_item_ids(items: Iterable[Mapping]) -> frozenset[str]:
     """
     ids: set[str] = set()
     for item in items:
-        if item.get("kind") not in ("work_item", "wip"):
+        if item.get("kind") not in _WORK_ITEM_KINDS:
             continue
         key = str(item.get("key") or "").strip().lstrip("#")
         if key.isdigit():

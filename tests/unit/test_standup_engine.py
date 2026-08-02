@@ -1942,6 +1942,8 @@ class TestTranscriptEntryPoints:
         result = engine.file_transcript_issues(review_id, db_path=db_path)
         assert result.filed == 1
         assert seen["review"].review_id == review_id
+
+
 class TestLlmPayloadKeys:
     """`engine._for_llm` is a blacklist, so a new grouped key reaches the prompt by default.
 

@@ -980,9 +980,7 @@ class TestStandupPracticeFeedbackTool:
         from yeaboi.standup.store import StandupStore
 
         run_id = self._seed_run(tmp_db)
-        payload = call_tool(
-            "standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "up"}
-        )
+        payload = call_tool("standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "up"})
         assert payload["data"]["confirmed_changes"] == 1
         with StandupStore(tmp_db) as store:
             assert store.get_run_by_id(run_id).member_updates[0].practices != ()
@@ -1001,9 +999,7 @@ class TestStandupPracticeFeedbackTool:
         # to remember, and hiding it while forgetting it would be the worst of
         # both. The two causes must not share a message.
         self._seed_run(tmp_db, handles=())
-        payload = call_tool(
-            "standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "down"}
-        )
+        payload = call_tool("standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "down"})
         assert payload["data"]["applied"] is False
         assert "predates" in payload["data"]["reason"]
 

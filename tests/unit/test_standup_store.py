@@ -952,6 +952,8 @@ class TestTranscriptConfig:
             cfg = store.load_config("s1")
         assert cfg["transcript_dir"] == ""
         assert cfg["transcript_review_enabled"] is True
+
+
 class TestPracticeConfig:
     def _save(self, store, **over):
         kwargs = dict(enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])

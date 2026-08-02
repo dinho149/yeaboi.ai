@@ -525,10 +525,14 @@ def detect_practices(
     tracker_usable = ticketing not in (categories.FAILED, categories.NOT_CONFIGURED)
 
     all_items = [item for items in grouped.values() for item in items]
-    prefixes = references.tracker_prefixes(all_items)
-    work_item_ids = references.tracker_work_item_ids(all_items)
+    # The gates read the open tickets too, not just today's board movement.
+    # Whether "PROJ-12" in a commit subject is a real key is a fact about the
+    # tracker, not about whether anyone happened to touch a ticket today.
+    gate_items = [*all_items, *reference_items]
+    prefixes = references.tracker_prefixes(gate_items)
+    work_item_ids = references.tracker_work_item_ids(gate_items)
     ticket_status = _ticket_status_index(all_items)
-    previous = _previous_signal_handles(previous_report)
+    previous = _previous_signal_rules(previous_report)
 
     reference_grouped = reference_grouped or {}
     # Only the tracker-shaped rules consult it, so an unusable tracker skips the
@@ -631,7 +635,7 @@ def _signal(rule: str, detail: str, evidence: Sequence[Mapping]) -> PracticeSign
     )
 
 
-def _previous_signal_handles(previous_report: StandupReport | None) -> dict[str, frozenset[str]]:
+def _previous_signal_rules(previous_report: StandupReport | None) -> dict[str, frozenset[str]]:
     """Per-member ``rule`` ids that already fired in the previous standup."""
     if previous_report is None:
         return {}

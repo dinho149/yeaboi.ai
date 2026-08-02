@@ -216,7 +216,7 @@ def _dict_to_practices(items: object) -> tuple[PracticeSignal, ...]:
             title=str(p.get("title", "")),
             detail=str(p.get("detail", "")),
             # JSON turned each (label, url) tuple into a list — rebuild tuples.
-            evidence=tuple((str(e[0]), str(e[1])) for e in p.get("evidence", ()) if len(e) == 2),
+            evidence=tuple((str(e[0]), str(e[1])) for e in p.get("evidence") or () if len(e) == 2),
             repeat=bool(p.get("repeat", False)),
             # Absent on reports written before feedback existed, which simply
             # means none of their signals can be voted on.
@@ -1064,13 +1064,31 @@ class StandupStore:
             (session_id, rule, handle, verdict, note, member, subject, standup_date, self._now()),
         )
 
-    def load_practice_feedback(self, session_id: str, limit: int = 500) -> list[dict]:
-        """Every verdict for a session, newest first."""
-        rows = self._conn.execute(
+    def load_practice_feedback(self, session_id: str, limit: int = 0) -> list[dict]:
+        """Every verdict for a session, newest first. Unbounded by default.
+
+        No cap, deliberately. A thumbs-down promises a change is excused
+        *forever* (see practice_feedback.py), and a LIMIT here would quietly
+        break that promise at the worst moment: past the cap the oldest excuses
+        fall out of the window and a signal someone already answered fires again
+        at the same person, months later, with no way to tell why.
+
+        The prompt is what actually needs bounding, and it is bounded where the
+        examples are chosen (``_MAX_CORRECTIONS`` / ``_MAX_CONFIRMATIONS``). This
+        row is eight short columns keyed by ``(session_id, rule, handle)`` with
+        one row per change ever voted on, so reading them all is cheap.
+        ``limit`` stays available for callers that want a page of recent
+        verdicts; 0 means all of them.
+        """
+        sql = (
             "SELECT rule, handle, verdict, note, member, subject, standup_date, created_at "
-            "FROM standup_practice_feedback WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
-            (session_id, limit),
-        ).fetchall()
+            "FROM standup_practice_feedback WHERE session_id = ? ORDER BY created_at DESC, id DESC"
+        )
+        params: tuple = (session_id,)
+        if limit > 0:
+            sql += " LIMIT ?"
+            params = (session_id, limit)
+        rows = self._conn.execute(sql, params).fetchall()
         return [
             {
                 "rule": r[0],

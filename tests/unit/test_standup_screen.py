@@ -1481,6 +1481,8 @@ class TestActionRowWrapping:
         for sel in range(len(self.ACTIONS)):
             panel = _build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS, action_sel=sel)
             assert isinstance(panel, Panel)
+
+
 class TestPracticesOnScreen:
     def _report_with_practices(self, **over):
         from yeaboi.agent.state import PracticeSignal

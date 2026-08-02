@@ -227,6 +227,7 @@ class TestApplyVerdict:
         )
         assert store.load_practice_feedback("s1") == []
 
+
 class TestVotable:
     def test_a_signal_with_no_handles_cannot_be_voted_on(self):
         # Reports written before this feature existed have nothing to remember,

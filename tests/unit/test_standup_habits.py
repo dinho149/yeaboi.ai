@@ -512,6 +512,36 @@ class TestRelatednessSuppression:
         )
         assert habits.RULE_UNTRACKED_WORK not in _rules(signals)
 
+    def test_a_commit_naming_its_key_survives_a_day_with_no_board_movement(self):
+        """The gate is about what the tracker HOLDS, not what moved today.
+
+        Prefixes used to be read off the window's tracker items alone, so on a
+        day nobody touched a ticket the set went empty, ``has_tracker_reference``
+        short-circuited, and a commit that spells its key out loud was reported
+        as untracked. A quiet Monday would accuse a named person of exactly the
+        thing they had just done correctly.
+        """
+        context = _open_ticket("PSOT-77", "Rename the approval plugins", "Unrelated prose, so only the key can match.")
+        spelled = _commit(key="d4", title="PSOT-77 rename the plugins")
+        signals = detect_practices(
+            {"Alice": [spelled]},  # no issue/update/comment item anywhere in the window
+            category_coverage=_covered(),
+            reference_items=[context],
+        )
+        assert habits.RULE_UNTRACKED_WORK not in _rules(signals)
+
+    def test_a_key_no_tracker_has_ever_produced_is_still_reported(self):
+        # The gate must still be a gate: widening it to the open tickets must not
+        # turn it into "any Jira-shaped string counts".
+        context = _open_ticket("PSOT-77", "Rename the approval plugins", "Prose.")
+        invented = _commit(key="d5", title="NOPE-12 fix the thing")
+        signals = detect_practices(
+            {"Alice": [invented]},
+            category_coverage=_covered(),
+            reference_items=[context],
+        )
+        assert habits.RULE_UNTRACKED_WORK in _rules(signals)
+
     def test_the_matched_ticket_is_never_named(self):
         # Suppression is silent, which is exactly what makes matching the wrong
         # sibling ticket in an epic cost nothing.
@@ -661,9 +691,7 @@ class TestFeedbackExcuses:
         )
         detail = next(s.detail for s in signals["Alice"] if s.rule == habits.RULE_UNTRACKED_WORK)
         assert "1 other change" in detail
-        assert excused not in next(
-            s.handles for s in signals["Alice"] if s.rule == habits.RULE_UNTRACKED_WORK
-        )
+        assert excused not in next(s.handles for s in signals["Alice"] if s.rule == habits.RULE_UNTRACKED_WORK)
 
     def test_excusing_takes_a_threshold_rule_back_under_its_bar(self):
         # Three thin subjects fire; excusing one has to silence the rule, not

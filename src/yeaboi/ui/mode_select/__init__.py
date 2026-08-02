@@ -5413,6 +5413,14 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         )
 
     def get_share_document(run):
+        """A past run, shared read-only.
+
+        Deliberately NOT correctable, unlike the live page's Share Online. This
+        path already offers ``get_editable_session`` below, and a document cannot
+        be both: the editable share re-renders from its own edit log, so a
+        practice vote written straight to the run underneath it would be
+        overwritten by the next edit. One writer per shared document.
+        """
         report = _report(run.run_id)
         if report is None:
             return None
@@ -6228,6 +6236,12 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
                     )
+                    # A reader may have answered a practice signal while the
+                    # share was up, which rewrites the stored run. Re-read it, or
+                    # the screen keeps offering "Practices" on a signal that is
+                    # no longer there and pressing it does nothing.
+                    if anon is None and share_run_id:
+                        data = _collect_standup_data()
                 _reset_to_overview()
             elif act == "Anonymize":  # mask the report in place for public sharing
                 logger.info("standup: Anonymize pressed (session=%s)", session_id)
