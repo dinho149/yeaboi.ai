@@ -715,15 +715,15 @@ def _analysis_setup_header(
     crumbs = Text(PAD, justify="left", no_wrap=True, overflow="ellipsis")
     crumbs.append(brand, style=f"bold {theme.accent_bright}")
     crumbs.append("  ›  ", style=theme.dim)
-    crumbs.append(upper, style=f"bold {theme.accent_bright}")
-    out: list = [crumbs]
     if show_trail:
-        # build_progress_dots is the app's existing stage indicator — the same one
-        # the initial setup wizard uses — so Analysis's setup reads like the rest
-        # of the app rather than inventing a second breadcrumb style. Filled dots
-        # are done, the bright one is here, hollow ones are still to come.
-        out.append(build_progress_dots(list(trail), here, theme=theme, mark_done=True))
-    out.append(Text(PAD + help_text, style=theme.muted))
+        # One line, not two: the stage row already names where you are, so a
+        # separate "› REVIEW" crumb above it just said it twice. build_progress_dots
+        # is the app's existing stage indicator (the initial setup wizard uses it),
+        # so this reads like the rest of the app rather than a second style.
+        crumbs.append_text(build_progress_dots(list(trail), here, pad="", theme=theme, mark_done=True))
+    else:
+        crumbs.append(upper, style=f"bold {theme.accent_bright}")
+    out: list = [crumbs, Text(PAD + help_text, style=theme.muted)]
     if message:
         out.extend((Text(PAD + "⚠  " + message, style=theme.warn), Text("")))
     else:
