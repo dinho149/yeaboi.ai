@@ -5421,11 +5421,13 @@ def _run_analysis_feature_select(
     supports_timeout: bool,
     available: dict[str, bool],
     initial_features: list[str] | None = None,
+    grid: dict[str, list[str]] | None = None,
 ):
     """Choose analysis result areas; every runnable area starts selected.
 
     ``initial_features`` restores a previous selection when the setup wizard
-    re-enters this step (Esc back-navigation)."""
+    re-enters this step (Esc back-navigation). ``grid`` (component -> configured
+    sub-sources) nests each selected area's sources beneath it."""
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _ANALYSIS_FEATURE_KEYS,
         _build_analysis_feature_screen,
@@ -6416,6 +6418,7 @@ def _run_analysis_setup_wizard(
                     "documentation": bool(grid["docs"]),
                 },
                 initial_features=state["features"],
+                grid=grid,
             )
             if chosen == "cancel":
                 return "back"
