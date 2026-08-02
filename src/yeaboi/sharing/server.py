@@ -185,7 +185,20 @@ class _OutputHandler(BaseHTTPRequestHandler):
             )
             return
         if path == "/api/invite":
-            self._json(200, invite_payload(self.headers, "", self.server.public_url))  # type: ignore[attr-defined]
+            # Four positional arguments, in this order. Passing `public_url`
+            # third put the tunnel address in the `joinCode` field and left the
+            # share URL to be guessed from the request headers — so the invite
+            # offered a reader a URL as the code to type, and handed a teammate
+            # whatever Host the browser happened to send.
+            self._json(
+                200,
+                invite_payload(
+                    self.headers,
+                    "",
+                    self.server.join_code,  # type: ignore[attr-defined]
+                    self.server.public_url,  # type: ignore[attr-defined]
+                ),
+            )
             return
         self._json(404, {"error": "not found"})
 

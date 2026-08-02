@@ -134,13 +134,17 @@ def run_output_share(
 
     With ``editable`` the shared document is correctable: teammates who join can
     fix what the run got wrong, and this screen shows a live count of what they
-    have changed. Returns how many corrections were recorded, so the caller can
-    decide whether to commit them — this function deliberately does not, because
-    its teardown also runs on Esc, on Back and on any exception, and a path that
-    rewrites the host's stored report from a crash handler is not one anybody
-    asked for.
+    have changed. Returns how many corrections were recorded **in this session**,
+    so the caller can decide whether to commit them — this function deliberately
+    does not, because its teardown also runs on Esc, on Back and on any
+    exception, and a path that rewrites the host's stored report from a crash
+    handler is not one anybody asked for.
     """
     from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+
+    # Read before anything can join: a reopened share has already replayed every
+    # correction on record, and those are not news.
+    already_recorded = len(editable.document.edits()) if editable is not None else 0
 
     state: dict[str, object] = {
         "status": "Preparing a protected local snapshot…",
@@ -313,6 +317,12 @@ def run_output_share(
             tunnel.stop()  # type: ignore[union-attr]
         if server is not None:
             server.stop()  # type: ignore[union-attr]
-        recorded = len(editable.document.edits()) if editable is not None else 0
-        logger.info("output sharing closed (mode=%s, edits=%d)", document.source_mode, recorded)
+        # The *delta*, not the total. A session that reopens a previously
+        # corrected document replays its whole log before anyone joins, so the
+        # total is non-zero the moment the screen opens — and the caller commits
+        # a fresh `origin='edited'` row whenever this is non-zero. Returning the
+        # total meant opening the share and pressing Back immediately reported
+        # "Saved 1 correction." and appended a duplicate row, once per cycle.
+        recorded = (len(editable.document.edits()) - already_recorded) if editable is not None else 0
+        logger.info("output sharing closed (mode=%s, new edits=%d)", document.source_mode, recorded)
     return recorded

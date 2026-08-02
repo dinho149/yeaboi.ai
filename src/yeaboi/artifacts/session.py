@@ -54,6 +54,7 @@ class EditableSession:
         self.kind = kind
         self.db_path = db_path
         self.run_id = run_id
+        self.session_id = session_id
         self.ref = artifact_ref(kind, run_id=run_id, session_id=session_id, engineer=engineer)
         self._base_hash = base_hash(artifact)
         self.share = editable_share(artifact, kind=kind, ref=self.ref, history=history)
@@ -80,7 +81,13 @@ class EditableSession:
             try:
                 self.share.document.apply(edit)
             except Exception as exc:  # noqa: BLE001 — a stale edit must not stop the share opening
-                logger.info("Skipped a recorded %s edit on replay (%s): %s", self.kind, edit.edit_id[:8], exc)
+                # Kept and shown, not dropped. `edits.py` promises a correction
+                # that no longer fits is "shown as unapplied, which is the
+                # honest outcome"; swallowing it here left the reader who wrote
+                # it with a document missing their change and a history that
+                # never mentioned it.
+                self.share.document.record_unapplied(edit, str(exc))
+                logger.warning("Recorded %s edit could not be replayed (%s): %s", self.kind, edit.edit_id[:8], exc)
 
     # ── While the share is open ───────────────────────────────────────────
 
@@ -122,7 +129,7 @@ class EditableSession:
         if committer is None:
             logger.info("No history table for %s — corrections live in the edit log only", self.kind)
             return 0
-        row_id = committer(self.db_path, self.share.document.current(), self.run_id)
+        row_id = committer(self.db_path, self.share.document.current(), self.run_id, self.session_id)
         logger.info("Committed corrected %s as row %d (from %d)", self.kind, row_id, self.run_id)
         return row_id
 
@@ -131,26 +138,35 @@ class EditableSession:
 # signatures and a generic `update_run` would have to know all seven — which is
 # the coupling those copies exist to avoid. Each of these is four lines over the
 # store's own `record_run`.
+#
+# All four arguments are passed to every one even where a mode ignores some:
+# uniform signatures are what let `_COMMITTERS` be a plain dict lookup, and the
+# one that needs `session_id` is not obvious from the outside.
 
 
-def _commit_standup(db_path: Path, artifact: Any, parent_id: int) -> int:
+def _commit_standup(db_path: Path, artifact: Any, parent_id: int, _session_id: str) -> int:
     from yeaboi.standup.store import StandupStore
 
-    with StandupStore(db_path) as store:
+    with StandupStore(db_path) as store:  # the report carries its own session_id
         return store.record_run(artifact, origin="edited", edited_from_id=parent_id)
 
 
-def _commit_reporting(db_path: Path, artifact: Any, parent_id: int) -> int:
+def _commit_reporting(db_path: Path, artifact: Any, parent_id: int, session_id: str) -> int:
     from yeaboi.reporting.store import ReportingStore
 
+    # `session_id` is a *column*, not a field on the report — unlike standup and
+    # retro, whose artifacts carry their own. Omitting it wrote the corrected row
+    # with an empty session, and both `get_latest_report` and `get_history`
+    # filter on it: the reporting hub went on showing the uncorrected run while
+    # the corrected one sat in the table unreachable.
     with ReportingStore(db_path) as store:
-        return store.record_run(artifact, origin="edited", edited_from_id=parent_id)
+        return store.record_run(artifact, session_id=session_id, origin="edited", edited_from_id=parent_id)
 
 
-def _commit_retro(db_path: Path, artifact: Any, parent_id: int) -> int:
+def _commit_retro(db_path: Path, artifact: Any, parent_id: int, _session_id: str) -> int:
     from yeaboi.retro.store import RetroStore
 
-    with RetroStore(db_path) as store:
+    with RetroStore(db_path) as store:  # the report carries its own session_id
         return store.record_run(artifact, origin="edited", edited_from_id=parent_id)
 
 

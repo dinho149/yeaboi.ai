@@ -206,6 +206,38 @@ class RetroStore:
             logger.warning("Failed to deserialize retro run id=%s: %s", run_id, exc)
             return None
 
+    def get_base_run(self, *, session_id: str = "", run_id: int = 0) -> tuple[int, RetroReport] | None:
+        """Return ``(id, report)`` for the *generated* run a correction log is anchored to.
+
+        See :meth:`StandupStore.get_base_run` — same reason, same shape. Not
+        `get_latest_report`, which returns the corrected row on purpose; a log
+        replayed onto that applies every earlier correction again, and appends
+        and notes have no compare-and-swap to stop them duplicating.
+        """
+        if run_id:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM retro_history WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is not None and row[1] == "edited" and row[2]:
+                row = self._conn.execute(
+                    "SELECT id, origin, edited_from_id, report_json FROM retro_history WHERE id = ?",
+                    (row[2],),
+                ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM retro_history "
+                "WHERE session_id = ? AND origin != 'edited' ORDER BY run_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        if row is None or not row[3]:
+            return None
+        try:
+            return int(row[0]), _dict_to_retro_report(json.loads(row[3]))
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to deserialize retro base run id=%s: %s", row[0], exc)
+            return None
+
     def delete_run(self, run_id: int) -> bool:
         """Delete a single retro history row. Returns True if a row was removed."""
         cursor = self._conn.execute("DELETE FROM retro_history WHERE id = ?", (run_id,))

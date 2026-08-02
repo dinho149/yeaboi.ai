@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from yeaboi.artifacts.edits import EDIT_OPS, Edit, EditError
 from yeaboi.artifacts.registry import ARTIFACTS, spec_for
@@ -31,6 +32,22 @@ The three whose stores can take a corrected row (``session._COMMITTERS``). The
 rest are correctable on the shared document, where a person is present to decide
 what to keep — there is no headless equivalent yet because there is nowhere to
 put the result.
+"""
+
+SHARED_KINDS = ("standup", "reporting", "retro")
+"""Artifacts the TUI currently opens as a *correctable* share.
+
+Deliberately its own tuple even though it equals :data:`HEADLESS_KINDS` today,
+because the two answer different questions and will diverge: this one is "does
+Share Online let anyone edit this", and it is gated on the same three
+committers — a share whose corrections have nowhere to be written back to would
+collect them and drop them when the tunnel closed.
+
+Roadmap, the three performance artifacts and the team profile still publish
+**read-only** shares. That is a real gap against "every shared document", and it
+is reported here rather than left for a caller to discover: an agent that is
+told a roadmap is correctable and finds no way to correct it has been misled by
+this function, which is the failure this whole module is written to avoid.
 """
 
 
@@ -52,11 +69,14 @@ def artifact_fields(kind: str = "") -> dict:
     Returning it is also the honest way to expose the *absences* — a team profile
     reports no editable fields and says why.
 
-    Each row carries ``headless``: whether :func:`apply_artifact_edits` can reach
-    that artifact from here, or whether it is correctable only on the shared
-    document. Advertising eight kinds while five of them raise is worse than
-    advertising three, so the difference is data rather than something a caller
-    discovers by being refused.
+    Each row carries two reachability flags, because "correctable" is not one
+    question. ``headless`` is whether :func:`apply_artifact_edits` can reach the
+    artifact from here; ``shared`` is whether the TUI opens it as a correctable
+    document rather than a read-only one. Advertising eight kinds while five of
+    them raise is worse than advertising three, so both are data rather than
+    something a caller discovers by being refused — and today a row with neither
+    flag set is a kind whose fields are described here and are not editable
+    anywhere yet.
     """
     kinds = [kind] if kind else sorted(ARTIFACTS)
     out: list[dict] = []
@@ -70,6 +90,7 @@ def artifact_fields(kind: str = "") -> dict:
                 "label": spec.label,
                 "annotatable": spec.annotatable,
                 "headless": spec.kind in HEADLESS_KINDS,
+                "shared": spec.kind in SHARED_KINDS,
                 "note": spec.note,
                 "list_keys": dict(spec.list_keys),
                 "fields": [
@@ -165,15 +186,18 @@ def apply_artifact_edits(
     from yeaboi.artifacts.session import EditableSession
     from yeaboi.sharing.editable import ConflictError
 
-    artifact = _load(kind, session_id=session_id, run_id=run_id, engineer=engineer, db_path=_db(db_path))
-    if artifact is None:
+    loaded = _load(kind, session_id=session_id, run_id=run_id, engineer=engineer, db_path=_db(db_path))
+    if loaded is None:
         raise ValueError(f"no stored {kind} to correct")
+    base_id, artifact = loaded
 
-    # One session, which replays everything already on record. Applying through
-    # it rather than calling apply_edits separately is what keeps this call's
-    # corrections *on top of* earlier ones rather than instead of them.
+    # One session, which replays everything already on record onto the *base*.
+    # Applying through it rather than calling apply_edits separately is what
+    # keeps this call's corrections on top of earlier ones rather than instead
+    # of them — and anchoring to `base_id` is what stops them being applied
+    # twice, since the row this commits becomes the newest one.
     session = EditableSession(
-        artifact, kind=kind, db_path=_db(db_path), run_id=run_id, session_id=session_id, engineer=engineer
+        artifact, kind=kind, db_path=_db(db_path), run_id=base_id, session_id=session_id, engineer=engineer
     )
     ref = session.ref
 
@@ -182,7 +206,13 @@ def apply_artifact_edits(
     stale: list[dict] = []
     for index, raw in enumerate(edits):
         candidate = Edit(
-            edit_id=str(raw.get("edit_id", "") or f"mcp-{ref}-{session.share.document.revision + index + 1}"),
+            # A real random id, not a counter. `revision` advances only for
+            # *accepted* edits while `index` advances for every one, so a single
+            # refused edit desynchronised the two and a later call re-minted an
+            # id already in the replayed log. `apply` then took it for a retry,
+            # returned the earlier edit, and this counted it as applied — the
+            # caller was told the correction landed and it had been discarded.
+            edit_id=str(raw.get("edit_id", "") or f"mcp-{uuid4()}"),
             op=str(raw.get("op", "")),
             path=str(raw.get("path", "")),
             value=str(raw.get("value", "")),
@@ -230,19 +260,33 @@ def apply_artifact_edits(
     }
 
 
-def _load(kind: str, *, session_id: str, run_id: int, engineer: str, db_path: Path) -> Any:
-    """Read the stored artifact a correction targets, or None."""
+def _load(kind: str, *, session_id: str, run_id: int, engineer: str, db_path: Path) -> tuple[int, Any] | None:
+    """Read the *base* artifact a correction log is anchored to, with its row id.
+
+    Deliberately not the latest row. `get_latest_report` returns the corrected
+    artifact — that is the whole "edits become the artifact" property, and every
+    reader should get it. But a log is recorded against the original and
+    replayed onto the original, so building a session on the corrected row
+    replays every earlier correction a second time. `set` survives on its
+    compare-and-swap; `append`, `note` and `field` have none, and duplicated
+    once per call.
+
+    Returning the id matters as much as the artifact: it anchors the log's ref
+    to the generated run rather than to whichever corrected row happened to be
+    newest, so the ref stops moving as corrections accumulate and headless
+    agrees with the TUI, which has always passed the run it is sharing.
+    """
     if kind == "standup":
         from yeaboi.standup.store import StandupStore
 
         with StandupStore(db_path) as store:
-            return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
+            return store.get_base_run(session_id=session_id, run_id=run_id)
     if kind == "reporting":
         from yeaboi.reporting.store import ReportingStore
 
         with ReportingStore(db_path) as store:
-            return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
+            return store.get_base_run(session_id=session_id, run_id=run_id)
     from yeaboi.retro.store import RetroStore
 
     with RetroStore(db_path) as store:  # kind == "retro"; the caller already gated on HEADLESS_KINDS
-        return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
+        return store.get_base_run(session_id=session_id, run_id=run_id)

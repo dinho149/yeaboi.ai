@@ -439,6 +439,18 @@ export type ExportReport = (
         trendText: string;
         rationale: string;
       };
+      /**
+       * The report-level editable fields — `team_summary` and
+       * `confidence_rationale`. Served documents only.
+       *
+       * Declared here because the server has always sent it. The
+       * response-direction guard only catches a *dropped* field: `wire.ts`
+       * asserts the committed fixture `satisfies` this union, and excess-property
+       * checking does not run on imported JSON, so a field that crossed the wire
+       * undeclared and was dropped on the floor by `Report.tsx` looked exactly
+       * like a field nobody sends.
+       */
+      edit?: EditMap;
       /** The team summary, one run-list per sentence. */
       summary: Run[][];
       members: StandupMember[];

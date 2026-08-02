@@ -43,6 +43,17 @@ export interface EditRow {
    * raw pid never has to travel to everyone in order to answer it.
    */
   mine: boolean;
+  /**
+   * False for a recorded correction the artifact can no longer take — the
+   * standup was re-run underneath it, or the field left the allowlist.
+   *
+   * These are shown rather than hidden. The alternative is what used to happen:
+   * the edit was dropped on replay, so the reader who wrote it saw a document
+   * without their change and a history that had never heard of it.
+   */
+  applied: boolean;
+  /** Why it could not be applied. Empty when `applied`. */
+  reason: string;
 }
 
 /**

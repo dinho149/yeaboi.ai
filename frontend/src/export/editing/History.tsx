@@ -102,7 +102,7 @@ export function History({
           ) : (
             <ul className={styles['list']}>
               {ordered.map((row) => (
-                <li key={row.id} className={styles['row']}>
+                <li key={row.id} className={styles['row']} data-unapplied={row.applied ? undefined : '1'}>
                   <p className={styles['what']}>
                     {/* Space inside the expression — JSX strips it before a
                         newline, which runs the emoji into the name. */}
@@ -120,9 +120,17 @@ export function History({
                     </button>
                   </p>
                   {row.value ? <p className={styles['value']}>{row.value}</p> : null}
+                  {/* Said in words, not signalled by the dimming alone: this
+                      correction was made and the artifact can no longer take
+                      it, which is a different thing from it never happening. */}
+                  {row.applied ? null : (
+                    <p className={styles['unapplied']}>
+                      Could not be applied{row.reason ? ` — ${row.reason}` : ''}
+                    </p>
+                  )}
                   <p className={styles['meta']}>
                     <span>{row.at.slice(0, 10)}</span>
-                    {editable && row.op !== 'revert' ? (
+                    {editable && row.applied && row.op !== 'revert' ? (
                       <button type="button" className={styles['revert']} onClick={() => onRevert(row.id)}>
                         Revert
                       </button>

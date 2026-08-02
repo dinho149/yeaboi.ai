@@ -23,16 +23,22 @@ export function useEditPresence(
 ): void {
   // Held in a ref so changing your name does not restart the interval — the
   // next beat simply carries the new value.
-  const latest = useRef({ identity, editingPath });
-  latest.current = { identity, editingPath };
+  //
+  // `actions` is in here for the same reason and it is the one that mattered:
+  // `EditApp` re-memoises it whenever the identity or the revision changes, so
+  // depending on it tore the interval down and fired an immediate heartbeat on
+  // every keystroke of the name and every edit anyone made — which is exactly
+  // what the ref above exists to prevent, undone by the dependency array.
+  const latest = useRef({ identity, editingPath, actions });
+  latest.current = { identity, editingPath, actions };
 
   useEffect(() => {
     if (!enabled) return;
     let stopped = false;
     function beat() {
       if (stopped) return;
-      const { identity: who, editingPath: path } = latest.current;
-      void actions.presence(who.name, who.avatar, path);
+      const { identity: who, editingPath: path, actions: send } = latest.current;
+      void send.presence(who.name, who.avatar, path);
     }
     beat();
     const timer = setInterval(beat, INTERVAL_MS);
@@ -40,5 +46,5 @@ export function useEditPresence(
       stopped = true;
       clearInterval(timer);
     };
-  }, [actions, enabled]);
+  }, [enabled]);
 }

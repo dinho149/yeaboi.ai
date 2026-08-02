@@ -31,7 +31,7 @@ import {
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
 import { cx } from '../../runtime/cx';
-import type { EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import type { EditMap, EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
 import { EditableSlot } from '../editing/Editable';
 import { Field } from '../editing/Field';
 import { EvidenceList } from './Evidence';
@@ -282,6 +282,7 @@ function TeamActivity({ members }: { members: StandupMember[] }) {
 export function Standup({
   sprint,
   confidence,
+  edit,
   summary,
   members,
   activityCounts,
@@ -294,6 +295,8 @@ export function Standup({
 }: {
   sprint: { name: string; day: number; total: number };
   confidence: { label: string; pct: number; text: string; trend: string; trendText: string; rationale: string };
+  /** Report-level editable fields. Undefined on a file export. */
+  edit?: EditMap;
   summary: Run[][];
   members: StandupMember[];
   activityCounts: Array<[string, number]>;
@@ -335,7 +338,11 @@ export function Standup({
           {confidence.trendText ? (
             <Chip tone={confidence.trend === 'improving' ? 'ok' : 'danger'}>{confidence.trendText}</Chip>
           ) : null}
-          {confidence.rationale ? <span className={styles['rationale']}>{confidence.rationale}</span> : null}
+          {confidence.rationale ? (
+            <Field edit={edit} field="confidence_rationale" label="the confidence rationale" inline>
+              <span className={styles['rationale']}>{confidence.rationale}</span>
+            </Field>
+          ) : null}
         </p>
 
         <TrendCard trend={trend} endTone={confidenceTone} />
@@ -346,20 +353,26 @@ export function Standup({
       {summary.length ? (
         <section id="summary">
           <h2 className={styles['h2']}>Team Summary</h2>
-          {/* One sentence is a paragraph; several are a scannable list. */}
-          {summary.length === 1 ? (
-            <p className={styles['lede']}>
-              <RichText runs={summary[0] as Run[]} />
-            </p>
-          ) : (
-            <ul className={styles['bullets']}>
-              {summary.map((runs, index) => (
-                <li key={index}>
-                  <RichText runs={runs} />
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* The editor opens on the raw artifact string; what is drawn here is
+              the derived view — sentences of link-runs, with no inverse. That
+              asymmetry is the whole reason the payload carries {path, value}
+              beside the region instead of expecting this side to unpick it. */}
+          <Field edit={edit} field="team_summary" label="the team summary">
+            {/* One sentence is a paragraph; several are a scannable list. */}
+            {summary.length === 1 ? (
+              <p className={styles['lede']}>
+                <RichText runs={summary[0] as Run[]} />
+              </p>
+            ) : (
+              <ul className={styles['bullets']}>
+                {summary.map((runs, index) => (
+                  <li key={index}>
+                    <RichText runs={runs} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Field>
         </section>
       ) : null}
 

@@ -175,3 +175,70 @@ class TestCommittingNeverRedelivers:
             assert "record_run" in body, kind
             for forbidden in ("deliver", "smtp", "webhook", "notify"):
                 assert forbidden not in body.lower(), f"{kind} committer mentions {forbidden!r}"
+
+
+class TestCommitKeepsTheRunFindable:
+    """A corrected row nobody can look up is the same as no correction at all."""
+
+    def test_a_corrected_reporting_run_keeps_its_session(self, tmp_path):
+        """`session_id` is a column on reporting_history, not a field on the report.
+
+        Standup and retro artifacts carry their own, so their committers do not
+        need it and this was easy to miss. `ReportingStore.get_latest_report` and
+        `get_history` both filter on the column: written empty, the corrected row
+        exists in the table and the reporting hub goes on showing the
+        uncorrected one.
+        """
+        from yeaboi.agent.state import DeliveryReport
+        from yeaboi.artifacts.session import EditableSession
+        from yeaboi.reporting.store import ReportingStore
+
+        db = tmp_path / "sessions.db"
+        report = DeliveryReport(headline="Original headline.", period_label="Week 1")
+        with ReportingStore(db) as store:
+            run_id = store.record_run(report, session_id="s9")
+
+        session = EditableSession(report, kind="reporting", db_path=db, run_id=run_id, session_id="s9")
+        session.share.document.apply(
+            Edit(edit_id="e1", op="set", path="headline", value="Corrected headline.", base="Original headline.")
+        )
+        session.commit()
+
+        with ReportingStore(db) as store:
+            assert store.get_latest_report("s9").headline == "Corrected headline."
+            assert len(store.get_history("s9")) == 2
+
+
+class TestUnappliedEditsAreShown:
+    def test_a_correction_the_artifact_can_no_longer_take_is_kept_and_marked(self, tmp_path):
+        """`edits.py` promises a stale correction is "shown as unapplied".
+
+        Replay caught the refusal and dropped the edit, so the reader who wrote
+        it saw a document without their change and a history that had never
+        heard of it — the exact disappearance the compare-and-swap exists to
+        prevent. Here the base is re-generated with different prose, so the
+        recorded edit's CAS no longer matches.
+        """
+        db = tmp_path / "sessions.db"
+        original = StandupReport(session_id="s1", date="2026-08-01", team_summary="The original sentence.")
+        with StandupStore(db) as store:
+            run_id = store.record_run(original)
+
+        session = EditableSession(original, kind="standup", db_path=db, run_id=run_id)
+        edit = session.share.document.apply(
+            Edit(edit_id="e1", op="set", path="team_summary", value="Corrected.", base="The original sentence.")
+        )
+        session.persist(session.share, edit, "")
+
+        # The standup is re-run: same paths, different prose underneath them.
+        rerun = StandupReport(session_id="s1", date="2026-08-01", team_summary="Something else entirely.")
+        reopened = EditableSession(rerun, kind="standup", db_path=db, run_id=run_id)
+
+        assert reopened.share.document.current().team_summary == "Something else entirely."
+        assert reopened.share.document.edits() == ()
+        unapplied = reopened.share.document.unapplied()
+        assert [e.edit_id for e, _ in unapplied] == ["e1"]
+
+        rows = reopened.share.snapshot("")["edits"]
+        assert [(r["id"], r["applied"]) for r in rows] == [("e1", False)]
+        assert rows[0]["reason"]

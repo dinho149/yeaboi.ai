@@ -27,6 +27,8 @@ function row(over: Partial<EditRow> = {}): EditRow {
     avatar: '🦊',
     at: '2026-01-01T00:00:00+00:00',
     mine: false,
+    applied: true,
+    reason: '',
     ...over,
   };
 }

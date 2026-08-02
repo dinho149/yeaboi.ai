@@ -1056,7 +1056,7 @@ def run_standup(
         # run metadata (for the confidence trend). Both are date-scoped so a
         # same-day rerun never compares today against itself.
         previous_run = store.get_previous_run(session_id, date_str)
-        previous_report = previous_run[2] if previous_run else None
+        previous_report = previous_run[3] if previous_run else None
         prior_history = store.get_history(session_id, limit=10)
 
     # What the team corrected on the previous standup, if they corrected it.
@@ -1070,7 +1070,11 @@ def run_standup(
 
         try:
             with ArtifactEditStore(db_path) as edit_store:
-                corrections = edit_store.list_edits("standup", artifact_ref("standup", run_id=previous_run[0]))
+                # `edited_from_id`, not this row's own id: the log is filed
+                # against the artifact it was written on, which is the parent.
+                corrections = edit_store.list_edits(
+                    "standup", artifact_ref("standup", run_id=previous_run[2] or previous_run[0])
+                )
         except Exception:  # noqa: BLE001 — a missing hint is not a failed standup
             logger.warning("Could not read previous standup corrections", exc_info=True)
 

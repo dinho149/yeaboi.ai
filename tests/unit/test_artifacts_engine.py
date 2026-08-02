@@ -163,3 +163,103 @@ class TestHistory:
     def test_an_unedited_artifact_reports_nothing(self, db):
         path, run_id = db
         assert artifact_edit_history("standup", run_id=run_id, db_path=path)["count"] == 0
+
+
+class TestSuccessiveCalls:
+    """Two corrections in a row, which is how an agent actually uses this.
+
+    Both bugs below reported success while losing or duplicating work, and both
+    needed a *second* call to appear — a single-call test cannot see either.
+    """
+
+    def test_notes_do_not_duplicate_across_calls(self, db):
+        """The log is replayed onto the base, not onto the last corrected row.
+
+        `get_latest_report` returns the *corrected* artifact — that is the whole
+        "edits become the artifact" property. Building the next session on it and
+        then replaying the log re-applies everything earlier. `set` survives on
+        its compare-and-swap; `note` has none, so three one-note calls produced
+        six notes.
+
+        Addressed by **session**, with no ``run_id``. That is the path the bug
+        lived on and the one an agent takes when it just says "correct the latest
+        standup": naming a run explicitly already read that row rather than the
+        newest, so a test that passes ``run_id`` here watches the branch that was
+        never broken.
+        """
+        path, _run_id = db
+        for i in range(3):
+            out = apply_artifact_edits(
+                "standup",
+                [{"op": "note", "path": "", "value": f"note-{i}"}],
+                session_id="s1",
+                author="Grace",
+                db_path=path,
+            )
+            assert out["applied"] == 1
+        with StandupStore(path) as store:
+            latest = store.get_latest_report("s1")
+        assert [a.text for a in latest.annotations] == ["note-0", "note-1", "note-2"]
+
+    def test_a_refused_edit_does_not_make_the_next_call_a_no_op(self, db):
+        """Edit ids must be unique, not counted.
+
+        The synthetic id was `revision + index`, but `revision` only advances for
+        *accepted* edits while `index` advances for every one. A single refusal
+        desynchronised them, the next call re-minted an id already in the
+        replayed log, `apply` took it for a retried POST and returned the earlier
+        edit — and this counted it as applied. The caller was told the fix landed
+        and the fix was gone.
+        """
+        path, run_id = db
+        first = apply_artifact_edits(
+            "standup",
+            [
+                {"op": "set", "path": "not_a_field", "value": "x"},
+                {"op": "set", "path": "team_summary", "value": "first fix"},
+            ],
+            run_id=run_id,
+            author="Grace",
+            db_path=path,
+        )
+        assert first["applied"] == 1 and len(first["refused"]) == 1
+
+        second = apply_artifact_edits(
+            "standup",
+            [{"op": "set", "path": "team_summary", "value": "second fix"}],
+            run_id=run_id,
+            author="Grace",
+            db_path=path,
+        )
+        assert second["applied"] == 1
+        with StandupStore(path) as store:
+            assert store.get_latest_report("s1").team_summary == "second fix"
+
+    def test_naming_a_corrected_row_still_anchors_to_the_generated_one(self, db):
+        """A caller may hold either id in the chain; the log has one home.
+
+        The artifact coming out right is not enough to show this — it does that
+        by accident when the second call reads the corrected row and finds no log
+        to replay. What pins it is *where the corrections were filed*: both must
+        land under the generated run, because that is the ref the next standup
+        looks up when it asks what the team changed yesterday.
+        """
+        path, run_id = db
+        first = apply_artifact_edits(
+            "standup",
+            [{"op": "note", "path": "", "value": "one"}],
+            run_id=run_id,
+            db_path=path,
+        )
+        corrected_id = first["committed_run_id"]
+        assert corrected_id != run_id
+
+        apply_artifact_edits("standup", [{"op": "note", "path": "", "value": "two"}], run_id=corrected_id, db_path=path)
+        with StandupStore(path) as store:
+            assert [a.text for a in store.get_latest_report("s1").annotations] == ["one", "two"]
+
+        anchored = artifact_edit_history("standup", run_id=run_id, db_path=path)
+        assert [row["value"] for row in anchored["edits"]] == ["one", "two"]
+        # And nothing filed under the corrected row, which is not an artifact
+        # anybody wrote a correction against.
+        assert artifact_edit_history("standup", run_id=corrected_id, db_path=path)["edits"] == []

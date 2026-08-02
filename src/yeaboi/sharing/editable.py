@@ -79,6 +79,9 @@ class EditableDocument:
         self.ref = ref
         self.share_id = share_id
         self._edits: list[Edit] = []
+        # Recorded corrections that no longer fit this artifact. Never part of
+        # `_edits`, which has to keep agreeing with what `current()` says.
+        self._unapplied: list[tuple[Edit, str]] = []
         self._current = artifact
         self._revision = 0
         self._locked = False
@@ -111,6 +114,29 @@ class EditableDocument:
         """The correction log, in accept order."""
         with self._lock:
             return tuple(self._edits)
+
+    def record_unapplied(self, edit: Edit, reason: str) -> None:
+        """Remember a recorded correction that no longer fits this artifact.
+
+        `edits.py` promises that a correction which fails its compare-and-swap on
+        replay "is not lost, it is *shown as unapplied*, which is the honest
+        outcome". Without somewhere to put it that promise was not kept: replay
+        caught the refusal, dropped the edit, and the only trace was an INFO line
+        on the host's own machine. The reader whose correction it was saw a
+        document that did not contain it and a history that had never heard of
+        it — which is exactly the disappearance the module set out to avoid.
+
+        Kept apart from ``_edits`` because these did *not* apply: folding them in
+        would make `edits()` disagree with the artifact, and `edits()` is what
+        replay, the commit count and the trend charts all read.
+        """
+        with self._lock:
+            self._unapplied.append((edit, reason))
+
+    def unapplied(self) -> tuple[tuple[Edit, str], ...]:
+        """Recorded corrections that could not be replayed, with why."""
+        with self._lock:
+            return tuple(self._unapplied)
 
     def editors(self) -> tuple[str, ...]:
         """Distinct self-declared names that have edited. Never an identity claim."""
@@ -267,6 +293,7 @@ class EditableDocument:
         with self._lock:
             current = self._current
             edits = tuple(self._edits)
+            unapplied = tuple(self._unapplied)
             revision = self._revision
             locked = self._locked
 
@@ -288,8 +315,31 @@ class EditableDocument:
                     # Whose edit this is, without ever putting a raw pid on the
                     # wire — the same trick the retro board's `mine` flag uses.
                     "mine": bool(pid) and e.pid == pid,
+                    "applied": True,
+                    "reason": "",
                 }
                 for e in edits
+            ]
+            # Shown, not hidden. These are corrections somebody really made that
+            # this artifact can no longer take — the reader is owed the fact
+            # rather than a document that quietly lacks their change.
+            + [
+                {
+                    "id": e.edit_id,
+                    "seq": 0,
+                    "op": e.op,
+                    "path": e.path,
+                    "value": e.value,
+                    "label": e.label,
+                    "target": e.target,
+                    "author": e.author,
+                    "avatar": e.avatar,
+                    "at": e.at,
+                    "mine": bool(pid) and e.pid == pid,
+                    "applied": False,
+                    "reason": reason,
+                }
+                for e, reason in unapplied
             ],
             "people": self.presence_list(pid),
         }

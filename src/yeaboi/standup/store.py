@@ -583,8 +583,8 @@ class StandupStore:
             logger.warning("Failed to deserialize standup report for %s: %s", session_id, exc)
             return None
 
-    def get_previous_run(self, session_id: str, before_date: str) -> tuple[int, str, StandupReport] | None:
-        """Return ``(row id, origin, report)`` for the newest report before ``before_date``.
+    def get_previous_run(self, session_id: str, before_date: str) -> tuple[int, str, int, StandupReport] | None:
+        """Return ``(row id, origin, edited_from_id, report)`` for the newest report before ``before_date``.
 
         Date-scoped (not run-scoped) so a same-day rerun never becomes
         "yesterday" — the engine uses this as the previous standup when
@@ -594,18 +594,28 @@ class StandupStore:
         is worth more to the next run than a generated one: it says the team
         looked at this and told us it was wrong, and the engine can go and read
         exactly what they changed.
+
+        ``edited_from_id`` rides along because that is the row the corrections
+        are filed under. A log is anchored to the artifact it was written
+        against, so looking it up by *this* row's id — the corrected one — finds
+        nothing, and the whole feed-forward hint quietly never fires.
         """
         row = self._conn.execute(
-            "SELECT id, origin, report_json FROM standup_history "
+            "SELECT id, origin, edited_from_id, report_json FROM standup_history "
             "WHERE session_id = ? AND standup_date != '' AND standup_date < ? "
             "AND status IN ('success', 'partial') "
             "ORDER BY standup_date DESC, run_at DESC LIMIT 1",
             (session_id, before_date),
         ).fetchone()
-        if row is None or not row[2]:
+        if row is None or not row[3]:
             return None
         try:
-            return int(row[0]), str(row[1] or "generated"), _dict_to_standup_report(json.loads(row[2]))
+            return (
+                int(row[0]),
+                str(row[1] or "generated"),
+                int(row[2] or 0),
+                _dict_to_standup_report(json.loads(row[3])),
+            )
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize previous standup report for %s: %s", session_id, exc)
             return None
@@ -613,7 +623,7 @@ class StandupStore:
     def get_previous_report(self, session_id: str, before_date: str) -> StandupReport | None:
         """The previous standup's report alone. See :meth:`get_previous_run`."""
         found = self.get_previous_run(session_id, before_date)
-        return found[2] if found else None
+        return found[3] if found else None
 
     def get_history(self, session_id: str, limit: int = 30) -> list[dict]:
         """Return recent run metadata (newest first) for a session.
@@ -650,6 +660,45 @@ class StandupStore:
             return _dict_to_standup_report(json.loads(row[0]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize standup run id=%s: %s", run_id, exc)
+            return None
+
+    def get_base_run(self, *, session_id: str = "", run_id: int = 0) -> tuple[int, StandupReport] | None:
+        """Return ``(id, report)`` for the *generated* run a correction log is anchored to.
+
+        Not `get_latest_report`, which deliberately returns the **corrected**
+        row — that is what makes "edits become the artifact" true for every
+        reader. A correction log is the opposite question: it was recorded
+        against the original, and it is replayed onto the original, so a caller
+        that replays it onto the latest row applies every earlier correction a
+        second time. Appends and notes have no compare-and-swap to save them, so
+        they duplicate silently, once per call.
+
+        Given a ``run_id`` that names a corrected row, this follows
+        ``edited_from_id`` back to its parent, so naming either row in a chain
+        anchors to the same log.
+        """
+        if run_id:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM standup_history WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is not None and row[1] == "edited" and row[2]:
+                row = self._conn.execute(
+                    "SELECT id, origin, edited_from_id, report_json FROM standup_history WHERE id = ?",
+                    (row[2],),
+                ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM standup_history "
+                "WHERE session_id = ? AND origin != 'edited' ORDER BY run_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        if row is None or not row[3]:
+            return None
+        try:
+            return int(row[0]), _dict_to_standup_report(json.loads(row[3]))
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to deserialize standup base run id=%s: %s", row[0], exc)
             return None
 
     def delete_run(self, run_id: int) -> bool:

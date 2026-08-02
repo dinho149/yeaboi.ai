@@ -116,6 +116,7 @@ function Body({ report }: { report: ExportReport }) {
           images={report.images}
           trend={report.trend}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'profile':

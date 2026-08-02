@@ -153,6 +153,15 @@ def _args_builder(kind: str, *, history=()):
             from yeaboi.roadmap.export import roadmap_export_args
 
             return roadmap_export_args(artifact, editable=True)
+        if kind == "analysis":
+            from yeaboi.team_profile_exporter import profile_export_args
+
+            # No `editable=` and no per-field maps: a team profile is
+            # annotations-only, because every number on it is computed from
+            # tracker data and correcting one in place would make the page
+            # disagree with the run that produced it. `profile_export_args`
+            # already calls `with_annotations`, which is the whole affordance.
+            return profile_export_args(artifact)
         if kind.startswith("performance_"):
             from yeaboi.performance import export
 

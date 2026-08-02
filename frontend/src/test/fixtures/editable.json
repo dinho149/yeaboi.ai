@@ -38,6 +38,7 @@
   "editable": true,
   "edits": [
     {
+      "applied": true,
       "at": "2026-01-01T00:00:00+00:00",
       "author": "Grace",
       "avatar": "🦊",
@@ -46,11 +47,13 @@
       "mine": true,
       "op": "set",
       "path": "member_updates[name=Ada].blockers",
+      "reason": "",
       "seq": 1,
       "target": "",
       "value": "unblocked"
     },
     {
+      "applied": true,
       "at": "2026-01-01T00:00:00+00:00",
       "author": "Grace",
       "avatar": "🦊",
@@ -59,11 +62,13 @@
       "mine": true,
       "op": "note",
       "path": "member_updates[name=Ada]",
+      "reason": "",
       "seq": 2,
       "target": "",
       "value": "was on call all week"
     },
     {
+      "applied": true,
       "at": "2026-01-01T00:00:00+00:00",
       "author": "Ada",
       "avatar": "🐙",
@@ -72,6 +77,7 @@
       "mine": false,
       "op": "field",
       "path": "",
+      "reason": "",
       "seq": 3,
       "target": "",
       "value": "Grace"

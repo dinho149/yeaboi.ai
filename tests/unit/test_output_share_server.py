@@ -208,3 +208,38 @@ def test_a_body_that_lies_about_its_length_closes_the_connection(share_server):
             conn.getresponse().read()
     finally:
         conn.close()
+
+
+@pytest.fixture
+def editable_server():
+    """A share whose document can be corrected — the only mode with API routes."""
+    from yeaboi.agent.state import StandupReport
+    from yeaboi.sharing.documents import editable_share, standup_document
+
+    report = StandupReport(session_id="s1", date="2026-08-01", team_summary="Original.")
+    server = OutputShareServer(
+        standup_document(report),
+        editable=editable_share(report, kind="standup", ref="standup:1"),
+    )
+    server.start()
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+def test_the_invite_carries_the_join_code_and_not_the_url(editable_server):
+    """`invite_payload` takes four positional arguments, and order is everything.
+
+    Passing `public_url` into the `join_code` slot type-checks perfectly and
+    produces an invite that offers a reader a tunnel URL as the code to type,
+    while the share URL falls back to whatever Host the request carried — which
+    over a tunnel is not the address a teammate can reach. Nothing in the bundle
+    reads this endpoint yet, so the only thing that would have caught it is a
+    test that looks at the body rather than at the status.
+    """
+    request = urllib.request.Request(f"{editable_server.local_url}api/invite?token={editable_server.token}")
+    with urllib.request.urlopen(request, timeout=2) as response:  # noqa: S310 - loopback test server
+        body = json.loads(response.read())
+    assert body["joinCode"] == editable_server.join_code
+    assert "://" not in body["joinCode"]
