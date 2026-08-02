@@ -455,12 +455,61 @@ class TestScanRepoContext:
         assert ctx is None
         assert status["status"] == "skipped"
 
-    def test_gitlab_platform_returns_none(self):
-        """Returns None for GitLab (no tools implemented yet)."""
-        qs = self._make_qs("https://gitlab.com/owner/repo", "GitLab")
+    def test_gitlab_calls_read_repo_and_readme(self, monkeypatch):
+        """GitLab platform calls gitlab_read_repo and gitlab_read_readme.
+
+        This path used to bail with "GitLab not yet supported" even though Q16
+        offers GitLab — see tools/gitlab.py. Note the kwarg is project_url, not
+        repo_url: GitLab projects can be nested arbitrarily deep in subgroups,
+        so the tools take a project path rather than an owner/repo slug.
+        """
+        mock_repo = MagicMock()
+        mock_repo.invoke.return_value = "Project: group/project"
+        mock_readme = MagicMock()
+        mock_readme.invoke.return_value = "# MyProject\nA great project."
+
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_repo", mock_repo)
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_readme", mock_readme)
+
+        qs = self._make_qs("https://gitlab.com/group/project", "GitLab")
+        result, status = _scan_repo_context(qs)
+
+        mock_repo.invoke.assert_called_once_with({"project_url": "https://gitlab.com/group/project"})
+        mock_readme.invoke.assert_called_once_with({"project_url": "https://gitlab.com/group/project"})
+        assert result is not None
+        assert "group/project" in result
+        assert "MyProject" in result
+        assert status["status"] == "success"
+
+    def test_gitlab_unconfigured_returns_none(self, monkeypatch):
+        """An unconfigured GitLab (no token) degrades to None, it does not raise."""
+        missing = MagicMock()
+        missing.invoke.return_value = "Error: GitLab is not configured. Ensure GITLAB_TOKEN is set in your .env file."
+
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_repo", missing)
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_readme", missing)
+
+        qs = self._make_qs("https://gitlab.com/group/project", "GitLab")
         ctx, status = _scan_repo_context(qs)
         assert ctx is None
-        assert status["status"] == "skipped"
+        assert status["status"] == "error"
+
+    def test_gitlab_one_tool_fails_returns_other(self, monkeypatch):
+        """Returns the successful result when only one GitLab tool fails."""
+        mock_repo = MagicMock()
+        mock_repo.invoke.return_value = "Error: GitLab project not found"
+        mock_readme = MagicMock()
+        mock_readme.invoke.return_value = "# README content"
+
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_repo", mock_repo)
+        monkeypatch.setattr("yeaboi.tools.gitlab.gitlab_read_readme", mock_readme)
+
+        qs = self._make_qs("https://gitlab.com/group/project", "GitLab")
+        result, status = _scan_repo_context(qs)
+
+        assert result is not None
+        assert "README content" in result
+        assert status["status"] == "success"
 
     def test_unsupported_platform_returns_none(self):
         """Returns None for Bitbucket (no tools implemented yet)."""

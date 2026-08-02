@@ -23,6 +23,7 @@ _EXPECTED_WRITES = {
     "azdevops_create_epic",
     "azdevops_create_story",
     "azdevops_create_iteration",
+    "gitlab_create_issue",
 }
 
 

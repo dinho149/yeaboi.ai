@@ -50,6 +50,7 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
     "GOOGLE_API_KEY",
     "LANGSMITH_API_KEY",
     "GITHUB_TOKEN",
+    "GITLAB_TOKEN",
     "JIRA_API_TOKEN",
     "AZURE_DEVOPS_TOKEN",
     "CONFLUENCE_API_TOKEN",
@@ -74,6 +75,9 @@ _TOKEN_PATTERNS: tuple[str, ...] = (
     r"sk-[A-Za-z0-9_-]{20,}",
     r"gh[pousr]_[A-Za-z0-9]{20,}",
     r"github_pat_[A-Za-z0-9_]{20,}",
+    # GitLab personal access tokens (glpat-) and their CI/runner siblings
+    # (glrt-, gldt-, glsoat-), all of which share the "gl<kind>-" prefix.
+    r"gl[a-z]{2,6}-[A-Za-z0-9_-]{20,}",
     r"xox[abprs]-[\w-]{10,}",
     r"AIza[\w-]{35}",
     r"AKIA[0-9A-Z]{16}",
