@@ -194,3 +194,34 @@ class TestCorrectionsFeedForward:
 
         report = StandupReport(member_updates=(MemberUpdate(name="Ada", summary="a"),))
         assert yesterday_context(report) == yesterday_context(report, corrections=())
+
+
+class TestYesterdayCorrections:
+    """Corrections are fed FORWARD, never written back into yesterday's report."""
+
+    def test_correction_attaches_to_an_existing_entry(self):
+        prev = _prev_report(summary="Did X")
+        ctx = yesterday_context(prev, {"Alice": ["also commented on the design doc"]})
+        assert ctx["Alice"]["summary"] == "Did X"
+        assert ctx["Alice"]["corrections"] == ["also commented on the design doc"]
+
+    def test_member_with_only_a_correction_still_gets_an_entry(self):
+        """The correction is the only thing we know about their yesterday."""
+        ctx = yesterday_context(None, {"Alice": ["shipped the alerting PR"]})
+        assert ctx["Alice"]["corrections"] == ["shipped the alerting PR"]
+        assert ctx["Alice"]["summary"] == ""
+
+    def test_no_corrections_leaves_the_key_absent(self):
+        ctx = yesterday_context(_prev_report(summary="Did X"))
+        assert "corrections" not in ctx["Alice"]
+
+    def test_corrections_are_capped(self):
+        ctx = yesterday_context(None, {"Alice": [f"thing {i}" for i in range(10)]})
+        assert len(ctx["Alice"]["corrections"]) == 3
+
+    def test_corrections_are_clipped(self):
+        ctx = yesterday_context(None, {"Alice": ["x" * 900]})
+        assert len(ctx["Alice"]["corrections"][0]) <= 305
+
+    def test_empty_corrections_are_ignored(self):
+        assert yesterday_context(None, {"Alice": ["", "   "]}) == {}

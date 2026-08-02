@@ -37,7 +37,7 @@ def get_standup_summary_prompt(
             "documentation_activity": [ {kind,title,status,source,repository}, ... ],
             "in_progress": [ {kind,title,status,source}, ... ],
             "self_report": str, "coverage": dict,
-            "yesterday": {"summary","blockers","outlook","corrected"?} | {},
+            "yesterday": {"summary","blockers","outlook","corrected"?,"corrections"?} | {},
             "blocker_signals": [str, ...]}] — one entry per team member.
             The three activity lists are already classified; "in_progress" holds tickets
             currently assigned to them and in progress (possibly untouched in
@@ -45,7 +45,9 @@ def get_standup_summary_prompt(
             didn't type one), used as supporting context, never as a
             replacement for the activity analysis; "yesterday" is the member's
             entry from the previous standup ({} when there is none) for the
-            day-over-day progress note; "blocker_signals" are deterministic
+            day-over-day progress note, optionally carrying "corrections" —
+            work stated in the last standup MEETING that the last report missed
+            (standup/transcript_review.py); "blocker_signals" are deterministic
             blocker evidence strings from insights.detect_blocker_signals that
             MUST be reflected in the member's 'blockers'.
         activity_counts: (source, count) pairs for the "what we looked at" line.
@@ -110,6 +112,9 @@ def get_standup_summary_prompt(
         "is already their correction, not the original. Treat that as a signal you got something "
         "wrong about this person before and be correspondingly careful — do not restate the version "
         "they replaced, and do not describe the correction itself as new activity.\n"
+        "- A member's 'yesterday.corrections' are work they stated in the last standup MEETING that "
+        "the last report missed. Treat them as ESTABLISHED FACT about yesterday when writing "
+        "'progress_note' — never as new activity today, and never repeat them in 'summary'.\n"
         "- Write a one-sentence 'outlook' predicting the member's likely focus for the day ahead, "
         "grounded ONLY in their in-progress tickets, open pull requests, and self-report. Phrase it "
         "as an expectation ('Likely to continue …'), never as fact. Use an empty string when there "

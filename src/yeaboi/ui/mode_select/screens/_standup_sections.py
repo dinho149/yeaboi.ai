@@ -123,7 +123,14 @@ def standup_card_order(data: dict) -> list[str]:
     order = ["summary", "my_update", "team"]
     if data.get("team_expanded"):
         order += [f"member:{m.name}" for m in _team_members(data)]
-    order += ["activity", "schedule"]
+    order += ["activity"]
+    # Only when a transcript has actually been reviewed — an empty card would
+    # advertise a feature the user hasn't used rather than report a result.
+    # A nudge IS a result ("3 standups went unchecked"), so it earns the card on
+    # the same terms rather than being an exception to them.
+    if data.get("review") is not None or data.get("nudge"):
+        order.append("gaps")
+    order += ["schedule"]
     if report.warnings:
         order.append("notices")
     return order
@@ -177,6 +184,7 @@ def standup_card_title(key: str, data: dict) -> str:
         "my_update": "My Update",
         "team": "Team",
         "activity": "Activity",
+        "gaps": "Transcript Review",
         "schedule": "Schedule",
         "notices": "⚠ Notices",
     }.get(key, key)
@@ -222,6 +230,26 @@ def standup_card_teaser(key: str, data: dict) -> str:
             return "Not configured"
         state = "Enabled" if config.get("enabled") else "Off"
         return f"{state} · {config.get('time', '—')} · {config.get('weekdays', '—')}"
+    if key == "gaps":
+        review = data.get("review")
+        nudge = data.get("nudge")
+        if review is None:
+            if nudge:
+                n = len(nudge.missed_dates)
+                return f"{n} standup{'s' if n != 1 else ''} unchecked · oldest {nudge.missed_dates[-1]}"[:_TEASER_W]
+            return "Not reviewed yet"
+        # An outstanding count leads even when a review exists: the review is
+        # history, the unchecked standups are the thing to act on.
+        parts = []
+        if nudge:
+            parts.append(f"{len(nudge.missed_dates)} unchecked")
+        parts.append(f"{len(review.gaps)} gap{'s' if len(review.gaps) != 1 else ''}")
+        if review.config_suggestions:
+            parts.append(f"{len(review.config_suggestions)} to fix in config")
+        filed = sum(1 for entry in (data.get("gap_issues") or []) if entry.get("issue_number"))
+        if filed:
+            parts.append(f"{filed} filed")
+        return " · ".join(parts)[:_TEASER_W]
     if key == "notices":
         n = len(report.warnings) if report else 0
         return f"{n} notice{'s' if n != 1 else ''}"
@@ -552,6 +580,94 @@ def _detail_notices(ctx: _StandupCtx, data: dict) -> None:
         ctx.wrapped(f"- {w}", ctx.theme.warn)
 
 
+def _gaps_nudge(ctx: _StandupCtx, nudge) -> None:
+    """The standups that ran but were never checked against their meetings."""
+    theme = ctx.theme
+    ctx.wrapped(nudge.message, theme.warn)
+    ctx.blank()
+    shown = nudge.missed_dates[:8]
+    ctx.line(f"    Unchecked: {', '.join(shown)}", theme.dim)
+    if len(nudge.missed_dates) > len(shown):
+        ctx.line(f"    …and {len(nudge.missed_dates) - len(shown)} more", theme.dim)
+    ctx.blank()
+    ctx.wrapped("Press Review to paste a transcript, or to point Standup at your recordings folder.", theme.muted)
+
+
+def _detail_gaps(ctx: _StandupCtx, data: dict) -> None:
+    """What the standup MEETING revealed the report had missed, and why.
+
+    Two clearly separated halves, because they need different actions: gaps in
+    yeaboi itself become GitHub issues, while config gaps are the user's to fix
+    and carry an exact remedy.
+    """
+    review = data.get("review")
+    nudge = data.get("nudge")
+    theme = ctx.theme
+    if review is None:
+        ctx.heading("Transcript Review")
+        if nudge:
+            _gaps_nudge(ctx, nudge)
+            return
+        ctx.wrapped(
+            "No standup transcript has been reviewed yet. Press Review to paste one, "
+            "or to point Standup at the folder your recordings land in.",
+            theme.muted,
+        )
+        return
+
+    # A review on file does not mean the feature is keeping up — it is a review
+    # of ONE standup, and the nudge is about every standup since. Rendering it
+    # only in the no-review branch made the whole escalation ladder invisible to
+    # the user who tried this once and then stopped: `invite` never reaches
+    # report.warnings by design, so for them it would have reached nothing at
+    # all. It goes above the review because it is the half with something to do.
+    if nudge:
+        ctx.heading("Standups not yet checked")
+        _gaps_nudge(ctx, nudge)
+        ctx.blank()
+
+    ctx.heading(f"Transcript Review · {review.standup_date or 'unknown date'}")
+    if review.sources:
+        ctx.line(f"    Read: {', '.join(s.filename for s in review.sources)}", theme.dim)
+    if review.accuracy_note:
+        ctx.wrapped(review.accuracy_note, theme.muted)
+
+    filed_by_fingerprint = {entry.get("fingerprint"): entry for entry in (data.get("gap_issues") or [])}
+
+    if review.gaps:
+        ctx.blank()
+        ctx.heading("Gaps in standup itself")
+        for gap in review.gaps:
+            ctx.line(f"    • {gap.title}", theme.value)
+            if gap.root_cause:
+                ctx.wrapped(gap.root_cause, theme.muted, indent="      ")
+            for claim in gap.claims[:1]:
+                if claim.quote:
+                    ctx.wrapped(f"“{claim.quote}”", theme.dim, indent="      ")
+            entry = filed_by_fingerprint.get(gap.fingerprint) or {}
+            if entry.get("issue_number"):
+                ctx.line(f"      issue #{entry['issue_number']} · seen ×{entry.get('occurrences', 1)}", theme.dim)
+            else:
+                ctx.line(f"      drafted · {gap.priority} priority", theme.dim)
+
+    if review.config_suggestions:
+        ctx.blank()
+        ctx.heading("Fix in your configuration")
+        for gap in review.config_suggestions:
+            ctx.line(f"    • {gap.title}", theme.value)
+            if gap.remedy:
+                ctx.wrapped(f"→ {gap.remedy}", theme.muted, indent="      ")
+
+    if not review.gaps and not review.config_suggestions:
+        ctx.blank()
+        ctx.wrapped("No gaps found — the report matched what the team said.", theme.muted)
+
+    if review.warnings:
+        ctx.blank()
+        for warning in review.warnings[:3]:
+            ctx.wrapped(f"- {warning}", theme.warn)
+
+
 def build_standup_detail(ctx: _StandupCtx, key: str, data: dict) -> None:
     """Append the detail-view lines for one card into ctx."""
     if key == "my_update":
@@ -563,6 +679,7 @@ def build_standup_detail(ctx: _StandupCtx, key: str, data: dict) -> None:
     builder = {
         "summary": _detail_summary,
         "activity": _detail_activity,
+        "gaps": _detail_gaps,
         "schedule": _detail_schedule,
         "notices": _detail_notices,
     }.get(key)

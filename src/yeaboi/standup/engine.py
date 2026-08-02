@@ -25,9 +25,13 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import UTC, date, datetime
+from typing import TYPE_CHECKING
 
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
+
+if TYPE_CHECKING:
+    from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
 from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
 from yeaboi.standup.store import StandupStore
 
@@ -504,6 +508,10 @@ def _member_links(acts: list[dict]) -> tuple[tuple[str, str], ...]:
 # merges end in "(#91)" and the collector's own PR-branch scan appends
 # "(PR #91)". All are gated on a matching PR existing in the same repository's
 # window, so a stray "(#12)" in prose cannot fold a commit under nothing.
+# Transcript-review findings shown in the standup's own notices before the list
+# is elided — enough to act on, few enough that the notices stay scannable.
+_MAX_TRANSCRIPT_NOTICES = 3
+
 _PR_NUMBER_RES = (
     re.compile(r"Merge pull request #?(\d+)"),
     re.compile(r"Merged PR (\d+):"),
@@ -998,6 +1006,7 @@ def run_standup(
     azdo_projects: list[str] | None = None,
     azdo_repositories: list[str] | None = None,
     documentation_sources: list[str] | None = None,
+    review_transcripts: bool = True,
     deliver: bool = True,
     dry_run: bool = False,
     db_path=None,
@@ -1020,6 +1029,10 @@ def run_standup(
             repository-scoped and Azure Repos is project-scoped.
         documentation_sources: optional Confluence/Notion provider override;
             repository documentation follows the selected code repositories.
+        review_transcripts: when True (default), sweep the transcript folders
+            for unreviewed meeting transcripts covering EARLIER dates and review
+            them first, so yesterday's corrections inform today's report. Never
+            writes to GitHub — issues are drafted, and filing is a separate act.
         deliver: when True, fan out to delivery channels (skipped if dry_run).
         dry_run: build the report but do not deliver (used by the TUI "Generate" preview).
         db_path: override sessions.db path (tests); defaults to paths.get_db_path().
@@ -1077,6 +1090,26 @@ def run_standup(
                 )
         except Exception:  # noqa: BLE001 — a missing hint is not a failed standup
             logger.warning("Could not read previous standup corrections", exc_info=True)
+
+    # 1b. Transcript sweep. Reviews unreviewed transcripts covering EARLIER
+    #     dates BEFORE today's activity is collected, so a correction the team
+    #     made out loud yesterday ("yes, but I also did 4 and 5") is in hand
+    #     when today's summaries are written. Never fatal: this sits on the
+    #     standup critical path, including the timed --standup-interactive one.
+    transcript_corrections: dict[str, list[str]] = {}
+    transcript_warnings: list[str] = []
+    if review_transcripts and (config or {}).get("transcript_review_enabled", True):
+        _notify("Reviewing meeting transcripts")
+        try:
+            from yeaboi.standup import transcript_review as _transcript_review
+
+            reviews = _transcript_review.sweep_and_review(
+                session_id, config=config, before_date=date_str, db_path=db_path, today=today
+            )
+            transcript_corrections, transcript_warnings = _transcript_review.carry_forward(reviews, previous_report)
+        except Exception as e:  # belt and braces; the sweep already never raises
+            logger.warning("standup: transcript review failed (non-fatal): %s", e)
+            transcript_warnings = ["Transcript review skipped — see logs."]
 
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
@@ -1217,7 +1250,7 @@ def run_standup(
     # deterministic blocker evidence + each member's previous-standup context.
     grouped = _group_activity_by_author(bundle.items, members, alias_map)
     blocker_signals = insights.detect_blocker_signals(grouped, previous_report=previous_report)
-    yesterday = insights.yesterday_context(previous_report, corrections=corrections)
+    yesterday = insights.yesterday_context(previous_report, transcript_corrections, corrections=corrections)
     if blocker_signals:
         logger.info("standup: blocker signals detected for %d member(s)", len(blocker_signals))
 
@@ -1269,6 +1302,38 @@ def run_standup(
         # problems above are more urgent) naming each unscanned source and its fix.
         skipped = ", ".join(f"{src.replace('_', ' ').title()} ({reason})" for src, reason in bundle.skipped)
         warnings.append(f"Not scanned: {skipped} — connect these in .env to include their activity in the standup.")
+
+    # Transcript-review findings, capped so the notices stay scannable. They go
+    # last: an auth failure or a missing source is more urgent than a diagnosis
+    # of a standup that already happened.
+    if transcript_warnings:
+        warnings.extend(transcript_warnings[:_MAX_TRANSCRIPT_NOTICES])
+        if len(transcript_warnings) > _MAX_TRANSCRIPT_NOTICES:
+            warnings.append(
+                f"…and {len(transcript_warnings) - _MAX_TRANSCRIPT_NOTICES} more transcript-review "
+                "finding(s) — run `yeaboi standup-review --list-gaps` to see them all."
+            )
+
+    # AFTER the cap above, deliberately: a day with three findings must not
+    # truncate away the reason the fourth one was never checked at all.
+    #
+    # Gated on level, not on existence. report.warnings is a BROADCAST surface —
+    # it reaches Slack, email and the exports — and "you forgot a file" does not
+    # belong in a team channel over a single miss. A persistent one does, because
+    # by then the feature is quietly doing nothing.
+    try:
+        from yeaboi.standup import transcripts as _transcripts
+
+        # before_date excludes TODAY: this run is about to be recorded, and a
+        # second run on the same day would otherwise count it as a standup whose
+        # meeting went untranscribed — for a meeting that has only just happened.
+        nudge = _transcripts.transcript_nudge(
+            session_id, config=config, db_path=db_path, before_date=date_str, today=today
+        )
+        if nudge and nudge.level != "invite":
+            warnings.append(nudge.message)
+    except Exception as e:  # a nudge must never break a standup
+        logger.warning("standup: transcript nudge failed: %s", e)
 
     report = StandupReport(
         date=date_str,
@@ -1334,3 +1399,225 @@ def run_standup(
         status,
     )
     return report
+
+
+def transcript_nudge(session_id: str, *, db_path=None, today: date | None = None) -> TranscriptNudge:
+    """Which standups were never checked against their meeting, and how loudly to say so.
+
+    Deterministic and offline — two indexed queries, no LLM — because the TUI
+    calls it on every hub refresh. Nothing is stored: the answer is a set
+    difference between the dates a standup ran and the dates a transcript was
+    reviewed for, both already in the database, so there is no "last nudged"
+    state to migrate or get wrong.
+
+    Returns a falsy ``TranscriptNudge`` when there is nothing to say, which is
+    the normal case.
+    """
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup import transcripts as _transcripts
+
+    resolved_db = db_path or get_db_path()
+    with StandupStore(resolved_db) as store:
+        config = store.load_config(session_id) or {}
+    return _transcripts.transcript_nudge(session_id, config=config, db_path=resolved_db, today=today)
+
+
+def import_transcript(
+    text: str,
+    *,
+    covered_date: str = "",
+    label: str = "",
+    today: date | None = None,
+) -> TranscriptSource:
+    """Save transcript TEXT into the managed folder and describe what landed.
+
+    The intake half of the review pipeline, for material that never was a file —
+    a clipboard paste, a piped stdin, an MCP argument. Everything downstream
+    still sees an ordinary file in ``~/.yeaboi/transcripts``, so nothing in the
+    sweep, the content-hash ledger or the date attribution needs to know a paste
+    happened.
+
+    Returns the same ``TranscriptSource`` a discovered file produces, so the
+    caller can confirm what actually landed ("covers 2026-08-01 · 4 speakers ·
+    labelled") rather than just "saved". Attribution is the part worth showing:
+    an unlabelled transcript narrows what the review is then allowed to conclude,
+    and the user can still fix that by re-copying with speaker names.
+
+    Raises ``ValueError`` on empty or oversized text, or a malformed
+    ``covered_date`` — an intake primitive with a clear input contract, whose
+    callers want the message.
+    """
+    from yeaboi.standup import transcripts as _transcripts
+
+    path = _transcripts.import_text(text, covered_date=covered_date, label=label, today=today)
+    source, _turns = _transcripts.read_transcript(path, today=today)
+    logger.info(
+        "import_transcript: %s covers %s (%s, %d speaker(s), %d chars)",
+        source.filename,
+        source.covered_date,
+        source.attribution,
+        len(source.speakers),
+        source.char_count,
+    )
+    return source
+
+
+def run_transcript_review(
+    session_id: str,
+    *,
+    transcript_paths: list[str] | None = None,
+    transcript_text: str = "",
+    transcript_dir: str = "",
+    standup_date: str = "",
+    max_transcripts: int = 5,
+    include_reviewed: bool = False,
+    db_path=None,
+    today: date | None = None,
+    on_progress=None,
+) -> TranscriptReview:
+    """Review standup meeting transcripts against the reports they discussed.
+
+    Absorbs a transcript of the standup, checks each claim people made against
+    the evidence the report actually had, and diagnoses WHY anything missing was
+    invisible — a missing integration, an unconfigured source, a capability the
+    collectors lack, or a summary that dropped what it collected.
+
+    This function ALWAYS drafts and NEVER writes to GitHub. It has no
+    ``file_issues`` parameter by design: filing is a separate, explicit act
+    (``file_transcript_issues``), so a scheduled run cannot publish to a public
+    repository. Product-level gaps are staged in the local ledger; config-level
+    ones stay as suggestions with an exact remedy.
+
+    Args:
+        transcript_paths: explicit files to review, bypassing the folder sweep.
+        transcript_text: raw transcript text to import and review — a paste, a
+            pipe, an agent's argument. Saved via ``import_transcript`` first, so
+            it is reviewed exactly like a file the user dropped in themselves.
+        transcript_dir: an external transcript folder for this run only; the
+            managed ~/.yeaboi/transcripts folder is always swept as well.
+        standup_date: the date to attribute transcripts to when their own date
+            cannot be inferred. For ``transcript_text`` it is stronger than that:
+            somebody who passes both a date and the text means that date, so it
+            wins over a date found inside the text.
+        max_transcripts: cap on distinct standup DATES reviewed in one call —
+            each date costs one LLM call.
+        include_reviewed: re-review transcripts already in the ledger.
+        db_path/today/on_progress: injection seams (see run_standup).
+
+    Returns the newest review; when several dates were reviewed the rest are
+    persisted and readable through ``StandupStore.get_reviews``.
+    """
+    from yeaboi.agent.state import TranscriptReview
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup import transcript_review as _review
+    from yeaboi.standup.store import StandupStore
+
+    def _notify(phase: str) -> None:
+        if on_progress:
+            try:
+                on_progress(phase)
+            except Exception:
+                logger.debug("standup review: on_progress callback failed", exc_info=True)
+
+    resolved_db = db_path or get_db_path()
+    today = today or date.today()
+    logger.info(
+        "run_transcript_review: session=%s date=%s paths=%d",
+        session_id,
+        standup_date or "-",
+        len(transcript_paths or []),
+    )
+
+    with StandupStore(resolved_db) as store:
+        config = store.load_config(session_id) or {}
+    if transcript_dir:
+        config = {**config, "transcript_dir": transcript_dir}
+
+    if transcript_text.strip():
+        _notify("Saving the pasted transcript")
+        try:
+            imported = import_transcript(transcript_text, covered_date=standup_date, label="pasted", today=today)
+        except (ValueError, OSError) as exc:
+            # A bad paste is a user-input problem, not a pipeline failure — this
+            # surface never raises, so it comes back as a warning like every
+            # other reason a review found nothing to say. OSError is in here for
+            # the read-BACK: import_transcript writes the file and then reads it
+            # to report what landed, and read_transcript raises by contract, so a
+            # disk that filled between the two would otherwise reach an MCP
+            # client as a traceback instead of a warning.
+            logger.warning("run_transcript_review: import failed: %s", exc)
+            return TranscriptReview(
+                session_id=session_id,
+                standup_date=standup_date,
+                reviewed_at=datetime.now(UTC).isoformat(),
+                llm_mode="deterministic",
+                warnings=(str(exc),),
+            )
+        # Explicit paths bypass the folder sweep, which is what we want: an
+        # import the user just made is reviewed now, not queued behind a backlog.
+        transcript_paths = [imported.path, *(transcript_paths or [])]
+
+    _notify("Reading transcripts")
+    reviews = _review.sweep_and_review(
+        session_id,
+        config=config,
+        db_path=resolved_db,
+        today=today,
+        transcript_paths=transcript_paths,
+        standup_date=standup_date,
+        max_dates=max_transcripts,
+        include_reviewed=include_reviewed,
+    )
+    _notify("Diagnosing gaps")
+
+    if not reviews:
+        logger.info("run_transcript_review: nothing to review for session=%s", session_id)
+        return TranscriptReview(
+            session_id=session_id,
+            standup_date=standup_date,
+            reviewed_at=datetime.now(UTC).isoformat(),
+            llm_mode="deterministic",
+            warnings=("No unreviewed transcripts found. Drop one in ~/.yeaboi/transcripts and try again.",),
+        )
+    return reviews[-1]
+
+
+def file_transcript_issues(
+    review_id: int,
+    *,
+    session_id: str = "",
+    gap_ids: list[str] | None = None,
+    db_path=None,
+) -> IssueFilingResult:
+    """File a review's product gaps as GitHub issues. The explicit confirm act.
+
+    This is the ONLY path in the feature that writes to GitHub, and only a
+    deliberate user action reaches it. A gap already filed gets fresh evidence as
+    a comment rather than a duplicate issue; a gap whose issue was CLOSED gets a
+    new one referencing the old. Config-level suggestions are never filed —
+    those are the user's to fix.
+
+    Never raises: per-gap failures come back as GapIssueLink states.
+    """
+    from yeaboi.agent.state import IssueFilingResult
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup import gap_issues
+    from yeaboi.standup.store import StandupStore
+
+    resolved_db = db_path or get_db_path()
+    with StandupStore(resolved_db) as store:
+        review = store.get_review(review_id) if review_id else store.get_latest_review(session_id)
+    if review is None:
+        logger.warning("file_transcript_issues: no review found (id=%s session=%s)", review_id, session_id)
+        return IssueFilingResult(
+            review_id=review_id,
+            warnings=("No transcript review found to file — run a review first.",),
+        )
+
+    report = None
+    if review.run_id:
+        with StandupStore(resolved_db) as store:
+            report = store.get_run_by_id(review.run_id)
+
+    logger.info("file_transcript_issues: filing %d gap(s) from review %s", len(review.gaps), review.review_id)
+    return gap_issues.file_review_gaps(review, report=report, gap_ids=gap_ids, db_path=resolved_db)

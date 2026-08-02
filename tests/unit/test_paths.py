@@ -45,6 +45,25 @@ class TestExportDirHelpers:
         assert p.parent.is_dir()  # data dir created, file itself may not exist yet
 
 
+class TestTranscriptsDir:
+    """The managed standup-transcript drop folder."""
+
+    def test_creates_under_root(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        d = paths.get_transcripts_dir()
+        assert d == tmp_path / "transcripts"
+        assert d.is_dir()
+
+    def test_idempotent(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        assert paths.get_transcripts_dir() == paths.get_transcripts_dir()
+
+    def test_lives_inside_the_yeaboi_root(self):
+        # Being under ROOT_DIR is the whole reason this folder needs no
+        # path-consent prompt — fs_policy already allows the tree.
+        assert paths.TRANSCRIPTS_DIR.parent == paths.ROOT_DIR
+
+
 class TestSafeKey:
     """_safe_key must never let a key escape its export root."""
 

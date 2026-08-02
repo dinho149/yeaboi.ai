@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 21  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits  # noqa: E501
+CURRENT_SCHEMA_VERSION = 22  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -725,6 +725,25 @@ class SessionStore:
                     except sqlite3.OperationalError:
                         pass  # column already exists — the block stays idempotent
             logger.info("Migration v21: created artifact_edits and edit-provenance columns")
+
+        if from_version < 22:
+            # v22: standup transcript review — three new tables plus two
+            # standup_config columns. The whole schema script is idempotent
+            # (CREATE TABLE IF NOT EXISTS), so replaying it only adds what's missing.
+            from yeaboi.standup.store import _STANDUP_SCHEMA
+
+            self._conn.executescript(_STANDUP_SCHEMA)
+            for statement in (
+                """ALTER TABLE standup_config
+                   ADD COLUMN transcript_dir TEXT NOT NULL DEFAULT ''""",
+                """ALTER TABLE standup_config
+                   ADD COLUMN transcript_review_enabled INTEGER NOT NULL DEFAULT 1""",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+            logger.info("Migration v22: created standup transcript-review tables")
 
     # ── Token usage persistence ──────────────────────────────────────────
 

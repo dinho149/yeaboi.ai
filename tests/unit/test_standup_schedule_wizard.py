@@ -16,7 +16,7 @@ class _Live:
         pass
 
 
-def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_line=None):
+def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_line=None, reminder_offset=0):
     """Run the wizard headlessly with a scripted key sequence.
 
     Returns (message, saved_config, install_calls, remove_calls).
@@ -31,7 +31,18 @@ def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_li
 
     install_calls, remove_calls = [], []
     monkeypatch.setattr(scheduler, "install_schedule", lambda *a, **k: install_calls.append(a) or "installed ok")
-    monkeypatch.setattr(scheduler, "remove_schedule", lambda *a, **k: remove_calls.append(a) or "removed ok")
+    monkeypatch.setattr(
+        scheduler, "remove_schedule", lambda *a, **k: remove_calls.append((*a, *sorted(k.items()))) or "removed ok"
+    )
+    reminder_calls = []
+    monkeypatch.setattr(
+        scheduler, "install_transcript_reminder", lambda *a, **k: reminder_calls.append(a) or "reminder ok"
+    )
+    monkeypatch.setattr(scheduler, "get_schedule_status", lambda sid, kind=None: {"installed": False})
+    # The installed job is the only record of the reminder offset — the wizard
+    # reads it back off the OS rather than defaulting it.
+    monkeypatch.setattr(scheduler, "transcript_reminder_offset", lambda sid, t: reminder_offset)
+    _drive.reminder_calls = reminder_calls
     if read_line is not None:
         values = iter(read_line)
         prompts = []
@@ -59,11 +70,14 @@ class TestScheduleWizard:
         # Enter through time (10:00) / lead (10) / days (Mon–Fri) / channels
         # (terminal), then Up+Enter picks "On" on the enable step.
         msg, saved, install_calls, remove_calls = _drive(
-            ["enter", "enter", "enter", "enter", "up", "enter"], tmp_path, monkeypatch
+            ["enter", "enter", "enter", "enter", "up", "enter", "enter"], tmp_path, monkeypatch
         )
         assert msg == "installed ok"
         assert install_calls == [("s1", "10:00", "1-5", 10)]
-        assert not remove_calls
+        # The standup job itself is never removed on the enable path. The one
+        # removal is the reminder kind, cleared because "No reminder" was chosen —
+        # teardown is idempotent so a stale job can't outlive the setting.
+        assert remove_calls == [("s1", ("kind", "transcript-reminder"))]
         assert saved["enabled"] is True
         assert saved["time"] == "10:00"
         assert saved["lead_minutes"] == 10
@@ -81,7 +95,7 @@ class TestScheduleWizard:
         # — the cursor must re-seed on 09:00, so plain Enter keeps it — then Enter
         # through the rest (enable defaults to Off).
         msg, saved, install_calls, remove_calls = _drive(
-            ["up", "up", "enter", "esc", "enter", "enter", "enter", "enter", "enter"], tmp_path, monkeypatch
+            ["up", "up", "enter", "esc", "enter", "enter", "enter", "enter", "enter", "enter"], tmp_path, monkeypatch
         )
         assert saved["time"] == "09:00"
         assert saved["enabled"] is False
@@ -92,7 +106,7 @@ class TestScheduleWizard:
         # Down ×3 from 10:00 reaches Custom…; the line editor feeds an invalid
         # value then a valid one; the wizard re-prompts in between.
         msg, saved, _install, _remove = _drive(
-            ["down", "down", "down", "enter", "enter", "enter", "enter", "enter"],
+            ["down", "down", "down", "enter", "enter", "enter", "enter", "enter", "enter"],
             tmp_path,
             monkeypatch,
             read_line=["25:99", "08:45"],
@@ -106,7 +120,7 @@ class TestScheduleWizard:
         # Esc inside the Custom editor (read_line → None) returns to the time
         # option list — NOT the previous step — so Enter still confirms a preset.
         msg, saved, _install, _remove = _drive(
-            ["down", "down", "down", "enter", "enter", "enter", "enter", "enter", "enter"],
+            ["down", "down", "down", "enter", "enter", "enter", "enter", "enter", "enter", "enter"],
             tmp_path,
             monkeypatch,
             read_line=[None],
@@ -118,7 +132,7 @@ class TestScheduleWizard:
         # On the channels step: Space unchecks terminal, Enter is blocked (no
         # channels), Space re-checks, Enter proceeds.
         msg, saved, _install, _remove = _drive(
-            ["enter", "enter", "enter", " ", "enter", " ", "enter", "enter"], tmp_path, monkeypatch
+            ["enter", "enter", "enter", " ", "enter", " ", "enter", "enter", "enter"], tmp_path, monkeypatch
         )
         assert saved is not None
         assert saved["delivery_channels"] == ["terminal"]
@@ -127,7 +141,7 @@ class TestScheduleWizard:
         # On the days step: uncheck Tue and Thu (cursor starts on Monday) →
         # Mon/Wed/Fri remain → saved as "1,3,5".
         msg, saved, _install, _remove = _drive(
-            ["enter", "enter", "down", " ", "down", "down", " ", "enter", "enter", "enter"],
+            ["enter", "enter", "down", " ", "down", "down", " ", "enter", "enter", "enter", "enter"],
             tmp_path,
             monkeypatch,
         )
@@ -136,13 +150,64 @@ class TestScheduleWizard:
     def test_disable_path_calls_remove(self, tmp_path, monkeypatch):
         config = dict(enabled=True, time="09:30", lead_minutes=5, weekdays="1-5", delivery_channels=["terminal"])
         msg, saved, install_calls, remove_calls = _drive(
-            ["enter", "enter", "enter", "enter", "down", "enter"], tmp_path, monkeypatch, config=config
+            ["enter", "enter", "enter", "enter", "down", "enter", "enter"], tmp_path, monkeypatch, config=config
         )
         assert msg == "removed ok"
         assert remove_calls == [("s1",)]
         assert not install_calls
         assert saved["enabled"] is False
         assert saved["time"] == "09:30"  # presets re-seed from saved config
+
+    def test_choosing_a_reminder_installs_the_second_job(self, tmp_path, monkeypatch):
+        # …up+enter enables the schedule, then down+enter picks "30 minutes after".
+        msg, _saved, install_calls, _remove = _drive(
+            ["enter", "enter", "enter", "enter", "up", "enter", "down", "enter"], tmp_path, monkeypatch
+        )
+        assert _drive.reminder_calls == [("s1", "10:00", "1-5", 30)]
+        assert install_calls == [("s1", "10:00", "1-5", 10)]
+        assert "reminder ok" in msg
+
+    def test_an_existing_offset_is_not_silently_downgraded(self, tmp_path, monkeypatch):
+        """Entering through the reminder step must keep what is installed.
+
+        The job is the only record of the offset, so a wizard that recovered
+        only "one exists" would reinstall a user's "2 hours after" at 30 minutes
+        the next time they came here to change a delivery channel.
+        """
+        msg, _saved, _install, _remove = _drive(
+            ["enter", "enter", "enter", "enter", "up", "enter", "enter"],
+            tmp_path,
+            monkeypatch,
+            reminder_offset=120,
+        )
+        assert _drive.reminder_calls == [("s1", "10:00", "1-5", 120)]
+        assert "reminder ok" in msg
+
+    def test_an_offset_off_the_preset_grid_snaps_instead_of_vanishing(self, tmp_path, monkeypatch):
+        """The standup time can move after the reminder was installed."""
+        _msg, _saved, _install, _remove = _drive(
+            ["enter", "enter", "enter", "enter", "up", "enter", "enter"],
+            tmp_path,
+            monkeypatch,
+            reminder_offset=100,
+        )
+        assert _drive.reminder_calls == [("s1", "10:00", "1-5", 120)]
+
+    def test_disabling_the_schedule_tears_down_every_kind(self, tmp_path, monkeypatch):
+        """The failure this guards: notifications still firing after the user
+        turned their standup off."""
+        config = dict(enabled=True, time="09:30", lead_minutes=5, weekdays="1-5", delivery_channels=["terminal"])
+        msg, _saved, install_calls, remove_calls = _drive(
+            ["enter", "enter", "enter", "enter", "down", "enter", "down", "enter"],
+            tmp_path,
+            monkeypatch,
+            config=config,
+        )
+        # No kind kwarg → remove_schedule removes ALL kinds, and no reminder was
+        # installed even though the user asked for one on a disabled schedule.
+        assert remove_calls == [("s1",)]
+        assert _drive.reminder_calls == []
+        assert not install_calls
 
     def test_preserves_identity_and_scope_fields(self, tmp_path, monkeypatch):
         config = dict(

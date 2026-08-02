@@ -177,6 +177,7 @@ Key flags to know about when modifying the CLI:
 | `--standup-interactive` | With `--standup-run`: timed prompt for the user's update + confirm before generating (TTY-aware; headless fallback) |
 | `--standup-session ID` | Session to run the standup for (default: most recent) |
 | `--standup-output {terminal,desktop,slack,email,all}` | Override the session's saved delivery channels |
+| `--standup-remind-transcript` | Headless: post a desktop reminder if standups went unchecked against their meetings (the scheduler's *second* job, fired after the standup) |
 
 **Subcommands** (additive `add_subparsers(dest="command")` — every flat flag keeps working): `yeaboi report`, `yeaboi standup`, `yeaboi perf {roster,prep,complete,review,note}`, `yeaboi analyze`. Thin `_cmd_*` handlers in `cli.py` over the shared engines; `--format json` keeps stdout machine-clean. Dispatched in `main()` before the flag-guard sequence. Tests in `tests/unit/test_cli_subcommands.py` (the flat-flag assertions in `tests/integration/test_cli.py` must stay untouched).
 

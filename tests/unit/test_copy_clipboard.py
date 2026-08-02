@@ -31,6 +31,81 @@ class TestCopyStatus:
 
 
 # ---------------------------------------------------------------------------
+# read_clipboard_text — the only workable transcript paste path
+# ---------------------------------------------------------------------------
+
+
+class TestReadClipboardText:
+    def _fake_run(self, stdout: bytes, returncode: int = 0):
+        class _Proc:
+            pass
+
+        proc = _Proc()
+        proc.stdout = stdout
+        proc.returncode = returncode
+        return lambda *a, **k: proc
+
+    def test_reads_text_via_the_platform_helper(self, monkeypatch):
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "darwin")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: "/usr/bin/pbpaste")
+        monkeypatch.setattr(clip.subprocess, "run", self._fake_run(b"Alice: hi\nBob: hey\n"))
+        assert clip.read_clipboard_text() == "Alice: hi\nBob: hey\n"
+
+    def test_newlines_survive(self, monkeypatch):
+        """The whole point: bracketed paste would flatten this to one turn."""
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "darwin")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: "/usr/bin/pbpaste")
+        monkeypatch.setattr(clip.subprocess, "run", self._fake_run(b"a\nb\nc"))
+        assert (clip.read_clipboard_text() or "").count("\n") == 2
+
+    def test_falls_through_to_the_second_linux_helper(self, monkeypatch):
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "linux")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: None if name == "wl-paste" else "/usr/bin/xclip")
+        monkeypatch.setattr(clip.subprocess, "run", self._fake_run(b"Alice: hi"))
+        assert clip.read_clipboard_text() == "Alice: hi"
+
+    def test_no_helper_returns_none(self, monkeypatch):
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "darwin")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: None)
+        assert clip.read_clipboard_text() is None
+
+    def test_unsupported_platform_returns_none(self, monkeypatch):
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "sunos5")
+        assert clip.read_clipboard_text() is None
+
+    def test_helper_failure_returns_none(self, monkeypatch):
+        import yeaboi.clipboard as clip
+
+        monkeypatch.setattr(clip.sys, "platform", "darwin")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: "/usr/bin/pbpaste")
+        monkeypatch.setattr(clip.subprocess, "run", self._fake_run(b"", returncode=1))
+        assert clip.read_clipboard_text() is None
+
+    def test_timeout_never_raises(self, monkeypatch):
+        import subprocess as sp
+
+        import yeaboi.clipboard as clip
+
+        def _boom(*a, **k):
+            raise sp.TimeoutExpired("pbpaste", 10)
+
+        monkeypatch.setattr(clip.sys, "platform", "darwin")
+        monkeypatch.setattr(clip.shutil, "which", lambda name: "/usr/bin/pbpaste")
+        monkeypatch.setattr(clip.subprocess, "run", _boom)
+        assert clip.read_clipboard_text() is None
+
+
+# ---------------------------------------------------------------------------
 # build_usage_text
 # ---------------------------------------------------------------------------
 

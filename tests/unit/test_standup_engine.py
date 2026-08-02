@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 
+from yeaboi.agent.state import MemberUpdate, StandupGap, TranscriptClaim, TranscriptReview
 from yeaboi.sessions import SessionStore
 from yeaboi.standup import engine
 from yeaboi.standup.collector import ActivityBundle
@@ -789,6 +790,9 @@ class TestProgressCallback:
             seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10), on_progress=phases.append
         )
         assert phases == [
+            # The transcript sweep runs first so yesterday's corrections are in
+            # hand before today's activity is collected and summarised.
+            "Reviewing meeting transcripts",
             "Collecting recent activity",
             "Reading sprint progress",
             "Resolving team & identities",
@@ -1536,3 +1540,405 @@ class TestDayOverDay:
         assert alice.progress_note == ""  # no true yesterday → clamp wins
         assert "Earlier rerun today" not in self._prompt_text(captured)
         assert report.confidence_trend == ""  # same-day pct filtered from the trend
+
+
+class TestTranscriptReviewSweep:
+    """The automatic pre-standup transcript sweep wired into run_standup."""
+
+    def _patch_llm(self, monkeypatch, captured: dict):
+        llm_json = json.dumps(
+            {"members": [{"name": "Alice", "summary": "s", "progress_note": "p"}], "team_summary": "ok"}
+        )
+
+        def _fake_invoke(self, m):
+            captured["prompt"] = m
+            return _FakeResp(llm_json)
+
+        monkeypatch.setattr("yeaboi.agent.llm.get_llm", lambda **k: type("L", (), {"invoke": _fake_invoke})())
+
+    def _prompt_text(self, captured: dict) -> str:
+        return str(captured.get("prompt", ""))
+
+    def test_disabled_by_kwarg_skips_the_sweep(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        called = []
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: called.append(1) or [],
+        )
+        engine.run_standup(
+            seeded_session,
+            deliver=False,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            review_transcripts=False,
+        )
+        assert called == []
+
+    def test_disabled_by_config_skips_the_sweep(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                transcript_review_enabled=False,
+            )
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        called = []
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: called.append(1) or [],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert called == []
+
+    def test_a_raising_sweep_is_never_fatal(self, monkeypatch, db_path, seeded_session):
+        """This sits on the standup critical path — it must not break a standup."""
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+
+        def _boom(*a, **k):
+            raise RuntimeError("transcripts exploded")
+
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", _boom)
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert report.date == "2026-07-10"
+        assert any("Transcript review skipped" in w for w in report.warnings)
+
+    def test_corrections_reach_the_summary_prompt(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import StandupReport as _Report
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.record_run(
+                _Report(
+                    date="2026-07-09",
+                    session_id=seeded_session,
+                    member_updates=(MemberUpdate(name="Alice", summary="Did the login work"),),
+                )
+            )
+        _patch_common(
+            monkeypatch,
+            items=[{"author": "Alice", "kind": "commit", "title": "x", "source": "github"}],
+            counts=[("github", 1)],
+        )
+        captured: dict = {}
+        self._patch_llm(monkeypatch, captured)
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: [
+                TranscriptReview(
+                    standup_date="2026-07-09",
+                    claims=(TranscriptClaim(member="Alice", claim="also shipped the alerting PR", status="missing"),),
+                )
+            ],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert "also shipped the alerting PR" in self._prompt_text(captured)
+
+    def test_findings_become_notices_capped(self, monkeypatch, db_path, seeded_session):
+        _patch_common(monkeypatch, items=[], counts=[("github", 1)])
+        self._patch_llm(monkeypatch, {})
+        gaps = tuple(StandupGap(title=f"Gap number {i}", scope="product") for i in range(6))
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: [TranscriptReview(standup_date="2026-07-09", gaps=gaps)],
+        )
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        notices = [w for w in report.warnings if "Gap number" in w]
+        assert len(notices) == engine._MAX_TRANSCRIPT_NOTICES
+        assert any("and 3 more transcript-review" in w for w in report.warnings)
+
+    def test_sweep_runs_before_activity_collection(self, monkeypatch, db_path, seeded_session):
+        """Corrections must be in hand BEFORE today's summaries are written."""
+        order: list[str] = []
+        _patch_common(monkeypatch, items=[], counts=[])
+        self._patch_llm(monkeypatch, {})
+        original = engine.collector.collect_recent_activity
+        monkeypatch.setattr(
+            engine.collector,
+            "collect_recent_activity",
+            lambda **kw: order.append("collect") or original(**kw),
+        )
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda *a, **k: order.append("review") or [],
+        )
+        engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert order[:2] == ["review", "collect"]
+
+
+class TestNudgeInTheReport:
+    """The nudge rides on report.warnings — a BROADCAST surface (Slack, email,
+    exports), which is why a single miss stays out of it."""
+
+    def _seed_misses(self, db_path, session, days, *, status="success"):
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            for day in days:
+                store.record_run(StandupReport(session_id=session, date=day), status=status)
+
+    def _run(self, monkeypatch, db_path, seeded_session, today=date(2026, 7, 10)):
+        _patch_common(monkeypatch, items=[], counts=[])
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda *a, **k: [])
+        return engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=today)
+
+    def test_a_persistent_miss_reaches_the_report(self, monkeypatch, db_path, seeded_session):
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert any("never checked against their meetings" in w or "gone unchecked" in w for w in report.warnings)
+
+    def test_a_single_miss_stays_out_of_the_broadcast(self, monkeypatch, db_path, seeded_session):
+        """ "You forgot a file" does not belong in a team Slack channel."""
+        self._seed_misses(db_path, seeded_session, ["2026-07-07", "2026-07-08", "2026-07-09"])
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert not any("transcript" in w.lower() and "unchecked" in w.lower() for w in report.warnings)
+
+    def test_the_nudge_survives_the_notice_cap(self, monkeypatch, db_path, seeded_session):
+        """A day with three findings must not truncate away the reason a fourth
+        standup was never checked at all."""
+        from yeaboi.agent.state import TranscriptReview
+
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        noisy = [TranscriptReview(warnings=tuple(f"finding {i}" for i in range(8)))]
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda *a, **k: noisy)
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.carry_forward", lambda r, p: ({}, list(noisy[0].warnings))
+        )
+        _patch_common(monkeypatch, items=[], counts=[])
+        report = engine.run_standup(seeded_session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        assert any("gone unchecked" in w or "never checked" in w for w in report.warnings)
+
+    def test_the_opt_out_silences_it(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        self._seed_misses(db_path, seeded_session, [f"2026-07-0{d}" for d in range(1, 8)])
+        with StandupStore(db_path) as store:
+            store.save_config(
+                seeded_session,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                transcript_review_enabled=False,
+            )
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert not any("unchecked" in w for w in report.warnings)
+
+    def test_a_broken_nudge_never_breaks_a_standup(self, monkeypatch, db_path, seeded_session):
+        def _boom(*a, **k):
+            raise RuntimeError("db gone")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.transcript_nudge", _boom)
+        report = self._run(monkeypatch, db_path, seeded_session)
+        assert report is not None
+
+
+class TestTranscriptNudgeEntryPoint:
+    def test_returns_a_falsy_nudge_when_there_is_nothing_to_say(self, db_path, seeded_session):
+        assert not engine.transcript_nudge(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+
+    def test_reads_config_so_the_opt_out_applies(self, monkeypatch, db_path, seeded_session):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcripts.transcript_nudge",
+            lambda sid, **kw: seen.update(kw) or None,
+        )
+        engine.transcript_nudge(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+        assert "config" in seen
+
+
+class TestImportTranscript:
+    """Text that never was a file — a paste, a pipe, an agent argument."""
+
+    @pytest.fixture
+    def managed(self, tmp_path, monkeypatch):
+        d = tmp_path / "transcripts"
+        d.mkdir()
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", d)
+        return d
+
+    def test_returns_a_source_describing_what_landed(self, managed):
+        source = engine.import_transcript(
+            "Alice: shipped auth\nBob: reviewed it\nCara: blocked", today=date(2026, 7, 10)
+        )
+        assert source.covered_date == "2026-07-10"
+        assert source.speakers == ("Alice", "Bob", "Cara")
+        # The part worth surfacing: it narrows what a review may conclude.
+        assert source.attribution == "labelled"
+
+    def test_writes_into_the_managed_folder(self, managed):
+        source = engine.import_transcript("Alice: hi", today=date(2026, 7, 10))
+        assert list(managed.iterdir()) == [managed / source.filename]
+
+    def test_explicit_date_lands_in_the_filename(self, managed):
+        source = engine.import_transcript("Alice: hi", covered_date="2026-07-08", today=date(2026, 7, 10))
+        assert source.filename.startswith("2026-07-08-")
+        assert source.covered_date == "2026-07-08"
+
+    def test_empty_text_raises(self, managed):
+        with pytest.raises(ValueError, match="empty"):
+            engine.import_transcript("   ", today=date(2026, 7, 10))
+
+
+class TestReviewFromText:
+    @pytest.fixture
+    def managed(self, tmp_path, monkeypatch):
+        d = tmp_path / "transcripts"
+        d.mkdir()
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", d)
+        return d
+
+    def test_pasted_text_is_imported_and_reviewed(self, monkeypatch, managed, db_path, seeded_session):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda sid, **kw: seen.update(kw) or [],
+        )
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: shipped auth\nBob: reviewed it",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        # It reaches the sweep as an explicit PATH — an import the user just made
+        # is reviewed now, not queued behind a folder backlog.
+        assert len(seen["transcript_paths"]) == 1
+        assert seen["transcript_paths"][0].endswith(".txt")
+        assert (managed / "2026-07-10-pasted.txt").exists()
+
+    def test_standup_date_attributes_the_paste(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda sid, **kw: [])
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            standup_date="2026-07-08",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert (managed / "2026-07-08-pasted.txt").exists()
+
+    def test_paste_is_prepended_to_explicit_paths(self, monkeypatch, managed, db_path, seeded_session, tmp_path):
+        other = tmp_path / "other.vtt"
+        other.write_text("WEBVTT")
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.transcript_review.sweep_and_review",
+            lambda sid, **kw: seen.update(kw) or [],
+        )
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_paths=[str(other)],
+            transcript_text="Alice: hi",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert len(seen["transcript_paths"]) == 2
+        assert seen["transcript_paths"][1] == str(other)
+
+    def test_a_rejected_paste_comes_back_as_a_warning_not_an_exception(self, managed, db_path, seeded_session):
+        """This surface never raises — a bad paste reads like any other reason
+        the review found nothing to say. Reachable as `--date 'last tuesday'`."""
+        review = engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            standup_date="last tuesday",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert review.gaps == ()
+        assert any("Invalid covered_date" in w for w in review.warnings)
+        assert list(managed.iterdir()) == []
+
+    def test_oversized_paste_is_a_warning_too(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcripts._MAX_BYTES", 20)
+        review = engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: " + "x" * 500,
+            db_path=db_path,
+            today=date(2026, 7, 10),
+        )
+        assert any("larger than" in w for w in review.warnings)
+
+    @pytest.mark.parametrize("blank", ["", "    \n   "])
+    def test_blank_text_does_not_trigger_an_import(self, blank, managed, db_path, seeded_session):
+        review = engine.run_transcript_review(
+            seeded_session, transcript_text=blank, db_path=db_path, today=date(2026, 7, 10)
+        )
+        assert list(managed.iterdir()) == []
+        assert any("No unreviewed transcripts" in w for w in review.warnings)
+
+    def test_import_progress_is_reported(self, monkeypatch, managed, db_path, seeded_session):
+        monkeypatch.setattr("yeaboi.standup.transcript_review.sweep_and_review", lambda sid, **kw: [])
+        phases: list[str] = []
+        engine.run_transcript_review(
+            seeded_session,
+            transcript_text="Alice: hi",
+            db_path=db_path,
+            today=date(2026, 7, 10),
+            on_progress=phases.append,
+        )
+        assert "Saving the pasted transcript" in phases
+
+
+class TestTranscriptEntryPoints:
+    def test_review_with_no_transcripts_says_so(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        review = engine.run_transcript_review(seeded_session, db_path=db_path, today=date(2026, 7, 10))
+        assert review.gaps == ()
+        assert any("No unreviewed transcripts" in w for w in review.warnings)
+
+    def test_review_has_no_file_issues_parameter(self):
+        """Structural guarantee: the drafting entry point cannot publish."""
+        import inspect
+
+        assert "file_issues" not in inspect.signature(engine.run_transcript_review).parameters
+
+    def test_review_reports_progress(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+        phases: list[str] = []
+        engine.run_transcript_review(
+            seeded_session, db_path=db_path, today=date(2026, 7, 10), on_progress=phases.append
+        )
+        assert "Reading transcripts" in phases
+
+    def test_progress_callback_failure_is_swallowed(self, monkeypatch, db_path, seeded_session, tmp_path):
+        monkeypatch.setattr("yeaboi.paths.TRANSCRIPTS_DIR", tmp_path / "transcripts")
+
+        def _boom(phase):
+            raise RuntimeError("ui died")
+
+        review = engine.run_transcript_review(
+            seeded_session, db_path=db_path, today=date(2026, 7, 10), on_progress=_boom
+        )
+        assert review is not None
+
+    def test_filing_without_a_review_is_reported_not_raised(self, db_path):
+        result = engine.file_transcript_issues(0, session_id="nope", db_path=db_path)
+        assert result.filed == 0
+        assert any("No transcript review found" in w for w in result.warnings)
+
+    def test_filing_delegates_to_gap_issues(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.agent.state import IssueFilingResult
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            review_id = store.record_review(
+                TranscriptReview(session_id=seeded_session, gaps=(StandupGap(fingerprint="fp1"),))
+            )
+        seen: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.gap_issues.file_review_gaps",
+            lambda review, **kw: seen.update(review=review, kw=kw) or IssueFilingResult(filed=1),
+        )
+        result = engine.file_transcript_issues(review_id, db_path=db_path)
+        assert result.filed == 1
+        assert seen["review"].review_id == review_id

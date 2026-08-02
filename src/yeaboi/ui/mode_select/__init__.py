@@ -1778,6 +1778,8 @@ def _collect_standup_data(message: str = "") -> dict:
         "config": None,
         "report": None,
         "schedule": {},
+        "review": None,
+        "gap_issues": [],
     }
     try:
         from yeaboi.sessions import SessionStore, make_display_name
@@ -1800,6 +1802,15 @@ def _collect_standup_data(message: str = "") -> dict:
         with StandupStore(_ana_dbp) as store:
             data["config"] = store.load_config(session_id)
             data["report"] = store.get_latest_report(session_id)
+            # The most recent transcript review + the gap→issue ledger, so the
+            # Transcript Review card can show which gaps are already filed.
+            data["review"] = store.get_latest_review(session_id)
+            data["gap_issues"] = store.get_gap_issues(limit=50)
+        # Two indexed SELECTs, once per hub refresh (never per frame): which
+        # standups ran without ever being checked against their meeting.
+        from yeaboi.standup import transcripts as _transcripts
+
+        data["nudge"] = _transcripts.transcript_nudge(session_id, config=data.get("config"), db_path=_ana_dbp)
         # The engine resolves "Me" to the user's real tracker identity (e.g. their
         # Jira displayName) — the report's my_name drives the "My Update" row.
         if data["report"] is not None and data["report"].my_name:
@@ -2481,6 +2492,278 @@ def _standup_generate_flow(
         time.sleep(1 / 30)
     thread.join()
     return result_box[0]
+
+
+_REVIEW_STEP_NAMES = ["Source", "Review", "File"]
+
+
+def _standup_transcript_counts(session_id: str) -> tuple[int, str]:
+    """Return ``(unreviewed transcript count, clipboard hint)`` for the source step.
+
+    Both are read ONCE, when the picker opens — never per frame. ``discover``
+    hashes files and ``read_clipboard_text`` shells out with a 10 s timeout, so
+    either inside the render loop would stall the TUI.
+    """
+    from yeaboi.clipboard import read_clipboard_text
+    from yeaboi.standup import transcripts as _transcripts
+    from yeaboi.standup.store import StandupStore
+
+    count = 0
+    try:
+        from yeaboi.paths import get_db_path
+
+        with StandupStore(get_db_path()) as store:
+            config = store.load_config(session_id) or {}
+        found, _warnings = _transcripts.discover(session_id, config=config)
+        count = len(found)
+    except Exception:  # a count is a nicety; never block the picker on it
+        logger.debug("standup review: could not count transcripts", exc_info=True)
+
+    try:
+        clip = read_clipboard_text() or ""
+    except Exception:
+        logger.debug("standup review: could not read the clipboard", exc_info=True)
+        clip = ""
+    if not clip.strip():
+        hint = "nothing on the clipboard"
+    else:
+        hint = f"{len(clip):,} characters ready"
+    return count, hint
+
+
+def _standup_transcript_dir_label(session_id: str) -> str:
+    """Describe the saved transcript folder for the "change my folders" row."""
+    from yeaboi.standup.store import StandupStore
+
+    try:
+        from yeaboi.paths import get_db_path
+
+        with StandupStore(get_db_path()) as store:
+            config = store.load_config(session_id) or {}
+    except Exception:
+        logger.debug("standup review: could not read the transcript folder", exc_info=True)
+        return "saved for every run"
+    current = str(config.get("transcript_dir") or "")
+    if not current:
+        return "currently: none — I only look in ~/.yeaboi/transcripts"
+    return f"currently: {current.replace(str(Path.home()), '~')}"
+
+
+def _standup_review_source_step(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str, message: str = ""
+) -> tuple[str, str] | None:
+    """Ask where this review's transcript comes from. Returns ``(kind, value)``.
+
+    ``kind`` is one of ``sweep`` / ``paste`` / ``open`` / ``folder``; ``None``
+    means the user backed out. The counts in the descriptions are the point of
+    the screen — "3 unreviewed file(s)" answers "is there anything to review?"
+    without making the user go and look.
+    """
+    from yeaboi.clipboard import read_clipboard_text
+    from yeaboi.paths import get_transcripts_dir
+
+    count, clip_hint = _standup_transcript_counts(session_id)
+    folder = str(get_transcripts_dir()).replace(str(Path.home()), "~")
+    options = [
+        ("Sweep my transcript folders", f"{count} unreviewed file(s)" if count else "nothing unreviewed right now"),
+        ("Paste the transcript from my clipboard", clip_hint),
+        (f"Open {folder}", "drop a file in, then come back"),
+        ("Use another folder, just this once", "a Zoom or Granola recordings folder"),
+        ("Change my transcript folders…", _standup_transcript_dir_label(session_id)),
+    ]
+    choice = _run_schedule_choice_step(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        options=options,
+        initial=1 if (count == 0 and "characters" in clip_hint) else 0,
+        step_index=0,
+        heading="Transcript review  —  where should I look?",
+        step_names=_REVIEW_STEP_NAMES,
+        message=message,
+    )
+    if choice == "back":
+        return None
+    if choice == 0:
+        return ("sweep", "")
+    if choice == 1:
+        text = read_clipboard_text() or ""
+        if not text.strip():
+            return ("open", "")  # nothing to paste; fall through to the folder
+        return ("paste", text)
+    if choice == 2:
+        return ("open", "")
+    if choice == 4:
+        return ("configure", "")
+    typed = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Transcript folder (drag it in, or type a path)",
+        step="Transcript review  —  where to look",
+        default="",
+        box_rows=5,
+    )
+    if typed is None:
+        return None
+    from yeaboi.standup.transcripts import normalize_dropped_path
+
+    return ("folder", normalize_dropped_path(typed))
+
+
+def _standup_review_flow(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str | None:
+    """Review standup meeting transcripts, then offer to file the gaps found.
+
+    Two deliberate steps. The review always runs and only ever DRAFTS; filing to
+    a public GitHub repo needs a separate confirmation that shows what will be
+    published. Returns a status message, or None when the user backs out.
+    """
+    import threading
+
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+
+    extra_dir = ""
+    transcript_text = ""
+    note = ""
+    while True:
+        picked = _standup_review_source_step(
+            console, live, read_key, frame_time, supports_timeout, session_id, message=note
+        )
+        if picked is None:
+            logger.info("standup review: cancelled at the source step (session=%s)", session_id)
+            return None
+        kind, value = picked
+        if kind == "open":
+            # Reveal the folder and come straight back, so "where do I put it?"
+            # and "now review it" are one continuous move.
+            from yeaboi.os_open import open_path
+            from yeaboi.paths import get_transcripts_dir
+
+            note = open_path(get_transcripts_dir())
+            continue
+        if kind == "configure":
+            _saved, note = _standup_transcripts_configure(
+                console, live, read_key, frame_time, supports_timeout, session_id
+            )
+            continue
+        if kind == "paste":
+            transcript_text = value
+            break
+        if kind == "folder" and value:
+            # Ask BEFORE the read so a path outside the sandbox gets an Allow/Deny
+            # popup rather than an exception (same as the performance transcript flow).
+            from yeaboi.ui.shared._consent import _preflight_path_consent
+
+            if not _preflight_path_consent(console, live, read_key, frame_time, supports_timeout, value, mode="read"):
+                return "Transcript folder not allowed — review cancelled."
+            extra_dir = value
+        break
+
+    progress: list[str] = ["Starting"]
+    result_box: list = [None]
+
+    def _worker() -> None:
+        try:
+            from yeaboi.standup.engine import run_transcript_review
+
+            result_box[0] = run_transcript_review(
+                session_id,
+                transcript_dir=extra_dir,
+                transcript_text=transcript_text,
+                on_progress=progress.append,
+            )
+        except Exception as e:  # a review must never crash the TUI
+            logger.error("standup review failed: %s", e, exc_info=True)
+            result_box[0] = e
+
+    thread = threading.Thread(target=_worker, name="standup-review", daemon=True)
+    thread.start()
+    start = time.monotonic()
+    while thread.is_alive():
+        elapsed = time.monotonic() - start
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                list(progress), width=w, height=max(10, h - 1), elapsed=elapsed, anim_tick=elapsed
+            )
+        )
+        time.sleep(1 / 30)
+    thread.join()
+
+    review = result_box[0]
+    if isinstance(review, Exception):
+        return f"Transcript review failed: {review}"
+    if review is None:
+        return "Transcript review produced no result — see logs."
+
+    summary = f"Reviewed {len(review.sources)} transcript(s) · {len(review.gaps)} gap(s)"
+    if transcript_text and review.sources:
+        # Name the day it landed on: a paste attributed to the wrong standup is
+        # the one failure the user cannot see from a success message.
+        first = review.sources[0]
+        summary = f"Saved {first.filename} ({first.attribution}) · {summary}"
+    if review.config_suggestions:
+        summary += f" · {len(review.config_suggestions)} to fix in config"
+    if not review.gaps:
+        return summary
+    filed = _standup_file_issues_confirm(console, live, read_key, frame_time, supports_timeout, session_id, review)
+    return f"{summary}. {filed}" if filed else summary
+
+
+def _standup_file_issues_confirm(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str, review
+) -> str:
+    """Show what would be published, then file only on an explicit yes.
+
+    The confirmation renders the FINAL redacted body — names masked, home paths
+    stripped, secrets removed — because that is what actually lands on a public
+    repository, and a preview of the raw text would be misleading.
+    """
+    from yeaboi.standup import gap_issues
+
+    lines = [f"{len(review.gaps)} gap(s) would be filed to {gap_issues.FEEDBACK_REPO} (a PUBLIC repo):", ""]
+    blocked = 0
+    for gap in review.gaps:
+        body = gap_issues.build_gap_issue_body(gap, review)
+        leak = gap_issues.leak_check(body)
+        if leak:
+            blocked += 1
+            lines.append(f"  ✗ {gap.title} — blocked, still looks like it contains {leak}")
+            continue
+        lines.append(f"  • [{gap.feedback_kind}] {gap.title}")
+        for claim in gap.claims[:1]:
+            if claim.quote:
+                masked = gap_issues.scrub(claim.quote, gap_issues.name_mask(review))
+                lines.append(f'      evidence: "{masked[:120]}"')
+    lines += ["", "Member names are masked and secrets removed. File them now?"]
+
+    answer = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Type 'yes' to file on GitHub (Enter to skip)",
+        step="\n".join(lines),
+        default="",
+        box_rows=5,
+    )
+    if answer is None or answer.strip().lower() not in ("y", "yes"):
+        logger.info("standup review: filing declined (session=%s)", session_id)
+        return "Nothing filed — the drafts are saved locally."
+
+    from yeaboi.standup.engine import file_transcript_issues
+
+    result = file_transcript_issues(review.review_id, session_id=session_id)
+    message = f"Filed {result.filed}, commented {result.commented}"
+    if result.skipped:
+        message += f", skipped {result.skipped}"
+    logger.info("standup review: %s (session=%s)", message, session_id)
+    return message + "."
 
 
 def _ask_regen_feedback(console: Console, live, read_key, frame_time, supports_timeout, label: str) -> str | None:
@@ -3171,6 +3454,8 @@ def _standup_team_configure(
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -3333,6 +3618,8 @@ def _standup_code_configure(
             documentation_scope_configured=merged.get("documentation_scope_configured", False),
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     return True, (
         f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
@@ -3429,8 +3716,192 @@ def _standup_documentation_configure(
             documentation_scope_configured=True,
             automation_markers=merged.get("automation_markers", ""),
             automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=merged.get("transcript_dir", ""),
+            transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
+
+
+_TRANSCRIPT_STEP_NAMES = ["Folder", "Auto-review"]
+# Sentinel for the "Type a folder…" row: a value no real path can collide with.
+_TYPE_A_FOLDER = "\x00type"
+
+
+def _standup_transcripts_configure(
+    console: Console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    session_id: str,
+) -> tuple[bool, str]:
+    """Choose where recordings come from, and whether the sweep runs by itself.
+
+    Both settings were MCP-only before this: ``transcript_dir`` could be typed
+    for a single run but never saved, and ``transcript_review_enabled`` had no
+    interface at all. Folders are DETECTED and offered by name rather than
+    typed, because "is this the right one?" is a question people can answer and
+    "where does Zoom put your recordings?" is not.
+    """
+    from yeaboi.standup import transcript_sources
+    from yeaboi.standup.store import StandupStore
+    from yeaboi.standup.transcripts import normalize_dropped_path
+    from yeaboi.ui.shared._consent import _preflight_path_choice
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+    current = str(existing.get("transcript_dir") or "")
+
+    options: list[tuple[str, str]] = []
+    values: list[str] = []
+    for candidate in transcript_sources.detect():
+        options.append((candidate.label, transcript_sources.describe(candidate)))
+        values.append(candidate.path)
+    if current and current not in values:
+        options.append((current.replace(str(Path.home()), "~"), "your current folder"))
+        values.append(current)
+    options.append(("Type a folder…", "drag it in, or type a path"))
+    values.append(_TYPE_A_FOLDER)
+    options.append(("Just ~/.yeaboi/transcripts", "no extra folder"))
+    values.append("")
+
+    chosen_dir = current
+    auto = bool(existing.get("transcript_review_enabled", True))
+    index = 0
+    while index < 2:
+        if index == 0:
+            initial = values.index(current) if current in values else 0
+            pick = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=options,
+                initial=initial,
+                step_index=0,
+                heading="Where do your standup recordings land?",
+                step_names=_TRANSCRIPT_STEP_NAMES,
+            )
+            if pick == "back":
+                return False, "Transcript setup cancelled."
+            value = values[pick]
+            if value == _TYPE_A_FOLDER:
+                typed = _standup_read_line(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    prompt="Transcript folder (drag it in, or type a path)",
+                    step="Transcripts  —  where your recordings land",
+                    default="",
+                    box_rows=5,
+                )
+                if typed is None:
+                    continue  # Esc from the text box returns to the list
+                value = normalize_dropped_path(typed)
+            if value:
+                choice = _preflight_path_choice(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    value,
+                    mode="read",
+                    context="Standup — transcript folder",
+                )
+                if choice == "deny":
+                    return False, "Transcript folder not allowed — nothing saved."
+                if choice == "allow_once":
+                    # An allow-once grant dies with this process. Saving a folder
+                    # backed by one produces a config that works right now and
+                    # then silently reviews nothing on every scheduled run —
+                    # the worst kind of wrong, because it looks configured.
+                    return False, (
+                        "That folder is allowed for this run only, so it wasn't saved. "
+                        "Choose 'Always allow' to keep it."
+                    )
+            chosen_dir = value
+            index = 1
+        else:
+            pick = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("Review transcripts automatically", "before each standup, so misses surface on their own"),
+                    ("Only when I ask", "the Review button still works"),
+                ],
+                initial=0 if auto else 1,
+                step_index=1,
+                heading="Check each standup against its meeting?",
+                step_names=_TRANSCRIPT_STEP_NAMES,
+            )
+            if pick == "back":
+                index = 0
+                continue
+            auto = pick == 0
+            index = 2
+
+    defaults = {
+        "enabled": False,
+        "time": "10:00",
+        "weekdays": "1-5",
+        "delivery_channels": ["terminal"],
+        "lead_minutes": 10,
+        "timezone": "",
+        "repo_path": "",
+        "my_aliases": "",
+        "tracker_sources": ["jira"],
+        "team_members": [],
+        "roster_configured": False,
+        "code_sources": [],
+        "github_repositories": [],
+        "azdo_projects": [],
+        "azdo_repositories": [],
+        "code_scope_configured": False,
+        "documentation_sources": [],
+        "documentation_scope_configured": False,
+    }
+    merged = {**defaults, **existing}
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=merged["enabled"],
+            time=merged["time"],
+            weekdays=merged["weekdays"],
+            delivery_channels=merged["delivery_channels"],
+            lead_minutes=merged["lead_minutes"],
+            timezone=merged["timezone"],
+            repo_path=merged["repo_path"],
+            my_aliases=merged["my_aliases"],
+            tracker_sources=merged["tracker_sources"],
+            team_members=merged["team_members"],
+            roster_configured=merged["roster_configured"],
+            code_sources=merged["code_sources"],
+            github_repositories=merged["github_repositories"],
+            azdo_projects=merged["azdo_projects"],
+            azdo_repositories=merged["azdo_repositories"],
+            code_scope_configured=merged["code_scope_configured"],
+            documentation_sources=merged["documentation_sources"],
+            documentation_scope_configured=merged["documentation_scope_configured"],
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=chosen_dir,
+            transcript_review_enabled=auto,
+        )
+    logger.info(
+        "standup transcripts configured: session=%s dir=%s auto=%s",
+        session_id,
+        chosen_dir or "-",
+        auto,
+    )
+    where = chosen_dir.replace(str(Path.home()), "~") if chosen_dir else "~/.yeaboi/transcripts only"
+    return True, f"Transcripts: {where} · {'automatic review on' if auto else 'review on demand'}."
 
 
 def _run_schedule_choice_step(
@@ -3444,11 +3915,14 @@ def _run_schedule_choice_step(
     initial: int,
     step_index: int,
     heading: str,
+    step_names: list[str] | None = None,
+    message: str = "",
 ) -> int | str:
-    """One single-select (radio) step of the schedule wizard.
+    """One single-select (radio) step of a standup option-list wizard.
 
     The cursor row IS the selection: Enter returns its index, Esc returns
     ``"back"`` so the wizard can step backwards (analysis-wizard convention).
+    ``step_names``/``message`` let a non-schedule wizard reuse this loop.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
 
@@ -3457,7 +3931,14 @@ def _run_schedule_choice_step(
         w, h = console.size
         live.update(
             _build_standup_schedule_step_screen(
-                options, cursor, step_index=step_index, heading=heading, width=w, height=max(10, h - 1)
+                options,
+                cursor,
+                step_index=step_index,
+                heading=heading,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+                step_names=step_names,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
@@ -3534,12 +4015,16 @@ _SCHEDULE_CHANNEL_DESCS = {
     "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
     "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
 }
+# Minutes AFTER the standup for the transcript reminder; 0 = no reminder. The
+# offset is not a config column: the existence of the OS job IS the setting, so
+# there is nothing to migrate or keep in sync.
+_REMINDER_PRESETS = [0, 30, 60, 120]
 
 
 def _run_standup_schedule_wizard(
     console: Console, live, read_key, frame_time, supports_timeout, session_id: str
 ) -> str:
-    """Option-list schedule wizard: Time → Lead → Days → Channels → Enable.
+    """Option-list wizard: Time → Lead → Days → Channels → Enable → Remind.
 
     Arrow-key driven replacement for the old free-text Configure flow. Esc steps
     BACK one step (Esc on the first step cancels); Time/Lead offer presets plus a
@@ -3548,7 +4033,16 @@ def _run_standup_schedule_wizard(
     installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import install_schedule, parse_time, remove_schedule, weekday_list, weekday_spec
+    from yeaboi.standup.scheduler import (
+        JOB_TRANSCRIPT_REMINDER,
+        install_schedule,
+        install_transcript_reminder,
+        parse_time,
+        remove_schedule,
+        transcript_reminder_offset,
+        weekday_list,
+        weekday_spec,
+    )
     from yeaboi.standup.store import StandupStore
 
     with StandupStore(_ana_dbp) as store:
@@ -3558,6 +4052,18 @@ def _run_standup_schedule_wizard(
     days = set(weekday_list(existing.get("weekdays", "1-5")))
     channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
     enabled = bool(existing.get("enabled"))
+    # The installed job is the source of truth for the reminder — nothing in the
+    # database records it, so we ask the OS. Read the OFFSET back too, not just
+    # whether one exists: a user who picked "2 hours after" and later reopens
+    # this wizard to change a delivery channel would otherwise Enter past a step
+    # showing the default and silently reinstall the job at 30 minutes.
+    remind_after = transcript_reminder_offset(session_id, time_val)
+    if remind_after and remind_after not in _REMINDER_PRESETS:
+        # The standup time can move after the reminder was installed, so the
+        # recovered offset need not land on a preset. Snap to the nearest one
+        # rather than falling through to "No reminder", which would tear the job
+        # down for a user who came here to change something else entirely.
+        remind_after = min((p for p in _REMINDER_PRESETS if p), key=lambda p: abs(p - remind_after))
     logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
     def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
@@ -3583,7 +4089,7 @@ def _run_standup_schedule_wizard(
                 current_prompt = f"Invalid value — {prompt}"
 
     index = 0
-    while index < 5:
+    while index < 6:
         if index == 0:
             options = [(t, "") for t in _SCHEDULE_TIME_PRESETS]
             if time_val in _SCHEDULE_TIME_PRESETS:
@@ -3615,7 +4121,7 @@ def _run_standup_schedule_wizard(
                     parse_time(raw)  # raises ValueError on bad input
                     return raw.strip()
 
-                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/5)", time_val, _parse_hhmm)
+                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/6)", time_val, _parse_hhmm)
                 if custom is not None:
                     time_val = custom
                     index += 1
@@ -3646,7 +4152,7 @@ def _run_standup_schedule_wizard(
             else:
                 custom = _custom_text(
                     "Minutes before the standup",
-                    "Set up schedule  (2/5)",
+                    "Set up schedule  (2/6)",
                     str(lead_val),
                     lambda raw: max(0, int(raw)),
                 )
@@ -3689,7 +4195,7 @@ def _run_standup_schedule_wizard(
             else:
                 channels = [ALL_CHANNELS[i] for i in sorted(got)]
                 index += 1
-        else:
+        elif index == 4:
             got = _run_schedule_choice_step(
                 console,
                 live,
@@ -3709,6 +4215,29 @@ def _run_standup_schedule_wizard(
             else:
                 enabled = got == 0
                 index += 1
+        else:
+            initial = _REMINDER_PRESETS.index(remind_after) if remind_after in _REMINDER_PRESETS else 0
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("No reminder", "the standup itself will mention what went unchecked"),
+                    ("30 minutes after", "while the recording is still fresh"),
+                    ("1 hour after", ""),
+                    ("2 hours after", ""),
+                ],
+                initial=initial,
+                step_index=5,
+                heading="Remind you to drop the meeting transcript?",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                remind_after = _REMINDER_PRESETS[got]
+                index += 1
         logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
 
     weekdays = weekday_spec(days)
@@ -3720,6 +4249,7 @@ def _run_standup_schedule_wizard(
             lead_minutes=lead_val,
             weekdays=weekdays,
             delivery_channels=channels,
+            timezone=existing.get("timezone", ""),
             repo_path=existing.get("repo_path", ""),
             my_aliases=existing.get("my_aliases", ""),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -3734,9 +4264,27 @@ def _run_standup_schedule_wizard(
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
             automation_markers=existing.get("automation_markers", ""),
             automation_handling=existing.get("automation_handling", "exclude"),
+            transcript_dir=existing.get("transcript_dir", ""),
+            transcript_review_enabled=existing.get("transcript_review_enabled", True),
         )
-    msg = install_schedule(session_id, time_val, weekdays, lead_val) if enabled else remove_schedule(session_id)
-    logger.info("standup schedule wizard: saved session=%s enabled=%s -> %s", session_id, enabled, msg)
+    if enabled:
+        msg = install_schedule(session_id, time_val, weekdays, lead_val)
+        # A reminder is only meaningful alongside a scheduled standup; when the
+        # schedule is off, remove_schedule below tears BOTH kinds down, so a
+        # disabled standup can never leave notifications firing.
+        if remind_after:
+            msg += "  " + install_transcript_reminder(session_id, time_val, weekdays, remind_after)
+        else:
+            remove_schedule(session_id, kind=JOB_TRANSCRIPT_REMINDER)
+    else:
+        msg = remove_schedule(session_id)  # every kind
+    logger.info(
+        "standup schedule wizard: saved session=%s enabled=%s remind_after=%s -> %s",
+        session_id,
+        enabled,
+        remind_after,
+        msg,
+    )
     return msg
 
 
@@ -3807,6 +4355,7 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             lead_minutes=int(existing.get("lead_minutes", 10)),
             weekdays=existing.get("weekdays", "1-5"),
             delivery_channels=existing.get("delivery_channels", ["terminal"]),
+            timezone=existing.get("timezone", ""),
             repo_path=repo_in,
             my_aliases=aliases_in.strip(),
             tracker_sources=existing.get("tracker_sources", ["jira"]),
@@ -3821,6 +4370,8 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             documentation_scope_configured=existing.get("documentation_scope_configured", False),
             automation_markers=existing.get("automation_markers", ""),
             automation_handling=existing.get("automation_handling", "exclude"),
+            transcript_dir=existing.get("transcript_dir", ""),
+            transcript_review_enabled=existing.get("transcript_review_enabled", True),
         )
     logger.info("standup identity: saved (session=%s)", session_id)
     return "Identity saved."
@@ -5292,7 +5843,7 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
 
     def _actions() -> list[str]:
         if view == "overview":
-            base = ["Generate", "Team", "Anonymize", "Identity", "Back"]
+            base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
         if data.get("report") is not None:
@@ -5420,6 +5971,15 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     proceed = f"Generate failed: {e}"
                 data = _collect_standup_data(message=proceed if proceed is not None else "")
                 anon, anon_instruction = None, ""  # new report → drop any stale mask
+                _reset_to_overview()
+            elif act == "Review":  # audit past standups against their meeting transcripts
+                logger.info("standup: Review pressed (session=%s)", session_id)
+                try:
+                    msg = _standup_review_flow(console, live, read_key, frame_time, supports_timeout, session_id)
+                except Exception as e:  # never let a review crash the TUI
+                    logger.error("standup review flow failed: %s", e, exc_info=True)
+                    msg = f"Transcript review failed: {e}"
+                data = _collect_standup_data(message=msg or "")
                 _reset_to_overview()
             elif act == "Export":  # pick a destination (files / Notion / Confluence)
                 logger.info("standup: Export pressed (session=%s)", session_id)

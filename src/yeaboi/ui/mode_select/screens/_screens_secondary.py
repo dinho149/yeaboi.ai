@@ -167,6 +167,11 @@ _PAD = "  "
 # The two columns a Panel's left and right borders take. Anything measured
 # against the panel's usable interior has to come off the console width first.
 _PANEL_BORDER_W = 2
+# …and the padding inside those borders. build_page_panel pads (1, 2), so two
+# more columns a side. Border alone is not enough for anything that PACKS to its
+# budget (the action bar): four columns of slack is the difference between a row
+# that fits and a row Rich soft-wraps into a bank of invisible buttons.
+_PANEL_PADDING_W = 4
 
 
 def _link_lines(
@@ -2716,7 +2721,28 @@ def _build_standup_screen(
         strip = None
         banner = None
         header_h = 6
-    viewport_h = calc_viewport(height, header_h=header_h, action_h=4)
+    # The action bar wraps when it outgrows the terminal, so its height has to
+    # be measured rather than assumed — six buttons come to well over 80
+    # columns, and a hardcoded action_h=4 would draw the overflow row off the
+    # bottom of the panel (reachable with the arrow keys, invisible on screen).
+    #
+    # Budget against the panel's INNER width, not the console's: a row that
+    # packs to exactly the console width still overflows the interior, so Rich
+    # soft-wraps it and the last bank of buttons drops off the bottom — the very
+    # bug the measuring was added to fix. build_page_panel pads (1, 2), so the
+    # interior is the border (2) plus 2 columns of padding a side (4) narrower,
+    # the same `width - 2 - 4` the section screens below use. Getting this wrong
+    # by even a column or two is invisible at 80 and at 100: the six-button bar
+    # only lands in the gap at 87-88 columns, the seven-button one at 91-96 and
+    # 105-106, which is why the test sweeps a range rather than sampling a width.
+    _actions = (
+        actions
+        if actions is not None
+        else (["Generate", "Review", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"])
+    )
+    inner_w = width - _PANEL_BORDER_W - _PANEL_PADDING_W
+    action_h = action_rows_height(_actions, inner_w)
+    viewport_h = calc_viewport(height, header_h=header_h, action_h=action_h)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
     # Scroll offsets identify renderable items, not terminal rows. Find the
@@ -2754,9 +2780,7 @@ def _build_standup_screen(
     for _ in range(max(0, viewport_h - visible_h)):
         padded_lines.append(Text(""))
 
-    if actions is None:
-        actions = ["Generate", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"]
-    btn_top, btn_mid, btn_bot = build_action_buttons(actions, action_sel)
+    action_lines = build_action_rows(_actions, action_sel, width=inner_w)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable
@@ -2788,9 +2812,7 @@ def _build_standup_screen(
         Text(""),
         viewport_renderable,
         Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        *action_lines,
     )
 
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
@@ -3084,7 +3106,7 @@ def _build_standup_team_member_screen(
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
-_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable"]
+_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable", "Remind"]
 
 
 def _build_standup_schedule_step_screen(
@@ -3097,14 +3119,20 @@ def _build_standup_schedule_step_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
+    step_names: list[str] | None = None,
 ) -> Panel:
-    """Build one step of the schedule wizard: a radio or checkbox option list.
+    """Build one step of a standup option-list wizard: radio or checkbox.
 
     ``checked is None`` renders a single-select (radio) step — the cursor row IS
     the selection, Enter confirms it. A ``set`` renders a multi-select step where
     Space toggles membership. ``options`` are ``(label, description)`` pairs; the
-    description renders dimmed after the label. Progress dots across the top show
-    the five wizard steps (``_SCHEDULE_STEP_NAMES``).
+    description renders dimmed after the label.
+
+    ``step_names`` labels the progress dots, defaulting to the schedule wizard's
+    five steps. It is a parameter rather than a constant so other standup
+    wizards (the transcript source picker) reuse this whole screen — the
+    scrolling, the back-navigation and their render tests — instead of growing a
+    near-copy.
     """
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
@@ -3151,7 +3179,7 @@ def _build_standup_schedule_step_screen(
         standup_title(),
         Text(""),
         Text(_PAD + heading, style="bold white"),
-        build_progress_dots(_SCHEDULE_STEP_NAMES, step_index, theme=theme),
+        build_progress_dots(step_names or _SCHEDULE_STEP_NAMES, step_index, theme=theme),
         Text(_PAD + hints, style=theme.muted),
         Text(""),
         viewport,

@@ -1,6 +1,6 @@
 ---
 name: standup
-description: "Run a daily scrum standup with yeaboi: collect ticketing, code, and documentation activity, score sprint confidence, and summarize per member. Use when the user asks for a standup, daily scrum, 'what did the team do', or sprint progress check."
+description: "Run a daily scrum standup with yeaboi: collect ticketing, code, and documentation activity, score sprint confidence, and summarize per member. Also reviews standup meeting transcripts to find what the report missed and why. Use when the user asks for a standup, daily scrum, 'what did the team do', a sprint progress check, or wants to check a standup report against a recording/transcript of the meeting."
 ---
 
 # Daily Standup with yeaboi
@@ -20,7 +20,38 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
 3. **History.** For trends or "how have standups been going", call
    `standup_history` and summarize confidence over time.
 
-4. **Configuration.** To view or change the standup setup (time, weekdays,
+4. **Check a standup against its meeting.** When the user has a transcript of
+   the standup itself — or says the report missed something someone mentioned —
+   call `standup_review`. It reads `.txt/.md/.vtt/.srt/.json` transcripts from
+   `~/.yeaboi/transcripts` (or specific files via `transcript_paths`), checks
+   what each person said they did against the evidence the report actually had,
+   and diagnoses each gap. Present the two halves separately, because they need
+   different actions:
+
+   If the user pastes the transcript into the conversation, or you already have
+   the text from a meeting-notes document, pass it as `transcript_text` — it is
+   saved into `~/.yeaboi/transcripts` and reviewed like any other file. **Do not
+   ask them to save it somewhere first.** Pass `standup_date` alongside it when
+   the meeting was not today; for pasted text that date wins outright.
+   - `gaps` are faults in yeaboi itself (a missing integration, a capability the
+     collectors lack, a summary that dropped collected evidence). These are
+     drafted as GitHub issues.
+   - `config_suggestions` are the user's to fix and carry an exact `remedy`.
+     They are never filed.
+
+   **`file_issues` writes real, public GitHub issues** on the yeaboi repository.
+   Never set it without asking the user first, and show them the gap titles
+   before you do. The default drafts everything locally so it can be reviewed.
+   Use `standup_gaps` to read back past reviews and see which gaps are already
+   filed, which recurred, and their issue numbers.
+
+   `standup_gaps` also returns `nudge` — the standups that ran but were never
+   checked against their meeting. When `nudge.level` is set, say which dates went
+   unchecked and offer to review a transcript for them. When it is `"escalated"`,
+   the team has gone many standups without one: offer to turn the feature off
+   (`transcript_review_enabled: false`) rather than asking again.
+
+5. **Configuration.** To view or change the standup setup (time, weekdays,
    delivery channels, member aliases, user name, tracker sources, and selected
    team), use `standup_config_get` / `standup_config_set`. Call
    `standup_members` first to preview candidates from Jira, Azure DevOps, or
@@ -34,7 +65,17 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    Activity providers and repository/project scans run concurrently with
    bounded provider limits; a single final synthesis keeps the four summary
    sections consistent.
+   `transcript_dir` adds an external folder to the transcript sweep (a Zoom or
+   Google Meet recordings folder), and `transcript_review_enabled` turns off the
+   automatic review that runs before each standup. Both are also settable in the
+   TUI now, under Standup › Review › "Change my transcript folders…", which
+   offers the detected recording folders by name — suggest that when the user
+   would rather point-and-pick than find the path themselves.
    Installing the OS schedule that fires it daily is done from the yeaboi TUI.
+   That wizard also offers a transcript reminder — a second scheduled job that
+   posts a desktop notification 30 minutes to 2 hours after the standup, only
+   when standups have actually gone unchecked. Point the user at it when they
+   say they keep forgetting to save the recording.
 
 If there are no sessions yet, suggest planning first (`/yeaboi:plan-sprint`) —
 the standup needs a session for sprint dates and team context.

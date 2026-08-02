@@ -2,6 +2,46 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.50.0",
+      "date": "2026-08-02",
+      "summary": "Daily Standup now asks for the meeting transcript instead of waiting for one. Paste it from your clipboard, pipe it in, drag the file across, or point Standup at the folder your recordings already land in — Zoom, Google Meet and Downloads are detected and offered by name. When a standup runs and no transcript is ever checked against it, Standup says so: quietly at first, in the terminal only, and after several in a row it offers to turn the feature off rather than keep asking. An optional reminder can arrive shortly after your standup, and only when something is actually unchecked.",
+      "highlights": [
+        {
+          "text": "Paste, pipe or drag a standup transcript in — no more finding the right folder first",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Your Zoom, Google Meet and Downloads folders are detected and offered by name, with a count and the newest date",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "Standups that were never checked against their meeting are now surfaced, escalating to an offer to switch the feature off",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "An optional desktop reminder 30 minutes to 2 hours after the standup, which stays silent when nothing is unchecked",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        },
+        {
+          "text": "The transcript folder and the automatic pre-standup review are now settable in the terminal app, not only over MCP",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.49.0",
       "date": "2026-08-02",
       "summary": "Every shared artifact — your standup, retrospective, or report — is now editable by teammates who have the link. When the standup gets your work wrong, the person reading it can fix the text right there: correct a misspelled blocker, append something the scan missed, or add a note nobody thought to include. Every change is attributed to a self-declared name and can be reverted, and the corrected text becomes the version that exports, feeds into history, and reaches the next day's standup so the team doesn't repeat the same mistakes. Editing works through the browser; nothing needs to be re-run.",

@@ -957,6 +957,71 @@ class TestStandupReport:
         assert restored.member_updates == ()
 
 
+class TestTranscriptReviewArtifacts:
+    """The standup transcript-review artifacts (state.py) and their round-trip."""
+
+    def test_defaults(self):
+        from yeaboi.agent.state import StandupGap, TranscriptClaim, TranscriptReview, TranscriptSource
+
+        assert TranscriptReview().gaps == ()
+        assert TranscriptReview().config_suggestions == ()
+        assert TranscriptClaim().member == ""
+        assert StandupGap().priority == "medium"
+        assert StandupGap().feedback_kind == "Improvement"
+        assert TranscriptSource().attribution == "labelled"
+        assert TranscriptSource().external is False
+
+    def test_frozen(self):
+        from yeaboi.agent.state import StandupGap
+
+        gap = StandupGap(title="x")
+        with pytest.raises(FrozenInstanceError):
+            gap.title = "y"  # type: ignore[misc]
+
+    def test_round_trip_via_store_helpers(self):
+        from yeaboi.agent.state import StandupGap, TranscriptClaim, TranscriptReview, TranscriptSource
+        from yeaboi.standup.store import _dict_to_review, _review_to_json
+
+        original = TranscriptReview(
+            session_id="s1",
+            standup_date="2026-07-10",
+            run_id=7,
+            reviewed_at="2026-07-10T11:00:00+00:00",
+            sources=(TranscriptSource(path="/tmp/a.vtt", fmt="vtt", speakers=("Alice", "Bob"), truncated=True),),
+            claims=(TranscriptClaim(member="Alice", quote="I also did X", status="missing"),),
+            gaps=(
+                StandupGap(
+                    fingerprint="fp1",
+                    scope="product",
+                    members=("Alice",),
+                    claims=(TranscriptClaim(member="Alice", quote="I also did X"),),
+                    next_steps=("do a thing", "do another"),
+                    affected_systems=("confluence",),
+                ),
+            ),
+            config_suggestions=(StandupGap(fingerprint="fp2", scope="config", remedy="add the repo"),),
+            claims_matched=3,
+            llm_mode="llm",
+            warnings=("w1",),
+        )
+        restored = _dict_to_review(json.loads(_review_to_json(original)))
+        assert restored == original
+        # Every collection must come back a tuple, not a JSON list.
+        assert isinstance(restored.sources, tuple)
+        assert isinstance(restored.gaps[0].next_steps, tuple)
+        assert isinstance(restored.gaps[0].claims[0], TranscriptClaim)
+        assert restored.sources[0].truncated is True
+
+    def test_reconstruct_backfills_missing_fields(self):
+        from yeaboi.standup.store import _dict_to_review
+
+        restored = _dict_to_review({"session_id": "s1"})
+        assert restored.session_id == "s1"
+        assert restored.gaps == ()
+        assert restored.claims == ()
+        assert restored.run_id == 0
+
+
 class TestDeliveryReport:
     """The Reporting mode's DeliveryReport frozen dataclass + serialization."""
 

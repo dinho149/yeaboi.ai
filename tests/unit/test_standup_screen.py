@@ -932,6 +932,255 @@ class TestBuildScheduleStepScreen:
         assert isinstance(panel, Panel)
         self._render(panel, width=60)
 
+    def test_custom_step_names_replace_the_schedule_ones(self):
+        """The screen is shared with the transcript source picker."""
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        panel = _build_standup_schedule_step_screen(
+            [("Sweep my transcript folders", "3 unreviewed file(s)")],
+            0,
+            step_index=0,
+            heading="Where should I look?",
+            step_names=["Source", "Review", "File"],
+        )
+        out = self._render(panel)
+        assert "Source" in out and "Review" in out and "File" in out
+        assert "Channels" not in out  # a schedule-only step name
+
+
+class TestTranscriptSourceStep:
+    """The picker that turns "find the folder, copy the file" into one keypress."""
+
+    def _pick(self, monkeypatch, key_script, *, count=0, clip=""):
+        """Drive the source step with a scripted key sequence."""
+        from yeaboi.ui.mode_select import _standup_review_source_step
+
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select._standup_transcript_counts",
+            lambda sid: (count, f"{len(clip):,} characters ready" if clip.strip() else "nothing on the clipboard"),
+        )
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: clip)
+        keys = iter(key_script)
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        return _standup_review_source_step(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+
+    def test_enter_on_the_first_row_sweeps(self, monkeypatch):
+        assert self._pick(monkeypatch, ["enter"], count=3) == ("sweep", "")
+
+    def test_paste_returns_the_clipboard_text(self, monkeypatch):
+        # count=1 so the cursor starts on Sweep and "down" lands on Paste.
+        kind, value = self._pick(monkeypatch, ["down", "enter"], count=1, clip="Alice: hi\nBob: hey")
+        assert kind == "paste"
+        assert value == "Alice: hi\nBob: hey"
+        assert "\n" in value  # the newlines a text box would have eaten
+
+    def test_an_empty_clipboard_falls_through_to_opening_the_folder(self, monkeypatch):
+        """Choosing paste with nothing to paste should help, not error."""
+        assert self._pick(monkeypatch, ["down", "enter"], clip="   ")[0] == "open"
+
+    def test_open_row_returns_open(self, monkeypatch):
+        assert self._pick(monkeypatch, ["down", "down", "enter"], count=1) == ("open", "")
+
+    def test_esc_backs_out(self, monkeypatch):
+        assert self._pick(monkeypatch, ["esc"]) is None
+
+    def test_cursor_starts_on_paste_when_there_is_nothing_to_sweep(self, monkeypatch):
+        """Nothing unreviewed but a clipboard full of text — offer the useful row."""
+        assert self._pick(monkeypatch, ["enter"], count=0, clip="Alice: hi")[0] == "paste"
+
+    def test_cursor_starts_on_sweep_when_files_are_waiting(self, monkeypatch):
+        assert self._pick(monkeypatch, ["enter"], count=2, clip="Alice: hi")[0] == "sweep"
+
+
+class TestTranscriptsConfigure:
+    """Saving transcript_dir / transcript_review_enabled from the TUI — both were
+    MCP-only before, and the folders live outside the sandbox."""
+
+    def _run(self, monkeypatch, tmp_path, key_script, *, candidates=(), consent="allow_always", existing=None):
+        from yeaboi.standup.store import StandupStore
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        if existing is not None:
+            with StandupStore(db) as store:
+                store.save_config("sid", **existing)
+        monkeypatch.setattr("yeaboi.standup.transcript_sources.detect", lambda **kw: list(candidates))
+        monkeypatch.setattr("yeaboi.ui.shared._consent._preflight_path_choice", lambda *a, **kw: consent)
+        keys = iter(key_script)
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        ok, msg = mode_select._standup_transcripts_configure(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+        with StandupStore(db) as store:
+            saved = store.load_config("sid") or {}
+        return ok, msg, saved
+
+    def _zoom(self, path="/Users/x/Documents/Zoom"):
+        from yeaboi.standup.transcript_sources import SourceCandidate
+
+        return SourceCandidate(label="Zoom recordings", path=path, file_count=14, newest_date="2026-07-30")
+
+    # The cursor opens on the CURRENT setting, so with nothing configured it sits
+    # on the last row ("Just ~/.yeaboi/transcripts"); "down" wraps onto the first
+    # detected folder. Adopting somebody's Zoom folder is never an accidental
+    # single keypress.
+    _TO_ZOOM = ["down"]
+
+    def test_the_cursor_opens_on_the_current_setting(self, monkeypatch, tmp_path):
+        ok, _msg, saved = self._run(monkeypatch, tmp_path, ["enter", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_dir"] == ""  # unchanged: the managed folder only
+
+    def test_a_detected_folder_is_saved(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(monkeypatch, tmp_path, [*self._TO_ZOOM, "enter", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+        assert saved["transcript_review_enabled"] is True
+        assert "Zoom" in msg
+
+    def test_allow_once_refuses_to_save(self, monkeypatch, tmp_path):
+        """An allow-once grant dies with the process — saving it would produce a
+        config that works now and silently reviews nothing on every scheduled run."""
+        ok, msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter"], candidates=[self._zoom()], consent="allow_once"
+        )
+        assert ok is False
+        assert "this run only" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_deny_saves_nothing(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter"], candidates=[self._zoom()], consent="deny"
+        )
+        assert ok is False
+        assert "not allowed" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_choosing_the_managed_folder_needs_no_consent(self, monkeypatch, tmp_path):
+        """~/.yeaboi/transcripts is already inside the sandbox."""
+
+        def _boom(*a, **kw):
+            raise AssertionError("should not ask for consent on the managed folder")
+
+        monkeypatch.setattr("yeaboi.ui.shared._consent._preflight_path_choice", _boom)
+        monkeypatch.setattr("yeaboi.standup.transcript_sources.detect", lambda **kw: [])
+        from yeaboi.standup.store import StandupStore
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        keys = iter(["enter", "enter"])  # cursor already sits on "Just ~/.yeaboi/transcripts"
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        ok, _msg = mode_select._standup_transcripts_configure(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+        assert ok is True
+        with StandupStore(db) as store:
+            assert (store.load_config("sid") or {})["transcript_dir"] == ""
+
+    def test_auto_review_can_be_turned_off(self, monkeypatch, tmp_path):
+        """transcript_review_enabled had no interface at all before this."""
+        ok, _msg, saved = self._run(monkeypatch, tmp_path, ["enter", "down", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_review_enabled"] is False
+
+    def test_esc_on_the_first_step_cancels(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(monkeypatch, tmp_path, ["esc"], candidates=[self._zoom()])
+        assert ok is False
+        assert "cancelled" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_esc_on_the_second_step_goes_back(self, monkeypatch, tmp_path):
+        ok, _msg, saved = self._run(
+            monkeypatch,
+            tmp_path,
+            [*self._TO_ZOOM, "enter", "esc", *self._TO_ZOOM, "enter", "enter"],
+            candidates=[self._zoom()],
+        )
+        assert ok is True
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+
+    def test_other_config_fields_survive_the_save(self, monkeypatch, tmp_path):
+        """save_config writes EVERY column — an omitted keyword resets it."""
+        existing = {
+            "enabled": True,
+            "time": "09:30",
+            "weekdays": "1-5",
+            "delivery_channels": ["slack"],
+            "lead_minutes": 15,
+            "timezone": "",
+            "repo_path": "",
+            "my_aliases": "al",
+            "tracker_sources": ["jira"],
+            "team_members": ["Alice", "Bob"],
+            "roster_configured": True,
+            "code_sources": ["github"],
+            "github_repositories": ["o/r"],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+            "code_scope_configured": True,
+            "documentation_sources": ["notion"],
+            "documentation_scope_configured": True,
+            "automation_markers": "wiz",
+            "automation_handling": "exclude",
+            "transcript_dir": "",
+            "transcript_review_enabled": True,
+        }
+        _ok, _msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter", "enter"], candidates=[self._zoom()], existing=existing
+        )
+        assert saved["team_members"] == ["Alice", "Bob"]
+        assert saved["time"] == "09:30"
+        assert saved["delivery_channels"] == ["slack"]
+        assert saved["my_aliases"] == "al"
+        assert saved["automation_markers"] == "wiz"
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+
+
+class TestTranscriptCounts:
+    """The counts are read once on entry — discover() hashes files and the
+    clipboard helper shells out with a 10s timeout, so neither may run per frame."""
+
+    def test_counts_unreviewed_files_and_clipboard_chars(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        monkeypatch.setattr(
+            "yeaboi.standup.transcripts.discover", lambda sid, **kw: ([("a.vtt", False), ("b.txt", False)], [])
+        )
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: "x" * 1234)
+        count, hint = _standup_transcript_counts("sid")
+        assert count == 2
+        assert "1,234 characters" in hint
+
+    def test_empty_clipboard_says_so(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", lambda sid, **kw: ([], []))
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: None)
+        assert _standup_transcript_counts("sid") == (0, "nothing on the clipboard")
+
+    def test_a_broken_discover_does_not_block_the_picker(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        def _boom(*a, **k):
+            raise OSError("disk gone")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", _boom)
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: "Alice: hi")
+        count, hint = _standup_transcript_counts("sid")
+        assert count == 0
+        assert "characters ready" in hint
+
+    def test_a_broken_clipboard_does_not_block_the_picker(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        def _boom():
+            raise OSError("no display")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", lambda sid, **kw: ([("a.vtt", False)], []))
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", _boom)
+        assert _standup_transcript_counts("sid") == (1, "nothing on the clipboard")
+
 
 class TestDayOverDayScreen:
     def test_member_detail_shows_progress_note_and_outlook(self):
@@ -1002,3 +1251,244 @@ class TestDayOverDayScreen:
         out = cap.get()
         assert "▲" not in out
         assert "▼" not in out
+
+
+def _render(panel, width: int) -> str:
+    """Render a panel to plain text for content assertions."""
+    import io
+
+    from rich.console import Console
+
+    buf = io.StringIO()
+    Console(file=buf, width=width, force_terminal=False).print(panel)
+    return buf.getvalue()
+
+
+def _review(**over):
+    from yeaboi.agent.state import StandupGap, TranscriptClaim, TranscriptReview, TranscriptSource
+
+    base = dict(
+        standup_date="2026-07-30",
+        accuracy_note="Claims checked: 1 confirmed by the evidence.",
+        sources=(TranscriptSource(filename="2026-07-30-standup.vtt"),),
+        gaps=(
+            StandupGap(
+                fingerprint="fp1",
+                scope="product",
+                title="Standup misses Confluence comments",
+                root_cause="The Confluence collector reads page edits but not comments.",
+                priority="high",
+                claims=(TranscriptClaim(member="Alice", quote="I also commented on the design doc"),),
+            ),
+        ),
+        config_suggestions=(
+            StandupGap(
+                scope="config",
+                title="acme/infra is outside your code scope",
+                remedy="Add acme/infra via Standup -> Configure -> Code",
+            ),
+        ),
+    )
+    base.update(over)
+    return TranscriptReview(**base)
+
+
+def _review_data(**over) -> dict:
+    data = {
+        "session_name": "demo",
+        "report": _report(),
+        "schedule": {},
+        "my_name": "Alice",
+        "review": _review(),
+        "gap_issues": [{"fingerprint": "fp1", "issue_number": 42, "occurrences": 3}],
+    }
+    data.update(over)
+    return data
+
+
+class TestTranscriptReviewCard:
+    def test_card_absent_until_a_review_exists(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" not in standup_card_order({"report": _report()})
+
+    def test_card_present_once_reviewed(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" in standup_card_order(_review_data())
+
+    def test_teaser_counts_gaps_suggestions_and_filed(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", _review_data())
+        assert "1 gap" in teaser
+        assert "1 to fix in config" in teaser
+        assert "1 filed" in teaser
+
+    def test_overview_shows_the_card(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=30), 100)
+        assert "Transcript Review" in out
+
+    def test_detail_separates_product_gaps_from_config_fixes(self):
+        panel = _build_standup_screen(_review_data(), width=100, height=40, view="gaps")
+        out = _render(panel, 100)
+        assert "Gaps in standup itself" in out
+        assert "Standup misses Confluence comments" in out
+        assert "Fix in your configuration" in out
+        assert "Add acme/infra" in out
+
+    def test_detail_shows_the_quote_and_issue_number(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=40, view="gaps"), 100)
+        assert "I also commented on the design doc" in out
+        assert "#42" in out
+
+    def test_detail_empty_state(self):
+        data = _review_data(review=_review(gaps=(), config_suggestions=()), gap_issues=[])
+        out = _render(_build_standup_screen(data, width=100, height=30, view="gaps"), 100)
+        assert "No gaps found" in out
+
+    def test_detail_with_many_gaps_still_renders(self):
+        from yeaboi.agent.state import StandupGap
+
+        gaps = tuple(
+            StandupGap(fingerprint=f"fp{i}", scope="product", title=f"Gap {i}", priority="medium") for i in range(8)
+        )
+        data = _review_data(review=_review(gaps=gaps))
+        assert isinstance(_build_standup_screen(data, width=80, height=24, view="gaps"), Panel)
+
+    def test_renders_at_80_columns_without_overflow(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, view="gaps"), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+
+class TestUncheckedStandupCard:
+    """A nudge earns the card on the same terms a review does: it IS a result."""
+
+    def _nudge(self, **over):
+        from yeaboi.agent.state import TranscriptNudge
+
+        base = dict(
+            missed_dates=("2026-07-31", "2026-07-30", "2026-07-29"),
+            streak=3,
+            standup_count=3,
+            level="invite",
+            message="No transcript for the 2026-07-31 standup — drop the recording in ~/.yeaboi/transcripts.",
+        )
+        base.update(over)
+        return TranscriptNudge(**base)
+
+    def _data(self, **over):
+        base = {"review": None, "gap_issues": [], "nudge": self._nudge()}
+        base.update(over)
+        return _review_data(**base)
+
+    def test_card_appears_with_a_nudge_and_no_review(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" in standup_card_order(self._data())
+
+    def test_card_still_absent_with_neither(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_order
+
+        assert "gaps" not in standup_card_order({"report": _report(), "nudge": None})
+
+    def test_teaser_counts_the_unchecked_standups(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", self._data())
+        assert "3 standups unchecked" in teaser
+        assert "2026-07-29" in teaser  # the oldest
+
+    def test_a_review_and_a_nudge_both_reach_the_teaser(self):
+        from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
+
+        teaser = standup_card_teaser("gaps", _review_data(nudge=self._nudge()))
+        assert "3 unchecked" in teaser  # the outstanding thing leads
+        assert "1 gap" in teaser  # …without losing the review it has
+
+    def test_the_nudge_survives_a_review_on_file(self):
+        """The user who reviewed once and stopped is exactly who this is for.
+
+        Rendering the nudge only in the no-review branch made the whole
+        escalation ladder invisible to them: `invite` never enters
+        report.warnings by design, so it would have reached no surface at all.
+        """
+        out = _render(_build_standup_screen(_review_data(nudge=self._nudge()), width=100, height=40, view="gaps"), 100)
+        assert "drop the recording" in out  # the nudge
+        assert "Standups not yet checked" in out
+        assert "Gaps in standup itself" in out  # …and the review below it
+
+    def test_detail_shows_the_message_and_the_dates(self):
+        out = _render(_build_standup_screen(self._data(), width=100, height=30, view="gaps"), 100)
+        assert "drop the recording" in out
+        assert "2026-07-31" in out
+        assert "Press Review" in out
+
+    def test_detail_caps_a_long_list_of_dates(self):
+        nudge = self._nudge(missed_dates=tuple(f"2026-07-{d:02d}" for d in range(31, 11, -1)))
+        out = _render(_build_standup_screen(self._data(nudge=nudge), width=100, height=40, view="gaps"), 100)
+        assert "and 12 more" in out
+
+    def test_empty_state_survives_when_there_is_no_nudge(self):
+        data = _review_data(review=None, gap_issues=[], nudge=None)
+        out = _render(_build_standup_screen(data, width=100, height=30, view="gaps"), 100)
+        assert "No standup transcript has been reviewed yet" in out
+
+    def test_renders_at_80_columns_without_overflow(self):
+        out = _render(_build_standup_screen(self._data(), width=80, height=30, view="gaps"), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+
+class TestActionRowWrapping:
+    """Six standup actions outgrow an 80-column terminal, so the bar must wrap —
+    a clipped button is reachable with the arrow keys and invisible on screen."""
+
+    ACTIONS = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
+
+    def test_every_button_is_drawn_at_80_columns(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS), 80)
+        for label in self.ACTIONS:
+            assert label in out, f"{label} was clipped off the panel"
+
+    def test_no_line_exceeds_the_width(self):
+        out = _render(_build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS), 80)
+        assert not [line for line in out.splitlines() if len(line) > 80]
+
+    def test_wide_terminal_keeps_one_row(self):
+        from yeaboi.ui.shared._components import action_rows_height
+
+        assert action_rows_height(self.ACTIONS, 200) == 4
+
+    def test_narrow_terminal_takes_the_extra_height_from_the_viewport(self):
+        from yeaboi.ui.shared._components import action_rows_height
+
+        assert action_rows_height(self.ACTIONS, 80) > 4
+
+    def test_every_button_survives_every_width_it_is_used_at(self):
+        """A fixed-width smoke test looks in the wrong place for this bug.
+
+        `_wrap_actions` packs a row up to its budget, and the panel interior is
+        two columns narrower than the console. Budget against the console and a
+        row that just fits it soft-wraps inside the panel, shoving the last bank
+        of buttons off the bottom — selectable with the arrow keys, invisible on
+        screen. That only bites where a packed row lands in the two-column gap,
+        which for these bars is 87-88 and 91-96/105-106 columns respectively —
+        nowhere near the 80 every other test here checks. Hence the sweep.
+        """
+        six = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+        seven = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
+        for actions in (six, seven):
+            for width in range(80, 121):
+                out = _render(_build_standup_screen(_review_data(), width=width, height=30, actions=actions), width)
+                for label in actions:
+                    assert label in out, f"{label} clipped at {width} columns with {len(actions)} buttons"
+                assert not [ln for ln in out.splitlines() if len(ln) > width], f"overflow at {width} columns"
+
+    def test_default_actions_include_review(self):
+        out = _render(_build_standup_screen(_review_data(), width=100, height=30), 100)
+        assert "Review" in out
+
+    def test_selection_across_every_action(self):
+        for sel in range(len(self.ACTIONS)):
+            panel = _build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS, action_sel=sel)
+            assert isinstance(panel, Panel)

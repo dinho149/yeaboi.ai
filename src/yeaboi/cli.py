@@ -465,6 +465,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --standup-run: prompt for your update + confirm (timed) before generating. "
         "What the scheduler opens in a terminal; falls back to headless when no TTY.",
     )
+    # The second scheduled job: fires AFTER the standup, posts one desktop
+    # notification if any standup went unchecked, and exits. No terminal, no LLM.
+    parser.add_argument(
+        "--standup-remind-transcript",
+        action="store_true",
+        default=False,
+        help="Post a desktop reminder if standups went unchecked against their meetings (used by the OS scheduler).",
+    )
 
     # ── Team learning flags ───────────────────────────────────────────────
     parser.add_argument(
@@ -495,7 +503,9 @@ def build_parser() -> argparse.ArgumentParser:
     # optional, so bare `yeaboi` and `yeaboi --<flag>` parse unchanged).
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
-    subparsers = parser.add_subparsers(dest="command", metavar="{report,standup,perf,retro,poker,analyze}")
+    subparsers = parser.add_subparsers(
+        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze}"
+    )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
     report_p.add_argument(
@@ -602,8 +612,82 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["install", "remove", "status"],
         help="Manage the OS schedule (launchd/cron) that runs the standup daily, instead of running one now",
     )
+    standup_p.add_argument(
+        "--no-transcript-review",
+        dest="review_transcripts",
+        action="store_false",
+        default=True,
+        help="Skip the pre-standup review of any unreviewed meeting transcripts",
+    )
     standup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     standup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    # ── standup-review ────────────────────────────────────────────────────
+    # A sibling subcommand rather than `standup review`: `standup` is a leaf
+    # parser and converting it into a parser-of-parsers would break the
+    # existing `yeaboi standup --deliver` form.
+    review_p = subparsers.add_parser(
+        "standup-review",
+        help="Review standup meeting transcripts to find what standup missed, and why",
+    )
+    review_p.add_argument("--session", default="", metavar="ID", help="Session to use (default: most recent)")
+    # A bare `yeaboi standup-review meeting.vtt` is the shape people reach for
+    # first, and it is what a dragged file produces.
+    review_p.add_argument(
+        "paths",
+        nargs="*",
+        metavar="PATH",
+        help="Transcript files to review (same as --transcript; '-' reads the transcript from stdin)",
+    )
+    review_p.add_argument(
+        "--transcript",
+        dest="transcript_paths",
+        nargs="+",
+        metavar="PATH",
+        help="Review specific transcript files instead of sweeping the transcript folders",
+    )
+    review_p.add_argument(
+        "--transcript-text",
+        default="",
+        metavar="TEXT",
+        help="Review transcript text directly; it is saved to ~/.yeaboi/transcripts first",
+    )
+    review_p.add_argument(
+        "--transcript-dir",
+        default="",
+        metavar="DIR",
+        help="An extra transcript folder for this run (~/.yeaboi/transcripts is always swept)",
+    )
+    review_p.add_argument(
+        "--date",
+        dest="standup_date",
+        default="",
+        metavar="YYYY-MM-DD",
+        help="Attribute transcripts to this standup date when their own date can't be inferred",
+    )
+    review_p.add_argument(
+        "--max-transcripts",
+        type=int,
+        default=5,
+        help="Cap on distinct standup dates reviewed (one AI call each)",
+    )
+    review_p.add_argument(
+        "--include-reviewed",
+        action="store_true",
+        help="Re-review transcripts that have already been processed",
+    )
+    review_p.add_argument(
+        "--file-issues",
+        action="store_true",
+        help="File the drafted gaps as GitHub issues (writes to a PUBLIC repo; off by default)",
+    )
+    review_p.add_argument(
+        "--list-gaps",
+        action="store_true",
+        help="List past reviews and the gap→issue ledger instead of running a review",
+    )
+    review_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    review_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
 
     perf_p = subparsers.add_parser(
         "perf",
@@ -903,6 +987,51 @@ def _run_standup(args: argparse.Namespace) -> int:
     except Exception as e:
         logging.getLogger(__name__).error("Standup run failed: %s", e, exc_info=True)
         print(f"Error: standup run failed: {e}", file=sys.stderr)
+        return 1
+
+
+def _run_transcript_reminder(args: argparse.Namespace) -> int:
+    """Post one desktop reminder if standups went unchecked. Returns an exit code.
+
+    The second job the OS scheduler installs, firing shortly AFTER the standup —
+    the moment the recording has just landed and the meeting is still in mind.
+
+    Deliberately tiny: no LLM, no collectors, no terminal window. It asks the
+    same deterministic question the hub card asks, and if the answer is "nothing
+    to say" it exits silently. A scheduled job that speaks only when it has
+    something to report is one you leave installed.
+
+    # See docs: "Daily Standup" — scheduling
+    """
+    from yeaboi.logging_setup import attach_mode_handler, configure_logging
+    from yeaboi.paths import get_db_path
+    from yeaboi.sessions import SessionStore
+
+    configure_logging()
+    attach_mode_handler("standup")
+
+    session_id = args.standup_session
+    if not session_id or session_id == "latest":
+        with SessionStore(get_db_path()) as store:
+            session_id = store.get_latest_session_id()
+    if not session_id:
+        print("Error: no session found to check transcripts for.", file=sys.stderr)
+        return 2
+
+    try:
+        from yeaboi.standup.delivery import notify_desktop
+        from yeaboi.standup.engine import transcript_nudge
+
+        nudge = transcript_nudge(session_id)
+        if not nudge:
+            logging.getLogger(__name__).info("transcript reminder: nothing to say for %s", session_id)
+            return 0
+        notify_desktop("Standup transcript", nudge.message)
+        print(nudge.message)
+        return 0
+    except Exception as e:
+        logging.getLogger(__name__).error("Transcript reminder failed: %s", e, exc_info=True)
+        print(f"Error: transcript reminder failed: {e}", file=sys.stderr)
         return 1
 
 
@@ -1217,6 +1346,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
     handlers = {
         "report": _cmd_report,
         "standup": _cmd_standup,
+        "standup-review": _cmd_standup_review,
         "perf": _cmd_perf,
         "retro": _cmd_retro,
         "poker": _cmd_poker,
@@ -1302,6 +1432,17 @@ def _cmd_report(args: argparse.Namespace, console: "Console") -> int:
 
 
 def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
+    # Route this run's records to ~/.yeaboi/logs/standup/ like every other
+    # standup entry point (CLAUDE.md "Observability" — each mode logs to its own
+    # directory). Only the --standup-run scheduler path did this before, so a
+    # `yeaboi standup` run left nothing behind in the standup log.
+    from yeaboi.logging_setup import mode_log
+
+    with mode_log("standup"):
+        return _cmd_standup_inner(args, console)
+
+
+def _cmd_standup_inner(args: argparse.Namespace, console: "Console") -> int:
     from yeaboi.standup.engine import run_standup
     from yeaboi.standup.render import format_standup_rich
 
@@ -1348,6 +1489,7 @@ def _cmd_standup(args: argparse.Namespace, console: "Console") -> int:
         azdo_projects=args.azdo_projects,
         azdo_repositories=args.azdo_repositories,
         documentation_sources=args.documentation_sources,
+        review_transcripts=args.review_transcripts,
     )
     for warning in report.warnings:
         print(f"⚠ {warning}", file=sys.stderr)
@@ -1392,6 +1534,154 @@ def _cmd_standup_schedule(args: argparse.Namespace, console: "Console", session_
     lead_minutes = int(config.get("lead_minutes", 10))
     console.print(install_schedule(session_id, standup_time, weekdays, lead_minutes))
     return 0
+
+
+def _format_review_text(review, console: "Console") -> None:
+    """Print a transcript review as scannable text."""
+    console.print(f"[bold]Transcript review — {review.standup_date or 'unknown date'}[/bold]")
+    if review.sources:
+        console.print("Read: " + ", ".join(s.filename for s in review.sources))
+    if review.accuracy_note:
+        console.print(review.accuracy_note)
+    if review.gaps:
+        console.print("\n[bold]Gaps in standup itself[/bold] (drafted as GitHub issues)")
+        for gap in review.gaps:
+            # Parentheses, not brackets: Rich reads [high/high] as markup and
+            # silently swallows it.
+            console.print(f"  • {gap.title}  ({gap.priority} priority, {gap.confidence} confidence)  {gap.fingerprint}")
+            if gap.root_cause:
+                console.print(f"    {gap.root_cause}")
+    if review.config_suggestions:
+        console.print("\n[bold]Fix in your configuration[/bold] (never filed)")
+        for gap in review.config_suggestions:
+            console.print(f"  • {gap.title}")
+            if gap.remedy:
+                console.print(f"    → {gap.remedy}")
+    if not review.gaps and not review.config_suggestions:
+        console.print("\nNo gaps found — the report matched what the team said.")
+
+
+def _resolve_review_inputs(args: argparse.Namespace) -> tuple[list[str] | None, str]:
+    """Fold the positional paths, ``-`` and ``--transcript-text`` into engine args.
+
+    Returns ``(transcript_paths, transcript_text)``.
+
+    Stdin is resolved HERE rather than in the engine: ``sweep_and_review`` does a
+    bare ``Path(p)`` on everything it is handed, so a literal ``"-"`` would reach
+    it as a filename. Every path is run through ``normalize_dropped_path`` because
+    a file dragged from Finder arrives quoted (Terminal) or backslash-escaped
+    (iTerm2), and would otherwise fail as "not found".
+    """
+    from yeaboi.standup.transcripts import normalize_dropped_path
+
+    raw = [*(args.transcript_paths or []), *(getattr(args, "paths", None) or [])]
+    text = args.transcript_text or ""
+
+    paths: list[str] = []
+    for entry in raw:
+        if entry == "-":
+            if not text:
+                # A bare `-` on an interactive terminal means the user expected a
+                # pipe and did not give one. Reading anyway blocks forever with a
+                # blank screen and no hint, which reads as a hung command.
+                if sys.stdin.isatty():
+                    raise SystemExit(
+                        "standup-review -: nothing is piped in. "
+                        "Pipe a transcript (cat standup.txt | yeaboi standup-review -), "
+                        "or pass the file path instead."
+                    )
+                text = sys.stdin.read()
+            continue
+        cleaned = normalize_dropped_path(entry)
+        if cleaned:
+            paths.append(cleaned)
+    return (paths or None), text
+
+
+def _cmd_standup_review(args: argparse.Namespace, console: "Console") -> int:
+    """`yeaboi standup-review` — audit standup reports against meeting transcripts."""
+    from yeaboi.logging_setup import mode_log
+
+    with mode_log("standup"):
+        return _cmd_standup_review_inner(args, console)
+
+
+def _cmd_standup_review_inner(args: argparse.Namespace, console: "Console") -> int:
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup.engine import file_transcript_issues, run_transcript_review, transcript_nudge
+    from yeaboi.standup.store import StandupStore
+
+    logging.getLogger(__name__).info("standup-review (list_gaps=%s file=%s)", args.list_gaps, args.file_issues)
+    session_id = _resolve_cli_session(args.session)
+    if not session_id:
+        print("Error: no session found to review transcripts for.", file=sys.stderr)
+        return 2
+
+    if args.list_gaps:
+        # The dedup ledger, so it is possible to SEE dedup working rather than
+        # having to trust it.
+        with StandupStore(get_db_path()) as store:
+            reviews = store.get_reviews(session_id, limit=30)
+            ledger = store.get_gap_issues(limit=50)
+        if args.format == "json":
+            print(_json_dump({"reviews": reviews, "gap_issues": ledger}))
+            return 0
+        console.print(f"[bold]{len(reviews)} review(s)[/bold]")
+        for row in reviews:
+            console.print(f"  {row['standup_date'] or '?'}  run={row['run_id'] or '-'}  {row['status']}")
+        console.print(f"\n[bold]{len(ledger)} tracked gap(s)[/bold]")
+        for entry in ledger:
+            issue = f"#{entry['issue_number']}" if entry["issue_number"] else entry["state"]
+            console.print(f"  {entry['fingerprint']}  {issue}  ×{entry['occurrences']}  {entry['title']}")
+        nudge = transcript_nudge(session_id)
+        if nudge:
+            console.print(f"\n[bold]{len(nudge.missed_dates)} unchecked standup(s)[/bold]")
+            console.print("  " + ", ".join(nudge.missed_dates[:14]))
+            console.print(f"  {nudge.message}")
+        return 0
+
+    paths, transcript_text = _resolve_review_inputs(args)
+
+    review = run_transcript_review(
+        session_id,
+        transcript_paths=paths,
+        transcript_text=transcript_text,
+        transcript_dir=args.transcript_dir,
+        standup_date=args.standup_date,
+        max_transcripts=args.max_transcripts,
+        include_reviewed=args.include_reviewed,
+    )
+    if transcript_text and review.sources:
+        # Name what landed: an import the user cannot see is an import they
+        # cannot tell went to the right day.
+        imported = review.sources[0]
+        print(f"Imported {imported.filename} — covers {imported.covered_date} ({imported.attribution})")
+    for warning in review.warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+
+    filing = None
+    if args.file_issues:
+        if not review.gaps:
+            print("Nothing to file — no gaps in standup itself were diagnosed.", file=sys.stderr)
+        else:
+            filing = file_transcript_issues(review.review_id, session_id=session_id)
+            for warning in filing.warnings:
+                print(f"⚠ {warning}", file=sys.stderr)
+
+    if args.format == "json":
+        print(_json_dump({"review": review, "filing": filing} if filing else review))
+    else:
+        _format_review_text(review, console)
+        if filing:
+            console.print(f"\nFiled {filing.filed}, commented {filing.commented}, skipped {filing.skipped}.")
+            for link in filing.links:
+                if link.issue_url:
+                    console.print(f"  {link.issue_url}")
+        elif review.gaps:
+            console.print("\nRun again with --file-issues to file these on GitHub.")
+
+    warnings = list(review.warnings) + list(filing.warnings if filing else [])
+    return _strict_exit(args.strict, warnings)
 
 
 def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
@@ -1953,6 +2243,9 @@ def main(argv: list[str] | None = None) -> None:
     # with no TUI/splash. Runs before the interactive setup below.
     if args.standup_run:
         sys.exit(_run_standup(args))
+
+    if args.standup_remind_transcript:
+        sys.exit(_run_transcript_reminder(args))
 
     # ── Non-interactive headless flow ────────────────────────────────────────
     # Runs the full pipeline without any TUI, splash, or interactive input.

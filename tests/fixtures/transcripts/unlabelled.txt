@@ -1,0 +1,3 @@
+so yesterday I mostly worked on the login flow and then I picked up the
+redirect bug which took a while because the session cookie was wrong
+then we talked about the release and agreed to cut it on friday

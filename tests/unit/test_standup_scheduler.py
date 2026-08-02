@@ -80,6 +80,136 @@ class TestHelpers:
         ]
 
 
+class TestTwoJobKinds:
+    """Two OS jobs per session. Every install/remove/status path takes a kind,
+    and the teardown matrix is the whole safety property: a reminder still
+    firing after the user disabled their standup is the worst failure here."""
+
+    @pytest.fixture
+    def macos(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: True)
+        monkeypatch.setattr(scheduler, "_is_linux", lambda: False)
+        monkeypatch.setattr(scheduler, "_launch_agents_dir", lambda: tmp_path)
+        monkeypatch.setattr(scheduler, "_launcher_dir", lambda: tmp_path / "launchers")
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/yeaboi")
+        monkeypatch.setattr(scheduler.subprocess, "run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
+        return tmp_path
+
+    def test_a_negative_lead_fires_after_the_standup(self):
+        """The reminder needs no new time maths — run_time already wraps."""
+        assert scheduler.run_time("10:00", -45) == (10, 45)
+        assert scheduler.run_time("23:30", -45) == (0, 15)  # wraps past midnight
+
+    def test_the_offset_is_readable_back_off_the_installed_job(self, macos):
+        """The job IS the setting, so the wizard must be able to read it back.
+
+        Recovering only "is one installed?" and defaulting the offset to 30
+        would silently downgrade a user's "2 hours after" the next time they
+        opened the wizard to change something else entirely.
+        """
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 120)
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 120
+
+    def test_no_installed_job_means_no_offset(self, macos):
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 0
+
+    def test_an_offset_past_midnight_reads_back(self, macos):
+        scheduler.install_transcript_reminder("s1", "23:30", "1-5", 60)
+        assert scheduler.transcript_reminder_offset("s1", "23:30") == 60
+
+    def test_a_malformed_standup_time_is_not_fatal(self, macos):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 60)
+        assert scheduler.transcript_reminder_offset("s1", "not a time") == 0
+
+    def test_the_two_kinds_use_distinct_labels(self, macos):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        assert (macos / "com.yeaboi.standup.s1.plist").exists()
+        assert (macos / "com.yeaboi.standup-transcript.s1.plist").exists()
+
+    def test_the_reminder_runs_the_cli_directly_with_no_terminal(self, macos):
+        """The wrapper/osascript stack exists only to make the standup run
+        interactive; a notification is passive and must not open a window."""
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        with (macos / "com.yeaboi.standup-transcript.s1.plist").open("rb") as fh:
+            data = plistlib.load(fh)
+        argv = data["ProgramArguments"]
+        assert "--standup-remind-transcript" in argv
+        assert not any("osascript" in str(a) or "yeaboi-standup" == str(a).split("/")[-1] for a in argv)
+        assert data["StartCalendarInterval"][0]["Hour"] == 10
+        assert data["StartCalendarInterval"][0]["Minute"] == 45
+
+    def test_removing_one_kind_leaves_the_other(self, macos):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        scheduler.remove_schedule("s1", kind=scheduler.JOB_TRANSCRIPT_REMINDER)
+        assert (macos / "com.yeaboi.standup.s1.plist").exists()
+        assert not (macos / "com.yeaboi.standup-transcript.s1.plist").exists()
+
+    def test_remove_with_no_kind_tears_down_everything(self, macos):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        scheduler.remove_schedule("s1")
+        assert not list(macos.glob("*.plist"))
+
+    def test_status_is_per_kind(self, macos):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        assert scheduler.get_schedule_status("s1")["installed"] is False
+        assert scheduler.get_schedule_status("s1", scheduler.JOB_TRANSCRIPT_REMINDER)["installed"] is True
+
+    def test_removing_the_standup_does_not_touch_another_session(self, macos):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        scheduler.install_transcript_reminder("s2", "10:00", "1-5", 45)
+        scheduler.remove_schedule("s1")
+        assert (macos / "com.yeaboi.standup-transcript.s2.plist").exists()
+
+
+class TestTwoJobKindsCron:
+    @pytest.fixture
+    def cron(self, monkeypatch):
+        monkeypatch.setattr(scheduler, "_is_macos", lambda: False)
+        monkeypatch.setattr(scheduler, "_is_linux", lambda: True)
+        monkeypatch.setattr(scheduler.shutil, "which", lambda name: "/bin/yeaboi")
+        lines: list[str] = []
+        monkeypatch.setattr(scheduler, "_read_crontab", lambda: list(lines))
+        monkeypatch.setattr(scheduler, "_write_crontab", lambda new: (lines.clear(), lines.extend(new)))
+        return lines
+
+    def test_markers_cannot_collide(self):
+        """'# yeaboi-standup s1' must not be a substring of the transcript one,
+        or removing the standup would silently take the reminder with it."""
+        standup = scheduler._cron_marker("s1")
+        reminder = scheduler._cron_marker("s1", scheduler.JOB_TRANSCRIPT_REMINDER)
+        assert standup not in reminder
+        assert reminder not in standup
+
+    def test_the_offset_reads_back_off_the_crontab_entry(self, cron):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 90)
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 90
+
+    def test_removing_one_kind_leaves_the_other(self, cron):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        assert len(cron) == 2
+        scheduler.remove_schedule("s1", kind=scheduler.JOB_TRANSCRIPT_REMINDER)
+        assert len(cron) == 1
+        assert "--standup-run" in cron[0]
+
+    def test_remove_with_no_kind_tears_down_everything(self, cron):
+        scheduler.install_schedule("s1", "10:00", "1-5")
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        scheduler.remove_schedule("s1")
+        assert cron == []
+
+    def test_the_reminder_entry_fires_after_the_standup(self, cron):
+        scheduler.install_schedule("s1", "10:00", "1-5", 10)
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
+        standup = next(ln for ln in cron if "--standup-run" in ln)
+        reminder = next(ln for ln in cron if "--standup-remind-transcript" in ln)
+        assert standup.startswith("50 9 ")
+        assert reminder.startswith("45 10 ")
+
+
 class TestLaunchd:
     def test_install_writes_plist_and_loads(self, monkeypatch, tmp_path):
         monkeypatch.setattr(scheduler, "_is_macos", lambda: True)

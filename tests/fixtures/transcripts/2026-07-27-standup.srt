@@ -1,0 +1,7 @@
+1
+00:00:01,000 --> 00:00:05,000
+Alice: I merged the auth branch.
+
+2
+00:00:05,500 --> 00:00:09,000
+Bob: I was in interviews all day, nothing tracked.

@@ -46,8 +46,11 @@ class TestSchemaVersion:
         # v13 added the ticket cache; v14-v17 add Standup scopes; v18 added the
         # Scrum Poker table (poker_history); v19 adds the Analysis enrichment
         # cache; v20 records selected Analysis features; v21 adds the artifact
-        # edit log plus origin/edited_from_id provenance on every history table.
-        assert CURRENT_SCHEMA_VERSION == 21
+        # edit log plus origin/edited_from_id provenance on every history table;
+        # v22 added the Standup transcript-review tables (standup_reviews,
+        # standup_transcripts, standup_gap_issues) plus the two standup_config
+        # transcript columns.
+        assert CURRENT_SCHEMA_VERSION == 22
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

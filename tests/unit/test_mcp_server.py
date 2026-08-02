@@ -39,6 +39,8 @@ EXPECTED_TOOLS = {
     "standup_history",
     "standup_members",
     "standup_repositories",
+    "standup_review",
+    "standup_gaps",
     "standup_config_get",
     "standup_config_set",
     "report_delivery",
@@ -395,6 +397,48 @@ class TestEngineTools:
         assert payload["ok"] is True
         assert captured == {"session_id": seeded_session, "deliver": False, "days": None}
         assert payload["warnings"] == ["Jira skipped"]
+
+    def test_standup_review_passes_transcript_text_through(self, seeded_session, provider_mode, monkeypatch):
+        """An agent that already HAS the transcript shouldn't have to ask the
+        user to save it to a file first."""
+        from yeaboi.agent.state import TranscriptReview
+
+        captured: dict = {}
+
+        def fake_review(session_id, **kwargs):
+            captured.update(session_id=session_id, **kwargs)
+            return TranscriptReview(standup_date="2026-07-30")
+
+        monkeypatch.setattr("yeaboi.standup.engine.run_transcript_review", fake_review)
+        payload = call_tool("standup_review", {"transcript_text": "Alice: shipped auth"})
+        assert payload["ok"] is True
+        assert captured["transcript_text"] == "Alice: shipped auth"
+        assert payload["data"]["standup_date"] == "2026-07-30"
+
+    def test_standup_review_defaults_to_no_text(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.agent.state import TranscriptReview
+
+        captured: dict = {}
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.run_transcript_review",
+            lambda sid, **kw: captured.update(kw) or TranscriptReview(),
+        )
+        call_tool("standup_review")
+        assert captured["transcript_text"] == ""
+
+    def test_standup_gaps_carries_the_unchecked_nudge(self, seeded_session, provider_mode, monkeypatch):
+        from yeaboi.agent.state import TranscriptNudge
+
+        monkeypatch.setattr(
+            "yeaboi.standup.engine.transcript_nudge",
+            lambda sid, **kw: TranscriptNudge(
+                session_id=sid, missed_dates=("2026-07-30",), streak=4, level="reminder", message="4 unchecked"
+            ),
+        )
+        payload = call_tool("standup_gaps")
+        assert payload["ok"] is True
+        assert payload["data"]["nudge"]["level"] == "reminder"
+        assert payload["data"]["nudge"]["missed_dates"] == ["2026-07-30"]
 
     def test_report_delivery_validates_period(self, tmp_db, provider_mode):
         payload = call_tool("report_delivery", {"period": "fortnight"})

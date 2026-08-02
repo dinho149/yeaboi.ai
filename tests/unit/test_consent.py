@@ -183,6 +183,50 @@ class TestPreflightPathConsent:
         assert seen[0].context == "Ctx"
 
 
+class TestPreflightPathChoice:
+    """The tri-state variant. A caller that SAVES a path needs to know whether
+    the grant outlives this process — an allow-once grant behind a persisted
+    setting reviews nothing on every scheduled run afterwards."""
+
+    def _choice(self, path, **kwargs):
+        return _consent._preflight_path_choice(
+            _FakeConsole(), _FakeLive(), lambda timeout=None: "", 0.001, True, path, **kwargs
+        )
+
+    def test_already_allowed_is_distinguishable_from_a_fresh_grant(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda path, mode="read": True)
+        assert self._choice("/anywhere") == "already_allowed"
+
+    def test_allow_once_is_reported_as_such(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda path, mode="read": False)
+        monkeypatch.setattr("yeaboi.fs_policy.grant_session", lambda p: None)
+        monkeypatch.setattr(_consent, "_fs_consent_popup", lambda *a, **k: "allow_once")
+        assert self._choice("/definitely/outside") == "allow_once"
+
+    def test_allow_always_is_reported_as_such(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda path, mode="read": False)
+        monkeypatch.setattr("yeaboi.config.add_allowed_path", lambda p: None)
+        monkeypatch.setattr(_consent, "_fs_consent_popup", lambda *a, **k: "allow_always")
+        assert self._choice("/definitely/outside") == "allow_always"
+
+    def test_deny(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda path, mode="read": False)
+        monkeypatch.setattr(_consent, "_fs_consent_popup", lambda *a, **k: "deny")
+        assert self._choice("/definitely/outside") == "deny"
+
+    def test_the_boolean_wrapper_is_unchanged(self, monkeypatch):
+        """Every existing call site keeps its behaviour."""
+        monkeypatch.setattr("yeaboi.fs_policy.is_allowed", lambda path, mode="read": False)
+        monkeypatch.setattr("yeaboi.fs_policy.grant_session", lambda p: None)
+        for popup, expected in (("allow_once", True), ("allow_always", True), ("deny", False)):
+            monkeypatch.setattr("yeaboi.config.add_allowed_path", lambda p: None)
+            monkeypatch.setattr(_consent, "_fs_consent_popup", lambda *a, _p=popup, **k: _p)
+            got = _consent._preflight_path_consent(
+                _FakeConsole(), _FakeLive(), lambda timeout=None: "", 0.001, True, "/definitely/outside"
+            )
+            assert got is expected
+
+
 class TestDrainSandboxConsents:
     """Post-turn loop: queued denial + consent stub → grant + synthetic retry turn."""
 
