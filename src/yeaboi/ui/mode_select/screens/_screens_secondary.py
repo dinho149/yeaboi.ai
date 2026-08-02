@@ -722,7 +722,7 @@ def _analysis_setup_header(
         # the initial setup wizard uses — so Analysis's setup reads like the rest
         # of the app rather than inventing a second breadcrumb style. Filled dots
         # are done, the bright one is here, hollow ones are still to come.
-        out.append(build_progress_dots(list(trail), here, theme=theme))
+        out.append(build_progress_dots(list(trail), here, theme=theme, mark_done=True))
     out.append(Text(PAD + help_text, style=theme.muted))
     if message:
         out.extend((Text(PAD + "⚠  " + message, style=theme.warn), Text("")))

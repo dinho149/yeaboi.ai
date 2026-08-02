@@ -570,10 +570,16 @@ def build_progress_dots(
     *,
     pad: str = PAD,
     theme: Theme | None = None,
+    mark_done: bool = False,
 ) -> Text:
     """Build a progress indicator: ● Instructions  ● Epic  ○ Stories ...
 
     Filled dots for completed stages, bright dot for current, hollow for future.
+
+    ``mark_done`` also carries "done" in the LABEL — a finished stage keeps its
+    name uppercased and in the accent colour, so a glance down the row says what
+    is behind you without decoding dot fills. Off by default: the flows that
+    predate it read as a plain stage list.
     """
     _theme = theme or ANALYSIS_THEME
     progress = Text(pad, justify="left")
@@ -586,7 +592,13 @@ def build_progress_dots(
             progress.append("\u25cf", style=_theme.accent_bright)
         else:
             progress.append("\u25cb", style="rgb(60,60,70)")
-        progress.append(f" {stage_name}", style="dim" if i != current else "bold white")
+        if i == current:
+            label, style = (stage_name.upper() if mark_done else stage_name), "bold white"
+        elif i < current and mark_done:
+            label, style = stage_name.upper(), _theme.accent
+        else:
+            label, style = stage_name, "dim"
+        progress.append(f" {label}", style=style)
     return progress
 
 

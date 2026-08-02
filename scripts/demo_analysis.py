@@ -125,16 +125,40 @@ def main() -> int:
 
     _install_stubs(fast=args.fast)
 
+    import atexit
+
     from rich.console import Console
 
     from yeaboi.ui.mode_select import select_mode
+    from yeaboi.ui.shared._input import (
+        disable_mouse_tracking,
+        enable_mouse_tracking,
+        enter_raw_mode,
+        exit_raw_mode,
+    )
 
+    # cli.py does this around select_mode, not select_mode itself — so calling
+    # the TUI directly (as this script does) left mouse reporting off and EVERY
+    # click dead, which reads as "the buttons don't work" rather than "the demo
+    # harness never turned the mouse on". Mirror the CLI exactly.
+    def _cleanup() -> None:
+        for fn in (disable_mouse_tracking, exit_raw_mode):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 - best-effort terminal restore
+                pass
+
+    atexit.register(_cleanup)
     print(f"demo data dir: {tmp}\nPick Analysis. Ctrl+C to quit.")
     time.sleep(1.2)
+    enter_raw_mode()
+    enable_mouse_tracking()
     try:
         select_mode(Console())
     except KeyboardInterrupt:
         pass
+    finally:
+        _cleanup()
     return 0
 
 
