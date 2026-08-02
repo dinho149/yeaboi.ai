@@ -398,6 +398,22 @@ class StandupStore:
         ).fetchall()
         return [r[0] for r in rows]
 
+    def get_latest_configured_session(self) -> str | None:
+        """Newest session whose roster was actually confirmed, or None.
+
+        The standup page targets "the latest session" across every mode, so any
+        other activity that opens a session leaves the saved standup setup on an
+        older one. The schedule card already works around this for schedules
+        (see :meth:`get_enabled_schedule_sessions`); this is the same escape
+        hatch for the setup itself. ``roster_configured`` is the filter because
+        a row written by a half-finished walk is not a setup worth offering —
+        the caller still validates the remaining, conditionally-required flags.
+        """
+        row = self._conn.execute(
+            "SELECT session_id FROM standup_config WHERE roster_configured = 1 ORDER BY updated_at DESC LIMIT 1"
+        ).fetchone()
+        return row[0] if row else None
+
     def load_config(self, session_id: str) -> dict | None:
         """Return the standup config for a session as a dict, or None if unset."""
         row = self._conn.execute(
