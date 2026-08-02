@@ -2,6 +2,51 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.49.0",
+      "date": "2026-08-02",
+      "summary": "Every shared artifact — your standup, retrospective, or report — is now editable by teammates who have the link. When the standup gets your work wrong, the person reading it can fix the text right there: correct a misspelled blocker, append something the scan missed, or add a note nobody thought to include. Every change is attributed to a self-declared name and can be reverted, and the corrected text becomes the version that exports, feeds into history, and reaches the next day's standup so the team doesn't repeat the same mistakes. Editing works through the browser; nothing needs to be re-run.",
+      "highlights": [
+        {
+          "text": "Teammates can now correct and edit shared standups, reports and retrospectives directly from the shared link",
+          "areas": [
+            "standup",
+            "reporting",
+            "retro"
+          ]
+        },
+        {
+          "text": "Every correction is attributed to a self-declared name, timestamped and can be reverted",
+          "areas": [
+            "standup",
+            "reporting",
+            "retro",
+            "general"
+          ]
+        },
+        {
+          "text": "Corrected text feeds forward to the next run so mistakes aren't repeated",
+          "areas": [
+            "standup",
+            "retro"
+          ]
+        },
+        {
+          "text": "Edit history shows what changed and who changed it, with timestamps",
+          "areas": [
+            "standup",
+            "reporting",
+            "retro"
+          ]
+        },
+        {
+          "text": "All edits are made through the browser — standups and reports are never re-run",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.48.0",
       "date": "2026-08-01",
       "summary": "Daily Standup no longer walks you through five pickers on every run — tracker sources, team members, code sources, repositories, and documentation sources — when you've already told it once. Generate now opens with a summary of your saved setup and three buttons: Use Saved goes straight to \"Your update for today\", Change lets you adjust any settings (still pre-selected from last time), and Back cancels. The gate only appears when there's something to reuse; first runs and incomplete setups are unchanged.",
@@ -33,26 +78,42 @@
       "highlights": [
         {
           "text": "Invite links now carry the access code in the URL fragment, making them a single working link",
-          "areas": ["retro", "planning", "general"]
+          "areas": [
+            "retro",
+            "planning",
+            "general"
+          ]
         },
         {
           "text": "Stale links show a clear message and don't spam failed join attempts to the server",
-          "areas": ["retro", "planning", "general"]
+          "areas": [
+            "retro",
+            "planning",
+            "general"
+          ]
         },
         {
           "text": "Applies to both live boards and Share Online exports",
-          "areas": ["reporting", "standup", "retro", "planning"]
+          "areas": [
+            "reporting",
+            "standup",
+            "retro",
+            "planning"
+          ]
         },
         {
           "text": "Fixed: Copy Invite button produced a broken two-line payload that failed when pasted into address bars or chat",
-          "areas": ["retro", "planning"]
+          "areas": [
+            "retro",
+            "planning"
+          ]
         }
       ]
     },
     {
       "version": "2.46.0",
       "date": "2026-07-31",
-      "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look \u2014 different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it \u2014 \u201ca standup\u201d, \u201ca retro\u201d \u2014 so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading \u201cSprint Retro\u201d on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
+      "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look — different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it — “a standup”, “a retro” — so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading “Sprint Retro” on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
       "highlights": [
         {
           "text": "Boards, share pages, exported reports and the slide deck all wear the same header, footer and colours",
@@ -78,7 +139,7 @@
           ]
         },
         {
-          "text": "A share page names what is behind it \u2014 except Performance, which stays anonymous on purpose",
+          "text": "A share page names what is behind it — except Performance, which stays anonymous on purpose",
           "areas": [
             "performance",
             "general"
@@ -111,10 +172,10 @@
     {
       "version": "2.45.0",
       "date": "2026-07-31",
-      "summary": "Performance mode is now clearly marked as beta wherever you meet it. The mode works exactly as before and nothing has been taken away \u2014 but its 1:1 preps, completion summaries and six-month reviews have not yet been checked against a real team's delivery data, and until now nothing on screen said so. That matters more here than elsewhere, because these drafts are about named people. The Performance card on the welcome screen and the page header both carry a BETA tag, and the first time you open the mode you get a short one-time note explaining what is and isn't reliable: the drafts are a starting point rather than an assessment, a board with little on it produces thin and sometimes misleading signals, and nothing is emailed to anyone unless you ask for it. You will only see that note once. The same caveat now appears when you use Performance from the command line or through an AI assistant.",
+      "summary": "Performance mode is now clearly marked as beta wherever you meet it. The mode works exactly as before and nothing has been taken away — but its 1:1 preps, completion summaries and six-month reviews have not yet been checked against a real team's delivery data, and until now nothing on screen said so. That matters more here than elsewhere, because these drafts are about named people. The Performance card on the welcome screen and the page header both carry a BETA tag, and the first time you open the mode you get a short one-time note explaining what is and isn't reliable: the drafts are a starting point rather than an assessment, a board with little on it produces thin and sometimes misleading signals, and nothing is emailed to anyone unless you ask for it. You will only see that note once. The same caveat now appears when you use Performance from the command line or through an AI assistant.",
       "highlights": [
         {
-          "text": "Performance is labelled BETA on the mode card and page header \u2014 the mode stays fully usable",
+          "text": "Performance is labelled BETA on the mode card and page header — the mode stays fully usable",
           "areas": [
             "performance"
           ]
@@ -143,10 +204,10 @@
     {
       "version": "2.44.0",
       "date": "2026-07-31",
-      "summary": "Inviting people to a live retro or planning poker board is now one link that works for everyone, wherever they are. Boards used to offer a link that only worked for teammates on the same Wi-Fi, with a separate \u201cShare Remotely\u201d button to add an internet-reachable one on top \u2014 and it was easy to send the wrong one to someone at home. Every board now sets up a single secure link by itself the moment it opens, and that is the link Copy Invite gives you. The board is also no longer reachable from your local network at all, so it is not exposed to everyone else on an office or caf\u00e9 connection, and your own host link travels encrypted. Two things to know: hosting a board now needs an internet connection, and the invite link takes a few seconds to appear while it is being prepared \u2014 the access code works straight away.",
+      "summary": "Inviting people to a live retro or planning poker board is now one link that works for everyone, wherever they are. Boards used to offer a link that only worked for teammates on the same Wi-Fi, with a separate “Share Remotely” button to add an internet-reachable one on top — and it was easy to send the wrong one to someone at home. Every board now sets up a single secure link by itself the moment it opens, and that is the link Copy Invite gives you. The board is also no longer reachable from your local network at all, so it is not exposed to everyone else on an office or café connection, and your own host link travels encrypted. Two things to know: hosting a board now needs an internet connection, and the invite link takes a few seconds to appear while it is being prepared — the access code works straight away.",
       "highlights": [
         {
-          "text": "One secure link per board, set up automatically \u2014 the separate \u201cShare Remotely\u201d step is gone",
+          "text": "One secure link per board, set up automatically — the separate “Share Remotely” step is gone",
           "areas": [
             "retro",
             "planning"
@@ -222,11 +283,36 @@
       "date": "2026-07-31",
       "summary": "The welcome screen gains a duck companion who now does more than sit there: press f and a speech bubble opens from him that you write your feedback straight into, pick a type and area for, paste screenshots into, or dictate out loud. Settings gets a full rebuild around boxed sections you can drive entirely from the keyboard — arrow between boxes, Enter to focus one, then arrow between the values inside it — with storage settings moved under System and long status lines that wrap instead of getting cut off. Clicking now works across the whole app rather than just the main menu, and a handful of small annoyances are gone: the Back button leaves in one click, the controls drawer opens with c, and the wordmark intro no longer replays every time you open Changelog, Feedback, or All Tips.",
       "highlights": [
-        {"text": "Write and send feedback in a speech bubble from the duck, with image paste and voice dictation", "areas": ["general"]},
-        {"text": "Settings laid out as boxed sections you can navigate and edit with the keyboard alone", "areas": ["settings"]},
-        {"text": "Storage settings moved under System, and long status lines wrap instead of truncating", "areas": ["settings"]},
-        {"text": "Clicking buttons, rows, and cards now works on every screen, not just the main menu", "areas": ["general"]},
-        {"text": "Back leaves in one click, c opens the controls drawer, and the intro animation no longer replays on secondary pages", "areas": ["general"]}
+        {
+          "text": "Write and send feedback in a speech bubble from the duck, with image paste and voice dictation",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Settings laid out as boxed sections you can navigate and edit with the keyboard alone",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Storage settings moved under System, and long status lines wrap instead of truncating",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Clicking buttons, rows, and cards now works on every screen, not just the main menu",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Back leaves in one click, c opens the controls drawer, and the intro animation no longer replays on secondary pages",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -234,11 +320,36 @@
       "date": "2026-07-28",
       "summary": "Reporting mode reaches feature and UX parity with Analysis and Standup with six major capability launches. Threaded generation runs the engine on a background worker behind a shared progress screen with full cancellation support, and adds Last Week and custom date range periods with automatic window clamping for delivered items. The new theme registry (4 built-in themes plus custom palettes from ~/.yeaboi/data/reporting_themes.json) flows into HTML deck CSS, .pptx slides, CLI --theme flag, and MCP tools. Native .pptx export now available as an optional docs extra with graceful degradation if python-pptx is missing. Per-component source selection (delivery/code/docs) lets you pick what gets included, and deterministic supporting signals (merged PRs, commits, doc updates) appear as bounded reference-only rows with corroboration footnotes. Persisted DeckStyle preferences control title/heading colors, font presets, layout density, bullets, section toggles, and slide numbers with neutral defaults. New layout.py planner delivers content-aware slide packing shared by both renderers: full-width lone cards, greedy 2-column layouts, pagination with (cont.) markers, and a content_fit mode (ask/expand/tight) that lets users decide whether to add slides when content exceeds bounds. Visual quality improvements include top-anchored outcome cards, height-fitted delivered-items table with explicit column widths, deduplicated items (collapsed ticket + changelog rows), executive summary as sentence bullets, and flattened doc-collector progress. Packaged pixel-duck mark appears on both surfaces (inline data URI, offline-safe).",
       "highlights": [
-        {"text": "Threaded generation with background worker, live progress screen, and Esc cancellation; Last Week and custom date range periods added", "areas": ["reporting"]},
-        {"text": "Theme registry: 4 built-in themes + custom palettes from ~/.yeaboi/data/reporting_themes.json flowing into HTML, .pptx, CLI, and MCP", "areas": ["reporting"]},
-        {"text": "Native .pptx export via python-pptx (optional docs extra); gracefully degrades to HTML if missing", "areas": ["reporting"]},
-        {"text": "Per-component source selection (delivery/code/docs); deterministic supporting signals as bounded reference rows with corroboration footnotes", "areas": ["reporting"]},
-        {"text": "Persisted DeckStyle preferences: colors, fonts, layout density, section toggles, slide numbers; content-aware slide packing with ask/expand/tight fit modes", "areas": ["reporting"]}
+        {
+          "text": "Threaded generation with background worker, live progress screen, and Esc cancellation; Last Week and custom date range periods added",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "Theme registry: 4 built-in themes + custom palettes from ~/.yeaboi/data/reporting_themes.json flowing into HTML, .pptx, CLI, and MCP",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "Native .pptx export via python-pptx (optional docs extra); gracefully degrades to HTML if missing",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "Per-component source selection (delivery/code/docs); deterministic supporting signals as bounded reference rows with corroboration footnotes",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "Persisted DeckStyle preferences: colors, fonts, layout density, section toggles, slide numbers; content-aware slide packing with ask/expand/tight fit modes",
+          "areas": [
+            "reporting"
+          ]
+        }
       ]
     },
     {
@@ -246,11 +357,40 @@
       "date": "2026-07-27",
       "summary": "Daily Standup unlocked six major capabilities that transform how standups work: automated scheduling (set it and run headless), intelligent day-over-day insights (blockers, progress signals, outlook), humanized export cards with ticket links and activity bars, automation detection (bots and scanners excluded from credit), and theme-aware visualizations across all eight modes. The export redesign landed per-member cards instead of tables, readable bullets with hanging indent, theme-aware sparklines and progress bars, and avatar chips. Then the visual system rolled out to Retro, Poker, Performance, Reporting, and Roadmap exports with the same polish.",
       "highlights": [
-        {"text": "Schedule wizard: set time, lead, weekdays, and channels; runs scheduled standups headless via launchd/cron", "areas": ["standup"]},
-        {"text": "Day-over-day intelligence: blocker detection, previous-day progress notes, AI-written outlook, trend-aware confidence with delta fields", "areas": ["standup"]},
-        {"text": "HTML/Markdown redesign: per-member cards with ticket links, readable sentence-split bullets, badge-chip links, adaptive grid, coverage dots", "areas": ["standup"]},
-        {"text": "Automation detection: filter out bot and scanner comments via content markers and metadata; always surface as Notices", "areas": ["standup", "general"]},
-        {"text": "Theme-aware visual system: sparklines, segment bars, avatars, legends, progress bars in all five themes + print across Standup/Retro/Poker/Performance/Reporting", "areas": ["general", "standup", "retro", "reporting"]}
+        {
+          "text": "Schedule wizard: set time, lead, weekdays, and channels; runs scheduled standups headless via launchd/cron",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Day-over-day intelligence: blocker detection, previous-day progress notes, AI-written outlook, trend-aware confidence with delta fields",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "HTML/Markdown redesign: per-member cards with ticket links, readable sentence-split bullets, badge-chip links, adaptive grid, coverage dots",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Automation detection: filter out bot and scanner comments via content markers and metadata; always surface as Notices",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "Theme-aware visual system: sparklines, segment bars, avatars, legends, progress bars in all five themes + print across Standup/Retro/Poker/Performance/Reporting",
+          "areas": [
+            "general",
+            "standup",
+            "retro",
+            "reporting"
+          ]
+        }
       ]
     },
     {
@@ -258,11 +398,42 @@
       "date": "2026-07-27",
       "summary": "Security-hardened release elevating the app's trust foundation across five independent workstreams. A new filesystem sandbox restricts all reads and writes to ~/.yeaboi unless explicitly allowed, with interactive TUI consent and Settings integration. Sensitive credentials and tokens are now redacted from all logs and tracebacks. Every external write tool (Jira/Azure DevOps ticket creation) now requires human confirmation before executing. HTML exports were hardened against XSS injection across all eight exporters with consolidated escaping. File permissions were tightened (chmod 0o600 for logs and database), and a non-blocking CodeQL workflow adds continuous static analysis. Manual end-to-end testing confirms sandbox denial paths work, and all existing functionality remains backward-compatible.",
       "highlights": [
-        {"text": "New filesystem sandbox: restricts all reads/writes to ~/.yeaboi unless explicitly allowed via Settings, --allow-path flag, or YEABOI_ALLOWED_PATHS env var", "areas": ["settings", "general"]},
-        {"text": "Interactive TUI consent flow for path access: Allow once / Always allow / Deny, with post-turn retry queue", "areas": ["general"]},
-        {"text": "Secret redaction in all logs: automatic scrubbing of env secrets and token shapes from messages and tracebacks", "areas": ["general"]},
-        {"text": "Full write-tool gating: ticket creation tools now require human confirmation before executing", "areas": ["planning", "analysis"]},
-        {"text": "HTML export XSS hardening: consolidated escaping, real-leak fixes across all eight exporters, and probe-injection harness", "areas": ["general", "planning", "standup", "retro", "reporting"]}
+        {
+          "text": "New filesystem sandbox: restricts all reads/writes to ~/.yeaboi unless explicitly allowed via Settings, --allow-path flag, or YEABOI_ALLOWED_PATHS env var",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Interactive TUI consent flow for path access: Allow once / Always allow / Deny, with post-turn retry queue",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Secret redaction in all logs: automatic scrubbing of env secrets and token shapes from messages and tracebacks",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Full write-tool gating: ticket creation tools now require human confirmation before executing",
+          "areas": [
+            "planning",
+            "analysis"
+          ]
+        },
+        {
+          "text": "HTML export XSS hardening: consolidated escaping, real-leak fixes across all eight exporters, and probe-injection harness",
+          "areas": [
+            "general",
+            "planning",
+            "standup",
+            "retro",
+            "reporting"
+          ]
+        }
       ]
     },
     {
@@ -270,10 +441,30 @@
       "date": "2026-07-27",
       "summary": "Every TUI screen now displays with its mode's signature background color — a dark tint of the accent (analysis green, planning blue, standup magenta, retro teal, poker gold, performance rust, reporting violet, usage amber) instead of your terminal's default, ensuring the app looks identical and polished across any terminal theme. Home, splash, provider select, settings, changelog, and feedback use a neutral dark base. The change includes a shared root-panel helper, full-screen AST guards to prevent regressions, and new truecolor rendering tests.",
       "highlights": [
-        {"text": "Every mode-specific TUI screen now displays with its mode's background tint for a polished, consistent look", "areas": ["general"]},
-        {"text": "Neutral dark base for home, splash, settings, and other cross-mode screens", "areas": ["general"]},
-        {"text": "Appearance is now identical across all terminal themes thanks to baked-in backgrounds", "areas": ["general"]},
-        {"text": "New AST guard + truecolor tests prevent raw full-screen Panels from merging in the future", "areas": ["general"]}
+        {
+          "text": "Every mode-specific TUI screen now displays with its mode's background tint for a polished, consistent look",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Neutral dark base for home, splash, settings, and other cross-mode screens",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Appearance is now identical across all terminal themes thanks to baked-in backgrounds",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "New AST guard + truecolor tests prevent raw full-screen Panels from merging in the future",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -281,11 +472,36 @@
       "date": "2026-07-27",
       "summary": "Team analysis evolved into a comprehensive, member-scoped investigation of how your team works. The AI Usage card now leads with an engineering-practices table scoring tests-with-changes, documentation clarity, ticket references, and PR description quality across all attributed work — honest denominators, small-sample transparency, and a recomputed team row. The same table appears in markdown and HTML exports. Performance overhaul adds pooled tracker fetching, a schema v19 model-keyed analysis cache, cold-run lookup caps with disclosed truncation, activity-targeted repo scanning, and fan-out dedup. Scope controls let you pick sources per component (delivery reads Jira/Azure DevOps, code scans GitHub/Azure Repos, docs reads Confluence/Notion), pick specific members, run dual-source analyses, and persist analysis features per run. Doc quality now reads page content for clarity and AI usage estimates with evidence links. Default analysis depth is now `deep` on all surfaces. UX gains include wizard Esc back-stepping, Ctrl-C cooperative cancel, AzDO SDK clients pinned to the configured org URL, and render-side caps preventing oversized tables from rendering blank.",
       "highlights": [
-        {"text": "AI Usage card redesigned: per-member practices table (tests, docs, tickets, PR quality) replacing simple footprint", "areas": ["analysis"]},
-        {"text": "Member-scoped analysis with explicit source selection and dual-source runs (Jira + Azure DevOps together)", "areas": ["analysis"]},
-        {"text": "Doc quality reads page content for clarity + AI-usage estimates with evidence links", "areas": ["analysis"]},
-        {"text": "Performance overhaul: pooled fetching, analysis cache (v19), lookup caps with transparent truncation, activity-targeted scanning", "areas": ["analysis"]},
-        {"text": "Default analysis depth is now `deep` on all surfaces; scope controls, feature selection, and render-side caps prevent blank viewports", "areas": ["analysis"]}
+        {
+          "text": "AI Usage card redesigned: per-member practices table (tests, docs, tickets, PR quality) replacing simple footprint",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Member-scoped analysis with explicit source selection and dual-source runs (Jira + Azure DevOps together)",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Doc quality reads page content for clarity + AI-usage estimates with evidence links",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Performance overhaul: pooled fetching, analysis cache (v19), lookup caps with transparent truncation, activity-targeted scanning",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Default analysis depth is now `deep` on all surfaces; scope controls, feature selection, and render-side caps prevent blank viewports",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -293,11 +509,43 @@
       "date": "2026-07-25",
       "summary": "All shareable HTML exports now share a cohesive, polished design system. Every mode's export page — planning, standup, retro, performance, reporting, roadmap, team profile, and anonymize — uses unified five-theme palettes (midnight, light, solarized, synthwave, forest) with a persistent theme switcher. A self-contained header button cycles themes and remembers your choice in localStorage; printing always forces light tokens. New semantic color tokens (`--ok`, `--warn`, `--danger`, priority ramps, text variants) replace scattered hardcoded hex values across eight exporters, and shared page chrome primitives (`html_page()`, `chip()`, `section()`, `stat_tile()`, `stat_bar()`, `notice_block()`) unify markup and reduce duplication. The design is self-contained with no external CDN or requests. Incidentally fixes an unstyled container in the anonymize export and corrects four double-escaped ampersands in team-profile titles.",
       "highlights": [
-        {"text": "Five unified theme palettes (midnight default, light, solarized, synthwave, forest) across all eight export pages", "areas": ["general", "planning", "standup", "retro", "performance", "reporting", "usage"]},
-        {"text": "Persistent theme switcher in a header button; localStorage remembers choice and printing forces light tokens", "areas": ["general", "usage"]},
-        {"text": "Shared semantic color tokens and page chrome primitives reduce duplication across exporters", "areas": ["general"]},
-        {"text": "Self-contained design with no CDN or external requests; all resources inline", "areas": ["general"]},
-        {"text": "Bug fixes: unstyled anonymize export container and corrected double-escaped ampersands in team profile", "areas": ["general"]}
+        {
+          "text": "Five unified theme palettes (midnight default, light, solarized, synthwave, forest) across all eight export pages",
+          "areas": [
+            "general",
+            "planning",
+            "standup",
+            "retro",
+            "performance",
+            "reporting",
+            "usage"
+          ]
+        },
+        {
+          "text": "Persistent theme switcher in a header button; localStorage remembers choice and printing forces light tokens",
+          "areas": [
+            "general",
+            "usage"
+          ]
+        },
+        {
+          "text": "Shared semantic color tokens and page chrome primitives reduce duplication across exporters",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Self-contained design with no CDN or external requests; all resources inline",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Bug fixes: unstyled anonymize export container and corrected double-escaped ampersands in team profile",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -305,11 +553,36 @@
       "date": "2026-07-24",
       "summary": "Daily Standup activity coverage got a major upgrade with explicit source selection before generation. Before standup runs, you now pick which trackers (Jira, Azure DevOps), repositories (GitHub, Azure Repos), and documentation (Confluence, Notion) to scan — letting you focus the report on what matters. Member updates are split into source-specific summaries with evidence links: your GitHub PR activity shows up separately from Jira work, which appears distinct from Confluence pages you edited. The app collects all sources in parallel for speed, caches metadata, and surfaces live progress with partial-coverage notices when some sources aren't configured. Results display as responsive Analysis-style dashboards showing each team member's activity across all sources, and saved-run rendering stays consistent when you re-open a historical standup.",
       "highlights": [
-        {"text": "Explicit source selection grid before standup generation — pick trackers, repos, and docs to scan", "areas": ["standup"]},
-        {"text": "Member updates split by source with separate summaries and evidence links for each tracker, repo, and docs platform", "areas": ["standup"]},
-        {"text": "Parallel source collection with live progress and partial-coverage notices", "areas": ["standup"]},
-        {"text": "Metadata caching and bounded network work for faster, more reliable runs", "areas": ["standup"]},
-        {"text": "Redesigned results as responsive Analysis-style dashboards; saved runs render identically when reopened", "areas": ["standup"]}
+        {
+          "text": "Explicit source selection grid before standup generation — pick trackers, repos, and docs to scan",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Member updates split by source with separate summaries and evidence links for each tracker, repo, and docs platform",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Parallel source collection with live progress and partial-coverage notices",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Metadata caching and bounded network work for faster, more reliable runs",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Redesigned results as responsive Analysis-style dashboards; saved runs render identically when reopened",
+          "areas": [
+            "standup"
+          ]
+        }
       ]
     },
     {
@@ -317,11 +590,36 @@
       "date": "2026-07-24",
       "summary": "Team analysis now offers two speed tiers. Quick mode runs instantly with deterministic summaries and no LLM calls—perfect for fast iterations during planning sessions. Deep mode activates AI-enriched analysis with larger ticket batches and parallel processing of all three analysis components (delivery, code, and documentation) for comprehensive insights. The Quick/Deep choice appears right before analysis starts in both the TUI workflow and CLI, with mode details and stage timings visible throughout the run. All three components now run concurrently instead of serially, cutting analysis wall-clock time significantly. The choice is exposed through CLI flags and MCP tools so teammates and AI agents can pick the right depth for their workflow.",
       "highlights": [
-        {"text": "Quick mode: instant, deterministic analysis with no LLM calls; perfect for fast iterations", "areas": ["analysis"]},
-        {"text": "Deep mode: AI-enriched with larger ticket batches and parallel processing of delivery, code, and docs components", "areas": ["analysis"]},
-        {"text": "Choose Quick or Deep right before analysis starts; mode details and stage timings shown during the run", "areas": ["analysis"]},
-        {"text": "Concurrent component analysis cuts wall-clock time; delivery, code, and documentation run in parallel", "areas": ["analysis"]},
-        {"text": "Analysis depth exposed through CLI flags and MCP tools for programmatic control", "areas": ["analysis"]}
+        {
+          "text": "Quick mode: instant, deterministic analysis with no LLM calls; perfect for fast iterations",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Deep mode: AI-enriched with larger ticket batches and parallel processing of delivery, code, and docs components",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Choose Quick or Deep right before analysis starts; mode details and stage timings shown during the run",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Concurrent component analysis cuts wall-clock time; delivery, code, and documentation run in parallel",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Analysis depth exposed through CLI flags and MCP tools for programmatic control",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -329,10 +627,30 @@
       "date": "2026-07-24",
       "summary": "Analysis mode gained significantly improved insights dashboards. AI Adoption and Documentation sections now display as evidence-led dashboards with metric tiles, meters, ranked member breakdowns, evidence tables, and actionable cards — replacing a flat text layout with data-forward visualization. Team Insights was reorganized into consistent Focus Now, Keep Working, and Experiments sections, each with category badges for quick scanning. Member selection was redesigned: every team member starts pre-selected in the analysis scope picker, you can toggle one at a time or press A to select or deselect all, and the app prevents running with nobody selected. Overall scrolling and navigation improved for better usability with rich content.",
       "highlights": [
-        {"text": "Redesigned AI Adoption and Documentation as data-driven dashboards with metrics, breakdowns, evidence tables, and actions", "areas": ["analysis"]},
-        {"text": "Team Insights reorganized into Focus Now, Keep Working, and Experiments with category badges", "areas": ["analysis"]},
-        {"text": "Member selection pre-selects everyone; toggle individual members or press A to select/deselect all; prevents running with nobody selected", "areas": ["analysis"]},
-        {"text": "Improved scrolling and navigation for better usability with rich dashboard content", "areas": ["analysis"]}
+        {
+          "text": "Redesigned AI Adoption and Documentation as data-driven dashboards with metrics, breakdowns, evidence tables, and actions",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Team Insights reorganized into Focus Now, Keep Working, and Experiments with category badges",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Member selection pre-selects everyone; toggle individual members or press A to select/deselect all; prevents running with nobody selected",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Improved scrolling and navigation for better usability with rich dashboard content",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -340,11 +658,42 @@
       "date": "2026-07-24",
       "summary": "Share your yeaboi output publicly without exposing anything private. Every mode's result screen — planning, analysis, standups, retros, performance, reporting, and roadmaps — now has a Share Online button: press it and a local artifact server starts up, exchanges a short access code for a strong token with rate limiting, and opens a public Cloudflare tunnel URL you can send to teammates or stakeholders. The browser displays your rich output in full fidelity (cards, tables, meters, grids, all styled exactly as you see it in the app), and the link stays active only while the sharing screen is open. Security is baked in: the local server binds to loopback only, tokens carry no-store headers, and logs never expose URLs, codes, or artifact content.",
       "highlights": [
-        {"text": "Share Online button on every mode's result screen — planning, analysis, standup, retro, performance, reporting, roadmap", "areas": ["planning", "analysis", "standup", "retro", "performance", "reporting"]},
-        {"text": "Cloudflare tunnel with rate-limited token exchange and secure access codes — no long-lived URLs", "areas": ["general"]},
-        {"text": "Rich rendering in the browser: same cards, tables, and grids you see in the app, fully styled", "areas": ["general"]},
-        {"text": "Local artifact server bound to loopback only; link stays active only while sharing screen is open", "areas": ["general"]},
-        {"text": "Works with both raw and anonymized documents, retro's interactive sharing flow preserved", "areas": ["retro", "general"]}
+        {
+          "text": "Share Online button on every mode's result screen — planning, analysis, standup, retro, performance, reporting, roadmap",
+          "areas": [
+            "planning",
+            "analysis",
+            "standup",
+            "retro",
+            "performance",
+            "reporting"
+          ]
+        },
+        {
+          "text": "Cloudflare tunnel with rate-limited token exchange and secure access codes — no long-lived URLs",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Rich rendering in the browser: same cards, tables, and grids you see in the app, fully styled",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Local artifact server bound to loopback only; link stays active only while sharing screen is open",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Works with both raw and anonymized documents, retro's interactive sharing flow preserved",
+          "areas": [
+            "retro",
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -352,9 +701,24 @@
       "date": "2026-07-24",
       "summary": "The All Tips screen now displays better, with tips grouped into logical sections (Modes, More Workflows, and Shortcuts & Setup), improved spacing and text wrapping, colored metadata badges, and scrollbar gutters that prevent layout fragmentation. The gallery preserves emoji in copied tip text while avoiding terminal-unsafe characters in the displayed view.",
       "highlights": [
-        {"text": "All Tips screen reorganized into logical sections with better spacing and layout", "areas": ["general"]},
-        {"text": "Improved text wrapping, colored metadata badges, and scrollbar gutters prevent layout fragmentation", "areas": ["general"]},
-        {"text": "Emoji preserved in copied text while terminal display stays safe", "areas": ["general"]}
+        {
+          "text": "All Tips screen reorganized into logical sections with better spacing and layout",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Improved text wrapping, colored metadata badges, and scrollbar gutters prevent layout fragmentation",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Emoji preserved in copied text while terminal display stays safe",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -362,9 +726,31 @@
       "date": "2026-07-23",
       "summary": "Standup, Retro, Reporting, and Performance modes now surface a browsable saved-runs hub showing the history of past runs alongside the current working session. Instead of jumping straight into a single run, you land on a unified hub with Open, Delete, and Export options for each run — the same experience Planning and Analysis already offer. Saved runs render with rich mode-specific formatting: Standup shows the full meter strip and section drill-in, Reporting displays its indigo card layout, Performance shows the coral metrics grid, and Retro renders the full grid view with a snapshot flag that suppresses the live-only join block. Each mode's own screen builder handles rendering, not flat text, so historical runs read as complete, real snapshots of past work.",
       "highlights": [
-        {"text": "Saved-runs hub surfaces historical runs with Open / Delete / Export across Standup, Retro, Reporting, and Performance", "areas": ["standup", "retro", "reporting", "performance"]},
-        {"text": "Saved runs render with rich mode-specific formatting: Standup meter strips, Reporting cards, Performance grids, Retro boards", "areas": ["standup", "retro", "reporting", "performance"]},
-        {"text": "Browse, open, delete, or export past runs from one hub; each mode's own screen builder ensures faithful historical rendering", "areas": ["usage", "general"]}
+        {
+          "text": "Saved-runs hub surfaces historical runs with Open / Delete / Export across Standup, Retro, Reporting, and Performance",
+          "areas": [
+            "standup",
+            "retro",
+            "reporting",
+            "performance"
+          ]
+        },
+        {
+          "text": "Saved runs render with rich mode-specific formatting: Standup meter strips, Reporting cards, Performance grids, Retro boards",
+          "areas": [
+            "standup",
+            "retro",
+            "reporting",
+            "performance"
+          ]
+        },
+        {
+          "text": "Browse, open, delete, or export past runs from one hub; each mode's own screen builder ensures faithful historical rendering",
+          "areas": [
+            "usage",
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -372,10 +758,31 @@
       "date": "2026-07-23",
       "summary": "Retro web board gained several quality-of-life features. You can now focus on one team member's cards at a time (useful for turn-taking discussions), group cards by author, add sticky cards at the top of each column so you don't have to scroll on tall boards, and see relative timestamps on each card. The host also gained admin powers: broadcast theme changes and ambient music to all teammates at once, and lock the board during discussions to freeze card editing. Cards can still get reactions and carried-item status updates during a lock. Security tightening removed an information leak in the access log that could have exposed session tokens.",
       "highlights": [
-        {"text": "Focus and Group controls to filter or cluster cards by author for better turn-taking", "areas": ["retro"]},
-        {"text": "Add-card input at the top of each column; relative timestamps on all cards", "areas": ["retro"]},
-        {"text": "Host admin controls: broadcast theme and music, lock the board during discussions", "areas": ["retro"]},
-        {"text": "Fixed an access-log security regression that leaked session tokens and admin secrets", "areas": ["retro", "general"]}
+        {
+          "text": "Focus and Group controls to filter or cluster cards by author for better turn-taking",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Add-card input at the top of each column; relative timestamps on all cards",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Host admin controls: broadcast theme and music, lock the board during discussions",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Fixed an access-log security regression that leaked session tokens and admin secrets",
+          "areas": [
+            "retro",
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -383,10 +790,30 @@
       "date": "2026-07-22",
       "summary": "Team analysis got a major rework. It can now run across Jira and Azure DevOps together, and — more importantly — each part of the analysis scans its OWN sources: Delivery (velocity, calibration, contributors) reads your Jira/Azure DevOps boards, Code scans GitHub and Azure Repos, and Docs reads Confluence and Notion. A single grid lets you pick exactly what to analyse — e.g. just Confluence docs, or just one code host — and scope the run to a subset of team members. Delivery is analysed per tracker (never blended, with a side-by-side comparison), while code and docs run once as global scans. Local code scanning was dropped in favour of remote-only.",
       "highlights": [
-        {"text": "Analyse Jira and Azure DevOps together — Delivery runs per tracker with a side-by-side comparison, never blended", "areas": ["analysis"]},
-        {"text": "Decoupled components: Delivery ← boards, Code ← GitHub/Azure Repos, Docs ← Confluence/Notion — each scans its own sources", "areas": ["analysis"]},
-        {"text": "Pick exactly what to analyse in one grid, and scope the run to a subset of team members", "areas": ["analysis"]},
-        {"text": "Code and docs now scan once globally (no more per-tracker double-scan); local code scanning removed (remote-only)", "areas": ["analysis"]}
+        {
+          "text": "Analyse Jira and Azure DevOps together — Delivery runs per tracker with a side-by-side comparison, never blended",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Decoupled components: Delivery ← boards, Code ← GitHub/Azure Repos, Docs ← Confluence/Notion — each scans its own sources",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Pick exactly what to analyse in one grid, and scope the run to a subset of team members",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Code and docs now scan once globally (no more per-tracker double-scan); local code scanning removed (remote-only)",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -394,10 +821,30 @@
       "date": "2026-07-22",
       "summary": "The welcome screen tips just got a lot more useful. Instead of generic CLI hints, each tip now spotlights a real feature — Analysis, Standups, Retros, and more — with a gold NEW badge marking freshly-shipped ones. Press [ or ] to browse through tips at your own pace (pausing auto-rotation), press g to jump straight into the mode the current tip describes, or press t to hide tips entirely. Every tip is keyed to a capability and automatically stays in sync — a new mode can't merge without a tip, enforced by the same surface-parity check that guards the TUI and CLI.",
       "highlights": [
-        {"text": "Feature-focused tips replace generic CLI hints, one per capability like Analysis and Standups", "areas": ["general"]},
-        {"text": "Browse tips manually with [ / ]; NEW badge highlights freshly-shipped features", "areas": ["general"]},
-        {"text": "Press g to jump into the mode a tip describes, reusing the existing activation path", "areas": ["general"]},
-        {"text": "Tips stay automatically in sync via surface-parity enforcement — new modes require a tip", "areas": ["general"]}
+        {
+          "text": "Feature-focused tips replace generic CLI hints, one per capability like Analysis and Standups",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Browse tips manually with [ / ]; NEW badge highlights freshly-shipped features",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Press g to jump into the mode a tip describes, reusing the existing activation path",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Tips stay automatically in sync via surface-parity enforcement — new modes require a tip",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -405,10 +852,30 @@
       "date": "2026-07-22",
       "summary": "Team analysis now includes two new sub-analyses that deepen your understanding of how your team works. AI adoption scanning finds markers of Claude, Copilot, Cursor, aider, Devin, Codeium, and other AI tools in your recent commits and pull requests across GitHub, Azure DevOps, and your local git clone — showing you the AI footprint as a lower bound with source-aware reporting and real evidence links. Documentation quality analysis scores the clarity and AI-likelihood of your team's Notion and Confluence pages, again with cited examples and improvement suggestions. Both ride on the existing team profile machinery, gracefully skip when nothing is configured, and frame their findings honestly as footprints and heuristics rather than definitive counts.",
       "highlights": [
-        {"text": "New AI adoption sub-analysis: detect Claude, Copilot, Cursor, aider, Devin, Codeium markers in commits and PRs", "areas": ["analysis"]},
-        {"text": "AI adoption scans GitHub, Azure DevOps, and local git clones with source-aware breakdowns and evidence links", "areas": ["analysis"]},
-        {"text": "New documentation quality sub-analysis: score Notion/Confluence page clarity and estimated AI likelihood", "areas": ["analysis"]},
-        {"text": "Both analyses include evidence-linked coaching citing specific commits, PRs, and pages with real links", "areas": ["analysis"]}
+        {
+          "text": "New AI adoption sub-analysis: detect Claude, Copilot, Cursor, aider, Devin, Codeium markers in commits and PRs",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "AI adoption scans GitHub, Azure DevOps, and local git clones with source-aware breakdowns and evidence links",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "New documentation quality sub-analysis: score Notion/Confluence page clarity and estimated AI likelihood",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Both analyses include evidence-linked coaching citing specific commits, PRs, and pages with real links",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -416,9 +883,24 @@
       "date": "2026-07-21",
       "summary": "Retro now carries action items forward from the previous retro to this one, showing them in a dedicated \"Last sprint's actions\" review column on the browser board and TUI host view. Your team sets a status for each carried item — Done, Pending, In Progress, Carried Over, or Not Relevant — and these statuses persist in the report. Items marked as Carried Over re-enter the current sprint's action grid and keep the team focused on the context that still matters; Done and Not Relevant items drop out. Carry-forward works whether an item was AI-generated or typed in by hand, and now also survives closing and reopening a retro under the same session. The \"Share Remotely\" button also hardened: it now waits until the Cloudflare tunnel hostname is externally resolvable before advertising the URL, so opening the link doesn't hit an NXDOMAIN that resolvers will cache for 30 minutes.",
       "highlights": [
-        {"text": "Carried-forward action items from the previous retro with status tracking (Done/Pending/In Progress/Carried Over/Not Relevant)", "areas": ["retro"]},
-        {"text": "Previous retro's items re-enter the current sprint's action grid if marked Carried Over", "areas": ["retro"]},
-        {"text": "Hardened Share Remotely: waits for DNS resolution before advertising the Cloudflare tunnel URL", "areas": ["retro"]}
+        {
+          "text": "Carried-forward action items from the previous retro with status tracking (Done/Pending/In Progress/Carried Over/Not Relevant)",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Previous retro's items re-enter the current sprint's action grid if marked Carried Over",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Hardened Share Remotely: waits for DNS resolution before advertising the Cloudflare tunnel URL",
+          "areas": [
+            "retro"
+          ]
+        }
       ]
     },
     {
@@ -426,9 +908,24 @@
       "date": "2026-07-21",
       "summary": "The token setup wizard now shows you exactly where to create each credential and what access to grant it. GitHub PAT, Azure DevOps PAT, and Jira/Notion/Confluence token fields display a clickable creation URL as an OSC-8 terminal hyperlink and show the required scopes underneath — the same scopes that power all your integrations. The Settings page's credential dashboard now shows these links and scopes too, so you can review them any time and quickly re-create or upgrade a token without searching the documentation.",
       "highlights": [
-        {"text": "Setup wizard shows clickable token creation URLs and required scopes under each credential field", "areas": ["settings"]},
-        {"text": "Settings dashboard displays token creation links and scopes for every configured credential", "areas": ["settings"]},
-        {"text": "Scopes accurately reflect what each integration actually uses — GitHub repo access, Azure work-item creation, Jira ticket reads, etc.", "areas": ["settings"]}
+        {
+          "text": "Setup wizard shows clickable token creation URLs and required scopes under each credential field",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Settings dashboard displays token creation links and scopes for every configured credential",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Scopes accurately reflect what each integration actually uses — GitHub repo access, Azure work-item creation, Jira ticket reads, etc.",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -436,10 +933,35 @@
       "date": "2026-07-21",
       "summary": "You can now share real yeaboi output publicly without leaking anything private. Every mode's result screen — planning, analysis, standups, retros, performance, reporting, and roadmaps — has a new Anonymize button: press it and the sensitive words (people's names, team and project names, your company name, internal tools, and links) get masked right there in the same cards and tables — the layout never changes, only the words do, so it still reads as a realistic example. It uses AI for the smart cases and always masks the obvious company terms it already knows about, even offline. Refine it in plain language with Adjust (\"also hide this\", \"leave that — it's public\"), flip back to the real names with Revert, then copy the clean version to your clipboard or export it to Files, Notion, or Confluence. Great for READMEs, your website, and posts.",
       "highlights": [
-        {"text": "New Anonymize button on every mode's result screen masks names, teams, projects, tools, and links in place — same cards and tables, only the words change", "areas": ["planning", "standup", "retro", "performance", "reporting"]},
-        {"text": "Adjust what's masked in plain language, Revert to the real names instantly, then copy to clipboard or export to Files/Notion/Confluence", "areas": ["general"]},
-        {"text": "Set ANONYMIZE_MASK_TERMS to always hide your company-specific words, and it works even without an AI provider", "areas": ["settings"]},
-        {"text": "New 'Copy to clipboard' option in every Export menu — plus a Copy button on the Usage and Changelog pages — for a quick, zero-setup way to pull data out of the terminal", "areas": ["general", "usage"]}
+        {
+          "text": "New Anonymize button on every mode's result screen masks names, teams, projects, tools, and links in place — same cards and tables, only the words change",
+          "areas": [
+            "planning",
+            "standup",
+            "retro",
+            "performance",
+            "reporting"
+          ]
+        },
+        {
+          "text": "Adjust what's masked in plain language, Revert to the real names instantly, then copy to clipboard or export to Files/Notion/Confluence",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Set ANONYMIZE_MASK_TERMS to always hide your company-specific words, and it works even without an AI provider",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "New 'Copy to clipboard' option in every Export menu — plus a Copy button on the Usage and Changelog pages — for a quick, zero-setup way to pull data out of the terminal",
+          "areas": [
+            "general",
+            "usage"
+          ]
+        }
       ]
     },
     {
@@ -447,10 +969,30 @@
       "date": "2026-07-20",
       "summary": "yeaboi can now be driven from other AI tools, not just its own terminal app. It ships as a Claude Code plugin with guided skills, and every mode - planning, standups, retros, performance reviews, and reporting - is now reachable from the command line as well as the full-screen app, so you can script or automate anything you used to do by hand. The command line also got friendlier: clearer error messages for bad input, and a strict mode that fails loudly instead of quietly degrading, which is handy for automated pipelines.",
       "highlights": [
-        {"text": "yeaboi is now available as a Claude Code plugin with guided setup skills", "areas": ["general"]},
-        {"text": "New command-line subcommands bring reporting, standups, performance, retros, and team analysis to scripts and automation, not just the app", "areas": ["general"]},
-        {"text": "Clearer command-line error messages for bad dates, unknown sources, and typos in engineer names", "areas": ["general"]},
-        {"text": "New strict mode for automated runs that fails clearly instead of silently falling back", "areas": ["general"]}
+        {
+          "text": "yeaboi is now available as a Claude Code plugin with guided setup skills",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "New command-line subcommands bring reporting, standups, performance, retros, and team analysis to scripts and automation, not just the app",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Clearer command-line error messages for bad dates, unknown sources, and typos in engineer names",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "New strict mode for automated runs that fails clearly instead of silently falling back",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -458,9 +1000,24 @@
       "date": "2026-07-20",
       "summary": "Several fixes and small additions for local Ollama mode. Switching from a local model back to a cloud AI provider no longer leaves the old local model name lingering in your settings. When you quit the app with a local model server running, you'll now be offered a quick way to stop it or free up the memory it was using. And the Usage page now shows performance details for local models, like response speed and tokens per second, so you can see how your local setup is actually performing.",
       "highlights": [
-        {"text": "Fixed the old local model name sticking around after switching to a cloud AI provider", "areas": ["settings"]},
-        {"text": "On quit, offer to stop the local Ollama server or free up its memory", "areas": ["general"]},
-        {"text": "Usage page now shows local model performance: response speed and tokens per second", "areas": ["usage"]}
+        {
+          "text": "Fixed the old local model name sticking around after switching to a cloud AI provider",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "On quit, offer to stop the local Ollama server or free up its memory",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Usage page now shows local model performance: response speed and tokens per second",
+          "areas": [
+            "usage"
+          ]
+        }
       ]
     },
     {
@@ -468,10 +1025,34 @@
       "date": "2026-07-20",
       "summary": "Planning now has a fourth way to start a project: point it at your quarterly roadmap — a Confluence or Notion page, or a local document — and it reads through it to pull out the concrete candidate projects, ranks them by suggested start order, and sizes each as small or large. Pick one and its description is pre-filled into the normal planning flow, so you skip re-typing what's already written down. Saved roadmap analyses show up right alongside your other projects, tagged so you can tell them apart, and can be exported the same way as everything else.",
       "highlights": [
-        {"text": "New Roadmap intake: analyze a quarterly roadmap document into ranked, sized candidate projects", "areas": ["planning"]},
-        {"text": "Pick a candidate project to pre-fill its description into the normal planning intake", "areas": ["planning"]},
-        {"text": "Saved roadmap analyses appear alongside your projects, tagged and exportable to Files, Notion, or Confluence", "areas": ["planning"]},
-        {"text": "Improved reliability for newer AI models used in planning and every ceremony mode", "areas": ["planning", "standup", "retro", "performance", "reporting"]}
+        {
+          "text": "New Roadmap intake: analyze a quarterly roadmap document into ranked, sized candidate projects",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Pick a candidate project to pre-fill its description into the normal planning intake",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Saved roadmap analyses appear alongside your projects, tagged and exportable to Files, Notion, or Confluence",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Improved reliability for newer AI models used in planning and every ceremony mode",
+          "areas": [
+            "planning",
+            "standup",
+            "retro",
+            "performance",
+            "reporting"
+          ]
+        }
       ]
     },
     {
@@ -479,11 +1060,41 @@
       "date": "2026-07-20",
       "summary": "You can now run yeaboi completely for free with no API key by using a local Ollama model instead of a cloud AI provider — planning, standups, retros, performance reviews, reporting, and chat all work fully offline with nothing leaving your machine. The setup wizard walks you through picking a downloaded model (or downloading one right from the app, with live progress) and explains the size/speed/RAM trade-offs of each. Extra work under the hood keeps local models just as reliable as cloud ones, with clear on-screen guidance if the local server isn't running or a model needs to be downloaded first.",
       "highlights": [
-        {"text": "New free local mode: run yeaboi entirely offline with Ollama, no API key required", "areas": ["settings", "general"]},
-        {"text": "Setup wizard adds an Ollama option with live model discovery and per-model size/speed/RAM guidance", "areas": ["settings"]},
-        {"text": "Download and verify local models directly from the app, with live progress and resumable downloads", "areas": ["settings"]},
-        {"text": "Clearer, more reliable output from local models across planning and all ceremony modes", "areas": ["planning", "standup", "retro", "performance", "reporting"]},
-        {"text": "Usage page shows $0 cost for local runs while still tracking your past cloud spend", "areas": ["usage"]}
+        {
+          "text": "New free local mode: run yeaboi entirely offline with Ollama, no API key required",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Setup wizard adds an Ollama option with live model discovery and per-model size/speed/RAM guidance",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Download and verify local models directly from the app, with live progress and resumable downloads",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Clearer, more reliable output from local models across planning and all ceremony modes",
+          "areas": [
+            "planning",
+            "standup",
+            "retro",
+            "performance",
+            "reporting"
+          ]
+        },
+        {
+          "text": "Usage page shows $0 cost for local runs while still tracking your past cloud spend",
+          "areas": [
+            "usage"
+          ]
+        }
       ]
     },
     {
@@ -491,7 +1102,12 @@
       "date": "2026-07-20",
       "summary": "Fixed a bug where keys you pressed while the terminal UI was busy rendering a frame could be silently dropped instead of registering — now every keypress is reliably picked up, even ones sent while the app is mid-render.",
       "highlights": [
-        {"text": "Fixed dropped keypresses in the terminal UI when input arrived while a frame was rendering", "areas": ["general"]}
+        {
+          "text": "Fixed dropped keypresses in the terminal UI when input arrived while a frame was rendering",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -499,10 +1115,30 @@
       "date": "2026-07-20",
       "summary": "You can now send bug reports and feature requests straight from the app instead of leaving to file a GitHub issue. Press f from the mode select screen to open a quick feedback form, pick a type and area, write a title and description (with voice dictation and screenshot paste support), and optionally let AI polish your wording before you submit. Your feedback is filed as a GitHub issue automatically, or opens a pre-filled page in your browser if that's not set up.",
       "highlights": [
-        {"text": "New Feedback page (press f) for filing bug reports and feature requests without leaving the app", "areas": ["general"]},
-        {"text": "Feedback form supports voice dictation and screenshot paste, same as other text fields", "areas": ["general"]},
-        {"text": "Optional AI Polish rewrites your draft with repro steps or user-story framing before you submit", "areas": ["general"]},
-        {"text": "Submissions file a GitHub issue automatically, or open a pre-filled issue page in your browser", "areas": ["general"]}
+        {
+          "text": "New Feedback page (press f) for filing bug reports and feature requests without leaving the app",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Feedback form supports voice dictation and screenshot paste, same as other text fields",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Optional AI Polish rewrites your draft with repro steps or user-story framing before you submit",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Submissions file a GitHub issue automatically, or open a pre-filled issue page in your browser",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -510,9 +1146,24 @@
       "date": "2026-07-19",
       "summary": "Analysis mode now gives you actionable coaching on how to improve your team before it moves on to suggesting sample tickets. After you see your results, a new Team Insights page shows four categories - things to start doing, stop doing, keep doing, and things worth trying - covering team setup, ways of working, estimation, process, and work mix. Every suggestion comes with practical advice and points to the specific stat from your analysis that triggered it, and you can export the page just like any other report.",
       "highlights": [
-        {"text": "New Team Insights page after analysis results: start/stop/keep doing plus worth-trying suggestions", "areas": ["analysis"]},
-        {"text": "Each insight includes practical advice and cites the specific stat that triggered it", "areas": ["analysis"]},
-        {"text": "Team Insights is exportable to Files, Notion, or Confluence like other analysis sections", "areas": ["analysis"]}
+        {
+          "text": "New Team Insights page after analysis results: start/stop/keep doing plus worth-trying suggestions",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Each insight includes practical advice and cites the specific stat that triggered it",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Team Insights is exportable to Files, Notion, or Confluence like other analysis sections",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -520,11 +1171,37 @@
       "date": "2026-07-19",
       "summary": "Every Export button across the app now opens a single destination picker so you can send your work straight to Files, Notion, or Confluence, with only the destinations you've actually set up shown. Notion and Confluence pages are no longer plain pasted markdown — they come out as properly formatted native pages with tables, task lists, callouts, and embedded charts, all branded with a yeaboi icon and footer, and grouped together under an auto-created yeaboi page if you haven't picked a specific spot for them. Team analysis and delivery reports can now include sprint velocity and delivered-work charts as images. There's also a single setting to change where yeaboi stores everything on your computer.",
       "highlights": [
-        {"text": "Every Export button now opens one picker for Files, Notion, or Confluence, showing only configured destinations", "areas": ["general"]},
-        {"text": "Notion and Confluence exports are natively formatted with tables, task lists, and callouts instead of raw markdown", "areas": ["general"]},
-        {"text": "Exported pages carry yeaboi branding and group under an auto-created yeaboi page by default", "areas": ["general"]},
-        {"text": "Team analysis and delivery reports can embed sprint velocity and delivered-work charts", "areas": ["analysis", "reporting"]},
-        {"text": "New single setting to change where yeaboi stores its data on your computer", "areas": ["settings"]}
+        {
+          "text": "Every Export button now opens one picker for Files, Notion, or Confluence, showing only configured destinations",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Notion and Confluence exports are natively formatted with tables, task lists, and callouts instead of raw markdown",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Exported pages carry yeaboi branding and group under an auto-created yeaboi page by default",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Team analysis and delivery reports can embed sprint velocity and delivered-work charts",
+          "areas": [
+            "analysis",
+            "reporting"
+          ]
+        },
+        {
+          "text": "New single setting to change where yeaboi stores its data on your computer",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -532,10 +1209,30 @@
       "date": "2026-07-19",
       "summary": "The standup roster is cleaner and the standup page itself is redesigned into a compact dashboard. Bot accounts and people who only commented on or edited a ticket no longer show up as team members — only people actually assigned work do. The standup view now leads with a pinned status strip showing sprint day, progress, and confidence at a glance, team member rows are easier to scan with clear active/quiet/self-reported markers, and duplicated information has been cleared out so more fits on screen at once.",
       "highlights": [
-        {"text": "Bot accounts and drive-by commenters are filtered out of the standup team roster — only assignees count", "areas": ["standup"]},
-        {"text": "Standup redesigned into a compact dashboard with a pinned sprint day / progress / confidence strip", "areas": ["standup"]},
-        {"text": "Team member rows now show clear active/quiet/self-reported activity markers", "areas": ["standup"]},
-        {"text": "Removed duplicated summary text and rows so the standup view fits more on screen", "areas": ["standup"]}
+        {
+          "text": "Bot accounts and drive-by commenters are filtered out of the standup team roster — only assignees count",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Standup redesigned into a compact dashboard with a pinned sprint day / progress / confidence strip",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Team member rows now show clear active/quiet/self-reported activity markers",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Removed duplicated summary text and rows so the standup view fits more on screen",
+          "areas": [
+            "standup"
+          ]
+        }
       ]
     },
     {
@@ -543,9 +1240,24 @@
       "date": "2026-07-19",
       "summary": "Daily Standup now sees a lot more of what your team actually did — status changes, comments, and in-progress tickets all count, not just who was assigned a task, so quiet team members get a real update instead of \"No activity detected.\" When a source like GitHub or Confluence isn't connected, the report now tells you plainly instead of just going quiet. The standup overview is also decluttered: your own update gets its own row, and the rest of the team collapses into a single expandable row.",
       "highlights": [
-        {"text": "Standup now credits status changes, comments, and in-progress tickets across Jira, Azure DevOps, Confluence, and GitHub, not just assignments", "areas": ["standup"]},
-        {"text": "Reports now call out which sources weren't scanned and why, so you know what to connect", "areas": ["standup"]},
-        {"text": "Overview redesigned: your update is its own row, teammates collapse into one expandable Team row", "areas": ["standup"]}
+        {
+          "text": "Standup now credits status changes, comments, and in-progress tickets across Jira, Azure DevOps, Confluence, and GitHub, not just assignments",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Reports now call out which sources weren't scanned and why, so you know what to connect",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Overview redesigned: your update is its own row, teammates collapse into one expandable Team row",
+          "areas": [
+            "standup"
+          ]
+        }
       ]
     },
     {
@@ -553,9 +1265,26 @@
       "date": "2026-07-18",
       "summary": "You can now paste a screenshot straight from your clipboard into any text box with Ctrl+V, just like Claude Code. A small chip shows where the image landed in your text, and it travels with your message so the AI can see and reason about what you pasted — in project descriptions, feedback when regenerating, chat, standup updates, and 1:1 transcripts.",
       "highlights": [
-        {"text": "Paste screenshots into text fields with Ctrl+V; a chip marks where the image is attached", "areas": ["general"]},
-        {"text": "Pasted images are sent to the AI in project descriptions, regenerate feedback, and chat", "areas": ["analysis", "planning"]},
-        {"text": "Pasted images also supported in Daily Standup updates and Performance 1:1 transcripts", "areas": ["standup", "performance"]}
+        {
+          "text": "Paste screenshots into text fields with Ctrl+V; a chip marks where the image is attached",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Pasted images are sent to the AI in project descriptions, regenerate feedback, and chat",
+          "areas": [
+            "analysis",
+            "planning"
+          ]
+        },
+        {
+          "text": "Pasted images also supported in Daily Standup updates and Performance 1:1 transcripts",
+          "areas": [
+            "standup",
+            "performance"
+          ]
+        }
       ]
     },
     {
@@ -563,9 +1292,24 @@
       "date": "2026-07-18",
       "summary": "yeaboi now keeps you up to date and tells you what's new. The welcome screen shows the version you're running in the bottom-left corner and quietly checks PyPI in the background — when a newer release exists, it shows the exact upgrade command for how you installed. Press c to open the new Changelog page: an AI-written summary of every release, with each change tagged by the feature it touches in that feature's colour.",
       "highlights": [
-        {"text": "Version indicator with automatic update check and installer-aware upgrade hint", "areas": ["general"]},
-        {"text": "In-app Changelog page (press c on the welcome screen) with colour-coded feature tags", "areas": ["general"]},
-        {"text": "Releases now ship their changelog entry automatically alongside each version bump", "areas": ["general"]}
+        {
+          "text": "Version indicator with automatic update check and installer-aware upgrade hint",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "In-app Changelog page (press c on the welcome screen) with colour-coded feature tags",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Releases now ship their changelog entry automatically alongside each version bump",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -573,9 +1317,25 @@
       "date": "2026-07-18",
       "summary": "A security hardening release: stricter validation and safer defaults across the retro server, remote tunnel, and external integrations, plus automated dependency and security scanning that keeps the project patched continuously.",
       "highlights": [
-        {"text": "Hardened retro board server and remote tunnel handling", "areas": ["retro"]},
-        {"text": "Safer credential and config handling across integrations", "areas": ["settings", "general"]},
-        {"text": "Automated dependency updates and scheduled security scans", "areas": ["general"]}
+        {
+          "text": "Hardened retro board server and remote tunnel handling",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Safer credential and config handling across integrations",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Automated dependency updates and scheduled security scans",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -583,8 +1343,18 @@
       "date": "2026-07-18",
       "summary": "Analysis results got a full redesign: instead of one long wall of text you now land on an overview with section cards, each with an AI-written explanation of what the finding means for your team. Giving feedback when regenerating is also nicer with a proper multi-row text box.",
       "highlights": [
-        {"text": "Analysis results redesigned into an overview plus section cards with AI explanations", "areas": ["analysis"]},
-        {"text": "Regenerate-feedback prompt is now a large multi-row text box", "areas": ["analysis"]}
+        {
+          "text": "Analysis results redesigned into an overview plus section cards with AI explanations",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Regenerate-feedback prompt is now a large multi-row text box",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -592,8 +1362,22 @@
       "date": "2026-07-18",
       "summary": "A unified logging system: every mode now writes its own log file under ~/.yeaboi/logs, and you can change the log level live from the Settings page without restarting.",
       "highlights": [
-        {"text": "Per-mode log files for standup, retro, performance, reporting, and analysis", "areas": ["standup", "retro", "performance", "reporting", "analysis"]},
-        {"text": "Live log-level control from the Settings page", "areas": ["settings"]}
+        {
+          "text": "Per-mode log files for standup, retro, performance, reporting, and analysis",
+          "areas": [
+            "standup",
+            "retro",
+            "performance",
+            "reporting",
+            "analysis"
+          ]
+        },
+        {
+          "text": "Live log-level control from the Settings page",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -601,7 +1385,13 @@
       "date": "2026-07-18",
       "summary": "Small visual fix: the animated wordmark intros for Standup and the setup wizard no longer show misaligned rows.",
       "highlights": [
-        {"text": "Fixed wordmark intro row misalignment on Standup and setup intros", "areas": ["standup", "settings"]}
+        {
+          "text": "Fixed wordmark intro row misalignment on Standup and setup intros",
+          "areas": [
+            "standup",
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -609,8 +1399,19 @@
       "date": "2026-07-18",
       "summary": "Analysis polish and a safety net for ticket creation: the patterns page no longer crops its buttons, and generating tickets now asks for confirmation before anything is created.",
       "highlights": [
-        {"text": "Fixed button cropping on the analysis patterns page", "areas": ["analysis"]},
-        {"text": "Ticket generation now shows a confirmation gate before creating anything", "areas": ["analysis", "planning"]}
+        {
+          "text": "Fixed button cropping on the analysis patterns page",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Ticket generation now shows a confirmation gate before creating anything",
+          "areas": [
+            "analysis",
+            "planning"
+          ]
+        }
       ]
     },
     {
@@ -618,8 +1419,18 @@
       "date": "2026-07-17",
       "summary": "Music player polish: the bar stays hidden during the startup splash and shows a connecting indicator while a stream buffers.",
       "highlights": [
-        {"text": "Music bar hidden during the startup splash", "areas": ["general"]},
-        {"text": "Connecting indicator while the music stream buffers", "areas": ["general"]}
+        {
+          "text": "Music bar hidden during the startup splash",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Connecting indicator while the music stream buffers",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -627,7 +1438,14 @@
       "date": "2026-07-17",
       "summary": "Confluence is now a first-class option in the Docs setup step, with its own standalone login so you can use it without configuring Jira.",
       "highlights": [
-        {"text": "Confluence selectable directly in the Docs setup step, no Jira required", "areas": ["settings", "analysis", "planning"]}
+        {
+          "text": "Confluence selectable directly in the Docs setup step, no Jira required",
+          "areas": [
+            "settings",
+            "analysis",
+            "planning"
+          ]
+        }
       ]
     },
     {
@@ -635,8 +1453,18 @@
       "date": "2026-07-17",
       "summary": "Analysis reliability fixes: finished team profiles save to the right database, and each preview step is saved the moment it generates so nothing is lost mid-run.",
       "highlights": [
-        {"text": "Team profiles save to the active database instead of a legacy path", "areas": ["analysis"]},
-        {"text": "Each analysis preview step saves as soon as it generates", "areas": ["analysis"]}
+        {
+          "text": "Team profiles save to the active database instead of a legacy path",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Each analysis preview step saves as soon as it generates",
+          "areas": [
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -644,7 +1472,12 @@
       "date": "2026-07-17",
       "summary": "Scrolling across the app is now smooth — fast wheel bursts no longer stutter or tear the view.",
       "highlights": [
-        {"text": "Smooth scrolling with no view tearing across all pages", "areas": ["general"]}
+        {
+          "text": "Smooth scrolling with no view tearing across all pages",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -652,7 +1485,12 @@
       "date": "2026-07-16",
       "summary": "The voice-input install hint now shows the right command for how you installed yeaboi (uv, pipx, or source).",
       "highlights": [
-        {"text": "Voice install hint adapts to your install method", "areas": ["general"]}
+        {
+          "text": "Voice install hint adapts to your install method",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -660,8 +1498,18 @@
       "date": "2026-07-16",
       "summary": "The big rebrand: scrum-agent is now yeaboi. The package renamed on PyPI (existing installs migrate via a shim), the repo moved to yeaboi.ai, and the project got its own landing page.",
       "highlights": [
-        {"text": "Package renamed scrum-agent → yeaboi on PyPI with a migration shim", "areas": ["general"]},
-        {"text": "New yeaboi.ai landing page", "areas": ["general"]}
+        {
+          "text": "Package renamed scrum-agent → yeaboi on PyPI with a migration shim",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "New yeaboi.ai landing page",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -669,8 +1517,18 @@
       "date": "2026-07-16",
       "summary": "Setup wizard navigation upgrades: jump between sections with ←/→, press F to finish, and every connection field now shows a hint telling you where to get that token or URL.",
       "highlights": [
-        {"text": "←/→ jump between wizard sections; F finishes setup", "areas": ["settings"]},
-        {"text": "Where-to-get-it hints on every connection setup field", "areas": ["settings"]}
+        {
+          "text": "←/→ jump between wizard sections; F finishes setup",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Where-to-get-it hints on every connection setup field",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -678,7 +1536,12 @@
       "date": "2026-07-16",
       "summary": "The setup wizard gained a Docs section so you can connect Notion or Confluence during first-time setup instead of editing environment variables by hand.",
       "highlights": [
-        {"text": "Docs setup step for Notion and Confluence in the wizard", "areas": ["settings"]}
+        {
+          "text": "Docs setup step for Notion and Confluence in the wizard",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -686,9 +1549,24 @@
       "date": "2026-07-16",
       "summary": "Retro boards got social: teammates can react to cards with emojis, the join flow has a clear accent-colored share-code gate, and the in-app music player now has a real multi-channel library.",
       "highlights": [
-        {"text": "Emoji reactions on retro cards", "areas": ["retro"]},
-        {"text": "Clearer share-code join gate for teammates", "areas": ["retro"]},
-        {"text": "Expanded in-app music library", "areas": ["general"]}
+        {
+          "text": "Emoji reactions on retro cards",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Clearer share-code join gate for teammates",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "Expanded in-app music library",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -696,7 +1574,12 @@
       "date": "2026-07-16",
       "summary": "Music playback is more reliable: the backend switched to ffplay for headless playback and the app now notices when the audio daemon dies on its own.",
       "highlights": [
-        {"text": "Music backend switched to ffplay; dead-daemon detection", "areas": ["general"]}
+        {
+          "text": "Music backend switched to ffplay; dead-daemon detection",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -704,7 +1587,13 @@
       "date": "2026-07-15",
       "summary": "Animation consistency pass: planning and analysis page titles (including project-list and status screens) all shimmer like the rest of the app.",
       "highlights": [
-        {"text": "Shimmer animation on planning and analysis titles and status screens", "areas": ["planning", "analysis"]}
+        {
+          "text": "Shimmer animation on planning and analysis titles and status screens",
+          "areas": [
+            "planning",
+            "analysis"
+          ]
+        }
       ]
     },
     {
@@ -712,8 +1601,18 @@
       "date": "2026-07-15",
       "summary": "Choosing an AI model is much nicer: the setup wizard discovers available models live from your provider, shows them as cards, and no longer offers retired models. The wizard itself got a visual polish with themed titles and threaded discovery so it never freezes.",
       "highlights": [
-        {"text": "Live model discovery with a card-based picker in the setup wizard", "areas": ["settings"]},
-        {"text": "Retired models removed from the choices", "areas": ["settings"]}
+        {
+          "text": "Live model discovery with a card-based picker in the setup wizard",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Retired models removed from the choices",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -721,8 +1620,19 @@
       "date": "2026-07-15",
       "summary": "Notion joined the toolbox: connect an integration token and yeaboi can search, read, and write Notion pages during analysis and planning, and include recent Notion activity in the daily standup.",
       "highlights": [
-        {"text": "Notion search/read/write tools for analysis and planning", "areas": ["analysis", "planning"]},
-        {"text": "Recent Notion pages feed the Daily Standup activity", "areas": ["standup"]}
+        {
+          "text": "Notion search/read/write tools for analysis and planning",
+          "areas": [
+            "analysis",
+            "planning"
+          ]
+        },
+        {
+          "text": "Recent Notion pages feed the Daily Standup activity",
+          "areas": [
+            "standup"
+          ]
+        }
       ]
     },
     {
@@ -730,8 +1640,18 @@
       "date": "2026-07-14",
       "summary": "Reporting mode arrived: generate a business-friendly delivery report of what shipped last sprint or last month, ready to send to stakeholders. The app also rebranded to yeaboi.ai with cinematic ANSI-shadow intros and a glinting splash wordmark.",
       "highlights": [
-        {"text": "New Reporting mode — stakeholder-ready delivery summaries", "areas": ["reporting"]},
-        {"text": "Rebrand to yeaboi.ai with cinematic per-mode intros", "areas": ["general"]}
+        {
+          "text": "New Reporting mode — stakeholder-ready delivery summaries",
+          "areas": [
+            "reporting"
+          ]
+        },
+        {
+          "text": "Rebrand to yeaboi.ai with cinematic per-mode intros",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -739,8 +1659,18 @@
       "date": "2026-07-13",
       "summary": "Performance mode arrived: per-engineer 1:1 prep, 1:1 completion with tracked action items, and a 6-month review builder — all fed by real Jira/Azure DevOps activity. You can also pick the exact LLM model in the setup wizard and settings.",
       "highlights": [
-        {"text": "New Performance mode — 1:1 prep, 1:1 completion, 6-month reviews", "areas": ["performance"]},
-        {"text": "LLM model selection in setup wizard and settings", "areas": ["settings"]}
+        {
+          "text": "New Performance mode — 1:1 prep, 1:1 completion, 6-month reviews",
+          "areas": [
+            "performance"
+          ]
+        },
+        {
+          "text": "LLM model selection in setup wizard and settings",
+          "areas": [
+            "settings"
+          ]
+        }
       ]
     },
     {
@@ -748,9 +1678,24 @@
       "date": "2026-07-11",
       "summary": "The planner got a lot smarter: choose an intake depth (Quick to Large), let the analyzer read your actual repository to inform the tech stack (including low-code detection), and past ceremony history now shapes new plans.",
       "highlights": [
-        {"text": "Selectable intake modes from Quick to Large", "areas": ["planning"]},
-        {"text": "Repo-informed stack detection, including low-code platforms", "areas": ["planning"]},
-        {"text": "Ceremony history (standups, retros) feeds new sprint plans", "areas": ["planning"]}
+        {
+          "text": "Selectable intake modes from Quick to Large",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Repo-informed stack detection, including low-code platforms",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Ceremony history (standups, retros) feeds new sprint plans",
+          "areas": [
+            "planning"
+          ]
+        }
       ]
     },
     {
@@ -758,7 +1703,12 @@
       "date": "2026-07-10",
       "summary": "Retro mode arrived: host a collaborative sprint retrospective where teammates join from their browser on the LAN, add sticky cards to four grids, and let the AI propose action items from the feedback.",
       "highlights": [
-        {"text": "New Retro mode — collaborative LAN browser board with AI action items", "areas": ["retro"]}
+        {
+          "text": "New Retro mode — collaborative LAN browser board with AI action items",
+          "areas": [
+            "retro"
+          ]
+        }
       ]
     },
     {
@@ -766,8 +1716,18 @@
       "date": "2026-07-10",
       "summary": "Daily Standup mode arrived: yeaboi collects recent activity from your trackers and repos, scores sprint confidence, writes a summary, and delivers it to terminal, desktop, Slack, or email — with Markdown and HTML exports.",
       "highlights": [
-        {"text": "New Daily Standup mode with multi-channel delivery", "areas": ["standup"]},
-        {"text": "Standup exports to Markdown and HTML", "areas": ["standup"]}
+        {
+          "text": "New Daily Standup mode with multi-channel delivery",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Standup exports to Markdown and HTML",
+          "areas": [
+            "standup"
+          ]
+        }
       ]
     },
     {
@@ -775,8 +1735,18 @@
       "date": "2026-07-10",
       "summary": "Quality-of-life release: an optional lofi music player embedded in the TUI (with an animated equalizer), rotating welcome-screen tips you can dismiss, and releases now version themselves automatically.",
       "highlights": [
-        {"text": "Embedded music player with channels and animated equalizer", "areas": ["general"]},
-        {"text": "Rotating, dismissible welcome-screen tips", "areas": ["general"]}
+        {
+          "text": "Embedded music player with channels and animated equalizer",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Rotating, dismissible welcome-screen tips",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -784,8 +1754,19 @@
       "date": "2026-07-10",
       "summary": "Offline voice input landed — dictate answers instead of typing — plus graceful handling of API auth and billing errors, and fully automated PyPI releases on every version bump.",
       "highlights": [
-        {"text": "Offline voice input for answering questions", "areas": ["planning", "general"]},
-        {"text": "Graceful API auth/billing error handling", "areas": ["general"]}
+        {
+          "text": "Offline voice input for answering questions",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Graceful API auth/billing error handling",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -793,8 +1774,18 @@
       "date": "2026-04-01",
       "summary": "Analysis mode arrived: yeaboi studies your team's delivery history to build a team profile, then uses it to calibrate sprint plans to how your team actually works. The TUI also picked up assorted improvements.",
       "highlights": [
-        {"text": "New Analysis mode — team learning from delivery history", "areas": ["analysis"]},
-        {"text": "Calibrated planning informed by the team profile", "areas": ["planning"]}
+        {
+          "text": "New Analysis mode — team learning from delivery history",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Calibrated planning informed by the team profile",
+          "areas": [
+            "planning"
+          ]
+        }
       ]
     },
     {
@@ -802,8 +1793,18 @@
       "date": "2026-03-25",
       "summary": "Azure DevOps reached full parity with Jira — boards, velocity, and batch work-item creation — and the app gained opt-in anonymous telemetry.",
       "highlights": [
-        {"text": "Azure DevOps board parity with Jira", "areas": ["planning"]},
-        {"text": "Opt-in anonymous telemetry", "areas": ["general"]}
+        {
+          "text": "Azure DevOps board parity with Jira",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Opt-in anonymous telemetry",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -811,8 +1812,19 @@
       "date": "2026-03-22",
       "summary": "AWS Bedrock joined the provider list — run yeaboi on IAM credentials with no API key — alongside a full guide for deploying on AWS Lightsail.",
       "highlights": [
-        {"text": "AWS Bedrock provider (IAM credentials, no API key)", "areas": ["settings", "general"]},
-        {"text": "AWS Lightsail deployment guide", "areas": ["general"]}
+        {
+          "text": "AWS Bedrock provider (IAM credentials, no API key)",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "AWS Lightsail deployment guide",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     },
     {
@@ -820,10 +1832,30 @@
       "date": "2026-03-20",
       "summary": "The first release of the AI Scrum Master: describe your project, answer a smart adaptive intake, and get epics, user stories, tasks, and sprint plans — reviewable step by step, exportable, and syncable to Jira in one batch. Includes a full-screen TUI and a headless CLI mode.",
       "highlights": [
-        {"text": "Smart adaptive intake with keyword extraction and follow-ups", "areas": ["planning"]},
-        {"text": "Epics, stories, tasks, and sprint plans with human review checkpoints", "areas": ["planning"]},
-        {"text": "One-shot Jira batch sync", "areas": ["planning"]},
-        {"text": "Headless mode for CI and scripting", "areas": ["general"]}
+        {
+          "text": "Smart adaptive intake with keyword extraction and follow-ups",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Epics, stories, tasks, and sprint plans with human review checkpoints",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "One-shot Jira batch sync",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Headless mode for CI and scripting",
+          "areas": [
+            "general"
+          ]
+        }
       ]
     }
   ]

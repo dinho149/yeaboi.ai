@@ -115,11 +115,17 @@ def _run_output_share_flow(
     document,
     theme,
     title_fn,
-) -> None:
-    """Open the shared temporary-output publishing view."""
+    editable=None,
+    on_edit=None,
+) -> int:
+    """Open the shared temporary-output publishing view.
+
+    Returns how many corrections teammates recorded, so the caller can decide
+    whether to keep them. Zero for a read-only share.
+    """
     from yeaboi.ui.shared._output_share import run_output_share
 
-    run_output_share(
+    return run_output_share(
         console,
         live,
         read_key,
@@ -128,6 +134,8 @@ def _run_output_share_flow(
         document=document,
         theme=theme,
         title_fn=title_fn,
+        editable=editable,
+        on_edit=on_edit,
     )
 
 
@@ -4249,6 +4257,9 @@ def _run_mode_hub(
     make_detail=None,
     open_snapshot=None,
     get_share_document=None,
+    # Returns an artifacts.session.EditableSession, or None for a mode whose
+    # shared document is read-only. Absent means read-only everywhere.
+    get_editable_session=None,
     share_theme=None,
     new_breaks_out: bool = False,
     extra_label=None,
@@ -4360,7 +4371,10 @@ def _run_mode_hub(
             document = get_share_document(run)
             if document is None:
                 return False, "That artifact cannot be shared."
-            _run_output_share_flow(
+            # A correctable share when the mode offers one; otherwise exactly
+            # the read-only publish this has always been.
+            editing = get_editable_session(run) if get_editable_session is not None else None
+            recorded = _run_output_share_flow(
                 console,
                 live,
                 read_key,
@@ -4369,7 +4383,15 @@ def _run_mode_hub(
                 document=document,
                 theme=share_theme,
                 title_fn=title_fn,
+                editable=editing.share if editing is not None else None,
+                on_edit=editing.persist if editing is not None else None,
             )
+            if recorded and editing is not None:
+                # Appended, so the generated original is still there and every
+                # trend chart picks the corrected row up on its own.
+                editing.commit()
+                _reload(f"Saved {recorded} " + ("correction" if recorded == 1 else "corrections") + ".")
+                return False, None
             return False, None
         if act == "Delete":
             delete_run(run)
@@ -4719,6 +4741,21 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
 
         return standup_document(report, history=_history_for(report))
 
+    def get_editable_session(run):
+        """A correctable standup, when the run is still readable."""
+        report = _report(run.run_id)
+        if report is None:
+            return None
+        from yeaboi.artifacts.session import EditableSession
+
+        return EditableSession(
+            report,
+            kind="standup",
+            db_path=_ana_dbp,
+            run_id=run.run_id,
+            history=tuple(_history_for(report)),
+        )
+
     def delete_run(run):
         with StandupStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
@@ -4791,6 +4828,7 @@ def _run_standup_hub(console: Console, live, read_key, frame_time: float, suppor
         files_export=files_export,
         get_document=get_document,
         get_share_document=get_share_document,
+        get_editable_session=get_editable_session,
         share_theme=STANDUP_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_standup_page(console, live, read_key, frame_time, supports_timeout),
@@ -4894,6 +4932,21 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
 
         return retro_document(report, history=_history_for(report))
 
+    def get_editable_session(run):
+        """A correctable retro, when the run is still readable."""
+        report = _report(run.run_id)
+        if report is None:
+            return None
+        from yeaboi.artifacts.session import EditableSession
+
+        return EditableSession(
+            report,
+            kind="retro",
+            db_path=_ana_dbp,
+            run_id=run.run_id,
+            history=tuple(_history_for(report)),
+        )
+
     def delete_run(run):
         with RetroStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
@@ -4915,6 +4968,7 @@ def _run_retro_hub(console: Console, live, read_key, frame_time: float, supports
         files_export=files_export,
         get_document=get_document,
         get_share_document=get_share_document,
+        get_editable_session=get_editable_session,
         share_theme=RETRO_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_retro_page(console, live, read_key, frame_time, supports_timeout),
@@ -5010,6 +5064,21 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
 
         return reporting_document(report, history=_history_for(run))
 
+    def get_editable_session(run):
+        """A correctable reporting, when the run is still readable."""
+        report = _report(run.run_id)
+        if report is None:
+            return None
+        from yeaboi.artifacts.session import EditableSession
+
+        return EditableSession(
+            report,
+            kind="reporting",
+            db_path=_ana_dbp,
+            run_id=run.run_id,
+            history=tuple(_history_for(run)),
+        )
+
     def delete_run(run):
         with ReportingStore(_ana_dbp) as store:
             store.delete_run(run.run_id)
@@ -5031,6 +5100,7 @@ def _run_reporting_hub(console: Console, live, read_key, frame_time: float, supp
         files_export=files_export,
         get_document=get_document,
         get_share_document=get_share_document,
+        get_editable_session=get_editable_session,
         share_theme=REPORTING_THEME,
         delete_run=delete_run,
         run_new=lambda: _run_reporting_page(console, live, read_key, frame_time, supports_timeout),

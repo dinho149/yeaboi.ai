@@ -192,3 +192,65 @@ class TestArtifactAndGateAreUnchanged:
         for csp in (GATE_CSP, ARTIFACT_CSP):
             for value in _directives(csp).values():
                 assert "http" not in value, f"external origin allowed: {csp}"
+
+
+class TestEditPolicy:
+    """The editable document's policy: an artifact that also takes input.
+
+    It sits between the other two, and the interesting assertions are about
+    where it stops — a document is not a board, so it must not have acquired a
+    board's freedoms along with a board's transport.
+    """
+
+    def test_denies_everything_by_default(self):
+        from yeaboi.web.security import EDIT_CSP
+
+        assert _directives(EDIT_CSP)["default-src"] == "'none'"
+
+    def test_does_not_allow_eval(self):
+        from yeaboi.web.security import EDIT_CSP
+
+        assert "unsafe-eval" not in EDIT_CSP
+
+    def test_talks_only_to_its_own_origin(self):
+        # The one directive ARTIFACT_CSP forbids outright, and the whole reason
+        # an editable document cannot be served under it: connect-src 'none'
+        # makes the edit POST and the long poll impossible by construction.
+        from yeaboi.web.security import EDIT_CSP
+
+        assert _directives(EDIT_CSP)["connect-src"] == "'self'"
+
+    def test_the_finished_artifact_still_talks_to_nothing(self):
+        assert _directives(ARTIFACT_CSP)["connect-src"] == "'none'"
+
+    def test_serves_only_embedded_images(self):
+        """No `'self'`: the boards earn theirs with `<img src="/api/qr?…">`.
+
+        This server has no QR route, so the directive would be permission
+        granted for nothing — the same reasoning the board policy applies to
+        its own three loose directives, turned on this one.
+        """
+        from yeaboi.web.security import EDIT_CSP
+
+        assert _directives(EDIT_CSP)["img-src"] == "data:"
+
+    def test_has_no_media_source(self):
+        """There is no radio on a document.
+
+        A directive nothing needs is a directive nobody will notice is wrong, so
+        this asserts the absence rather than trusting that nobody pasted the
+        board policy across.
+        """
+        from yeaboi.web.security import EDIT_CSP
+
+        assert "media-src" not in _directives(EDIT_CSP)
+
+    def test_forms_cannot_navigate(self):
+        from yeaboi.web.security import EDIT_CSP
+
+        assert _directives(EDIT_CSP)["form-action"] == "'none'"
+
+    def test_it_is_not_simply_the_board_policy(self):
+        from yeaboi.web.security import EDIT_CSP
+
+        assert EDIT_CSP != BOARD_CSP

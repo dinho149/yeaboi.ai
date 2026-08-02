@@ -30,7 +30,9 @@ import {
   StatGrid,
   StatTile,
 } from '../../design/primitives';
-import type { DeliveredItem, ReportTheme, Trend } from '../boot';
+import type { DeliveredItem, EditMap, ReportTheme, Trend } from '../boot';
+import { EditableList, EditableSlot } from '../editing/Editable';
+import { Field } from '../editing/Field';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
 
@@ -75,6 +77,7 @@ export function Reporting({
   summary,
   themes,
   highlights,
+  edit,
   items,
   breakdown,
   emoji,
@@ -86,6 +89,7 @@ export function Reporting({
   summary?: string;
   themes: ReportTheme[];
   highlights: string[];
+  edit?: EditMap;
   items: DeliveredItem[];
   breakdown: Array<[string, number]>;
   emoji: Record<string, string>;
@@ -96,7 +100,12 @@ export function Reporting({
 
   return (
     <>
-      {headline ? <blockquote className={styles['lede']}>{headline}</blockquote> : null}
+      <EditableSlot anchor="" label="this report" />
+      {headline ? (
+        <Field edit={edit} field="headline" label="the headline">
+          <blockquote className={styles['lede']}>{headline}</blockquote>
+        </Field>
+      ) : null}
 
       {metrics.length ? (
         <section id="numbers">
@@ -117,7 +126,9 @@ export function Reporting({
           {/* `Prose`, not a paragraph with the newlines swapped for `<br>`: the
               summary's line breaks are the model's own paragraphing, and
               `white-space: pre-wrap` keeps them without parsing anything. */}
-          <Prose text={summary} />
+          <Field edit={edit} field="executive_summary" label="the executive summary">
+            <Prose text={summary} />
+          </Field>
         </section>
       ) : null}
 
@@ -131,7 +142,9 @@ export function Reporting({
       {highlights.length ? (
         <section id="highlights">
           <Heading emoji={emoji['highlights']}>Highlights</Heading>
-          <Bullets items={highlights} />
+          <EditableList path="highlights" label="highlight">
+            <Bullets items={highlights} />
+          </EditableList>
         </section>
       ) : null}
 

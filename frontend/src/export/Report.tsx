@@ -10,6 +10,7 @@
  */
 
 import type { ExportReport } from './boot';
+import { Annotations } from './reports/Annotations';
 import { Anonymize } from './reports/Anonymize';
 import { Performance } from './reports/Performance';
 import { Plan } from './reports/Plan';
@@ -21,11 +22,32 @@ import { Roadmap } from './reports/Roadmap';
 import { Standup } from './reports/Standup';
 
 export function Report({ report }: { report: ExportReport }) {
+  return (
+    <>
+      <Body report={report} />
+      <Annotations rows={report.annotations ?? []} />
+    </>
+  );
+}
+
+/**
+ * The generated document itself. Split from {@link Report} so reader-added
+ * notes are drawn once, after it, rather than by each of the nine components —
+ * the ninth one forgetting is a note nobody ever sees.
+ */
+function Body({ report }: { report: ExportReport }) {
   switch (report.kind) {
     case 'anonymize':
       return <Anonymize markdown={report.markdown} warnings={report.warnings} />;
     case 'roadmap':
-      return <Roadmap summary={report.summary} projects={report.projects} warnings={report.warnings} />;
+      return (
+        <Roadmap
+          summary={report.summary}
+          projects={report.projects}
+          warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
+        />
+      );
     case 'performance':
       return (
         <Performance
@@ -34,6 +56,7 @@ export function Report({ report }: { report: ExportReport }) {
           sections={report.sections}
           {...(report.footnote ? { footnote: report.footnote } : {})}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'poker':
@@ -60,6 +83,7 @@ export function Report({ report }: { report: ExportReport }) {
           emoji={report.emoji}
           trend={report.trend}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'plan':
@@ -92,6 +116,7 @@ export function Report({ report }: { report: ExportReport }) {
           images={report.images}
           trend={report.trend}
           warnings={report.warnings}
+          {...(report.edit ? { edit: report.edit } : {})}
         />
       );
     case 'profile':

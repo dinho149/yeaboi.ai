@@ -167,6 +167,69 @@ class TestOnePaletteSource:
         assert offenders == [], f"use a token from design/tokens.css, not a literal colour: {offenders}"
 
 
+class TestCustomPropertiesResolve:
+    """A `var(--x)` naming a property nothing declares is silently nothing.
+
+    This is the quietest failure in the whole front end. An undefined custom
+    property makes the declaration invalid *at computed-value time*, so the
+    browser does not fall back to the shorthand's initial value or log anything —
+    it drops that one declaration and paints the rest of the rule. A panel keeps
+    its `max-width: 34rem` and its border and loses every `padding`, `gap`,
+    `border-radius` and `font-size`, which reads as "someone forgot to style
+    this" rather than as a typo in a token name.
+
+    Nothing else catches it. `npm run typecheck` does not look inside a
+    stylesheet; jsdom does not resolve custom properties, so a component test
+    renders the class name and asserts nothing about it; and the Python suite
+    reads the built bundle for self-containment, not for meaning. It shipped
+    twice in this repo before this test existed — the editing stack invented a
+    whole `--space-*`/`--text-sm`/`--radius-2` vocabulary that the design layer
+    spells `--s*`/`--fs-s`/`--r-m`, and an earlier `var(--r2)` in
+    `reports.module.css` had been inert since the day it was written.
+
+    Only the no-fallback form is an error. `var(--wordmark-block, 10px)` names a
+    property set from TypeScript at runtime and says what to do without it,
+    which is the documented way to depend on one.
+    """
+
+    # A declaration, not a use: `--x:` at the start of a line or after `{` or
+    # `;`. palette.css puts five on one line, so this cannot be line-anchored,
+    # and the leading `(` of a `var(` is what keeps a *use* from matching.
+    _DECLARED = re.compile(r"(?:^|[;{])\s*(--[a-z0-9-]+)\s*:", re.M)
+    _SET_FROM_TS = re.compile(r"""setProperty\(\s*['"`](--[a-z0-9-]+)""")
+    _USED_BARE = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*\)")
+
+    def _declared(self) -> set[str]:
+        names: set[str] = set()
+        for path in _sources(".css"):
+            names |= set(self._DECLARED.findall(path.read_text()))
+        for path in _sources(".ts", ".tsx", tests=True):
+            names |= set(self._SET_FROM_TS.findall(path.read_text()))
+        return names
+
+    def test_every_var_reference_resolves(self):
+        declared = self._declared()
+        assert "--s4" in declared, "the declaration regex has rotted — it cannot see tokens.css"
+
+        offenders: list[str] = []
+        # Stylesheets and TypeScript alike: an inline `style` string is a
+        # stylesheet with no file extension, and the deck writes several.
+        for path in _sources(".css", ".ts", ".tsx"):
+            for lineno, line in enumerate(path.read_text().splitlines(), start=1):
+                # Same reason as `_code_hits`: these files explain the tokens
+                # they use, and `useConfetti` documents why a canvas cannot
+                # paint `var(--x)` — a sentence, not a declaration.
+                if line.lstrip().startswith(("*", "//", "/*")):
+                    continue
+                for name in self._USED_BARE.findall(line):
+                    if name not in declared:
+                        offenders.append(f"{_rel(path)}:{lineno}: var({name})")
+        assert offenders == [], (
+            "these name a custom property nothing declares, so the whole declaration is dropped "
+            f"at paint time — check design/tokens.css for the real name: {offenders}"
+        )
+
+
 class TestGeneratedEnums:
     def test_enums_ts_is_current(self):
         """`frontend/src/types/enums.ts` must match the board tuples it mirrors.

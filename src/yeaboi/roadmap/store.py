@@ -29,7 +29,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path, PurePath
 
-from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject
+from yeaboi.agent.state import RoadmapAnalysis, RoadmapProject, annotations_from
 from yeaboi.roadmap.ingest import RoadmapSource
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,12 @@ CREATE TABLE IF NOT EXISTS roadmap_history (
     source_type    TEXT NOT NULL DEFAULT '',
     source_locator TEXT NOT NULL DEFAULT '',
     project_count  INTEGER NOT NULL DEFAULT 0,
-    analysis_json  TEXT NOT NULL DEFAULT ''
+    analysis_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS roadmaps (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -140,6 +145,7 @@ def _dict_to_analysis(d: dict) -> RoadmapAnalysis:
         projects=projects,
         warnings=tuple(d.get("warnings", ())),
         generated_at=d.get("generated_at", ""),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

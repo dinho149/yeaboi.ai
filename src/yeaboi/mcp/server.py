@@ -52,6 +52,7 @@ def create_app():
 
     from yeaboi.mcp import (
         tools_anonymize,
+        tools_artifacts,
         tools_performance,
         tools_planning,
         tools_poker,
@@ -64,6 +65,7 @@ def create_app():
 
     app = FastMCP("yeaboi", instructions=_INSTRUCTIONS)
     modules = (
+        tools_artifacts,
         tools_planning,
         tools_sessions,
         tools_standup,

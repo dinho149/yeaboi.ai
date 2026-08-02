@@ -83,8 +83,13 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
         port = 54321
         display_code = "ABCD-2345"
 
-        def __init__(self, document):
+        def __init__(self, document, *, editable=None, on_edit=None):
             self.document = document
+            self.editable = editable
+            self.on_edit = on_edit
+
+        def set_public_url(self, url):
+            self.public_url = url
 
         def start(self):
             events.append("server-start")
@@ -150,8 +155,17 @@ def test_copy_invite_puts_one_self_contained_link_on_the_clipboard(monkeypatch):
         port = 54321
         display_code = "ABCD-2345"
 
-        def __init__(self, document):
+        # `editable`/`on_edit` are accepted and ignored: this test is about the
+        # invite link, and a share flow now always passes them through.
+        def __init__(self, document, *, editable=None, on_edit=None):
             self.document = document
+            self.editable = editable
+            self.on_edit = on_edit
+
+        def set_public_url(self, url):
+            # The share flow tells the server its tunnel address so the invite
+            # is built from that rather than from the request's own Host.
+            self.public_url = url
 
         def start(self):
             pass

@@ -20,7 +20,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import RetroCard, RetroReport
+from yeaboi.agent.state import RetroCard, RetroReport, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,12 @@ CREATE TABLE IF NOT EXISTS retro_history (
     retro_date   TEXT NOT NULL DEFAULT '',
     project_name TEXT NOT NULL DEFAULT '',
     card_count   INTEGER NOT NULL DEFAULT 0,
-    report_json  TEXT NOT NULL DEFAULT ''
+    report_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0
 );"""
 
 
@@ -83,6 +88,7 @@ def _dict_to_retro_report(d: dict) -> RetroReport:
         participants=tuple(d.get("participants", ())),
         generated_at=d.get("generated_at", ""),
         carried_action_items=carried,
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
@@ -130,13 +136,14 @@ class RetroStore:
 
     # ── Run history ───────────────────────────────────────────────────────
 
-    def record_run(self, report: RetroReport) -> int:
+    def record_run(self, report: RetroReport, *, origin: str = "generated", edited_from_id: int = 0) -> int:
         """Persist a completed retro and return its history row id."""
         report_json = _retro_report_to_json(report)
         cursor = self._conn.execute(
             """INSERT INTO retro_history
-                   (session_id, run_at, retro_date, project_name, card_count, report_json)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+                   (session_id, run_at, retro_date, project_name, card_count, report_json,
+                    origin, edited_from_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 report.session_id,
                 self._now(),
@@ -144,6 +151,8 @@ class RetroStore:
                 report.project_name,
                 len(report.cards),
                 report_json,
+                origin,
+                edited_from_id,
             ),
         )
         logger.info(
@@ -195,6 +204,38 @@ class RetroStore:
             return _dict_to_retro_report(json.loads(row[0]))
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
             logger.warning("Failed to deserialize retro run id=%s: %s", run_id, exc)
+            return None
+
+    def get_base_run(self, *, session_id: str = "", run_id: int = 0) -> tuple[int, RetroReport] | None:
+        """Return ``(id, report)`` for the *generated* run a correction log is anchored to.
+
+        See :meth:`StandupStore.get_base_run` — same reason, same shape. Not
+        `get_latest_report`, which returns the corrected row on purpose; a log
+        replayed onto that applies every earlier correction again, and appends
+        and notes have no compare-and-swap to stop them duplicating.
+        """
+        if run_id:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM retro_history WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is not None and row[1] == "edited" and row[2]:
+                row = self._conn.execute(
+                    "SELECT id, origin, edited_from_id, report_json FROM retro_history WHERE id = ?",
+                    (row[2],),
+                ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT id, origin, edited_from_id, report_json FROM retro_history "
+                "WHERE session_id = ? AND origin != 'edited' ORDER BY run_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        if row is None or not row[3]:
+            return None
+        try:
+            return int(row[0]), _dict_to_retro_report(json.loads(row[3]))
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            logger.warning("Failed to deserialize retro base run id=%s: %s", row[0], exc)
             return None
 
     def delete_run(self, run_id: int) -> bool:

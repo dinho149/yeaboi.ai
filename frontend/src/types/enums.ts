@@ -63,6 +63,10 @@ export type PokerPhases = (typeof POKER_PHASES)[number];
 export const DUEL_STATUSES = ["live", "transcribing", "done", "failed"] as const;
 export type DuelStatuses = (typeof DUEL_STATUSES)[number];
 
+/** What one correction does to a shared artifact. Server-validated, so it is generated rather than shipped in a boot payload — a payload would win at runtime and let a stale bundle offer an op the server rejects. */
+export const EDIT_OPS = ["set", "append", "remove", "note", "field", "revert"] as const;
+export type EditOps = (typeof EDIT_OPS)[number];
+
 /**
  * The two-line block font, one entry per character: `[top, bottom]`.
  *

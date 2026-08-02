@@ -1055,8 +1055,28 @@ def run_standup(
         # per-member progress notes + cross-standup blocker signals) and prior
         # run metadata (for the confidence trend). Both are date-scoped so a
         # same-day rerun never compares today against itself.
-        previous_report = store.get_previous_report(session_id, date_str)
+        previous_run = store.get_previous_run(session_id, date_str)
+        previous_report = previous_run[3] if previous_run else None
         prior_history = store.get_history(session_id, limit=10)
+
+    # What the team corrected on the previous standup, if they corrected it.
+    # The corrected *text* already reaches this run for free — a corrected row
+    # supersedes its parent above — but that alone only stops one wrong fact
+    # being repeated. Knowing the team looked at a member's summary and
+    # disagreed is the part worth carrying forward.
+    corrections: tuple = ()
+    if previous_run is not None and previous_run[1] == "edited":
+        from yeaboi.artifacts.store import ArtifactEditStore, artifact_ref
+
+        try:
+            with ArtifactEditStore(db_path) as edit_store:
+                # `edited_from_id`, not this row's own id: the log is filed
+                # against the artifact it was written on, which is the parent.
+                corrections = edit_store.list_edits(
+                    "standup", artifact_ref("standup", run_id=previous_run[2] or previous_run[0])
+                )
+        except Exception:  # noqa: BLE001 — a missing hint is not a failed standup
+            logger.warning("Could not read previous standup corrections", exc_info=True)
 
     resolved_channels = channels or (config or {}).get("delivery_channels") or ["terminal"]
     source_params = _resolve_source_params(config)
@@ -1197,7 +1217,7 @@ def run_standup(
     # deterministic blocker evidence + each member's previous-standup context.
     grouped = _group_activity_by_author(bundle.items, members, alias_map)
     blocker_signals = insights.detect_blocker_signals(grouped, previous_report=previous_report)
-    yesterday = insights.yesterday_context(previous_report)
+    yesterday = insights.yesterday_context(previous_report, corrections=corrections)
     if blocker_signals:
         logger.info("standup: blocker signals detected for %d member(s)", len(blocker_signals))
 

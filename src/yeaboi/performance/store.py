@@ -24,7 +24,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview
+from yeaboi.agent.state import OneOnOnePrep, OneOnOneRecord, SixMonthReview, annotations_from
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS performance_one_on_ones (
     on_date          TEXT NOT NULL DEFAULT '',
     report_json      TEXT NOT NULL DEFAULT '',
     action_items_json TEXT NOT NULL DEFAULT '[]',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS performance_reviews (
@@ -50,6 +55,11 @@ CREATE TABLE IF NOT EXISTS performance_reviews (
     period_start TEXT NOT NULL DEFAULT '',
     period_end   TEXT NOT NULL DEFAULT '',
     report_json  TEXT NOT NULL DEFAULT '',
+    -- Where this row came from: 'generated' or 'edited'. Provenance, not
+    -- status: get_previous_report filters on status, so a third status value
+    -- would silently drop corrected rows out of the next day's comparison.
+    origin          TEXT NOT NULL DEFAULT 'generated',
+    edited_from_id  INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS performance_notes (
@@ -83,6 +93,7 @@ def _dict_to_prep(d: dict) -> OneOnOnePrep:
         carried_action_items=tuple(d.get("carried_action_items", ())),
         activity_summary=d.get("activity_summary", ""),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
@@ -102,6 +113,7 @@ def _dict_to_record(d: dict) -> OneOnOneRecord:
         action_items=tuple(d.get("action_items", ())),
         highlights=tuple(d.get("highlights", ())),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 
@@ -123,6 +135,7 @@ def _dict_to_review(d: dict) -> SixMonthReview:
         overall=d.get("overall", ""),
         framework_used=d.get("framework_used", ""),
         warnings=tuple(d.get("warnings", ())),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

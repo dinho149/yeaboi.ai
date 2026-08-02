@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from yeaboi.agent.state import Annotation, annotations_from
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -263,6 +265,12 @@ class TeamProfile:
     sprints_analysed: int = 0
     created_at: str = ""  # ISO timestamp
     updated_at: str = ""  # ISO timestamp
+    # Reader-authored notes and named fields; see agent.state.Annotation. This is
+    # the *only* correction a profile accepts — every number here is computed
+    # from tracker history, and a hand-edited percentile is not a correction but
+    # a fabrication that the next analysis silently contradicts. Defaulted, so a
+    # profile stored before browser editing existed still deserializes.
+    annotations: tuple[Annotation, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +699,7 @@ def _dict_to_profile(d: dict) -> TeamProfile:
         created_at=d.get("created_at", ""),
         updated_at=d.get("updated_at", ""),
         team_name=d.get("team_name", ""),
+        annotations=annotations_from(d.get("annotations")),
     )
 
 

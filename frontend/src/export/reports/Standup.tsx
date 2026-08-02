@@ -31,7 +31,9 @@ import {
 } from '../../design/primitives';
 import { toneVar, type Tone } from '../../design/tone';
 import { cx } from '../../runtime/cx';
-import type { EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import type { EditMap, EvidenceLink, Run, StandupCategory, StandupMember, Trend } from '../boot';
+import { EditableSlot } from '../editing/Editable';
+import { Field } from '../editing/Field';
 import { EvidenceList } from './Evidence';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
@@ -170,18 +172,24 @@ function Member({ member }: { member: StandupMember }) {
 
       {/* The blocker leads the card: it is the one thing on this page somebody
           has to act on, and it must not sit below three categories of prose. */}
-      {member.blockers ? <Note label="Blocker" runs={member.blockers} tone="danger" /> : null}
-      {member.summary.length ? (
-        <ul className={styles['memberSummary']}>
-          {member.summary.map((runs, index) => (
-            <li key={index}>
-              <RichText runs={runs} />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className={styles['memberSummary']}>No activity detected.</p>
-      )}
+      {member.blockers ? (
+        <Field edit={member.edit} field="blockers" label={`${member.name}'s blocker`}>
+          <Note label="Blocker" runs={member.blockers} tone="danger" />
+        </Field>
+      ) : null}
+      <Field edit={member.edit} field="summary" label={`${member.name}'s summary`}>
+        {member.summary.length ? (
+          <ul className={styles['memberSummary']}>
+            {member.summary.map((runs, index) => (
+              <li key={index}>
+                <RichText runs={runs} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={styles['memberSummary']}>No activity detected.</p>
+        )}
+      </Field>
       {member.progressNote ? (
         <p className={styles['since']}>
           <span aria-hidden="true">↺</span> <em>Since last standup:</em>{' '}
@@ -203,7 +211,13 @@ function Member({ member }: { member: StandupMember }) {
         </p>
       ))}
 
-      {member.outlook ? <Note label="Outlook" runs={member.outlook} /> : null}
+      {member.outlook ? (
+        <Field edit={member.edit} field="outlook" label={`${member.name}'s outlook`}>
+          <Note label="Outlook" runs={member.outlook} />
+        </Field>
+      ) : null}
+      {/* Renders nothing without a session, so a file on disk is unaffected. */}
+      <EditableSlot anchor={member.anchor ?? ''} label={`${member.name}'s update`} />
       {member.selfReport ? (
         <p className={styles['quote']}>
           <span aria-hidden="true">✍</span> <RichText runs={member.selfReport} />
@@ -268,6 +282,7 @@ function TeamActivity({ members }: { members: StandupMember[] }) {
 export function Standup({
   sprint,
   confidence,
+  edit,
   summary,
   members,
   activityCounts,
@@ -280,6 +295,8 @@ export function Standup({
 }: {
   sprint: { name: string; day: number; total: number };
   confidence: { label: string; pct: number; text: string; trend: string; trendText: string; rationale: string };
+  /** Report-level editable fields. Undefined on a file export. */
+  edit?: EditMap;
   summary: Run[][];
   members: StandupMember[];
   activityCounts: Array<[string, number]>;
@@ -321,7 +338,11 @@ export function Standup({
           {confidence.trendText ? (
             <Chip tone={confidence.trend === 'improving' ? 'ok' : 'danger'}>{confidence.trendText}</Chip>
           ) : null}
-          {confidence.rationale ? <span className={styles['rationale']}>{confidence.rationale}</span> : null}
+          {confidence.rationale ? (
+            <Field edit={edit} field="confidence_rationale" label="the confidence rationale" inline>
+              <span className={styles['rationale']}>{confidence.rationale}</span>
+            </Field>
+          ) : null}
         </p>
 
         <TrendCard trend={trend} endTone={confidenceTone} />
@@ -332,20 +353,26 @@ export function Standup({
       {summary.length ? (
         <section id="summary">
           <h2 className={styles['h2']}>Team Summary</h2>
-          {/* One sentence is a paragraph; several are a scannable list. */}
-          {summary.length === 1 ? (
-            <p className={styles['lede']}>
-              <RichText runs={summary[0] as Run[]} />
-            </p>
-          ) : (
-            <ul className={styles['bullets']}>
-              {summary.map((runs, index) => (
-                <li key={index}>
-                  <RichText runs={runs} />
-                </li>
-              ))}
-            </ul>
-          )}
+          {/* The editor opens on the raw artifact string; what is drawn here is
+              the derived view — sentences of link-runs, with no inverse. That
+              asymmetry is the whole reason the payload carries {path, value}
+              beside the region instead of expecting this side to unpick it. */}
+          <Field edit={edit} field="team_summary" label="the team summary">
+            {/* One sentence is a paragraph; several are a scannable list. */}
+            {summary.length === 1 ? (
+              <p className={styles['lede']}>
+                <RichText runs={summary[0] as Run[]} />
+              </p>
+            ) : (
+              <ul className={styles['bullets']}>
+                {summary.map((runs, index) => (
+                  <li key={index}>
+                    <RichText runs={runs} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Field>
         </section>
       ) : null}
 

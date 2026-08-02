@@ -1,0 +1,119 @@
+/* The edit history dock. Tokens only, and every breakpoint on the declared
+   scale in design/tokens.css. */
+
+/* Fixed, not sticky. `position: sticky` needs room to travel inside its
+   containing block, and this is the last child of the page — so it had none,
+   and the dock only ever appeared once you had scrolled to the very bottom.
+   Which is exactly where a reader is least likely to be when they notice
+   something wrong. */
+.dock {
+  position: fixed;
+  inset-block-end: var(--s4);
+  inset-inline-end: var(--s4);
+  z-index: var(--z-console);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s2);
+}
+
+.people {
+  display: flex;
+  gap: var(--s1);
+}
+
+.panel {
+  /* Fixed positioning means the containing block is the viewport, so an
+     unqualified 34rem overflows a narrow phone off the side of the page. */
+  width: min(34rem, calc(100vw - var(--s5)));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  padding: var(--s4);
+  max-height: 60vh;
+  overflow-y: auto;
+  /* It floats over the report now, so it needs to lift off it. */
+  box-shadow: var(--shadow-2);
+}
+
+/* Said in words, not implied by an icon: every name in this panel was typed by
+   whoever held the link. */
+.caveat {
+  margin: 0 0 var(--s3);
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Naming yourself lives in `editbar.module.css` now: it is the entrance to the
+   feature, and it was unreachable while it sat inside this collapsed panel. */
+
+.list {
+  display: grid;
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--s2);
+}
+
+.what,
+.value,
+.meta,
+.filter,
+.empty {
+  margin: 0;
+}
+
+.value {
+  margin-block-start: var(--s1);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  gap: var(--s3);
+  margin-block-start: var(--s1);
+  color: var(--muted);
+  font-size: var(--fs-s);
+  font-variant-numeric: tabular-nums;
+}
+
+.where,
+.clear,
+.revert {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+/* A correction that was really made and no longer fits. Dimmed so it reads as
+   past tense, never hidden — and the row carries the sentence too, because a
+   shade of grey is not a fact a screen reader can hear. */
+.row[data-unapplied='1'] {
+  opacity: 0.7;
+}
+
+.unapplied {
+  margin: var(--s1) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-s);
+}
+
+@media print {
+  .dock {
+    display: none;
+  }
+}

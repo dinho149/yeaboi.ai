@@ -107,6 +107,27 @@ BOARD_CSP = policy(
     form_action="'none'",
 )
 
+# An editable shared artifact. It sits between the two above: it is a finished
+# document like the artifact, but it takes input from anyone holding the link
+# like a board — and unlike a board, what it takes becomes a *stored* artifact
+# that outlives the session.
+#
+# Exactly one directive is looser than ARTIFACT_CSP's:
+#
+# connect-src 'self' — the edit POST and the long poll, both same-origin fetches
+#   built from relative paths. This is the directive ARTIFACT_CSP's 'none'
+#   forbids, and the whole reason an editable document cannot be served under it.
+#
+# `img-src data:` is inherited unchanged: screenshots on a standup are embedded
+# data URIs. There is deliberately no `'self'` — the boards earn theirs with
+# `<img src="/api/qr?…">`, and this server serves no QR — and no media-src,
+# because there is no radio on a document. The rule the board policy states
+# applies to itself: a directive nothing needs is one nobody notices is wrong.
+EDIT_CSP = policy(
+    connect_src="'self'",
+    form_action="'none'",
+)
+
 
 def send_headers(
     handler: BaseHTTPRequestHandler,

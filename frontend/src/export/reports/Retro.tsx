@@ -17,6 +17,7 @@ import { toneVar } from '../../design/tone';
 import { GRID_TONE } from '../../retro/gridTone';
 import { CARRIED_STATUS_LABELS, RETRO_GRID_LABELS } from '../../types/enums';
 import type { CarriedItem, RetroCard, RetroColumn, Trend } from '../boot';
+import { Field } from '../editing/Field';
 import styles from './reports.module.css';
 import { TrendCard } from './Trend';
 
@@ -60,7 +61,10 @@ function Column({ column }: { column: RetroColumn }) {
           const reactions = reactionText(card);
           return (
             <li key={`${index}-${card.text.slice(0, 24)}`}>
-              {card.text} <Attribution card={card} />
+              <Field edit={card.edit} field="text" label="this card" inline>
+                <>{card.text}</>
+              </Field>{' '}
+              <Attribution card={card} />
               {reactions ? <Chip className={styles['reactions']}>{reactions}</Chip> : null}
             </li>
           );

@@ -22,6 +22,9 @@ from yeaboi.mcp.runtime import LLM_HINT, envelope, error_envelope, to_jsonable  
 from yeaboi.mcp.server import create_app  # noqa: E402
 
 EXPECTED_TOOLS = {
+    "artifact_edit_apply",
+    "artifact_edit_history",
+    "artifact_fields",
     "plan_generate",
     "intake_questions",
     "plan_get",

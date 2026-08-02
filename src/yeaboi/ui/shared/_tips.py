@@ -139,6 +139,11 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "🌐 Tip: Share Online publishes any generated output behind a temporary access code",
         is_new=True,
     ),
+    FeatureTip(
+        "artifact-editing",
+        "✏️ Tip: teammates can correct a shared report in the browser — every change is attributed",
+        is_new=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic

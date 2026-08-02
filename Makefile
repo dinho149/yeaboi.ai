@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker site-seo site-check site-og site-serve
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -149,6 +149,9 @@ dev-poker: ## Seeded planning-poker board on :5273 for front-end development
 
 dev-deck: ## Seeded reporting slide deck on :5373 for front-end development
 	$(UV) run python scripts/dev_deck.py
+
+dev-editable: ## Seeded correctable standup document on :5473 for front-end development
+	$(UV) run python scripts/dev_editable.py
 
 build: ## Build sdist + wheel into dist/
 	$(UV) build

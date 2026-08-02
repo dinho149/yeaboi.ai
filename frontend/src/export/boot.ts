@@ -21,6 +21,7 @@
 import type { Run } from '../design/primitives';
 import type { Tone } from '../design/tone';
 import { requireBoot } from '../runtime/boot';
+import type { EditPerson, EditRow } from './editing/state';
 import type { PageChrome } from '../shared/chrome';
 import type { CarriedStatuses, RetroGrids } from '../types/enums';
 
@@ -74,6 +75,9 @@ export interface RoadmapProject {
   themes?: string[];
   description?: string;
   rationale?: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 /** A titled run of bullets — the shape all three performance artifacts share. */
@@ -111,6 +115,9 @@ export interface RetroCard {
   ai?: boolean;
   /** `[emoji, count]`, non-zero counts only. */
   reactions: Array<[string, number]>;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 /**
@@ -130,6 +137,9 @@ export interface RetroColumn {
 export interface CarriedItem {
   status: CarriedStatuses;
   text: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface DeliveredItem {
@@ -137,6 +147,9 @@ export interface DeliveredItem {
   title: string;
   status: string;
   assignee?: string;
+  /** This row's path, for hanging a note or a field off it. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface ReportTheme {
@@ -199,6 +212,9 @@ export interface StandupMember {
   counts: [number, number, number];
   /** Leftover general links. Legacy reports carry no per-category ones. */
   links: EvidenceLink[];
+  /** This member's path, for hanging a note or a field off them. Served docs only. */
+  anchor?: string;
+  edit?: EditMap;
 }
 
 export interface PlanFeature {
@@ -310,17 +326,55 @@ export interface ProfileSection {
   blocks: Block[];
 }
 
-export type ExportReport =
+/**
+ * Something a reader added to a generated report that its schema had no room for.
+ *
+ * Two shapes, told apart by `kind`: a `note` is free text, a `field` is a named
+ * value (`label` carries the name). Attribution is **self-declared** — the
+ * author typed it into their own browser — so a renderer must never draw a
+ * verified badge beside it.
+ *
+ * `anchor` is the edit-path of the row this hangs off, or `''` for the document
+ * as a whole.
+ */
+export interface AnnotationRow {
+  kind: string;
+  anchor: string;
+  label: string;
+  text: string;
+  author: string;
+  avatar: string;
+  at: string;
+}
+
+/**
+ * Carried by every report, and absent whenever a document has none.
+ *
+ * Intersected into the union rather than repeated on nine members: narrowing on
+ * `kind` still works through an intersection, so `Report.tsx` keeps its
+ * exhaustiveness guard while every report gains the key for free.
+ */
+export interface Annotated {
+  annotations?: AnnotationRow[];
+}
+
+export type ExportReport = (
   | { kind: 'anonymize'; markdown: string; warnings: string[] }
-  | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[] }
+  | { kind: 'roadmap'; summary: string; projects: RoadmapProject[]; warnings: string[]; edit?: EditMap }
   | {
       kind: 'performance';
       engineer: string;
       /** The one free-prose block an artifact may open with (sprint work, overall assessment). */
-      lead?: { title: string; text: string };
+      lead?: {
+        title: string;
+        text: string;
+        /** Which artifact field this prose is, for the editor. Served docs only. */
+        field?: string;
+      };
       sections: PerfSection[];
       footnote?: string;
       warnings: string[];
+      edit?: EditMap;
     }
   | {
       kind: 'poker';
@@ -336,6 +390,7 @@ export type ExportReport =
       /** Last sprint's action items and the progress recorded against them. */
       carried: CarriedItem[];
       trend: Trend | null;
+      edit?: EditMap;
     }
   | {
       kind: 'reporting';
@@ -365,6 +420,7 @@ export type ExportReport =
       emoji: Record<string, string>;
       trend: Trend | null;
       warnings: string[];
+      edit?: EditMap;
     }
   | {
       kind: 'standup';
@@ -383,6 +439,18 @@ export type ExportReport =
         trendText: string;
         rationale: string;
       };
+      /**
+       * The report-level editable fields — `team_summary` and
+       * `confidence_rationale`. Served documents only.
+       *
+       * Declared here because the server has always sent it. The
+       * response-direction guard only catches a *dropped* field: `wire.ts`
+       * asserts the committed fixture `satisfies` this union, and excess-property
+       * checking does not run on imported JSON, so a field that crossed the wire
+       * undeclared and was dropped on the floor by `Report.tsx` looked exactly
+       * like a field nobody sends.
+       */
+      edit?: EditMap;
       /** The team summary, one run-list per sentence. */
       summary: Run[][];
       members: StandupMember[];
@@ -441,11 +509,52 @@ export type ExportReport =
       /** What the analysis could and could not read. Shown before the numbers. */
       coverage: string[];
       sections: ProfileSection[];
-    };
+    }
+) &
+  Annotated;
+
+/**
+ * Present only on a tunnel-served editable document.
+ *
+ * **Absent for a file on disk**, and that absence is the whole switch: `main.tsx`
+ * never reaches the edit stack without it, so an export written to disk runs no
+ * network code. `tests/_pages.assert_inert` checks that from the other side.
+ *
+ * Carries no secret. `GET /` is unauthenticated for the gate, and the same
+ * renderer writes documents to disk — a token here would be in both.
+ */
+/**
+ * Where one editable region lives, and what it currently says.
+ *
+ * `path` addresses the **artifact**, not this payload. The two are not the same
+ * shape and cannot be: `_team_summary_runs` shreds prose into sentences of link
+ * runs with no inverse, so an editor opened on what is drawn could never hand
+ * back something the server can store. `value` is the raw field, which is what
+ * the editor opens on and what the server replaces.
+ *
+ * Present only on a document served editable. A file export has no `edit` keys
+ * at all, which is what keeps a downloaded report byte-for-byte what it was.
+ */
+export interface EditTarget {
+  path: string;
+  value: string;
+}
+
+/** The editable fields of one payload node, keyed by artifact field name. */
+export type EditMap = Record<string, EditTarget>;
+
+export interface EditBoot {
+  revision: number;
+  /** False once the host has closed editing: history shows, affordances do not. */
+  editable: boolean;
+  edits: EditRow[];
+  people: EditPerson[];
+}
 
 export interface ExportBoot {
   chrome: ExportChrome;
   report: ExportReport;
+  editing?: EditBoot;
 }
 
 export function readExportBoot(): ExportBoot {

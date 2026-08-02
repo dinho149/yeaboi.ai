@@ -161,22 +161,60 @@ def detect_blocker_signals(
     return signals
 
 
-def yesterday_context(previous_report: StandupReport | None) -> dict[str, dict]:
+def corrected_members(corrections: Sequence[object]) -> dict[str, list[str]]:
+    """Map ``{member name: [field, ...]}`` from a previous run's edit log.
+
+    The names come back out of the paths — ``member_updates[name=Ada].blockers``
+    — because that is where they are, and re-deriving them here keeps the log
+    itself free of anything but what was written.
+
+    Anything unparseable is skipped rather than raised on: a hint that cannot be
+    built is a hint the run does without, and a standup must not fail because a
+    correction from last week was recorded by an older version.
+    """
+    from yeaboi.artifacts.paths import PathError, parse_path
+
+    out: dict[str, list[str]] = {}
+    for edit in corrections:
+        path = getattr(edit, "path", "")
+        if not path:
+            continue
+        try:
+            segments = parse_path(path)
+        except PathError:
+            continue
+        if len(segments) != 2 or segments[0].field != "member_updates" or not segments[0].value:
+            continue
+        out.setdefault(segments[0].value, []).append(segments[1].field)
+    return out
+
+
+def yesterday_context(previous_report: StandupReport | None, *, corrections: Sequence[object] = ()) -> dict[str, dict]:
     """Per-member comparison context distilled from the previous standup report.
 
     Returns ``{name: {"summary": ..., "blockers": ..., "outlook": ...}}`` with
     each value clipped to keep the LLM prompt bounded; members with a fully
     empty previous update are omitted. ``{}`` when there is no previous report.
+
+    When the previous standup was **corrected by the team**, the affected members
+    carry a ``corrected`` list naming the fields they fixed. The corrected text
+    itself already feeds forward for free — a corrected row supersedes its parent
+    in ``get_previous_run`` — but that alone only stops the model repeating a
+    wrong *fact*. The flag is what lets the prompt say the team looked at this
+    and disagreed, which is the part worth not repeating.
     """
     if previous_report is None:
         return {}
+    fixed = corrected_members(corrections)
     context: dict[str, dict] = {}
     for member in previous_report.member_updates:
-        entry = {
+        entry: dict = {
             "summary": _clip(member.summary, _YESTERDAY_CLIP),
             "blockers": _clip(member.blockers, _YESTERDAY_CLIP),
             "outlook": _clip(getattr(member, "outlook", ""), _YESTERDAY_CLIP),
         }
         if any(entry.values()):
+            if member.name in fixed:
+                entry["corrected"] = sorted(set(fixed[member.name]))
             context[member.name] = entry
     return context

@@ -869,7 +869,7 @@ ul.memberSummary {
 .callout {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
-  border-radius: var(--r2);
+  border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
@@ -899,4 +899,46 @@ ul.memberSummary {
   .h2 {
     break-after: avoid;
   }
+}
+
+/* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
+   the rules live with the other report sections rather than in a file of their
+   own. Tokens only — no literal colours (test_web_frontend_guards). */
+.annotations {
+  margin-block-start: var(--s6);
+  border-block-start: 1px solid var(--line);
+  padding-block-start: var(--s5);
+}
+
+.annotationList {
+  display: grid;
+  gap: var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.annotation {
+  border-inline-start: 2px solid var(--line-strong);
+  padding-inline-start: var(--s4);
+}
+
+.annotationBody {
+  margin: 0;
+}
+
+.annotationMeta {
+  display: flex;
+  gap: var(--s2);
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+.annotationWhen {
+  font-variant-numeric: tabular-nums;
+}
+
+.annotationWhere {
+  font-style: italic;
 }

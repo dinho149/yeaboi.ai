@@ -85,3 +85,17 @@ def markup(html: str) -> str:
     can meaningfully make a negative claim about.
     """
     return _ASSET_RE.sub("", html)
+
+
+def assert_inert(html: str) -> None:
+    """Assert a document on disk carries nothing that would make it talk.
+
+    The `export` bundle contains the edit stack — it has to, since `import()` is
+    banned and there is no lazy path — so "a file is inert" cannot be a claim
+    about what is *in* the bundle. It is a claim about the boot payload: the edit
+    stack is reachable only through the `editing` key, and a file never has one.
+
+    Stating it this way makes it checkable, which the looser version was not.
+    """
+    payload = island(html)
+    assert "editing" not in payload, "an exported file must not carry an editing session"

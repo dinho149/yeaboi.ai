@@ -40,7 +40,16 @@ export interface Session {
 }
 
 /** Result of a JSON request. `ok:false` carries the status for the caller to map. */
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number };
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  /**
+   * `data` is present when the server answered with a JSON body it wants read —
+   * a 409 from the editable document carries the state it now holds, so the
+   * page can show the newer text at the same moment it reports the conflict.
+   * Optional because most refusals have nothing useful to say and the boards
+   * ignore it entirely.
+   */
+  | { ok: false; status: number; data?: T };
 
 /** Outcome of one long-poll. `changed:false` means the server answered 304. */
 export type PollResult<T> =
@@ -150,7 +159,18 @@ export async function postJSON<T>(
     // so callers can tell "could not reach the board" from "the board said no".
     return { ok: false, status: 0 };
   }
-  if (!response.ok) return { ok: false, status: response.status };
+  if (!response.ok) {
+    // Read the body on the way out too. It is small, it is already on the wire,
+    // and discarding it is what made the edit surface's conflict handling a
+    // comment rather than a behaviour.
+    try {
+      const failed = await response.text();
+      if (failed) return { ok: false, status: response.status, data: JSON.parse(failed) as T };
+    } catch {
+      /* not JSON, or already consumed — the status alone is still the answer */
+    }
+    return { ok: false, status: response.status };
+  }
   // 204 and an empty 200 are both legitimate — POST /api/presence?quiet=1
   // answers `{"ok":true}` precisely so it does not have to ship 40 KB of state.
   const text = await response.text();

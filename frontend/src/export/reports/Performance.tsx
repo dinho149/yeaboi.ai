@@ -15,7 +15,9 @@
  */
 
 import { Avatar, NoticeBlock, Prose, proseBullets } from '../../design/primitives';
-import type { PerfSection } from '../boot';
+import type { EditMap, PerfSection } from '../boot';
+import { EditableSlot } from '../editing/Editable';
+import { Field } from '../editing/Field';
 import styles from './reports.module.css';
 
 /** Long enough that it is packed prose, not a bullet someone wrote. */
@@ -49,12 +51,14 @@ function Section({ section }: { section: PerfSection }) {
 export function Performance({
   engineer,
   lead,
+  edit,
   sections,
   footnote,
   warnings,
 }: {
   engineer: string;
-  lead?: { title: string; text: string };
+  lead?: { title: string; text: string; field?: string };
+  edit?: EditMap;
   sections: PerfSection[];
   footnote?: string;
   warnings: string[];
@@ -68,10 +72,13 @@ export function Performance({
         </p>
       ) : null}
 
+      <EditableSlot anchor="" label="this review" />
       {lead ? (
         <section id={sectionId(lead.title)}>
           <h2 className={styles['h2']}>{lead.title}</h2>
-          <Prose text={lead.text} />
+          <Field edit={edit} field={lead.field ?? ''} label={lead.title.toLowerCase()}>
+            <Prose text={lead.text} />
+          </Field>
         </section>
       ) : null}
 

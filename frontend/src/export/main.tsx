@@ -19,6 +19,7 @@ import { createRoot } from 'react-dom/client';
 import '../design/tokens.css';
 import { applyStoredTheme } from '../runtime/theme';
 import { readExportBoot } from './boot';
+import { EditApp } from './EditApp';
 import { Report } from './Report';
 import { Shell } from './Shell';
 
@@ -34,9 +35,16 @@ if (root) {
   const theme = applyStoredTheme();
   const boot = readExportBoot();
 
+  // The one branch in the bundle. `editing` is present only on a document
+  // served by the share server; a file on disk does not have the key, so this
+  // never reaches the edit stack and the file executes no network code.
   createRoot(root).render(
-    <Shell chrome={boot.chrome} theme={theme}>
-      <Report report={boot.report} />
-    </Shell>
+    boot.editing ? (
+      <EditApp chrome={boot.chrome} report={boot.report} editing={boot.editing} theme={theme} />
+    ) : (
+      <Shell chrome={boot.chrome} theme={theme}>
+        <Report report={boot.report} />
+      </Shell>
+    )
   );
 }

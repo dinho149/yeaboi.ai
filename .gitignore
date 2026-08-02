@@ -71,3 +71,7 @@ SCRUM.md
 # Allow test fixtures (overrides SCRUM.md ignore above)
 !tests/fixtures/SCRUM.md
 !projects/*/SCRUM.md
+
+# Stray log tree from a run whose home directory resolved relative — logs
+# belong under ~/.yeaboi/logs (paths.py owns every log path), never in the repo.
+/Documents/

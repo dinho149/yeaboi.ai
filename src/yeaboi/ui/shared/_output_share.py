@@ -11,6 +11,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
+from yeaboi.sharing.editable import EditableShare
 from yeaboi.sharing.server import OutputShareServer, ShareDocument
 from yeaboi.ui.shared._animations import loading_border_color
 from yeaboi.ui.shared._click import button_click, parse_click
@@ -129,9 +130,24 @@ def run_output_share(
     document: ShareDocument,
     theme: Theme,
     title_fn: Callable,
-) -> None:
-    """Start a code-gated server+tunnel and own them until the user leaves."""
+    editable: EditableShare | None = None,
+    on_edit: Callable | None = None,
+) -> int:
+    """Start a code-gated server+tunnel and own them until the user leaves.
+
+    With ``editable`` the shared document is correctable: teammates who join can
+    fix what the run got wrong, and this screen shows a live count of what they
+    have changed. Returns how many corrections were recorded **in this session**,
+    so the caller can decide whether to commit them — this function deliberately
+    does not, because its teardown also runs on Esc, on Back and on any
+    exception, and a path that rewrites the host's stored report from a crash
+    handler is not one anybody asked for.
+    """
     from yeaboi.sharing.tunnel import CloudflareTunnel, ensure_cloudflared
+
+    # Read before anything can join: a reopened share has already replayed every
+    # correction on record, and those are not news.
+    already_recorded = len(editable.document.edits()) if editable is not None else 0
 
     state: dict[str, object] = {
         "status": "Preparing a protected local snapshot…",
@@ -153,7 +169,7 @@ def run_output_share(
         server: OutputShareServer | None = None
         tunnel: CloudflareTunnel | None = None
         try:
-            server = OutputShareServer(document)
+            server = OutputShareServer(document, editable=editable, on_edit=on_edit)
             server.start()
             _set(server=server, status="Setting up Cloudflare sharing (first use may download ~40 MB)…")
             binary = ensure_cloudflared()
@@ -174,6 +190,7 @@ def run_output_share(
                 tunnel.stop()
                 _set(done=True)
                 return
+            server.set_public_url(public_url.rstrip("/") + "/")
             _set(
                 public_url=public_url.rstrip("/") + "/",
                 status="Sharing is live.",
@@ -202,10 +219,18 @@ def run_output_share(
             done = bool(snapshot["done"])
             if active:
                 actions = ["Copy Invite", "Stop Sharing", "Back"]
+                if editable is not None and editable.document.edits():
+                    actions.insert(1, "Discard Edits")
             else:
                 actions = ["Back"]
                 sel = 0
             status = error or str(snapshot["status"])
+            if editable is not None and active:
+                count = len(editable.document.edits())
+                if count:
+                    who = editable.document.editors()
+                    people = f" by {len(who)} " + ("person" if len(who) == 1 else "people")
+                    status = f"Sharing is live — {count} " + ("edit" if count == 1 else "edits") + people + "."
             if leaving and not done:
                 status = "Cancelling setup and cleaning up…"
 
@@ -262,6 +287,20 @@ def run_output_share(
                     invite = invite_url(str(snapshot["public_url"]), server.display_code)  # type: ignore[union-attr]
                     message = "Copied invite to clipboard." if copy_text(invite) else "Couldn't copy — see logs."
                     logger.info("output sharing invite copy requested (mode=%s)", document.source_mode)
+                elif action == "Discard Edits" and editable is not None:
+                    dropped = 0
+                    while editable.document.drop_last() is not None:
+                        dropped += 1
+                    # Precise about what just happened: the document is back to
+                    # what the run produced, but the log is append-only and
+                    # still holds every one of them, which is what the edit
+                    # history and the next run's context will keep reading.
+                    message = (
+                        f"Removed {dropped} " + ("correction" if dropped == 1 else "corrections") + " from this "
+                        "document — the edit history still shows them."
+                    )
+                    logger.info("output sharing edits discarded (mode=%s)", document.source_mode)
+                    sel = 0
                 elif action in ("Stop Sharing", "Back"):
                     cancel.set()
                     leaving = True
@@ -287,4 +326,12 @@ def run_output_share(
             tunnel.stop()  # type: ignore[union-attr]
         if server is not None:
             server.stop()  # type: ignore[union-attr]
-        logger.info("output sharing closed (mode=%s)", document.source_mode)
+        # The *delta*, not the total. A session that reopens a previously
+        # corrected document replays its whole log before anyone joins, so the
+        # total is non-zero the moment the screen opens — and the caller commits
+        # a fresh `origin='edited'` row whenever this is non-zero. Returning the
+        # total meant opening the share and pressing Back immediately reported
+        # "Saved 1 correction." and appended a duplicate row, once per cycle.
+        recorded = (len(editable.document.edits()) - already_recorded) if editable is not None else 0
+        logger.info("output sharing closed (mode=%s, new edits=%d)", document.source_mode, recorded)
+    return recorded

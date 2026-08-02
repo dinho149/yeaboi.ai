@@ -96,31 +96,16 @@ def _deep_mask(value, replacements: Replacements):
 def _reconstructor_for(cls):
     """Return the ``dict -> dataclass`` rebuilder for a known result artifact, or None.
 
-    Looked up by class *name* with lazy imports so this module doesn't pull the standup /
-    retro / roadmap / team_profile stores at import time (avoids import cycles).
+    Delegates to :func:`yeaboi.artifacts.registry.reconstructor_for`, which owns
+    the mapping. It used to be spelled out here, and being a second copy is how
+    it went wrong: the performance artifacts were never added, so masking a 1:1
+    prep or a six-month review returned it **unmasked** — the one path where a
+    silent no-op is worst, since the caller's whole reason for asking was that
+    they were about to publish it.
     """
-    name = cls.__name__
-    if name == "StandupReport":
-        from yeaboi.standup.store import _dict_to_standup_report
+    from yeaboi.artifacts.registry import reconstructor_for
 
-        return _dict_to_standup_report
-    if name == "RetroReport":
-        from yeaboi.retro.store import _dict_to_retro_report
-
-        return _dict_to_retro_report
-    if name == "RoadmapAnalysis":
-        from yeaboi.roadmap.store import _dict_to_analysis
-
-        return _dict_to_analysis
-    if name == "TeamProfile":
-        from yeaboi.team_profile import _dict_to_profile
-
-        return _dict_to_profile
-    if name == "DeliveryReport":
-        from yeaboi.reporting.store import _dict_to_report
-
-        return _dict_to_report
-    return None
+    return reconstructor_for(cls)
 
 
 def mask_artifact(artifact, replacements: Replacements):
