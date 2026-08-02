@@ -2,6 +2,44 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.51.0",
+      "date": "2026-08-02",
+      "summary": "Daily Standup now flags engineering practices that might cost your team later — work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed — no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",
+      "highlights": [
+        {
+          "text": "Standup now detects engineering bad habits: untracked work, stale boards, too many open changes, and commits too big to review",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Each signal names the exact changes it observed, with no LLM judgment involved",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Teammates can thumbs-down a signal to hide it or thumbs-up to confirm it's correct",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Signals are voteable in three places: the TUI member detail, the shared HTML page, and over the MCP standup_practice_feedback tool",
+          "areas": [
+            "standup",
+            "general"
+          ]
+        },
+        {
+          "text": "An optional LLM pass can catch untracked work that was mentioned in a ticket without linking it",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.50.0",
       "date": "2026-08-02",
       "summary": "Daily Standup now asks for the meeting transcript instead of waiting for one. Paste it from your clipboard, pipe it in, drag the file across, or point Standup at the folder your recordings already land in — Zoom, Google Meet and Downloads are detected and offered by name. When a standup runs and no transcript is ever checked against it, Standup says so: quietly at first, in the terminal only, and after several in a row it offers to turn the feature off rather than keep asking. An optional reminder can arrive shortly after your standup, and only when something is actually unchecked.",
