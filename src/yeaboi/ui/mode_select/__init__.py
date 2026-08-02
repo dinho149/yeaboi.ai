@@ -4015,12 +4015,16 @@ _SCHEDULE_CHANNEL_DESCS = {
     "slack": "post to Slack (needs SLACK_WEBHOOK_URL)",
     "email": "send via SMTP (needs STANDUP_SMTP_* settings)",
 }
+# Minutes AFTER the standup for the transcript reminder; 0 = no reminder. The
+# offset is not a config column: the existence of the OS job IS the setting, so
+# there is nothing to migrate or keep in sync.
+_REMINDER_PRESETS = [0, 30, 60, 120]
 
 
 def _run_standup_schedule_wizard(
     console: Console, live, read_key, frame_time, supports_timeout, session_id: str
 ) -> str:
-    """Option-list schedule wizard: Time → Lead → Days → Channels → Enable.
+    """Option-list wizard: Time → Lead → Days → Channels → Enable → Remind.
 
     Arrow-key driven replacement for the old free-text Configure flow. Esc steps
     BACK one step (Esc on the first step cancels); Time/Lead offer presets plus a
@@ -4029,7 +4033,16 @@ def _run_standup_schedule_wizard(
     installed or removed; the returned message surfaces on the hub.
     """
     from yeaboi.standup.delivery import ALL_CHANNELS
-    from yeaboi.standup.scheduler import install_schedule, parse_time, remove_schedule, weekday_list, weekday_spec
+    from yeaboi.standup.scheduler import (
+        JOB_TRANSCRIPT_REMINDER,
+        get_schedule_status,
+        install_schedule,
+        install_transcript_reminder,
+        parse_time,
+        remove_schedule,
+        weekday_list,
+        weekday_spec,
+    )
     from yeaboi.standup.store import StandupStore
 
     with StandupStore(_ana_dbp) as store:
@@ -4039,6 +4052,9 @@ def _run_standup_schedule_wizard(
     days = set(weekday_list(existing.get("weekdays", "1-5")))
     channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
     enabled = bool(existing.get("enabled"))
+    # The installed job is the source of truth for the reminder — nothing in the
+    # database records it, so we ask the OS.
+    remind_after = 30 if get_schedule_status(session_id, JOB_TRANSCRIPT_REMINDER).get("installed") else 0
     logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
     def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:
@@ -4064,7 +4080,7 @@ def _run_standup_schedule_wizard(
                 current_prompt = f"Invalid value — {prompt}"
 
     index = 0
-    while index < 5:
+    while index < 6:
         if index == 0:
             options = [(t, "") for t in _SCHEDULE_TIME_PRESETS]
             if time_val in _SCHEDULE_TIME_PRESETS:
@@ -4096,7 +4112,7 @@ def _run_standup_schedule_wizard(
                     parse_time(raw)  # raises ValueError on bad input
                     return raw.strip()
 
-                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/5)", time_val, _parse_hhmm)
+                custom = _custom_text("Standup time (HH:MM)", "Set up schedule  (1/6)", time_val, _parse_hhmm)
                 if custom is not None:
                     time_val = custom
                     index += 1
@@ -4127,7 +4143,7 @@ def _run_standup_schedule_wizard(
             else:
                 custom = _custom_text(
                     "Minutes before the standup",
-                    "Set up schedule  (2/5)",
+                    "Set up schedule  (2/6)",
                     str(lead_val),
                     lambda raw: max(0, int(raw)),
                 )
@@ -4170,7 +4186,7 @@ def _run_standup_schedule_wizard(
             else:
                 channels = [ALL_CHANNELS[i] for i in sorted(got)]
                 index += 1
-        else:
+        elif index == 4:
             got = _run_schedule_choice_step(
                 console,
                 live,
@@ -4189,6 +4205,29 @@ def _run_standup_schedule_wizard(
                 index -= 1
             else:
                 enabled = got == 0
+                index += 1
+        else:
+            initial = _REMINDER_PRESETS.index(remind_after) if remind_after in _REMINDER_PRESETS else 0
+            got = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("No reminder", "the standup itself will mention what went unchecked"),
+                    ("30 minutes after", "while the recording is still fresh"),
+                    ("1 hour after", ""),
+                    ("2 hours after", ""),
+                ],
+                initial=initial,
+                step_index=5,
+                heading="Remind you to drop the meeting transcript?",
+            )
+            if got == "back":
+                index -= 1
+            else:
+                remind_after = _REMINDER_PRESETS[got]
                 index += 1
         logger.info("standup schedule wizard: moved to step %d (session=%s)", index, session_id)
 
@@ -4219,8 +4258,24 @@ def _run_standup_schedule_wizard(
             transcript_dir=existing.get("transcript_dir", ""),
             transcript_review_enabled=existing.get("transcript_review_enabled", True),
         )
-    msg = install_schedule(session_id, time_val, weekdays, lead_val) if enabled else remove_schedule(session_id)
-    logger.info("standup schedule wizard: saved session=%s enabled=%s -> %s", session_id, enabled, msg)
+    if enabled:
+        msg = install_schedule(session_id, time_val, weekdays, lead_val)
+        # A reminder is only meaningful alongside a scheduled standup; when the
+        # schedule is off, remove_schedule below tears BOTH kinds down, so a
+        # disabled standup can never leave notifications firing.
+        if remind_after:
+            msg += "  " + install_transcript_reminder(session_id, time_val, weekdays, remind_after)
+        else:
+            remove_schedule(session_id, kind=JOB_TRANSCRIPT_REMINDER)
+    else:
+        msg = remove_schedule(session_id)  # every kind
+    logger.info(
+        "standup schedule wizard: saved session=%s enabled=%s remind_after=%s -> %s",
+        session_id,
+        enabled,
+        remind_after,
+        msg,
+    )
     return msg
 
 

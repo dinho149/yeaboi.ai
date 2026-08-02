@@ -465,6 +465,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --standup-run: prompt for your update + confirm (timed) before generating. "
         "What the scheduler opens in a terminal; falls back to headless when no TTY.",
     )
+    # The second scheduled job: fires AFTER the standup, posts one desktop
+    # notification if any standup went unchecked, and exits. No terminal, no LLM.
+    parser.add_argument(
+        "--standup-remind-transcript",
+        action="store_true",
+        default=False,
+        help="Post a desktop reminder if standups went unchecked against their meetings (used by the OS scheduler).",
+    )
 
     # ── Team learning flags ───────────────────────────────────────────────
     parser.add_argument(
@@ -979,6 +987,51 @@ def _run_standup(args: argparse.Namespace) -> int:
     except Exception as e:
         logging.getLogger(__name__).error("Standup run failed: %s", e, exc_info=True)
         print(f"Error: standup run failed: {e}", file=sys.stderr)
+        return 1
+
+
+def _run_transcript_reminder(args: argparse.Namespace) -> int:
+    """Post one desktop reminder if standups went unchecked. Returns an exit code.
+
+    The second job the OS scheduler installs, firing shortly AFTER the standup —
+    the moment the recording has just landed and the meeting is still in mind.
+
+    Deliberately tiny: no LLM, no collectors, no terminal window. It asks the
+    same deterministic question the hub card asks, and if the answer is "nothing
+    to say" it exits silently. A scheduled job that speaks only when it has
+    something to report is one you leave installed.
+
+    # See docs: "Daily Standup" — scheduling
+    """
+    from yeaboi.logging_setup import attach_mode_handler, configure_logging
+    from yeaboi.paths import get_db_path
+    from yeaboi.sessions import SessionStore
+
+    configure_logging()
+    attach_mode_handler("standup")
+
+    session_id = args.standup_session
+    if not session_id or session_id == "latest":
+        with SessionStore(get_db_path()) as store:
+            session_id = store.get_latest_session_id()
+    if not session_id:
+        print("Error: no session found to check transcripts for.", file=sys.stderr)
+        return 2
+
+    try:
+        from yeaboi.standup.delivery import notify_desktop
+        from yeaboi.standup.engine import transcript_nudge
+
+        nudge = transcript_nudge(session_id)
+        if not nudge:
+            logging.getLogger(__name__).info("transcript reminder: nothing to say for %s", session_id)
+            return 0
+        notify_desktop("Standup transcript", nudge.message)
+        print(nudge.message)
+        return 0
+    except Exception as e:
+        logging.getLogger(__name__).error("Transcript reminder failed: %s", e, exc_info=True)
+        print(f"Error: transcript reminder failed: {e}", file=sys.stderr)
         return 1
 
 
@@ -2181,6 +2234,9 @@ def main(argv: list[str] | None = None) -> None:
     # with no TUI/splash. Runs before the interactive setup below.
     if args.standup_run:
         sys.exit(_run_standup(args))
+
+    if args.standup_remind_transcript:
+        sys.exit(_run_transcript_reminder(args))
 
     # ── Non-interactive headless flow ────────────────────────────────────────
     # Runs the full pipeline without any TUI, splash, or interactive input.

@@ -95,6 +95,48 @@ class TestTerminalDelivery:
         assert TerminalDelivery().send(_report()) is True
 
 
+class TestNotifyDesktop:
+    """The report-free notification path, for callers that have something to say
+    that is not a StandupReport (the transcript reminder)."""
+
+    def test_posts_a_notification_without_a_report(self, monkeypatch):
+        run = MagicMock()
+        monkeypatch.setattr(delivery.platform, "system", lambda: "Darwin")
+        monkeypatch.setattr(delivery.subprocess, "run", run)
+        assert delivery.notify_desktop("Standup transcript", "5 standups unchecked") is True
+        assert run.call_args[0][0][0] == "osascript"
+
+    def test_the_argv_injection_guard_moved_with_it(self, monkeypatch):
+        """`on run argv` is a security control, not a style choice — it has to
+        still hold on the path the reminder uses."""
+        evil = 'pwned" & (do shell script "touch /tmp/x") & "\\`end'
+        monkeypatch.setattr(delivery.platform, "system", lambda: "Darwin")
+        run = MagicMock()
+        monkeypatch.setattr(delivery.subprocess, "run", run)
+        assert delivery.notify_desktop("Title", evil) is True
+        argv = run.call_args[0][0]
+        script = argv[2]
+        assert "on run argv" in script
+        assert evil not in script  # never interpolated into the AppleScript source
+        assert evil in argv  # delivered as data
+
+    def test_body_is_clipped(self, monkeypatch):
+        monkeypatch.setattr(delivery.platform, "system", lambda: "Linux")
+        run = MagicMock()
+        monkeypatch.setattr(delivery.subprocess, "run", run)
+        delivery.notify_desktop("T", "x" * 500)
+        assert len(run.call_args[0][0][2]) == 200
+
+    def test_unsupported_platform_returns_false(self, monkeypatch):
+        monkeypatch.setattr(delivery.platform, "system", lambda: "Windows")
+        assert delivery.notify_desktop("T", "B") is False
+
+    def test_a_missing_helper_never_raises(self, monkeypatch):
+        monkeypatch.setattr(delivery.platform, "system", lambda: "Linux")
+        monkeypatch.setattr(delivery.subprocess, "run", MagicMock(side_effect=FileNotFoundError))
+        assert delivery.notify_desktop("T", "B") is False
+
+
 class TestDesktopDelivery:
     def test_macos_uses_osascript(self, monkeypatch):
         monkeypatch.setattr(delivery.platform, "system", lambda: "Darwin")

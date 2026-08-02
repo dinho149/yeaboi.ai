@@ -1155,6 +1155,72 @@ class TestStandupReviewInputs:
         assert "2026-07-30" in out
 
 
+class TestTranscriptReminderCommand:
+    """The second scheduled job: passive, tiny, and silent when it has nothing
+    to say — a job that only speaks when it matters is one you leave installed."""
+
+    @pytest.fixture(autouse=True)
+    def _no_real_logging(self, monkeypatch):
+        # The handler is a scheduled-run concern, not what these tests are about,
+        # and configure_logging() latches globally — running it for real here
+        # silently no-ops the later test_logging_setup assertions.
+        monkeypatch.setattr("yeaboi.logging_setup.configure_logging", lambda *a, **k: None)
+        monkeypatch.setattr("yeaboi.logging_setup.attach_mode_handler", lambda *a, **k: None)
+
+    def _args(self, session="s1"):
+        from yeaboi.cli import build_parser
+
+        return build_parser().parse_args(["--standup-remind-transcript", "--standup-session", session])
+
+    def _run(self, monkeypatch, nudge, *, session="s1"):
+        from yeaboi.cli import _run_transcript_reminder
+
+        sent: list[tuple[str, str]] = []
+        monkeypatch.setattr("yeaboi.sessions.SessionStore.get_latest_session_id", lambda self: session)
+        monkeypatch.setattr("yeaboi.standup.engine.transcript_nudge", lambda sid, **kw: nudge)
+        monkeypatch.setattr("yeaboi.standup.delivery.notify_desktop", lambda t, b: sent.append((t, b)) or True)
+        return _run_transcript_reminder(self._args(session)), sent
+
+    def _nudge(self, **over):
+        from yeaboi.agent.state import TranscriptNudge
+
+        base = dict(missed_dates=("2026-07-30",), streak=5, level="reminder", message="5 standups unchecked")
+        base.update(over)
+        return TranscriptNudge(**base)
+
+    def test_flag_is_registered(self):
+        assert self._args().standup_remind_transcript is True
+
+    def test_notifies_when_standups_went_unchecked(self, monkeypatch, capsys):
+        code, sent = self._run(monkeypatch, self._nudge())
+        assert code == 0
+        assert sent == [("Standup transcript", "5 standups unchecked")]
+        assert "5 standups unchecked" in capsys.readouterr().out
+
+    def test_silent_when_there_is_nothing_to_say(self, monkeypatch):
+        from yeaboi.agent.state import TranscriptNudge
+
+        code, sent = self._run(monkeypatch, TranscriptNudge())
+        assert code == 0
+        assert sent == []
+
+    def test_no_session_exits_2(self, monkeypatch, capsys):
+        code, _sent = self._run(monkeypatch, self._nudge(), session="")
+        assert code == 2
+        assert "no session found" in capsys.readouterr().err
+
+    def test_a_failure_never_escapes(self, monkeypatch, capsys):
+        from yeaboi.cli import _run_transcript_reminder
+
+        def _boom(sid, **kw):
+            raise RuntimeError("db gone")
+
+        monkeypatch.setattr("yeaboi.sessions.SessionStore.get_latest_session_id", lambda self: "s1")
+        monkeypatch.setattr("yeaboi.standup.engine.transcript_nudge", _boom)
+        assert _run_transcript_reminder(self._args()) == 1
+        assert "transcript reminder failed" in capsys.readouterr().err
+
+
 class TestStandupTranscriptFlag:
     def test_review_is_on_by_default(self):
         assert build_parser().parse_args(["standup"]).review_transcripts is True

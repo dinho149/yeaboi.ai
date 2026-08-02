@@ -72,6 +72,10 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    offers the detected recording folders by name — suggest that when the user
    would rather point-and-pick than find the path themselves.
    Installing the OS schedule that fires it daily is done from the yeaboi TUI.
+   That wizard also offers a transcript reminder — a second scheduled job that
+   posts a desktop notification 30 minutes to 2 hours after the standup, only
+   when standups have actually gone unchecked. Point the user at it when they
+   say they keep forgetting to save the recording.
 
 If there are no sessions yet, suggest planning first (`/yeaboi:plan-sprint`) —
 the standup needs a session for sprint dates and team context.

@@ -30,20 +30,35 @@ logger = logging.getLogger(__name__)
 _LABEL_PREFIX = "com.yeaboi.standup"
 _CRON_MARKER = "# yeaboi-standup"
 
+# Two kinds of job per session, and every install/remove/status path takes the
+# kind. That symmetry is the whole safety property here: if teardown missed one
+# kind, disabling your standup would leave a job still firing notifications at
+# you — the worst possible failure for a feature whose job is to nudge.
+JOB_STANDUP = "standup"
+JOB_TRANSCRIPT_REMINDER = "transcript-reminder"
+_JOB_KINDS = (JOB_STANDUP, JOB_TRANSCRIPT_REMINDER)
+# Suffix appended to the label/marker/dir for non-default kinds, so the existing
+# standup job keeps the exact identifiers it already installed on real machines.
+_KIND_SUFFIX = {JOB_STANDUP: "", JOB_TRANSCRIPT_REMINDER: "-transcript"}
 
-def _executable_args(session_id: str) -> list[str]:
-    """Return the argv the scheduler should invoke — the *interactive* standup run.
 
-    Prefer an installed ``yeaboi`` on PATH (or the legacy ``scrum-agent`` alias);
-    fall back to ``python -m yeaboi.cli`` so a dev/venv install still schedules
-    correctly. The run is interactive: attached to a terminal it prompts for the
-    user's update + confirm; with no TTY it falls back to headless generate+deliver.
-    """
+def _base_argv() -> list[str]:
+    """Prefer an installed ``yeaboi`` (or the legacy alias); fall back to the module."""
     exe = shutil.which("yeaboi") or shutil.which("scrum-agent")
-    if exe:
-        base = [exe]
-    else:
-        base = [sys.executable, "-m", "yeaboi.cli"]
+    return [exe] if exe else [sys.executable, "-m", "yeaboi.cli"]
+
+
+def _executable_args(session_id: str, kind: str = JOB_STANDUP) -> list[str]:
+    """Return the argv the scheduler should invoke for one job kind.
+
+    The standup run is *interactive*: attached to a terminal it prompts for the
+    user's update + confirm; with no TTY it falls back to headless
+    generate+deliver. The reminder is the opposite — passive, no terminal, it
+    posts one desktop notification and exits.
+    """
+    base = _base_argv()
+    if kind == JOB_TRANSCRIPT_REMINDER:
+        return [*base, "--standup-remind-transcript", "--standup-session", session_id]
     return [*base, "--standup-run", "--standup-interactive", "--standup-session", session_id]
 
 
@@ -138,18 +153,21 @@ def _launch_agents_dir() -> Path:
     return Path.home() / "Library" / "LaunchAgents"
 
 
-def _plist_path(session_id: str) -> Path:
-    safe = session_id.replace("/", "_")
-    return _launch_agents_dir() / f"{_LABEL_PREFIX}.{safe}.plist"
+def _label(session_id: str, kind: str = JOB_STANDUP) -> str:
+    return f"{_LABEL_PREFIX}{_KIND_SUFFIX[kind]}.{session_id.replace('/', '_')}"
+
+
+def _plist_path(session_id: str, kind: str = JOB_STANDUP) -> Path:
+    return _launch_agents_dir() / f"{_label(session_id, kind)}.plist"
 
 
 def _launcher_dir() -> Path:
     return Path.home() / "Library" / "Application Support" / "yeaboi"
 
 
-def _session_launcher_dir(session_id: str) -> Path:
+def _session_launcher_dir(session_id: str, kind: str = JOB_STANDUP) -> Path:
     safe = session_id.replace("/", "_")
-    return _launcher_dir() / f"standup-{safe}"
+    return _launcher_dir() / f"standup{_KIND_SUFFIX[kind]}-{safe}"
 
 
 def _wrapper_path(session_id: str) -> Path:
@@ -216,56 +234,66 @@ def _write_launcher_scripts(session_id: str) -> Path:
     return wrapper
 
 
-def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int]) -> str:
-    label = f"{_LABEL_PREFIX}.{session_id.replace('/', '_')}"
+def _install_launchd(session_id: str, hour: int, minute: int, weekdays: list[int], kind: str = JOB_STANDUP) -> str:
+    label = _label(session_id, kind)
     # launchd Weekday: Sunday=0/7, Monday=1..Saturday=6. Our 1-7 (Mon-Sun) maps
     # directly except Sunday which we send as 0.
     intervals = [{"Hour": hour, "Minute": minute, "Weekday": (0 if wd == 7 else wd)} for wd in weekdays]
 
-    # The wrapper opens a Terminal window (via osascript) so the run is
-    # INTERACTIVE (it can prompt for the user's update). LaunchAgents run in the
-    # GUI session, so AppleScript to Terminal works while the user is logged in.
-    wrapper = _write_launcher_scripts(session_id)
-    _legacy_launcher_path(session_id).unlink(missing_ok=True)
+    if kind == JOB_TRANSCRIPT_REMINDER:
+        # No wrapper, no osascript, no Terminal. That whole stack exists only to
+        # make the standup run INTERACTIVE; a notification is passive, so the
+        # reminder runs the CLI directly and never surprises anyone with a
+        # window opening.
+        program = _executable_args(session_id, kind)
+    else:
+        # The wrapper opens a Terminal window (via osascript) so the run is
+        # INTERACTIVE (it can prompt for the user's update). LaunchAgents run in
+        # the GUI session, so AppleScript to Terminal works while logged in.
+        program = [str(_write_launcher_scripts(session_id))]
+        _legacy_launcher_path(session_id).unlink(missing_ok=True)
     plist = {
         "Label": label,
-        "ProgramArguments": [str(wrapper)],
+        "ProgramArguments": program,
         "StartCalendarInterval": intervals,
         "RunAtLoad": False,
     }
-    path = _plist_path(session_id)
+    path = _plist_path(session_id, kind)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as fh:
         plistlib.dump(plist, fh)
-    logger.info("scheduler[launchd]: wrote %s (wrapper %s)", path, wrapper)
+    logger.info("scheduler[launchd]: wrote %s (kind=%s)", path, kind)
     # Reload: bootout any existing instance, then bootstrap the fresh plist.
     subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
     proc = subprocess.run(["launchctl", "load", str(path)], capture_output=True, text=True, timeout=10, check=False)
     if proc.returncode != 0:
         logger.warning("scheduler[launchd]: load returned %d: %s", proc.returncode, proc.stderr.strip())
+    if kind == JOB_TRANSCRIPT_REMINDER:
+        return f"Transcript reminder set for {hour:02d}:{minute:02d} ({path.name})"
     return f"Scheduled via launchd at {hour:02d}:{minute:02d} — opens a terminal to prompt ({path.name})"
 
 
-def _cleanup_launchers(session_id: str) -> None:
+def _cleanup_launchers(session_id: str, kind: str = JOB_STANDUP) -> None:
     """Remove the wrapper/run.sh pair (and the pre-overhaul .sh launcher)."""
-    shutil.rmtree(_session_launcher_dir(session_id), ignore_errors=True)
-    _legacy_launcher_path(session_id).unlink(missing_ok=True)
+    shutil.rmtree(_session_launcher_dir(session_id, kind), ignore_errors=True)
+    if kind == JOB_STANDUP:
+        _legacy_launcher_path(session_id).unlink(missing_ok=True)
 
 
-def _remove_launchd(session_id: str) -> str:
-    path = _plist_path(session_id)
+def _remove_launchd(session_id: str, kind: str = JOB_STANDUP) -> str:
+    path = _plist_path(session_id, kind)
     if not path.exists():
-        _cleanup_launchers(session_id)
+        _cleanup_launchers(session_id, kind)
         return "No launchd schedule found."
     subprocess.run(["launchctl", "unload", str(path)], capture_output=True, timeout=10, check=False)
     path.unlink(missing_ok=True)
-    _cleanup_launchers(session_id)
-    logger.info("scheduler[launchd]: removed %s", path)
+    _cleanup_launchers(session_id, kind)
+    logger.info("scheduler[launchd]: removed %s (kind=%s)", path, kind)
     return "Removed launchd schedule."
 
 
-def _status_launchd(session_id: str) -> dict:
-    path = _plist_path(session_id)
+def _status_launchd(session_id: str, kind: str = JOB_STANDUP) -> dict:
+    path = _plist_path(session_id, kind)
     return {"platform": "launchd", "installed": path.exists(), "path": str(path)}
 
 
@@ -287,38 +315,48 @@ def _write_crontab(lines: list[str]) -> None:
     subprocess.run(["crontab", "-"], input=content, text=True, timeout=10, check=True)
 
 
-def _cron_marker(session_id: str) -> str:
-    return f"{_CRON_MARKER} {session_id}"
+def _cron_marker(session_id: str, kind: str = JOB_STANDUP) -> str:
+    """The trailing comment that identifies one job.
+
+    The two kinds cannot collide: the standup marker ends with a SPACE before
+    the session id ("# yeaboi-standup s1"), so it is not a substring of
+    "# yeaboi-standup-transcript s1". Removing one kind therefore never takes the
+    other with it — which matters, because leaving a reminder firing after the
+    user disabled their standup is the worst failure this feature has.
+    """
+    return f"{_CRON_MARKER}{_KIND_SUFFIX[kind]} {session_id}"
 
 
-def _install_cron(session_id: str, hour: int, minute: int, weekdays: list[int]) -> str:
-    marker = _cron_marker(session_id)
+def _install_cron(session_id: str, hour: int, minute: int, weekdays: list[int], kind: str = JOB_STANDUP) -> str:
+    marker = _cron_marker(session_id, kind)
     # cron weekday: 0-6 (Sun-Sat) or 1-7; we send Mon-Sun as 1-7 (7 = Sunday, accepted by cron).
     dow = ",".join(str(wd) for wd in weekdays)
-    cmd = " ".join(_executable_args(session_id))
+    cmd = " ".join(_executable_args(session_id, kind))
     entry = f"{minute} {hour} * * {dow} {cmd} {marker}"
 
-    # Remove any prior block for this session, then append the new one.
+    # Remove any prior block for this session+kind, then append the new one.
     lines = [ln for ln in _read_crontab() if marker not in ln]
     lines.append(entry)
     _write_crontab(lines)
-    logger.info("scheduler[cron]: installed entry for %s", session_id)
+    logger.info("scheduler[cron]: installed entry for %s (kind=%s)", session_id, kind)
+    if kind == JOB_TRANSCRIPT_REMINDER:
+        return f"Transcript reminder set for {hour:02d}:{minute:02d}"
     return f"Scheduled via crontab at {hour:02d}:{minute:02d}"
 
 
-def _remove_cron(session_id: str) -> str:
-    marker = _cron_marker(session_id)
+def _remove_cron(session_id: str, kind: str = JOB_STANDUP) -> str:
+    marker = _cron_marker(session_id, kind)
     lines = _read_crontab()
     kept = [ln for ln in lines if marker not in ln]
     if len(kept) == len(lines):
         return "No crontab schedule found."
     _write_crontab(kept)
-    logger.info("scheduler[cron]: removed entry for %s", session_id)
+    logger.info("scheduler[cron]: removed entry for %s (kind=%s)", session_id, kind)
     return "Removed crontab schedule."
 
 
-def _status_cron(session_id: str) -> dict:
-    marker = _cron_marker(session_id)
+def _status_cron(session_id: str, kind: str = JOB_STANDUP) -> dict:
+    marker = _cron_marker(session_id, kind)
     installed = any(marker in ln for ln in _read_crontab())
     return {"platform": "cron", "installed": installed, "path": "crontab"}
 
@@ -336,17 +374,27 @@ def _is_linux() -> bool:
     return sys.platform.startswith("linux")
 
 
-def install_schedule(session_id: str, standup_time: str, weekdays: str = "1-5", lead_minutes: int = 10) -> str:
-    """Install/replace the OS schedule for a session's standup. Returns a status message.
+def install_schedule(
+    session_id: str,
+    standup_time: str,
+    weekdays: str = "1-5",
+    lead_minutes: int = 10,
+    kind: str = JOB_STANDUP,
+) -> str:
+    """Install/replace an OS job for a session. Returns a status message.
 
     ``standup_time`` is when the standup HAPPENS (e.g. "10:00"); the job fires
-    ``lead_minutes`` earlier so the summary is delivered before the meeting.
+    ``lead_minutes`` earlier so the summary is delivered before the meeting. A
+    NEGATIVE lead therefore fires *after* the standup, which is exactly what the
+    transcript reminder wants — ``run_time`` already wraps mod 1440, so no new
+    time arithmetic is needed for it.
     """
     hour, minute = run_time(standup_time, lead_minutes)  # lead-adjusted fire time
     wd = weekday_list(weekdays)
     logger.info(
-        "install_schedule: session=%s standup=%s lead=%d fire=%02d:%02d weekdays=%s",
+        "install_schedule: session=%s kind=%s standup=%s lead=%d fire=%02d:%02d weekdays=%s",
         session_id,
+        kind,
         standup_time,
         lead_minutes,
         hour,
@@ -355,36 +403,59 @@ def install_schedule(session_id: str, standup_time: str, weekdays: str = "1-5", 
     )
     try:
         if _is_macos():
-            return _install_launchd(session_id, hour, minute, wd)
+            return _install_launchd(session_id, hour, minute, wd, kind)
         if _is_linux():
-            return _install_cron(session_id, hour, minute, wd)
+            return _install_cron(session_id, hour, minute, wd, kind)
     except (subprocess.SubprocessError, OSError) as e:
         logger.error("install_schedule failed: %s", e)
         return f"Failed to install schedule: {e}"
     return "Scheduling is not supported on this platform — use on-demand standup runs instead."
 
 
-def remove_schedule(session_id: str) -> str:
-    """Remove the OS schedule for a session's standup. Returns a status message."""
-    logger.info("remove_schedule: session=%s", session_id)
+def install_transcript_reminder(
+    session_id: str, standup_time: str, weekdays: str = "1-5", after_minutes: int = 45
+) -> str:
+    """Remind the user to drop the transcript, ``after_minutes`` AFTER the standup."""
+    return install_schedule(
+        session_id, standup_time, weekdays, lead_minutes=-int(after_minutes), kind=JOB_TRANSCRIPT_REMINDER
+    )
+
+
+def remove_schedule(session_id: str, kind: str | None = None) -> str:
+    """Remove a session's OS job(s). ``kind=None`` removes EVERY kind.
+
+    Removing everything is the default on purpose. A user who turns their
+    standup off has turned the whole thing off, and a reminder still firing
+    afterwards is the worst failure this feature can have — so the safe
+    behaviour is what you get by not thinking about it.
+    """
+    kinds = _JOB_KINDS if kind is None else (kind,)
+    logger.info("remove_schedule: session=%s kinds=%s", session_id, ",".join(kinds))
+    messages: list[str] = []
     try:
-        if _is_macos():
-            return _remove_launchd(session_id)
-        if _is_linux():
-            return _remove_cron(session_id)
+        for one in kinds:
+            if _is_macos():
+                messages.append(_remove_launchd(session_id, one))
+            elif _is_linux():
+                messages.append(_remove_cron(session_id, one))
+            else:
+                return "Scheduling is not supported on this platform."
     except (subprocess.SubprocessError, OSError) as e:
         logger.error("remove_schedule failed: %s", e)
         return f"Failed to remove schedule: {e}"
-    return "Scheduling is not supported on this platform."
+    # Report the removal that actually happened; "no schedule found" from the
+    # kind that was never installed is noise.
+    removed = [m for m in messages if m.startswith("Removed")]
+    return removed[0] if removed else (messages[0] if messages else "No schedule found.")
 
 
-def get_schedule_status(session_id: str) -> dict:
-    """Return {platform, installed, path} describing the current schedule state."""
+def get_schedule_status(session_id: str, kind: str = JOB_STANDUP) -> dict:
+    """Return {platform, installed, path} describing one job's state."""
     try:
         if _is_macos():
-            return _status_launchd(session_id)
+            return _status_launchd(session_id, kind)
         if _is_linux():
-            return _status_cron(session_id)
+            return _status_cron(session_id, kind)
     except (subprocess.SubprocessError, OSError) as e:
         logger.warning("get_schedule_status failed: %s", e)
     return {"platform": "unsupported", "installed": False, "path": ""}

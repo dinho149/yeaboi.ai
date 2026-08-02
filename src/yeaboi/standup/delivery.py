@@ -60,6 +60,41 @@ class TerminalDelivery(NotificationDelivery):
         return True
 
 
+def notify_desktop(title: str, body: str) -> bool:
+    """Post one native desktop notification. No ``StandupReport`` required.
+
+    Split out of :class:`DesktopDelivery` so a caller with something to say that
+    is not a report — the transcript reminder — can say it without the ABC, the
+    channel registry or a fabricated report standing in for one.
+    """
+    body = (body or "")[:200]
+    system = platform.system()
+    logger.info("delivery[desktop]: system=%s", system)
+    try:
+        if system == "Darwin":
+            # SECURITY: body/title are LLM-generated (from Jira/git/transcript data), so they
+            # must never be interpolated into the AppleScript source — a crafted string could
+            # break out of the quoted literal and AppleScript can `do shell script`. Instead we
+            # pass them as runtime arguments via `on run argv`; AppleScript treats argv items as
+            # opaque data, never code, so no escaping is needed and injection is impossible.
+            script = "on run argv\n  display notification (item 1 of argv) with title (item 2 of argv)\nend run"
+            subprocess.run(
+                ["osascript", "-e", script, body, title],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+        elif system == "Linux":
+            subprocess.run(["notify-send", title, body], check=True, capture_output=True, timeout=10)
+        else:
+            logger.warning("delivery[desktop]: unsupported platform %s", system)
+            return False
+        return True
+    except (FileNotFoundError, subprocess.SubprocessError) as e:
+        logger.error("delivery[desktop] failed: %s", e)
+        return False
+
+
 class DesktopDelivery(NotificationDelivery):
     """Post a native desktop notification (macOS osascript / Linux notify-send)."""
 
@@ -69,32 +104,7 @@ class DesktopDelivery(NotificationDelivery):
         title = f"Daily Standup — {report.confidence_label or report.date}"
         # One-line body: confidence + team summary head.
         body = report.team_summary or report.confidence_rationale or "Standup ready."
-        body = body[:200]
-        system = platform.system()
-        logger.info("delivery[desktop]: system=%s", system)
-        try:
-            if system == "Darwin":
-                # SECURITY: body/title are LLM-generated (from Jira/git/transcript data), so they
-                # must never be interpolated into the AppleScript source — a crafted string could
-                # break out of the quoted literal and AppleScript can `do shell script`. Instead we
-                # pass them as runtime arguments via `on run argv`; AppleScript treats argv items as
-                # opaque data, never code, so no escaping is needed and injection is impossible.
-                script = "on run argv\n  display notification (item 1 of argv) with title (item 2 of argv)\nend run"
-                subprocess.run(
-                    ["osascript", "-e", script, body, title],
-                    check=True,
-                    capture_output=True,
-                    timeout=10,
-                )
-            elif system == "Linux":
-                subprocess.run(["notify-send", title, body], check=True, capture_output=True, timeout=10)
-            else:
-                logger.warning("delivery[desktop]: unsupported platform %s", system)
-                return False
-            return True
-        except (FileNotFoundError, subprocess.SubprocessError) as e:
-            logger.error("delivery[desktop] failed: %s", e)
-            return False
+        return notify_desktop(title, body)
 
 
 class SlackDelivery(NotificationDelivery):

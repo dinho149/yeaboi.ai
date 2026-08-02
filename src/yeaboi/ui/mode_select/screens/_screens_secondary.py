@@ -3090,7 +3090,7 @@ def _build_standup_team_member_screen(
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
-_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable"]
+_SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable", "Remind"]
 
 
 def _build_standup_schedule_step_screen(
