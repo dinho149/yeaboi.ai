@@ -712,16 +712,6 @@ def _analysis_setup_title(width: int, height: int):
     return analysis_title(width=width)
 
 
-# Which component's sub-sources belong under each area. Two areas read the same
-# "code" row (an AI-footprint scan and a health scan run over the same hosts).
-_FEATURE_COMPONENT: dict[str, str] = {
-    "delivery": "delivery",
-    "ai_footprint": "code",
-    "code_health": "code",
-    "documentation": "docs",
-}
-
-
 def _build_analysis_feature_screen(
     available: dict[str, bool],
     checked: set[str],
@@ -730,14 +720,8 @@ def _build_analysis_feature_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
-    grid: dict[str, list[str]] | None = None,
 ) -> Panel:
-    """First Analysis card: choose independently runnable result areas.
-
-    ``grid`` maps component -> its configured sub-sources. Pass it and a selected
-    area lists the sources it will actually read, indented beneath it — the
-    information that used to need a whole separate SOURCES step to see.
-    """
+    """First Analysis card: choose independently runnable result areas."""
     theme = ANALYSIS_THEME
     runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
     all_checked = bool(runnable) and runnable <= checked
@@ -769,54 +753,21 @@ def _build_analysis_feature_screen(
                 label_w=label_w,
             )
         )
-    # Nest each selected area's sources under it. Only when selected: an unticked
-    # area reads nothing, so listing its sources would claim otherwise.
-    if grid:
-        nested: list[Text] = []
-        cursor_row = cursor  # the cursor indexes AREAS; nesting shifts their positions
-        for row_index, feature in enumerate([None, *_ANALYSIS_FEATURE_KEYS]):
-            if row_index == cursor:
-                cursor_row = len(nested)
-            nested.append(rows[row_index])
-            if feature is None or feature not in checked:
-                continue
-            srcs = grid.get(_FEATURE_COMPONENT.get(feature, "")) or []
-            for i, src in enumerate(srcs):
-                line = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
-                line.append("└ " if i == len(srcs) - 1 else "├ ", style=theme.dim)
-                line.append(_SUBSOURCE_TITLES.get(src, src), style=theme.muted)
-                nested.append(line)
-        rows, cursor = nested, cursor_row
-
-    footer = (
-        f"{len(checked)} selected  ·  press Run Analysis or hit Enter"
-        if checked
-        else "Select at least one available area"
-    )
+    footer = f"{len(checked)} selected" if checked else "Select at least one available area"
     header = _analysis_setup_header(
         "Areas",
         "Arrows move · Space selects · A selects all · Enter continues",
         message=message,
     )
-    # The go button sits at the foot of the page, below the list, so the screen
-    # reads top-to-bottom: pick your areas, then run. Only once something is
-    # picked — there is nothing to run otherwise.
-    btn_top, btn_mid, btn_bot = build_action_buttons(["Run Analysis"], 0) if checked else (Text(""), Text(""), Text(""))
     content = Group(
         Text(""),
         _analysis_setup_title(width, height),
         Text(""),
         *header,
-        _analysis_toggle_viewport(rows, cursor, height=height, header_h=16),
-        Text(_PAD + footer, style=theme.accent_bright),
-        Text(""),
-        btn_top,
-        btn_mid,
-        btn_bot,
+        _analysis_toggle_viewport(rows, cursor, height=height),
+        Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
     )
-    panel = build_page_panel(content, theme=ANALYSIS_THEME, height=height)
-    panel._feature_actions = ["Run Analysis"] if checked else []
-    return panel
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_component_select_screen(
