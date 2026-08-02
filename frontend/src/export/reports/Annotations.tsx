@@ -43,7 +43,8 @@ export function Annotations({ rows }: { rows: readonly AnnotationRow[] }) {
               {row.text}
             </p>
             <p className={styles['annotationMeta']}>
-              {row.avatar ? <span aria-hidden="true">{row.avatar} </span> : null}
+              {/* Space inside the expression — JSX strips it before a newline. */}
+              {row.avatar ? <span aria-hidden="true">{`${row.avatar} `}</span> : null}
               {row.author ? <span>{row.author}</span> : <span>Anonymous</span>}
               {/* Where it was left. The Markdown twin says this too, and a note
                   anchored to one member reading as a document-level note is a

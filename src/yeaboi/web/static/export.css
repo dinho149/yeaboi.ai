@@ -370,7 +370,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_1h7hg_15 {
+._h2_1xdoh_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -382,21 +382,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_1h7hg_27 {
+._bullets_1xdoh_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_1h7hg_27 li + li {
+._bullets_1xdoh_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_1h7hg_27 li::marker {
+._bullets_1xdoh_27 li::marker {
   color: var(--accent);
 }
 
-._lede_1h7hg_41 {
+._lede_1xdoh_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -409,12 +409,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._empty_1h7hg_54 {
+._empty_1xdoh_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_1h7hg_59 {
+._footnote_1xdoh_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -424,20 +424,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_1h7hg_69 {
+._split_1xdoh_69 {
   margin: var(--s4) 0;
 }
-._split_1h7hg_69 > * + * {
+._split_1xdoh_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_1h7hg_76 {
+._trend_1xdoh_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_1h7hg_82 {
+._people_1xdoh_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -445,7 +445,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_1h7hg_90 {
+._person_1xdoh_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -454,7 +454,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_1h7hg_99 {
+._identity_1xdoh_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -467,33 +467,33 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_1h7hg_112 {
+._mixes_1xdoh_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_1h7hg_112 > * + * {
+._mix_1xdoh_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_1h7hg_122 {
+._projects_1xdoh_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_1h7hg_122 {
+._project_1xdoh_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_1h7hg_131 {
+._projectIndex_1xdoh_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_1h7hg_138 {
+._chips_1xdoh_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
@@ -504,13 +504,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_1h7hg_138 {
+  ._chips_1xdoh_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_1h7hg_155 {
+._why_1xdoh_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -522,12 +522,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_1h7hg_167 {
+._votes_1xdoh_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_1h7hg_167 {
+._vote_1xdoh_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -538,18 +538,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_1h7hg_183 {
+._skipped_1xdoh_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_1h7hg_188 {
+._notes_1xdoh_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_1h7hg_194 {
+._transcript_1xdoh_194 {
   font-size: var(--fs-s);
 }
 
@@ -558,7 +558,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_1h7hg_203 {
+._columns_1xdoh_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -567,14 +567,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_1h7hg_203 {
+._column_1xdoh_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_1h7hg_219 {
+._columnTitle_1xdoh_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -586,75 +586,75 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_1h7hg_231 {
+._count_1xdoh_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_1h7hg_203 ._bullets_1h7hg_27 li::marker {
+._column_1xdoh_203 ._bullets_1xdoh_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_1h7hg_239 {
+._byline_1xdoh_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_1h7hg_246 {
+._reactions_1xdoh_246 {
   margin-left: var(--s1);
 }
-._status_1h7hg_249 {
+._status_1xdoh_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_1h7hg_256 {
+._confidence_1xdoh_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_1h7hg_263 {
+._rationale_1xdoh_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_1h7hg_270 {
+._activity_1xdoh_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_1h7hg_270 > * + * {
+._activity_1xdoh_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_1h7hg_280 {
+._activityRow_1xdoh_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_1h7hg_286 {
+._activityName_1xdoh_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_1h7hg_292 {
+._activityTotal_1xdoh_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_1h7hg_299 {
+._member_1xdoh_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -663,10 +663,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_1h7hg_308 {
+._blocked_1xdoh_308 {
   border-left-color: var(--danger);
 }
-._memberHead_1h7hg_311 {
+._memberHead_1xdoh_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -674,18 +674,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_1h7hg_319 {
+._memberSummary_1xdoh_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* The intro renders as terse clause bullets (a ul), one thought per line. */
-ul._memberSummary_1h7hg_319 {
+ul._memberSummary_1xdoh_319 {
   display: grid;
   gap: calc(var(--s1) / 2);
   padding-left: 1.1em;
 }
-._since_1h7hg_330 {
+._since_1xdoh_330 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -693,7 +693,7 @@ ul._memberSummary_1h7hg_319 {
 
 /* `auto-fit`, so two active categories share the width instead of leaving a
    third of the card empty to preserve a three-column shape. */
-._categories_1h7hg_338 {
+._categories_1xdoh_338 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--s3);
@@ -701,33 +701,33 @@ ul._memberSummary_1h7hg_319 {
 }
 /* The border colour is set inline per category tone, so Tickets / Code / Docs
    land in consistently colour-coded positions across every card. */
-._category_1h7hg_346 {
+._category_1xdoh_346 {
   border-left: 2px solid var(--line);
   padding-left: var(--s2);
 }
-._category_1h7hg_346 > * + * {
+._category_1xdoh_346 > * + * {
   margin-top: var(--s2);
 }
-._categoryHead_1h7hg_353 {
+._categoryHead_1xdoh_353 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
 }
 
-._chipRow_1h7hg_359 {
+._chipRow_1xdoh_359 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
 /* The jump strip above the member cards: who's here, who's blocked, one glance. */
-._memberStrip_1h7hg_366 {
+._memberStrip_1xdoh_366 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberJump_1h7hg_372 {
+._memberJump_1xdoh_372 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -739,13 +739,13 @@ ul._memberSummary_1h7hg_319 {
   font-size: var(--fs-xs);
   text-decoration: none;
 }
-._memberJump_1h7hg_372:hover {
+._memberJump_1xdoh_372:hover {
   border-color: var(--line-strong);
 }
-._memberJumpBlocked_1h7hg_387 {
+._memberJumpBlocked_1xdoh_387 {
   border-color: var(--danger);
 }
-._memberJumpFlag_1h7hg_390 {
+._memberJumpFlag_1xdoh_390 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -754,7 +754,7 @@ ul._memberSummary_1h7hg_319 {
 }
 
 /* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
-._evidence_1h7hg_399 {
+._evidence_1xdoh_399 {
   display: grid;
   gap: var(--s1);
   margin: var(--s2) 0 0;
@@ -763,37 +763,37 @@ ul._memberSummary_1h7hg_319 {
 }
 /* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
    fold would render fully open with a lying "+ N more" button. */
-._evidence_1h7hg_399[hidden] {
+._evidence_1xdoh_399[hidden] {
   display: none;
 }
-._evidenceRow_1h7hg_411 {
+._evidenceRow_1xdoh_411 {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--s2);
   font-size: var(--fs-xs);
 }
-._evidenceRef_1h7hg_418 {
+._evidenceRef_1xdoh_418 {
   font-family: var(--font-mono);
   white-space: nowrap;
 }
-._evidenceTitle_1h7hg_422 {
+._evidenceTitle_1xdoh_422 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._evidenceMeta_1h7hg_427 {
+._evidenceMeta_1xdoh_427 {
   grid-column: 2 / -1;
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
 /* Board status with its glyph — colour comes inline via toneVar; the word is
    always beside it (never colour alone). */
-._evidenceStatus_1h7hg_434 {
+._evidenceStatus_1xdoh_434 {
   white-space: nowrap;
 }
 /* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
-._commitToggle_1h7hg_438 {
+._commitToggle_1xdoh_438 {
   padding: 0;
   border: 0;
   background: none;
@@ -804,10 +804,10 @@ ul._memberSummary_1h7hg_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._commitToggle_1h7hg_438:hover {
+._commitToggle_1xdoh_438:hover {
   color: var(--text);
 }
-._evidenceChildren_1h7hg_452 {
+._evidenceChildren_1xdoh_452 {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--s1);
@@ -817,10 +817,10 @@ ul._memberSummary_1h7hg_319 {
   list-style: none;
 }
 /* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._evidenceChildren_1h7hg_452[hidden] {
+._evidenceChildren_1xdoh_452[hidden] {
   display: none;
 }
-._moreToggle_1h7hg_465 {
+._moreToggle_1xdoh_465 {
   margin-top: var(--s1);
   padding: 0;
   border: 0;
@@ -832,11 +832,11 @@ ul._memberSummary_1h7hg_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._moreToggle_1h7hg_465:hover {
+._moreToggle_1xdoh_465:hover {
   color: var(--text);
 }
 
-._note_1h7hg_188 {
+._note_1xdoh_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -846,7 +846,7 @@ ul._memberSummary_1h7hg_319 {
   line-height: 1.6;
 }
 
-._quote_1h7hg_491 {
+._quote_1xdoh_491 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -859,7 +859,7 @@ ul._memberSummary_1h7hg_319 {
   white-space: pre-wrap;
 }
 
-._screenshot_1h7hg_504 {
+._screenshot_1xdoh_504 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -867,26 +867,26 @@ ul._memberSummary_1h7hg_319 {
   border-radius: var(--r-m);
 }
 
-._details_1h7hg_512 {
+._details_1xdoh_512 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_1h7hg_519 {
+._coverage_1xdoh_519 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_1h7hg_526 {
+._dot_1xdoh_526 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_1h7hg_531 {
+._dim_1xdoh_531 {
   color: var(--dim);
 }
 
@@ -894,14 +894,14 @@ ul._memberSummary_1h7hg_319 {
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_1h7hg_539 {
+._headingEmoji_1xdoh_539 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_1h7hg_546 {
+._cardId_1xdoh_546 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -912,57 +912,57 @@ ul._memberSummary_1h7hg_319 {
   white-space: nowrap;
 }
 
-._feature_1h7hg_557,
-._story_1h7hg_558,
-._sprint_1h7hg_559 {
+._feature_1xdoh_557,
+._story_1xdoh_558,
+._sprint_1xdoh_559 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_1h7hg_558 {
+._story_1xdoh_558 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_1h7hg_566 {
+._storyText_1xdoh_566 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_1h7hg_573 {
+._storyGroup_1xdoh_573 {
   margin-bottom: var(--s5);
 }
-._storyGroup_1h7hg_573 > .eyebrow {
+._storyGroup_1xdoh_573 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_1h7hg_583 {
+._criteria_1xdoh_583 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_1h7hg_583 li {
+._criteria_1xdoh_583 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_1h7hg_583 li + li {
+._criteria_1xdoh_583 li + li {
   margin-top: var(--s1);
 }
-._criteria_1h7hg_583 b {
+._criteria_1xdoh_583 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_1h7hg_604 {
+._dod_1xdoh_604 {
   margin-top: var(--s3);
 }
-._dod_1h7hg_604 ul {
+._dod_1xdoh_604 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -970,22 +970,22 @@ ul._memberSummary_1h7hg_319 {
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_1h7hg_615 {
+._exempt_1xdoh_615 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_1h7hg_620 {
+._fields_1xdoh_620 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_1h7hg_620 > * + * {
+._field_1xdoh_620 > * + * {
   margin-top: var(--s2);
 }
 
-._target_1h7hg_630 {
+._target_1xdoh_630 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -994,36 +994,36 @@ ul._memberSummary_1h7hg_319 {
   line-height: 1.6;
 }
 
-._capacity_1h7hg_639 {
+._capacity_1xdoh_639 {
   margin-top: var(--s4);
 }
-._capacity_1h7hg_639 > * + * {
+._capacity_1xdoh_639 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_1h7hg_646 {
+._sprintGoal_1xdoh_646 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_1h7hg_652 {
+._reduced_1xdoh_652 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_1h7hg_655 {
+._reducedNote_1xdoh_655 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_1h7hg_661 {
+._taskGroup_1xdoh_661 {
   margin-bottom: var(--s5);
 }
-._taskGroup_1h7hg_661 > .eyebrow {
+._taskGroup_1xdoh_661 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_1h7hg_668 {
+._groupSubject_1xdoh_668 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1031,7 +1031,7 @@ ul._memberSummary_1h7hg_319 {
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_1h7hg_676 {
+._taskNote_1xdoh_676 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1041,44 +1041,44 @@ ul._memberSummary_1h7hg_319 {
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_1h7hg_686 {
+._document_1xdoh_686 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_1h7hg_686 > * + * {
+._document_1xdoh_686 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_1h7hg_686 h2,
-._document_1h7hg_686 h3,
-._document_1h7hg_686 h4,
-._document_1h7hg_686 h5,
-._document_1h7hg_686 h6 {
+._document_1xdoh_686 h2,
+._document_1xdoh_686 h3,
+._document_1xdoh_686 h4,
+._document_1xdoh_686 h5,
+._document_1xdoh_686 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_1h7hg_686 h2 { font-size: var(--fs-m); }
-._document_1h7hg_686 h3 { font-size: var(--fs-s); }
-._document_1h7hg_686 h4,
-._document_1h7hg_686 h5,
-._document_1h7hg_686 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_1h7hg_686 ul,
-._document_1h7hg_686 ol {
+._document_1xdoh_686 h2 { font-size: var(--fs-m); }
+._document_1xdoh_686 h3 { font-size: var(--fs-s); }
+._document_1xdoh_686 h4,
+._document_1xdoh_686 h5,
+._document_1xdoh_686 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1xdoh_686 ul,
+._document_1xdoh_686 ol {
   padding-left: 1.2rem;
 }
-._document_1h7hg_686 li + li {
+._document_1xdoh_686 li + li {
   margin-top: var(--s1);
 }
-._document_1h7hg_686 li::marker {
+._document_1xdoh_686 li::marker {
   color: var(--accent);
 }
-._document_1h7hg_686 code {
+._document_1xdoh_686 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1086,18 +1086,18 @@ ul._memberSummary_1h7hg_319 {
   background: var(--card);
   color: var(--accent2);
 }
-._document_1h7hg_686 a {
+._document_1xdoh_686 a {
   color: var(--accent);
 }
 
-._quote_1h7hg_491 {
+._quote_1xdoh_491 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_1h7hg_742 {
+._code_1xdoh_742 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1110,13 +1110,13 @@ ul._memberSummary_1h7hg_319 {
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_1h7hg_742 code {
+._code_1xdoh_742 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_1h7hg_761 {
+._rule_1xdoh_761 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
@@ -1124,13 +1124,13 @@ ul._memberSummary_1h7hg_319 {
 
 /* ── Team profile: generated blocks ───────────────────────────── */
 
-._blocks_1h7hg_769 > * + * {
+._blocks_1xdoh_769 > * + * {
   margin-top: var(--s4);
 }
 
 /* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
    accent — it groups within a section rather than announcing a new one. */
-._h3_1h7hg_775 {
+._h3_1xdoh_775 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -1139,48 +1139,48 @@ ul._memberSummary_1h7hg_319 {
   color: var(--muted);
   margin: 0 0 var(--s2);
 }
-._kvWrap_1h7hg_784 > * + * {
+._kvWrap_1xdoh_784 > * + * {
   margin-top: var(--s2);
 }
 
 /* Label and value on one baseline. A `<dl>` rather than a table: these are
    facts about one thing, not rows that compare with each other. */
-._kv_1h7hg_784 {
+._kv_1xdoh_784 {
   display: grid;
   gap: 0;
   margin: 0;
   font-size: var(--fs-s);
 }
-._kv_1h7hg_784 > div {
+._kv_1xdoh_784 > div {
   display: grid;
   grid-template-columns: minmax(0, 14rem) 1fr;
   gap: var(--s3);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-._kv_1h7hg_784 > div:last-child {
+._kv_1xdoh_784 > div:last-child {
   border-bottom: none;
 }
-._kv_1h7hg_784 dt {
+._kv_1xdoh_784 dt {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._kv_1h7hg_784 dd {
+._kv_1xdoh_784 dd {
   margin: 0;
   line-height: 1.6;
   min-width: 0;
 }
 @media (max-width: 699px) {
-  ._kv_1h7hg_784 > div {
+  ._kv_1xdoh_784 > div {
     grid-template-columns: 1fr;
     gap: var(--s1);
   }
 }
 
-._cell_1h7hg_825 {
+._cell_1xdoh_825 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1189,32 +1189,32 @@ ul._memberSummary_1h7hg_319 {
 }
 /* Bounded rather than fluid: a proportion bar is only comparable down a column
    if every row draws the same track. */
-._cellBar_1h7hg_834 {
+._cellBar_1xdoh_834 {
   width: 90px;
   flex: none;
 }
-._cellNote_1h7hg_838 {
+._cellNote_1xdoh_838 {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._cellPerson_1h7hg_842 {
+._cellPerson_1xdoh_842 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._profileCards_1h7hg_848 {
+._profileCards_1xdoh_848 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
-._profileProse_1h7hg_853 {
+._profileProse_1xdoh_853 {
   font-size: var(--fs-s);
 }
 
 /* A caveat reads as a qualification of the section, not as one of its
    findings. */
-._note_1h7hg_188 {
+._note_1xdoh_188 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1224,17 +1224,17 @@ ul._memberSummary_1h7hg_319 {
 
 /* A finding worth stopping on. The rule and the wash are both derived from the
    tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_1h7hg_869 {
+._callout_1xdoh_869 {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
-  border-radius: var(--r2);
+  border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
-._callout_1h7hg_869 > * + * {
+._callout_1xdoh_869 > * + * {
   margin-top: var(--s2);
 }
-._callout_1h7hg_869 p {
+._callout_1xdoh_869 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -1245,16 +1245,16 @@ ul._memberSummary_1h7hg_319 {
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_1h7hg_122,
-  ._column_1h7hg_203,
-  ._lede_1h7hg_41,
-  ._callout_1h7hg_869 {
+  ._project_1xdoh_122,
+  ._column_1xdoh_203,
+  ._lede_1xdoh_41,
+  ._callout_1xdoh_869 {
     break-inside: avoid;
   }
-  ._h3_1h7hg_775 {
+  ._h3_1xdoh_775 {
     break-after: avoid;
   }
-  ._h2_1h7hg_15 {
+  ._h2_1xdoh_15 {
     break-after: avoid;
   }
 }
@@ -1262,42 +1262,42 @@ ul._memberSummary_1h7hg_319 {
 /* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
    the rules live with the other report sections rather than in a file of their
    own. Tokens only — no literal colours (test_web_frontend_guards). */
-._annotations_1h7hg_907 {
-  margin-block-start: var(--space-7);
+._annotations_1xdoh_907 {
+  margin-block-start: var(--s6);
   border-block-start: 1px solid var(--line);
-  padding-block-start: var(--space-5);
+  padding-block-start: var(--s5);
 }
 
-._annotationList_1h7hg_913 {
+._annotationList_1xdoh_913 {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--s3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-._annotation_1h7hg_907 {
+._annotation_1xdoh_907 {
   border-inline-start: 2px solid var(--line-strong);
-  padding-inline-start: var(--space-4);
+  padding-inline-start: var(--s4);
 }
 
-._annotationBody_1h7hg_926 {
+._annotationBody_1xdoh_926 {
   margin: 0;
 }
 
-._annotationMeta_1h7hg_930 {
+._annotationMeta_1xdoh_930 {
   display: flex;
-  gap: var(--space-2);
-  margin: var(--space-1) 0 0;
+  gap: var(--s2);
+  margin: var(--s1) 0 0;
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
-._annotationWhen_1h7hg_938 {
+._annotationWhen_1xdoh_938 {
   font-variant-numeric: tabular-nums;
 }
 
-._annotationWhere_1h7hg_942 {
+._annotationWhere_1xdoh_942 {
   font-style: italic;
 }
 /*
@@ -2336,113 +2336,180 @@ ul._memberSummary_1h7hg_319 {
    colours in a component stylesheet, and every width query has to sit on the
    breakpoint scale declared in design/tokens.css. */
 
-._wrap_106rh_5 {
+/* Block by default: almost every editable region is a `<p>`, a `<ul>` or a
+   `<blockquote>`, and the pencil is pinned to the corner of that box. See the
+   `inline` prop on `Editable` for the one call site that is not. */
+._wrap_an5bm_8 {
   position: relative;
+  display: block;
 }
 
-._wrap_106rh_5[data-edited='1'] {
-  border-block-end: 1px dashed var(--line-strong);
+._wrap_an5bm_8[data-inline='1'] {
+  display: inline;
 }
 
-._trigger_106rh_13,
-._edited_106rh_14,
-._add_106rh_15 {
+/* What is correctable has to be *visible*, not discoverable by sweeping a mouse
+   across the page. The tint only appears once a reader has named themselves —
+   an explicit "I intend to change something" — so a document being read stays a
+   document, and a document being corrected shows its seams. */
+._wrap_an5bm_8[data-editable='1']:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: var(--r-s);
+}
+
+/* Already corrected. A wash rather than a rule: the wrapper is a block box, so
+   an underline here is a full-width dashed line across the card that reads as a
+   stray divider rather than as a mark on the passage above it.
+
+   Never colour alone — the marker button in the corner carries the word
+   "(edited)" for a screen reader and a monochrome printout. */
+._wrap_an5bm_8[data-edited='1'] {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: var(--r-s);
+}
+
+._trigger_an5bm_37,
+._edited_an5bm_38,
+._add_an5bm_39 {
   border: 0;
   background: none;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  padding: 0 var(--space-1);
+  padding: 0 var(--s1);
 }
 
-._trigger_106rh_13:hover,
-._edited_106rh_14:hover,
-._add_106rh_15:hover {
-  color: var(--fg);
+._trigger_an5bm_37:hover,
+._edited_an5bm_38:hover,
+._add_an5bm_39:hover {
+  color: var(--text);
 }
 
-._trigger_106rh_13:focus-visible,
-._edited_106rh_14:focus-visible,
-._add_106rh_15:focus-visible {
+._trigger_an5bm_37:focus-visible,
+._edited_an5bm_38:focus-visible,
+._add_an5bm_39:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* The pencil is quiet until the region is hovered or something in it has focus.
-   A document covered in always-visible controls stops reading as a document. */
-._trigger_106rh_13 {
-  opacity: 0;
+/* Quiet, but never invisible. This was `opacity: 0` until hover, which meant the
+   only way to find out that a passage could be corrected was to happen to put
+   the pointer on it — and on a touch screen there is no hover at all, so the
+   affordance did not exist. Dimmed is enough to keep it out of the way of
+   reading; it comes up to full on hover or focus.
+
+   Pinned to the corner via `.marks` rather than left in the flow: after block
+   children a trailing inline button lands on a line of its own, reading as a
+   stray glyph belonging to nothing. */
+._trigger_an5bm_37 {
+  opacity: 0.55;
 }
 
-._wrap_106rh_5:hover ._trigger_106rh_13,
-._trigger_106rh_13:focus-visible {
+._marks_an5bm_67 {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+/* Inline regions keep their markers in the text flow — there is no box corner
+   to pin them to, and the line they sit on is the passage itself. */
+._wrap_an5bm_8[data-inline='1'] ._marks_an5bm_67 {
+  position: static;
+  display: inline;
+}
+
+._wrap_an5bm_8:hover ._trigger_an5bm_37,
+._trigger_an5bm_37:focus-visible {
   opacity: 1;
 }
 
-._editor_106rh_48 {
+._editor_an5bm_95 {
   display: block;
 }
 
-._input_106rh_52 {
+._input_an5bm_99 {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg-raised);
-  color: var(--fg);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
   font: inherit;
-  padding: var(--space-2);
+  padding: var(--s2);
 }
 
-._actions_106rh_62 {
+._actions_an5bm_109 {
   display: flex;
-  gap: var(--space-2);
-  margin-block-start: var(--space-2);
+  gap: var(--s2);
+  margin-block-start: var(--s2);
 }
 
-._error_106rh_68 {
+._error_an5bm_115 {
   display: block;
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--s2);
   color: var(--danger);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
-._busy_106rh_75 {
-  margin-inline-start: var(--space-2);
+._busy_an5bm_122 {
+  margin-inline-start: var(--s2);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
-._list_106rh_81 {
+._list_an5bm_128 {
   display: block;
 }
 
-._addRow_106rh_85 {
+._addRow_an5bm_132 {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--s2);
   align-items: center;
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--s2);
+  /* Fill the slot rather than shrink to the button beside it: inside `.slot`'s
+     flex row this row is otherwise sized by its content, which left a note
+     field narrower than the sentence anyone would type into it. */
+  flex: 1 1 100%;
 }
 
-._slot_106rh_92 {
+._addRow_an5bm_132 ._input_an5bm_99 {
+  flex: 1 1 12rem;
+}
+
+._slot_an5bm_137 {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
+  gap: var(--s2);
+  margin-block-start: var(--s3);
 }
 
-._name_106rh_99 {
+/* "Add" is an invitation, so it gets an outline. Left bare it was a run of grey
+   text among other grey text, which is not a control anyone finds. */
+._add_an5bm_39 {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-s);
+  padding: var(--s1) var(--s2);
+}
+
+._add_an5bm_39:hover {
+  border-color: var(--accent);
+}
+
+._name_an5bm_166 {
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg-raised);
-  color: var(--fg);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
   font: inherit;
-  padding: var(--space-2);
+  padding: var(--s2);
 }
 
 /* Visually hidden but read aloud. Every state this file signals with a shape or
    a border also carries a word, because a dotted underline is invisible to a
    screen reader and to a monochrome printout alike. */
-._srOnly_106rh_111 {
+._srOnly_an5bm_178 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2456,11 +2523,17 @@ ul._memberSummary_1h7hg_319 {
 /* An editable document prints as a document: the affordances are not part of
    what anyone wants on paper. */
 @media print {
-  ._trigger_106rh_13,
-  ._addRow_106rh_85,
-  ._slot_106rh_92,
-  ._busy_106rh_75 {
+  ._trigger_an5bm_37,
+  ._addRow_an5bm_132,
+  ._slot_an5bm_137,
+  ._busy_an5bm_122 {
     display: none;
+  }
+
+  /* The dotted seam is an affordance too. What was *edited* keeps its mark,
+     because that is a fact about the document rather than a control. */
+  ._wrap_an5bm_8[data-editable='1'] {
+    border-block-end: 0;
   }
 }
 /*
@@ -2733,129 +2806,213 @@ ul._memberSummary_1h7hg_319 {
     color: var(--muted);
   }
 }
+/* The invitation to correct the document, above the report.
+
+   Tokens only — test_web_frontend_guards forbids a literal colour here, and
+   every name below has to be one design/tokens.css actually declares: an
+   undefined custom property drops its declaration silently, which is how this
+   whole stack shipped unstyled the first time. */
+
+._bar_hkjgg_8 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-block-end: var(--s5);
+  border: 1px solid var(--line-strong);
+  /* The accent edge is the only thing that distinguishes this from the report's
+     own cards at a glance, and it is what makes it read as an invitation
+     attached to the document rather than another section of it. */
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  padding: var(--s3) var(--s4);
+}
+
+._text_hkjgg_24 {
+  flex: 1 1 20rem;
+  margin: 0;
+}
+
+._title_hkjgg_29 {
+  display: block;
+  font-weight: 600;
+}
+
+._hint_hkjgg_34,
+._caveat_hkjgg_35 {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+._hint_hkjgg_34 {
+  margin-block-start: var(--s1);
+}
+
+._caveat_hkjgg_35 {
+  flex: 1 1 100%;
+  font-size: var(--fs-xs);
+}
+
+._controls_hkjgg_51 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+._nameInput_hkjgg_58 {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: var(--s2);
+}
+
+._avatars_hkjgg_69 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  flex: 1 1 100%;
+}
+
+._avatarPick_hkjgg_76 {
+  border: 1px solid transparent;
+  border-radius: var(--r-s);
+  background: none;
+  cursor: pointer;
+  font-size: var(--fs-m);
+  line-height: 1;
+  padding: var(--s1);
+}
+
+._avatarPick_hkjgg_76:hover {
+  border-color: var(--line-strong);
+}
+
+._avatarPick_hkjgg_76[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+._closed_hkjgg_94 {
+  margin: 0 0 var(--s5);
+  color: var(--muted);
+  font-size: var(--fs-s);
+}
+
+/* Visually hidden but read aloud — the name field's label, which is otherwise
+   carried only by a placeholder, and a placeholder is not a label. */
+._srOnly_hkjgg_102 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A control on paper is furniture that cost a reader ink. */
+@media print {
+  ._bar_hkjgg_8,
+  ._closed_hkjgg_94 {
+    display: none;
+  }
+}
 /* The edit history dock. Tokens only, and every breakpoint on the declared
    scale in design/tokens.css. */
 
-._dock_17360_4 {
-  position: sticky;
-  bottom: var(--space-4);
+/* Fixed, not sticky. `position: sticky` needs room to travel inside its
+   containing block, and this is the last child of the page — so it had none,
+   and the dock only ever appeared once you had scrolled to the very bottom.
+   Which is exactly where a reader is least likely to be when they notice
+   something wrong. */
+._dock_19d9f_9 {
+  position: fixed;
+  inset-block-end: var(--s4);
+  inset-inline-end: var(--s4);
+  z-index: var(--z-console);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--space-2);
-  margin-block-start: var(--space-7);
+  gap: var(--s2);
 }
 
-._people_17360_14 {
+._people_19d9f_20 {
   display: flex;
-  gap: var(--space-1);
+  gap: var(--s1);
 }
 
-._panel_17360_19 {
-  width: 100%;
-  max-width: 34rem;
+._panel_19d9f_25 {
+  /* Fixed positioning means the containing block is the viewport, so an
+     unqualified 34rem overflows a narrow phone off the side of the page. */
+  width: min(34rem, calc(100vw - var(--s5)));
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg-raised);
-  padding: var(--space-4);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  padding: var(--s4);
   max-height: 60vh;
   overflow-y: auto;
+  /* It floats over the report now, so it needs to lift off it. */
+  box-shadow: var(--shadow-2);
 }
 
 /* Said in words, not implied by an icon: every name in this panel was typed by
    whoever held the link. */
-._caveat_17360_32 {
-  margin: 0 0 var(--space-3);
+._caveat_19d9f_41 {
+  margin: 0 0 var(--s3);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
-._identity_17360_38 {
-  margin-block-end: var(--space-4);
-}
+/* Naming yourself lives in `editbar.module.css` now: it is the entrance to the
+   feature, and it was unreachable while it sat inside this collapsed panel. */
 
-._identityRow_17360_42 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-._label_17360_49 {
-  display: block;
-  margin-block-end: var(--space-1);
-  color: var(--muted);
-  font-size: var(--text-sm);
-}
-
-._nameInput_17360_56 {
-  flex: 1 1 12rem;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
-  padding: var(--space-2);
-}
-
-._avatars_17360_66 {
-  display: flex;
-  gap: var(--space-1);
-}
-
-._avatarPick_17360_71 {
-  border: 1px solid transparent;
-  border-radius: var(--radius-2);
-  background: none;
-  cursor: pointer;
-  font-size: var(--text-md);
-  padding: var(--space-1);
-}
-
-._avatarPick_17360_71[aria-pressed='true'] {
-  border-color: var(--accent);
-}
-
-._list_17360_84 {
+._list_19d9f_50 {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--s3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-._row_17360_92 {
+._row_19d9f_58 {
   border-block-start: 1px solid var(--line);
-  padding-block-start: var(--space-2);
+  padding-block-start: var(--s2);
 }
 
-._what_17360_97,
-._value_17360_98,
-._meta_17360_99,
-._filter_17360_100,
-._empty_17360_101,
-._closed_17360_102 {
+._what_19d9f_63,
+._value_19d9f_64,
+._meta_19d9f_65,
+._filter_19d9f_66,
+._empty_19d9f_67 {
   margin: 0;
 }
 
-._value_17360_98 {
-  margin-block-start: var(--space-1);
+._value_19d9f_64 {
+  margin-block-start: var(--s1);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 
-._meta_17360_99 {
+._meta_19d9f_65 {
   display: flex;
-  gap: var(--space-3);
-  margin-block-start: var(--space-1);
+  gap: var(--s3);
+  margin-block-start: var(--s1);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
   font-variant-numeric: tabular-nums;
 }
 
-._where_17360_121,
-._clear_17360_122,
-._revert_17360_123 {
+._where_19d9f_86,
+._clear_19d9f_87,
+._revert_19d9f_88 {
   border: 0;
   background: none;
   color: var(--accent);
@@ -2865,13 +3022,12 @@ ul._memberSummary_1h7hg_319 {
   text-decoration: underline;
 }
 
-._empty_17360_101,
-._closed_17360_102 {
+._empty_19d9f_67 {
   color: var(--muted);
 }
 
 @media print {
-  ._dock_17360_4 {
+  ._dock_19d9f_9 {
     display: none;
   }
 }

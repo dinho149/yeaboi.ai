@@ -67,7 +67,59 @@ class _OutputHandler(BaseHTTPRequestHandler):
         token = self.server.token  # type: ignore[attr-defined]
         return bool(supplied) and secrets.compare_digest(supplied, token)
 
+    #: Whether *this* request's body has been taken off the socket.
+    _body_read = False
+
+    def handle_one_request(self) -> None:
+        """Reset per-request state, then handle it.
+
+        One handler instance serves every request on a keep-alive connection —
+        ``handle()`` loops over ``handle_one_request()`` — so anything stored on
+        ``self`` outlives the request that set it. Leaving ``_body_read`` True
+        from the previous request silently disables :meth:`_drain` for the next
+        one, which turns the guard off exactly when it is needed: after a
+        successful heartbeat, on the same connection, when a later request is
+        refused before its body is read.
+        """
+        self._body_read = False
+        super().handle_one_request()
+
+    def _drain(self) -> None:
+        """Consume an unread request body so the connection stays in sync.
+
+        ``protocol_version = "HTTP/1.1"`` means keep-alive, and every early
+        return in :meth:`do_POST` that answers *before* reading the body — an
+        unauthenticated edit, a heartbeat for a document that is not editable, an
+        unknown ``/api/`` path — leaves those bytes sitting in the socket. The
+        next request on that connection then begins mid-JSON, and
+        ``BaseHTTPRequestHandler`` reads ``{"pid":…}GET`` as a method name and
+        answers ``501 Unsupported method``.
+
+        So the cost of one rejected request is *every* request after it on the
+        same connection, which is not what a 404 is supposed to mean. A stale
+        token in a browser tab is enough to trigger it, and what the reader sees
+        is not a refusal but the whole page replaced by a server error.
+        """
+        if self._body_read or self.command != "POST":
+            return
+        self._body_read = True
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return
+        if length <= 0:
+            return
+        if length > _MAX_EDIT_BODY:
+            # Reading it is the exact denial-of-service the caps exist to
+            # prevent, so this one resynchronises by hanging up instead.
+            self.close_connection = True
+            return
+        self.rfile.read(length)
+
     def _send(self, code: int, body: bytes, content_type: str, *, csp: str | None = None) -> None:
+        # Before the response, never after: the body has to leave the socket
+        # while the connection is still ours to fix.
+        self._drain()
         send_document(self, code, body, content_type, csp=csp)
 
     def _json(self, code: int, payload: dict) -> None:
@@ -146,9 +198,17 @@ class _OutputHandler(BaseHTTPRequestHandler):
         if length > cap:
             self._json(413, {"error": "too large"})
             return None
+        self._body_read = True
         try:
             payload = json.loads(self.rfile.read(length) or b"{}")
         except (json.JSONDecodeError, ValueError):
+            # Body that will not parse after exactly `Content-Length` bytes is
+            # the signature of a mis-framed request: the declared length
+            # disagreed with what was sent, so the remainder is still queued and
+            # every subsequent request on this connection starts mid-JSON.
+            # `_drain` cannot help — the header it would trust is the one that
+            # lied. Hanging up is the only way back to a known position.
+            self.close_connection = True
             self._json(400, {"error": "bad json"})
             return None
         if not isinstance(payload, dict):

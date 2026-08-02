@@ -14,10 +14,7 @@
 import { useState } from 'react';
 
 import { Button } from '../../shared/Button';
-// Codegen'd from the server's own tuple. A hand-written copy here would be a
-// third list agreeing with nothing, and the server rejects what it does not
-// recognise — so a picker built from anything else offers dead options.
-import { AVATARS } from '../../types/enums';
+import { SELF_DECLARED } from './EditBar';
 import { formatOp, formatPath } from './paths';
 import styles from './history.module.css';
 import type { EditPerson, EditRow } from './state';
@@ -28,10 +25,16 @@ export interface HistoryProps {
   /** A path to filter to, or null for everything. */
   filter: string | null;
   onFilter(path: string | null): void;
+  /** Empty until this reader has named themselves in the bar at the top. */
   name: string;
-  avatar: string;
   editable: boolean;
-  onIdentity(name: string, avatar: string): void;
+  /**
+   * Send an un-named reader back to the bar. The dock is reachable from
+   * anywhere in a long document and the invitation is not, so this is the
+   * entrance for someone who scrolled first and decided to correct something
+   * second.
+   */
+  onWantToEdit(): void;
   onRevert(id: string): void;
   onFocusPath(path: string): void;
 }
@@ -42,15 +45,28 @@ export function History({
   filter,
   onFilter,
   name,
-  avatar,
   editable,
-  onIdentity,
+  onWantToEdit,
   onRevert,
   onFocusPath,
 }: HistoryProps) {
   const [open, setOpen] = useState(false);
   const shown = filter ? rows.filter((row) => row.path === filter) : rows;
   const ordered = [...shown].reverse();
+
+  // Nothing to dock: a closed document with no history has neither a record to
+  // show nor an invitation to make.
+  if (!editable && !rows.length) return null;
+
+  if (editable && !name) {
+    return (
+      <div className={styles['dock']}>
+        <Button onClick={onWantToEdit} size="s" tone="primary">
+          ✎ Correct this{rows.length ? ` · ${rows.length}` : ''}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className={styles['dock']}>
@@ -70,11 +86,7 @@ export function History({
 
       {open || filter ? (
         <div className={styles['panel']}>
-          <p className={styles['caveat']}>
-            Names are self-declared. Anyone with this link can edit, and can claim any name.
-          </p>
-
-          <Identity name={name} avatar={avatar} editable={editable} onIdentity={onIdentity} />
+          <p className={styles['caveat']}>{SELF_DECLARED}</p>
 
           {filter ? (
             <p className={styles['filter']}>
@@ -92,7 +104,9 @@ export function History({
               {ordered.map((row) => (
                 <li key={row.id} className={styles['row']}>
                   <p className={styles['what']}>
-                    <span aria-hidden="true">{row.avatar || '🙂'} </span>
+                    {/* Space inside the expression — JSX strips it before a
+                        newline, which runs the emoji into the name. */}
+                    <span aria-hidden="true">{`${row.avatar || '🙂'} `}</span>
                     <strong>{row.author || 'Someone'}</strong> {formatOp(row.op)}{' '}
                     <button
                       type="button"
@@ -120,56 +134,6 @@ export function History({
           )}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function Identity({
-  name,
-  avatar,
-  editable,
-  onIdentity,
-}: {
-  name: string;
-  avatar: string;
-  editable: boolean;
-  onIdentity(name: string, avatar: string): void;
-}) {
-  const [draft, setDraft] = useState(name);
-  if (!editable) return <p className={styles['closed']}>Editing is closed for this document.</p>;
-
-  return (
-    <div className={styles['identity']}>
-      <label className={styles['label']} htmlFor="editor-name">
-        {name ? 'Editing as' : 'Say who you are to start editing'}
-      </label>
-      <div className={styles['identityRow']}>
-        <input
-          id="editor-name"
-          className={styles['nameInput']}
-          value={draft}
-          placeholder="Your name"
-          onInput={(event) => setDraft((event.target as HTMLInputElement).value)}
-          onBlur={() => onIdentity(draft.trim(), avatar)}
-          onKeyDown={(event: KeyboardEvent) => {
-            if (event.key === 'Enter') onIdentity(draft.trim(), avatar);
-          }}
-        />
-        <span className={styles['avatars']}>
-          {AVATARS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={styles['avatarPick']}
-              aria-label={`Use the ${option} avatar`}
-              aria-pressed={option === avatar}
-              onClick={() => onIdentity(draft.trim() || name, option)}
-            >
-              {option}
-            </button>
-          ))}
-        </span>
-      </div>
     </div>
   );
 }

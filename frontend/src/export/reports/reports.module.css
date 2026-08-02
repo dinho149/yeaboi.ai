@@ -869,7 +869,7 @@ ul.memberSummary {
 .callout {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
-  border-radius: var(--r2);
+  border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
@@ -905,14 +905,14 @@ ul.memberSummary {
    the rules live with the other report sections rather than in a file of their
    own. Tokens only — no literal colours (test_web_frontend_guards). */
 .annotations {
-  margin-block-start: var(--space-7);
+  margin-block-start: var(--s6);
   border-block-start: 1px solid var(--line);
-  padding-block-start: var(--space-5);
+  padding-block-start: var(--s5);
 }
 
 .annotationList {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--s3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -920,7 +920,7 @@ ul.memberSummary {
 
 .annotation {
   border-inline-start: 2px solid var(--line-strong);
-  padding-inline-start: var(--space-4);
+  padding-inline-start: var(--s4);
 }
 
 .annotationBody {
@@ -929,10 +929,10 @@ ul.memberSummary {
 
 .annotationMeta {
   display: flex;
-  gap: var(--space-2);
-  margin: var(--space-1) 0 0;
+  gap: var(--s2);
+  margin: var(--s1) 0 0;
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
 .annotationWhen {

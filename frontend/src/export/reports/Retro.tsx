@@ -61,7 +61,7 @@ function Column({ column }: { column: RetroColumn }) {
           const reactions = reactionText(card);
           return (
             <li key={`${index}-${card.text.slice(0, 24)}`}>
-              <Field edit={card.edit} field="text" label="this card">
+              <Field edit={card.edit} field="text" label="this card" inline>
                 <>{card.text}</>
               </Field>{' '}
               <Attribution card={card} />

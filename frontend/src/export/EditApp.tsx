@@ -8,19 +8,21 @@
  * copy cannot disagree if only one set of components draws them.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { Theme } from '../runtime/theme';
 
 import { useBoardStream } from '../hooks/useBoardStream';
 import { loadSession, stripCredentialsFromUrl } from '../runtime/api';
 import { participantId, read, write } from '../runtime/storage';
+import { AVATARS } from '../types/enums';
 import { createBoardStore } from '../store/boardStore';
 import { useBoardSnapshot } from '../store/useBoard';
 import { Report } from './Report';
 import { Shell } from './Shell';
 import { createEditActions } from './actions';
 import type { EditBoot, ExportChrome, ExportReport } from './boot';
+import { EditBar } from './editing/EditBar';
 import { EditProvider, indexByPath, type Editing } from './editing/EditContext';
 import { History } from './editing/History';
 import type { EditDocState } from './editing/state';
@@ -28,6 +30,24 @@ import { useEditPresence } from './editing/useEditPresence';
 
 const NAME_KEY = 'yeaboi_editor_name';
 const AVATAR_KEY = 'yeaboi_editor_avatar';
+
+/**
+ * This browser's avatar, guaranteed to be one the server will accept.
+ *
+ * `clean_avatar` validates against the same codegen'd tuple and blanks anything
+ * it does not recognise — silently, because a rejected avatar is not worth
+ * refusing a correction over. So an avatar that is merely *plausible* does not
+ * fail loudly, it just vanishes: the default used to be a bare `'🙂'`, which is
+ * not in `AVATARS`, and every note added before anyone touched the picker was
+ * stored with no avatar at all. The elsewhere-`|| '🙂'` display fallbacks then
+ * painted one back, so the page looked right and the artifact did not.
+ *
+ * Derived from the tuple rather than written out, so it cannot drift from it.
+ */
+function storedAvatar(): string {
+  const saved = read('local', AVATAR_KEY);
+  return saved && (AVATARS as readonly string[]).includes(saved) ? saved : AVATARS[0];
+}
 
 export interface EditAppProps {
   chrome: ExportChrome;
@@ -71,9 +91,27 @@ export function EditApp({ chrome: bootChrome, report: bootReport, editing: boot,
   };
 
   const [name, setName] = useState(() => read('local', NAME_KEY) ?? '');
-  const [avatar, setAvatar] = useState(() => read('local', AVATAR_KEY) ?? '🙂');
+  const [avatar, setAvatar] = useState(storedAvatar);
   const [focused, setFocused] = useState('');
   const [historyPath, setHistoryPath] = useState<string | null>(null);
+
+  const nameInput = useRef<HTMLInputElement>(null);
+  const identify = useCallback((nextName: string, nextAvatar: string) => {
+    setName(nextName);
+    setAvatar(nextAvatar);
+    write('local', NAME_KEY, nextName);
+    write('local', AVATAR_KEY, nextAvatar);
+  }, []);
+  // The dock is reachable from anywhere; the invitation is at the top. Someone
+  // who scrolled first gets sent back to it rather than shown a second copy.
+  const wantToEdit = useCallback(() => {
+    const el = nameInput.current;
+    if (!el) return;
+    // No `behavior: 'smooth'` — a reduced-motion preference would have to be
+    // read and honoured, and there is nothing here worth animating.
+    el.scrollIntoView({ block: 'center' });
+    el.focus();
+  }, []);
 
   const identity = useCallback(() => ({ name, avatar }), [name, avatar]);
   const revision = useCallback(() => state.revision, [state.revision]);
@@ -106,6 +144,16 @@ export function EditApp({ chrome: bootChrome, report: bootReport, editing: boot,
   return (
     <EditProvider value={editing}>
       <Shell chrome={state.chrome} theme={theme}>
+        {/* Above the report, because the first thing a reader needs to know
+            about a correctable document is that it is one. */}
+        <EditBar
+          editable={state.editable}
+          name={name}
+          avatar={avatar}
+          count={state.edits.length}
+          onIdentity={identify}
+          inputRef={nameInput}
+        />
         <Report report={state.report} />
         <History
           rows={state.edits}
@@ -113,14 +161,8 @@ export function EditApp({ chrome: bootChrome, report: bootReport, editing: boot,
           filter={historyPath}
           onFilter={setHistoryPath}
           name={name}
-          avatar={avatar}
           editable={state.editable}
-          onIdentity={(nextName, nextAvatar) => {
-            setName(nextName);
-            setAvatar(nextAvatar);
-            write('local', NAME_KEY, nextName);
-            write('local', AVATAR_KEY, nextAvatar);
-          }}
+          onWantToEdit={wantToEdit}
           onRevert={(id) => void actions.revert(id)}
           onFocusPath={setFocused}
         />

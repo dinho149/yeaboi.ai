@@ -42,19 +42,34 @@ export interface EditableProps extends Common {
   children: ReactNode;
   /** Multi-line editor. Default true — most editable fields are prose. */
   multiline?: boolean;
+  /**
+   * Whether `children` is a run of text rather than blocks.
+   *
+   * Almost every editable region is a `<p>`, a `<ul>` or a `<blockquote>`, so
+   * the default is block: the wrapper is a block box and the pencil is pinned to
+   * its top corner, because a trailing inline button after block content lands
+   * on a line of its own with nothing to attach it to. A retro card's text is
+   * the exception — it sits inline next to its attribution — and gets the
+   * pencil in the flow after it.
+   *
+   * A prop and not a CSS guess: `display` cannot be chosen from the outside
+   * without knowing what was passed in, and getting it wrong is either an
+   * orphaned control or a broken line box.
+   */
+  inline?: boolean;
 }
 
-export function Editable({ path, label, value, children, multiline = true }: EditableProps) {
+export function Editable({ path, label, value, children, multiline = true, inline = false }: EditableProps) {
   const editing = useEditing();
   if (!editing) return <>{children}</>;
   return (
-    <EditableLive path={path} label={label} value={value} multiline={multiline}>
+    <EditableLive path={path} label={label} value={value} multiline={multiline} inline={inline}>
       {children}
     </EditableLive>
   );
 }
 
-function EditableLive({ path, label, value, children, multiline }: Required<EditableProps>) {
+function EditableLive({ path, label, value, children, multiline, inline }: Required<EditableProps>) {
   const editing = useEditing()!;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -83,36 +98,50 @@ function EditableLive({ path, label, value, children, multiline }: Required<Edit
 
   if (!open) {
     return (
-      <span className={styles['wrap']} data-edit-path={path} data-edited={history.length ? '1' : undefined}>
+      <span
+        className={styles['wrap']}
+        data-edit-path={path}
+        // Drives the dotted seam that shows what is correctable. Only once the
+        // reader has named themselves, so reading a document is not the same
+        // experience as correcting one.
+        data-editable={editing.enabled ? '1' : undefined}
+        data-edited={history.length ? '1' : undefined}
+        data-inline={inline ? '1' : undefined}
+      >
         {children}
-        {editing.enabled ? (
-          <button
-            ref={trigger}
-            type="button"
-            className={styles['trigger']}
-            aria-label={`Edit ${label}`}
-            onClick={() => {
-              setDraft(value);
-              setOpen(true);
-            }}
-          >
-            ✎
-          </button>
-        ) : null}
-        {history.length ? (
-          <button
-            type="button"
-            className={styles['edited']}
-            onClick={() => editing.showHistory(path)}
-            aria-label={`${label} was edited — show history`}
-          >
-            {/* Never colour alone: the word is what a screen reader and a
-                monochrome print both get. */}
-            <span aria-hidden="true">•</span>
-            <span className={styles['srOnly']}> (edited)</span>
-          </button>
-        ) : null}
-        {others.length ? <span className={styles['busy']}>{others.join(', ')} editing…</span> : null}
+        {/* One box for all the markers. Individually placed they each landed on
+            a line of their own after block children — a lone ✎ and a lone dot
+            floating under the passage, attached to nothing. */}
+        <span className={styles['marks']}>
+          {editing.enabled ? (
+            <button
+              ref={trigger}
+              type="button"
+              className={styles['trigger']}
+              aria-label={`Edit ${label}`}
+              onClick={() => {
+                setDraft(value);
+                setOpen(true);
+              }}
+            >
+              ✎
+            </button>
+          ) : null}
+          {history.length ? (
+            <button
+              type="button"
+              className={styles['edited']}
+              onClick={() => editing.showHistory(path)}
+              aria-label={`${label} was edited — show history`}
+            >
+              {/* Never colour alone: the word is what a screen reader and a
+                  monochrome print both get. */}
+              <span aria-hidden="true">•</span>
+              <span className={styles['srOnly']}> (edited)</span>
+            </button>
+          ) : null}
+          {others.length ? <span className={styles['busy']}>{others.join(', ')} editing…</span> : null}
+        </span>
       </span>
     );
   }
@@ -195,6 +224,9 @@ export function EditableSlot({ anchor, label }: EditableSlotProps) {
     <div className={styles['slot']}>
       {mode === 'field' ? (
         <input
+          // Naming the field is the first thing to do, so it takes the caret;
+          // the value row below stays unfocused until it is tabbed into.
+          autoFocus
           className={styles['name']}
           value={name}
           placeholder="Field name"
@@ -203,6 +235,7 @@ export function EditableSlot({ anchor, label }: EditableSlotProps) {
         />
       ) : null}
       <AddRow
+        autoFocus={mode === 'note'}
         label={mode === 'field' ? `Value for ${name || 'the field'}` : `Note on ${label}`}
         onSubmit={async (text) => {
           const outcome =
@@ -278,14 +311,29 @@ function AddRow({
   label,
   onSubmit,
   onCancel,
+  autoFocus = false,
 }: {
   label: string;
   onSubmit(text: string): Promise<{ ok: boolean; message?: string }>;
   onCancel?(): void;
+  /**
+   * Take focus on mount.
+   *
+   * True only where this row appeared *because* someone asked for it — the note
+   * and field slots, which are a click away. A list's add row is on screen from
+   * the start, and focusing that on load would steal the caret from a reader who
+   * only wanted to read.
+   */
+  autoFocus?: boolean;
 }) {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) input.current?.focus();
+  }, [autoFocus]);
 
   async function submit() {
     if (!text.trim()) return;
@@ -299,6 +347,7 @@ function AddRow({
   return (
     <div className={styles['addRow']}>
       <input
+        ref={input}
         className={styles['input']}
         type="text"
         value={text}

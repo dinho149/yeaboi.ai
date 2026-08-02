@@ -2,12 +2,36 @@
    colours in a component stylesheet, and every width query has to sit on the
    breakpoint scale declared in design/tokens.css. */
 
+/* Block by default: almost every editable region is a `<p>`, a `<ul>` or a
+   `<blockquote>`, and the pencil is pinned to the corner of that box. See the
+   `inline` prop on `Editable` for the one call site that is not. */
 .wrap {
   position: relative;
+  display: block;
 }
 
+.wrap[data-inline='1'] {
+  display: inline;
+}
+
+/* What is correctable has to be *visible*, not discoverable by sweeping a mouse
+   across the page. The tint only appears once a reader has named themselves —
+   an explicit "I intend to change something" — so a document being read stays a
+   document, and a document being corrected shows its seams. */
+.wrap[data-editable='1']:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: var(--r-s);
+}
+
+/* Already corrected. A wash rather than a rule: the wrapper is a block box, so
+   an underline here is a full-width dashed line across the card that reads as a
+   stray divider rather than as a mark on the passage above it.
+
+   Never colour alone — the marker button in the corner carries the word
+   "(edited)" for a screen reader and a monochrome printout. */
 .wrap[data-edited='1'] {
-  border-block-end: 1px dashed var(--line-strong);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: var(--r-s);
 }
 
 .trigger,
@@ -18,13 +42,13 @@
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  padding: 0 var(--space-1);
+  padding: 0 var(--s1);
 }
 
 .trigger:hover,
 .edited:hover,
 .add:hover {
-  color: var(--fg);
+  color: var(--text);
 }
 
 .trigger:focus-visible,
@@ -34,10 +58,33 @@
   outline-offset: 2px;
 }
 
-/* The pencil is quiet until the region is hovered or something in it has focus.
-   A document covered in always-visible controls stops reading as a document. */
+/* Quiet, but never invisible. This was `opacity: 0` until hover, which meant the
+   only way to find out that a passage could be corrected was to happen to put
+   the pointer on it — and on a touch screen there is no hover at all, so the
+   affordance did not exist. Dimmed is enough to keep it out of the way of
+   reading; it comes up to full on hover or focus.
+
+   Pinned to the corner via `.marks` rather than left in the flow: after block
+   children a trailing inline button lands on a line of its own, reading as a
+   stray glyph belonging to nothing. */
 .trigger {
-  opacity: 0;
+  opacity: 0.55;
+}
+
+.marks {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+/* Inline regions keep their markers in the text flow — there is no box corner
+   to pin them to, and the line they sit on is the passage itself. */
+.wrap[data-inline='1'] .marks {
+  position: static;
+  display: inline;
 }
 
 .wrap:hover .trigger,
@@ -52,30 +99,30 @@
 .input {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg-raised);
-  color: var(--fg);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
   font: inherit;
-  padding: var(--space-2);
+  padding: var(--s2);
 }
 
 .actions {
   display: flex;
-  gap: var(--space-2);
-  margin-block-start: var(--space-2);
+  gap: var(--s2);
+  margin-block-start: var(--s2);
 }
 
 .error {
   display: block;
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--s2);
   color: var(--danger);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
 .busy {
-  margin-inline-start: var(--space-2);
+  margin-inline-start: var(--s2);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--fs-s);
 }
 
 .list {
@@ -84,25 +131,45 @@
 
 .addRow {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--s2);
   align-items: center;
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--s2);
+  /* Fill the slot rather than shrink to the button beside it: inside `.slot`'s
+     flex row this row is otherwise sized by its content, which left a note
+     field narrower than the sentence anyone would type into it. */
+  flex: 1 1 100%;
+}
+
+.addRow .input {
+  flex: 1 1 12rem;
 }
 
 .slot {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
+  gap: var(--s2);
+  margin-block-start: var(--s3);
+}
+
+/* "Add" is an invitation, so it gets an outline. Left bare it was a run of grey
+   text among other grey text, which is not a control anyone finds. */
+.add {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-s);
+  padding: var(--s1) var(--s2);
+}
+
+.add:hover {
+  border-color: var(--accent);
 }
 
 .name {
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-2);
-  background: var(--bg-raised);
-  color: var(--fg);
+  border-radius: var(--r-m);
+  background: var(--panel-2);
+  color: var(--text);
   font: inherit;
-  padding: var(--space-2);
+  padding: var(--s2);
 }
 
 /* Visually hidden but read aloud. Every state this file signals with a shape or
@@ -127,5 +194,11 @@
   .slot,
   .busy {
     display: none;
+  }
+
+  /* The dotted seam is an affordance too. What was *edited* keeps its mark,
+     because that is a fact about the document rather than a control. */
+  .wrap[data-editable='1'] {
+    border-block-end: 0;
   }
 }

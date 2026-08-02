@@ -20,6 +20,9 @@ export function Field({
   edit,
   field,
   label,
+  // Defaulted here rather than passed through: `exactOptionalPropertyTypes`
+  // makes an explicit `undefined` a different thing from an absent prop.
+  inline = false,
   children,
 }: {
   /** The payload node's edit map, or undefined on a file export. */
@@ -28,12 +31,14 @@ export function Field({
   field: string;
   /** Accessible name, composed at the call site: "Ada's blocker", not "blocker". */
   label: string;
+  /** True when `children` is a run of text rather than blocks. See `Editable`. */
+  inline?: boolean;
   children: ComponentChildren;
 }) {
   const target = edit?.[field];
   if (!target) return <>{children}</>;
   return (
-    <Editable path={target.path} label={label} value={target.value}>
+    <Editable path={target.path} label={label} value={target.value} inline={inline}>
       {children}
     </Editable>
   );
