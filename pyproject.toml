@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yeaboi"
-version = "2.51.0"
+version = "2.52.0"
 description = "yeaboi — an AI Scrum Master for your terminal: sprint planning, standups, retros, planning poker, 1:1s and delivery reports."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,6 +46,10 @@ dependencies = [
     # Notion doc tools (tools/notion.py) — official SDK, mirrors how Confluence
     # uses atlassian-python-api. Notion has its own integration token (NOTION_TOKEN).
     "notion-client",
+    # GitLab repo/issue tools (tools/gitlab.py) — the maintained official SDK,
+    # mirroring how GitHub uses PyGithub. Auth is a personal access token
+    # (GITLAB_TOKEN); GITLAB_URL points it at a self-hosted instance.
+    "python-gitlab",
     # SQLite-backed checkpoint store for Phase 8 session persistence.
     # SqliteSaver is used as a standalone store; the graph itself stays
     # stateless for now (Phase 8B wires it as a full LangGraph checkpointer).

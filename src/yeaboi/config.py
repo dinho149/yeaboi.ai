@@ -276,6 +276,33 @@ def get_github_token() -> str | None:
     return os.getenv("GITHUB_TOKEN") or None
 
 
+def get_gitlab_token() -> str | None:
+    """Return the GitLab personal access token, or None if not set.
+
+    Unlike GitHub (whose tools fall back to unauthenticated access for public
+    repos), the GitLab tools require this — see the module docstring of
+    tools/gitlab.py for why anonymous access is not worth supporting there.
+    """
+    return os.getenv("GITLAB_TOKEN") or None
+
+
+def get_gitlab_url() -> str:
+    """Return the GitLab instance URL, defaulting to https://gitlab.com.
+
+    Set GITLAB_URL to point the tools at a self-hosted instance. Normalised on
+    read: whitespace and trailing slashes stripped, and a missing scheme
+    defaulted to https:// — python-gitlab joins this with API paths directly, so
+    a bare "gitlab.example.com" would otherwise reach requests as a relative URL
+    and fail with a MissingSchema error on every GitLab call.
+    """
+    raw = (os.getenv("GITLAB_URL") or "").strip().rstrip("/")
+    if not raw:
+        return "https://gitlab.com"
+    if "://" not in raw:
+        return f"https://{raw}"
+    return raw
+
+
 def get_azure_devops_token() -> str | None:
     """Return the Azure DevOps PAT, or None if not set."""
     return os.getenv("AZURE_DEVOPS_TOKEN") or None

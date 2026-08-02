@@ -80,6 +80,12 @@ def get_tools() -> list[BaseTool]:
         github_read_readme,
         github_read_repo,
     )
+    from yeaboi.tools.gitlab import (
+        gitlab_create_issue,
+        gitlab_list_issues,
+        gitlab_read_readme,
+        gitlab_read_repo,
+    )
     from yeaboi.tools.jira import (
         jira_create_epic,
         jira_create_sprint,
@@ -103,6 +109,10 @@ def get_tools() -> list[BaseTool]:
         github_read_file,
         github_list_issues,
         github_read_readme,
+        gitlab_read_repo,
+        gitlab_read_readme,
+        gitlab_list_issues,
+        gitlab_create_issue,
         azdevops_read_repo,
         azdevops_read_file,
         azdevops_list_work_items,

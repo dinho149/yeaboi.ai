@@ -2,6 +2,38 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.52.0",
+      "date": "2026-08-02",
+      "summary": "GitLab support is now complete. Intake now scans GitLab projects for repository metadata, readme files, and open issues — the same way it already does for GitHub and Azure DevOps. Read tools work anonymously for public projects and with a token for private ones; the write tool creates GitLab issues during planning, gated behind human review. Self-hosted GitLab instances are supported by setting GITLAB_URL. Fixes the broken contract where intake Q16 offered GitLab as a code-host option but then reported it wasn't supported yet.",
+      "highlights": [
+        {
+          "text": "Intake now scans GitLab repositories for project metadata, directory trees, and open issues",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Create GitLab issues directly from planning poker, the same way GitHub and Jira do",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Support for both gitlab.com and self-hosted GitLab instances via GITLAB_URL",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "GitLab token authentication via GITLAB_TOKEN environment variable",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.51.0",
       "date": "2026-08-02",
       "summary": "Daily Standup now flags engineering practices that might cost your team later — work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed — no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",

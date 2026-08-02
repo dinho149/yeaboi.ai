@@ -38,6 +38,11 @@ TOOL_RISK: dict[str, ToolRisk] = {
     "github_read_file": ToolRisk.READ,
     "github_list_issues": ToolRisk.READ,
     "github_read_readme": ToolRisk.READ,
+    # GitLab — 3 reads + 1 write (create_issue is gated behind human_review)
+    "gitlab_read_repo": ToolRisk.READ,
+    "gitlab_read_readme": ToolRisk.READ,
+    "gitlab_list_issues": ToolRisk.READ,
+    "gitlab_create_issue": ToolRisk.WRITE,
     # Azure DevOps
     "azdevops_read_repo": ToolRisk.READ,
     "azdevops_read_file": ToolRisk.READ,
