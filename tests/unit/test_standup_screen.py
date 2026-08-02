@@ -993,6 +993,150 @@ class TestTranscriptSourceStep:
         assert self._pick(monkeypatch, ["enter"], count=2, clip="Alice: hi")[0] == "sweep"
 
 
+class TestTranscriptsConfigure:
+    """Saving transcript_dir / transcript_review_enabled from the TUI — both were
+    MCP-only before, and the folders live outside the sandbox."""
+
+    def _run(self, monkeypatch, tmp_path, key_script, *, candidates=(), consent="allow_always", existing=None):
+        from yeaboi.standup.store import StandupStore
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        if existing is not None:
+            with StandupStore(db) as store:
+                store.save_config("sid", **existing)
+        monkeypatch.setattr("yeaboi.standup.transcript_sources.detect", lambda **kw: list(candidates))
+        monkeypatch.setattr("yeaboi.ui.shared._consent._preflight_path_choice", lambda *a, **kw: consent)
+        keys = iter(key_script)
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        ok, msg = mode_select._standup_transcripts_configure(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+        with StandupStore(db) as store:
+            saved = store.load_config("sid") or {}
+        return ok, msg, saved
+
+    def _zoom(self, path="/Users/x/Documents/Zoom"):
+        from yeaboi.standup.transcript_sources import SourceCandidate
+
+        return SourceCandidate(label="Zoom recordings", path=path, file_count=14, newest_date="2026-07-30")
+
+    # The cursor opens on the CURRENT setting, so with nothing configured it sits
+    # on the last row ("Just ~/.yeaboi/transcripts"); "down" wraps onto the first
+    # detected folder. Adopting somebody's Zoom folder is never an accidental
+    # single keypress.
+    _TO_ZOOM = ["down"]
+
+    def test_the_cursor_opens_on_the_current_setting(self, monkeypatch, tmp_path):
+        ok, _msg, saved = self._run(monkeypatch, tmp_path, ["enter", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_dir"] == ""  # unchanged: the managed folder only
+
+    def test_a_detected_folder_is_saved(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(monkeypatch, tmp_path, [*self._TO_ZOOM, "enter", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+        assert saved["transcript_review_enabled"] is True
+        assert "Zoom" in msg
+
+    def test_allow_once_refuses_to_save(self, monkeypatch, tmp_path):
+        """An allow-once grant dies with the process — saving it would produce a
+        config that works now and silently reviews nothing on every scheduled run."""
+        ok, msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter"], candidates=[self._zoom()], consent="allow_once"
+        )
+        assert ok is False
+        assert "this run only" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_deny_saves_nothing(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter"], candidates=[self._zoom()], consent="deny"
+        )
+        assert ok is False
+        assert "not allowed" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_choosing_the_managed_folder_needs_no_consent(self, monkeypatch, tmp_path):
+        """~/.yeaboi/transcripts is already inside the sandbox."""
+
+        def _boom(*a, **kw):
+            raise AssertionError("should not ask for consent on the managed folder")
+
+        monkeypatch.setattr("yeaboi.ui.shared._consent._preflight_path_choice", _boom)
+        monkeypatch.setattr("yeaboi.standup.transcript_sources.detect", lambda **kw: [])
+        from yeaboi.standup.store import StandupStore
+        from yeaboi.ui import mode_select
+
+        db = tmp_path / "sessions.db"
+        monkeypatch.setattr(mode_select, "_ana_dbp", db)
+        keys = iter(["enter", "enter"])  # cursor already sits on "Just ~/.yeaboi/transcripts"
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        ok, _msg = mode_select._standup_transcripts_configure(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+        assert ok is True
+        with StandupStore(db) as store:
+            assert (store.load_config("sid") or {})["transcript_dir"] == ""
+
+    def test_auto_review_can_be_turned_off(self, monkeypatch, tmp_path):
+        """transcript_review_enabled had no interface at all before this."""
+        ok, _msg, saved = self._run(monkeypatch, tmp_path, ["enter", "down", "enter"], candidates=[self._zoom()])
+        assert ok is True
+        assert saved["transcript_review_enabled"] is False
+
+    def test_esc_on_the_first_step_cancels(self, monkeypatch, tmp_path):
+        ok, msg, saved = self._run(monkeypatch, tmp_path, ["esc"], candidates=[self._zoom()])
+        assert ok is False
+        assert "cancelled" in msg
+        assert not saved.get("transcript_dir")
+
+    def test_esc_on_the_second_step_goes_back(self, monkeypatch, tmp_path):
+        ok, _msg, saved = self._run(
+            monkeypatch,
+            tmp_path,
+            [*self._TO_ZOOM, "enter", "esc", *self._TO_ZOOM, "enter", "enter"],
+            candidates=[self._zoom()],
+        )
+        assert ok is True
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+
+    def test_other_config_fields_survive_the_save(self, monkeypatch, tmp_path):
+        """save_config writes EVERY column — an omitted keyword resets it."""
+        existing = {
+            "enabled": True,
+            "time": "09:30",
+            "weekdays": "1-5",
+            "delivery_channels": ["slack"],
+            "lead_minutes": 15,
+            "timezone": "",
+            "repo_path": "",
+            "my_aliases": "al",
+            "tracker_sources": ["jira"],
+            "team_members": ["Alice", "Bob"],
+            "roster_configured": True,
+            "code_sources": ["github"],
+            "github_repositories": ["o/r"],
+            "azdo_projects": [],
+            "azdo_repositories": [],
+            "code_scope_configured": True,
+            "documentation_sources": ["notion"],
+            "documentation_scope_configured": True,
+            "automation_markers": "wiz",
+            "automation_handling": "exclude",
+            "transcript_dir": "",
+            "transcript_review_enabled": True,
+        }
+        _ok, _msg, saved = self._run(
+            monkeypatch, tmp_path, [*self._TO_ZOOM, "enter", "enter"], candidates=[self._zoom()], existing=existing
+        )
+        assert saved["team_members"] == ["Alice", "Bob"]
+        assert saved["time"] == "09:30"
+        assert saved["delivery_channels"] == ["slack"]
+        assert saved["my_aliases"] == "al"
+        assert saved["automation_markers"] == "wiz"
+        assert saved["transcript_dir"] == "/Users/x/Documents/Zoom"
+
+
 class TestTranscriptCounts:
     """The counts are read once on entry — discover() hashes files and the
     clipboard helper shells out with a 10s timeout, so neither may run per frame."""

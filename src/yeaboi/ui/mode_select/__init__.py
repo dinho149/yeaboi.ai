@@ -2526,6 +2526,24 @@ def _standup_transcript_counts(session_id: str) -> tuple[int, str]:
     return count, hint
 
 
+def _standup_transcript_dir_label(session_id: str) -> str:
+    """Describe the saved transcript folder for the "change my folders" row."""
+    from yeaboi.standup.store import StandupStore
+
+    try:
+        from yeaboi.paths import get_db_path
+
+        with StandupStore(get_db_path()) as store:
+            config = store.load_config(session_id) or {}
+    except Exception:
+        logger.debug("standup review: could not read the transcript folder", exc_info=True)
+        return "saved for every run"
+    current = str(config.get("transcript_dir") or "")
+    if not current:
+        return "currently: none — I only look in ~/.yeaboi/transcripts"
+    return f"currently: {current.replace(str(Path.home()), '~')}"
+
+
 def _standup_review_source_step(
     console: Console, live, read_key, frame_time, supports_timeout, session_id: str, message: str = ""
 ) -> tuple[str, str] | None:
@@ -2546,6 +2564,7 @@ def _standup_review_source_step(
         ("Paste the transcript from my clipboard", clip_hint),
         (f"Open {folder}", "drop a file in, then come back"),
         ("Use another folder, just this once", "a Zoom or Granola recordings folder"),
+        ("Change my transcript folders…", _standup_transcript_dir_label(session_id)),
     ]
     choice = _run_schedule_choice_step(
         console,
@@ -2571,6 +2590,8 @@ def _standup_review_source_step(
         return ("paste", text)
     if choice == 2:
         return ("open", "")
+    if choice == 4:
+        return ("configure", "")
     typed = _standup_read_line(
         console,
         live,
@@ -2618,6 +2639,11 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
             from yeaboi.paths import get_transcripts_dir
 
             note = open_path(get_transcripts_dir())
+            continue
+        if kind == "configure":
+            _saved, note = _standup_transcripts_configure(
+                console, live, read_key, frame_time, supports_timeout, session_id
+            )
             continue
         if kind == "paste":
             transcript_text = value
@@ -3689,6 +3715,188 @@ def _standup_documentation_configure(
             transcript_review_enabled=merged.get("transcript_review_enabled", True),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
+
+
+_TRANSCRIPT_STEP_NAMES = ["Folder", "Auto-review"]
+# Sentinel for the "Type a folder…" row: a value no real path can collide with.
+_TYPE_A_FOLDER = "\x00type"
+
+
+def _standup_transcripts_configure(
+    console: Console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    session_id: str,
+) -> tuple[bool, str]:
+    """Choose where recordings come from, and whether the sweep runs by itself.
+
+    Both settings were MCP-only before this: ``transcript_dir`` could be typed
+    for a single run but never saved, and ``transcript_review_enabled`` had no
+    interface at all. Folders are DETECTED and offered by name rather than
+    typed, because "is this the right one?" is a question people can answer and
+    "where does Zoom put your recordings?" is not.
+    """
+    from yeaboi.standup import transcript_sources
+    from yeaboi.standup.store import StandupStore
+    from yeaboi.standup.transcripts import normalize_dropped_path
+    from yeaboi.ui.shared._consent import _preflight_path_choice
+
+    with StandupStore(_ana_dbp) as store:
+        existing = store.load_config(session_id) or {}
+    current = str(existing.get("transcript_dir") or "")
+
+    options: list[tuple[str, str]] = []
+    values: list[str] = []
+    for candidate in transcript_sources.detect():
+        options.append((candidate.label, transcript_sources.describe(candidate)))
+        values.append(candidate.path)
+    if current and current not in values:
+        options.append((current.replace(str(Path.home()), "~"), "your current folder"))
+        values.append(current)
+    options.append(("Type a folder…", "drag it in, or type a path"))
+    values.append(_TYPE_A_FOLDER)
+    options.append(("Just ~/.yeaboi/transcripts", "no extra folder"))
+    values.append("")
+
+    chosen_dir = current
+    auto = bool(existing.get("transcript_review_enabled", True))
+    index = 0
+    while index < 2:
+        if index == 0:
+            initial = values.index(current) if current in values else 0
+            pick = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=options,
+                initial=initial,
+                step_index=0,
+                heading="Where do your standup recordings land?",
+                step_names=_TRANSCRIPT_STEP_NAMES,
+            )
+            if pick == "back":
+                return False, "Transcript setup cancelled."
+            value = values[pick]
+            if value == _TYPE_A_FOLDER:
+                typed = _standup_read_line(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    prompt="Transcript folder (drag it in, or type a path)",
+                    step="Transcripts  —  where your recordings land",
+                    default="",
+                    box_rows=5,
+                )
+                if typed is None:
+                    continue  # Esc from the text box returns to the list
+                value = normalize_dropped_path(typed)
+            if value:
+                choice = _preflight_path_choice(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    value,
+                    mode="read",
+                    context="Standup — transcript folder",
+                )
+                if choice == "deny":
+                    return False, "Transcript folder not allowed — nothing saved."
+                if choice == "allow_once":
+                    # An allow-once grant dies with this process. Saving a folder
+                    # backed by one produces a config that works right now and
+                    # then silently reviews nothing on every scheduled run —
+                    # the worst kind of wrong, because it looks configured.
+                    return False, (
+                        "That folder is allowed for this run only, so it wasn't saved. "
+                        "Choose 'Always allow' to keep it."
+                    )
+            chosen_dir = value
+            index = 1
+        else:
+            pick = _run_schedule_choice_step(
+                console,
+                live,
+                read_key,
+                frame_time,
+                supports_timeout,
+                options=[
+                    ("Review transcripts automatically", "before each standup, so misses surface on their own"),
+                    ("Only when I ask", "the Review button still works"),
+                ],
+                initial=0 if auto else 1,
+                step_index=1,
+                heading="Check each standup against its meeting?",
+                step_names=_TRANSCRIPT_STEP_NAMES,
+            )
+            if pick == "back":
+                index = 0
+                continue
+            auto = pick == 0
+            index = 2
+
+    defaults = {
+        "enabled": False,
+        "time": "10:00",
+        "weekdays": "1-5",
+        "delivery_channels": ["terminal"],
+        "lead_minutes": 10,
+        "timezone": "",
+        "repo_path": "",
+        "my_aliases": "",
+        "tracker_sources": ["jira"],
+        "team_members": [],
+        "roster_configured": False,
+        "code_sources": [],
+        "github_repositories": [],
+        "azdo_projects": [],
+        "azdo_repositories": [],
+        "code_scope_configured": False,
+        "documentation_sources": [],
+        "documentation_scope_configured": False,
+    }
+    merged = {**defaults, **existing}
+    with StandupStore(_ana_dbp) as store:
+        store.save_config(
+            session_id,
+            enabled=merged["enabled"],
+            time=merged["time"],
+            weekdays=merged["weekdays"],
+            delivery_channels=merged["delivery_channels"],
+            lead_minutes=merged["lead_minutes"],
+            timezone=merged["timezone"],
+            repo_path=merged["repo_path"],
+            my_aliases=merged["my_aliases"],
+            tracker_sources=merged["tracker_sources"],
+            team_members=merged["team_members"],
+            roster_configured=merged["roster_configured"],
+            code_sources=merged["code_sources"],
+            github_repositories=merged["github_repositories"],
+            azdo_projects=merged["azdo_projects"],
+            azdo_repositories=merged["azdo_repositories"],
+            code_scope_configured=merged["code_scope_configured"],
+            documentation_sources=merged["documentation_sources"],
+            documentation_scope_configured=merged["documentation_scope_configured"],
+            automation_markers=merged.get("automation_markers", ""),
+            automation_handling=merged.get("automation_handling", "exclude"),
+            transcript_dir=chosen_dir,
+            transcript_review_enabled=auto,
+        )
+    logger.info(
+        "standup transcripts configured: session=%s dir=%s auto=%s",
+        session_id,
+        chosen_dir or "-",
+        auto,
+    )
+    where = chosen_dir.replace(str(Path.home()), "~") if chosen_dir else "~/.yeaboi/transcripts only"
+    return True, f"Transcripts: {where} · {'automatic review on' if auto else 'review on demand'}."
 
 
 def _run_schedule_choice_step(

@@ -59,9 +59,12 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    Activity providers and repository/project scans run concurrently with
    bounded provider limits; a single final synthesis keeps the four summary
    sections consistent.
-   `transcript_dir` adds an external folder to the transcript sweep, and
-   `transcript_review_enabled` turns off the automatic review that runs before
-   each standup.
+   `transcript_dir` adds an external folder to the transcript sweep (a Zoom or
+   Google Meet recordings folder), and `transcript_review_enabled` turns off the
+   automatic review that runs before each standup. Both are also settable in the
+   TUI now, under Standup › Review › "Change my transcript folders…", which
+   offers the detected recording folders by name — suggest that when the user
+   would rather point-and-pick than find the path themselves.
    Installing the OS schedule that fires it daily is done from the yeaboi TUI.
 
 If there are no sessions yet, suggest planning first (`/yeaboi:plan-sprint`) —

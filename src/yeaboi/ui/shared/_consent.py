@@ -122,6 +122,39 @@ def _apply_consent(choice: str, req) -> bool:
     return False
 
 
+def _preflight_path_choice(
+    console,
+    live,
+    read_key,
+    frame_time,
+    supports_timeout,
+    path,
+    *,
+    mode: str = "read",
+    context: str = "",
+) -> str:
+    """Like :func:`_preflight_path_consent`, but says WHICH kind of yes it got.
+
+    Returns ``"already_allowed"``, ``"allow_once"``, ``"allow_always"`` or
+    ``"deny"``. The distinction matters whenever a caller wants to *save* the
+    path: an ``allow_once`` grant dies with the process, so persisting a folder
+    backed by one produces a config that works now and silently reviews nothing
+    on every scheduled run afterwards. Callers that only need to read the path
+    once should keep using the boolean wrapper.
+    """
+    from yeaboi import fs_policy
+    from yeaboi.fs_policy import ConsentRequest
+
+    if fs_policy.is_allowed(path, mode=mode):
+        return "already_allowed"
+    # Resolve the same way fs_policy does (expanduser + symlink-following
+    # resolve) so the granted root matches what enforcement will check.
+    resolved = Path(path).expanduser().resolve(strict=False)
+    req = ConsentRequest(resolved, mode, context)
+    choice = _fs_consent_popup(console, live, read_key, frame_time, supports_timeout, req)
+    return choice if _apply_consent(choice, req) else "deny"
+
+
 def _preflight_path_consent(
     console,
     live,
@@ -139,14 +172,7 @@ def _preflight_path_consent(
     it), False when the user denied. Call this BEFORE reading a user-typed path
     so the eventual file access never raises SandboxViolationError.
     """
-    from yeaboi import fs_policy
-    from yeaboi.fs_policy import ConsentRequest
-
-    if fs_policy.is_allowed(path, mode=mode):
-        return True
-    # Resolve the same way fs_policy does (expanduser + symlink-following
-    # resolve) so the granted root matches what enforcement will check.
-    resolved = Path(path).expanduser().resolve(strict=False)
-    req = ConsentRequest(resolved, mode, context)
-    choice = _fs_consent_popup(console, live, read_key, frame_time, supports_timeout, req)
-    return _apply_consent(choice, req)
+    choice = _preflight_path_choice(
+        console, live, read_key, frame_time, supports_timeout, path, mode=mode, context=context
+    )
+    return choice != "deny"
