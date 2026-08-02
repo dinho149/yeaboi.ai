@@ -1608,12 +1608,15 @@ class TestAnalysisFeatureScreen:
             ),
             width=48,
         )
-        assert "‹ ● Documentation ›" in out
+        # No caret any more — the bullet says selected, weight says focused.
+        assert "● Documentation" in out
+        assert "‹" not in out
 
 
 def test_narrow_window_screen_keeps_focused_tile_visible():
     out = _render(_build_analysis_window_screen(3, width=48, height=20), width=48)
-    assert "‹ ● 365 DAYS ›" in out
+    assert "● 365 DAYS" in out
+    assert "‹" not in out
 
 
 class TestComponentSelectScreen:
@@ -1644,7 +1647,8 @@ class TestComponentSelectScreen:
             ),
             width=110,
         )
-        assert "‹ ● Azure Repos ›" in out
+        assert "● Azure Repos" in out
+        assert "‹" not in out
 
     def test_no_selection_shows_hint(self):
         checked = {"delivery": set(), "code": set(), "docs": set()}
@@ -1706,7 +1710,8 @@ class TestAnalysisDepthScreen:
 
     def test_deep_can_be_focused(self):
         out = _render(_build_analysis_depth_screen(1, width=100, height=30), width=100)
-        assert "‹ ● DEEP ›" in out
+        assert "● DEEP" in out
+        assert "‹" not in out
 
 
 class TestAnalysisSetupReviewScreen:

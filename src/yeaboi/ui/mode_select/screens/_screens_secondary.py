@@ -606,23 +606,23 @@ def _analysis_toggle_row(
     a single row does not, so it has to come in from outside.
     """
     theme = theme or ANALYSIS_THEME
-    row = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
-    row.append("‹ " if focused else "  ", style=theme.accent_bright if enabled else theme.dim)
+    # Flush with the section header, no caret and no separator dot: the bullet
+    # already says selected, weight already says focused, and the columns already
+    # separate label from description — the extra glyphs were decoration that
+    # pushed the whole list in from the page edge.
+    row = Text(_PAD, justify="left", overflow="ellipsis", no_wrap=True)
     row.append(
         "●" if selected and enabled else "○",
         style=theme.accent_bright if selected and enabled else theme.dim,
     )
     row.append(
-        f" {title} ",
+        f" {title}",
         style="bold white" if focused and enabled else theme.accent if selected and enabled else theme.desc,
     )
-    # The focus caret is a column of its own, held open on every row — otherwise
-    # focusing a row shifts its description one to the right.
-    row.append("›" if focused else " ", style=theme.accent_bright if enabled else theme.dim)
     row.append(" " * max(0, label_w - len(title)))
     detail = "Unavailable" if not enabled else note or description
     if detail:
-        row.append(f"  ·  {detail}", style=theme.dim if not enabled else theme.muted)
+        row.append(f"   {detail}", style=theme.dim if not enabled else theme.muted)
     return row
 
 
