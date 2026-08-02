@@ -875,6 +875,7 @@ class TestMemberUpdate:
             "ticketing_evidence": (),
             "code_evidence": (),
             "documentation_evidence": (),
+            "practices": (),
         }
 
     def test_self_report_defaults_empty(self):
@@ -1146,3 +1147,39 @@ class TestRoadmapArtifacts:
         assert isinstance(restored.projects, tuple)
         assert isinstance(restored.projects[0], RoadmapProject)
         assert isinstance(restored.projects[0].themes, tuple)
+
+
+class TestPracticeSignal:
+    def test_defaults_are_all_empty(self):
+        from yeaboi.agent.state import PracticeSignal
+
+        s = PracticeSignal()
+        assert (s.rule, s.title, s.detail, s.evidence, s.repeat) == ("", "", "", (), False)
+
+    def test_asdict_round_trip(self):
+        from dataclasses import asdict
+
+        from yeaboi.agent.state import PracticeSignal
+
+        s = PracticeSignal(
+            rule="untracked-work",
+            title="Untracked work",
+            detail="#91 carries no ticket reference.",
+            evidence=(("#91", "https://x/pull/91"),),
+            repeat=True,
+            handles=("url:https://x/pull/91",),
+        )
+        assert asdict(s) == {
+            "rule": "untracked-work",
+            "title": "Untracked work",
+            "detail": "#91 carries no ticket reference.",
+            "evidence": (("#91", "https://x/pull/91"),),
+            "repeat": True,
+            "handles": ("url:https://x/pull/91",),
+        }
+
+    def test_member_and_report_default_to_empty(self):
+        from yeaboi.agent.state import MemberUpdate, StandupReport
+
+        assert MemberUpdate().practices == ()
+        assert StandupReport().practice_rollup == ()

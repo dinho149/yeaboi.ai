@@ -333,3 +333,52 @@ class TestDayOverDayRender:
         out = cap.get()
         assert "Since last standup" in out
         assert "Outlook" in out
+
+
+class TestRenderPractices:
+    def _report_with_practices(self, **signal_over):
+        from yeaboi.agent.state import PracticeSignal
+
+        base = dict(
+            rule="untracked-work",
+            title="Untracked work",
+            detail="#91 carries no ticket reference in the branch, title, or description.",
+            evidence=(("#91", "https://x/pull/91"),),
+        )
+        base.update(signal_over)
+        return StandupReport(
+            date="2026-07-10",
+            member_updates=(MemberUpdate(name="Alice", summary="login page", practices=(PracticeSignal(**base),)),),
+            practice_rollup=(("untracked-work", 2),),
+        )
+
+    def test_plaintext_shows_the_signal_after_the_blocker(self):
+        text = render.format_standup_plaintext(self._report_with_practices())
+        assert "◇ Untracked work: #91 carries no ticket reference" in text
+
+    def test_plaintext_shows_the_team_rollup(self):
+        text = render.format_standup_plaintext(self._report_with_practices())
+        assert "Practices: Untracked work ×2" in text
+
+    def test_plaintext_marks_a_repeat(self):
+        text = render.format_standup_plaintext(self._report_with_practices(repeat=True))
+        assert "Untracked work (again today):" in text
+
+    def test_a_report_with_no_practices_says_nothing(self):
+        text = render.format_standup_plaintext(_report())
+        assert "◇" not in text
+        assert "Practices:" not in text
+
+    def test_rich_renders_them_too(self):
+        from rich.console import Console
+
+        console = Console(width=100, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(render.format_standup_rich(self._report_with_practices()))
+        assert "Untracked work" in cap.get()
+
+    def test_a_legacy_report_without_the_field_still_renders(self):
+        # Reports serialized before this feature deserialize with practices=(),
+        # but a hand-built object may not have the attribute at all.
+        legacy = StandupReport(date="2026-07-10", member_updates=(MemberUpdate(name="Alice", summary="x"),))
+        assert "Alice" in render.format_standup_plaintext(legacy)

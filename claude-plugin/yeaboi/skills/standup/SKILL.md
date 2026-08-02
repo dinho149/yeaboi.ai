@@ -17,6 +17,35 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    category-specific links. Surface any `warnings` (e.g. a tracker returned
    401) — they explain missing sections.
 
+   Each member may also carry `practices`: deterministic engineering-practice
+   signals (work that landed with no ticket behind it, a board not updated after
+   a merge, too many tickets held in progress, an oversized PR, commits with no
+   PR, thin commit messages). **Present them as observations, never as
+   judgements of the person** — each carries the evidence it was derived from,
+   so quote the evidence and keep the framing coaching-shaped. They are computed
+   by rule, not written by a model, so do not embellish, re-rank, or infer new
+   ones; a `repeat: true` signal fired in the previous standup too. The
+   report-level `practice_rollup` counts *members* per rule, not signals.
+
+   Before a change is reported as untracked, it is matched against the
+   description, acceptance criteria and definition of done of every ticket the
+   team has open — a change that plausibly belongs to one is dropped silently,
+   and the matched ticket is deliberately never recorded. So an `untracked-work`
+   signal already means "we looked for a home for this and found none": do not
+   soften it with a guess about which ticket it might belong to.
+
+   **When the user says a signal was wrong, record it** with
+   `standup_practice_feedback` (`member`, `rule`, `verdict='down'`, and a `note`
+   capturing their reason in one sentence). That removes it from the stored
+   report and stops every change behind it from ever being reported for that
+   rule again — an open pull request would otherwise re-fire the same wrong
+   nudge at the same person every morning. Use `verdict='up'` when they confirm
+   a signal was right. Both feed the matching pass as calibration, which is why
+   the note is worth writing. `applied: false` means the verdict was not
+   recorded — that signal is no longer in the run (already voted on, or
+   regenerated since), or it predates this feature and carries nothing to
+   remember. Read the `reason` back to the user; do not retry.
+
 3. **History.** For trends or "how have standups been going", call
    `standup_history` and summarize confidence over time.
 
@@ -71,6 +100,13 @@ description: "Run a daily scrum standup with yeaboi: collect ticketing, code, an
    TUI now, under Standup › Review › "Change my transcript folders…", which
    offers the detected recording folders by name — suggest that when the user
    would rather point-and-pick than find the path themselves.
+   Practice detection is on by default: `habit_detection` is `'on'`/`'off'`, and
+   `habit_rules` narrows it to a comma-separated subset of `untracked-work`,
+   `untracked-docs`, `board-not-updated`, `wip-sprawl`, `large-change`,
+   `no-pull-request`, `commit-messages` (empty means all of them). An unknown
+   rule id is rejected rather than ignored. `habit_ai_match` (`'on'`/`'off'`)
+   controls the LLM pass that excuses a change belonging to a ticket it never
+   names; it can only ever suppress a signal, never raise one.
    Installing the OS schedule that fires it daily is done from the yeaboi TUI.
    That wizard also offers a transcript reminder — a second scheduled job that
    posts a desktop notification 30 minutes to 2 hours after the standup, only

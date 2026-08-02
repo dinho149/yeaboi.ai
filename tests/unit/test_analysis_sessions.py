@@ -49,8 +49,11 @@ class TestSchemaVersion:
         # edit log plus origin/edited_from_id provenance on every history table;
         # v22 added the Standup transcript-review tables (standup_reviews,
         # standup_transcripts, standup_gap_issues) plus the two standup_config
-        # transcript columns.
-        assert CURRENT_SCHEMA_VERSION == 22
+        # transcript columns; v23 adds the Standup practice-detection config
+        # (habit_detection / habit_rules); v24 adds its LLM relatedness switch
+        # (habit_ai_match); v25 adds the practice feedback ledger
+        # (standup_practice_feedback).
+        assert CURRENT_SCHEMA_VERSION == 25
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""
@@ -539,3 +542,59 @@ class TestAnalysisResumeContract:
             store.save_state(sid, {"messages": [], "last_page": "complete"})
 
         assert mode_select._load_ana_session("Platform") is None
+
+
+class TestMigrationV23:
+    """Standup practice config reaches a database migrated ahead of StandupStore.
+
+    Covers v24 (habit_ai_match) too: both migrations run off the same v20 base.
+    """
+
+    def _v20_db(self, db_path: Path) -> None:
+        # A v20-era standup_config: everything up to automation_handling, and
+        # nothing after it.
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(
+            """
+            CREATE TABLE schema_info (schema_version INT NOT NULL);
+            INSERT INTO schema_info VALUES (20);
+            CREATE TABLE standup_config (
+                session_id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                time TEXT NOT NULL DEFAULT '10:00',
+                automation_handling TEXT NOT NULL DEFAULT 'exclude',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO standup_config (session_id) VALUES ('s1');
+            """
+        )
+        conn.commit()
+        conn.close()
+
+    def test_migration_adds_the_habit_columns(self, tmp_path: Path):
+        db_path = tmp_path / "v20.db"
+        self._v20_db(db_path)
+        with SessionStore(db_path) as store:
+            cols = {row[1] for row in store._conn.execute("PRAGMA table_info(standup_config)").fetchall()}
+            assert {"habit_detection", "habit_rules", "habit_ai_match"} <= cols
+            ver = store._conn.execute("SELECT schema_version FROM schema_info").fetchone()[0]
+            assert ver == CURRENT_SCHEMA_VERSION
+
+    def test_an_existing_row_defaults_to_on(self, tmp_path: Path):
+        # Practices are on by default, so an existing team must not silently
+        # come out of the migration with detection disabled.
+        import sqlite3
+
+        db_path = tmp_path / "v20b.db"
+        self._v20_db(db_path)
+        with SessionStore(db_path):
+            pass
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT habit_detection, habit_rules, habit_ai_match FROM standup_config WHERE session_id = 's1'"
+        ).fetchone()
+        conn.close()
+        assert row == ("on", "", "on")

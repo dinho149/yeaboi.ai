@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "standup_gaps",
     "standup_config_get",
     "standup_config_set",
+    "standup_practice_feedback",
     "report_delivery",
     "reporting_history",
     "reporting_export",
@@ -938,6 +939,83 @@ class TestPerfNotes:
         assert "note_text is required" in payload["error"]["message"]
 
 
+class TestStandupPracticeFeedbackTool:
+    """The verdict tool: it corrects the stored report, or explains why it did not."""
+
+    def _seed_run(self, tmp_db, *, handles=("url:https://x/pull/42",)):
+        from yeaboi.agent.state import MemberUpdate, PracticeSignal, StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        signal = PracticeSignal(
+            rule="untracked-work",
+            title="Untracked work",
+            detail="#42 carries no ticket reference.",
+            evidence=(("#42", "https://x/pull/42"),),
+            handles=handles,
+        )
+        report = StandupReport(
+            session_id="new-abcd1234-2026-07-20",
+            date="2026-08-02",
+            member_updates=(MemberUpdate(name="Ada", practices=(signal,)),),
+            practice_rollup=(("untracked-work", 1),),
+        )
+        with StandupStore(tmp_db) as store:
+            return store.record_run(report)
+
+    def test_thumbs_down_hides_the_signal_and_remembers_the_change(self, seeded_session, tmp_db):
+        from yeaboi.standup.store import StandupStore
+
+        run_id = self._seed_run(tmp_db)
+        payload = call_tool(
+            "standup_practice_feedback",
+            {"member": "Ada", "rule": "untracked-work", "verdict": "down", "note": "that is the spike ticket"},
+        )
+        assert payload["ok"] is True
+        assert payload["data"]["applied"] is True
+        assert payload["data"]["excused_changes"] == 1
+        with StandupStore(tmp_db) as store:
+            assert store.get_run_by_id(run_id).member_updates[0].practices == ()
+
+    def test_thumbs_up_leaves_the_report_alone(self, seeded_session, tmp_db):
+        from yeaboi.standup.store import StandupStore
+
+        run_id = self._seed_run(tmp_db)
+        payload = call_tool("standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "up"})
+        assert payload["data"]["confirmed_changes"] == 1
+        with StandupStore(tmp_db) as store:
+            assert store.get_run_by_id(run_id).member_updates[0].practices != ()
+
+    def test_an_unknown_member_reports_why_rather_than_failing(self, seeded_session, tmp_db):
+        self._seed_run(tmp_db)
+        payload = call_tool(
+            "standup_practice_feedback", {"member": "Grace", "rule": "untracked-work", "verdict": "down"}
+        )
+        assert payload["ok"] is True
+        assert payload["data"]["applied"] is False
+        assert "Grace" in payload["data"]["reason"]
+
+    def test_a_signal_predating_the_feature_says_so(self, seeded_session, tmp_db):
+        # Distinct from "no such signal": it is there, it just carries nothing
+        # to remember, and hiding it while forgetting it would be the worst of
+        # both. The two causes must not share a message.
+        self._seed_run(tmp_db, handles=())
+        payload = call_tool("standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "down"})
+        assert payload["data"]["applied"] is False
+        assert "predates" in payload["data"]["reason"]
+
+    def test_an_unknown_rule_is_rejected(self, seeded_session, tmp_db):
+        self._seed_run(tmp_db)
+        payload = call_tool("standup_practice_feedback", {"member": "Ada", "rule": "vibes", "verdict": "down"})
+        assert payload["ok"] is False
+
+    def test_an_unknown_verdict_is_rejected(self, seeded_session, tmp_db):
+        self._seed_run(tmp_db)
+        payload = call_tool(
+            "standup_practice_feedback", {"member": "Ada", "rule": "untracked-work", "verdict": "maybe"}
+        )
+        assert payload["ok"] is False
+
+
 class TestStandupConfigTools:
     def test_config_get_unset(self, seeded_session):
         payload = call_tool("standup_config_get")
@@ -1027,6 +1105,54 @@ class TestStandupConfigTools:
         payload = call_tool("standup_config_set", {"automation_handling": "flag"})
         assert payload["ok"] is False
         assert "automation_handling" in payload["error"]["message"]
+
+    def test_config_get_defaults_practices_to_on(self, seeded_session):
+        call_tool("standup_config_set", {"time": "09:15"})
+        config = call_tool("standup_config_get", {})["data"]["config"]
+        assert config["habit_detection"] == "on"
+        assert config["habit_rules"] == ""
+
+    def test_config_set_habit_fields_merge(self, seeded_session):
+        call_tool("standup_config_set", {"time": "09:15"})
+        payload = call_tool("standup_config_set", {"habit_detection": "off", "habit_rules": "wip-sprawl"})
+        config = payload["data"]["config"]
+        assert config["habit_detection"] == "off"
+        assert config["habit_rules"] == "wip-sprawl"
+        assert config["time"] == "09:15"  # earlier value preserved
+        # Omitting both keeps the tuned values — save_config is a full upsert,
+        # so a dropped key here would silently switch practices back on.
+        config = call_tool("standup_config_set", {"enabled": True})["data"]["config"]
+        assert config["habit_detection"] == "off"
+        assert config["habit_rules"] == "wip-sprawl"
+
+    def test_config_set_canonicalises_habit_rules(self, seeded_session):
+        payload = call_tool("standup_config_set", {"habit_rules": "wip-sprawl, untracked-work"})
+        assert payload["data"]["config"]["habit_rules"] == "untracked-work,wip-sprawl"
+
+    def test_config_set_rejects_bad_habit_detection(self, seeded_session):
+        payload = call_tool("standup_config_set", {"habit_detection": "maybe"})
+        assert payload["ok"] is False
+        assert "habit_detection" in payload["error"]["message"]
+
+    def test_config_set_rejects_an_unknown_habit_rule(self, seeded_session):
+        # Silently dropping a typo would read to the user as "that rule is off".
+        payload = call_tool("standup_config_set", {"habit_rules": "untracked-work,nonsense"})
+        assert payload["ok"] is False
+        assert "nonsense" in payload["error"]["message"]
+
+    def test_config_set_round_trips_habit_ai_match(self, seeded_session):
+        call_tool("standup_config_set", {"time": "09:15"})
+        assert call_tool("standup_config_get", {})["data"]["config"]["habit_ai_match"] == "on"
+        config = call_tool("standup_config_set", {"habit_ai_match": "off"})["data"]["config"]
+        assert config["habit_ai_match"] == "off"
+        # save_config is a full upsert, so an omitted key here would silently
+        # switch the LLM matching back on and start spending again.
+        assert call_tool("standup_config_set", {"enabled": True})["data"]["config"]["habit_ai_match"] == "off"
+
+    def test_config_set_rejects_bad_habit_ai_match(self, seeded_session):
+        payload = call_tool("standup_config_set", {"habit_ai_match": "sometimes"})
+        assert payload["ok"] is False
+        assert "habit_ai_match" in payload["error"]["message"]
 
 
 class TestServerEntry:

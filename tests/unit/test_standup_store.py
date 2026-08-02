@@ -952,3 +952,114 @@ class TestTranscriptConfig:
             cfg = store.load_config("s1")
         assert cfg["transcript_dir"] == ""
         assert cfg["transcript_review_enabled"] is True
+
+
+class TestPracticeConfig:
+    def _save(self, store, **over):
+        kwargs = dict(enabled=True, time="10:00", weekdays="1-5", delivery_channels=["terminal"])
+        kwargs.update(over)
+        store.save_config("s1", **kwargs)
+
+    def test_defaults_are_on_and_all_rules(self, db_path):
+        with StandupStore(db_path) as store:
+            self._save(store)
+            config = store.load_config("s1")
+        assert config["habit_detection"] == "on"
+        assert config["habit_rules"] == ""
+        assert config["habit_ai_match"] == "on"
+
+    def test_round_trips_both_columns(self, db_path):
+        with StandupStore(db_path) as store:
+            self._save(store, habit_detection="off", habit_rules="wip-sprawl,large-change", habit_ai_match="off")
+            config = store.load_config("s1")
+        assert config["habit_detection"] == "off"
+        assert config["habit_rules"] == "wip-sprawl,large-change"
+        assert config["habit_ai_match"] == "off"
+
+    def test_a_row_written_before_the_columns_existed_reads_as_on(self, db_path):
+        # The migration adds the columns with defaults; a legacy row must not
+        # come back with practices mysteriously disabled.
+        with StandupStore(db_path) as store:
+            self._save(store)
+            store._conn.execute("UPDATE standup_config SET habit_detection = '', habit_rules = '', habit_ai_match = ''")
+            config = store.load_config("s1")
+        assert config["habit_detection"] == "on"
+        assert config["habit_ai_match"] == "on"
+
+    def test_migration_is_idempotent(self, db_path):
+        with StandupStore(db_path) as store:
+            self._save(store, habit_detection="off")
+        # Re-opening runs the same ALTERs again; they must not raise or reset.
+        with StandupStore(db_path) as store:
+            assert store.load_config("s1")["habit_detection"] == "off"
+
+
+class TestPracticeReportRoundTrip:
+    def test_practices_and_rollup_survive_a_round_trip(self, db_path):
+        from yeaboi.agent.state import PracticeSignal
+
+        report = _make_report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="login",
+                    practices=(
+                        PracticeSignal(
+                            rule="untracked-work",
+                            title="Untracked work",
+                            detail="#91 carries no ticket reference.",
+                            evidence=(("#91", "https://x/pull/91"),),
+                            repeat=True,
+                            handles=("url:https://x/pull/91", "commit:acme/web:a1b2"),
+                        ),
+                    ),
+                ),
+            ),
+            practice_rollup=(("untracked-work", 1),),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            loaded = store.get_latest_report("s1")
+        signal = loaded.member_updates[0].practices[0]
+        assert (signal.rule, signal.title, signal.repeat) == ("untracked-work", "Untracked work", True)
+        # JSON turned the pair into a list — it must come back as a tuple.
+        assert signal.evidence == (("#91", "https://x/pull/91"),)
+        # Without these a stored signal cannot be voted on, so they matter as
+        # much as the prose does.
+        assert signal.handles == ("url:https://x/pull/91", "commit:acme/web:a1b2")
+        assert loaded.practice_rollup == (("untracked-work", 1),)
+
+    def test_a_signal_stored_before_handles_existed_still_loads(self, db_path):
+        import json
+
+        from yeaboi.agent.state import PracticeSignal
+
+        report = _make_report(
+            member_updates=(MemberUpdate(name="Alice", practices=(PracticeSignal(rule="untracked-work"),)),),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+            row = store._conn.execute("SELECT id, report_json FROM standup_history").fetchone()
+            payload = json.loads(row[1])
+            payload["member_updates"][0]["practices"][0].pop("handles", None)
+            store._conn.execute(
+                "UPDATE standup_history SET report_json = ? WHERE id = ?", (json.dumps(payload), row[0])
+            )
+            loaded = store.get_latest_report("s1")
+        assert loaded.member_updates[0].practices[0].handles == ()
+
+    def test_a_legacy_report_json_with_neither_key_still_loads(self, db_path):
+        import json
+
+        with StandupStore(db_path) as store:
+            store.record_run(_make_report())
+            row = store._conn.execute("SELECT id, report_json FROM standup_history").fetchone()
+            payload = json.loads(row[1])
+            payload["member_updates"][0].pop("practices", None)
+            payload.pop("practice_rollup", None)
+            store._conn.execute(
+                "UPDATE standup_history SET report_json = ? WHERE id = ?", (json.dumps(payload), row[0])
+            )
+            loaded = store.get_latest_report("s1")
+        assert loaded.member_updates[0].practices == ()
+        assert loaded.practice_rollup == ()

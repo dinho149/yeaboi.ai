@@ -25,6 +25,7 @@ from jira import JIRA, JIRAError
 from langchain_core.tools import tool
 
 from yeaboi.config import get_jira_base_url, get_jira_email, get_jira_project_key, get_jira_token
+from yeaboi.ticket_text import jira_wiki_to_text, ticket_text
 
 logger = logging.getLogger(__name__)
 
@@ -734,6 +735,48 @@ _MAX_UPDATES_TOTAL = 100
 _MAX_COMMENTS_PER_ISSUE = 5
 _MAX_COMMENTS_TOTAL = 50
 
+# The activity searches' base field lists. Kept as named constants because the
+# ticket-text option appends to them and has to be able to fall back to exactly
+# these on rejection.
+_STANDUP_ISSUE_FIELDS = "summary,assignee,status,updated,comment"
+_STANDUP_WIP_FIELDS = "summary,assignee,status"
+
+
+def _standup_text_fields(jira: JIRA) -> tuple[str, str, str]:
+    """Return (extra ``fields=`` suffix, acceptance id, definition-of-done id).
+
+    The suffix always contains at least ``description`` — that one is a built-in
+    field, so it needs no discovery and cannot be missing. Only the acceptance
+    and definition-of-done ids are per-instance custom fields, and either may
+    come back "" when discovery fails or the instance has no such field; the
+    ticket text is then just the description.
+
+    That is why the caller can treat ``suffix != base fields`` as "we asked for
+    the long form": it is true whenever ticket text was requested at all.
+    """
+    acceptance, dod = _discover_text_fields(jira)
+    return ",".join(f for f in ("description", acceptance, dod) if f), acceptance, dod
+
+
+def _ticket_body(fields, acceptance_id: str, dod_id: str) -> str:
+    """A ticket's description + acceptance criteria + definition of done, flattened.
+
+    This is what ``standup/relatedness.py`` matches a change against, so that a
+    commit belonging to a ticket it never names — documentation the ticket's
+    definition of done asked for, most of all — is not reported as unapproved
+    scope. Empty on any absence: the practice rules are one-sided, so no text
+    degrades to judging the change's own words alone, exactly as before.
+
+    PyJira talks REST v2, so these arrive as wiki-markup strings (sometimes
+    wrapping modern-editor content in an ``{adf}`` JSON macro), never as dicts.
+    """
+    return ticket_text(
+        getattr(fields, "description", "") or "",
+        (getattr(fields, acceptance_id, "") or "") if acceptance_id else "",
+        (getattr(fields, dod_id, "") or "") if dod_id else "",
+        flatten=jira_wiki_to_text,
+    )
+
 
 def jira_recent_activity(
     project_key: str = "",
@@ -743,6 +786,7 @@ def jira_recent_activity(
     include_changelog: bool = True,
     include_comments: bool = True,
     include_wip: bool = True,
+    include_ticket_text: bool = False,
 ) -> list[dict]:
     """Return Jira activity since the window start: updated issues, the people
     who actually changed/commented on them, and in-progress (WIP) tickets.
@@ -757,6 +801,14 @@ def jira_recent_activity(
     - ``comment`` — an in-window comment, credited to the comment author
     - ``wip``     — an in-progress ticket in the open sprint, credited to its assignee,
                     even if untouched in the window (so quiet in-flight work is visible)
+
+    ``include_ticket_text`` additionally puts each ticket's description,
+    acceptance criteria and definition of done on ``body`` for ``issue`` and
+    ``wip`` items. It costs no extra search — the fields ride the requests we
+    already make — beyond one cached ``jira.fields()`` scan to learn the two
+    custom-field ids. Only the standup asks for it; reporting and performance
+    reuse this function over much longer windows and would pay for text they
+    drop immediately.
 
     Returns [] when Jira is unconfigured or the query fails (logged at warning).
     """
@@ -773,13 +825,27 @@ def jira_recent_activity(
 
     cutoff = _activity_cutoff(days, since)
     updated_clause = f'updated >= "{since:%Y-%m-%d}"' if since is not None else f"updated >= -{int(days)}d"
+    acceptance_id = dod_id = ""
+    fields_param = _STANDUP_ISSUE_FIELDS
+    if include_ticket_text:
+        extra, acceptance_id, dod_id = _standup_text_fields(jira)
+        if extra:
+            fields_param = f"{_STANDUP_ISSUE_FIELDS},{extra}"
+    jql = f'project = "{key}" AND {updated_clause} ORDER BY updated DESC'
     try:
-        issues = jira.search_issues(
-            f'project = "{key}" AND {updated_clause} ORDER BY updated DESC',
-            maxResults=100,
-            fields="summary,assignee,status,updated,comment",
-            expand="changelog",
-        )
+        try:
+            issues = jira.search_issues(jql, maxResults=100, fields=fields_param, expand="changelog")
+        except JIRAError:
+            # A field id Jira rejects (a stale cache after the process was
+            # pointed at another instance) 400s the MAIN activity search, not
+            # just the enrichment. The ticket text is a bonus; the activity is
+            # the product — retry once without it rather than lose the source.
+            if fields_param == _STANDUP_ISSUE_FIELDS:
+                raise
+            logger.warning("jira_recent_activity: enriched fields rejected — retrying without ticket text")
+            acceptance_id = dod_id = ""
+            fields_param = _STANDUP_ISSUE_FIELDS
+            issues = jira.search_issues(jql, maxResults=100, fields=fields_param, expand="changelog")
         items: list[dict] = []
         seen_keys: set[str] = set()
         update_total = comment_total = 0
@@ -799,6 +865,11 @@ def jira_recent_activity(
                     "timestamp": (getattr(issue.fields, "updated", "") or "")[:19],
                     "key": issue.key,
                     "url": _issue_url(issue.key),
+                    # Set on issue/wip items only, never on the update/comment
+                    # items below: "comment" is one of automation.py's
+                    # detectable kinds, and a ticket description there would go
+                    # through scanner-marker matching and burst fingerprinting.
+                    **({"body": _ticket_body(issue.fields, acceptance_id, dod_id)} if include_ticket_text else {}),
                 }
             )
             if include_changelog and update_total < _MAX_UPDATES_TOTAL:
@@ -813,7 +884,19 @@ def jira_recent_activity(
                 items.extend(emitted)
 
         if include_wip:
-            items.extend(_wip_items(jira, key, seen_keys))
+            items.extend(
+                _wip_items(
+                    jira,
+                    key,
+                    seen_keys,
+                    # Not `include_ticket_text`: if the main search had to fall
+                    # back, the ids were cleared and asking again would just
+                    # repeat the rejection.
+                    include_ticket_text=fields_param != _STANDUP_ISSUE_FIELDS,
+                    acceptance_id=acceptance_id,
+                    dod_id=dod_id,
+                )
+            )
 
         logger.info("jira_recent_activity: %d item(s) (window since %s)", len(items), cutoff.isoformat())
         return items
@@ -824,6 +907,55 @@ def jira_recent_activity(
     except Exception as e:
         logger.warning("jira_recent_activity unexpected error: %s", e)
         return []
+
+
+def jira_open_tickets(project_key: str = "", *, limit: int = 200) -> list[dict]:
+    """Open (not-done) tickets in the project, with their long-form text.
+
+    These are NOT activity and must never be presented as such — nobody touched
+    them today. They exist so the standup's practice rules can ask "does this
+    unlabelled commit belong to a ticket that already exists?" about a ticket
+    raised last sprint and quietly worked ever since. Without them, long-running
+    work is the single largest source of false "no ticket behind this" reports.
+
+    Items carry ``kind="ticket_context"`` so no rule that walks activity kinds
+    can pick them up by accident. Returns [] on any failure — matching context is
+    a bonus, and its absence only ever costs a suppression.
+    """
+    jira = _make_jira_client()
+    if jira is None:
+        return []
+    key = project_key.strip() or (get_jira_project_key() or "")
+    if not key:
+        return []
+    safe_key = key.replace('"', '\\"')
+    extra, acceptance_id, dod_id = _standup_text_fields(jira)
+    fields_param = f"{_STANDUP_WIP_FIELDS},{extra}" if extra else _STANDUP_WIP_FIELDS
+    jql = f'project = "{safe_key}" AND statusCategory != Done ORDER BY updated DESC'
+    try:
+        issues = jira.search_issues(jql, maxResults=max(1, int(limit)), fields=fields_param)
+    except Exception as e:
+        logger.warning("jira_open_tickets failed: %s", e)
+        return []
+    out: list[dict] = []
+    for issue in issues:
+        author_name, author_email = _actor_fields(getattr(issue.fields, "assignee", None))
+        status = getattr(issue.fields, "status", None)
+        out.append(
+            {
+                "author": author_name,
+                "author_email": author_email,
+                "kind": "ticket_context",
+                "title": getattr(issue.fields, "summary", ""),
+                "status": getattr(status, "name", "") if status else "",
+                "timestamp": "",
+                "key": issue.key,
+                "url": _issue_url(issue.key),
+                "body": _ticket_body(issue.fields, acceptance_id, dod_id),
+            }
+        )
+    logger.info("jira_open_tickets: %d open ticket(s) for matching context", len(out))
+    return out
 
 
 def jira_assignee_roster(project_key: str = "", days: int = 30) -> list[dict]:
@@ -980,7 +1112,15 @@ def _comment_items(issue, summary: str, cutoff: datetime) -> list[dict]:
     return out
 
 
-def _wip_items(jira: JIRA, key: str, seen_keys: set[str]) -> list[dict]:
+def _wip_items(
+    jira: JIRA,
+    key: str,
+    seen_keys: set[str],
+    *,
+    include_ticket_text: bool = False,
+    acceptance_id: str = "",
+    dod_id: str = "",
+) -> list[dict]:
     """Assigned in-progress tickets in the open sprint — the "what they're working on" signal.
 
     Skips issues already emitted by the updated-in-window search (those carry a
@@ -988,17 +1128,38 @@ def _wip_items(jira: JIRA, key: str, seen_keys: set[str]) -> list[dict]:
     site without them falls back to a recently-updated statusCategory query, and
     any failure degrades to [] (auth errors were already surfaced by the main
     search, which shares the client).
+
+    The field ids are threaded in rather than rediscovered so a carried-WIP
+    ticket arrives with the same ``body`` as one the main search returned —
+    without them these tickets would be title-only and invisible to relatedness
+    matching.
     """
+    fields_param = _STANDUP_WIP_FIELDS
+    if include_ticket_text:
+        extra = ",".join(f for f in ("description", acceptance_id, dod_id) if f)
+        fields_param = f"{_STANDUP_WIP_FIELDS},{extra}"
     wip_jql = (
         f'project = "{key}" AND sprint in openSprints() AND statusCategory = "In Progress" AND assignee is not EMPTY'
     )
     fallback_jql = f'project = "{key}" AND statusCategory = "In Progress" AND assignee is not EMPTY AND updated >= -14d'
     for jql in (wip_jql, fallback_jql):
         try:
-            wip = jira.search_issues(jql, maxResults=50, fields="summary,assignee,status")
+            wip = jira.search_issues(jql, maxResults=50, fields=fields_param)
         except JIRAError as e:
-            logger.warning("jira wip query failed (%s): %s", jql, _jira_error_msg(e))
-            continue
+            if fields_param != _STANDUP_WIP_FIELDS:
+                # Same reasoning as the main search: a field Jira rejects must
+                # cost the ticket text, not the in-flight tickets themselves.
+                logger.warning("jira wip query: enriched fields rejected — retrying without ticket text")
+                fields_param = _STANDUP_WIP_FIELDS
+                include_ticket_text = False
+                try:
+                    wip = jira.search_issues(jql, maxResults=50, fields=fields_param)
+                except Exception as retry_error:
+                    logger.warning("jira wip query failed (%s): %s", jql, retry_error)
+                    continue
+            else:
+                logger.warning("jira wip query failed (%s): %s", jql, _jira_error_msg(e))
+                continue
         except Exception as e:
             logger.warning("jira wip query unexpected error: %s", e)
             return []
@@ -1020,6 +1181,7 @@ def _wip_items(jira: JIRA, key: str, seen_keys: set[str]) -> list[dict]:
                     "timestamp": "",
                     "key": issue.key,
                     "url": _issue_url(issue.key),
+                    **({"body": _ticket_body(issue.fields, acceptance_id, dod_id)} if include_ticket_text else {}),
                 }
             )
         return out
@@ -1172,40 +1334,64 @@ _POKER_TYPE_NAMES: dict[str, frozenset[str]] = {
     "task": frozenset({"task"}),
 }
 
-# Acceptance criteria is always a custom field in Jira (there is no builtin).
-# Discovered once via jira.fields() and cached module-level: None = not yet
-# attempted (a transient failure retries on the next fetch), "" = this
-# instance has no such field (never re-scan), anything else = the field id.
+# Acceptance criteria and definition of done are always custom fields in Jira
+# (there is no builtin for either). Discovered together in ONE jira.fields()
+# scan and cached module-level: None = not yet attempted (a transient failure
+# retries on the next fetch), "" = this instance has no such field (never
+# re-scan), anything else = the field id.
+#
+# Exact display-name match, never substring: "Acceptance Test Plan" is not the
+# acceptance-criteria field, and reading the wrong field would feed the standup
+# practice matcher text that has nothing to do with the ticket's criteria.
 _ACCEPTANCE_FIELD_NAMES = frozenset({"acceptance criteria"})
+_DOD_FIELD_NAMES = frozenset({"definition of done", "dod", "done criteria"})
 _acceptance_field_cache: str | None = None
+_dod_field_cache: str | None = None
 
 
-def _discover_acceptance_field(jira: JIRA) -> str:
-    """Find this instance's acceptance-criteria custom-field id ("" if none).
+def _discover_text_fields(jira: JIRA) -> tuple[str, str]:
+    """Find (acceptance-criteria, definition-of-done) custom-field ids ("" if none).
 
     Same display-name scan as _discover_story_points_field, but run BEFORE the
     search (the fields= param must name the field to fetch it) and cached only
     on a successful scan so transient API failures don't poison the session.
+    One scan populates both caches — the poker path and the standup share it.
     """
-    global _acceptance_field_cache
-    if _acceptance_field_cache is not None:
-        return _acceptance_field_cache
+    global _acceptance_field_cache, _dod_field_cache
+    if _acceptance_field_cache is not None and _dod_field_cache is not None:
+        return _acceptance_field_cache, _dod_field_cache
     try:
-        found = ""
+        acceptance = dod = ""
         for field in jira.fields():
-            if (field.get("name") or "").strip().lower() in _ACCEPTANCE_FIELD_NAMES:
-                found = field.get("id") or ""
-                break
-        _acceptance_field_cache = found
-        logger.info("_discover_acceptance_field: %s", "found" if found else "none on this instance")
-        return found
+            name = (field.get("name") or "").strip().lower()
+            if not acceptance and name in _ACCEPTANCE_FIELD_NAMES:
+                acceptance = field.get("id") or ""
+            elif not dod and name in _DOD_FIELD_NAMES:
+                dod = field.get("id") or ""
+        _acceptance_field_cache, _dod_field_cache = acceptance, dod
+        logger.info(
+            "_discover_text_fields: acceptance=%s definition_of_done=%s",
+            "found" if acceptance else "none",
+            "found" if dod else "none",
+        )
+        return acceptance, dod
     except Exception as e:
-        logger.warning("_discover_acceptance_field failed: %s", e)
-        return ""
+        logger.warning("_discover_text_fields failed: %s", e)
+        return "", ""
+
+
+def _discover_acceptance_field(jira: JIRA) -> str:
+    """This instance's acceptance-criteria custom-field id ("" if none)."""
+    return _discover_text_fields(jira)[0]
 
 
 def _poker_search_fields(jira: JIRA) -> tuple[str, str]:
-    """Return (fields param for search_issues, acceptance-criteria field id or "")."""
+    """Return (fields param for search_issues, acceptance-criteria field id or "").
+
+    Poker keeps an acceptance-only view deliberately: it renders the AC beside
+    the ticket, and a definition-of-done field appearing in that slot would read
+    as criteria the estimate has to cover.
+    """
     ac_field = _discover_acceptance_field(jira)
     return (_POKER_ISSUE_FIELDS + "," + ac_field if ac_field else _POKER_ISSUE_FIELDS), ac_field
 

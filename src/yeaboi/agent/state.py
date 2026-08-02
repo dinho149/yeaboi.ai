@@ -359,6 +359,34 @@ class ActivityEvidence:
 
 
 @dataclass(frozen=True)
+class PracticeSignal:
+    """One deterministic engineering-practice observation about a member's day.
+
+    Produced by ``standup/habits.py`` from the collected activity — never by the
+    LLM, and never shown to it. Each signal is an *observation with evidence*
+    ("this PR has no ticket reference", with the PR's link), not a verdict:
+    the standup names people, so a rule only fires on positive evidence and a
+    missed signal is always preferred to a wrong one.
+
+    ``rule`` is an engine-produced vocabulary, not a validated one — an
+    unrecognised id renders with the muted fallback tone rather than failing a
+    build (same treatment as confidence labels and coverage statuses).
+    """
+
+    rule: str = ""  # "untracked-work" | "board-not-updated" | … (habits.ALL_RULES)
+    title: str = ""  # short label for the chip, e.g. "Untracked work"
+    detail: str = ""  # the observation plus its nudge, one or two sentences
+    evidence: tuple[tuple[str, str], ...] = ()  # (label, url) — the items observed
+    repeat: bool = False  # the same signal also fired in the previous standup
+    # Stable ids of EVERY change behind this signal — ``habits.change_handle``.
+    # Internal identity, not display: this is what a thumbs-down remembers, so a
+    # change excused once never fires again. Deliberately wider than ``evidence``,
+    # which is capped at four links, and deliberately absent from the export
+    # payload — a static HTML file can do nothing with it.
+    handles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class MemberUpdate:
     """One team member's standup update for a given day."""
 
@@ -385,6 +413,9 @@ class MemberUpdate:
     ticketing_evidence: tuple[ActivityEvidence, ...] = ()
     code_evidence: tuple[ActivityEvidence, ...] = ()
     documentation_evidence: tuple[ActivityEvidence, ...] = ()
+    # Deterministic practice observations (standup/habits.py) — capped, and
+    # empty whenever detection is off or the tracker coverage can't support it.
+    practices: tuple[PracticeSignal, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -417,6 +448,8 @@ class StandupReport:
     # Reader-authored additions; see Annotation. Defaulted so a report stored
     # before browser editing existed still deserializes.
     annotations: tuple[Annotation, ...] = ()
+    # (rule, member count) for the overview rollup — same shape as activity_counts
+    practice_rollup: tuple[tuple[str, int], ...] = ()
 
 
 # See docs: "Session Management" — Daily Standup transcript-review artifacts

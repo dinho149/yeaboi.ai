@@ -29,6 +29,7 @@ from yeaboi.artifacts.render import annotations_markdown, edit_map, row_anchor, 
 from yeaboi.html_theme import prose_bullets as _summary_bullets
 from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
+from yeaboi.standup import references
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,11 @@ _SPARKLINE_MAX_POINTS = 14
 
 # Jira-style ticket keys ("PSOT-12"). AzDO work items ("#1234" / "AB#1234")
 # deliberately don't match — their URLs only ever arrive via the *_links tuples.
-_TICKET_KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+# Aliased rather than re-declared: `references` owns the pattern (habits.py has
+# to agree with it exactly), and the local name keeps this module's five other
+# consumers — _KEY_ONLY_RE, _ticket_title_map, _runs, _leftover_links — as they
+# were.
+_TICKET_KEY_RE = references.TICKET_KEY_RE
 
 # The same alternation `_runs` builds, for the no-member-names case. Named so
 # the two branches read out of one `match.lastgroup` either way.
@@ -108,6 +113,9 @@ def _member_prose(m: MemberUpdate) -> tuple[str, ...]:
         getattr(m, "progress_note", "") or "",
         getattr(m, "outlook", "") or "",
         m.self_report or "",
+        # Practice details name ticket keys ("PSOT-12 shipped but the board…"),
+        # so they belong in the prefix-gated key map like any other prose.
+        *(s.detail or "" for s in getattr(m, "practices", ()) or ()),
     )
 
 
@@ -147,13 +155,13 @@ def _ticket_key_map(report: StandupReport) -> dict[str, str]:
     base = get_jira_base_url()
     if not base:
         return key_map
-    known_prefixes = {k.split("-")[0] for k in key_map}
+    known_prefixes = references.prefixes_of(key_map)
     prose: list[str] = [report.team_summary or "", report.confidence_rationale or ""]
     for m in report.member_updates:
         prose.extend(_member_prose(m))
     for text in prose:
-        for key in _TICKET_KEY_RE.findall(text):
-            if key not in key_map and key.split("-")[0] in known_prefixes:
+        for key in references.gated_ticket_keys(text, prefixes=known_prefixes):
+            if key not in key_map:
                 key_map[key] = f"{base.rstrip('/')}/browse/{key}"
     return key_map
 
@@ -523,6 +531,11 @@ def build_standup_markdown(report: StandupReport) -> str:
                 bullets.append(f"- **Outlook:** {_md_runs(_runs(m.outlook, key_map, titles=titles, seen=seen))}")
             if m.blockers:
                 bullets.append(f"- **Blocker:** {_md_runs(_runs(m.blockers, key_map, titles=titles, seen=seen))}")
+            for signal in getattr(m, "practices", ()) or ():
+                again = " (again today)" if getattr(signal, "repeat", False) else ""
+                detail = _md_runs(_runs(signal.detail, key_map, titles=titles, seen=seen))
+                refs = _refs(signal.evidence) if signal.evidence else ""
+                bullets.append(f"- **{signal.title}{again}:** {detail}{f' — {refs}' if refs else ''}")
             # Legacy reports carry only the general links tuple.
             category_links = (
                 *(getattr(m, "ticketing_links", ()) or ()),
@@ -590,6 +603,14 @@ def _category_payload(
         "links": _links_payload(_leftover_links(summary, links)),
         "evidence": _evidence_payload(evidence),
     }
+
+
+def _practice_title(rule: str) -> str:
+    """Human label for a rule id — sent with the rollup so the bundle needn't
+    carry a second copy of a vocabulary the engine owns."""
+    from yeaboi.standup.habits import RULE_TITLES
+
+    return RULE_TITLES.get(rule, rule.replace("-", " ").capitalize())
 
 
 def _member_payload(
@@ -685,6 +706,25 @@ def _member_payload(
         elif summary:
             out["footnotes"].append({"label": label, "runs": runs(summary)})
 
+    # Practices sit after the categories: the reader has just seen what shipped,
+    # which is the context that makes "no ticket behind it" mean anything. The
+    # rule id travels as the word — the component maps it to a tone, and an id
+    # it doesn't know renders muted rather than failing a build.
+    #
+    # ``handles`` is deliberately absent: it is internal identity for the
+    # feedback ledger, and an export is a file with nothing to vote from.
+    if practices := getattr(m, "practices", ()) or ():
+        out["practices"] = [
+            {
+                "rule": s.rule,
+                "title": s.title,
+                "detail": runs(s.detail),
+                "evidence": _links_payload(s.evidence),
+                **({"repeat": True} if getattr(s, "repeat", False) else {}),
+            }
+            for s in practices
+        ]
+
     if getattr(m, "outlook", ""):
         out["outlook"] = runs(m.outlook)
     if m.self_report:
@@ -704,7 +744,7 @@ def _member_payload(
 
 
 def standup_export_args(
-    report: StandupReport, *, history: Sequence[dict] = (), editable: bool = False
+    report: StandupReport, *, history: Sequence[dict] = (), editable: bool = False, correctable: bool = False
 ) -> dict[str, object]:
     """Return the chrome + payload keyword arguments for one standup document.
 
@@ -716,6 +756,12 @@ def standup_export_args(
     Page-level arguments — ``markdown_name``, ``document_title`` — deliberately
     stay with the caller: a served document has no sibling Markdown file, so
     naming one would point a reader at something nobody wrote.
+
+    ``correctable`` says a live share server is behind this page and will accept
+    a verdict on a practice signal. False for every written file: an export on
+    disk has nowhere to send one, and rendering the controls anyway would offer
+    the reader a button that silently does nothing. Independent of ``editable``:
+    a reader may answer a signal on a document whose prose they cannot rewrite.
     """
     from yeaboi.html_theme import image_data_uri, trend
 
@@ -772,6 +818,14 @@ def standup_export_args(
             "activityWindow": report.activity_window,
             "coverage": [[category, status] for category, status in report.category_coverage],
             "skipped": [[source, reason] for source, reason in report.skipped_sources],
+            # Overview rollup. `count` is MEMBERS, so "2" beside untracked-work
+            # means two people, not two PRs. An object rather than the pair-array
+            # its neighbours use, because three heterogeneous fields read badly
+            # as a positional tuple.
+            "practices": [
+                {"rule": rule, "count": count, "title": _practice_title(rule)}
+                for rule, count in getattr(report, "practice_rollup", ()) or ()
+            ],
             "images": images,
             "trend": trend(
                 history,
@@ -788,22 +842,36 @@ def standup_export_args(
             ),
             "warnings": list(report.warnings or []),
             **({"edit": edit_map("", report, ("team_summary", "confidence_rationale"))} if editable else {}),
+            # A capability, not a style: whether this page has a server that will
+            # take a verdict. Only sent when true, so every written export keeps
+            # exactly the payload it had.
+            **({"correctable": True} if correctable else {}),
         },
         footer=f"Generated by yeaboi.ai • {datetime.now().strftime('%Y-%m-%d')}",
     )
     return with_annotations(args, report)
 
 
-def build_standup_html(report: StandupReport, *, history: Sequence[dict] = (), document_title: str = "") -> str:
+def build_standup_html(
+    report: StandupReport,
+    *,
+    history: Sequence[dict] = (),
+    document_title: str = "",
+    correctable: bool = False,
+) -> str:
     """Return the standup as a self-contained HTML document.
 
     ``history`` is optional ``StandupStore.get_history`` rows (newest-first);
     with two or more usable points it powers the confidence-trend sparkline.
+
+    ``correctable`` is passed through to :func:`standup_export_args`, and is what
+    separates a share whose reader may answer a practice signal from a file on
+    disk, which has nowhere to send one.
     """
     from yeaboi.html_theme import export_page
 
     return export_page(
-        **standup_export_args(report, history=history),  # type: ignore[arg-type]
+        **standup_export_args(report, history=history, correctable=correctable),  # type: ignore[arg-type]
         markdown_name=f"{_stem(report)}.md",
         document_title=document_title,
     )

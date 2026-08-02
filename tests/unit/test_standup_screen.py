@@ -1253,17 +1253,6 @@ class TestDayOverDayScreen:
         assert "▼" not in out
 
 
-def _render(panel, width: int) -> str:
-    """Render a panel to plain text for content assertions."""
-    import io
-
-    from rich.console import Console
-
-    buf = io.StringIO()
-    Console(file=buf, width=width, force_terminal=False).print(panel)
-    return buf.getvalue()
-
-
 def _review(**over):
     from yeaboi.agent.state import StandupGap, TranscriptClaim, TranscriptReview, TranscriptSource
 
@@ -1492,3 +1481,255 @@ class TestActionRowWrapping:
         for sel in range(len(self.ACTIONS)):
             panel = _build_standup_screen(_review_data(), width=80, height=30, actions=self.ACTIONS, action_sel=sel)
             assert isinstance(panel, Panel)
+
+
+class TestPracticesOnScreen:
+    def _report_with_practices(self, **over):
+        from yeaboi.agent.state import PracticeSignal
+
+        base = dict(
+            rule="untracked-work",
+            title="Untracked work",
+            detail="#91 carries no ticket reference in the branch, title, or description.",
+            evidence=(("#91", "https://x/pull/91"),),
+        )
+        base.update(over)
+        return StandupReport(
+            date="2026-07-10",
+            sprint_name="Sprint 5",
+            sprint_day=3,
+            sprint_total_days=10,
+            confidence_pct=82,
+            confidence_label="At risk",
+            confidence_rationale="behind ideal burn",
+            member_updates=(MemberUpdate(name="Alice", summary="login page", practices=(PracticeSignal(**base),)),),
+            practice_rollup=(("untracked-work", 1),),
+        )
+
+    def _render(self, data, **kwargs) -> str:
+        from rich.console import Console
+
+        panel = _build_standup_screen(data, width=110, height=60, **kwargs)
+        console = Console(width=120, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        return cap.get()
+
+    def test_member_detail_shows_the_practice_panel(self):
+        data = {"report": self._report_with_practices(), "schedule": {}}
+        out = self._render(data, view="member:Alice")
+        assert "Untracked work" in out
+        assert "no ticket reference" in out
+
+    def test_member_detail_marks_a_repeat(self):
+        data = {"report": self._report_with_practices(repeat=True), "schedule": {}}
+        assert "again today" in self._render(data, view="member:Alice")
+
+    def test_summary_detail_shows_the_team_rollup(self):
+        data = {"report": self._report_with_practices(), "schedule": {}}
+        assert "Untracked work" in self._render(data, view="summary")
+
+    def test_a_report_with_no_practices_renders_unchanged(self):
+        out = self._render({"report": _report(), "schedule": {}}, view="member:Alice")
+        assert "Alice" in out
+        assert "Untracked work" not in out
+
+    def test_schedule_card_shows_practices_only_when_tuned(self):
+        data = {"report": _report(), "schedule": {}, "config": {"time": "10:00", "habit_detection": "on"}}
+        assert "Practices" not in self._render(data, view="schedule")
+        data["config"]["habit_detection"] = "off"
+        assert "Practices" in self._render(data, view="schedule")
+
+    def test_the_correct_it_hint_appears_only_when_a_verdict_could_be_recorded(self):
+        # A signal from a report written before feedback existed carries no
+        # handles, so offering to correct it would promise more than it does.
+        without = {"report": self._report_with_practices(), "schedule": {}}
+        assert "Press Practices" not in self._render(without, view="member:Alice")
+        with_handles = {
+            "report": self._report_with_practices(handles=("url:https://x/pull/91",)),
+            "schedule": {},
+        }
+        assert "Press Practices" in self._render(with_handles, view="member:Alice")
+
+
+class TestPracticeReviewScreen:
+    def _signals(self, n=2):
+        from yeaboi.agent.state import PracticeSignal
+
+        return [
+            PracticeSignal(
+                rule=f"rule-{i}",
+                title=f"Signal {i}",
+                detail=f"Something about change {i} that runs long enough to need clipping on a narrow screen.",
+                handles=(f"h{i}",),
+            )
+            for i in range(n)
+        ]
+
+    def _render(self, signals, verdicts, cursor=0, width=100, height=30) -> str:
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_practice_review_screen
+
+        panel = _build_standup_practice_review_screen("Alice", signals, verdicts, cursor, width=width, height=height)
+        console = Console(width=width + 10, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(panel)
+        return cap.get()
+
+    def test_it_names_the_member_and_both_verdicts(self):
+        out = self._render(self._signals(), {})
+        assert "Alice" in out
+        assert "Y right" in out and "N wrong" in out
+
+    def test_each_signal_shows_its_title_and_sentence(self):
+        out = self._render(self._signals(), {})
+        assert "Signal 0" in out and "Signal 1" in out
+        assert "Something about change 0" in out
+
+    def test_verdict_markers_render(self):
+        out = self._render(self._signals(), {0: "down", 1: "up"})
+        assert "▼" in out and "▲" in out
+        assert "2 of 2 answered" in out
+
+    def test_unanswered_signals_look_neutral(self):
+        # The resting state must not read as a list of accusations to confirm,
+        # so an unvoted row carries the neutral mark, not a verdict. The legend
+        # above the list shows both arrows either way — assert on the rows.
+        out = self._render(self._signals(), {})
+        assert "0 of 2 answered" in out
+        assert "· Signal 0" in out and "· Signal 1" in out
+        assert "▼ Signal" not in out and "▲ Signal" not in out
+
+    def test_an_empty_list_says_so_rather_than_rendering_blank(self):
+        assert "No practice signals" in self._render([], {})
+
+    def test_a_long_list_still_renders(self):
+        out = self._render(self._signals(20), {}, cursor=19, height=24)
+        assert "Alice" in out
+
+
+class TestRunPracticeReviewLoop:
+    """Drive _run_standup_practice_review — the key handling the builder tests can't reach.
+
+    The loop is the part a person actually touches, and its contract is narrow:
+    Esc writes nothing, Enter without an answer refuses, a thumbs-down asks for
+    a note and corrects the stored report, a thumbs-up does not.
+    """
+
+    class _FakeLive:
+        def update(self, renderable):
+            self.last = renderable
+
+    @staticmethod
+    def _console():
+        from types import SimpleNamespace
+
+        return SimpleNamespace(size=(100, 40))
+
+    @staticmethod
+    def _reader(keys):
+        it = iter(keys)
+
+        def read_key(timeout=None):
+            return next(it)
+
+        return read_key
+
+    def _seed(self, db_path):
+        from yeaboi.agent.state import MemberUpdate, PracticeSignal, StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        signals = (
+            PracticeSignal(
+                rule="untracked-work",
+                title="Untracked work",
+                detail="#91 carries no ticket reference.",
+                evidence=(("#91", "https://x/pull/91"),),
+                handles=("url:https://x/pull/91",),
+            ),
+            PracticeSignal(rule="large-change", title="Oversized change", detail="38 files.", handles=("h2",)),
+        )
+        report = StandupReport(
+            session_id="s1",
+            date="2026-08-02",
+            member_updates=(MemberUpdate(name="Alice", practices=signals),),
+            practice_rollup=(("untracked-work", 1), ("large-change", 1)),
+        )
+        with StandupStore(db_path) as store:
+            store.record_run(report)
+        return list(signals)
+
+    def _run(self, keys, db_path, signals, monkeypatch, note=""):
+        from yeaboi.ui import mode_select
+
+        monkeypatch.setattr(mode_select, "_get_db_path", lambda: db_path)
+        # The note prompt is its own screen; stub it so this test drives only
+        # the verdict loop's keys.
+        monkeypatch.setattr(mode_select, "_standup_read_line", lambda *a, **k: note)
+        return mode_select._run_standup_practice_review(
+            self._console(), self._FakeLive(), self._reader(keys), 0.01, True, "s1", "Alice", signals
+        )
+
+    def test_esc_records_nothing(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        assert self._run(["n", "esc"], db, signals, monkeypatch) == ""
+        with StandupStore(db) as store:
+            assert store.load_practice_feedback("s1") == []
+            assert len(store.get_latest_report("s1").member_updates[0].practices) == 2
+
+    def test_enter_with_nothing_answered_refuses_then_esc_leaves(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        assert self._run(["enter", "esc"], db, signals, monkeypatch) == ""
+        with StandupStore(db) as store:
+            assert store.load_practice_feedback("s1") == []
+
+    def test_a_thumbs_down_hides_it_and_keeps_the_note(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        msg = self._run(["n", "enter"], db, signals, monkeypatch, note="that is the spike ticket")
+        assert "hidden" in msg
+        with StandupStore(db) as store:
+            rows = store.load_practice_feedback("s1")
+            assert [r["verdict"] for r in rows] == ["down"]
+            assert rows[0]["note"] == "that is the spike ticket"
+            assert [s.rule for s in store.get_latest_report("s1").member_updates[0].practices] == ["large-change"]
+
+    def test_a_thumbs_up_confirms_without_hiding(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        msg = self._run(["y", "enter"], db, signals, monkeypatch)
+        assert "confirmed" in msg
+        with StandupStore(db) as store:
+            assert len(store.get_latest_report("s1").member_updates[0].practices) == 2
+
+    def test_c_clears_a_verdict_before_saving(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        # Down on the first, cleared, then down on the second instead.
+        self._run(["n", "c", "down", "n", "enter"], db, signals, monkeypatch)
+        with StandupStore(db) as store:
+            rows = store.load_practice_feedback("s1")
+            assert [r["rule"] for r in rows] == ["large-change"]
+
+    def test_both_signals_can_be_answered_in_one_pass(self, tmp_path, monkeypatch):
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        signals = self._seed(db)
+        self._run(["n", "down", "y", "enter"], db, signals, monkeypatch)
+        with StandupStore(db) as store:
+            rows = {r["rule"]: r["verdict"] for r in store.load_practice_feedback("s1")}
+            assert rows == {"untracked-work": "down", "large-change": "up"}

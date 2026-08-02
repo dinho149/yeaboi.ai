@@ -3106,6 +3106,96 @@ def _build_standup_team_member_screen(
     return build_page_panel(content, theme=STANDUP_THEME, height=height)
 
 
+#: Verdict → (marker, style attribute on the theme). ``None`` is "not voted on",
+#: which is the resting state and must not look like a judgement either way.
+_PRACTICE_VERDICT_MARKS = {
+    "up": ("▲", "good"),
+    "down": ("▼", "warn"),
+    None: ("·", "dim"),
+}
+
+
+def _build_standup_practice_review_screen(
+    member: str,
+    signals: list,
+    verdicts: dict[int, str],
+    cursor: int,
+    *,
+    width: int = 80,
+    height: int = 24,
+    message: str = "",
+) -> Panel:
+    """Review one member's practice signals: was each one right about them?
+
+    A verdict per signal rather than a multi-select, because the two answers are
+    not "on/off" — a thumbs-down suppresses the signal and teaches the matcher,
+    a thumbs-up only teaches it. Unvoted rows are the resting state and stay
+    unstyled: this screen must not read as a list of accusations to confirm.
+    """
+    from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+    theme = STANDUP_THEME
+    rows: list[Text] = []
+    if message:
+        rows.extend((Text(_PAD + message, style=theme.warn), Text("")))
+    voted = sum(1 for v in verdicts.values() if v)
+    rows.extend((Text(_PAD + f"{voted} of {len(signals)} answered", style=theme.muted), Text("")))
+
+    for idx, signal in enumerate(signals):
+        verdict = verdicts.get(idx)
+        mark, tone = _PRACTICE_VERDICT_MARKS[verdict]
+        active = idx == cursor
+        row = Text(_PAD + "  ")
+        row.append("‹ " if active else "  ", style=theme.accent_bright)
+        row.append(mark, style=getattr(theme, tone))
+        row.append(f" {getattr(signal, 'title', '')}", style="bold white" if active else theme.value)
+        if active:
+            row.append(" ›", style=theme.accent_bright)
+        rows.append(row)
+        # The sentence the member would read, dimmed under its own title — the
+        # verdict is about this wording, so voting blind on the label alone
+        # would be voting on the rule rather than on the call it made.
+        detail = " ".join(str(getattr(signal, "detail", "")).split())
+        # One line each, ellipsised — the row arithmetic below assumes three rows
+        # per signal, and a wrapped sentence would silently make it four.
+        # no_wrap/overflow only bind inside a Panel, which build_page_panel gives us.
+        rows.append(Text(_PAD + "      " + detail, style=theme.desc, no_wrap=True, overflow="ellipsis"))
+        rows.append(Text(""))
+    if not signals:
+        rows.append(Text(_PAD + "No practice signals to review for this member.", style=theme.muted))
+
+    viewport_h = calc_viewport(height, header_h=7, action_h=2)
+    total = len(rows)
+    max_scroll = max(0, total - viewport_h)
+    # Three rows per signal, so centring on the cursor has to scale by three or
+    # the selected row drifts off-screen well before the list ends.
+    start = min(max(0, cursor * 3 - viewport_h // 2 + 2), max_scroll) if signals else 0
+    visible = rows[start : start + viewport_h]
+    visible.extend(Text("") for _ in range(max(0, viewport_h - len(visible))))
+    scrollbar = build_scrollbar(viewport_h, total, start, max_scroll, always_show=True)
+    if scrollbar is not None:
+        viewport = Table(show_header=False, show_edge=False, box=None, padding=0, pad_edge=False, expand=True)
+        viewport.add_column(ratio=1)
+        viewport.add_column(width=1)
+        viewport.add_row(Group(*visible), scrollbar)
+    else:
+        viewport = Group(*visible)
+    content = Group(
+        Text(""),
+        standup_title(),
+        Text(""),
+        Text(_PAD + f"Was this right about {member}?", style="bold white"),
+        Text(
+            _PAD + "▼ hides it and stops it coming back · ▲ confirms it",
+            style=theme.muted,
+        ),
+        Text(_PAD + "↑/↓ move · Y right · N wrong · C clear · Enter save · Esc cancel", style=theme.muted),
+        Text(""),
+        viewport,
+    )
+    return build_page_panel(content, theme=STANDUP_THEME, height=height)
+
+
 _SCHEDULE_STEP_NAMES = ["Time", "Lead", "Days", "Channels", "Enable", "Remind"]
 
 

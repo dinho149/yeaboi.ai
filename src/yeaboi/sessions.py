@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS sessions_meta (
 #   stored < current → run migrations, UPDATE to current
 #   stored == current → schema_mismatch=False
 # See docs: "Memory & State" — session persistence
-CURRENT_SCHEMA_VERSION = 22  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review  # noqa: E501
+CURRENT_SCHEMA_VERSION = 25  # v1=8A, v2=8B, v3=team_profiles, v4=session_mode, v5=token_usage, v6=standup, v7=retro, v8=performance, v9=reporting, v10=roadmap, v11=roadmap list, v12=token usage perf, v13=analysis ticket cache, v14=standup roster, v15=standup code scope, v16=standup documentation scope, v17=standup Azure project scope, v18=poker, v19=analysis enrichment cache, v20=analysis feature selection, v21=artifact edits, v22=standup transcript review, v23=standup practices, v24=standup practice AI matching, v25=standup practice feedback  # noqa: E501
 
 _SCHEMA_INFO = """\
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -700,7 +700,6 @@ class SessionStore:
                 logger.info("Migration v20: added Analysis run feature selection")
             except sqlite3.OperationalError:
                 pass  # column already exists (pre-rebase lineage) — nothing to do
-
         if from_version < 21:
             # v21: browser-editable shared artifacts. The append-only edit log
             # gets its own table; each history table learns where a row came
@@ -744,6 +743,41 @@ class SessionStore:
                 except sqlite3.OperationalError:
                     pass  # column already exists
             logger.info("Migration v22: created standup transcript-review tables")
+
+        if from_version < 23:
+            # v23: standup practice detection (standup/habits.py) — on by
+            # default, with an optional rule subset. StandupStore.__init__ runs
+            # the same ALTERs, so a DB that only ever opens through the store is
+            # already correct; this is for databases migrated ahead of it.
+            for statement in (
+                "ALTER TABLE standup_config ADD COLUMN habit_detection TEXT NOT NULL DEFAULT 'on'",
+                "ALTER TABLE standup_config ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+            logger.info("Migration v23: added standup practice detection config")
+
+        if from_version < 24:
+            # v24: the language-model pass that excuses a change belonging to a
+            # ticket it never names (standup/adjudicate.py). Its own switch
+            # because it is the only part of practice detection that costs money.
+            try:
+                self._conn.execute("ALTER TABLE standup_config ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            logger.info("Migration v24: added standup practice AI matching config")
+
+        if from_version < 25:
+            # v25: per-change thumbs up/down on a practice signal
+            # (standup/practice_feedback.py). A new table rather than a config
+            # column — the unit is one change, not one setting, and the ledger
+            # has to outlive the report it was voted on.
+            from yeaboi.standup.store import _STANDUP_PRACTICE_FEEDBACK_SCHEMA
+
+            self._conn.execute(_STANDUP_PRACTICE_FEEDBACK_SCHEMA)
+            logger.info("Migration v25: created standup practice feedback ledger")
 
     # ── Token usage persistence ──────────────────────────────────────────
 

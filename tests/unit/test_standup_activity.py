@@ -1412,3 +1412,163 @@ class TestLocalGitAuthorEmail:
 
         items = local_git_recent_commits(str(repo), days=1)
         assert items[0]["author_email"] == "dev@example.com"
+
+
+class TestTicketTextFetch:
+    """The ticket's own words, fetched for the standup's practice matcher.
+
+    ``include_ticket_text`` is opt-in because reporting and performance reuse
+    these same collectors over 28-90 day windows and would pay for text they
+    drop immediately.
+    """
+
+    def _issue(self, key="PROJ-12", **fields):
+        issue = MagicMock()
+        issue.key = key
+        issue.fields = SimpleNamespace(
+            summary="Fix login",
+            assignee=SimpleNamespace(displayName="Alice"),
+            status=SimpleNamespace(name="In Progress"),
+            updated="2026-07-10T09:00:00.000+0000",
+            **fields,
+        )
+        return issue
+
+    def _jira(self, monkeypatch, client):
+        monkeypatch.setattr("yeaboi.tools.jira._make_jira_client", lambda: client)
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_project_key", lambda: "PROJ")
+        monkeypatch.setattr("yeaboi.tools.jira.get_jira_base_url", lambda: "https://x.atlassian.net")
+        monkeypatch.setattr("yeaboi.tools.jira._acceptance_field_cache", None)
+        monkeypatch.setattr("yeaboi.tools.jira._dod_field_cache", None)
+
+    def test_off_by_default(self, monkeypatch):
+        client = MagicMock()
+        client.search_issues.return_value = [self._issue(description="Rename the plugins")]
+        self._jira(monkeypatch, client)
+
+        items = jira_recent_activity("PROJ", days=2, include_wip=False)
+        assert "body" not in items[0]
+        assert "description" not in client.search_issues.call_args.kwargs["fields"]
+        client.fields.assert_not_called()  # no discovery request either
+
+    def test_description_acceptance_and_definition_of_done_land_on_body(self, monkeypatch):
+        client = MagicMock()
+        client.fields.return_value = [
+            {"id": "customfield_1", "name": "Acceptance Criteria"},
+            {"id": "customfield_2", "name": "Definition of Done"},
+        ]
+        client.search_issues.return_value = [
+            self._issue(
+                description="h2. Goal\nRename the plugins",
+                customfield_1="AC1: the new names are used",
+                customfield_2="- Documentation",
+            )
+        ]
+        self._jira(monkeypatch, client)
+
+        items = jira_recent_activity("PROJ", days=2, include_wip=False, include_ticket_text=True)
+        body = items[0]["body"]
+        assert "Rename the plugins" in body
+        assert "AC1: the new names are used" in body
+        assert "- Documentation" in body  # the section the docs carve-out reads
+        fields = client.search_issues.call_args.kwargs["fields"]
+        assert "description" in fields and "customfield_1" in fields and "customfield_2" in fields
+
+    def test_the_wip_query_asks_for_the_same_fields(self, monkeypatch):
+        # Jira's WIP search is a SEPARATE request: without this it returns
+        # title-only tickets that relatedness cannot match against.
+        client = MagicMock()
+        client.fields.return_value = [{"id": "customfield_1", "name": "Acceptance Criteria"}]
+        client.search_issues.return_value = []
+        self._jira(monkeypatch, client)
+
+        jira_recent_activity("PROJ", days=2, include_ticket_text=True)
+        wip_fields = client.search_issues.call_args_list[1].kwargs["fields"]
+        assert "description" in wip_fields and "customfield_1" in wip_fields
+
+    def test_a_rejected_field_costs_the_text_not_the_activity(self, monkeypatch):
+        from jira import JIRAError
+
+        client = MagicMock()
+        client.fields.return_value = [{"id": "customfield_stale", "name": "Acceptance Criteria"}]
+        client.search_issues.side_effect = [JIRAError(status_code=400, text="bad field"), [self._issue()]]
+        self._jira(monkeypatch, client)
+
+        items = jira_recent_activity("PROJ", days=2, include_wip=False, include_ticket_text=True)
+        assert [i["key"] for i in items] == ["PROJ-12"]
+        assert items[0]["body"] == ""
+        assert client.search_issues.call_args.kwargs["fields"] == "summary,assignee,status,updated,comment"
+
+    def test_field_discovery_failure_degrades_to_empty_text(self, monkeypatch):
+        client = MagicMock()
+        client.fields.side_effect = RuntimeError("api down")
+        client.search_issues.return_value = [self._issue(description="Rename the plugins")]
+        self._jira(monkeypatch, client)
+
+        items = jira_recent_activity("PROJ", days=2, include_wip=False, include_ticket_text=True)
+        assert "Rename the plugins" in items[0]["body"]  # description still rides along
+
+    def test_comment_items_never_carry_ticket_text(self, monkeypatch):
+        # "comment" is one of automation.py's detectable kinds; a description
+        # there would go through scanner-marker matching and burst fingerprinting.
+        recent = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+        comment = SimpleNamespace(created=recent, author=SimpleNamespace(displayName="Bob"))
+        issue = self._issue(description="Rename the plugins", comment=SimpleNamespace(comments=[comment]))
+        client = MagicMock()
+        client.fields.return_value = []
+        client.search_issues.return_value = [issue]
+        self._jira(monkeypatch, client)
+
+        items = jira_recent_activity("PROJ", days=2, include_wip=False, include_ticket_text=True)
+        assert [i.get("body", "") for i in items if i["kind"] == "comment"] == [""]
+
+    def test_azdo_description_and_acceptance_land_on_body(self, monkeypatch):
+        from yeaboi.tools import azure_devops as azdo
+
+        work_item = SimpleNamespace(
+            fields={
+                "System.Id": 7,
+                "System.Title": "Rename the plugins",
+                "System.State": "Active",
+                "System.AssignedTo": {"displayName": "Alice"},
+                "System.ChangedBy": {"displayName": "Alice"},
+                "System.ChangedDate": "2026-07-10T09:00:00Z",
+                "System.Description": "<p>Rename the pipeline approval plugin</p>",
+                "Microsoft.VSTS.Common.AcceptanceCriteria": "<ul><li>New names used</li></ul>",
+            }
+        )
+        wit = MagicMock()
+        wit.query_by_wiql.return_value = SimpleNamespace(work_items=[SimpleNamespace(id=7)])
+        wit.get_work_items.return_value = [work_item]
+        monkeypatch.setattr(azdo, "_make_azdo_clients", lambda: (wit, MagicMock()))
+        monkeypatch.setattr(azdo, "get_azure_devops_org_url", lambda: "https://dev.azure.com/acme")
+
+        items = azdevops_recent_activity("Proj", days=1, include_ticket_text=True)
+        body = next(i["body"] for i in items if i["kind"] == "work_item")
+        assert "Rename the pipeline approval plugin" in body
+        assert "New names used" in body
+        assert "System.Description" in wit.get_work_items.call_args.kwargs["fields"]
+
+    def test_azdo_unknown_field_falls_back_to_the_base_list(self, monkeypatch):
+        # A custom inherited process can drop AcceptanceCriteria, and Azure
+        # answers with a 400 — which would empty the whole ticketing source.
+        from yeaboi.tools import azure_devops as azdo
+
+        work_item = SimpleNamespace(
+            fields={
+                "System.Id": 7,
+                "System.Title": "Rename the plugins",
+                "System.State": "Active",
+                "System.AssignedTo": {"displayName": "Alice"},
+                "System.ChangedBy": {"displayName": "Alice"},
+                "System.ChangedDate": "2026-07-10T09:00:00Z",
+            }
+        )
+        wit = MagicMock()
+        wit.query_by_wiql.return_value = SimpleNamespace(work_items=[SimpleNamespace(id=7)])
+        wit.get_work_items.side_effect = [Exception("TF51535 unknown field"), [work_item], [work_item]]
+        monkeypatch.setattr(azdo, "_make_azdo_clients", lambda: (wit, MagicMock()))
+        monkeypatch.setattr(azdo, "get_azure_devops_org_url", lambda: "https://dev.azure.com/acme")
+
+        items = azdevops_recent_activity("Proj", days=1, include_ticket_text=True)
+        assert [i["key"] for i in items if i["kind"] == "work_item"] == ["#7"]

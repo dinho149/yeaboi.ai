@@ -113,10 +113,12 @@ function Body({ report }: { report: ExportReport }) {
           activityWindow={report.activityWindow}
           coverage={report.coverage}
           skipped={report.skipped}
+          practices={report.practices}
           images={report.images}
           trend={report.trend}
           warnings={report.warnings}
           {...(report.edit ? { edit: report.edit } : {})}
+          correctable={report.correctable ?? false}
         />
       );
     case 'profile':

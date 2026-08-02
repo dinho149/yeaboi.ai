@@ -94,6 +94,11 @@ class ActivityBundle:
         base activity succeeded but optional enrichment was incomplete.
     skipped: (source, reason) pairs for sources that were NOT attempted — missing
         config or SDK — so absent coverage is visible instead of silent.
+    reference_tickets: open tickets nobody necessarily touched today, carried
+        purely as matching CONTEXT for the practice rules (kind="ticket_context").
+        Deliberately NOT in `items`: they are not activity, and putting them
+        there would give them evidence rows, category counts and prompt tokens.
+        Nothing but habits.detect_practices may read them.
     """
 
     items: list[dict] = field(default_factory=list)
@@ -101,6 +106,7 @@ class ActivityBundle:
     errors: list[tuple[str, str]] = field(default_factory=list)
     partial_sources: list[tuple[str, str]] = field(default_factory=list)
     skipped: list[tuple[str, str]] = field(default_factory=list)
+    reference_tickets: list[dict] = field(default_factory=list)
 
     def total(self, *, exclude_kinds: tuple[str, ...] = ()) -> int:
         if not exclude_kinds:
@@ -167,6 +173,7 @@ def collect_recent_activity(
     notion_root: str = "",
     on_progress=None,
     cache_db_path=None,
+    ticket_context: bool = True,
 ) -> ActivityBundle:
     """Gather and normalize recent activity from all enabled sources.
 
@@ -177,6 +184,14 @@ def collect_recent_activity(
     Each source's helper already degrades to [] on error; this function adds the
     ``source`` tag, tallies counts, and guards the lazy import so a missing SDK
     (ImportError) simply skips that source.
+
+    ``ticket_context`` buys the two things only practice detection reads: each
+    ticket's description/acceptance-criteria/definition-of-done, and a search for
+    the open tickets nobody touched today (``bundle.reference_tickets``). It is
+    real money — a second Jira search over 200 issues with full text, a second
+    Azure WIQL plus batch fetch — so a team that has turned practice detection
+    off must not pay it. Off means the standup is exactly as expensive as it was
+    before this existed.
     """
     enabled = _resolve_sources(
         sources,
@@ -282,23 +297,51 @@ def collect_recent_activity(
         logger.info("Source %s contributed %d item(s) in %.2fs", source, len(raw), elapsed)
         _finished(f"complete ({len(raw)})")
 
+    def _add_reference_tickets(fetch, source: str) -> None:
+        """Merge open-ticket matching context, stamped and locked like activity.
+
+        Kept off ``bundle.items`` on purpose — see ActivityBundle.reference_tickets.
+
+        Takes the fetcher rather than its result so the call is inside the guard:
+        this runs within a source fetcher whose activity has already succeeded,
+        and a raise would make ``_run_source`` discard that activity entirely.
+        Losing the context only costs a suppression; losing the activity costs
+        the standup. Silent for the same reason — there is no notice worth
+        showing a user about matching context that did not load.
+        """
+        try:
+            tickets = fetch() or []
+        except Exception as e:
+            logger.warning("%s open-ticket context unavailable (%s) — practice matching runs without it", source, e)
+            return
+        for ticket in tickets:
+            ticket["source"] = source
+        with bundle_lock:
+            bundle.reference_tickets.extend(tickets)
+
     fetchers: dict[str, object] = {}
 
     if SOURCE_JIRA in enabled:
 
         def _jira() -> list[dict]:
-            from yeaboi.tools.jira import jira_recent_activity
+            from yeaboi.tools.jira import jira_open_tickets, jira_recent_activity
 
-            return jira_recent_activity(jira_project, days=days, since=since)
+            items = jira_recent_activity(jira_project, days=days, since=since, include_ticket_text=ticket_context)
+            if ticket_context:
+                _add_reference_tickets(lambda: jira_open_tickets(jira_project), SOURCE_JIRA)
+            return items
 
         fetchers[SOURCE_JIRA] = _jira
 
     if SOURCE_AZDO in enabled:
 
         def _azdo() -> list[dict]:
-            from yeaboi.tools.azure_devops import azdevops_recent_activity
+            from yeaboi.tools.azure_devops import azdevops_open_work_items, azdevops_recent_activity
 
-            return azdevops_recent_activity(azdo_project, days=days, since=since)
+            items = azdevops_recent_activity(azdo_project, days=days, since=since, include_ticket_text=ticket_context)
+            if ticket_context:
+                _add_reference_tickets(lambda: azdevops_open_work_items(azdo_project), SOURCE_AZDO)
+            return items
 
         fetchers[SOURCE_AZDO] = _azdo
 

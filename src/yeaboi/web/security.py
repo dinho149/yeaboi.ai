@@ -107,16 +107,32 @@ BOARD_CSP = policy(
     form_action="'none'",
 )
 
-# An editable shared artifact. It sits between the two above: it is a finished
-# document like the artifact, but it takes input from anyone holding the link
-# like a board — and unlike a board, what it takes becomes a *stored* artifact
-# that outlives the session.
+# A shared document that answers back. It sits between the two above: it is a
+# finished document like the artifact, but it takes input from anyone holding the
+# link like a board — and unlike a board, what it takes becomes a *stored*
+# artifact that outlives the session.
+#
+# Two surfaces earn it, and they are the same shape: an editable artifact, whose
+# reader rewrites its text, and a correctable standup, whose reader answers a
+# practice signal. One policy rather than one each, because the two differ in
+# what they send and not at all in what they may reach — and a second identical
+# string is how the looser of the pair eventually gains a directive alone.
+#
+# It stays separate from ARTIFACT_CSP rather than replacing it, because most
+# shares are still finished snapshots and must keep 'none'. Each server picks per
+# document (``ShareDocument.votable``, or an editable session), so the looser
+# policy travels only with the pages that earned it.
 #
 # Exactly one directive is looser than ARTIFACT_CSP's:
 #
-# connect-src 'self' — the edit POST and the long poll, both same-origin fetches
-#   built from relative paths. This is the directive ARTIFACT_CSP's 'none'
-#   forbids, and the whole reason an editable document cannot be served under it.
+# connect-src 'self' — the edit POST, the vote POST and the long poll, all
+#   same-origin fetches built from relative paths. This is the directive
+#   ARTIFACT_CSP's 'none' forbids, and the whole reason such a document cannot be
+#   served under it.
+#
+# form-action stays 'none' for the same reason as the gate's: every control is a
+# button with a JS handler, and a real form navigation would only happen if the
+# script were broken — in which case it would put the reader's text in a URL.
 #
 # `img-src data:` is inherited unchanged: screenshots on a standup are embedded
 # data URIs. There is deliberately no `'self'` — the boards earn theirs with

@@ -107,6 +107,7 @@ CAPABILITIES: dict[str, dict] = {
             "standup_repositories",
             "standup_review",
             "standup_gaps",
+            "standup_practice_feedback",
         },
         "tui_mode": "daily-standup",
         "cli": {

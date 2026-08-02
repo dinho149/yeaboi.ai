@@ -51,6 +51,14 @@ def _trend_fragment(report: StandupReport) -> str:
     return ""
 
 
+def _practice_rollup_line(report: StandupReport) -> str:
+    """Team-level practice summary, or "" — counts members, never signals."""
+    from yeaboi.standup.habits import RULE_TITLES
+
+    parts = [f"{RULE_TITLES.get(rule, rule)} ×{count}" for rule, count in getattr(report, "practice_rollup", ()) or ()]
+    return " · ".join(parts)
+
+
 def format_standup_lines(report: StandupReport) -> list[str]:
     """Return the standup as a list of plain-text lines (no ANSI)."""
     lines: list[str] = [
@@ -60,6 +68,8 @@ def format_standup_lines(report: StandupReport) -> list[str]:
     ]
     if report.confidence_rationale:
         lines.append(f"  {report.confidence_rationale}")
+    if rollup := _practice_rollup_line(report):
+        lines.append(f"  Practices: {rollup}")
     # Surface problems up top so they're never missed (missing key, source 401/403).
     if report.warnings:
         lines.append("")
@@ -92,6 +102,12 @@ def format_standup_lines(report: StandupReport) -> list[str]:
                 lines.append(f"      {prefix}{sr_line}")
             if m.blockers:
                 lines.append(f"      ⚠ Blocker: {m.blockers}")
+            # Practices sit after the blocker: the blocker is what to act on
+            # today, these are the coaching note. Capped at three per member by
+            # habits.py, which is what keeps a ten-person Slack post readable.
+            for signal in getattr(m, "practices", ()) or ():
+                again = " (again today)" if getattr(signal, "repeat", False) else ""
+                lines.append(f"      ◇ {signal.title}{again}: {signal.detail}")
             # Raw URLs — Slack/email clients auto-link them.
             category_links = (
                 *getattr(m, "ticketing_links", ()),
@@ -152,6 +168,8 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
     body.append(conf)
     if report.confidence_rationale:
         body.append(Text(f"  {report.confidence_rationale}", style="dim"))
+    if rollup := _practice_rollup_line(report):
+        body.append(Text(f"  Practices: {rollup}", style="dim"))
     body.append(Text(""))
 
     # Notices up top — auth/API-key problems must be seen, never silently empty.
@@ -193,6 +211,11 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
                 body.append(Text(f"      {prefix}{sr_line}", style="italic dim"))
             if m.blockers:
                 body.append(Text(f"      ⚠ Blocker: {m.blockers}", style="rgb(220,180,60)"))
+            # Deliberately dimmer than the blocker's warn colour: a practice
+            # note is a nudge, not something to drop the sprint for.
+            for signal in getattr(m, "practices", ()) or ():
+                again = " (again today)" if getattr(signal, "repeat", False) else ""
+                body.append(Text(f"      ◇ {signal.title}{again}: {signal.detail}", style="rgb(150,145,175)"))
             category_links = (
                 *getattr(m, "ticketing_links", ()),
                 *getattr(m, "code_links", ()),

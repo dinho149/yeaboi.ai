@@ -220,6 +220,8 @@ def standup_card_teaser(key: str, data: dict) -> str:
         # Lead with the first ticket/PR reference so who-is-on-what scans at a glance.
         if getattr(m, "links", ()):
             gist = f"{m.links[0][0]} · {gist}"
+        if practices := getattr(m, "practices", ()) or ():
+            gist = f"◇{len(practices)} · {gist}"
         return gist[: _TEASER_W - 1] + "…" if len(gist) > _TEASER_W else gist
     if key == "activity":
         if report is None or not report.activity_counts:
@@ -361,6 +363,15 @@ def _member_panel(
     )
 
 
+def _practice_rollup(report) -> str:
+    """Team practice rollup as one line, or "" — counts members, not signals."""
+    from yeaboi.standup.habits import RULE_TITLES
+
+    return " · ".join(
+        f"{RULE_TITLES.get(rule, rule)} ×{count}" for rule, count in getattr(report, "practice_rollup", ()) or ()
+    )
+
+
 def _detail_summary(ctx: _StandupCtx, data: dict) -> None:
     report = data["report"]
     theme = ctx.theme
@@ -373,6 +384,10 @@ def _detail_summary(ctx: _StandupCtx, data: dict) -> None:
     ctx.row("Confidence", _confidence_text(report), _confidence_style(theme, report.confidence_label))
     if report.confidence_rationale:
         ctx.wrapped(report.confidence_rationale, theme.dim, indent="      ")
+    # Team rollup — member counts per rule, so the scope leak is visible without
+    # opening each card.
+    if rollup := _practice_rollup(report):
+        ctx.row("Practices", rollup, theme.dim)
 
 
 def _detail_member(ctx: _StandupCtx, data: dict, name: str) -> None:
@@ -476,6 +491,33 @@ def _detail_member(ctx: _StandupCtx, data: dict, name: str) -> None:
                 padding=(0, 1),
             )
         )
+    # Practices sit below the blocker and above the legacy evidence: the blocker
+    # is what to act on today, these are the coaching note about how the day's
+    # work landed. Border in `dim`, deliberately quieter than the blocker's warn.
+    practices = getattr(m, "practices", ()) or ()
+    for signal in practices:
+        ctx.blank()
+        body: list = [Text(signal.detail, style=theme.desc)]
+        if signal.evidence:
+            body.extend(_member_link(label, url, theme) for label, url in signal.evidence)
+        again = " · again today" if getattr(signal, "repeat", False) else ""
+        ctx.add_renderable(
+            Panel(
+                Group(*body),
+                title=f"[bold {theme.dim}]◇ {signal.title}{again}[/]",
+                title_align="left",
+                box=rich.box.ROUNDED,
+                border_style=theme.sep,
+                padding=(0, 1),
+            )
+        )
+    # The affordance for the Practices button below. Only when a verdict could
+    # actually be recorded: signals from a report written before feedback existed
+    # carry no handles, and offering to hide one that cannot be remembered would
+    # promise more than it does.
+    if any(getattr(s, "handles", ()) for s in practices):
+        ctx.blank()
+        ctx.line("Not right? Press Practices below to correct it.", theme.muted)
     category_links = (
         *getattr(m, "ticketing_links", ()),
         *getattr(m, "code_links", ()),
@@ -562,6 +604,15 @@ def _detail_schedule(ctx: _StandupCtx, data: dict) -> None:
             ctx.row("Automation filter", "off", theme.muted)
         elif config.get("automation_markers"):
             ctx.row("Automation markers", config["automation_markers"])
+        # Practice detection (standup/habits.py) — same rule as above: only
+        # shown when tuned away from the default.
+        if config.get("habit_detection", "on") == "off":
+            ctx.row("Practices", "off", theme.muted)
+        else:
+            if config.get("habit_rules"):
+                ctx.row("Practice rules", config["habit_rules"])
+            if config.get("habit_ai_match", "on") == "off":
+                ctx.row("Practice AI match", "off", theme.muted)
     else:
         ctx.line("Not configured — set up a schedule from the Standup hub.", theme.muted)
     installed = schedule.get("installed")
