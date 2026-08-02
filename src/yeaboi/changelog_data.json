@@ -4,7 +4,7 @@
     {
       "version": "2.52.0",
       "date": "2026-08-02",
-      "summary": "GitLab support is now complete. Intake now scans GitLab projects for repository metadata, readme files, and open issues — the same way it already does for GitHub and Azure DevOps. Read tools work anonymously for public projects and with a token for private ones; the write tool creates GitLab issues during planning, gated behind human review. Self-hosted GitLab instances are supported by setting GITLAB_URL. Fixes the broken contract where intake Q16 offered GitLab as a code-host option but then reported it wasn't supported yet.",
+      "summary": "GitLab support is now complete. Intake scans GitLab projects for repository metadata, readme files, and open issues — the same way it already does for GitHub and Azure DevOps. GitLab needs a token even for public projects: set GITLAB_TOKEN, or the tools report that GitLab is not configured. The write tool creates GitLab issues during planning, gated behind human review. Self-hosted GitLab instances are supported by setting GITLAB_URL. Fixes the broken contract where intake Q16 offered GitLab as a code-host option but then reported it wasn't supported yet.",
       "highlights": [
         {
           "text": "Intake now scans GitLab repositories for project metadata, directory trees, and open issues",
@@ -14,7 +14,7 @@
           ]
         },
         {
-          "text": "Create GitLab issues directly from planning poker, the same way GitHub and Jira do",
+          "text": "Create a GitLab issue from planning, after yeaboi asks you to confirm it",
           "areas": [
             "planning"
           ]
@@ -26,7 +26,7 @@
           ]
         },
         {
-          "text": "GitLab token authentication via GITLAB_TOKEN environment variable",
+          "text": "GitLab token authentication via GITLAB_TOKEN — required, with no anonymous fallback",
           "areas": [
             "settings"
           ]

@@ -90,6 +90,9 @@ _KEY_FILES: frozenset[str] = frozenset(
 # we validate rather than forward blindly.
 _ISSUE_STATES: frozenset[str] = frozenset({"opened", "closed", "all"})
 
+# GitLab rejects per_page above this, so it is the most one request can return.
+_MAX_PER_PAGE = 100
+
 
 def _parse_project(url: str) -> str:
     """Extract the 'namespace/project' path from a GitLab URL, or pass a slug through.
@@ -371,17 +374,22 @@ def gitlab_list_issues(project_url: str, state: str = "opened", max_issues: int 
         project = _get_project(client, project_url)
         path = project.path_with_namespace
 
-        # per_page caps the response server-side; without get_all=True python-gitlab
-        # returns just the first page, which is exactly the bound we want.
-        logger.debug("GitLab API call: issues.list(state=%s, per_page=%d)", normalised, max_issues)
-        issues = project.issues.list(state=normalised, per_page=max(1, min(int(max_issues), 100)))
+        # GitLab's per_page maxes out at 100 server-side, so a larger max_issues
+        # cannot be honoured in one page. Clamp it explicitly rather than silently
+        # returning 100 and reporting a count that looks like the whole list.
+        requested = max(1, int(max_issues))
+        limit = min(requested, _MAX_PER_PAGE)
+        # Without get_all=True python-gitlab returns just the first page, which is
+        # exactly the bound we want.
+        logger.debug("GitLab API call: issues.list(state=%s, per_page=%d)", normalised, limit)
+        issues = project.issues.list(state=normalised, per_page=limit)
         logger.debug("GitLab API call succeeded: %d issues", len(issues))
 
         lines: list[str] = [f"Issues ({normalised}) for {path}:", ""]
 
         count = 0
         for issue in issues:
-            if count >= max_issues:
+            if count >= limit:
                 break
             labels = ", ".join(issue.labels or [])
             label_str = f" [{labels}]" if labels else ""
@@ -400,7 +408,14 @@ def gitlab_list_issues(project_url: str, state: str = "opened", max_issues: int 
             lines.append(f"No {normalised} issues found.")
         else:
             lines.append("")
-            note = "; increase max_issues to see more" if count >= max_issues else ""
+            if count >= limit and requested > _MAX_PER_PAGE:
+                # Asking for more than GitLab will return in one page is not an
+                # error, but silently showing 100 would read as "that's all of them".
+                note = f"; GitLab returns at most {_MAX_PER_PAGE} per request, so {requested} was capped"
+            elif count >= limit:
+                note = "; increase max_issues to see more"
+            else:
+                note = ""
             lines.append(f"({count} issues shown{note})")
 
         logger.debug("gitlab_list_issues returned %d issues for %s", count, path)

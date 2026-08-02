@@ -367,6 +367,17 @@ class TestListIssues:
         result = gitlab_list_issues.invoke({"project_url": "group/project", "max_issues": 3})
         assert "(3 issues shown; increase max_issues to see more)" in result
 
+    def test_max_issues_above_gitlabs_page_cap_says_so(self, patch_client):
+        # GitLab will not return more than 100 in one request; showing 100 with no
+        # note would read as "that is all of them".
+        project = _make_project()
+        project.issues.list.return_value = [_make_issue(i) for i in range(1, 101)]
+        patch_client(_make_client(project))
+        result = gitlab_list_issues.invoke({"project_url": "group/project", "max_issues": 250})
+        assert project.issues.list.call_args.kwargs["per_page"] == 100
+        assert "at most 100 per request" in result
+        assert "250 was capped" in result
+
     def test_no_issues(self, patch_client):
         project = _make_project()
         project.issues.list.return_value = []
