@@ -459,3 +459,51 @@ def get_schedule_status(session_id: str, kind: str = JOB_STANDUP) -> dict:
     except (subprocess.SubprocessError, OSError) as e:
         logger.warning("get_schedule_status failed: %s", e)
     return {"platform": "unsupported", "installed": False, "path": ""}
+
+
+def _installed_fire_time(session_id: str, kind: str) -> tuple[int, int] | None:
+    """The (hour, minute) an installed job fires at, or None if there isn't one."""
+    if _is_macos():
+        path = _plist_path(session_id, kind)
+        if not path.exists():
+            return None
+        with path.open("rb") as fh:
+            plist = plistlib.load(fh)
+        intervals = plist.get("StartCalendarInterval") or []
+        if isinstance(intervals, dict):
+            intervals = [intervals]
+        for entry in intervals:
+            if isinstance(entry, dict) and "Hour" in entry and "Minute" in entry:
+                return int(entry["Hour"]), int(entry["Minute"])
+        return None
+    if _is_linux():
+        marker = _cron_marker(session_id, kind)
+        for line in _read_crontab():
+            if marker not in line:
+                continue
+            fields = line.split()
+            if len(fields) >= 2 and fields[0].isdigit() and fields[1].isdigit():
+                return int(fields[1]), int(fields[0])
+        return None
+    return None
+
+
+def transcript_reminder_offset(session_id: str, standup_time: str) -> int:
+    """Minutes AFTER the standup that the installed reminder fires (0 = none).
+
+    The existence of the OS job is the on/off setting, which needs no storage —
+    but the offset is a value, and a wizard that cannot read it back would
+    silently reset "2 hours after" to the default the next time the user walked
+    through the steps to change something else. The job already encodes it, so
+    read it from there rather than adding a config column that could disagree
+    with what is actually installed.
+    """
+    try:
+        fire = _installed_fire_time(session_id, kind=JOB_TRANSCRIPT_REMINDER)
+        if fire is None:
+            return 0
+        hour, minute = parse_time(standup_time)
+    except (subprocess.SubprocessError, OSError, ValueError, plistlib.InvalidFileException) as e:
+        logger.warning("transcript_reminder_offset failed: %s", e)
+        return 0
+    return ((fire[0] * 60 + fire[1]) - (hour * 60 + minute)) % 1440

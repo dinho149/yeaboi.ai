@@ -100,6 +100,27 @@ class TestTwoJobKinds:
         assert scheduler.run_time("10:00", -45) == (10, 45)
         assert scheduler.run_time("23:30", -45) == (0, 15)  # wraps past midnight
 
+    def test_the_offset_is_readable_back_off_the_installed_job(self, macos):
+        """The job IS the setting, so the wizard must be able to read it back.
+
+        Recovering only "is one installed?" and defaulting the offset to 30
+        would silently downgrade a user's "2 hours after" the next time they
+        opened the wizard to change something else entirely.
+        """
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 120)
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 120
+
+    def test_no_installed_job_means_no_offset(self, macos):
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 0
+
+    def test_an_offset_past_midnight_reads_back(self, macos):
+        scheduler.install_transcript_reminder("s1", "23:30", "1-5", 60)
+        assert scheduler.transcript_reminder_offset("s1", "23:30") == 60
+
+    def test_a_malformed_standup_time_is_not_fatal(self, macos):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 60)
+        assert scheduler.transcript_reminder_offset("s1", "not a time") == 0
+
     def test_the_two_kinds_use_distinct_labels(self, macos):
         scheduler.install_schedule("s1", "10:00", "1-5")
         scheduler.install_transcript_reminder("s1", "10:00", "1-5", 45)
@@ -161,6 +182,10 @@ class TestTwoJobKindsCron:
         reminder = scheduler._cron_marker("s1", scheduler.JOB_TRANSCRIPT_REMINDER)
         assert standup not in reminder
         assert reminder not in standup
+
+    def test_the_offset_reads_back_off_the_crontab_entry(self, cron):
+        scheduler.install_transcript_reminder("s1", "10:00", "1-5", 90)
+        assert scheduler.transcript_reminder_offset("s1", "10:00") == 90
 
     def test_removing_one_kind_leaves_the_other(self, cron):
         scheduler.install_schedule("s1", "10:00", "1-5")

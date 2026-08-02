@@ -167,6 +167,11 @@ _PAD = "  "
 # The two columns a Panel's left and right borders take. Anything measured
 # against the panel's usable interior has to come off the console width first.
 _PANEL_BORDER_W = 2
+# …and the padding inside those borders. build_page_panel pads (1, 2), so two
+# more columns a side. Border alone is not enough for anything that PACKS to its
+# budget (the action bar): four columns of slack is the difference between a row
+# that fits and a row Rich soft-wraps into a bank of invisible buttons.
+_PANEL_PADDING_W = 4
 
 
 def _link_lines(
@@ -2720,12 +2725,23 @@ def _build_standup_screen(
     # be measured rather than assumed — six buttons come to well over 80
     # columns, and a hardcoded action_h=4 would draw the overflow row off the
     # bottom of the panel (reachable with the arrow keys, invisible on screen).
+    #
+    # Budget against the panel's INNER width, not the console's: a row that
+    # packs to exactly the console width still overflows the interior, so Rich
+    # soft-wraps it and the last bank of buttons drops off the bottom — the very
+    # bug the measuring was added to fix. build_page_panel pads (1, 2), so the
+    # interior is the border (2) plus 2 columns of padding a side (4) narrower,
+    # the same `width - 2 - 4` the section screens below use. Getting this wrong
+    # by even a column or two is invisible at 80 and at 100: the six-button bar
+    # only lands in the gap at 87-88 columns, the seven-button one at 91-96 and
+    # 105-106, which is why the test sweeps a range rather than sampling a width.
     _actions = (
         actions
         if actions is not None
         else (["Generate", "Review", "Team", "Identity", "Back"] if view == "overview" else ["Back", "Export"])
     )
-    action_h = action_rows_height(_actions, width)
+    inner_w = width - _PANEL_BORDER_W - _PANEL_PADDING_W
+    action_h = action_rows_height(_actions, inner_w)
     viewport_h = calc_viewport(height, header_h=header_h, action_h=action_h)
     total_items = len(body_lines)
     total_rendered = sum(ctx.item_heights)
@@ -2764,7 +2780,7 @@ def _build_standup_screen(
     for _ in range(max(0, viewport_h - visible_h)):
         padded_lines.append(Text(""))
 
-    action_lines = build_action_rows(_actions, action_sel, width=width)
+    action_lines = build_action_rows(_actions, action_sel, width=inner_w)
 
     if _sb_text is not None:
         from rich.table import Table as _SbTable

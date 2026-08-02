@@ -641,7 +641,28 @@ class TestSweepAndReview:
     def test_unreadable_file_is_not_fatal(self, managed, db_path, monkeypatch, llm_on):
         (managed / "2026-07-30-standup.txt").write_text(TRANSCRIPT)
         monkeypatch.setattr(transcripts, "read_transcript", lambda *a, **k: (_ for _ in ()).throw(OSError("disk gone")))
-        assert transcript_review.sweep_and_review("s1", db_path=db_path, today=date(2026, 8, 1)) == []
+        reviews = transcript_review.sweep_and_review("s1", db_path=db_path, today=date(2026, 8, 1))
+        # Not fatal, but not silent either: nothing was reviewable AND there is a
+        # reason, so the reason comes back as a claim-less review rather than
+        # being dropped on the floor with an empty list.
+        assert len(reviews) == 1
+        assert reviews[0].claims == ()
+        assert any("disk gone" in w for w in reviews[0].warnings)
+
+    def test_a_denied_external_folder_reaches_the_report(self, managed, db_path, monkeypatch):
+        """The failure this feature exists to make visible must not be silent.
+
+        A scheduled run cannot consent to a sandbox prompt, so an external
+        folder can start being refused long after it was configured. Returning a
+        bare [] here left the user reviewing nothing week after week with
+        report.warnings saying nothing at all.
+        """
+        monkeypatch.setattr(
+            transcripts, "discover", lambda *a, **k: ([], ["Transcript folder skipped — not allowed: /Zoom"])
+        )
+        reviews = transcript_review.sweep_and_review("s1", db_path=db_path, today=date(2026, 8, 1))
+        _, warnings = transcript_review.carry_forward(reviews, None)
+        assert any("not allowed" in w for w in warnings)
 
 
 class TestCarryForward:

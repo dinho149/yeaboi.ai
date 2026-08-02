@@ -16,7 +16,7 @@ class _Live:
         pass
 
 
-def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_line=None):
+def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_line=None, reminder_offset=0):
     """Run the wizard headlessly with a scripted key sequence.
 
     Returns (message, saved_config, install_calls, remove_calls).
@@ -39,6 +39,9 @@ def _drive(keys, tmp_path, monkeypatch, *, session_id="s1", config=None, read_li
         scheduler, "install_transcript_reminder", lambda *a, **k: reminder_calls.append(a) or "reminder ok"
     )
     monkeypatch.setattr(scheduler, "get_schedule_status", lambda sid, kind=None: {"installed": False})
+    # The installed job is the only record of the reminder offset — the wizard
+    # reads it back off the OS rather than defaulting it.
+    monkeypatch.setattr(scheduler, "transcript_reminder_offset", lambda sid, t: reminder_offset)
     _drive.reminder_calls = reminder_calls
     if read_line is not None:
         values = iter(read_line)
@@ -163,6 +166,32 @@ class TestScheduleWizard:
         assert _drive.reminder_calls == [("s1", "10:00", "1-5", 30)]
         assert install_calls == [("s1", "10:00", "1-5", 10)]
         assert "reminder ok" in msg
+
+    def test_an_existing_offset_is_not_silently_downgraded(self, tmp_path, monkeypatch):
+        """Entering through the reminder step must keep what is installed.
+
+        The job is the only record of the offset, so a wizard that recovered
+        only "one exists" would reinstall a user's "2 hours after" at 30 minutes
+        the next time they came here to change a delivery channel.
+        """
+        msg, _saved, _install, _remove = _drive(
+            ["enter", "enter", "enter", "enter", "up", "enter", "enter"],
+            tmp_path,
+            monkeypatch,
+            reminder_offset=120,
+        )
+        assert _drive.reminder_calls == [("s1", "10:00", "1-5", 120)]
+        assert "reminder ok" in msg
+
+    def test_an_offset_off_the_preset_grid_snaps_instead_of_vanishing(self, tmp_path, monkeypatch):
+        """The standup time can move after the reminder was installed."""
+        _msg, _saved, _install, _remove = _drive(
+            ["enter", "enter", "enter", "enter", "up", "enter", "enter"],
+            tmp_path,
+            monkeypatch,
+            reminder_offset=100,
+        )
+        assert _drive.reminder_calls == [("s1", "10:00", "1-5", 120)]
 
     def test_disabling_the_schedule_tears_down_every_kind(self, tmp_path, monkeypatch):
         """The failure this guards: notifications still firing after the user

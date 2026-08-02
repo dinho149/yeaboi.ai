@@ -184,13 +184,17 @@ def clamp_claims(
     transcript_text: str,
     source_path: str = "",
     speaker_map: dict[str, str] | None = None,
-    attribution: str = "labelled",
 ) -> tuple[tuple[TranscriptClaim, ...], list[str]]:
     """Keep only claims that survive verification. Returns (claims, notes).
 
     In order: quote must be literally present; member must be on the roster; a
     supplied key is re-checked against the evidence and overrides the model's
     own verdict; 'unclear' is dropped; per-member cap applied.
+
+    Attribution is deliberately not a parameter here. What an unlabelled
+    transcript may conclude is narrowed in the PROMPT (``attribution_rule`` in
+    ``prompts/standup_review.py``); a second, weaker rule at this layer would
+    only be a place for the two to disagree.
     """
     haystack = _normalise(transcript_text)
     roster = {m.name for m in report.member_updates}
@@ -215,9 +219,6 @@ def clamp_claims(
         if member and member not in roster:
             dropped_member += 1
             continue
-        # An unlabelled transcript cannot support member-scoped conclusions.
-        if attribution == "unlabelled" and member and member not in roster:
-            member = ""
 
         status = str(entry.get("status", "")).strip().lower()
         if status not in _VALID_STATUS:
@@ -445,7 +446,6 @@ def review_transcripts(
         transcript_text=transcript_text,
         source_path=source_tuple[0].path if source_tuple else "",
         speaker_map=speaker_map,
-        attribution=attribution,
     )
     warnings.extend(notes)
 
@@ -552,9 +552,27 @@ def sweep_and_review(
 
     warnings.extend(read_failures)
     if not by_date:
-        if warnings:
-            logger.info("transcript review: nothing reviewable (%d warning(s))", len(warnings))
-        return []
+        if not warnings:
+            logger.info("transcript review: nothing reviewable for session=%s", session_id)
+            return []
+        # There was nothing to review AND a reason why — a denied folder, a
+        # missing one, an unreadable file. Returning a bare [] would drop that
+        # reason on the floor and leave the user with a feature that reviews
+        # nothing week after week without ever saying so, which is the exact
+        # failure transcripts.discover raises these warnings to prevent. A
+        # review with no claims is the shape that carries them: carry_forward
+        # extends report.warnings from it, and the on-demand path returns the
+        # real reason instead of a generic "drop a file in ~/.yeaboi/transcripts".
+        logger.warning("transcript review: nothing reviewable (%d warning(s))", len(warnings))
+        return [
+            TranscriptReview(
+                session_id=session_id,
+                standup_date=standup_date,
+                reviewed_at=datetime.now(UTC).isoformat(),
+                llm_mode="deterministic",
+                warnings=tuple(dict.fromkeys(warnings)),
+            )
+        ]
 
     dates = sorted(by_date)
     if len(dates) > max_dates:

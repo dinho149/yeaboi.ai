@@ -4035,11 +4035,11 @@ def _run_standup_schedule_wizard(
     from yeaboi.standup.delivery import ALL_CHANNELS
     from yeaboi.standup.scheduler import (
         JOB_TRANSCRIPT_REMINDER,
-        get_schedule_status,
         install_schedule,
         install_transcript_reminder,
         parse_time,
         remove_schedule,
+        transcript_reminder_offset,
         weekday_list,
         weekday_spec,
     )
@@ -4053,8 +4053,17 @@ def _run_standup_schedule_wizard(
     channels = [c for c in existing.get("delivery_channels", ["terminal"]) if c in ALL_CHANNELS] or ["terminal"]
     enabled = bool(existing.get("enabled"))
     # The installed job is the source of truth for the reminder — nothing in the
-    # database records it, so we ask the OS.
-    remind_after = 30 if get_schedule_status(session_id, JOB_TRANSCRIPT_REMINDER).get("installed") else 0
+    # database records it, so we ask the OS. Read the OFFSET back too, not just
+    # whether one exists: a user who picked "2 hours after" and later reopens
+    # this wizard to change a delivery channel would otherwise Enter past a step
+    # showing the default and silently reinstall the job at 30 minutes.
+    remind_after = transcript_reminder_offset(session_id, time_val)
+    if remind_after and remind_after not in _REMINDER_PRESETS:
+        # The standup time can move after the reminder was installed, so the
+        # recovered offset need not land on a preset. Snap to the nearest one
+        # rather than falling through to "No reminder", which would tear the job
+        # down for a user who came here to change something else entirely.
+        remind_after = min((p for p in _REMINDER_PRESETS if p), key=lambda p: abs(p - remind_after))
     logger.info("standup schedule wizard: opened (session=%s)", session_id)
 
     def _custom_text(prompt: str, step: str, default: str, parse) -> str | None:

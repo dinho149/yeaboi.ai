@@ -516,6 +516,7 @@ def transcript_nudge(
     *,
     config: dict | None = None,
     db_path: Path | None = None,
+    before_date: str = "",
     today: date | None = None,
 ) -> TranscriptNudge:
     """Should we say anything about missing transcripts? Usually not.
@@ -527,6 +528,15 @@ def transcript_nudge(
     the report's warnings are assembled, a transcript dropped this morning is
     already recorded by the time this is computed, so it self-clears in the same
     run that would otherwise have complained.
+
+    ``before_date`` is what makes the first of those two claims true. A run is
+    recorded when it finishes, so a SECOND standup on the same day would see the
+    first one sitting in history with no transcript against it — for a meeting
+    that has only just happened — and count it as a miss, ratcheting a quiet
+    TUI-only ``invite`` into a ``reminder`` that broadcasts to Slack and email.
+    ``run_standup`` therefore passes its own date and the day is excluded. The
+    reminder job wants the opposite (it fires *after* the meeting, and today is
+    exactly what it is asking about), so it leaves this blank.
     """
     if config is not None and not config.get("transcript_review_enabled", True):
         # The opt-out already exists; a nudge for a feature you turned off is
@@ -534,7 +544,7 @@ def transcript_nudge(
         logger.debug("transcript nudge: review disabled for session=%s", session_id)
         return TranscriptNudge(session_id=session_id)
 
-    missed, ran, ever = missing_transcript_dates(session_id, db_path=db_path, today=today)
+    missed, ran, ever = missing_transcript_dates(session_id, db_path=db_path, before_date=before_date, today=today)
     standup_count = len(ran)
     if not missed or not standup_count:
         logger.debug("transcript nudge: nothing missed for session=%s", session_id)

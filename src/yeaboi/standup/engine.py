@@ -1324,7 +1324,12 @@ def run_standup(
     try:
         from yeaboi.standup import transcripts as _transcripts
 
-        nudge = _transcripts.transcript_nudge(session_id, config=config, db_path=db_path, today=today)
+        # before_date excludes TODAY: this run is about to be recorded, and a
+        # second run on the same day would otherwise count it as a standup whose
+        # meeting went untranscribed — for a meeting that has only just happened.
+        nudge = _transcripts.transcript_nudge(
+            session_id, config=config, db_path=db_path, before_date=date_str, today=today
+        )
         if nudge and nudge.level != "invite":
             warnings.append(nudge.message)
     except Exception as e:  # a nudge must never break a standup

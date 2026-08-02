@@ -1399,11 +1399,24 @@ class TestUncheckedStandupCard:
         assert "3 standups unchecked" in teaser
         assert "2026-07-29" in teaser  # the oldest
 
-    def test_a_real_review_still_wins_the_teaser(self):
+    def test_a_review_and_a_nudge_both_reach_the_teaser(self):
         from yeaboi.ui.mode_select.screens._standup_sections import standup_card_teaser
 
         teaser = standup_card_teaser("gaps", _review_data(nudge=self._nudge()))
-        assert "1 gap" in teaser
+        assert "3 unchecked" in teaser  # the outstanding thing leads
+        assert "1 gap" in teaser  # …without losing the review it has
+
+    def test_the_nudge_survives_a_review_on_file(self):
+        """The user who reviewed once and stopped is exactly who this is for.
+
+        Rendering the nudge only in the no-review branch made the whole
+        escalation ladder invisible to them: `invite` never enters
+        report.warnings by design, so it would have reached no surface at all.
+        """
+        out = _render(_build_standup_screen(_review_data(nudge=self._nudge()), width=100, height=40, view="gaps"), 100)
+        assert "drop the recording" in out  # the nudge
+        assert "Standups not yet checked" in out
+        assert "Gaps in standup itself" in out  # …and the review below it
 
     def test_detail_shows_the_message_and_the_dates(self):
         out = _render(_build_standup_screen(self._data(), width=100, height=30, view="gaps"), 100)
@@ -1450,6 +1463,26 @@ class TestActionRowWrapping:
         from yeaboi.ui.shared._components import action_rows_height
 
         assert action_rows_height(self.ACTIONS, 80) > 4
+
+    def test_every_button_survives_every_width_it_is_used_at(self):
+        """A fixed-width smoke test looks in the wrong place for this bug.
+
+        `_wrap_actions` packs a row up to its budget, and the panel interior is
+        two columns narrower than the console. Budget against the console and a
+        row that just fits it soft-wraps inside the panel, shoving the last bank
+        of buttons off the bottom — selectable with the arrow keys, invisible on
+        screen. That only bites where a packed row lands in the two-column gap,
+        which for these bars is 87-88 and 91-96/105-106 columns respectively —
+        nowhere near the 80 every other test here checks. Hence the sweep.
+        """
+        six = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
+        seven = ["Generate", "Review", "Team", "Anonymize", "Identity", "Share Online", "Back"]
+        for actions in (six, seven):
+            for width in range(80, 121):
+                out = _render(_build_standup_screen(_review_data(), width=width, height=30, actions=actions), width)
+                for label in actions:
+                    assert label in out, f"{label} clipped at {width} columns with {len(actions)} buttons"
+                assert not [ln for ln in out.splitlines() if len(ln) > width], f"overflow at {width} columns"
 
     def test_default_actions_include_review(self):
         out = _render(_build_standup_screen(_review_data(), width=100, height=30), 100)

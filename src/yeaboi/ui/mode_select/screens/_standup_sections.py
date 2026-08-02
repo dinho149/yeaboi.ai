@@ -238,7 +238,12 @@ def standup_card_teaser(key: str, data: dict) -> str:
                 n = len(nudge.missed_dates)
                 return f"{n} standup{'s' if n != 1 else ''} unchecked · oldest {nudge.missed_dates[-1]}"[:_TEASER_W]
             return "Not reviewed yet"
-        parts = [f"{len(review.gaps)} gap{'s' if len(review.gaps) != 1 else ''}"]
+        # An outstanding count leads even when a review exists: the review is
+        # history, the unchecked standups are the thing to act on.
+        parts = []
+        if nudge:
+            parts.append(f"{len(nudge.missed_dates)} unchecked")
+        parts.append(f"{len(review.gaps)} gap{'s' if len(review.gaps) != 1 else ''}")
         if review.config_suggestions:
             parts.append(f"{len(review.config_suggestions)} to fix in config")
         filed = sum(1 for entry in (data.get("gap_issues") or []) if entry.get("issue_number"))
@@ -575,6 +580,19 @@ def _detail_notices(ctx: _StandupCtx, data: dict) -> None:
         ctx.wrapped(f"- {w}", ctx.theme.warn)
 
 
+def _gaps_nudge(ctx: _StandupCtx, nudge) -> None:
+    """The standups that ran but were never checked against their meetings."""
+    theme = ctx.theme
+    ctx.wrapped(nudge.message, theme.warn)
+    ctx.blank()
+    shown = nudge.missed_dates[:8]
+    ctx.line(f"    Unchecked: {', '.join(shown)}", theme.dim)
+    if len(nudge.missed_dates) > len(shown):
+        ctx.line(f"    …and {len(nudge.missed_dates) - len(shown)} more", theme.dim)
+    ctx.blank()
+    ctx.wrapped("Press Review to paste a transcript, or to point Standup at your recordings folder.", theme.muted)
+
+
 def _detail_gaps(ctx: _StandupCtx, data: dict) -> None:
     """What the standup MEETING revealed the report had missed, and why.
 
@@ -588,16 +606,7 @@ def _detail_gaps(ctx: _StandupCtx, data: dict) -> None:
     if review is None:
         ctx.heading("Transcript Review")
         if nudge:
-            ctx.wrapped(nudge.message, theme.warn)
-            ctx.blank()
-            shown = nudge.missed_dates[:8]
-            ctx.line(f"    Unchecked: {', '.join(shown)}", theme.dim)
-            if len(nudge.missed_dates) > len(shown):
-                ctx.line(f"    …and {len(nudge.missed_dates) - len(shown)} more", theme.dim)
-            ctx.blank()
-            ctx.wrapped(
-                "Press Review to paste a transcript, or to point Standup at your recordings folder.", theme.muted
-            )
+            _gaps_nudge(ctx, nudge)
             return
         ctx.wrapped(
             "No standup transcript has been reviewed yet. Press Review to paste one, "
@@ -605,6 +614,17 @@ def _detail_gaps(ctx: _StandupCtx, data: dict) -> None:
             theme.muted,
         )
         return
+
+    # A review on file does not mean the feature is keeping up — it is a review
+    # of ONE standup, and the nudge is about every standup since. Rendering it
+    # only in the no-review branch made the whole escalation ladder invisible to
+    # the user who tried this once and then stopped: `invite` never reaches
+    # report.warnings by design, so for them it would have reached nothing at
+    # all. It goes above the review because it is the half with something to do.
+    if nudge:
+        ctx.heading("Standups not yet checked")
+        _gaps_nudge(ctx, nudge)
+        ctx.blank()
 
     ctx.heading(f"Transcript Review · {review.standup_date or 'unknown date'}")
     if review.sources:

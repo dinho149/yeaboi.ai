@@ -598,6 +598,28 @@ class TestTranscriptNudge:
         assert first.level == second.level
         assert first.message == second.message
 
+    def test_todays_own_standup_is_not_counted_against_it(self, db_path):
+        """The run being recorded right now is not a standup that went unchecked.
+
+        A run is written when it finishes, so a SECOND standup on the same day
+        sees the first one in history with no transcript against it — for a
+        meeting that has only just happened. Without ``before_date`` that extra
+        "miss" pushes the streak over the reminder threshold, and `reminder` is
+        the rung that enters report.warnings and broadcasts to Slack and email.
+        """
+        self._seed(db_path, ran=["2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01"])
+        rerun = transcripts.transcript_nudge("s1", db_path=db_path, today=date(2026, 8, 1))
+        in_run = transcripts.transcript_nudge("s1", db_path=db_path, before_date="2026-08-01", today=date(2026, 8, 1))
+        assert "2026-08-01" in rerun.missed_dates
+        assert "2026-08-01" not in in_run.missed_dates
+        assert rerun.level == "reminder"  # …which broadcasts
+        assert in_run.level == "invite"  # …which stays in the TUI
+
+    def test_the_reminder_job_still_asks_about_today(self, db_path):
+        """It fires AFTER the meeting, so today is exactly what it asks about."""
+        self._seed(db_path, ran=["2026-07-30", "2026-07-31", "2026-08-01"])
+        assert "2026-08-01" in transcripts.transcript_nudge("s1", db_path=db_path, today=date(2026, 8, 1)).missed_dates
+
     def test_missed_dates_are_newest_first(self, db_path):
         self._seed(db_path, ran=["2026-07-29", "2026-07-30", "2026-07-31"])
         assert self._nudge(db_path).missed_dates == ("2026-07-31", "2026-07-30", "2026-07-29")
