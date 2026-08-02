@@ -238,9 +238,18 @@ _back_retract_at = 0.0  # monotonic time the fold may begin
 
 
 def retract_back_tab() -> None:
-    """Arm the back tab's fold-away — called when the back button (or Esc) is
-    pressed, so the retract belongs to the press rather than the next screen's
-    entrance. The fold itself starts after ``_BACK_RETRACT_DELAY``."""
+    """Arm the back tab's fold-away.
+
+    NOT called from the Esc chokepoint any more. Arming on the keypress meant the
+    tab folded on EVERY Esc — including the many that pop an internal focus level
+    and stay on the same screen — and then glided straight back in, replaying the
+    whole animation and forcing a redraw. It put the burden on every
+    Esc-consuming screen to call :func:`cancel_back_retract`, which most did not.
+
+    The tab now simply follows its target: a destination with no back tab renders
+    ``target=0.0`` and it glides out there. Kept as a hook for a caller that
+    genuinely wants the fold to lead the navigation.
+    """
     global _back_retracting, _back_retract_at
     _back_retracting = True
     _back_retract_at = time.monotonic() + _BACK_RETRACT_DELAY

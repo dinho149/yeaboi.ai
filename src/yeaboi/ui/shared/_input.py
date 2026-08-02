@@ -66,7 +66,7 @@ def _esc(*, from_tab: bool = False) -> str:
     global _esc_from_back_tab
     _esc_from_back_tab = from_tab
     try:
-        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar, retract_back_tab
+        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar
 
         # An open controls drawer swallows the Esc: it closes the drawer instead of
         # navigating back, so Esc always means "dismiss what's on top".
@@ -74,7 +74,6 @@ def _esc(*, from_tab: bool = False) -> str:
             close_controls()
             nudge_music_bar()
             return ""
-        retract_back_tab()
     except Exception:  # noqa: BLE001 - never let chrome bookkeeping break input
         pass
     return "esc"
