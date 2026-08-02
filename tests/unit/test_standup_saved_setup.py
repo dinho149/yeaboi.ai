@@ -4,8 +4,11 @@ The gate's screen builder is covered in test_standup_screen.py with the other
 standup render tests.
 """
 
+from datetime import date
+
 import pytest
 
+from yeaboi.agent.state import StandupReport
 from yeaboi.standup.store import StandupStore
 from yeaboi.ui import mode_select
 from yeaboi.ui.mode_select.screens._screens_secondary import _SAVED_SETUP_ACTIONS
@@ -52,6 +55,16 @@ def no_integrations(monkeypatch):
     monkeypatch.setattr("yeaboi.config.get_confluence_space_key", lambda: "")
     monkeypatch.setattr("yeaboi.config.get_notion_root_page_id", lambda: "")
     monkeypatch.setattr("yeaboi.config.get_notion_token", lambda: "")
+
+
+def _report(standup_date: str, confidence: int) -> StandupReport:
+    return StandupReport(
+        date=standup_date,
+        session_id="s1",
+        sprint_day=3,
+        confidence_pct=confidence,
+        confidence_label="On track",
+    )
 
 
 def _save(db, **overrides):
@@ -119,7 +132,28 @@ class TestSavedSetupSummary:
 
         rows = mode_select._standup_saved_setup("s1")
 
-        assert ("Code", "2 GitHub repo(s) · 1 Azure project(s)") in rows
+        # Counts first, then the names themselves on a second line — a count
+        # alone can't tell you whether this is the scope you wanted back.
+        assert ("Code", "2 GitHub repo(s) · 1 Azure project(s)\nacme/api, acme/web, Core") in rows
+
+    def test_long_code_scope_is_truncated_with_a_count(self, store, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
+        _save(
+            store,
+            code_sources=["github"],
+            github_repositories=["a/one", "a/two", "a/three", "a/four", "a/five"],
+            code_scope_configured=True,
+        )
+
+        rows = dict(mode_select._standup_saved_setup("s1"))
+
+        assert rows["Code"] == "5 GitHub repo(s)\na/one, a/two, a/three, a/four +1 more"
+
+    def test_empty_code_scope_stays_none(self, store, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
+        _save(store, code_sources=[], code_scope_configured=True)
+
+        assert ("Code", "none") in mode_select._standup_saved_setup("s1")
 
     def test_applicable_documentation_must_be_configured(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_confluence_space_key", lambda: "ENG")
@@ -194,16 +228,100 @@ class TestSourceLabels:
         assert mode_select._standup_source_labels(["gitlab"]) == "gitlab"
 
 
-class TestMemberSummary:
+class TestNameSummary:
     def test_short_roster_is_named_in_full(self):
-        assert mode_select._standup_member_summary(["Alice", "Bob"]) == "Alice, Bob"
+        assert mode_select._standup_name_summary(["Alice", "Bob"]) == "Alice, Bob"
 
     def test_long_roster_is_truncated_with_a_count(self):
         roster = ["Alice", "Bob", "Carol", "Dan", "Erin"]
-        assert mode_select._standup_member_summary(roster) == "Alice, Bob, Carol +2 more"
+        assert mode_select._standup_name_summary(roster) == "Alice, Bob, Carol +2 more"
 
     def test_exactly_the_cutoff_is_not_truncated(self):
-        assert mode_select._standup_member_summary(["Alice", "Bob", "Carol"]) == "Alice, Bob, Carol"
+        assert mode_select._standup_name_summary(["Alice", "Bob", "Carol"]) == "Alice, Bob, Carol"
+
+    def test_cutoff_is_caller_controlled(self):
+        names = ["a", "b", "c", "d", "e"]
+        assert mode_select._standup_name_summary(names, shown=4) == "a, b, c, d +1 more"
+
+
+class TestLastRunLabel:
+    """The one row that is context, not a gate — it must never raise."""
+
+    def test_same_day_run_reads_today(self):
+        row = {"standup_date": "2026-08-02", "confidence_pct": 90, "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "today · 90% confidence"
+
+    def test_previous_day_run_reads_yesterday(self):
+        row = {"standup_date": "2026-08-01", "confidence_pct": 84, "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "yesterday · 84% confidence"
+
+    def test_older_run_counts_the_days(self):
+        row = {"standup_date": "2026-07-30", "confidence_pct": 71, "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "3 days ago · 71% confidence"
+
+    def test_missing_confidence_is_omitted(self):
+        row = {"standup_date": "2026-08-01", "confidence_pct": None, "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "yesterday"
+
+    def test_non_success_status_is_called_out(self):
+        row = {"standup_date": "2026-08-01", "confidence_pct": 50, "status": "partial"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "yesterday · 50% confidence · partial"
+
+    def test_falls_back_to_the_run_timestamp(self):
+        row = {"standup_date": "", "run_at": "2026-08-01T09:15:00", "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "yesterday"
+
+    def test_future_dated_run_states_the_date(self):
+        row = {"standup_date": "2026-08-05", "status": "success"}
+
+        assert mode_select._standup_last_run_label(row, date(2026, 8, 2)) == "2026-08-05"
+
+    def test_unparseable_date_drops_the_row(self):
+        assert mode_select._standup_last_run_label({"standup_date": "not-a-date"}, date(2026, 8, 2)) is None
+
+    def test_empty_row_drops_the_row(self):
+        assert mode_select._standup_last_run_label({}, date(2026, 8, 2)) is None
+
+
+class TestLastRunRow:
+    def _record(self, db, standup_date, confidence=80, status="success"):
+        with StandupStore(db) as st:
+            st.record_run(_report(standup_date, confidence), status=status)
+
+    def test_no_history_means_no_row(self, store):
+        _save(store)
+
+        assert [label for label, _ in mode_select._standup_saved_setup("s1")] == ["Trackers", "Members"]
+
+    def test_history_appends_the_row_last(self, store):
+        _save(store)
+        self._record(store, date.today().isoformat())
+
+        rows = mode_select._standup_saved_setup("s1")
+
+        assert rows[-1][0] == "Last run"
+        assert rows[-1][1].startswith("today")
+
+    def test_unreadable_history_still_reuses_the_setup(self, store, monkeypatch):
+        _save(store)
+
+        def _boom(*_args, **_kwargs):
+            raise OSError("history table gone")
+
+        monkeypatch.setattr("yeaboi.standup.store.StandupStore.get_history", _boom)
+
+        # Context is never a gate: a broken history read drops the line, it does
+        # not send the user back through five pickers.
+        assert mode_select._standup_saved_setup("s1") == [
+            ("Trackers", "Jira"),
+            ("Members", "Alice, Bob"),
+        ]
 
 
 class TestConfirmLoop:

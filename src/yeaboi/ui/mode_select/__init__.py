@@ -17,6 +17,7 @@ import dataclasses
 import logging
 import math
 import time
+from datetime import date
 from pathlib import Path
 
 from rich.console import Console
@@ -2749,11 +2750,46 @@ def _standup_source_labels(keys) -> str:
     return ", ".join(names.get(key, key) for key in keys)
 
 
-def _standup_member_summary(members: list[str], *, shown: int = 3) -> str:
-    """Name the roster being reused, so "use saved" is an informed choice."""
-    if len(members) <= shown:
-        return ", ".join(members)
-    return f"{', '.join(members[:shown])} +{len(members) - shown} more"
+def _standup_name_summary(names: list[str], *, shown: int = 3) -> str:
+    """Name what is being reused, so "use saved" is an informed choice.
+
+    Used for both the roster and the code scope — a bare count ("2 Azure
+    project(s)") tells you nothing about whether the saved answer is the one
+    you want back.
+    """
+    if len(names) <= shown:
+        return ", ".join(names)
+    return f"{', '.join(names[:shown])} +{len(names) - shown} more"
+
+
+def _standup_last_run_label(row: dict, today: date) -> str | None:
+    """Describe a standup_history row as "2 days ago · 84% confidence".
+
+    Pure so it can be tested without a store. Returns None when the row carries
+    no parseable date — this line is context on the gate, never a gate itself,
+    so an unreadable history row must degrade to "no line" and not to an error.
+    """
+    raw = str(row.get("standup_date") or "").strip() or str(row.get("run_at") or "")[:10]
+    try:
+        when = date.fromisoformat(raw)
+    except ValueError:
+        return None
+    days = (today - when).days
+    if days < 0:  # a run dated in the future — say when, not "-3 days ago"
+        parts = [when.isoformat()]
+    elif days == 0:
+        parts = ["today"]
+    elif days == 1:
+        parts = ["yesterday"]
+    else:
+        parts = [f"{days} days ago"]
+    confidence = row.get("confidence_pct")
+    if confidence is not None:
+        parts.append(f"{confidence}% confidence")
+    status = str(row.get("status") or "")
+    if status and status != "success":
+        parts.append(status)
+    return " · ".join(parts)
 
 
 def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
@@ -2778,9 +2814,18 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
 
     if not session_id:
         return None
+    history: list[dict] = []
     try:
         with StandupStore(_ana_dbp) as store:
             config = store.load_config(session_id) or {}
+            # Context only — "when did this setup last produce a standup". Read in
+            # the same connection, but never allowed to decide the gate: a failure
+            # here drops the line, it does not send the user back through the
+            # pickers. Hence the inner try rather than one shared except.
+            try:
+                history = store.get_history(session_id, limit=1)
+            except Exception:
+                logger.warning("standup: could not read the run history", exc_info=True)
     except Exception:
         logger.warning("standup: could not load the saved setup", exc_info=True)
         return None
@@ -2816,7 +2861,7 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
         return None
     rows = [
         ("Trackers", _standup_source_labels(trackers)),
-        ("Members", _standup_member_summary(members)),
+        ("Members", _standup_name_summary(members)),
     ]
 
     # Code scope. Applicable only when an integration exists — otherwise
@@ -2833,7 +2878,12 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
             parts.append(f"{len(github)} GitHub repo(s)")
         if projects:
             parts.append(f"{len(projects)} Azure project(s)")
-        rows.append(("Code", " · ".join(parts) or "none"))
+        counts = " · ".join(parts)
+        # Second line names them. A count alone can't tell you whether the saved
+        # scope is the one you want back. The newline is the builder's cue to
+        # give this a second row — the value is still plain text.
+        names = _standup_name_summary(github + projects, shown=4)
+        rows.append(("Code", f"{counts}\n{names}" if counts else "none"))
 
     # Documentation. An empty selection is a real answer here (the picker allows
     # it), so the flag is the signal, not the list.
@@ -2844,6 +2894,12 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
         if not set(docs) <= docs_available:
             return None
         rows.append(("Docs", _standup_source_labels(docs) or "none"))
+
+    # Last, and never a gate: when this setup last produced a standup.
+    if history:
+        last_run = _standup_last_run_label(history[0], date.today())
+        if last_run:
+            rows.append(("Last run", last_run))
     return rows
 
 

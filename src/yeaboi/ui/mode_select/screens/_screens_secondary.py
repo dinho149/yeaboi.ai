@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import textwrap
+
 import rich.box
 from rich.console import Group
 from rich.padding import Padding
@@ -30,6 +32,7 @@ from yeaboi.ui.shared._components import (
     ANALYSIS_THEME,
     PAD,
     PLANNING_THEME,
+    TITLE_ROWS,
     action_rows_height,
     build_action_buttons,
     build_action_rows,
@@ -2797,6 +2800,51 @@ def _build_standup_screen(
 # click-hit-testing (button_click) can't drift from what was drawn.
 _SAVED_SETUP_ACTIONS = ["Use saved", "Change", "Back"]
 
+# Elevated surface for the saved-setup cards — the standup analogue of
+# _ANALYSIS_CARD_BG_RGB, a magenta tint of the same neutral base so the cards
+# read as raised above the page. The *page* background stays Theme.bg via
+# build_page_panel: per-mode page tints were deliberately dropped, and modes
+# keep distinct accents only (see _components.Theme).
+_STANDUP_CARD_BG_RGB = "rgb(28,16,26)"
+_STANDUP_CARD_BG = f"on {_STANDUP_CARD_BG_RGB}"
+
+# Row label → glyph. Presentation lives here, not in the payload the driver
+# passes, so the summary stays plain strings. A label with no glyph gets the
+# neutral bullet rather than raising, so adding a row can never break the gate.
+_SAVED_SETUP_SYMBOLS = {
+    "Trackers": "◆",
+    "Members": "●",
+    "Code": "✦",
+    "Docs": "▤",
+    "Last run": "◷",
+}
+
+# A card is a top border, a header row, its body rows, and a bottom border.
+_SAVED_SETUP_CARD_CHROME = 3
+
+
+def _saved_setup_card(label: str, lines: list[str], theme) -> Panel:
+    """One summary card: glyph + label header over pre-wrapped value lines.
+
+    Lines arrive already wrapped and padded to a common count by the caller, so
+    every card in a row is the same height and the viewport maths below is exact.
+    They render ``no_wrap`` — a value that was measured slightly too wide is
+    ellipsized rather than silently taking a second row and pushing the buttons
+    off the bottom.
+    """
+    head = Text(overflow="ellipsis", no_wrap=True)
+    head.append(f"{_SAVED_SETUP_SYMBOLS.get(label, '·')} ", style=theme.accent_bright)
+    head.append(label.upper(), style=f"bold {theme.accent_bright}")
+    body = [Text(line, style="white", overflow="ellipsis", no_wrap=True) for line in lines]
+    return Panel(
+        Group(head, *body),
+        box=rich.box.ROUNDED,
+        border_style=theme.accent,
+        style=_STANDUP_CARD_BG,
+        padding=(0, 1),
+        expand=True,
+    )
+
 
 def _build_standup_saved_setup_screen(
     rows: list[tuple[str, str]],
@@ -2808,28 +2856,118 @@ def _build_standup_saved_setup_screen(
     """Build the Generate gate: reuse the saved setup, or walk the pickers again.
 
     ``rows`` are plain ``(label, value)`` strings built by the caller — this
-    builder decides the colours, so the summary never carries presentation.
+    builder decides the colours, so the summary never carries presentation. A
+    value may contain newlines; each becomes its own line in the card (and is
+    flattened to " · " in the compact layout).
+
+    Layout mirrors the Analysis setup review (the other "confirm what you already
+    chose" screen): breadcrumb, question, cards, then the reassurance that
+    nothing has started yet. Below 88 columns — or when the cards would not fit
+    the viewport — it degrades to the aligned label/value list this screen
+    started as, which stays readable down to the minimum terminal size.
     """
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
     theme = STANDUP_THEME
-    body: list[Text] = []
-    for label, value in rows:
-        row = Text(_PAD + "  ")
-        row.append(f"{label:<10}", style=theme.muted)
-        row.append(value, style=theme.value)
-        body.append(row)
-    viewport_h = calc_viewport(height, header_h=7, action_h=4)
-    body.extend(Text("") for _ in range(max(0, viewport_h - len(body))))
+    # A short terminal spends its rows on the summary, not on breathing room: the
+    # blank spacers and the reassurance line go first, and the wordmark shrinks to
+    # a text label. Losing a summary row to make space for a blank one would be
+    # the wrong trade — the summary is the whole point of the screen.
+    tight = height < 26
+    title_h = TITLE_ROWS if height >= 28 else 1
+    # blank + title + blank + breadcrumb + hint + blank + question + blank
+    # (tight drops the two blank spacers around the title)
+    header_h = (5 if tight else 7) + title_h
+
+    # Two columns is also a ceiling, not just what fits: button_click finds the
+    # action row by looking for the first row carrying exactly len(labels)
+    # ``╭──╮`` runs, and there are three actions — a three-card row would draw
+    # three of them and swallow every click on the buttons below it.
+    ncols = 2 if width >= 88 else 1
+    # Page borders (2) + build_page_panel's horizontal padding (2×2) + the indent
+    # that lines the cards up with the title, then per column the grid's own cell
+    # padding (2) and each card's border + padding (4).
+    text_w = max(12, (width - _PANEL_BORDER_W - 4 - len(PAD) - 2 * ncols) // ncols - 4)
+    wrapped = [
+        (
+            label,
+            [piece for line in value.split("\n") for piece in (textwrap.wrap(line, text_w) or [""])],
+        )
+        for label, value in rows
+    ]
+    grid_rows = -(-len(wrapped) // ncols) if wrapped else 0
+    # Every card gets the same number of body lines so the bottom borders align.
+    # Shrink that count (dropping the tail of the longest value) before giving up
+    # on cards entirely — a 5-row summary in a short terminal still reads better
+    # as cards than as a list.
+    needed = min(max((len(lines) for _, lines in wrapped), default=1), 3)
+
+    def _fits(vh: int) -> int:
+        """Largest uniform card body that fits ``vh`` rows, or 0 for none."""
+        return next((c for c in range(needed, 0, -1) if grid_rows * (c + _SAVED_SETUP_CARD_CHROME) <= vh), 0)
+
+    # The reassurance line is a nicety; the summary is the screen. So try the
+    # roomy layout first and fall back to spending its two rows on the cards —
+    # a truncated value is a worse outcome than a missing reminder.
+    body_lines, viewport_h, show_note = 0, 0, False
+    for note in (True, False) if not tight else (False,):
+        # note: blank + reassurance + blank + 3 button rows; without it, just the
+        # blank and the buttons.
+        candidate_vh = calc_viewport(height, header_h=header_h, action_h=6 if note else 4)
+        candidate = _fits(candidate_vh)
+        if candidate > body_lines or not viewport_h:
+            body_lines, viewport_h, show_note = candidate, candidate_vh, note
+        if body_lines >= needed:
+            break
+
+    if width >= 88 and body_lines:
+        cards = []
+        for label, lines in wrapped:
+            shown = lines[:body_lines]
+            if len(lines) > body_lines and shown:
+                shown[-1] = shown[-1][: max(0, text_w - 1)] + "…"
+            shown.extend("" for _ in range(body_lines - len(shown)))
+            cards.append(_saved_setup_card(label, shown, theme))
+        # Indented to the title/button column so the cards read as one block
+        # with the rest of the page rather than hanging off its left edge.
+        summary = Padding(_analysis_card_grid(cards, width=width, columns=ncols), (0, 0, 0, len(PAD)))
+        summary_h = grid_rows * (body_lines + _SAVED_SETUP_CARD_CHROME)
+    else:
+        compact = []
+        for label, value in rows:
+            line = Text(PAD, overflow="ellipsis", no_wrap=True)
+            line.append(f"{label:<10}", style=f"bold {theme.accent_bright}")
+            line.append(value.replace("\n", " · ") or "none", style="white")
+            compact.append(line)
+        summary = Group(*compact)
+        summary_h = len(compact)
+
     btn_top, btn_mid, btn_bot = build_action_buttons(_SAVED_SETUP_ACTIONS, action_sel)
+    spacer = [] if tight else [Text("")]
+    title = standup_title(width=width) if height >= 28 else Text(PAD + "STANDUP", style=f"bold {theme.accent_bright}")
+    reassurance = (
+        [
+            Text(""),
+            Text(PAD + "Nothing runs until you choose · Change re-walks every picker.", style=theme.muted),
+        ]
+        if show_note
+        else []
+    )
     content = Group(
+        *spacer,
+        title,
+        *spacer,
+        *_analysis_setup_header(
+            "Saved setup",
+            "←/→ move · Enter choose · Esc cancel",
+            brand="STANDUP",
+            theme=theme,
+        ),
+        Text(PAD + "Use your saved setup?", style="bold white"),
         Text(""),
-        standup_title(),
-        Text(""),
-        Text(_PAD + "Use your saved setup?", style="bold white"),
-        Text(_PAD + "←/→ move · Enter choose · Esc cancel", style=theme.muted),
-        Text(""),
-        Group(*body[:viewport_h]),
+        summary,
+        *[Text("") for _ in range(max(0, viewport_h - summary_h))],
+        *reassurance,
         Text(""),
         btn_top,
         btn_mid,

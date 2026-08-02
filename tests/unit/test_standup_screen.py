@@ -1,5 +1,7 @@
 """Render tests for the Daily Standup TUI screen builder and helpers."""
 
+import pytest
+from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
@@ -14,6 +16,24 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_standup_team_source_screen,
 )
 from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
+
+
+def _render(panel: Panel, width: int) -> str:
+    """Render a panel to plain text at an exact width, as a terminal would."""
+    console = Console(width=width)
+    with console.capture() as cap:
+        console.print(panel)
+    return cap.get()
+
+
+# The full five-row summary the gate shows once every step has been confirmed.
+_GATE_ROWS = [
+    ("Trackers", "Jira, Azure DevOps"),
+    ("Members", "Ahmet Ince, Alexandru Popa, Daniel Daraban +3 more"),
+    ("Code", "1 GitHub repo(s) · 2 Azure project(s)\nyeaboi.ai, acme-core, acme-web"),
+    ("Docs", "Confluence"),
+    ("Last run", "2 days ago · 84% confidence"),
+]
 
 
 def _report() -> StandupReport:
@@ -122,14 +142,11 @@ class TestBuildStandupScreen:
             height=28,
         )
         assert isinstance(panel, Panel)
-        from rich.console import Console
-
-        console = Console(width=100, file=open("/dev/null", "w"))
-        with console.capture() as cap:
-            console.print(panel)
-        out = cap.get()
+        out = _render(panel, 90)
         assert "Use your saved setup?" in out
-        assert "Trackers" in out and "Alice, Bob" in out
+        # A name list wraps inside a half-width card, so assert on the names
+        # themselves rather than on the joined string the caller passed.
+        assert "TRACKERS" in out and "Alice" in out and "Bob" in out
         for label in _SAVED_SETUP_ACTIONS:
             assert label in out
 
@@ -144,6 +161,94 @@ class TestBuildStandupScreen:
         for sel in range(len(_SAVED_SETUP_ACTIONS)):
             assert isinstance(_build_standup_saved_setup_screen(rows, action_sel=sel, width=80, height=24), Panel)
 
+    def test_saved_setup_gate_shows_the_setup_breadcrumb(self):
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS, width=100, height=34), 100)
+
+        assert "STANDUP  ›  SAVED SETUP" in out
+        assert "Nothing runs until you choose" in out
+
+    def test_saved_setup_gate_draws_cards_when_wide(self):
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS, width=100, height=34), 100)
+
+        # Every row becomes its own card, glyph and all.
+        assert "◆ TRACKERS" in out and "◷ LAST RUN" in out
+        assert "╭" in out
+
+    def test_saved_setup_gate_falls_back_to_a_list_when_narrow(self):
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS, width=70, height=30), 70)
+
+        assert "Trackers" in out and "Last run" in out
+        assert "◆ TRACKERS" not in out  # no cards below the two-column threshold
+
+    def test_saved_setup_gate_gives_a_multiline_value_its_own_row(self):
+        rows = [("Code", "2 Azure project(s)\nacme-core, acme-web")]
+
+        wide = _render(_build_standup_saved_setup_screen(rows, width=100, height=34), 100)
+        assert "2 Azure project(s)" in wide
+        assert "acme-core, acme-web" in wide
+
+        # The compact list is one row per label, so the second line joins on.
+        narrow = _render(_build_standup_saved_setup_screen(rows, width=70, height=30), 70)
+        assert "2 Azure project(s) · acme-core, acme-web" in narrow
+
+    def test_saved_setup_gate_drops_the_note_before_it_truncates_a_value(self):
+        """Five cards do not fit 32 rows *and* the reassurance line — data wins."""
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS, width=120, height=32), 120)
+
+        assert "yeaboi.ai, acme-core, acme-web" in out  # the Code card's second line survived
+        assert "Nothing runs until you choose" not in out
+        assert "…" not in out
+
+    def test_saved_setup_gate_keeps_the_note_when_there_is_room(self):
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS[:2], width=120, height=32), 120)
+
+        assert "Nothing runs until you choose" in out
+
+    def test_saved_setup_gate_tolerates_an_unknown_row_label(self):
+        out = _render(_build_standup_saved_setup_screen([("Sprint", "Sprint 12")], width=100, height=34), 100)
+
+        assert "· SPRINT" in out  # neutral bullet, not a KeyError
+
+    @pytest.mark.parametrize("size", [(70, 20), (80, 24), (100, 22), (100, 34), (120, 32), (140, 40)])
+    def test_saved_setup_gate_clicks_land_on_the_buttons(self, size):
+        """The cards' own ╭──╮ borders must not capture clicks meant for the actions.
+
+        button_click identifies the action row as the first row carrying exactly
+        len(labels) button-top runs, so a card row wide enough to draw three of
+        them would swallow every click below it. The confirm-loop tests stub
+        button_click out, so this is the only check on the real thing.
+        """
+        from yeaboi.ui.shared._click import button_click
+
+        width, height = size
+        console = Console(width=width, height=height)
+        panel = _build_standup_saved_setup_screen(_GATE_ROWS, width=width, height=height)
+        lines = _render(panel, width).rstrip("\n").split("\n")
+        label_row = next(i for i, ln in enumerate(lines) if "Use saved" in ln)
+
+        for expected, label in enumerate(_SAVED_SETUP_ACTIONS):
+            x = lines[label_row].index(label) + 2  # 1-based, inside the label
+            assert button_click(console, panel, x, label_row + 1, _SAVED_SETUP_ACTIONS) == expected
+
+        # A click on a card, or in the dead space beside the buttons, misses.
+        card_row = next((i for i, ln in enumerate(lines) if "TRACKERS" in ln), None)
+        if card_row is not None:
+            assert button_click(console, panel, 10, card_row + 1, _SAVED_SETUP_ACTIONS) is None
+        assert button_click(console, panel, width - 3, label_row + 1, _SAVED_SETUP_ACTIONS) is None
+
+    @pytest.mark.parametrize("size", [(70, 20), (80, 24), (88, 26), (100, 22), (100, 34), (140, 40)])
+    def test_saved_setup_gate_keeps_the_buttons_on_screen(self, size):
+        """The card grid must never grow past the viewport it was measured for."""
+        width, height = size
+        out = _render(_build_standup_saved_setup_screen(_GATE_ROWS, width=width, height=height), width)
+        lines = out.rstrip("\n").split("\n")
+
+        assert len(lines) == height  # nothing pushed past the panel's bottom border
+        assert not [ln for ln in lines if len(ln.rstrip()) > width]  # no horizontal overflow
+        # All three button rows drawn: the labels and the bottom border below them.
+        label_row = next(i for i, ln in enumerate(lines) if "Use saved" in ln)
+        assert "╰" in lines[label_row + 1]
+
     def test_team_source_picker_renders_saved_selection(self):
         panel = _build_standup_team_source_screen(
             [("jira", "Jira"), ("azure_devops", "Azure DevOps")],
@@ -153,7 +258,6 @@ class TestBuildStandupScreen:
             height=28,
         )
         assert isinstance(panel, Panel)
-        from rich.console import Console
 
         console = Console(width=100, file=open("/dev/null", "w"))
         with console.capture() as cap:
@@ -166,7 +270,6 @@ class TestBuildStandupScreen:
         roster = [f"Engineer {idx}" for idx in range(20)]
         panel = _build_standup_team_member_screen(roster, {0, 3}, 3, width=80, height=28)
         assert isinstance(panel, Panel)
-        from rich.console import Console
 
         console = Console(width=90, file=open("/dev/null", "w"))
         with console.capture() as cap:
@@ -178,7 +281,6 @@ class TestBuildStandupScreen:
     def test_report_renders_as_themed_rows_not_emoji(self):
         # The dashboard should use the status strip (meters) and clean rows,
         # not the plaintext emoji dump used for Slack/email delivery.
-        from rich.console import Console
 
         panel = _build_standup_screen({"report": _report(), "schedule": {"installed": False}}, width=100, height=60)
         console = Console(width=110, file=open("/dev/null", "w"))
@@ -190,7 +292,6 @@ class TestBuildStandupScreen:
         assert "🟡" not in out and "🟢" not in out  # no emoji in the TUI dashboard
 
     def test_status_strip_shows_sprint_day_and_confidence(self):
-        from rich.console import Console
 
         panel = _build_standup_screen({"report": _report(), "schedule": {}}, width=110, height=40)
         console = Console(width=120, file=open("/dev/null", "w"))
@@ -205,7 +306,6 @@ class TestBuildStandupScreen:
         assert "Sections" not in out
 
     def test_status_strip_no_report(self):
-        from rich.console import Console
 
         panel = _build_standup_screen({"report": None, "schedule": {}}, width=100, height=30)
         console = Console(width=110, file=open("/dev/null", "w"))
@@ -214,7 +314,6 @@ class TestBuildStandupScreen:
         assert "No standup yet" in cap.get()
 
     def test_banner_shows_first_warning(self):
-        from rich.console import Console
 
         rep = StandupReport(date="2026-07-10", warnings=("Jira: authentication failed", "second"))
         panel = _build_standup_screen({"report": rep, "schedule": {}}, width=110, height=40)
@@ -228,8 +327,6 @@ class TestBuildStandupScreen:
         # A long run-on warning must not stretch edge-to-edge on a wide terminal nor push
         # the notice past the panel's right border (ambiguous-width ⚠/— safety margin).
         import re
-
-        from rich.console import Console
 
         long_warn = (
             "Not scanned: Azure Devops (AZURE_DEVOPS_PROJECT not set), Github (STANDUP_GITHUB_REPO not set), "
@@ -247,7 +344,6 @@ class TestBuildStandupScreen:
         assert len(vis[:-1].rstrip()) < 130  # capped teaser, not stretched across 220 cols
 
     def test_banner_message_wins_over_warnings(self):
-        from rich.console import Console
 
         rep = StandupReport(date="2026-07-10", warnings=("Jira: authentication failed",))
         panel = _build_standup_screen({"report": rep, "schedule": {}, "message": "Generated."}, width=110, height=40)
@@ -259,7 +355,6 @@ class TestBuildStandupScreen:
         assert "⚠ 1 notice ·" not in out
 
     def test_warnings_render_in_notices_detail(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
@@ -280,7 +375,6 @@ class TestBuildStandupScreen:
         assert "ANTHROPIC_API_KEY not set" in out
 
     def test_notices_section_listed_on_overview(self):
-        from rich.console import Console
 
         rep = StandupReport(date="2026-07-10", warnings=("Jira: authentication failed",))
         panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=60)
@@ -292,7 +386,6 @@ class TestBuildStandupScreen:
         assert "1 notice" in out
 
     def test_schedule_detail_shows_standup_time_and_runs_at(self):
-        from rich.console import Console
 
         data = {
             "config": {
@@ -314,7 +407,6 @@ class TestBuildStandupScreen:
         assert "Runs at:" in out and "09:50" in out
 
     def test_overview_shows_my_update_and_collapsed_team_row(self):
-        from rich.console import Console
 
         data = {"report": _report(), "schedule": {}, "my_name": "Bob"}
         panel = _build_standup_screen(data, width=110, height=60)
@@ -330,7 +422,6 @@ class TestBuildStandupScreen:
         assert "Alice" not in out  # members hidden until the Team row is expanded
 
     def test_overview_expanded_team_shows_member_subrows(self):
-        from rich.console import Console
 
         data = {"report": _report(), "schedule": {}, "my_name": "Bob", "team_expanded": True}
         panel = _build_standup_screen(data, width=110, height=60)
@@ -343,7 +434,6 @@ class TestBuildStandupScreen:
         assert "Alice" in out
 
     def test_member_detail_shows_self_report_and_analysis(self):
-        from rich.console import Console
 
         rep = _report()
         rep = StandupReport(
@@ -375,7 +465,6 @@ class TestBuildStandupScreen:
         assert "waiting on review" in out
 
     def test_member_detail_uses_dashboard_tiles_and_category_evidence(self):
-        from rich.console import Console
 
         rep = StandupReport(
             member_updates=(
@@ -409,7 +498,6 @@ class TestBuildStandupScreen:
         assert "↗ Rollout guide" in out
 
     def test_member_detail_empty_states_and_short_terminal_are_safe(self):
-        from rich.console import Console
 
         rep = StandupReport(member_updates=(MemberUpdate(name="Quiet", summary=""),))
         data = {"report": rep, "schedule": {}}
@@ -520,7 +608,6 @@ class TestBuildStandupScreen:
         assert standup_card_teaser("team", data) == "2 updates · 1 active ● 1 quiet ○"
 
     def test_expanded_member_rows_show_quiet_glyph(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
@@ -540,7 +627,6 @@ class TestBuildStandupScreen:
         assert "no activity detected" in out
 
     def test_summary_teaser_wraps_to_two_rows(self):
-        from rich.console import Console
 
         long_summary = (
             "The sprint is in a critical position at day 8, with only 25% confidence. "
@@ -557,7 +643,6 @@ class TestBuildStandupScreen:
         assert "…" in lines[1]
 
     def test_member_detail_shows_links(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
@@ -579,7 +664,6 @@ class TestBuildStandupScreen:
         assert "browse/PSOT-1" in out
 
     def test_my_update_detail_renders_my_member_card(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
@@ -614,7 +698,6 @@ class TestBuildStandupInputScreen:
         assert isinstance(panel, Panel)
 
     def test_shows_prompt_value_and_hint(self):
-        from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
 
@@ -628,7 +711,6 @@ class TestBuildStandupInputScreen:
         assert "Esc to cancel" in out
 
     def test_multirow_box_honours_newlines(self):
-        from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
 
@@ -662,7 +744,6 @@ class TestSettingsMasksStandupSecrets:
         }
         panel = _build_settings_screen(data, width=100, height=40, active_tab=2)  # System tab (Standup)
         # Render to text and confirm the raw secret does not appear.
-        from rich.console import Console
 
         console = Console(width=120, file=open("/dev/null", "w"))
         with console.capture() as cap:
@@ -686,7 +767,6 @@ class TestButtonRowNotClipped:
     def test_button_bottom_border_renders(self):
         # The scrollbar's old trailing newline pushed the buttons' bottom border
         # off the fixed-height panel — the "overlapping buttons" bug.
-        from rich.console import Console
 
         data = {"report": _report(), "schedule": {}}
         for height in (24, 30, 40):
@@ -704,7 +784,6 @@ class TestButtonRowNotClipped:
         assert isinstance(_build_standup_screen(data, width=100, height=30, action_sel=-1), Panel)
 
     def test_overview_has_three_buttons_and_focus_hint(self):
-        from rich.console import Console
 
         panel = _build_standup_screen({"report": _report(), "schedule": {}}, width=110, height=40)
         console = Console(width=120, file=open("/dev/null", "w"))
@@ -722,7 +801,6 @@ class TestButtonRowNotClipped:
     def test_button_bottom_border_renders_with_banner(self):
         # A warning banner adds a header row — the height budget must absorb it
         # or the button bottom border falls off the fixed-height panel.
-        from rich.console import Console
 
         rep = StandupReport(date="2026-07-10", warnings=("Jira: authentication failed",))
         data = {"report": rep, "schedule": {}}
@@ -734,7 +812,6 @@ class TestButtonRowNotClipped:
             assert "╰──" in cap.get().splitlines()[-3]
 
     def test_activity_detail_shows_window(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-20",
@@ -751,7 +828,6 @@ class TestButtonRowNotClipped:
 
 class TestStandupProgressScreen:
     def test_returns_panel_with_steps(self):
-        from rich.console import Console
 
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -790,7 +866,6 @@ class TestBuildScheduleStepScreen:
     """Render tests for the schedule wizard's radio/checkbox step screen."""
 
     def _render(self, panel, width=100):
-        from rich.console import Console
 
         console = Console(width=width, file=open("/dev/null", "w"))
         with console.capture() as cap:
@@ -860,7 +935,6 @@ class TestBuildScheduleStepScreen:
 
 class TestDayOverDayScreen:
     def test_member_detail_shows_progress_note_and_outlook(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
@@ -884,7 +958,6 @@ class TestDayOverDayScreen:
         assert "Likely to start on tokens." in out
 
     def test_member_detail_without_fields_hides_panels(self):
-        from rich.console import Console
 
         rep = StandupReport(date="2026-07-10", member_updates=(MemberUpdate(name="Bob", summary="x"),))
         panel = _build_standup_screen({"report": rep, "schedule": {}}, width=100, height=100, view="member:Bob")
@@ -896,7 +969,6 @@ class TestDayOverDayScreen:
         assert "Outlook" not in out
 
     def test_status_strip_shows_trend_arrow(self):
-        from rich.console import Console
 
         for trend, delta, marker in (("improving", 6, "▲+6"), ("declining", -8, "▼8")):
             rep = StandupReport(
@@ -916,7 +988,6 @@ class TestDayOverDayScreen:
             assert marker in cap.get()
 
     def test_status_strip_no_trend_no_arrow(self):
-        from rich.console import Console
 
         rep = StandupReport(
             date="2026-07-10",
