@@ -3775,3 +3775,4 @@ class TestMultiChoiceMetadata:
         for q_num, meta in QUESTION_METADATA.items():
             if meta.question_type == "multi_choice":
                 assert meta.default_index is None, f"Q{q_num} multi_choice should have no default_index"
+

@@ -68,7 +68,7 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
   <main class="docs-content">
     <article>
       <h1>Tools</h1>
-      <p class="lede">The agent has access to 30 tools, organized by integration.</p>
+      <p class="lede">The agent has access to 41 tools, organized by integration.</p>
 
       <h2 id="github">GitHub (4 tools)</h2>
       <table>
@@ -78,6 +78,18 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
           <tr><td><code>github_read_file</code></td><td>Read a single file from a GitHub repo</td></tr>
           <tr><td><code>github_list_issues</code></td><td>List open issues with labels</td></tr>
           <tr><td><code>github_read_readme</code></td><td>Extract README content</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="gitlab">GitLab (4 tools)</h2>
+      <p>GitLab uses a personal access token of its own (<code>GITLAB_TOKEN</code>), and <code>GITLAB_URL</code> points at a self-hosted instance when you have one (it defaults to <code>https://gitlab.com</code>). The token is required even for public projects: unlike GitHub, these tools deliberately do not fall back to anonymous access, because anonymous reads succeed on public gitlab.com projects and fail on private and most self-hosted ones — so without a token they report that the integration is not configured.</p>
+      <table>
+        <thead><tr><th>Tool</th><th>Description</th><th>Risk</th></tr></thead>
+        <tbody>
+          <tr><td><code>gitlab_read_repo</code></td><td>Fetch project metadata and the root file tree (nested subgroups supported)</td><td>Low</td></tr>
+          <tr><td><code>gitlab_read_readme</code></td><td>Extract README content from the default branch</td><td>Low</td></tr>
+          <tr><td><code>gitlab_list_issues</code></td><td>List issues (opened, closed, or all) with labels and assignees</td><td>Low</td></tr>
+          <tr><td><code>gitlab_create_issue</code></td><td>Create an issue from a generated story or task (needs the <code>api</code> scope)</td><td>High (requires confirmation)</td></tr>
         </tbody>
       </table>
 

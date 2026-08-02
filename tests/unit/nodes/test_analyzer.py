@@ -455,12 +455,39 @@ class TestScanRepoContext:
         assert ctx is None
         assert status["status"] == "skipped"
 
-    def test_gitlab_platform_returns_none(self):
-        """Returns None for GitLab (no tools implemented yet)."""
-        qs = self._make_qs("https://gitlab.com/owner/repo", "GitLab")
-        ctx, status = _scan_repo_context(qs)
+    def test_gitlab_scans_via_the_gitlab_tools(self, monkeypatch):
+        """GitLab used to fall through to "not yet supported" — it now scans like GitHub.
+
+        Patches the client factory rather than the tools so the real tool bodies
+        run (a StructuredTool is a pydantic model; its .invoke can't be patched).
+        """
+        project = MagicMock()
+        project.name = "Proj"
+        project.path_with_namespace = "owner/repo"
+        project.default_branch = "main"
+        project.topics = []
+        project.repository_tree.return_value = [{"name": "src", "type": "tree"}]
+        project.files.get.return_value = MagicMock(decode=lambda: "# Proj readme")
+        client = MagicMock()
+        client.projects.get.return_value = project
+        monkeypatch.setattr("yeaboi.tools.gitlab._make_gitlab_client", lambda *a, **k: client)
+
+        ctx, status = _scan_repo_context(self._make_qs("https://gitlab.com/owner/repo", "GitLab"))
+
+        assert "GitLab project: owner/repo" in ctx
+        assert "# Proj readme" in ctx
+        assert status["status"] == "success"
+        assert "GitLab" in status["detail"]
+
+    def test_gitlab_without_a_token_degrades_instead_of_raising(self, monkeypatch):
+        """Both tools return the "not configured" string — a degraded scan, not a crash."""
+        monkeypatch.setattr("yeaboi.tools.gitlab._make_gitlab_client", lambda *a, **k: None)
+
+        ctx, status = _scan_repo_context(self._make_qs("https://gitlab.com/owner/repo", "GitLab"))
+
         assert ctx is None
-        assert status["status"] == "skipped"
+        assert status["status"] == "error"
+        assert "returned no data" in status["detail"]
 
     def test_unsupported_platform_returns_none(self):
         """Returns None for Bitbucket (no tools implemented yet)."""

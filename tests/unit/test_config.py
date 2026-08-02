@@ -738,6 +738,47 @@ class TestNotionConfig:
         assert get_notion_root_page_id() is None
 
 
+class TestGitlabConfig:
+    """GitLab: a plain PAT plus an optional host for self-hosted instances."""
+
+    def test_token_returns_value(self, monkeypatch):
+        from yeaboi.config import get_gitlab_token
+
+        monkeypatch.setenv("GITLAB_TOKEN", "glpat-secret")
+        assert get_gitlab_token() == "glpat-secret"
+
+    def test_token_none_when_absent(self, monkeypatch):
+        from yeaboi.config import get_gitlab_token
+
+        monkeypatch.delenv("GITLAB_TOKEN", raising=False)
+        assert get_gitlab_token() is None
+
+    def test_url_defaults_to_gitlab_com(self, monkeypatch):
+        from yeaboi.config import get_gitlab_url
+
+        monkeypatch.delenv("GITLAB_URL", raising=False)
+        assert get_gitlab_url() == "https://gitlab.com"
+
+    def test_url_returns_configured_host(self, monkeypatch):
+        from yeaboi.config import get_gitlab_url
+
+        monkeypatch.setenv("GITLAB_URL", "https://gitlab.internal.example.com")
+        assert get_gitlab_url() == "https://gitlab.internal.example.com"
+
+    def test_url_gets_a_scheme_and_loses_trailing_slash(self, monkeypatch):
+        """Same normalisation as AZURE_DEVOPS_ORG_URL — a bare host would raise MissingSchema."""
+        from yeaboi.config import get_gitlab_url
+
+        monkeypatch.setenv("GITLAB_URL", "  gitlab.internal.example.com/  ")
+        assert get_gitlab_url() == "https://gitlab.internal.example.com"
+
+    def test_blank_url_falls_back_to_the_default(self, monkeypatch):
+        from yeaboi.config import get_gitlab_url
+
+        monkeypatch.setenv("GITLAB_URL", "   ")
+        assert get_gitlab_url() == "https://gitlab.com"
+
+
 class TestAllowedPaths:
     """The sandbox whitelist setting (YEABOI_ALLOWED_PATHS)."""
 

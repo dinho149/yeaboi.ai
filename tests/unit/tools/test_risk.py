@@ -13,6 +13,7 @@ from yeaboi.tools.risk import TOOL_RISK, ToolRisk, high_risk_tool_names
 from .test_tools_registry import _discover_all_tools
 
 _EXPECTED_WRITES = {
+    "gitlab_create_issue",
     "jira_create_epic",
     "jira_create_story",
     "jira_create_sprint",

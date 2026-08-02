@@ -211,6 +211,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `OLLAMA_NUM_CTX` — optional, context window requested from the Ollama model (default 16384)
 - `GITHUB_TOKEN`, `AZURE_DEVOPS_TOKEN` — optional, for repo context tools
 - `AZURE_DEVOPS_ORG_URL`, `AZURE_DEVOPS_PROJECT`, `AZURE_DEVOPS_TEAM` — optional, for Azure DevOps board sync
+- `GITLAB_TOKEN` — optional, GitLab PAT enabling the 4 `gitlab_*` tools (repo/README/issue reads + issue creation) and the GitLab branch of the intake repo scan. Scope `read_api` for reads, `api` to create issues. Unlike GitHub there is **no** unauthenticated mode — without it the tools return "not configured".
+- `GITLAB_URL` — optional, GitLab instance base URL for self-hosted installs (default `https://gitlab.com`); normalised on read like `AZURE_DEVOPS_ORG_URL`
 - `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` — optional, for Jira integration
 - `CONFLUENCE_SPACE_KEY` — optional, the space to scope searches to; the Export buttons publish Confluence reports here too
 - `CONFLUENCE_BASE_URL` / `CONFLUENCE_EMAIL` / `CONFLUENCE_API_TOKEN` — optional standalone Atlassian login for Confluence. Confluence reuses the Jira creds by default; these let it be configured **without** Jira (they win over `JIRA_*` when set — see `config.get_confluence_base_url`). The Docs setup step collects them inline when Jira wasn't configured.
