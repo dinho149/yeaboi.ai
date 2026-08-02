@@ -180,15 +180,40 @@ SCREENS: dict[str, object] = {
 }
 
 
-def _render(name: str, console: Console) -> None:
+def _chrome(panel):
+    """Wrap a bare screen Panel in the app-wide chrome.
+
+    The back tab, music pocket and corner duck are drawn by MusicLive over the
+    finished frame, not by the screen builders — so a preview that prints the
+    bare Panel shows a screen with no back button, which is not what the app
+    shows. _MusicPocketFrame is the same wrapper get_renderable() applies, read
+    off the same opt-out attributes.
+    """
+    from yeaboi.ui.shared import _music_bar
+
+    # Pin the tab fully extended: its presence normally eases in over several
+    # frames, and a preview only ever draws one.
+    _music_bar._back_presence = 1.0
+    return _music_bar._MusicPocketFrame(
+        panel,
+        with_duck=not getattr(panel, "_no_companion_duck", False),
+        with_back=not getattr(panel, "_no_back_hint", False),
+        with_copy=bool(getattr(panel, "_copy_tab", False)),
+        hint_tab=getattr(panel, "_hint_tab", None),
+        duck_say=str(getattr(panel, "_duck_say", "") or ""),
+    )
+
+
+def _render(name: str, console: Console, *, chrome: bool = True) -> None:
     w, h = console.size
     try:
-        console.print(SCREENS[name](w, h - 2))
+        panel = SCREENS[name](w, h - 2)
+        console.print(_chrome(panel) if chrome else panel)
     except Exception as exc:  # noqa: BLE001 - a broken screen shouldn't kill the gallery
         console.print(f"[bold red]{name} failed to render:[/] {exc!r}")
 
 
-def _interactive(names: list[str], start: int) -> None:
+def _interactive(names: list[str], start: int, *, chrome: bool = True) -> None:
     from yeaboi.ui.shared._input import enter_raw_mode, exit_raw_mode, read_key
 
     console = Console()
@@ -197,7 +222,7 @@ def _interactive(names: list[str], start: int) -> None:
     try:
         while True:
             console.clear()
-            _render(names[idx], console)
+            _render(names[idx], console, chrome=chrome)
             console.print(f"[dim]{idx + 1}/{len(names)}  {names[idx]}   ←/→ move · r redraw · q quit[/]")
             key = read_key()
             if key in ("q", "esc", "ctrl+c"):
@@ -220,6 +245,9 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="print every screen and exit")
     parser.add_argument("--width", type=int, default=0, help="render at this width instead of the terminal's")
     parser.add_argument("--height", type=int, default=0, help="render at this height instead of the terminal's")
+    parser.add_argument(
+        "--no-chrome", action="store_true", help="draw the bare screen without the back tab / music pocket / duck"
+    )
     args = parser.parse_args()
 
     names = list(SCREENS)
@@ -237,14 +265,14 @@ def main() -> int:
     if args.all:
         for name in names:
             console.rule(f"[bold]{name}")
-            _render(name, console)
+            _render(name, console, chrome=not args.no_chrome)
         return 0
 
     if args.screen:
         if args.screen not in SCREENS:
             print(f"unknown screen {args.screen!r}\n\ntry one of:\n  " + "\n  ".join(names), file=sys.stderr)
             return 2
-        _render(args.screen, console)
+        _render(args.screen, console, chrome=not args.no_chrome)
         return 0
 
     if not sys.stdin.isatty():
@@ -252,10 +280,10 @@ def main() -> int:
         # everything rather than dying in termios.
         for name in names:
             console.rule(f"[bold]{name}")
-            _render(name, console)
+            _render(name, console, chrome=not args.no_chrome)
         return 0
 
-    _interactive(names, 0)
+    _interactive(names, 0, chrome=not args.no_chrome)
     return 0
 
 
