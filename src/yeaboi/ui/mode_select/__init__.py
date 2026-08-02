@@ -9010,20 +9010,6 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     anon = None
     anon_instruction = ""
 
-    def _invite_text() -> str:
-        """The link and code to hand a teammate — never the host link.
-
-        Same two lines the Share Online screen copies. The host link is left out
-        deliberately: it skips the join code and carries the admin secret, so
-        pasting it into a team chat would make every reader a host.
-
-        Empty while the tunnel is still coming up — the caller must not copy then,
-        because there is no address that would work for the reader.
-        """
-        if not server.share_url:
-            return ""
-        return f"{server.share_url}\nAccess code: {server.display_code}"
-
     def _actions() -> list[str]:
         # Copy Invite leads, matching the Share Online screen. Copy Host Link is
         # the one extra button the live boards carry, because they are the only
@@ -9144,9 +9130,12 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     scroll = 0
                 elif label == "Copy Invite":
                     from yeaboi.clipboard import copy_markdown_status
+                    from yeaboi.sharing.access import invite_url
 
                     logger.info("retro: Copy Invite pressed (session=%s)", session_id)
-                    invite = _invite_text()
+                    # One link, code in the fragment — never the host link, which
+                    # carries the admin secret and would make every reader a host.
+                    invite = invite_url(server.share_url, server.display_code)
                     # Never put a half-invite on the clipboard. Before the tunnel
                     # lands there is no address that works for the reader, and a
                     # "Copied" that pasted the code alone would send the host into
@@ -9782,18 +9771,6 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     # Start it now — the board is open and the join code is already valid.
     _start_remote()
 
-    def _invite_text() -> str:
-        """The link and code to hand a teammate — never the host link.
-
-        The host link holds the admin secret (reveal, save, edit, AI), so it is
-        the one thing that must not end up in the invite someone pastes into a
-        team chat. See the retro loop for the same note, and for why this is
-        empty until the tunnel is up.
-        """
-        if not server.share_url:
-            return ""
-        return f"{server.share_url}\nAccess code: {server.display_code}"
-
     def _actions() -> list[str]:
         # Same leading pair as the retro board and the Share Online screen.
         base = ["Copy Invite", "Copy Host Link", "Export", "Close"]
@@ -9857,9 +9834,12 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                     break
                 if label == "Copy Invite":
                     from yeaboi.clipboard import copy_markdown_status
+                    from yeaboi.sharing.access import invite_url
 
                     logger.info("poker: Copy Invite pressed (session=%s)", session_id)
-                    invite = _invite_text()
+                    # One link, code in the fragment — never the host link, which
+                    # holds the admin secret (reveal, save, edit, AI).
+                    invite = invite_url(server.share_url, server.display_code)
                     # Never put a half-invite on the clipboard — see the retro loop.
                     message = (
                         copy_markdown_status(invite)

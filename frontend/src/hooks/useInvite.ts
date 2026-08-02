@@ -32,7 +32,6 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { apiUrl, type Session } from '../runtime/api';
 import { copyText } from '../runtime/clipboard';
-import { inviteText } from '../shared/InviteQR';
 import type { InviteInfo } from '../types/board';
 
 export interface UseInvite {
@@ -70,14 +69,18 @@ export function useInvite(session: Session, open: boolean): UseInvite {
         // the host is sitting on. Copying the code on its own would be a
         // half-invite — the reader gets a password and no door — so the panel
         // shows what it has and says nothing about the clipboard.
-        if (!data.shareUrl) return;
+        //
+        // Gated on `inviteUrl`, which is the value actually copied: gating on
+        // `shareUrl` would put `undefined` on the clipboard the moment the two
+        // disagreed.
+        if (!data.inviteUrl) return;
 
-        const copied = await copyText(inviteText(data.shareUrl, data.joinCode));
+        const copied = await copyText(data.inviteUrl);
         if (!live) return;
         // Only claimed when it actually happened. "Copied" over an empty
         // clipboard is worse than saying nothing, because it stops the reader
         // reaching for the buttons that would have worked.
-        setNotice(copied ? 'Invite copied to your clipboard' : null);
+        setNotice(copied ? 'Invite link copied to your clipboard' : null);
       } catch {
         // The host closed the board, or the tunnel dropped. The panel still
         // shows the QR, and the board's own reconnect notice covers the rest.

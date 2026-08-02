@@ -94,7 +94,7 @@ class TestLiveView:
         data["public_url"] = "https://calm-tree-1234.trycloudflare.com/"
         out = _render(_build_poker_screen(data, width=100, height=42))
         assert "calm-tree-1234" in out
-        assert "Works anywhere" in out
+        assert "one link that carries the code" in out
         assert "preparing" not in out
 
     def test_join_block_stops_promising_a_link_after_a_failure(self):

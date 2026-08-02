@@ -46,7 +46,7 @@ from urllib.parse import parse_qs, urlparse
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.page import build_board_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
+from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import BOARD_CSP, send_document
@@ -210,20 +210,36 @@ class _RetroHandler(BaseHTTPRequestHandler):
         )
 
     def _send_qr(self) -> None:
-        """Render a QR of the token-free join URL as inline SVG.
+        """Render a QR of the one-link invite as inline SVG.
 
-        Same URL the invite carries — the tunnel address once there is one, the
-        request's own host before that (see :func:`participant_url`). A phone
-        scanning this is by definition not on the host's machine, so encoding the
-        loopback address it would otherwise see would produce a QR that resolves
-        to the scanner's own device.
+        Exactly what ``/api/invite`` hands out — the tunnel address once there is
+        one, the request's own host before that (see :func:`participant_url`),
+        with the join code in the fragment. A phone scanning this is by
+        definition not on the host's machine, so encoding the loopback address it
+        would otherwise see would produce a QR that resolves to the scanner's own
+        device.
 
-        The QR is token-free so scanning it lands on the code gate — a scan alone
-        does not grant access; the visitor still types the join code. Best-effort
-        — 501 if segno is unavailable, 503 before there is any URL to encode.
+        The code is *in* the QR now, so a scan lands on the board rather than on
+        the gate. That is the point — the alternative is asking someone holding a
+        phone to retype eight characters they can see on a wall. It is not the
+        disclosure it looks like: this endpoint is token-gated, so the only
+        people who can see this QR are people already inside, and the code was
+        already rendered in plain text beside it. What it does change is that a
+        screenshot of the invite panel is now machine-readable entry, which the
+        panel's own copy says out loud.
+
+        Still token-free in the sense that matters: no board *token* is encoded,
+        so the scanner goes through ``POST /api/join`` and the limiter like
+        everyone else. Best-effort — 501 if segno is unavailable, 503 before
+        there is any URL to encode.
         """
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = participant_url(self.headers, fallback, self.server.public_url)  # type: ignore[attr-defined]
+        # invite_url passes "" straight through, so the no-tunnel-yet 503 below
+        # still fires on exactly the same condition it always did.
+        url = invite_url(
+            participant_url(self.headers, fallback, self.server.public_url),  # type: ignore[attr-defined]
+            self._join_code,
+        )
         if not url:
             # No tunnel yet. A QR of nothing is worse than no QR: it scans to
             # something, and the something would be this machine.

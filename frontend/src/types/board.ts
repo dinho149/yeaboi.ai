@@ -204,6 +204,16 @@ export interface InviteInfo {
   /** The code a teammate types on the gate, e.g. `"K3P9-2QXA"`. */
   joinCode: string;
   /**
+   * The whole invite as one URL: `shareUrl` with `#code=<joinCode>` on the end.
+   *
+   * What the panel copies, and what the QR encodes. Composed server-side by
+   * `sharing.access.invite_url` rather than here, so the format has exactly one
+   * implementation — a fragment the emitter and the parser disagree about fails
+   * silently, with the link opening the gate and the autofill just not
+   * happening. `""` until the tunnel is up, same as `shareUrl`.
+   */
+  inviteUrl: string;
+  /**
    * The token-free URL to hand out — the board's Cloudflare tunnel address.
    *
    * The server binds loopback, so the tunnel is the only address that means
