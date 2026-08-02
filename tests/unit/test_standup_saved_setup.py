@@ -57,6 +57,18 @@ def no_integrations(monkeypatch):
     monkeypatch.setattr("yeaboi.config.get_notion_token", lambda: "")
 
 
+def _rows(session_id: str):
+    """The gate's summary rows, dropping the session the answers came from."""
+    result = mode_select._standup_saved_setup(session_id)
+    return None if result is None else result[1]
+
+
+def _source(session_id: str):
+    """The session the gate resolved the answers from."""
+    result = mode_select._standup_saved_setup(session_id)
+    return None if result is None else result[0]
+
+
 def _report(standup_date: str, confidence: int) -> StandupReport:
     return StandupReport(
         date=standup_date,
@@ -84,15 +96,15 @@ def _save(db, **overrides):
 
 class TestSavedSetupSummary:
     def test_no_saved_config_asks(self, store):
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_blank_session_asks(self, store):
-        assert mode_select._standup_saved_setup("") is None
+        assert _rows("") is None
 
     def test_team_only_setup_is_reusable_when_nothing_else_applies(self, store):
         _save(store)
 
-        assert mode_select._standup_saved_setup("s1") == [
+        assert _rows("s1") == [
             ("Trackers", "Jira"),
             ("Members", "Alice, Bob"),
         ]
@@ -100,24 +112,24 @@ class TestSavedSetupSummary:
     def test_unconfigured_roster_asks(self, store):
         _save(store, roster_configured=False)
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_empty_roster_asks(self, store):
         _save(store, team_members=[])
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_no_tracker_in_env_asks(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_jira_project_key", lambda: "")
         _save(store)
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_applicable_code_scope_must_be_configured(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
         _save(store)
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_configured_code_scope_is_summarised(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
@@ -130,7 +142,7 @@ class TestSavedSetupSummary:
             code_scope_configured=True,
         )
 
-        rows = mode_select._standup_saved_setup("s1")
+        rows = _rows("s1")
 
         # Counts first, then the names themselves on a second line — a count
         # alone can't tell you whether this is the scope you wanted back.
@@ -145,7 +157,7 @@ class TestSavedSetupSummary:
             code_scope_configured=True,
         )
 
-        rows = dict(mode_select._standup_saved_setup("s1"))
+        rows = dict(_rows("s1"))
 
         assert rows["Code"] == "5 GitHub repo(s)\na/one, a/two, a/three, a/four +1 more"
 
@@ -153,25 +165,25 @@ class TestSavedSetupSummary:
         monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
         _save(store, code_sources=[], code_scope_configured=True)
 
-        assert ("Code", "none") in mode_select._standup_saved_setup("s1")
+        assert ("Code", "none") in _rows("s1")
 
     def test_applicable_documentation_must_be_configured(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_confluence_space_key", lambda: "ENG")
         _save(store)
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_documentation_opted_out_is_still_an_answer(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_confluence_space_key", lambda: "ENG")
         _save(store, documentation_sources=[], documentation_scope_configured=True)
 
-        assert ("Docs", "none") in mode_select._standup_saved_setup("s1")
+        assert ("Docs", "none") in _rows("s1")
 
     def test_documentation_sources_are_named(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_notion_token", lambda: "secret")
         _save(store, documentation_sources=["notion"], documentation_scope_configured=True)
 
-        assert ("Docs", "Notion") in mode_select._standup_saved_setup("s1")
+        assert ("Docs", "Notion") in _rows("s1")
 
     def test_unreadable_store_asks_instead_of_raising(self, monkeypatch, tmp_path):
         monkeypatch.setattr(mode_select, "_ana_dbp", tmp_path / "sessions.db")
@@ -181,7 +193,7 @@ class TestSavedSetupSummary:
 
         monkeypatch.setattr("yeaboi.standup.store.StandupStore.load_config", _boom)
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
 
 class TestRemovedIntegrationsAreReconfirmed:
@@ -190,7 +202,7 @@ class TestRemovedIntegrationsAreReconfirmed:
     def test_tracker_no_longer_configured_asks(self, store):
         _save(store, tracker_sources=["jira", "azure_devops"])  # AzDO since removed from env
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_code_source_no_longer_configured_asks(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh-token")
@@ -201,7 +213,7 @@ class TestRemovedIntegrationsAreReconfirmed:
             code_scope_configured=True,
         )
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_documentation_source_no_longer_configured_asks(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_confluence_space_key", lambda: "ENG")
@@ -211,13 +223,13 @@ class TestRemovedIntegrationsAreReconfirmed:
             documentation_scope_configured=True,
         )
 
-        assert mode_select._standup_saved_setup("s1") is None
+        assert _rows("s1") is None
 
     def test_still_available_selection_is_reused(self, store, monkeypatch):
         monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "Core")
         _save(store, tracker_sources=["jira", "azure_devops"])
 
-        assert mode_select._standup_saved_setup("s1")[0] == ("Trackers", "Jira, Azure DevOps")
+        assert _rows("s1")[0] == ("Trackers", "Jira, Azure DevOps")
 
 
 class TestSourceLabels:
@@ -297,13 +309,13 @@ class TestLastRunRow:
     def test_no_history_means_no_row(self, store):
         _save(store)
 
-        assert [label for label, _ in mode_select._standup_saved_setup("s1")] == ["Trackers", "Members"]
+        assert [label for label, _ in _rows("s1")] == ["Trackers", "Members"]
 
     def test_history_appends_the_row_last(self, store):
         _save(store)
         self._record(store, date.today().isoformat())
 
-        rows = mode_select._standup_saved_setup("s1")
+        rows = _rows("s1")
 
         assert rows[-1][0] == "Last run"
         assert rows[-1][1].startswith("today")
@@ -318,10 +330,125 @@ class TestLastRunRow:
 
         # Context is never a gate: a broken history read drops the line, it does
         # not send the user back through five pickers.
-        assert mode_select._standup_saved_setup("s1") == [
+        assert _rows("s1") == [
             ("Trackers", "Jira"),
             ("Members", "Alice, Bob"),
         ]
+
+
+class TestSessionDrift:
+    """The standup page targets the latest session of *any* mode.
+
+    Opening a project or a retro is enough to make that a session with no
+    standup config, which stranded the saved setup and re-asked everything.
+    """
+
+    def test_setup_on_an_older_session_is_still_offered(self, store):
+        _save(store)  # saved under "s1"
+
+        assert _rows("s2-from-another-mode") == [
+            ("Trackers", "Jira"),
+            ("Members", "Alice, Bob"),
+        ]
+        assert _source("s2-from-another-mode") == "s1"
+
+    def test_the_current_session_wins_when_it_has_its_own_config(self, store):
+        _save(store)
+        _save(store)  # rewrites s1; still the only configured session
+        with StandupStore(store) as st:
+            st.save_config(
+                "s2",
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                tracker_sources=["jira"],
+                team_members=["Zoe"],
+                roster_configured=True,
+            )
+
+        assert _source("s2") == "s2"
+        assert ("Members", "Zoe") in _rows("s2")
+
+    def test_newest_configured_session_is_the_donor(self, store):
+        with StandupStore(store) as st:
+            for name, members in (("old", ["Old"]), ("new", ["New"])):
+                st.save_config(
+                    name,
+                    enabled=False,
+                    time="10:00",
+                    weekdays="1-5",
+                    delivery_channels=["terminal"],
+                    tracker_sources=["jira"],
+                    team_members=members,
+                    roster_configured=True,
+                )
+
+        assert _source("unconfigured") == "new"
+
+    def test_a_half_walked_session_is_not_offered(self, store):
+        _save(store, roster_configured=False)
+
+        assert _rows("s2") is None
+
+    def test_no_configured_session_anywhere_asks(self, store):
+        assert _rows("s2") is None
+
+
+class TestAdoptSetup:
+    """Reuse copies the answers onto the current session rather than running
+    under the donor: run_standup resolves config by session id, and the page
+    reloads the report for the latest session."""
+
+    def test_setup_fields_are_carried_forward(self, store, monkeypatch):
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "gh")
+        _save(
+            store,
+            team_members=["Alice", "Bob", "Carol"],
+            code_sources=["github"],
+            github_repositories=["acme/api"],
+            code_scope_configured=True,
+            my_aliases="alice,ali",
+            automation_handling="off",
+        )
+
+        mode_select._standup_adopt_setup("s1", "s2")
+
+        with StandupStore(store) as st:
+            copied = st.load_config("s2")
+        assert copied["team_members"] == ["Alice", "Bob", "Carol"]
+        assert copied["github_repositories"] == ["acme/api"]
+        assert copied["roster_configured"] and copied["code_scope_configured"]
+        assert copied["my_aliases"] == "alice,ali"
+        assert copied["automation_handling"] == "off"
+
+    def test_schedule_is_not_carried_forward(self, store):
+        _save(store, enabled=True, time="09:30", delivery_channels=["terminal", "slack"])
+
+        mode_select._standup_adopt_setup("s1", "s2")
+
+        with StandupStore(store) as st:
+            copied = st.load_config("s2")
+        # A copied schedule would make s2 look scheduled with no launchd job
+        # registered for it, and the hub's schedule card prefers enabled rows.
+        assert copied["enabled"] is False
+        assert copied["delivery_channels"] == ["terminal"]
+
+    def test_missing_donor_is_a_no_op(self, store):
+        mode_select._standup_adopt_setup("nope", "s2")
+
+        with StandupStore(store) as st:
+            assert st.load_config("s2") is None
+
+    def test_store_failure_does_not_raise(self, store, monkeypatch):
+        _save(store)
+
+        def _boom(*_args, **_kwargs):
+            raise OSError("disk gone")
+
+        monkeypatch.setattr("yeaboi.standup.store.StandupStore.save_config", _boom)
+
+        mode_select._standup_adopt_setup("s1", "s2")  # logged, not raised
 
 
 class TestConfirmLoop:

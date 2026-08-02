@@ -2351,9 +2351,10 @@ def _standup_generate_flow(
     # config on its own. This only skips re-asking: when every applicable step
     # was confirmed on an earlier run, offer those answers instead of walking
     # the five pickers again.
-    saved_rows = _standup_saved_setup(session_id)
+    saved = _standup_saved_setup(session_id)
     reuse = False
-    if saved_rows is not None:
+    if saved is not None:
+        source_id, saved_rows = saved
         choice = _run_standup_saved_setup_confirm(
             console,
             live,
@@ -2366,6 +2367,10 @@ def _standup_generate_flow(
         if choice == "cancel":
             return None  # Esc/Back → cancel the whole Generate
         reuse = choice == "use"
+        if reuse and source_id != session_id:
+            # The answers came from an older standup session; make them this
+            # session's own, so the engine and the page both see them.
+            _standup_adopt_setup(source_id, session_id)
 
     if not reuse:
         # Mirror Analysis mode: confirm tracker sources, discover their roster,
@@ -2792,13 +2797,21 @@ def _standup_last_run_label(row: dict, today: date) -> str | None:
     return " · ".join(parts)
 
 
-def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
+def _standup_saved_setup(session_id: str) -> tuple[str, list[tuple[str, str]]] | None:
     """Summarise a reusable saved setup, or None when Generate must ask.
 
-    Returns ``(label, value)`` rows only once every *applicable* step has been
-    confirmed at least once. A step whose integration isn't configured at all
-    (no Confluence/Notion, say) is skipped by the flow itself and so is not
-    required here — its ``*_configured`` flag would never be set.
+    Returns ``(source_session_id, rows)`` — ``(label, value)`` rows only once
+    every *applicable* step has been confirmed at least once. A step whose
+    integration isn't configured at all (no Confluence/Notion, say) is skipped
+    by the flow itself and so is not required here — its ``*_configured`` flag
+    would never be set.
+
+    ``source_session_id`` is usually ``session_id``, but the standup page
+    targets the most recently modified session of *any* mode, so opening a
+    project or a retro is enough to leave the setup stranded on an older
+    session. When the current one has no config of its own, fall back to the
+    newest that does; the caller copies it forward so the run still happens
+    under ``session_id`` (the session the page will reload the report from).
     """
     from yeaboi.config import (
         get_azure_devops_org_url,
@@ -2815,15 +2828,21 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
     if not session_id:
         return None
     history: list[dict] = []
+    source_id = session_id
     try:
         with StandupStore(_ana_dbp) as store:
             config = store.load_config(session_id) or {}
+            if not config:
+                # The latest session belongs to some other mode; the setup is on
+                # an older standup session. Offer that one rather than re-asking.
+                source_id = store.get_latest_configured_session() or session_id
+                config = store.load_config(source_id) or {} if source_id != session_id else {}
             # Context only — "when did this setup last produce a standup". Read in
             # the same connection, but never allowed to decide the gate: a failure
             # here drops the line, it does not send the user back through the
             # pickers. Hence the inner try rather than one shared except.
             try:
-                history = store.get_history(session_id, limit=1)
+                history = store.get_history(source_id, limit=1)
             except Exception:
                 logger.warning("standup: could not read the run history", exc_info=True)
     except Exception:
@@ -2900,7 +2919,58 @@ def _standup_saved_setup(session_id: str) -> list[tuple[str, str]] | None:
         last_run = _standup_last_run_label(history[0], date.today())
         if last_run:
             rows.append(("Last run", last_run))
-    return rows
+    return source_id, rows
+
+
+# The setup fields "use saved" carries forward. Schedule fields (enabled, time,
+# weekdays, delivery_channels…) are deliberately absent: they belong to the
+# session whose launchd job is installed, and copying them would make a second
+# session look scheduled when nothing is registered for it.
+_STANDUP_SETUP_FIELDS = (
+    "repo_path",
+    "my_aliases",
+    "tracker_sources",
+    "team_members",
+    "roster_configured",
+    "code_sources",
+    "github_repositories",
+    "azdo_projects",
+    "azdo_repositories",
+    "code_scope_configured",
+    "documentation_sources",
+    "documentation_scope_configured",
+    "automation_markers",
+    "automation_handling",
+)
+
+
+def _standup_adopt_setup(source_id: str, session_id: str) -> None:
+    """Copy a saved setup onto ``session_id`` — what the pickers would have written.
+
+    Reusing means running under the session the page is showing, not under the
+    one the answers came from: ``run_standup`` resolves config by session id and
+    the page reloads the report for the latest session, so generating elsewhere
+    would produce a report nothing displays. Only called when ``session_id`` has
+    no config of its own, so the upsert cannot clear a schedule.
+    """
+    from yeaboi.standup.store import StandupStore
+
+    try:
+        with StandupStore(_ana_dbp) as store:
+            config = store.load_config(source_id)
+            if not config:
+                return
+            store.save_config(
+                session_id,
+                enabled=False,
+                time="10:00",
+                weekdays="1-5",
+                delivery_channels=["terminal"],
+                **{key: config[key] for key in _STANDUP_SETUP_FIELDS if key in config},
+            )
+        logger.info("standup: adopted the saved setup from %s onto %s", source_id, session_id)
+    except Exception:
+        logger.warning("standup: could not adopt the saved setup", exc_info=True)
 
 
 def _run_standup_saved_setup_confirm(

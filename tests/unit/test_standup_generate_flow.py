@@ -215,12 +215,18 @@ def test_documentation_picker_offers_notion_with_token_and_no_root(monkeypatch, 
 class TestSavedSetupGate:
     """Generate offers the saved setup instead of re-walking every picker."""
 
-    def _wire(self, monkeypatch, calls, *, rows, choice):
-        monkeypatch.setattr(mode_select, "_standup_saved_setup", lambda _session: rows)
+    def _wire(self, monkeypatch, calls, *, rows, choice, source="s1"):
+        saved = None if rows is None else (source, rows)
+        monkeypatch.setattr(mode_select, "_standup_saved_setup", lambda _session: saved)
         monkeypatch.setattr(
             mode_select,
             "_run_standup_saved_setup_confirm",
             lambda *args: calls.append("gate") or choice,
+        )
+        monkeypatch.setattr(
+            mode_select,
+            "_standup_adopt_setup",
+            lambda src, dest: calls.append(f"adopt:{src}->{dest}"),
         )
         for name in ("team", "code", "documentation"):
             monkeypatch.setattr(
@@ -274,6 +280,33 @@ class TestSavedSetupGate:
 
         assert result == "Generated."
         assert calls == ["team", "code", "documentation", "update", "engine"]
+
+    def test_setup_from_another_session_is_adopted_before_the_run(self, monkeypatch):
+        """The engine resolves config by session id, so the answers must move."""
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="use", source="older")
+
+        result = mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert result == "Generated."
+        assert calls == ["gate", "adopt:older->s1", "update", "engine"]
+
+    def test_setup_from_this_session_is_not_copied(self, monkeypatch):
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="use", source="s1")
+
+        mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert calls == ["gate", "update", "engine"]
+
+    def test_change_never_adopts(self, monkeypatch):
+        """Walking the pickers writes this session's own answers."""
+        calls = []
+        self._wire(monkeypatch, calls, rows=[("Trackers", "Jira")], choice="change", source="older")
+
+        mode_select._standup_generate_flow(_Console(), _Live(), lambda **kwargs: "", 0.001, True, "s1")
+
+        assert "adopt:older->s1" not in calls
 
 
 def test_team_confirmation_persists_scope(monkeypatch, tmp_path):
