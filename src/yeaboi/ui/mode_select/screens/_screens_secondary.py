@@ -589,11 +589,17 @@ def _analysis_toggle_row(
     enabled: bool = True,
     note: str = "",
     theme=None,
+    label_w: int = 0,
 ) -> Text:
     """The shared setup-wizard option row (``‹ ● Title ›  ·  hint``).
 
     Defaults to the Analysis look; ``theme`` re-brands it for other modes'
     setup screens (Reporting passes REPORTING_THEME).
+
+    ``label_w`` is the widest title in the group. Pass it and every row's ``·``
+    lands in the same column; leave it 0 and the separator tracks each title's
+    own length, which reads as ragged down a list. Callers know their siblings,
+    a single row does not, so it has to come in from outside.
     """
     theme = theme or ANALYSIS_THEME
     row = Text(_PAD + "  ", justify="left", overflow="ellipsis", no_wrap=True)
@@ -606,8 +612,10 @@ def _analysis_toggle_row(
         f" {title} ",
         style="bold white" if focused and enabled else theme.accent if selected and enabled else theme.desc,
     )
-    if focused:
-        row.append("›", style=theme.accent_bright if enabled else theme.dim)
+    # The focus caret is a column of its own, held open on every row — otherwise
+    # focusing a row shifts its description one to the right.
+    row.append("›" if focused else " ", style=theme.accent_bright if enabled else theme.dim)
+    row.append(" " * max(0, label_w - len(title)))
     detail = "Unavailable" if not enabled else note or description
     if detail:
         row.append(f"  ·  {detail}", style=theme.dim if not enabled else theme.muted)
@@ -666,12 +674,15 @@ def _analysis_setup_header(
     modes' setup screens (Reporting passes "REPORTING SETUP" + REPORTING_THEME).
     """
     theme = theme or ANALYSIS_THEME
+    # PAD, not _PAD: this file's _PAD is 2 and the shared PAD is 4, so the header
+    # used to sit two columns left of both the wordmark above it and the option
+    # rows below — reading as an outdent rather than a heading.
     out: list = [
-        Text(_PAD + f"{brand}  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
-        Text(_PAD + help_text, style=theme.muted),
+        Text(PAD + f"{brand}  ›  {section.upper()}", style=f"bold {theme.accent_bright}"),
+        Text(PAD + help_text, style=theme.muted),
     ]
     if message:
-        out.extend((Text(_PAD + "⚠  " + message, style=theme.warn), Text("")))
+        out.extend((Text(PAD + "⚠  " + message, style=theme.warn), Text("")))
     else:
         out.append(Text(""))
     return out
@@ -699,6 +710,10 @@ def _build_analysis_feature_screen(
     theme = ANALYSIS_THEME
     runnable = {feature for feature in _ANALYSIS_FEATURE_KEYS if available.get(feature)}
     all_checked = bool(runnable) and runnable <= checked
+    label_w = max(
+        len("Analyse all"),
+        *(len(_ANALYSIS_FEATURE_LABELS[f][0]) for f in _ANALYSIS_FEATURE_KEYS),
+    )
     rows = [
         _analysis_toggle_row(
             "Analyse all",
@@ -707,6 +722,7 @@ def _build_analysis_feature_screen(
             selected=all_checked,
             enabled=bool(runnable),
             note=f"{len(checked)}/{len(runnable)} selected" if runnable else "",
+            label_w=label_w,
         )
     ]
     for index, feature in enumerate(_ANALYSIS_FEATURE_KEYS, start=1):
@@ -719,6 +735,7 @@ def _build_analysis_feature_screen(
                 focused=index == cursor,
                 selected=feature in checked,
                 enabled=enabled,
+                label_w=label_w,
             )
         )
     footer = f"{len(checked)} selected" if checked else "Select at least one available area"
@@ -1061,6 +1078,7 @@ def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: 
         ),
     )
     rows: list[Text] = []
+    label_w = max(len(name) for name, _label, _detail in options)
     for idx, (name, label, detail) in enumerate(options):
         focused = idx == selected
         rows.append(
@@ -1070,6 +1088,7 @@ def _build_analysis_depth_screen(selected: int = 0, *, width: int = 80, height: 
                 focused=focused,
                 selected=focused,
                 note=f"{label} · {detail}",
+                label_w=label_w,
             )
         )
 
@@ -1102,6 +1121,7 @@ def _build_analysis_model_offer_screen(
         (current_model, f"Keep current model · estimated {minutes} min"),
     )
     rows: list[Text] = []
+    label_w = max(len(model or "current model") for model, _detail in options)
     for index, (model, detail) in enumerate(options):
         focused = index == selected
         rows.append(
@@ -1111,6 +1131,7 @@ def _build_analysis_model_offer_screen(
                 focused=focused,
                 selected=focused,
                 note=f"{'Faster' if index == 0 else 'Current'} · {detail}",
+                label_w=label_w,
             )
         )
     content = Group(
@@ -1133,6 +1154,7 @@ def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height:
     """Choose the changed-content window shared by Code and Docs."""
     options = ((30, "Last month"), (90, "Last quarter"), (120, "Recommended"), (365, "Last year"))
     rows: list[Text] = []
+    label_w = max(len(f"{days} DAYS") for days, _label in options)
     for idx, (days, label) in enumerate(options):
         focused = idx == selected
         rows.append(
@@ -1142,6 +1164,7 @@ def _build_analysis_window_screen(selected: int = 2, *, width: int = 80, height:
                 focused=focused,
                 selected=focused,
                 note=label,
+                label_w=label_w,
             )
         )
     content = Group(
