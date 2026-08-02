@@ -2,6 +2,29 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.47.1",
+      "date": "2026-08-02",
+      "summary": "Copying an invite link now gives you one working URL instead of a broken two-line clipboard payload. Teammates clicking a stale link now get a clear \"That invite link is out of date\" message instead of a confusing error, and the code is preserved in the URL fragment so it stays out of server logs and referer headers. The fix applies to both live retro and planning poker boards and Share Online exports across all modes.",
+      "highlights": [
+        {
+          "text": "Invite links now carry the access code in the URL fragment, making them a single working link",
+          "areas": ["retro", "planning", "general"]
+        },
+        {
+          "text": "Stale links show a clear message and don't spam failed join attempts to the server",
+          "areas": ["retro", "planning", "general"]
+        },
+        {
+          "text": "Applies to both live boards and Share Online exports",
+          "areas": ["reporting", "standup", "retro", "planning"]
+        },
+        {
+          "text": "Fixed: Copy Invite button produced a broken two-line payload that failed when pasted into address bars or chat",
+          "areas": ["retro", "planning"]
+        }
+      ]
+    },
+    {
       "version": "2.46.0",
       "date": "2026-07-31",
       "summary": "Everything yeaboi puts in a browser now looks like the same product. The live retro and planning poker boards, the page that asks for a share code, the reports you export and the slide deck had each drifted into their own look \u2014 different headers, different buttons, and a colour theme that only applied where you happened to pick it. They now share one design: the same header carrying the mode's name and colour, the same footer, and a theme you choose anywhere that follows you everywhere, including the next report you export. The slide deck gains a light mode and prints properly for the first time. A share link's page now says what kind of thing is waiting behind it \u2014 \u201ca standup\u201d, \u201ca retro\u201d \u2014 so the person you sent it to knows what they are joining before they type the code; the one exception is Performance, which stays deliberately anonymous, because naming it would tell whoever holds the link that somebody's 1:1 or review is behind the door. Live boards are also served with the same security headers as every other page, browser tabs now name the session instead of reading \u201cSprint Retro\u201d on every one of them, and a ceremony timer that could stick on one second now counts down properly.",
