@@ -84,7 +84,10 @@ def _build_output_share_screen(
                 Text(PAD + "Access code", style=f"bold {theme.accent}"),
                 Text(PAD + join_code, style=f"bold {theme.accent_bright}"),
                 Text(""),
-                Text(PAD + "Copy Invite includes both values. Back or Stop Sharing closes the link.", style=theme.dim),
+                Text(
+                    PAD + "Copy Invite sends one link that carries the code. Back or Stop Sharing closes it.",
+                    style=theme.dim,
+                ),
             ]
         )
     if message:
@@ -273,9 +276,15 @@ def run_output_share(
                 action = actions[sel]
                 if action == "Copy Invite" and active:
                     from yeaboi.clipboard import copy_text
+                    from yeaboi.sharing.access import invite_url
 
                     server = snapshot["server"]
-                    invite = f"{snapshot['public_url']}\nAccess code: {server.display_code}"  # type: ignore[union-attr]
+                    # One link with the code in the fragment. A URL and a sentence
+                    # in one clipboard payload is what used to break here — see
+                    # invite_url. `active` already means the tunnel is up, so this
+                    # is non-empty, but the helper's empty case is the same "not
+                    # ready" answer the button is gated on anyway.
+                    invite = invite_url(str(snapshot["public_url"]), server.display_code)  # type: ignore[union-attr]
                     message = "Copied invite to clipboard." if copy_text(invite) else "Couldn't copy — see logs."
                     logger.info("output sharing invite copy requested (mode=%s)", document.source_mode)
                 elif action == "Discard Edits" and editable is not None:

@@ -30,24 +30,17 @@ export interface InviteQRProps {
   joinCode?: string | undefined;
   /** The URL to share. Shown as text so it can be read aloud as well as copied. */
   shareUrl?: string | undefined;
+  /**
+   * The whole invite as one URL — `shareUrl` with the code in its fragment.
+   *
+   * Built by `sharing.access.invite_url` and never re-derived here; this
+   * component only renders what arrived.
+   */
+  inviteUrl?: string | undefined;
   className?: string | undefined;
 }
 
-/**
- * The one-line invite: link then code, in the order they are used.
- *
- * Exported because the panel is not the only place this text is wanted — the
- * auto-copy on open sends exactly this, so both go through one function and the
- * clipboard cannot say something different from the screen.
- */
-export function inviteText(shareUrl: string, joinCode: string): string {
-  const lines = [];
-  if (shareUrl) lines.push(shareUrl);
-  if (joinCode) lines.push(`Access code: ${joinCode}`);
-  return lines.join('\n');
-}
-
-export function InviteQR({ qrSrc, joinCode, shareUrl, className }: InviteQRProps) {
+export function InviteQR({ qrSrc, joinCode, shareUrl, inviteUrl, className }: InviteQRProps) {
   const src = safeImageSrc(qrSrc);
 
   return (
@@ -62,10 +55,20 @@ export function InviteQR({ qrSrc, joinCode, shareUrl, className }: InviteQRProps
         />
       ) : null}
 
-      {/* Both fields render only once the values are in. They arrive from
+      {/* Every field renders only once the values are in. They arrive from
           `GET /api/invite` rather than the boot payload, because the page is
           served unauthenticated and the code would be readable by anyone who
-          reaches the board — see `retro/page.py`. */}
+          reaches the board — see `retro/page.py`.
+
+          Invite leads: it is one URL that carries the code, so it is the only
+          one of the three that is a complete thing to send someone. It has a
+          button of its own rather than relying on the auto-copy, because
+          `copyText` legitimately fails (insecure context, expired activation
+          window) and the panel must still have a way out.
+
+          Link and Code stay below it, separately copyable, for the host who
+          wants to post the address in a channel and pass the code another way. */}
+      {inviteUrl ? <CopyField label="Invite" value={inviteUrl} /> : null}
       {shareUrl ? <CopyField label="Link" value={shareUrl} /> : null}
       {joinCode ? <CopyField label="Code" value={joinCode} mono /> : null}
     </div>

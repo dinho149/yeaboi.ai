@@ -93,6 +93,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Without this the action prints a bare `is_error: true` and no reason,
+          # so a credential outage looks identical to a bad prompt. That is how
+          # the 401 that took every Claude workflow down on 2026-07-30 went a day
+          # and a half misdiagnosed as a model-alias problem — see the long note
+          # in auto-version.yml. The prompt and diff are public repo content, so
+          # there is nothing here to hide.
+          show_full_output: true
           prompt: |
             Review PR #${{ steps.pr.outputs.number }} in ${{ github.repository }}.
             The full CI suite has already passed on this PR — do not re-verify what

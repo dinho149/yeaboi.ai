@@ -178,7 +178,7 @@ class TestJoinBlock:
 
     def test_promotes_the_tunnel_link_once_there_is_one(self):
         out = self._lines(public_url="https://calm-tree-1234.trycloudflare.com/")
-        assert "Works anywhere" in out
+        assert "one link that carries the code" in out
         assert "calm-tree-1234" in out
         assert "preparing" not in out
 

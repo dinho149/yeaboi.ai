@@ -362,6 +362,23 @@ class TestQrEndpoint:
         body = _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}").read()
         assert b"<svg" in body  # segno inline SVG
 
+    def test_encodes_the_one_link_invite_so_a_scan_lands_on_the_board(self, running_server, monkeypatch):
+        # The QR is unreadable in the response bytes, so spy on what segno was
+        # handed. `import segno` inside _send_qr resolves this same module
+        # object, so patching the attribute here reaches the handler thread.
+        import segno
+
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        seen: list[str] = []
+        real = segno.make
+        monkeypatch.setattr(segno, "make", lambda content, **kw: (seen.append(content), real(content, **kw))[1])
+
+        _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}").read()
+        assert seen == [f"https://abc-def.trycloudflare.com/#code={srv.join_code}"]
+        # No board token: a scanner still goes through /api/join and the limiter.
+        assert srv.token not in seen[0]
+
 
 class TestInviteEndpoint:
     """What the browser's invite panel copies to a teammate's clipboard."""
@@ -379,6 +396,24 @@ class TestInviteEndpoint:
         assert body["joinCode"] == srv.join_code
         assert body["shareUrl"].endswith("/")
         assert "token=" not in body["shareUrl"]  # it is the *participant* link
+
+    def test_the_invite_url_is_the_whole_invite_in_one_string(self, running_server):
+        # The panel copies this and nothing else. A URL plus a separate sentence
+        # is what used to break: a paste target that flattens the newline turned
+        # the pair into one 404ing path. See sharing/access.invite_url.
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["inviteUrl"] == f"https://abc-def.trycloudflare.com/#code={srv.join_code}"
+        assert "token=" not in body["inviteUrl"]
+        # The code is in the fragment, never the query — a query would reach
+        # cloudflared's log and the gate's outbound Referer.
+        assert "?code=" not in body["inviteUrl"]
+
+    def test_no_invite_url_before_there_is_a_link(self, running_server):
+        srv, _ = running_server
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["inviteUrl"] == ""
 
     def test_never_returns_the_host_link_or_the_admin_secret(self, running_server):
         # The host link skips the gate and carries the admin secret, and every

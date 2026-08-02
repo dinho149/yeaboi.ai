@@ -138,3 +138,85 @@ def test_runner_stops_server_and_tunnel(monkeypatch):
     assert events[:2] == ["server-start", "tunnel-start"]
     assert "tunnel-stop" in events
     assert "server-stop" in events
+
+
+def test_copy_invite_puts_one_self_contained_link_on_the_clipboard(monkeypatch):
+    """The payload the original bug was about, on the surface it reached furthest.
+
+    Share Online is how standup, performance, reporting, roadmap and every export
+    get shared, so this is the widest of the three Copy Invite buttons. It used to
+    copy the URL, a newline, and the sentence ``Access code: XXXX-XXXX``; any
+    paste target that flattens a newline glued them into one 404ing path. What
+    goes on the clipboard now is one URL and nothing else.
+    """
+    copied: list[str] = []
+
+    class FakeServer:
+        port = 54321
+        display_code = "ABCD-2345"
+
+        # `editable`/`on_edit` are accepted and ignored: this test is about the
+        # invite link, and a share flow now always passes them through.
+        def __init__(self, document, *, editable=None, on_edit=None):
+            self.document = document
+            self.editable = editable
+            self.on_edit = on_edit
+
+        def set_public_url(self, url):
+            # The share flow tells the server its tunnel address so the invite
+            # is built from that rather than from the request's own Host.
+            self.public_url = url
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    class FakeTunnel:
+        def __init__(self, port, *, binary):
+            pass
+
+        def start(self, *, timeout):
+            # No trailing slash, exactly as cloudflared reports it — the screen
+            # adds one, and invite_url has to cope with either.
+            return "https://example.trycloudflare.com"
+
+        def stop(self):
+            pass
+
+    class FakeConsole:
+        size = (100, 34)
+
+    class FakeLive:
+        def update(self, _panel):
+            pass
+
+    # Copy Invite is the first action once sharing is live, so a bare Enter
+    # presses it; the second leaves.
+    keys = iter(("enter", "right", "enter"))
+
+    def read_key(timeout=None):
+        time.sleep(0.01)
+        return next(keys, "enter")
+
+    monkeypatch.setattr("yeaboi.ui.shared._output_share.OutputShareServer", FakeServer)
+    monkeypatch.setattr("yeaboi.sharing.tunnel.ensure_cloudflared", lambda: "/bin/cloudflared")
+    monkeypatch.setattr("yeaboi.sharing.tunnel.CloudflareTunnel", FakeTunnel)
+    monkeypatch.setattr("yeaboi.clipboard.copy_text", lambda text: copied.append(text) or True)
+
+    run_output_share(
+        FakeConsole(),
+        FakeLive(),
+        read_key,
+        0.001,
+        True,
+        document=ShareDocument("Daily Standup", "<html></html>", "standup"),
+        theme=STANDUP_THEME,
+        title_fn=standup_title,
+    )
+
+    assert copied == ["https://example.trycloudflare.com/#code=ABCD-2345"]
+    # One line, no whitespace anywhere: there is nothing for a paste target to
+    # flatten, and nothing to glue onto the end of the URL.
+    assert not any(char.isspace() for char in copied[0])

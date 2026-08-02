@@ -166,15 +166,15 @@ define need-name
 	@test -n "$(NAME)" || { echo "usage: make $@ NAME=<slug>  (e.g. NAME=standup-fix)"; exit 1; }
 endef
 
-wt-new: ## Create worktree .claude/worktrees/NAME (branch + .env + venv) + open in VS Code with claude auto-running
+wt-new: ## Create worktree .claude/worktrees/NAME off latest origin/main (branch + .env + venv) + open in VS Code with claude auto-running
 	$(need-name)
 	CODE="$(CODE)" bash scripts/wt.sh "$(NAME)" open
 
-wt-open: ## Open worktree in a NEW VS Code window with claude auto-running (creates it first if needed)
+wt-open: ## Open worktree in a NEW VS Code window with claude auto-running (creates it off latest origin/main first if needed)
 	$(need-name)
 	CODE="$(CODE)" bash scripts/wt.sh "$(NAME)" open
 
-wt-headless: ## Create worktree WITHOUT VS Code auto-launch (driven by background agents instead)
+wt-headless: ## Create worktree off latest origin/main WITHOUT VS Code auto-launch (driven by background agents instead)
 	$(need-name)
 	bash scripts/wt.sh "$(NAME)" headless
 

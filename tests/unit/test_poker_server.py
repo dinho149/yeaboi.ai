@@ -141,6 +141,35 @@ class TestServerRouting:
         body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
         assert body["shareUrl"] == "https://abc-def.trycloudflare.com/"
 
+    def test_invite_url_is_the_whole_invite_in_one_string(self, running_server):
+        # One URL, code in the fragment — see sharing/access.invite_url for the
+        # two-line clipboard payload this replaced.
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["inviteUrl"] == f"https://abc-def.trycloudflare.com/#code={srv.join_code}"
+        assert "?code=" not in body["inviteUrl"]
+
+    def test_invite_url_is_empty_before_the_tunnel(self, running_server):
+        srv, _ = running_server
+        body = json.load(_get(f"http://127.0.0.1:{srv.port}/api/invite?token={srv.token}"))
+        assert body["inviteUrl"] == ""
+
+    def test_qr_encodes_the_one_link_invite(self, running_server, monkeypatch):
+        # Spy on segno rather than the response bytes — `import segno` inside
+        # _send_qr resolves this same module object. See the retro suite.
+        import segno
+
+        srv, _ = running_server
+        srv.set_public_url("https://abc-def.trycloudflare.com/")
+        seen: list[str] = []
+        real = segno.make
+        monkeypatch.setattr(segno, "make", lambda content, **kw: (seen.append(content), real(content, **kw))[1])
+
+        _get(f"http://127.0.0.1:{srv.port}/api/qr?token={srv.token}").read()
+        assert seen == [f"https://abc-def.trycloudflare.com/#code={srv.join_code}"]
+        assert srv.token not in seen[0]
+
     def test_unknown_path_404(self, running_server):
         srv, _ = running_server
         with pytest.raises(urllib.error.HTTPError) as exc:

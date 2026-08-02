@@ -73,23 +73,54 @@ export function loadSession(prefix: string, pid: string): Session {
 }
 
 /**
- * Remove `token` and `admin` from the address bar without reloading.
+ * Remove `token`, `admin` and the invite `code` from the address bar.
  *
  * `replaceState`, not `pushState`: the credential-bearing URL must not stay in
  * the back stack. Wrapped because `history` is unavailable in some embedded
  * webviews and throws over `file://` in a few browsers — a failure here is
  * cosmetic and must never stop the board from booting.
+ *
+ * The `code` cases are load-bearing rather than tidiness. `JoinGate` calls this
+ * *before* it auto-submits a code lifted from the link, so a reload after a
+ * rejection carries nothing and makes no request — which is what keeps a stale
+ * link from walking an IP into `JoinLimiter`'s eight-failure lockout. And a
+ * visitor who already has a token never renders the gate at all, so without the
+ * fragment branch here their `#code=` would sit in the address bar, and in every
+ * screenshot, for the whole session.
+ *
+ * The fragment keeps whatever else it was carrying (an anchor, a future param):
+ * only the `code` segment is dropped, and by filtering the raw `&`-separated
+ * parts rather than round-tripping through `URLSearchParams`, which would
+ * re-encode the survivors and hand a bare `#…&section` back as `#section=`.
  */
 export function stripCredentialsFromUrl(): void {
   try {
     const url = new URL(location.href);
-    if (!url.searchParams.has('token') && !url.searchParams.has('admin')) return;
+    const parts = url.hash.replace(/^#/, '').split('&');
+    const codedHash = parts.some(isCode);
+    const dirty =
+      url.searchParams.has('token') ||
+      url.searchParams.has('admin') ||
+      url.searchParams.has('code') ||
+      codedHash;
+    if (!dirty) return;
     url.searchParams.delete('token');
     url.searchParams.delete('admin');
-    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    url.searchParams.delete('code');
+    let fragment = url.hash;
+    if (codedHash) {
+      const rest = parts.filter((part) => !isCode(part)).join('&');
+      fragment = rest ? `#${rest}` : '';
+    }
+    history.replaceState(null, '', `${url.pathname}${url.search}${fragment}`);
   } catch {
     /* no history API — the URL keeps its query, everything else still works */
   }
+}
+
+/** True for the one fragment segment this strips: `code=…`, or a bare `code`. */
+function isCode(part: string): boolean {
+  return part === 'code' || part.startsWith('code=');
 }
 
 /** Build a same-origin API URL carrying the token and any extra parameters. */

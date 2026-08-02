@@ -122,6 +122,9 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Not now": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Generate": ("rgb(180,80,160)", "rgb(220,120,200)", "rgb(50,40,50)", "rgb(60,50,60)"),
     "Team": ("rgb(180,80,160)", "rgb(220,120,200)", "rgb(50,40,50)", "rgb(60,50,60)"),
+    # Standup Generate gate: reuse the saved setup (green "go") or re-pick it (grey).
+    "Use saved": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    "Change": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Generate Action Items": ("rgb(50,170,170)", "rgb(90,220,220)", "rgb(40,52,52)", "rgb(50,62,62)"),
     "Close": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     # Live boards: shown only when the board's secure link failed to come up.
