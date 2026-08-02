@@ -2489,6 +2489,106 @@ def _standup_generate_flow(
     return result_box[0]
 
 
+_REVIEW_STEP_NAMES = ["Source", "Review", "File"]
+
+
+def _standup_transcript_counts(session_id: str) -> tuple[int, str]:
+    """Return ``(unreviewed transcript count, clipboard hint)`` for the source step.
+
+    Both are read ONCE, when the picker opens — never per frame. ``discover``
+    hashes files and ``read_clipboard_text`` shells out with a 10 s timeout, so
+    either inside the render loop would stall the TUI.
+    """
+    from yeaboi.clipboard import read_clipboard_text
+    from yeaboi.standup import transcripts as _transcripts
+    from yeaboi.standup.store import StandupStore
+
+    count = 0
+    try:
+        from yeaboi.paths import get_db_path
+
+        with StandupStore(get_db_path()) as store:
+            config = store.load_config(session_id) or {}
+        found, _warnings = _transcripts.discover(session_id, config=config)
+        count = len(found)
+    except Exception:  # a count is a nicety; never block the picker on it
+        logger.debug("standup review: could not count transcripts", exc_info=True)
+
+    try:
+        clip = read_clipboard_text() or ""
+    except Exception:
+        logger.debug("standup review: could not read the clipboard", exc_info=True)
+        clip = ""
+    if not clip.strip():
+        hint = "nothing on the clipboard"
+    else:
+        hint = f"{len(clip):,} characters ready"
+    return count, hint
+
+
+def _standup_review_source_step(
+    console: Console, live, read_key, frame_time, supports_timeout, session_id: str, message: str = ""
+) -> tuple[str, str] | None:
+    """Ask where this review's transcript comes from. Returns ``(kind, value)``.
+
+    ``kind`` is one of ``sweep`` / ``paste`` / ``open`` / ``folder``; ``None``
+    means the user backed out. The counts in the descriptions are the point of
+    the screen — "3 unreviewed file(s)" answers "is there anything to review?"
+    without making the user go and look.
+    """
+    from yeaboi.clipboard import read_clipboard_text
+    from yeaboi.paths import get_transcripts_dir
+
+    count, clip_hint = _standup_transcript_counts(session_id)
+    folder = str(get_transcripts_dir()).replace(str(Path.home()), "~")
+    options = [
+        ("Sweep my transcript folders", f"{count} unreviewed file(s)" if count else "nothing unreviewed right now"),
+        ("Paste the transcript from my clipboard", clip_hint),
+        (f"Open {folder}", "drop a file in, then come back"),
+        ("Use another folder, just this once", "a Zoom or Granola recordings folder"),
+    ]
+    choice = _run_schedule_choice_step(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        options=options,
+        initial=1 if (count == 0 and "characters" in clip_hint) else 0,
+        step_index=0,
+        heading="Transcript review  —  where should I look?",
+        step_names=_REVIEW_STEP_NAMES,
+        message=message,
+    )
+    if choice == "back":
+        return None
+    if choice == 0:
+        return ("sweep", "")
+    if choice == 1:
+        text = read_clipboard_text() or ""
+        if not text.strip():
+            return ("open", "")  # nothing to paste; fall through to the folder
+        return ("paste", text)
+    if choice == 2:
+        return ("open", "")
+    typed = _standup_read_line(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        prompt="Transcript folder (drag it in, or type a path)",
+        step="Transcript review  —  where to look",
+        default="",
+        box_rows=5,
+    )
+    if typed is None:
+        return None
+    from yeaboi.standup.transcripts import normalize_dropped_path
+
+    return ("folder", normalize_dropped_path(typed))
+
+
 def _standup_review_flow(console: Console, live, read_key, frame_time, supports_timeout, session_id: str) -> str | None:
     """Review standup meeting transcripts, then offer to file the gaps found.
 
@@ -2500,30 +2600,37 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
-    # Point the sweep at an extra folder for this run if the user wants one.
-    # Empty (just Enter) = sweep the managed folder only, which is the common case.
-    extra_dir = _standup_read_line(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        prompt="Extra transcript folder (Enter for ~/.yeaboi/transcripts)",
-        step="Transcript review  —  where to look",
-        default="",
-        box_rows=5,
-    )
-    if extra_dir is None:
-        logger.info("standup review: cancelled at folder prompt (session=%s)", session_id)
-        return None
-    extra_dir = extra_dir.strip()
-    if extra_dir:
-        # Ask BEFORE the read so a path outside the sandbox gets an Allow/Deny
-        # popup rather than an exception (same as the performance transcript flow).
-        from yeaboi.ui.shared._consent import _preflight_path_consent
+    extra_dir = ""
+    transcript_text = ""
+    note = ""
+    while True:
+        picked = _standup_review_source_step(
+            console, live, read_key, frame_time, supports_timeout, session_id, message=note
+        )
+        if picked is None:
+            logger.info("standup review: cancelled at the source step (session=%s)", session_id)
+            return None
+        kind, value = picked
+        if kind == "open":
+            # Reveal the folder and come straight back, so "where do I put it?"
+            # and "now review it" are one continuous move.
+            from yeaboi.os_open import open_path
+            from yeaboi.paths import get_transcripts_dir
 
-        if not _preflight_path_consent(console, live, read_key, frame_time, supports_timeout, extra_dir, mode="read"):
-            return "Transcript folder not allowed — review cancelled."
+            note = open_path(get_transcripts_dir())
+            continue
+        if kind == "paste":
+            transcript_text = value
+            break
+        if kind == "folder" and value:
+            # Ask BEFORE the read so a path outside the sandbox gets an Allow/Deny
+            # popup rather than an exception (same as the performance transcript flow).
+            from yeaboi.ui.shared._consent import _preflight_path_consent
+
+            if not _preflight_path_consent(console, live, read_key, frame_time, supports_timeout, value, mode="read"):
+                return "Transcript folder not allowed — review cancelled."
+            extra_dir = value
+        break
 
     progress: list[str] = ["Starting"]
     result_box: list = [None]
@@ -2532,7 +2639,12 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
         try:
             from yeaboi.standup.engine import run_transcript_review
 
-            result_box[0] = run_transcript_review(session_id, transcript_dir=extra_dir, on_progress=progress.append)
+            result_box[0] = run_transcript_review(
+                session_id,
+                transcript_dir=extra_dir,
+                transcript_text=transcript_text,
+                on_progress=progress.append,
+            )
         except Exception as e:  # a review must never crash the TUI
             logger.error("standup review failed: %s", e, exc_info=True)
             result_box[0] = e
@@ -2558,6 +2670,11 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
         return "Transcript review produced no result — see logs."
 
     summary = f"Reviewed {len(review.sources)} transcript(s) · {len(review.gaps)} gap(s)"
+    if transcript_text and review.sources:
+        # Name the day it landed on: a paste attributed to the wrong standup is
+        # the one failure the user cannot see from a success message.
+        first = review.sources[0]
+        summary = f"Saved {first.filename} ({first.attribution}) · {summary}"
     if review.config_suggestions:
         summary += f" · {len(review.config_suggestions)} to fix in config"
     if not review.gaps:
@@ -3585,11 +3702,14 @@ def _run_schedule_choice_step(
     initial: int,
     step_index: int,
     heading: str,
+    step_names: list[str] | None = None,
+    message: str = "",
 ) -> int | str:
-    """One single-select (radio) step of the schedule wizard.
+    """One single-select (radio) step of a standup option-list wizard.
 
     The cursor row IS the selection: Enter returns its index, Esc returns
     ``"back"`` so the wizard can step backwards (analysis-wizard convention).
+    ``step_names``/``message`` let a non-schedule wizard reuse this loop.
     """
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
 
@@ -3598,7 +3718,14 @@ def _run_schedule_choice_step(
         w, h = console.size
         live.update(
             _build_standup_schedule_step_screen(
-                options, cursor, step_index=step_index, heading=heading, width=w, height=max(10, h - 1)
+                options,
+                cursor,
+                step_index=step_index,
+                heading=heading,
+                width=w,
+                height=max(10, h - 1),
+                message=message,
+                step_names=step_names,
             )
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()

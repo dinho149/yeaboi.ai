@@ -932,6 +932,111 @@ class TestBuildScheduleStepScreen:
         assert isinstance(panel, Panel)
         self._render(panel, width=60)
 
+    def test_custom_step_names_replace_the_schedule_ones(self):
+        """The screen is shared with the transcript source picker."""
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_schedule_step_screen
+
+        panel = _build_standup_schedule_step_screen(
+            [("Sweep my transcript folders", "3 unreviewed file(s)")],
+            0,
+            step_index=0,
+            heading="Where should I look?",
+            step_names=["Source", "Review", "File"],
+        )
+        out = self._render(panel)
+        assert "Source" in out and "Review" in out and "File" in out
+        assert "Channels" not in out  # a schedule-only step name
+
+
+class TestTranscriptSourceStep:
+    """The picker that turns "find the folder, copy the file" into one keypress."""
+
+    def _pick(self, monkeypatch, key_script, *, count=0, clip=""):
+        """Drive the source step with a scripted key sequence."""
+        from yeaboi.ui.mode_select import _standup_review_source_step
+
+        monkeypatch.setattr(
+            "yeaboi.ui.mode_select._standup_transcript_counts",
+            lambda sid: (count, f"{len(clip):,} characters ready" if clip.strip() else "nothing on the clipboard"),
+        )
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: clip)
+        keys = iter(key_script)
+        live = type("L", (), {"update": lambda self, x: None})()
+        console = type("C", (), {"size": (100, 30)})()
+        return _standup_review_source_step(console, live, lambda **kw: next(keys), 0.03, True, "sid")
+
+    def test_enter_on_the_first_row_sweeps(self, monkeypatch):
+        assert self._pick(monkeypatch, ["enter"], count=3) == ("sweep", "")
+
+    def test_paste_returns_the_clipboard_text(self, monkeypatch):
+        # count=1 so the cursor starts on Sweep and "down" lands on Paste.
+        kind, value = self._pick(monkeypatch, ["down", "enter"], count=1, clip="Alice: hi\nBob: hey")
+        assert kind == "paste"
+        assert value == "Alice: hi\nBob: hey"
+        assert "\n" in value  # the newlines a text box would have eaten
+
+    def test_an_empty_clipboard_falls_through_to_opening_the_folder(self, monkeypatch):
+        """Choosing paste with nothing to paste should help, not error."""
+        assert self._pick(monkeypatch, ["down", "enter"], clip="   ")[0] == "open"
+
+    def test_open_row_returns_open(self, monkeypatch):
+        assert self._pick(monkeypatch, ["down", "down", "enter"], count=1) == ("open", "")
+
+    def test_esc_backs_out(self, monkeypatch):
+        assert self._pick(monkeypatch, ["esc"]) is None
+
+    def test_cursor_starts_on_paste_when_there_is_nothing_to_sweep(self, monkeypatch):
+        """Nothing unreviewed but a clipboard full of text — offer the useful row."""
+        assert self._pick(monkeypatch, ["enter"], count=0, clip="Alice: hi")[0] == "paste"
+
+    def test_cursor_starts_on_sweep_when_files_are_waiting(self, monkeypatch):
+        assert self._pick(monkeypatch, ["enter"], count=2, clip="Alice: hi")[0] == "sweep"
+
+
+class TestTranscriptCounts:
+    """The counts are read once on entry — discover() hashes files and the
+    clipboard helper shells out with a 10s timeout, so neither may run per frame."""
+
+    def test_counts_unreviewed_files_and_clipboard_chars(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        monkeypatch.setattr(
+            "yeaboi.standup.transcripts.discover", lambda sid, **kw: ([("a.vtt", False), ("b.txt", False)], [])
+        )
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: "x" * 1234)
+        count, hint = _standup_transcript_counts("sid")
+        assert count == 2
+        assert "1,234 characters" in hint
+
+    def test_empty_clipboard_says_so(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", lambda sid, **kw: ([], []))
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: None)
+        assert _standup_transcript_counts("sid") == (0, "nothing on the clipboard")
+
+    def test_a_broken_discover_does_not_block_the_picker(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        def _boom(*a, **k):
+            raise OSError("disk gone")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", _boom)
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", lambda: "Alice: hi")
+        count, hint = _standup_transcript_counts("sid")
+        assert count == 0
+        assert "characters ready" in hint
+
+    def test_a_broken_clipboard_does_not_block_the_picker(self, monkeypatch):
+        from yeaboi.ui.mode_select import _standup_transcript_counts
+
+        def _boom():
+            raise OSError("no display")
+
+        monkeypatch.setattr("yeaboi.standup.transcripts.discover", lambda sid, **kw: ([("a.vtt", False)], []))
+        monkeypatch.setattr("yeaboi.clipboard.read_clipboard_text", _boom)
+        assert _standup_transcript_counts("sid") == (1, "nothing on the clipboard")
+
 
 class TestDayOverDayScreen:
     def test_member_detail_shows_progress_note_and_outlook(self):

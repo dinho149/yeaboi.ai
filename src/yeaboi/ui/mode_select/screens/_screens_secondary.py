@@ -3103,14 +3103,20 @@ def _build_standup_schedule_step_screen(
     width: int = 80,
     height: int = 24,
     message: str = "",
+    step_names: list[str] | None = None,
 ) -> Panel:
-    """Build one step of the schedule wizard: a radio or checkbox option list.
+    """Build one step of a standup option-list wizard: radio or checkbox.
 
     ``checked is None`` renders a single-select (radio) step — the cursor row IS
     the selection, Enter confirms it. A ``set`` renders a multi-select step where
     Space toggles membership. ``options`` are ``(label, description)`` pairs; the
-    description renders dimmed after the label. Progress dots across the top show
-    the five wizard steps (``_SCHEDULE_STEP_NAMES``).
+    description renders dimmed after the label.
+
+    ``step_names`` labels the progress dots, defaulting to the schedule wizard's
+    five steps. It is a parameter rather than a constant so other standup
+    wizards (the transcript source picker) reuse this whole screen — the
+    scrolling, the back-navigation and their render tests — instead of growing a
+    near-copy.
     """
     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
@@ -3157,7 +3163,7 @@ def _build_standup_schedule_step_screen(
         standup_title(),
         Text(""),
         Text(_PAD + heading, style="bold white"),
-        build_progress_dots(_SCHEDULE_STEP_NAMES, step_index, theme=theme),
+        build_progress_dots(step_names or _SCHEDULE_STEP_NAMES, step_index, theme=theme),
         Text(_PAD + hints, style=theme.muted),
         Text(""),
         viewport,
