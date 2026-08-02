@@ -116,11 +116,16 @@ def _summarise(directory: Path, *, recurse: bool) -> tuple[int, str, bool]:
     strong = any(p.suffix.lower() in _STRONG_SUFFIXES for p in files)
     newest = ""
     for path in files:
-        try:
-            head = path.read_text(encoding="utf-8", errors="replace")[:2_000]
-        except OSError:
-            continue
-        covered = _transcripts.infer_date(path, head)
+        # Filename and mtime ONLY — never the contents. This runs over folders
+        # the user has not granted us yet, and the Google Drive one is the whole
+        # reason: under Drive's default "Stream" mode those files are on-demand
+        # placeholders, so reading them to build a preview label would trigger a
+        # real download of every meeting recording in the folder and freeze the
+        # setup screen behind it. (The old read_text()[:2000] also pulled each
+        # whole file into memory before slicing.) A label saying "14 files,
+        # newest 2026-08-01" does not need to be more accurate than an mtime;
+        # the actual review reads content, once the user has said yes.
+        covered = _transcripts.infer_date(path, "")
         if covered > newest:
             newest = covered
     return len(files), newest, strong

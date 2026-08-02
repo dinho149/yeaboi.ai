@@ -1537,11 +1537,15 @@ def run_transcript_review(
         _notify("Saving the pasted transcript")
         try:
             imported = import_transcript(transcript_text, covered_date=standup_date, label="pasted", today=today)
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             # A bad paste is a user-input problem, not a pipeline failure — this
             # surface never raises, so it comes back as a warning like every
-            # other reason a review found nothing to say.
-            logger.warning("run_transcript_review: import rejected: %s", exc)
+            # other reason a review found nothing to say. OSError is in here for
+            # the read-BACK: import_transcript writes the file and then reads it
+            # to report what landed, and read_transcript raises by contract, so a
+            # disk that filled between the two would otherwise reach an MCP
+            # client as a traceback instead of a warning.
+            logger.warning("run_transcript_review: import failed: %s", exc)
             return TranscriptReview(
                 session_id=session_id,
                 standup_date=standup_date,

@@ -76,7 +76,15 @@ _SPEAKER_RE = re.compile(r"^\s*([^\s:][^:\n]{0,48}?)\s*(?:\(\d{1,2}:\d{2}(?::\d{
 # terminal punctuation or too many words.
 _MAX_SPEAKER_WORDS = 5
 
-_VTT_TIMING_RE = re.compile(r"-->")
+# A WebVTT/SRT cue timing line: "00:00:01.000 --> 00:00:04.000". Anchored on the
+# leading timestamp rather than matching a bare arrow anywhere in the line, for
+# two reasons. A spoken line — "we went from manual --> automated" — is not a
+# timing line, and dropping it loses somebody's actual standup update. And a bare
+# `-->` reads to a static analyser as a half-written HTML-comment matcher (CodeQL
+# py/bad-tag-filter: it parses `-->` but not `--!>`), which is a false positive
+# here — nothing in this module filters HTML — but an alert nobody can act on is
+# worth spending a more precise regex to retire.
+_VTT_TIMING_RE = re.compile(r"^\s*\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?\s*-{2}>\s*\d{1,2}:\d{2}")
 _VTT_VOICE_RE = re.compile(r"<v\s+([^>]+?)\s*>(.*?)(?:</v>)?\s*$", re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
 _SRT_INDEX_RE = re.compile(r"^\d+$")
@@ -381,7 +389,10 @@ def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
     #    report, and that is worth being able to trace afterwards.
     try:
         stamp = datetime.fromtimestamp(path.stat().st_mtime).date()
-    except OSError:
+    except OSError as exc:
+        # Every other degrade path in this module says so; a transcript that
+        # ends up with NO date at all is the one most worth being able to trace.
+        logger.warning("transcripts: %s has no date and no usable mtime: %s", path.name, exc)
         return ""
     inferred = min(stamp, today).isoformat()
     logger.info("transcripts: %s has no date — using mtime %s", path.name, inferred)
@@ -396,7 +407,14 @@ def infer_date(path: Path, text: str, *, today: date | None = None) -> str:
 def read_transcript(
     path: Path, *, external: bool = False, today: date | None = None
 ) -> tuple[TranscriptSource, tuple[TranscriptTurn, ...]]:
-    """Read and parse one transcript. Returns an empty turn tuple on failure.
+    """Read and parse one transcript. Returns an empty turn tuple for empty text.
+
+    **Raises** ``OSError`` if the file cannot be read and ``SandboxViolationError``
+    if it resolves outside the allowed tree — deliberately, and unlike ``parse``,
+    which swallows its own errors. The caller needs the reason: the sweep turns
+    it into "Could not read X: …" in ``report.warnings``, and a transcript that
+    vanished between the scan and the read (a real TOCTOU window) has to be
+    reported rather than silently counted as reviewed-and-empty.
 
     The sandbox check runs even for the managed folder: a symlink inside
     ``~/.yeaboi/transcripts`` pointing at ``~/.ssh/id_rsa`` resolves outside the
@@ -851,8 +869,18 @@ def discover(
             if digest in seen_hashes:
                 logger.debug("transcripts: skipping %s (already reviewed)", path.name)
                 continue
+            # JSON needs the WHOLE document, every other format only its head.
+            # infer_date's structured-field step runs json.loads, and the first
+            # 2 000 chars of a real segments array is almost never valid JSON —
+            # so a head-only scan here would fall through to mtime and window the
+            # file out on a date that read_transcript (which parses the full
+            # text) would never have given it. The file then silently never gets
+            # reviewed, in a feature whose whole point is not missing one.
+            # _MAX_CHARS is the same bound read_transcript applies, so the two
+            # see byte-identical input and cannot disagree.
+            limit = _MAX_CHARS if path.suffix.lower() == ".json" else _DATE_SCAN_CHARS
             try:
-                head = path.read_text(encoding="utf-8", errors="replace")[:_DATE_SCAN_CHARS]
+                head = path.read_text(encoding="utf-8", errors="replace")[:limit]
             except OSError as exc:
                 logger.warning("transcripts: cannot read %s: %s", path, exc)
                 continue

@@ -350,9 +350,21 @@ def find_existing_issue(fingerprint: str, *, title: str = "") -> tuple[int, str,
                 break
             body = issue.body or ""
             match = _MARKER_RE.search(body)
-            if (match and match.group(1) == fingerprint) or (title and issue.title == issue_title("", title).strip()):
-                logger.info("gap_issues: found existing issue #%s for %s", issue.number, fingerprint)
-                return int(issue.number), issue.html_url, str(issue.state)
+            if match:
+                # A marked issue states which gap it is. If the fingerprint does
+                # not match, the title is not evidence that it does — some
+                # templates render the same sentence for genuinely different
+                # gaps (an unresolved category becomes "an unknown system"), and
+                # trusting the title there would post one gap's evidence as a
+                # comment on another gap's PUBLIC issue and then never file its
+                # own. The title fallback exists for issues filed before the
+                # marker did, so it only applies where there is no marker.
+                if match.group(1) != fingerprint:
+                    continue
+            elif not (title and issue.title == issue_title("", title).strip()):
+                continue
+            logger.info("gap_issues: found existing issue #%s for %s", issue.number, fingerprint)
+            return int(issue.number), issue.html_url, str(issue.state)
     except Exception as exc:
         logger.warning("gap_issues: issue search failed: %s", exc)
     return None

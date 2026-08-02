@@ -79,6 +79,27 @@ class TestDetect:
         monkeypatch.setenv("YEABOI_ALLOWED_PATHS", str(tmp_path / "Documents" / "Zoom"))
         assert transcript_sources.detect(home=tmp_path)[0].allowed is True
 
+    def test_detection_never_opens_a_file(self, tmp_path, monkeypatch):
+        """Probing must not read contents — Drive placeholders would download.
+
+        The Google Meet folder lives under Drive's CloudStorage mount. In its
+        default "Stream" mode those files are on-demand placeholders, so reading
+        each one to build a "newest 2026-07-30" label would pull down every
+        meeting recording in the folder and hang the setup screen behind it.
+        """
+        _vtt(tmp_path / "Documents" / "Zoom")
+        opened: list[str] = []
+        real_read = type(tmp_path).read_text
+        monkeypatch.setattr(
+            type(tmp_path),
+            "read_text",
+            lambda self, *a, **k: (opened.append(str(self)), real_read(self, *a, **k))[1],
+        )
+        found = transcript_sources.detect(home=tmp_path)
+        assert found  # …the folder is still offered
+        assert found[0].newest_date == "2026-07-30"  # …still dated, off the filename
+        assert opened == [], f"detection read {opened}"
+
     def test_granola_and_obsidian_are_not_probed(self, tmp_path):
         """Excluded on purpose: a proprietary cache blob and somebody's diary."""
         _vtt(tmp_path / "Library" / "Application Support" / "Granola")

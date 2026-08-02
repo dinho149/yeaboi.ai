@@ -1581,6 +1581,15 @@ def _resolve_review_inputs(args: argparse.Namespace) -> tuple[list[str] | None, 
     for entry in raw:
         if entry == "-":
             if not text:
+                # A bare `-` on an interactive terminal means the user expected a
+                # pipe and did not give one. Reading anyway blocks forever with a
+                # blank screen and no hint, which reads as a hung command.
+                if sys.stdin.isatty():
+                    raise SystemExit(
+                        "standup-review -: nothing is piped in. "
+                        "Pipe a transcript (cat standup.txt | yeaboi standup-review -), "
+                        "or pass the file path instead."
+                    )
                 text = sys.stdin.read()
             continue
         cleaned = normalize_dropped_path(entry)

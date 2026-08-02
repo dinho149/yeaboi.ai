@@ -97,6 +97,24 @@ class TestParseVtt:
         turns = transcripts.parse(vtt, "vtt")
         assert turns[0].speaker == "Alice"
 
+    def test_an_arrow_in_speech_is_not_a_timing_line(self):
+        """Somebody's actual update, dropped because it contained an arrow.
+
+        The timing matcher used to be a bare `-->` anywhere in the line, so a
+        spoken "manual --> automated" was read as cue timing and thrown away —
+        losing exactly the sentence the review exists to check the report
+        against.
+        """
+        vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nAlice: we moved the deploy from manual --> automated.\n"
+        turns = transcripts.parse(vtt, "vtt")
+        assert turns[0].speaker == "Alice"
+        assert "automated" in turns[0].text
+
+    def test_timing_lines_are_still_dropped_in_both_dialects(self):
+        for timing in ("00:00:01.000 --> 00:00:04.000", "00:01.000 --> 00:04.000", "00:00:01,000 --> 00:00:04,000"):
+            turns = transcripts.parse(f"WEBVTT\n\n{timing}\nAlice: hi.\n", "vtt")
+            assert [t.text for t in turns] == ["hi."], timing
+
 
 class TestParseSrt:
     def test_index_and_timing_lines_dropped(self):
@@ -201,6 +219,18 @@ class TestInferDate:
 
 
 class TestReadTranscript:
+    def test_a_file_that_vanished_raises_rather_than_reading_as_empty(self, managed):
+        """The TOCTOU window between discover()'s scan and this read is real.
+
+        Raising is the contract: the sweep turns it into a named warning, where
+        returning an empty transcript would record the file as reviewed and
+        conclude the meeting contained nothing.
+        """
+        import pytest
+
+        with pytest.raises(OSError):
+            transcripts.read_transcript(managed / "gone.txt", today=date(2026, 8, 1))
+
     def test_reads_and_describes(self, managed):
         path = _copy("2026-07-30-standup.vtt", managed)
         source, turns = transcripts.read_transcript(path, today=date(2026, 8, 1))
@@ -304,6 +334,31 @@ class TestDiscover:
             "2026-07-29-standup.txt",
             "2026-07-30-standup.vtt",
         ]
+
+    def test_a_big_json_transcript_is_dated_by_its_own_field(self, managed, db_path):
+        """discover and read_transcript must never disagree about the date.
+
+        infer_date's structured-field step runs json.loads, and the head of a
+        real segments array is not valid JSON. Scanning only the head here made
+        discover fall through to mtime (today), window the file out, and never
+        review it — while read_transcript, given the whole document, would have
+        dated it correctly. A silently skipped transcript in a feature whose one
+        job is not missing one.
+        """
+        import json
+
+        payload = {
+            "date": "2026-07-29",
+            "segments": [{"speaker": "Alice", "text": f"line {i} of the standup"} for i in range(200)],
+        }
+        big = managed / "meeting-export.json"
+        big.write_text(json.dumps(payload))
+        assert len(big.read_text()) > transcripts._DATE_SCAN_CHARS  # the head alone is invalid JSON
+
+        found, _ = transcripts.discover("s1", db_path=db_path, before_date="2026-08-01", today=date(2026, 8, 1))
+        assert [p.name for p, _ in found] == ["meeting-export.json"]
+        source, _turns = transcripts.read_transcript(big, today=date(2026, 8, 1))
+        assert source.covered_date == "2026-07-29"
 
     def test_skips_unsupported_suffixes(self, managed, db_path):
         (managed / "notes.pdf").write_text("nope")

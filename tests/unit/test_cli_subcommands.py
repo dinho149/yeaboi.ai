@@ -1113,6 +1113,18 @@ class TestStandupReviewInputs:
         # bare Path() on everything it is handed.
         assert seen["transcript_paths"] is None
 
+    def test_dash_on_a_terminal_says_so_instead_of_hanging(self, monkeypatch):
+        """`yeaboi standup-review -` with nothing piped read as a hung command."""
+        import pytest
+
+        self._capture(monkeypatch)
+        tty = io.StringIO()
+        tty.isatty = lambda: True
+        monkeypatch.setattr("sys.stdin", tty)
+        with pytest.raises(SystemExit) as excinfo:
+            _cmd_standup_review(self._args("-"), _console())
+        assert "nothing is piped in" in str(excinfo.value)
+
     def test_dash_does_not_override_an_explicit_text_flag(self, monkeypatch):
         seen = self._capture(monkeypatch)
         monkeypatch.setattr("sys.stdin", io.StringIO("from stdin"))

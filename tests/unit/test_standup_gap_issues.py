@@ -427,6 +427,31 @@ class TestFindExistingIssue:
     def test_returns_none_when_absent(self, repo):
         assert gap_issues.find_existing_issue("nope123456") is None
 
+    def test_a_marked_issue_is_never_matched_on_its_title(self, repo):
+        """A title is not evidence about an issue that already says what it is.
+
+        Some templates render the same sentence for genuinely different gaps —
+        an unresolved category becomes "an unknown system" — so trusting the
+        title here would post one gap's evidence as a comment on another gap's
+        PUBLIC issue, and the second gap would then never get filed at all.
+        """
+        from yeaboi.standup.gap_issues import issue_title
+
+        title = "Standup cannot see activity in an unknown system"
+        repo.issues.append(
+            FakeIssue(number=9, body="<!-- yeaboi-gap: aaaaaaaaaaaa -->", title=issue_title("", title).strip())
+        )
+        assert gap_issues.find_existing_issue("bbbbbbbbbbbb", title=title) is None
+        assert gap_issues.find_existing_issue("aaaaaaaaaaaa", title=title)[0] == 9
+
+    def test_an_unmarked_issue_still_matches_on_its_title(self, repo):
+        """The fallback exists for issues filed before the marker did."""
+        from yeaboi.standup.gap_issues import issue_title
+
+        title = "Standup cannot see activity in Slack"
+        repo.issues.append(FakeIssue(number=4, body="filed by hand", title=issue_title("", title).strip()))
+        assert gap_issues.find_existing_issue("cccccccccccc", title=title)[0] == 4
+
     def test_no_token_returns_none(self, no_token):
         assert gap_issues.find_existing_issue("abc123def456") is None
 
