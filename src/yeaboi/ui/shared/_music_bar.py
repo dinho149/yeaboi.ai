@@ -281,6 +281,18 @@ def build_copy_text(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
+def build_next_text(theme: Theme = PLANNING_THEME) -> Text:
+    """The 'next' line for the tab beside back, on multi-step flows.
+
+    Clicking it reports ``enter`` — the same key that advances the step — so the
+    page's loop needs no extra branch to handle the mouse.
+    """
+    line = Text(justify="left")
+    line.append("next ", style=theme.value)
+    line.append("⏎", style=theme.accent)
+    return line
+
+
 # Clickable rects of the sibling tabs drawn beside the back tab this frame:
 # (x0, y0, x1, y1, key) — a click inside one is reported as that key press.
 _tab_regions: list[tuple[int, int, int, int, str]] = []
@@ -789,6 +801,7 @@ class _MusicPocketFrame:
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
+        self.with_next = False  # set from the panel: draw a 'next ⏎' tab too
         self.hint_tab = hint_tab  # a page's control hints, as one more tab
         self.duck_say = duck_say  # transient status the companion speaks
         self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
@@ -803,6 +816,8 @@ class _MusicPocketFrame:
         _extra: list = []
         if self.with_back and self.with_copy:
             _extra.append((build_copy_text(), "c"))
+        if self.with_back and self.with_next:
+            _extra.append((build_next_text(), "enter"))
         # The page's hints are NOT drawn as their own tab any more — they'd be
         # redundant with (and cut off behind) the controls drawer, which lists them.
         draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
@@ -926,6 +941,10 @@ class MusicLive(Live):
             # Pages that support copy-to-clipboard flag themselves so a 'c copy'
             # tab appears beside the back tab (Usage, Changelog, …).
             with_copy = bool(getattr(renderable, "_copy_tab", False))
+            # Multi-step flows advertise "next" in the chrome beside back, so the
+            # two directions of a wizard sit together rather than one being a
+            # button in the body and the other a tab in the corner.
+            with_next = bool(getattr(renderable, "_next_tab", False))
             # A page can hand its control hints to the chrome (_hint_tab) so they
             # ride in the bottom pocket instead of taking a body row.
             hint_tab = getattr(renderable, "_hint_tab", None)
@@ -941,6 +960,7 @@ class MusicLive(Live):
                 duck_say=duck_say,
             )
             _frame.duck_say_sticky = _sticky
+            _frame.with_next = with_next
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()

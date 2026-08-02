@@ -799,9 +799,15 @@ def _build_analysis_feature_screen(
         rows[0],
         divider,
         _analysis_toggle_viewport(rows[1:], max(0, cursor - 1), height=height, header_h=13),
-        Text(_PAD + f"{footer}  ·  Enter ⏎", style=theme.accent_bright),
+        Text(_PAD + footer, style=theme.accent_bright),
     )
-    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, height=height)
+    # Advertise "next" in the bottom chrome beside "back", so the two directions
+    # of the wizard sit together instead of one being a body row and the other a
+    # corner tab. The tab reports `enter`, which this loop already handles, so
+    # the mouse needs no separate branch. The body's "· Enter ⏎" goes with it.
+    panel._next_tab = True
+    return panel
 
 
 def _build_component_select_screen(

@@ -194,7 +194,7 @@ def _chrome(panel):
     # Pin the tab fully extended: its presence normally eases in over several
     # frames, and a preview only ever draws one.
     _music_bar._back_presence = 1.0
-    return _music_bar._MusicPocketFrame(
+    frame = _music_bar._MusicPocketFrame(
         panel,
         with_duck=not getattr(panel, "_no_companion_duck", False),
         with_back=not getattr(panel, "_no_back_hint", False),
@@ -202,6 +202,8 @@ def _chrome(panel):
         hint_tab=getattr(panel, "_hint_tab", None),
         duck_say=str(getattr(panel, "_duck_say", "") or ""),
     )
+    frame.with_next = bool(getattr(panel, "_next_tab", False))
+    return frame
 
 
 def _render(name: str, console: Console, *, chrome: bool = True) -> None:
