@@ -1375,7 +1375,9 @@ def _build_analysis_setup_review_screen(
         )
     else:
         summary_renderable = _analysis_card_grid(cards, width=width)
-    btn_top, btn_mid, btn_bot = build_action_buttons(["Run Analysis", "Back"], action_sel)
+    # No Back button: Esc goes back, and the chrome's own back tab says so. The
+    # one button left is the thing this screen exists to confirm.
+    btn_top, btn_mid, btn_bot = build_action_buttons(["Run Analysis"], 0)
     if height < 24:
         content = Group(
             _analysis_setup_title(width, height),
@@ -1399,7 +1401,9 @@ def _build_analysis_setup_review_screen(
             btn_mid,
             btn_bot,
         )
-    return build_page_panel(content, theme=ANALYSIS_THEME, border_style=theme.accent, height=height)
+    # Default white border: the accent made the whole page frame green, which
+    # read as a state (something selected/active) rather than a page edge.
+    return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
 def _build_instructions_review_screen(

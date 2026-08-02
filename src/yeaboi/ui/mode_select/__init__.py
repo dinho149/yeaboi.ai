@@ -6050,7 +6050,9 @@ def _run_analysis_setup_review(
     )
 
     selected = 0
-    _labels = ["Run Analysis", "Back"]
+    # One button now — Esc and the chrome's back tab cover leaving, so a Back
+    # button was a third way to do the same thing.
+    _labels = ["Run Analysis"]
     while True:
         w, h = console.size
         _panel = _build_analysis_setup_review_screen(
@@ -6074,12 +6076,8 @@ def _run_analysis_setup_review(
                 continue  # click missed the buttons — ignore it
             selected = _idx
             key = "enter"  # fall through to the existing Enter handling
-        if key in ("left", "up", "scroll_up"):
-            selected = 0
-        elif key in ("right", "down", "scroll_down"):
-            selected = 1
-        elif key == "enter":
-            return ("run", "back")[selected]
+        if key == "enter":
+            return "run"
         elif key in ("esc", "q"):
             return "back"
 

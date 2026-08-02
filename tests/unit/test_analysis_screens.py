@@ -1730,7 +1730,9 @@ class TestAnalysisSetupReviewScreen:
             ),
             width=100,
         )
-        assert "REVIEW" in out and "Run Analysis" in out and "Back" in out
+        # Back button removed — Esc and the chrome's back tab cover leaving.
+        assert "REVIEW" in out and "Run Analysis" in out
+        assert "Back" not in out
         assert "AI footprint" in out and "Documentation" in out
         assert "GitHub" in out and "Infrastructure" in out
         assert "Alice, Bob" in out
@@ -1759,11 +1761,12 @@ class TestAnalysisSetupReviewScreen:
             )
             == "run"
         )
+        # Back is gone, so Esc is the only way out — arrows no longer select it.
         assert (
             _run_analysis_setup_review(
                 TestComponentAndMemberLoops._FakeLive(),
                 TestComponentAndMemberLoops._console(),
-                TestComponentAndMemberLoops._reader(["right", "enter"]),
+                TestComponentAndMemberLoops._reader(["esc"]),
                 0.01,
                 True,
                 **args,
@@ -1785,7 +1788,8 @@ class TestAnalysisSetupReviewScreen:
             ),
             width=48,
         )
-        assert "Run Analysis" in out and "Back" in out
+        assert "Run Analysis" in out
+        assert "Back" not in out
 
 
 class TestMemberSelectScreen:
