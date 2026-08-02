@@ -2437,10 +2437,10 @@ def _fetch_notion_context(
 def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, dict]:
     """Scan the repo referenced in Q17 and return a combined context string + status.
 
-    Calls GitHub or AzDO read tools directly as Python functions — no LLM
+    Calls GitHub, GitLab or AzDO read tools directly as Python functions — no LLM
     ReAct loop needed, they are plain functions that return strings.
     Returns (None, status) if no URL was provided, the platform is unsupported
-    (GitLab, Bitbucket — tools not yet implemented), or all tool calls fail.
+    (Bitbucket — tools not yet implemented), or all tool calls fail.
     The caller proceeds gracefully with reduced context when None is returned.
 
     Returns:
@@ -2467,6 +2467,22 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
                 if result and not result.startswith("Error:") and not result.startswith("GitHub rate limit"):
                     sections.append(result)
 
+        elif platform == "GitLab":
+            # Same two-call shape as GitHub (metadata + README). The GitLab
+            # tools require a token, so without GITLAB_TOKEN both calls return
+            # the "not configured" error string and this falls through to the
+            # "scan returned no data" status below — a degraded scan, which is
+            # what the caller already handles, not a crash.
+            from yeaboi.tools.gitlab import gitlab_read_readme, gitlab_read_repo
+
+            for fn, kwargs in [
+                (gitlab_read_repo, {"repo_url": url}),
+                (gitlab_read_readme, {"repo_url": url}),
+            ]:
+                result = fn.invoke(kwargs)
+                if result and not result.startswith("Error:"):
+                    sections.append(result)
+
         elif platform == "Azure DevOps":
             from yeaboi.tools.azure_devops import azdevops_read_repo
 
@@ -2484,7 +2500,7 @@ def _scan_repo_context(questionnaire: QuestionnaireState) -> tuple[str | None, d
                 sections.append(result)
 
         else:
-            # GitLab and Bitbucket: no tools implemented yet
+            # Bitbucket: no tools implemented yet
             return None, {"name": "Repository", "status": "skipped", "detail": f"{platform} not yet supported"}
 
     except Exception as e:

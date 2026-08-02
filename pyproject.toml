@@ -56,6 +56,10 @@ dependencies = [
     # Pure-python QR generator (no deps) — used to render the Retro "invite" QR
     # (retro/server.py:/api/qr) so teammates can scan to join. Offline, no CDN.
     "segno",
+    # GitLab repo-context tools (tools/gitlab.py) — the maintained SDK for
+    # GitLab's REST API, matching the per-integration-SDK pattern used above.
+    # Auth is a plain personal access token (GITLAB_TOKEN), no OAuth callback.
+    "python-gitlab>=8.5.0",
 ]
 
 [project.optional-dependencies]

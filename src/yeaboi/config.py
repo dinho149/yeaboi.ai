@@ -259,6 +259,10 @@ def mark_beta_notice_seen(mode_key: str) -> None:
 # Proxy environment variables to check (both uppercase and lowercase conventions).
 _PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
+# Public GitLab SaaS — the host used when GITLAB_URL is unset. Self-hosted and
+# dedicated instances override it (see get_gitlab_url).
+_GITLAB_DEFAULT_URL = "https://gitlab.com"
+
 
 def detect_proxy() -> str | None:
     """Return the first proxy URL found in environment variables, or None."""
@@ -274,6 +278,35 @@ def detect_proxy() -> str | None:
 def get_github_token() -> str | None:
     """Return the GitHub PAT, or None if not set (tools work for public repos without a token)."""
     return os.getenv("GITHUB_TOKEN") or None
+
+
+def get_gitlab_token() -> str | None:
+    """Return the GitLab personal access token, or None if not set.
+
+    Unlike GitHub — whose tools degrade to unauthenticated public-repo reads —
+    the tools in tools/gitlab.py require this token. gitlab.com serves anonymous
+    reads of public projects, but private projects and most self-hosted
+    instances do not, so degrading would work for some repos and 401 for others
+    with nothing to distinguish them; a missing token is "not configured".
+    """
+    return os.getenv("GITLAB_TOKEN") or None
+
+
+def get_gitlab_url() -> str:
+    """Return the GitLab instance base URL, defaulting to https://gitlab.com.
+
+    Self-hosted GitLab is common, so the host is configurable. Normalised on
+    read the same way as AZURE_DEVOPS_ORG_URL: whitespace and trailing slashes
+    stripped and a missing scheme defaulted to https://, because python-gitlab
+    joins "/api/v4/..." onto this value and a bare "gitlab.example.com" would
+    otherwise surface as a MissingSchema error on every call.
+    """
+    raw = (os.getenv("GITLAB_URL") or "").strip().rstrip("/")
+    if not raw:
+        return _GITLAB_DEFAULT_URL
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    return raw
 
 
 def get_azure_devops_token() -> str | None:

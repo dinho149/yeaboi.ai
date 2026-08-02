@@ -704,7 +704,9 @@ class TestSettingsScreen:
         panel = _build_settings_screen({}, width=130, height=44, active_tab=0)  # Credentials
         # LLM Provider is the only column box; the token-help sections go full width.
         assert panel._box_cols == [[0]]
-        assert panel._box_tail == [1, 2, 3, 4]
+        # Jira, Azure, GitHub, GitLab, Notion — every credential section that
+        # carries token-help sub-lines is wide.
+        assert panel._box_tail == [1, 2, 3, 4, 5]
 
     def test_selecting_an_offscreen_value_scrolls_it_into_view(self):
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
@@ -712,7 +714,7 @@ class TestSettingsScreen:
         meta: dict = {}
         # A short page can't show the last section, so focusing it must scroll.
         panel = _build_settings_screen(
-            {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=4, sel_field=0
+            {}, width=130, height=22, active_tab=0, scroll_offset=0, scroll_meta=meta, sel_box=5, sel_field=0
         )
         assert meta["scroll"] > 0
         # Notion is the last section; its focused row (highlight and all) is on screen.

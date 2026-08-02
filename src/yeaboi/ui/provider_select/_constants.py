@@ -24,6 +24,10 @@ TOKEN_HELP: dict[str, dict[str, str]] = {
         "scope": "Fine-grained: Contents Read · Issues Read · Metadata Read "
         "(classic: public_repo, or repo for private)",
     },
+    "GITLAB_TOKEN": {
+        "url": "https://gitlab.com/-/user_settings/personal_access_tokens",
+        "scope": "read_api (reads project, README and issues) — or api to also create issues",
+    },
     "AZURE_DEVOPS_TOKEN": {
         "url": "https://dev.azure.com",
         "scope": "Work Items Read & Write · Project and Team Read · Code Read",

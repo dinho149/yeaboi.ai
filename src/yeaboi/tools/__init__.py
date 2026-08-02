@@ -44,7 +44,10 @@ def get_tools() -> list[BaseTool]:
 
     GitHub and Azure DevOps tools are always included — they degrade gracefully
     without a token (public repos work unauthenticated; private resources require
-    GITHUB_TOKEN or AZURE_DEVOPS_TOKEN in .env).
+    GITHUB_TOKEN or AZURE_DEVOPS_TOKEN in .env). GitLab tools are included on the
+    same terms but deliberately do not degrade: anonymous reads work for public
+    gitlab.com projects and fail for everything else, so they return a "not
+    configured" message until GITLAB_TOKEN is set rather than half-working.
 
     Why lazy import?
     Importing at module level would fail if PyGithub or azure-devops are not
@@ -80,6 +83,12 @@ def get_tools() -> list[BaseTool]:
         github_read_readme,
         github_read_repo,
     )
+    from yeaboi.tools.gitlab import (
+        gitlab_create_issue,
+        gitlab_list_issues,
+        gitlab_read_readme,
+        gitlab_read_repo,
+    )
     from yeaboi.tools.jira import (
         jira_create_epic,
         jira_create_sprint,
@@ -103,6 +112,10 @@ def get_tools() -> list[BaseTool]:
         github_read_file,
         github_list_issues,
         github_read_readme,
+        gitlab_read_repo,
+        gitlab_read_readme,
+        gitlab_list_issues,
+        gitlab_create_issue,
         azdevops_read_repo,
         azdevops_read_file,
         azdevops_list_work_items,

@@ -5776,7 +5776,7 @@ _SETTINGS_TABS: list[str] = ["Credentials", "System"]
 # The heading sections each tab renders, in order. Storage is one row, so it
 # lives under System rather than owning a tab of its own.
 _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
-    "Credentials": ["provider", "jira", "azure", "github", "notion"],
+    "Credentials": ["provider", "jira", "azure", "github", "gitlab", "notion"],
     "System": ["storage", "standup", "voice", "bedrock", "advanced"],
 }
 
@@ -5784,7 +5784,7 @@ _SETTINGS_TAB_SECTIONS: dict[str, list[str]] = {
 # These carry token-help sub-lines (a creation URL + a scope sentence) that a
 # half-width column would ellipsize away — same reasoning as the Usage dashboard's
 # ``wide`` sections (see _build_usage_screen).
-_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "notion"}
+_WIDE_SETTINGS_SECTIONS = {"jira", "azure", "github", "gitlab", "notion"}
 
 # Absolute rows the tab bar occupies (labels + underline), for click hit-testing.
 # The header above it is fixed height: top border + top pad + blank + title (2
@@ -6159,6 +6159,14 @@ def _build_settings_screen(
         _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
         _token_help("GITHUB_TOKEN")
 
+    def _sec_gitlab() -> None:
+        # GitLab has no unauthenticated mode (unlike GitHub), so the token row is
+        # the whole integration; the URL row only matters for self-hosted instances.
+        _heading("GitLab", wide=True)
+        _row("Token", config_data.get("GITLAB_TOKEN", ""), masked=True, env="GITLAB_TOKEN")
+        _token_help("GITLAB_TOKEN")
+        _row("Instance URL", config_data.get("GITLAB_URL", "") or "https://gitlab.com (default)", env="GITLAB_URL")
+
     def _sec_notion() -> None:
         # Independent doc tool (its own integration token, unlike Confluence).
         _heading("Notion", wide=True)
@@ -6229,6 +6237,7 @@ def _build_settings_screen(
         "jira": _sec_jira,
         "azure": _sec_azure,
         "github": _sec_github,
+        "gitlab": _sec_gitlab,
         "notion": _sec_notion,
         "storage": _sec_storage,
         "standup": _sec_standup,

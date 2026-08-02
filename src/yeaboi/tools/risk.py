@@ -1,7 +1,7 @@
 """Per-tool risk classification — the source of truth for human-in-the-loop gating.
 
 Every ``@tool`` registered in ``get_tools()`` MUST have a row here. WRITE
-tools mutate external systems (Jira, Azure DevOps, Confluence, Notion) and are
+tools mutate external systems (Jira, Azure DevOps, Confluence, Notion, GitLab) and are
 routed through the ``human_review`` graph node for explicit user confirmation
 before they execute; READ tools auto-execute via the ToolNode.
 
@@ -38,6 +38,11 @@ TOOL_RISK: dict[str, ToolRisk] = {
     "github_read_file": ToolRisk.READ,
     "github_list_issues": ToolRisk.READ,
     "github_read_readme": ToolRisk.READ,
+    # GitLab — 3 reads plus one write (issue creation needs the 'api' scope)
+    "gitlab_read_repo": ToolRisk.READ,
+    "gitlab_read_readme": ToolRisk.READ,
+    "gitlab_list_issues": ToolRisk.READ,
+    "gitlab_create_issue": ToolRisk.WRITE,
     # Azure DevOps
     "azdevops_read_repo": ToolRisk.READ,
     "azdevops_read_file": ToolRisk.READ,
