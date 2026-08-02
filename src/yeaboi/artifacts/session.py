@@ -57,6 +57,30 @@ class EditableSession:
         self.ref = artifact_ref(kind, run_id=run_id, session_id=session_id, engineer=engineer)
         self._base_hash = base_hash(artifact)
         self.share = editable_share(artifact, kind=kind, ref=self.ref, history=history)
+        self._replay()
+
+    def _replay(self) -> None:
+        """Rebuild the document from every correction already on record.
+
+        Without this a session starts from the generated original with an empty
+        log while the *store* keeps counting, so the two disagree — and the next
+        commit writes an artifact missing every earlier correction while
+        reporting success. The docstrings promise a document is always
+        ``base + the log``; this is what makes that true across sessions and
+        across separate headless calls, not just within one.
+
+        Replayed through ``document.apply`` rather than by assignment so a stored
+        edit that no longer fits — a member who left, a field since removed from
+        the allowlist — is skipped exactly as it would be anywhere else, instead
+        of being forced back in.
+        """
+        with ArtifactEditStore(self.db_path) as store:
+            recorded = store.list_edits(self.kind, self.ref)
+        for edit in recorded:
+            try:
+                self.share.document.apply(edit)
+            except Exception as exc:  # noqa: BLE001 — a stale edit must not stop the share opening
+                logger.info("Skipped a recorded %s edit on replay (%s): %s", self.kind, edit.edit_id[:8], exc)
 
     # ── While the share is open ───────────────────────────────────────────
 

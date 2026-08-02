@@ -74,6 +74,9 @@ def register(app) -> None:
         a URL is editable, and a team profile takes notes but no field edits
         because its numbers are computed.
 
+        Each row's `headless` flag says whether artifact_edit_apply can reach
+        that artifact, or whether it is correctable only on the shared document.
+
         kind: one of standup, reporting, retro, roadmap, analysis,
             performance_prep, performance_completion, performance_review.
             Blank returns every artifact.
@@ -116,7 +119,12 @@ def register(app) -> None:
         """Correct a stored artifact, appending a corrected run rather than overwriting.
 
         The generated original is kept, and every trend and latest-report read
-        picks the correction up on its own.
+        picks the correction up on its own. Corrections stack: a second call adds
+        to what earlier ones changed rather than replacing them.
+
+        Covers **standup, reporting and retro** — the artifacts whose stores can
+        take a corrected row. Call artifact_fields first and check `headless`;
+        anything else is correctable only on the shared browser document.
 
         edits: a list of {op, path, value, base, label, target}. `op` is one of
             set / append / remove / note / field / revert. `path` addresses the

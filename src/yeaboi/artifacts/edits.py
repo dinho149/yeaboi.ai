@@ -78,6 +78,11 @@ MAX_AUTHOR = 60
 MAX_NEWLINES = 40
 """A correction is prose, not a document. Past this it is a layout attack."""
 
+MAX_ID = 64
+"""Longest accepted edit id or revert target. Capped here and not only in the
+HTTP handler, because the engine and the MCP tools reach ``validate`` without
+passing through one."""
+
 MAX_LABEL = 80
 """Longest name for a reader-added field. A label, not a sentence."""
 
@@ -144,6 +149,21 @@ def _clean(text: str, limit: int) -> str:
     return text.strip()
 
 
+def clean_avatar(avatar: str) -> str:
+    """Return the avatar if it is one the server knows, else ``""``.
+
+    Validated rather than truncated. It is a server-validated vocabulary
+    everywhere else in this product, and eight arbitrary characters rendered
+    beside somebody's name is a place to put anything you like.
+
+    Imported lazily: ``retro.board`` is where the tuple lives and it pulls in
+    enough of the retro package to make a module-level import here circular.
+    """
+    from yeaboi.retro.board import AVATARS
+
+    return avatar if avatar in AVATARS else ""
+
+
 def _clean_name(text: str) -> str:
     """Normalise a display name, truncating rather than refusing.
 
@@ -196,6 +216,15 @@ def validate(edit: Edit, spec: ArtifactSpec) -> Edit:
     if edit.op not in EDIT_OPS:
         raise EditError(f"unknown op: {edit.op!r}")
     author = _clean_name(edit.author)
+    # Identifiers and the avatar are bounded here too: every caller that is
+    # not the HTTP handler — the engine, the MCP tools, a replay — arrives
+    # with whatever it was handed.
+    edit = replace(
+        edit,
+        edit_id=_CONTROL_RE.sub("", edit.edit_id)[:MAX_ID],
+        target=_CONTROL_RE.sub("", edit.target)[:MAX_ID],
+        avatar=clean_avatar(edit.avatar),
+    )
 
     if edit.op == OP_REVERT:
         if not edit.target:

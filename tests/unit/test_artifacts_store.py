@@ -278,3 +278,57 @@ class TestEditedRunsSupersede:
             )
             previous = store.get_previous_report("s", before_date="2026-08-01")
         assert previous is not None and previous.team_summary == "corrected"
+
+
+class TestConcurrentWriters:
+    """Two threads must not be able to take the same sequence number.
+
+    Materialisation was never at risk — it orders by seq then id — but a
+    duplicate seq makes the edit history lie about what happened first, which is
+    the one thing this table exists to be trusted about.
+    """
+
+    def test_parallel_records_all_get_distinct_sequences(self, tmp_path):
+        import threading
+
+        path = tmp_path / "sessions.db"
+        ArtifactEditStore(path).close()  # create the schema once, up front
+
+        # Every wait here is bounded. A barrier with no timeout turns one thread
+        # failing early into a test that hangs the whole suite rather than one
+        # that fails — which is exactly what it did the first time this was
+        # written.
+        ready = threading.Barrier(8, timeout=20)
+        results: list[int] = []
+        failures: list[str] = []
+        lock = threading.Lock()
+
+        def writer(index: int) -> None:
+            try:
+                with ArtifactEditStore(path) as store:
+                    ready.wait()
+                    seq = store.record(edit(f"e{index}"), kind=KIND, ref=REF)
+                with lock:
+                    results.append(seq)
+            except Exception as exc:  # noqa: BLE001 — reported, not swallowed
+                ready.abort()  # release the others rather than stranding them
+                with lock:
+                    failures.append(f"{type(exc).__name__}: {exc}")
+
+        threads = [threading.Thread(target=writer, args=(i,), daemon=True) for i in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert not [t for t in threads if t.is_alive()], "a writer never finished"
+        assert not failures, failures
+        assert sorted(results) == list(range(1, 9)), f"duplicate or missing sequences: {sorted(results)}"
+
+    def test_the_unique_index_is_what_enforces_it(self, store):
+        store.record(edit("e1"), kind=KIND, ref=REF)
+        with pytest.raises(sqlite3.IntegrityError):
+            store._conn.execute(
+                "INSERT INTO artifact_edits (edit_id, artifact_kind, artifact_ref, seq) VALUES (?, ?, ?, ?)",
+                ("different-id", KIND, REF, 1),
+            )

@@ -81,8 +81,8 @@
     {
       "avatar": "🐙",
       "editing": "team_summary",
-      "name": "Ada",
-      "pid": "pid-2"
+      "mine": false,
+      "name": "Ada"
     }
   ],
   "report": {

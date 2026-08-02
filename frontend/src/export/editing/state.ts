@@ -45,13 +45,19 @@ export interface EditRow {
   mine: boolean;
 }
 
-/** Someone currently looking at the document. */
+/**
+ * Someone currently looking at the document.
+ *
+ * Carries no pid. A pid is the authorship key — it is what `mine` is computed
+ * from — so shipping everybody's to everybody would let one reader claim
+ * another's edits. `mine` is the only question this side actually asks.
+ */
 export interface EditPerson {
-  pid: string;
   name: string;
   avatar: string;
   /** The path they have open, or `''`. Drives "Ada is editing this". */
   editing: string;
+  mine: boolean;
 }
 
 /**

@@ -39,6 +39,12 @@ from yeaboi.artifacts.edits import Edit
 
 logger = logging.getLogger(__name__)
 
+_SEQ_ATTEMPTS = 8
+"""How many times to re-read the sequence maximum under contention.
+
+Eight is far past any real concurrency here — a document has a handful of
+editors, not a thousand — and bounded so a pathological loop cannot spin."""
+
 # ---------------------------------------------------------------------------
 # Schema — referenced by sessions.py migration v21 AND created on store open
 # ---------------------------------------------------------------------------
@@ -67,6 +73,12 @@ CREATE TABLE IF NOT EXISTS artifact_edits (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_edits_edit_id
     ON artifact_edits(edit_id);
 CREATE INDEX IF NOT EXISTS idx_artifact_edits_ref
+    ON artifact_edits(artifact_kind, artifact_ref, seq);
+-- Two request threads can both read MAX(seq) before either inserts, so
+-- uniqueness has to be the database's job rather than the reader's. The loser
+-- retries against the new maximum; materialisation was never at risk (it orders
+-- by seq then id) but a duplicate seq makes the history lie about the order.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifact_edits_seq
     ON artifact_edits(artifact_kind, artifact_ref, seq);"""
 
 
@@ -207,14 +219,13 @@ class ArtifactEditStore:
         original's sequence number so the caller answers the retry with the same
         state it answered the first attempt with.
         """
-        seq = self.next_seq(kind, ref)
         row = (
             edit.edit_id,
             share_id,
             kind,
             ref,
             base,
-            seq,
+            0,  # replaced per attempt below
             edit.op,
             edit.path,
             edit.value,
@@ -227,20 +238,31 @@ class ArtifactEditStore:
             ip_hash,
             edit.at or self._now(),
         )
-        try:
-            self._conn.execute(
-                """INSERT INTO artifact_edits
-                       (edit_id, share_id, artifact_kind, artifact_ref, base_hash, seq, op, path,
-                        value, base, label, target, author, avatar, pid, ip_hash, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                row,
-            )
-        except sqlite3.IntegrityError:
-            existing = self._conn.execute(
-                "SELECT seq FROM artifact_edits WHERE edit_id = ?", (edit.edit_id,)
-            ).fetchone()
-            logger.info("Duplicate edit ignored (kind=%s op=%s edit_id=%s)", kind, edit.op, edit.edit_id[:8])
-            return int(existing["seq"]) if existing else seq
+        # Retry on a seq collision. Both unique indexes raise IntegrityError, so
+        # the edit_id one is distinguished by looking for the row it collided
+        # with — that is the idempotent case and it must not consume an attempt.
+        seq = 0
+        for _ in range(_SEQ_ATTEMPTS):
+            seq = self.next_seq(kind, ref)
+            try:
+                self._conn.execute(
+                    """INSERT INTO artifact_edits
+                           (edit_id, share_id, artifact_kind, artifact_ref, base_hash, seq, op, path,
+                            value, base, label, target, author, avatar, pid, ip_hash, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (*row[:5], seq, *row[6:]),
+                )
+                break
+            except sqlite3.IntegrityError:
+                existing = self._conn.execute(
+                    "SELECT seq FROM artifact_edits WHERE edit_id = ?", (edit.edit_id,)
+                ).fetchone()
+                if existing is not None:
+                    logger.info("Duplicate edit ignored (kind=%s op=%s edit_id=%s)", kind, edit.op, edit.edit_id[:8])
+                    return int(existing["seq"])
+                continue  # another thread took this seq — read the new maximum
+        else:
+            raise sqlite3.IntegrityError(f"could not assign a sequence number for {kind}:{ref}")
         # Never the value: an edit body is the team's own prose, and a log file
         # is copied around far more casually than a database is.
         logger.info(

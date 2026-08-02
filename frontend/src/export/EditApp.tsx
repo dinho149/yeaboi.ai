@@ -97,9 +97,10 @@ export function EditApp({ chrome: bootChrome, report: bootReport, editing: boot,
       revision: state.revision,
       showHistory: setHistoryPath,
       othersEditing: (path: string) =>
-        state.people.filter((person) => person.pid !== pid && person.editing === path).map((person) => person.name),
+        // `mine` is decided server-side; no pid ever reaches this browser.
+        state.people.filter((person) => !person.mine && person.editing === path).map((person) => person.name),
     }),
-    [state, actions, name, avatar, pid]
+    [state, actions, name, avatar]
   );
 
   return (

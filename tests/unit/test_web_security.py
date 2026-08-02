@@ -223,10 +223,16 @@ class TestEditPolicy:
     def test_the_finished_artifact_still_talks_to_nothing(self):
         assert _directives(ARTIFACT_CSP)["connect-src"] == "'none'"
 
-    def test_allows_its_own_images_for_the_invite_qr(self):
+    def test_serves_only_embedded_images(self):
+        """No `'self'`: the boards earn theirs with `<img src="/api/qr?…">`.
+
+        This server has no QR route, so the directive would be permission
+        granted for nothing — the same reasoning the board policy applies to
+        its own three loose directives, turned on this one.
+        """
         from yeaboi.web.security import EDIT_CSP
 
-        assert _directives(EDIT_CSP)["img-src"] == "'self' data:"
+        assert _directives(EDIT_CSP)["img-src"] == "data:"
 
     def test_has_no_media_source(self):
         """There is no radio on a document.

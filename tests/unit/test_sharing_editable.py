@@ -178,9 +178,40 @@ class TestSnapshot:
         assert share.snapshot("pid-2")["edits"][0]["mine"] is False
 
     def test_raw_pids_never_reach_the_wire(self):
+        """Both the edit log and the presence row.
+
+        The presence half is the one that was wrong: it shipped every reader's
+        pid to every other reader, and an earlier version of this test passed
+        only because it never sent a heartbeat. A pid is the authorship key, so
+        handing them out lets one reader claim another's edits.
+        """
         share = editable_share(report(), kind="standup")
         share.document.apply(an_edit(value="x", pid="secret-pid"))
-        assert "secret-pid" not in json.dumps(share.snapshot("other"))
+        share.document.heartbeat("another-secret-pid", name="Ada", avatar="🦊")
+        frame = json.dumps(share.snapshot("other"))
+        assert "secret-pid" not in frame
+        assert "another-secret-pid" not in frame
+
+    def test_presence_says_who_is_you_instead(self):
+        share = editable_share(report(), kind="standup")
+        share.document.heartbeat("pid-1", name="Ada")
+        share.document.heartbeat("pid-2", name="Grace")
+        mine = {p["name"]: p["mine"] for p in share.snapshot("pid-1")["people"]}
+        assert mine == {"Ada": True, "Grace": False}
+
+    def test_an_invented_avatar_is_dropped(self):
+        # Server-validated everywhere else in this product; eight arbitrary
+        # characters rendered beside somebody's name is a place to put anything.
+        share = editable_share(report(), kind="standup")
+        share.document.heartbeat("pid-1", name="Ada", avatar="<script>")
+        assert share.snapshot()["people"][0]["avatar"] == ""
+
+    def test_a_real_avatar_survives(self):
+        from yeaboi.retro.board import AVATARS
+
+        share = editable_share(report(), kind="standup")
+        share.document.heartbeat("pid-1", name="Ada", avatar=AVATARS[0])
+        assert share.snapshot()["people"][0]["avatar"] == AVATARS[0]
 
     def test_an_uneditable_kind_is_refused(self):
         with pytest.raises(ValueError, match="not an editable artifact"):

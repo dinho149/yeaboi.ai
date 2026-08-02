@@ -14,6 +14,10 @@
 import { useState } from 'react';
 
 import { Button } from '../../shared/Button';
+// Codegen'd from the server's own tuple. A hand-written copy here would be a
+// third list agreeing with nothing, and the server rejects what it does not
+// recognise — so a picker built from anything else offers dead options.
+import { AVATARS } from '../../types/enums';
 import { formatOp, formatPath } from './paths';
 import styles from './history.module.css';
 import type { EditPerson, EditRow } from './state';
@@ -31,8 +35,6 @@ export interface HistoryProps {
   onRevert(id: string): void;
   onFocusPath(path: string): void;
 }
-
-const AVATARS = ['🙂', '🦊', '🐙', '🦉', '🐝', '🌵', '🍄', '⚡'];
 
 export function History({
   rows,
@@ -54,8 +56,8 @@ export function History({
     <div className={styles['dock']}>
       {people.length ? (
         <span className={styles['people']}>
-          {people.map((person) => (
-            <span key={person.pid} title={person.name}>
+          {people.map((person, index) => (
+            <span key={`${person.name}-${index}`} title={person.name}>
               {person.avatar || '🙂'}
             </span>
           ))}

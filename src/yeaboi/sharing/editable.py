@@ -40,7 +40,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from yeaboi.artifacts.edits import Edit, EditError, apply_edits, validate
+from yeaboi.artifacts.edits import Edit, EditError, apply_edits, clean_avatar, validate
 from yeaboi.artifacts.registry import ArtifactSpec
 
 logger = logging.getLogger(__name__)
@@ -219,20 +219,33 @@ class EditableDocument:
                 return
             self._presence[pid] = {
                 "name": name[:60],
-                "avatar": avatar[:8],
+                # Validated, not merely truncated — see `clean_avatar`.
+                "avatar": clean_avatar(avatar),
                 "editing": editing[:400],
                 "seen": time.monotonic(),
             }
 
-    def presence_list(self) -> list[dict]:
-        """Everyone seen within the TTL, oldest arrival first."""
+    def presence_list(self, viewer: str = "") -> list[dict]:
+        """Everyone seen within the TTL, oldest arrival first.
+
+        **No pid crosses the wire.** A pid is the authorship key — it is what
+        `mine` is computed from and what an owner check compares — so handing
+        every reader everybody else's would let one of them claim another's
+        edits. The retro board withholds them for the same reason. What a caller
+        actually wants is "is this me", so that is what ships.
+        """
         cutoff = time.monotonic() - PRESENCE_TTL
         with self._lock:
             stale = [pid for pid, row in self._presence.items() if row["seen"] < cutoff]
             for pid in stale:
                 del self._presence[pid]
             return [
-                {"pid": pid, "name": row["name"], "avatar": row["avatar"], "editing": row["editing"]}
+                {
+                    "name": row["name"],
+                    "avatar": row["avatar"],
+                    "editing": row["editing"],
+                    "mine": bool(viewer) and pid == viewer,
+                }
                 for pid, row in self._presence.items()
             ]
 
@@ -278,7 +291,7 @@ class EditableDocument:
                 }
                 for e in edits
             ],
-            "people": self.presence_list(),
+            "people": self.presence_list(pid),
         }
         if payload_for is not None:
             frame.update(payload_for(current))
@@ -297,21 +310,47 @@ class EditableDocument:
 class EditableShare:
     """One editable document plus the two things the server needs to serve it.
 
-    ``payload`` turns the *corrected* artifact into the ``{chrome, report}`` dict
-    the export bundle draws — the same builder the file export uses, which is
-    what stops a shared correction and its downloaded copy from disagreeing.
-    Injected rather than imported so this module never learns which exporter
-    belongs to which mode.
+    ``args`` turns the *corrected* artifact into the keyword arguments its
+    ``<mode>_export_args`` produces — the same builder the file export uses,
+    which is what stops a shared correction and its downloaded copy from
+    disagreeing about anything, chrome included. Injected rather than imported so
+    this module never learns which exporter belongs to which mode.
     """
 
     document: EditableDocument
-    payload: Callable[[Any], dict]
+    args: Callable[[Any], dict]
     title: str
     source_mode: str
     #: Per-share salt for hashing client addresses. Regenerated every share so a
     #: reader cannot be followed from one document to the next.
     salt: str = field(default="", repr=False)
 
+    def payload(self, artifact: Any) -> dict:
+        """The ``{chrome, report}`` boot payload for one artifact."""
+        from yeaboi.html_theme import export_payload
+
+        return export_payload(**self.args(artifact))
+
     def snapshot(self, pid: str = "") -> dict:
         """The frame one browser gets, artifact payload included."""
         return self.document.state_snapshot(pid, payload_for=self.payload)
+
+    def page_args(self, frame: dict) -> dict:
+        """Keyword arguments for :func:`~yeaboi.html_theme.export_page`.
+
+        Built from the args the exporter itself would use, plus the one boot key
+        that turns the bundle's edit stack on. Going through ``export_page``
+        rather than ``render_page`` is what keeps the served document and the
+        downloaded file identical in everything but that key.
+        """
+        return {
+            **self.args(self.document.current()),
+            "extra_data": {
+                "editing": {
+                    "revision": frame["revision"],
+                    "editable": frame["editable"],
+                    "edits": frame["edits"],
+                    "people": frame["people"],
+                }
+            },
+        }

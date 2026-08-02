@@ -26,7 +26,7 @@ from yeaboi.sharing.access import JoinLimiter, invite_payload, make_join_code, m
 from yeaboi.sharing.editable import ConflictError, EditableShare
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.gate import ARTIFACT_CSP, GATE_CSP, render_gate_page
-from yeaboi.sharing.live import serve_state
+from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import EDIT_CSP, send_document
 
 logger = logging.getLogger(__name__)
@@ -120,11 +120,17 @@ class _OutputHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
             return
         if path == "/api/state":
-            try:
-                wait = float(self._query("wait") or 0)
-            except ValueError:
-                wait = 0.0
-            serve_state(self, self.server.hub, lambda: share.snapshot(self._pid()), wait_seconds=wait)  # type: ignore[attr-defined]
+            # parse_wait, not a hand-rolled float(): `?wait=nan` survives a bare
+            # try/except, and NaN then makes every comparison in serve_state
+            # false — the deadline never passes, Event.wait returns instantly,
+            # and the request spins a core until the server stops. Both boards
+            # already call this helper; this one was the outlier.
+            serve_state(
+                self,
+                self.server.hub,  # type: ignore[attr-defined]
+                lambda: share.snapshot(self._pid()),
+                wait_seconds=parse_wait(self._query("wait")),
+            )
             return
         if path == "/api/invite":
             self._json(200, invite_payload(self.headers, "", self.server.public_url))  # type: ignore[attr-defined]
@@ -318,8 +324,17 @@ class OutputShareServer:
         return datetime.now(UTC).isoformat()
 
     def set_public_url(self, url: str) -> None:
-        """Record the tunnel URL, so the invite is the address teammates can open."""
+        """Record the tunnel URL, so the invite is the address teammates can open.
+
+        Written onto the running server too, not just onto self: the handler
+        reads it off ``self.server``, which was snapshotted at ``start()``. Both
+        boards do the same, and for the same reason — the host's own browser
+        arrives on 127.0.0.1, so an invite derived from that request hands a
+        teammate their own machine.
+        """
         self.public_url = url
+        if self._httpd is not None:
+            self._httpd.public_url = url  # type: ignore[attr-defined]
 
     def persist(self, share: EditableShare, edit: Edit, ip: str) -> None:
         """Hand an accepted edit to whoever owns durability.

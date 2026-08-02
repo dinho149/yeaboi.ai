@@ -13,6 +13,7 @@
  */
 
 import type { AnnotationRow } from '../boot';
+import { formatPath } from '../editing/paths';
 import styles from './reports.module.css';
 
 /** Matches `artifacts/render.NOTES_HEADING`; a test pins the two together. */
@@ -44,6 +45,10 @@ export function Annotations({ rows }: { rows: readonly AnnotationRow[] }) {
             <p className={styles['annotationMeta']}>
               {row.avatar ? <span aria-hidden="true">{row.avatar} </span> : null}
               {row.author ? <span>{row.author}</span> : <span>Anonymous</span>}
+              {/* Where it was left. The Markdown twin says this too, and a note
+                  anchored to one member reading as a document-level note is a
+                  real difference in what the document claims. */}
+              {row.anchor ? <span className={styles['annotationWhere']}>on {formatPath(row.anchor)}</span> : null}
               <When at={row.at} />
             </p>
           </li>

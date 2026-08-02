@@ -938,3 +938,7 @@ ul.memberSummary {
 .annotationWhen {
   font-variant-numeric: tabular-nums;
 }
+
+.annotationWhere {
+  font-style: italic;
+}

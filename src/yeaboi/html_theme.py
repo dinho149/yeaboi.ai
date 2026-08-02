@@ -299,6 +299,7 @@ def export_page(
     markdown_name: str = "",
     document_title: str = "",
     noscript: str = "",
+    extra_data: Mapping[str, object] | None = None,
 ) -> str:
     """Render one exported report as a self-contained React page.
 
@@ -338,6 +339,10 @@ def export_page(
             no sibling Markdown file to point at. A shared editable document is
             the case: it is served, not written, so ``markdown_name`` would name
             a file nobody wrote. Wins over ``markdown_name`` when both are given.
+        extra_data: Additional top-level boot keys. Only the editable share uses
+            it, to add ``editing`` — the one key that switches the bundle's edit
+            stack on. A file export never passes it, which is exactly what keeps
+            a document written to disk inert.
 
     **On JavaScript.** These pages render client-side, so with scripting off
     they would be blank. That is a real regression from the string-templated
@@ -357,6 +362,8 @@ def export_page(
         nav=nav,
         footer=footer,
     )
+    if extra_data:
+        data.update(extra_data)
 
     body = ""
     if noscript:

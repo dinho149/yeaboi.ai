@@ -141,3 +141,37 @@ class TestCommitting:
         session.share.document.apply(an_edit(value="Corrected."))
         with StandupStore(path) as store:
             assert len(store.get_history("s1")) == 1, "teardown must not write a corrected row by itself"
+
+
+class TestCommittingNeverRedelivers:
+    """Editing changes the artifact, the exports and the history — nothing else.
+
+    The spec called this out explicitly, so it is asserted rather than left as a
+    property of what the committers happen to call today. A correction that
+    re-sent the standup to Slack every time somebody fixed a typo would be a
+    worse feature than not having it.
+    """
+
+    def test_no_committer_reaches_the_delivery_module(self, session, db, monkeypatch):
+        import yeaboi.standup.delivery as delivery
+
+        def explode(*_args, **_kwargs):
+            raise AssertionError("committing a correction must never deliver")
+
+        monkeypatch.setattr(delivery, "deliver", explode)
+        session.share.document.apply(an_edit(value="Corrected."))
+        session.commit()
+
+    def test_the_committers_call_only_record_run(self):
+        # A source-level check as well, because a delivery call added behind a
+        # lazy import inside a committer would not be caught by the monkeypatch
+        # above unless a test happened to exercise that mode.
+        import inspect
+
+        from yeaboi.artifacts import session as module
+
+        for kind, committer in module._COMMITTERS.items():
+            body = inspect.getsource(committer)
+            assert "record_run" in body, kind
+            for forbidden in ("deliver", "smtp", "webhook", "notify"):
+                assert forbidden not in body.lower(), f"{kind} committer mentions {forbidden!r}"

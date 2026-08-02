@@ -110,22 +110,21 @@ BOARD_CSP = policy(
 # An editable shared artifact. It sits between the two above: it is a finished
 # document like the artifact, but it takes input from anyone holding the link
 # like a board — and unlike a board, what it takes becomes a *stored* artifact
-# that outlives the session. Two directives are looser than ARTIFACT_CSP's, and
-# each is earned rather than copied:
+# that outlives the session.
+#
+# Exactly one directive is looser than ARTIFACT_CSP's:
 #
 # connect-src 'self' — the edit POST and the long poll, both same-origin fetches
 #   built from relative paths. This is the directive ARTIFACT_CSP's 'none'
 #   forbids, and the whole reason an editable document cannot be served under it.
 #
-# img-src 'self' data: — the invite QR is `<img src="/api/qr?token=…">`, served
-#   by this server. A collaborative document wants the same invite affordance a
-#   board has; `data:` still covers embedded screenshots.
-#
-# No media-src: there is no radio on a document, and a directive nothing needs
-# is a directive nobody will notice is wrong.
+# `img-src data:` is inherited unchanged: screenshots on a standup are embedded
+# data URIs. There is deliberately no `'self'` — the boards earn theirs with
+# `<img src="/api/qr?…">`, and this server serves no QR — and no media-src,
+# because there is no radio on a document. The rule the board policy states
+# applies to itself: a directive nothing needs is one nobody notices is wrong.
 EDIT_CSP = policy(
     connect_src="'self'",
-    img_src="'self' data:",
     form_action="'none'",
 )
 

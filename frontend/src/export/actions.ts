@@ -72,14 +72,14 @@ export function createEditActions(
     const result = await postJSON<{ ok?: boolean; error?: string; state?: EditDocState }>(session, path, body);
     // Every answer carries fresh state, including the refusals — so a conflict
     // updates the page to the newer text at the same moment it reports one.
-    if (result.ok && result.data.state) {
-      store.apply(result.data.state);
-      return { ok: true };
-    }
-    if (!result.ok) {
-      return { ok: false, kind: result.status === 409 ? 'conflict' : 'error', message: describe(result.status) };
-    }
-    return { ok: false, kind: 'error', message: result.data.error ?? 'That could not be saved.' };
+    // The store's monotonic guard drops it if it is somehow behind.
+    if (result.data?.state) store.apply(result.data.state);
+    if (result.ok) return { ok: true };
+    return {
+      ok: false,
+      kind: result.status === 409 ? 'conflict' : 'error',
+      message: result.data?.error ?? describe(result.status),
+    };
   }
 
   function describe(status: number): string {

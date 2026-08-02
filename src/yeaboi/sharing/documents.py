@@ -130,9 +130,8 @@ def roadmap_document(analysis, *, anon=None) -> ShareDocument:
 # what the document says.
 
 
-def _payload_builder(kind: str, *, history=()):
-    """Return ``artifact -> {chrome, report}`` for one artifact kind."""
-    from yeaboi.html_theme import export_payload
+def _args_builder(kind: str, *, history=()):
+    """Return ``artifact -> <mode>_export_args(...)`` for one artifact kind."""
 
     def args_for(artifact):
         if kind == "standup":
@@ -165,7 +164,7 @@ def _payload_builder(kind: str, *, history=()):
             return builders[kind](artifact, editable=True)
         raise ValueError(f"no payload builder for {kind!r}")
 
-    return lambda artifact: export_payload(**args_for(artifact))
+    return args_for
 
 
 def editable_share(artifact, *, kind: str, ref: str = "", share_id: str = "", history=()) -> EditableShare:
@@ -181,7 +180,7 @@ def editable_share(artifact, *, kind: str, ref: str = "", share_id: str = "", hi
     document = EditableDocument(artifact, spec, kind=kind, ref=ref, share_id=share_id)
     return EditableShare(
         document=document,
-        payload=_payload_builder(kind, history=history),
+        args=_args_builder(kind, history=history),
         title=spec.label,
         source_mode=spec.mode,
         # Per-share, so the hashed addresses in one document's log cannot be
@@ -197,30 +196,21 @@ def render_editable_page(share: EditableShare, pid: str = "") -> str:
     and that key is the whole switch: a document written to disk does not have
     it, so `main.tsx` never reaches the edit stack and the file stays inert.
     """
-    from yeaboi.web.assets import render_page
-    from yeaboi.web.brand import accent_mode
+    from yeaboi.html_theme import export_page
 
     frame = share.snapshot(pid)
-    data = {
-        "chrome": frame["chrome"],
-        "report": frame["report"],
-        "editing": {
-            "revision": frame["revision"],
-            "editable": frame["editable"],
-            "edits": frame["edits"],
-            "people": frame["people"],
-        },
-    }
-    return render_page(
-        bundle="export",
-        title=share.title,
-        data=data,
-        # A served document has no sibling Markdown file, so naming one would
-        # point a reader at something nobody wrote.
-        body=(
-            '<noscript><p class="noscript">This document is drawn in the browser and can be '
-            "edited by anyone holding this link. With JavaScript off it cannot be shown — ask "
-            "whoever shared it for the exported file.</p></noscript>"
+    # Through export_page, not render_page: one function builds every one of
+    # these documents, so the shared page and the file someone downloads cannot
+    # drift in their chrome, their <title> or their [data-mode].
+    return export_page(
+        **share.page_args(frame),
+        # A served document has no sibling Markdown file, so `markdown_name`
+        # would point a reader at something nobody wrote. This is what the
+        # `noscript` override exists for.
+        noscript=(
+            "This document is drawn in the browser and can be edited by anyone holding this "
+            "link. With JavaScript off it cannot be shown — ask whoever shared it for the "
+            "exported file."
         ),
-        html_attrs=f'data-mode="{accent_mode(share.source_mode)}"',
+        document_title=share.title,
     )

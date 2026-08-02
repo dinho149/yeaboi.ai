@@ -275,9 +275,17 @@ def run_output_share(
                     message = "Copied invite to clipboard." if copy_text(invite) else "Couldn't copy — see logs."
                     logger.info("output sharing invite copy requested (mode=%s)", document.source_mode)
                 elif action == "Discard Edits" and editable is not None:
+                    dropped = 0
                     while editable.document.drop_last() is not None:
-                        pass
-                    message = "Discarded every correction made in this session."
+                        dropped += 1
+                    # Precise about what just happened: the document is back to
+                    # what the run produced, but the log is append-only and
+                    # still holds every one of them, which is what the edit
+                    # history and the next run's context will keep reading.
+                    message = (
+                        f"Removed {dropped} " + ("correction" if dropped == 1 else "corrections") + " from this "
+                        "document — the edit history still shows them."
+                    )
                     logger.info("output sharing edits discarded (mode=%s)", document.source_mode)
                     sel = 0
                 elif action in ("Stop Sharing", "Back"):

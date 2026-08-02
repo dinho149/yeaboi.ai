@@ -18,11 +18,20 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from yeaboi.artifacts.edits import EDIT_OPS, Edit, EditError, apply_edits, validate
+from yeaboi.artifacts.edits import EDIT_OPS, Edit, EditError
 from yeaboi.artifacts.registry import ARTIFACTS, spec_for
 from yeaboi.artifacts.store import ArtifactEditStore, artifact_ref
 
 logger = logging.getLogger(__name__)
+
+HEADLESS_KINDS = ("standup", "reporting", "retro")
+"""Artifacts a correction can reach without a browser.
+
+The three whose stores can take a corrected row (``session._COMMITTERS``). The
+rest are correctable on the shared document, where a person is present to decide
+what to keep — there is no headless equivalent yet because there is nowhere to
+put the result.
+"""
 
 
 def _db(db_path: Path | None) -> Path:
@@ -42,6 +51,12 @@ def artifact_fields(kind: str = "") -> dict:
     called, how long a value may be, and which lists are addressed by which key.
     Returning it is also the honest way to expose the *absences* — a team profile
     reports no editable fields and says why.
+
+    Each row carries ``headless``: whether :func:`apply_artifact_edits` can reach
+    that artifact from here, or whether it is correctable only on the shared
+    document. Advertising eight kinds while five of them raise is worse than
+    advertising three, so the difference is data rather than something a caller
+    discovers by being refused.
     """
     kinds = [kind] if kind else sorted(ARTIFACTS)
     out: list[dict] = []
@@ -54,6 +69,7 @@ def artifact_fields(kind: str = "") -> dict:
                 "kind": spec.kind,
                 "label": spec.label,
                 "annotatable": spec.annotatable,
+                "headless": spec.kind in HEADLESS_KINDS,
                 "note": spec.note,
                 "list_keys": dict(spec.list_keys),
                 "fields": [
@@ -140,22 +156,33 @@ def apply_artifact_edits(
     spec = spec_for(kind)
     if spec is None:
         raise ValueError(f"{kind!r} is not an editable artifact")
+    if kind not in HEADLESS_KINDS:
+        raise ValueError(
+            f"{kind!r} can only be corrected on the shared document — "
+            f"headless correction covers {', '.join(HEADLESS_KINDS)}"
+        )
 
     from yeaboi.artifacts.session import EditableSession
-
-    ref = _ref(kind, session_id, run_id, engineer)
-    with ArtifactEditStore(_db(db_path)) as store:
-        existing = store.list_edits(kind, ref)
+    from yeaboi.sharing.editable import ConflictError
 
     artifact = _load(kind, session_id=session_id, run_id=run_id, engineer=engineer, db_path=_db(db_path))
     if artifact is None:
         raise ValueError(f"no stored {kind} to correct")
 
-    accepted: list[Edit] = []
+    # One session, which replays everything already on record. Applying through
+    # it rather than calling apply_edits separately is what keeps this call's
+    # corrections *on top of* earlier ones rather than instead of them.
+    session = EditableSession(
+        artifact, kind=kind, db_path=_db(db_path), run_id=run_id, session_id=session_id, engineer=engineer
+    )
+    ref = session.ref
+
+    applied: list[Edit] = []
     refused: list[dict] = []
+    stale: list[dict] = []
     for index, raw in enumerate(edits):
         candidate = Edit(
-            edit_id=str(raw.get("edit_id", "") or f"mcp-{ref}-{len(existing) + index + 1}"),
+            edit_id=str(raw.get("edit_id", "") or f"mcp-{ref}-{session.share.document.revision + index + 1}"),
             op=str(raw.get("op", "")),
             path=str(raw.get("path", "")),
             value=str(raw.get("value", "")),
@@ -165,26 +192,21 @@ def apply_artifact_edits(
             author=author or str(raw.get("author", "")),
         )
         try:
-            accepted.append(validate(candidate, spec))
+            stored = session.share.document.apply(candidate)
+        except ConflictError as exc:
+            # Retryable and reported as such: the artifact moved under this
+            # correction, which is a different thing from it never having been
+            # acceptable.
+            stale.append({"index": index, "id": candidate.edit_id, "reason": "conflict", "detail": str(exc)})
+            continue
         except (EditError, ValueError) as exc:
             refused.append({"index": index, "reason": str(exc)})
-
-    corrected, results = apply_edits(artifact, (*existing, *accepted), spec)
-    outcomes = {r.edit_id: r for r in results}
-    stale = [
-        {"id": e.edit_id, "reason": outcomes[e.edit_id].reason}
-        for e in accepted
-        if e.edit_id in outcomes and not outcomes[e.edit_id].applied
-    ]
-    applied = [e for e in accepted if e.edit_id in outcomes and outcomes[e.edit_id].applied]
+            continue
+        applied.append(stored)
 
     committed = 0
     if applied and not dry_run:
-        session = EditableSession(
-            artifact, kind=kind, db_path=_db(db_path), run_id=run_id, session_id=session_id, engineer=engineer
-        )
         for edit in applied:
-            session.share.document.apply(edit)
             session.persist(session.share, edit, "")
         committed = session.commit()
 
@@ -220,9 +242,7 @@ def _load(kind: str, *, session_id: str, run_id: int, engineer: str, db_path: Pa
 
         with ReportingStore(db_path) as store:
             return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
-    if kind == "retro":
-        from yeaboi.retro.store import RetroStore
+    from yeaboi.retro.store import RetroStore
 
-        with RetroStore(db_path) as store:
-            return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
-    raise ValueError(f"{kind!r} cannot be corrected headlessly yet — use the shared document")
+    with RetroStore(db_path) as store:  # kind == "retro"; the caller already gated on HEADLESS_KINDS
+        return store.get_run_by_id(run_id) if run_id else store.get_latest_report(session_id)
