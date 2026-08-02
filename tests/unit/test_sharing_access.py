@@ -6,17 +6,21 @@ out" has exactly one right answer and two wrong ones — the host's own
 ``127.0.0.1``, and nothing at all when a link genuinely exists.
 """
 
+from urllib.parse import urlparse
+
 import pytest
 
 from yeaboi.sharing.access import (
     JoinLimiter,
     invite_payload,
+    invite_url,
     make_join_code,
     make_token,
     participant_url,
 )
 
 TUNNEL = "https://abc-def.trycloudflare.com/"
+CODE = "K3P9-2QXA"
 
 
 class TestCredentials:
@@ -66,16 +70,92 @@ class TestParticipantUrl:
         assert participant_url({"Host": "board.example:8712"}, "x") == "http://board.example:8712/"
 
 
+class TestInviteUrl:
+    """The one link that is the whole invite.
+
+    The bug this function exists to make impossible: every copy path used to put
+    ``f"{url}\\nAccess code: {code}"`` on the clipboard, and any paste target that
+    flattens a newline turned it into ``…/%20Access%20code:%207PER-8G5F`` — a
+    path no server serves, so the reader got a 404 and assumed the share was
+    broken.
+
+    ``JoinGate.readInviteCode`` in ``frontend/src/shared/JoinGate.tsx`` is the
+    other half of this contract and has a mirroring suite; the fragment format
+    is the one thing the two files must agree on.
+    """
+
+    def test_one_string_carries_both_halves(self):
+        assert invite_url(TUNNEL, CODE) == f"https://abc-def.trycloudflare.com/#code={CODE}"
+
+    def test_the_code_rides_in_the_fragment_and_never_the_query(self):
+        # A fragment is never sent to the origin, which is the whole reason for
+        # this shape: the code stays out of cloudflared's access log and out of
+        # the Referer when the visitor clicks the credit link on the gate.
+        parsed = urlparse(invite_url(TUNNEL, CODE))
+        assert parsed.fragment == f"code={CODE}"
+        assert parsed.query == ""
+        assert "?code=" not in invite_url(TUNNEL, CODE)
+
+    @pytest.mark.parametrize(
+        "share",
+        [
+            "https://abc-def.trycloudflare.com",
+            "https://abc-def.trycloudflare.com/",
+            "https://abc-def.trycloudflare.com//",
+        ],
+    )
+    def test_exactly_one_slash_however_the_caller_spelled_it(self, share):
+        # Four producers append their own trailing slash independently (both
+        # board tunnel workers, the output-share worker, participant_url's
+        # fallback). Two of them agreeing to append is how you get `//#code=`.
+        assert invite_url(share, CODE) == f"https://abc-def.trycloudflare.com/#code={CODE}"
+
+    def test_a_path_prefix_survives(self):
+        # Matters behind a reverse proxy: the board is not always at the root.
+        assert invite_url("https://co.example/board/", CODE) == f"https://co.example/board/#code={CODE}"
+
+    def test_a_query_string_stays_a_query_string(self):
+        # No producer sends one today, but this is a public function with four
+        # callers: concatenating would bury the fragment inside the query.
+        assert invite_url("https://co.example/?ref=chat", CODE) == f"https://co.example/?ref=chat#code={CODE}"
+
+    def test_an_existing_fragment_is_replaced_not_appended(self):
+        assert invite_url("https://co.example/#stale", CODE) == f"https://co.example/#code={CODE}"
+
+    @pytest.mark.parametrize(("share", "code"), [("", CODE), (TUNNEL, ""), ("", "")])
+    def test_nothing_at_all_rather_than_half_an_invite(self, share, code):
+        # participant_url already answers "" before the tunnel is up, and every
+        # caller renders that as "the secure link is still starting" rather than
+        # as a link. Propagating it keeps that one branch doing the work.
+        assert invite_url(share, code) == ""
+
+    def test_a_real_code_needs_no_escaping(self):
+        # The join alphabet is A-Z minus O/I plus 2-9, so the code can go into a
+        # fragment verbatim. If that alphabet ever grows, this fails first.
+        code = make_join_code()
+        assert urlparse(invite_url(TUNNEL, code)).fragment == f"code={code}"
+
+
 class TestInvitePayload:
     def test_carries_the_code_and_the_public_url(self):
-        body = invite_payload({"Host": "127.0.0.1:5173"}, "127.0.0.1:5173", "K3P9-2QXA", TUNNEL)
-        assert body == {"shareUrl": TUNNEL, "joinCode": "K3P9-2QXA"}
+        body = invite_payload({"Host": "127.0.0.1:5173"}, "127.0.0.1:5173", CODE, TUNNEL)
+        assert body == {
+            "shareUrl": TUNNEL,
+            "joinCode": CODE,
+            "inviteUrl": f"https://abc-def.trycloudflare.com/#code={CODE}",
+        }
 
     def test_still_hands_out_the_code_when_the_link_is_not_ready(self):
         # The gate is live from the moment the board starts — only the address
         # takes a few seconds. Withholding the code too would be a worse lie.
-        body = invite_payload({"Host": "127.0.0.1:5173"}, "127.0.0.1:5173", "K3P9-2QXA")
-        assert body == {"shareUrl": "", "joinCode": "K3P9-2QXA"}
+        body = invite_payload({"Host": "127.0.0.1:5173"}, "127.0.0.1:5173", CODE)
+        assert body == {"shareUrl": "", "joinCode": CODE, "inviteUrl": ""}
+
+    def test_never_the_host_link(self):
+        # Every participant can read this response; the host link carries the
+        # admin secret. Nothing here may look like one.
+        body = invite_payload({"Host": "127.0.0.1:5173"}, "127.0.0.1:5173", CODE, TUNNEL)
+        assert not any("token=" in value or "admin=" in value for value in body.values())
 
 
 class TestJoinLimiter:

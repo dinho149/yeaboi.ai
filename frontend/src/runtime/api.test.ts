@@ -78,6 +78,36 @@ describe('stripCredentialsFromUrl', () => {
     stripCredentialsFromUrl();
     expect(location.search).toBe('?x=1');
   });
+
+  it('removes the invite code from the fragment', () => {
+    // JoinGate calls this *before* it auto-submits, so a reload after a
+    // rejection carries nothing and asks nothing — which is what keeps a stale
+    // link out of JoinLimiter's eight-failure lockout.
+    history.replaceState(null, '', '/#code=K3P9-2QXA');
+    stripCredentialsFromUrl();
+    expect(location.hash).toBe('');
+  });
+
+  it('removes the invite code from the query too', () => {
+    history.replaceState(null, '', '/?code=K3P9-2QXA&keep=1');
+    stripCredentialsFromUrl();
+    expect(location.search).toBe('?keep=1');
+  });
+
+  it('keeps whatever else the fragment was carrying', () => {
+    history.replaceState(null, '', '/#theme=midnight&code=K3P9-2QXA');
+    stripCredentialsFromUrl();
+    expect(location.hash).toBe('#theme=midnight');
+  });
+
+  it('leaves a plain anchor alone while stripping the query', () => {
+    // Round-tripping `#section` through URLSearchParams would hand it back as
+    // `#section=`, so the fragment is only rewritten when it holds a code.
+    history.replaceState(null, '', '/?token=abc#section');
+    stripCredentialsFromUrl();
+    expect(location.hash).toBe('#section');
+    expect(location.search).toBe('');
+  });
 });
 
 describe('postJSON', () => {

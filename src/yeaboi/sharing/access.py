@@ -6,6 +6,7 @@ import secrets
 import threading
 import time
 from collections.abc import Callable, Mapping
+from urllib.parse import urlsplit, urlunsplit
 
 _JOIN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -60,6 +61,48 @@ def participant_url(headers: Mapping[str, str], fallback_host: str, public_url: 
     return f"{scheme}://{host}/"
 
 
+def invite_url(share_url: str, join_code: str) -> str:
+    """Return the one link that is the whole invite: ``https://host/#code=XXXX-XXXX``.
+
+    **One string, not two.** Every copy path used to put the URL and the sentence
+    ``Access code: XXXX-XXXX`` on the clipboard separated by a newline. Any paste
+    target that flattens a newline into a space — an address bar, a single-line
+    chat input, "paste and match style", a link unfurler — turned that into
+    ``https://host/%20Access%20code:%207PER-8G5F``, which is a path no server
+    here serves, so the reader got ``{"error": "not found"}`` from the board's
+    catch-all and concluded the share was broken. A payload that can be
+    misassembled eventually is; the fix is to have nothing to assemble.
+
+    **The code rides in the fragment, deliberately.** A fragment is never sent to
+    the origin, so it stays out of cloudflared's access log, out of this server's
+    request line, and out of the ``Referer`` header when the visitor clicks the
+    footer credit link on the gate. ``?code=`` would do the same job and leak in
+    all three places. ``JoinGate`` still *accepts* the query form — a link can be
+    mangled in transit — but nothing here ever emits it.
+
+    **Returns ``""`` when either half is missing**, which keeps the existing "not
+    ready" contract intact: :func:`participant_url` already answers ``""`` before
+    the tunnel is up, and every caller already renders that as "the secure link
+    is still starting" rather than as a link.
+
+    Never build this from the *host* link. That one carries the admin secret; see
+    the handlers.
+    """
+    if not share_url or not join_code:
+        return ""
+    # Split rather than concatenate. Four separate producers append their own
+    # trailing slash (the two board tunnel workers, the output-share worker, and
+    # participant_url's fallback), so a bare f-string gives `//#code=` the moment
+    # two of them agree; and appending to a URL that carried a query would put
+    # the fragment inside it. Normalising the path keeps one slash, preserves a
+    # path prefix (which matters behind a reverse proxy), and leaves any query
+    # where it belongs. An existing fragment is replaced — this function decides
+    # what the fragment is.
+    parts = urlsplit(share_url)
+    path = parts.path.rstrip("/") + "/"
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, f"code={join_code}"))
+
+
 def _is_loopback(host: str) -> bool:
     """True if ``host`` (optionally ``host:port``) names this machine only.
 
@@ -103,10 +146,19 @@ def invite_payload(
     Contains no secret: the join code is what the reader typed to get here, and
     the URL is the board's public tunnel address. The host link, which is
     neither, is never returned — see the handlers.
+
+    ``inviteUrl`` is the one the panel copies; ``shareUrl`` and ``joinCode`` stay
+    because the panel also offers them separately, for a host who wants to post
+    the link in a channel and pass the code another way. Composed here rather
+    than in the browser on purpose: a fragment format that drifts between the
+    emitter and the parser fails *silently* — the link opens the gate and the
+    autofill simply does not happen — so there is exactly one implementation.
     """
+    share = participant_url(headers, fallback_host, public_url)
     return {
-        "shareUrl": participant_url(headers, fallback_host, public_url),
+        "shareUrl": share,
         "joinCode": join_code,
+        "inviteUrl": invite_url(share, join_code),
     }
 
 

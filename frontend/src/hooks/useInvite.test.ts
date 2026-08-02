@@ -11,6 +11,11 @@
  * And a board whose tunnel has not come up yet answers with an empty `shareUrl`
  * — deliberately, rather than the loopback address the host is looking at. The
  * panel must not auto-copy a code with no link to go with it.
+ *
+ * What lands on the clipboard is one URL, `inviteUrl`, composed server-side by
+ * `sharing.access.invite_url`. It used to be the link and the sentence "Access
+ * code: …" on two lines, which any paste target that flattens a newline turned
+ * into a single 404ing address.
  */
 
 import { act, renderHook, waitFor } from '@testing-library/preact';
@@ -24,7 +29,11 @@ vi.mock('../runtime/clipboard', () => ({ copyText: vi.fn() }));
 const mockCopy = vi.mocked(copyText);
 
 const SESSION: Session = { token: 'tok', admin: '', pid: 'p1' };
-const INVITE = { shareUrl: 'https://x.trycloudflare.com/', joinCode: 'K3P9-2QXA' };
+const INVITE = {
+  shareUrl: 'https://x.trycloudflare.com/',
+  joinCode: 'K3P9-2QXA',
+  inviteUrl: 'https://x.trycloudflare.com/#code=K3P9-2QXA',
+};
 
 function answerWith(body: unknown, ok = true): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({ ok, json: async () => body }) as unknown as Response);
@@ -59,21 +68,36 @@ describe('useInvite', () => {
     // An empty shareUrl means the board is loopback-only for now. Copying the
     // code alone would hand a reader a password and no door, and the toast
     // would claim an invite that cannot be acted on.
-    answerWith({ shareUrl: '', joinCode: 'K3P9-2QXA' });
+    const notReady = { shareUrl: '', joinCode: 'K3P9-2QXA', inviteUrl: '' };
+    answerWith(notReady);
     const { result } = renderHook(() => useInvite(SESSION, true));
 
-    await waitFor(() => expect(result.current.invite).toEqual({ shareUrl: '', joinCode: 'K3P9-2QXA' }));
+    await waitFor(() => expect(result.current.invite).toEqual(notReady));
     expect(mockCopy).not.toHaveBeenCalled();
     expect(result.current.notice).toBeNull();
   });
 
-  it('copies the link and code together, and says so', async () => {
+  it('copies one self-contained link, and says so', async () => {
     answerWith(INVITE);
     const { result } = renderHook(() => useInvite(SESSION, true));
 
     await waitFor(() => expect(result.current.invite).toEqual(INVITE));
-    expect(mockCopy).toHaveBeenCalledWith('https://x.trycloudflare.com/\nAccess code: K3P9-2QXA');
-    await waitFor(() => expect(result.current.notice).toBe('Invite copied to your clipboard'));
+    // Exactly the server's string, and exactly one line: nothing here composes
+    // a URL, and nothing here adds a second thing that could be glued onto it.
+    expect(mockCopy).toHaveBeenCalledWith(INVITE.inviteUrl);
+    expect(mockCopy.mock.calls[0]?.[0]).not.toMatch(/\s/);
+    await waitFor(() => expect(result.current.notice).toBe('Invite link copied to your clipboard'));
+  });
+
+  it('copies nothing when the link is there but the invite is not', async () => {
+    // Guards the gate moving back onto `shareUrl`: that would put `undefined`
+    // on the clipboard the moment the two fields disagreed.
+    answerWith({ shareUrl: 'https://x.trycloudflare.com/', joinCode: 'K3P9-2QXA', inviteUrl: '' });
+    const { result } = renderHook(() => useInvite(SESSION, true));
+
+    await waitFor(() => expect(result.current.invite).not.toBeNull());
+    expect(mockCopy).not.toHaveBeenCalled();
+    expect(result.current.notice).toBeNull();
   });
 
   it('stays silent when the browser refused the copy', async () => {

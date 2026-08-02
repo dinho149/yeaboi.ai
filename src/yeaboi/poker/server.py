@@ -48,7 +48,7 @@ from yeaboi.poker import tickets as tickets_mod
 from yeaboi.poker.board import PokerBoard
 from yeaboi.poker.page import build_poker_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
-from yeaboi.sharing.access import invite_payload, make_join_code, make_token, participant_url
+from yeaboi.sharing.access import invite_payload, invite_url, make_join_code, make_token, participant_url
 from yeaboi.sharing.events import ChangeWatcher, EventHub
 from yeaboi.sharing.live import parse_wait, serve_state
 from yeaboi.web.security import BOARD_CSP, send_document
@@ -350,13 +350,18 @@ class _PokerHandler(BaseHTTPRequestHandler):
         )
 
     def _send_qr(self) -> None:
-        """Render a QR of the token-free join URL as inline SVG (see retro/server.py).
+        """Render a QR of the one-link invite as inline SVG (see retro/server.py).
 
-        The tunnel URL when there is one, the request's own host otherwise; the QR
-        is token-free so scanning it lands on the code gate.
+        The tunnel URL when there is one, the request's own host otherwise, with
+        the join code in the fragment — so a scan lands on the board rather than
+        on the gate. No board *token* is encoded: the scanner still goes through
+        ``POST /api/join`` and the limiter.
         """
         fallback = f"{self.server.server_address[0]}:{self.server.server_address[1]}"  # type: ignore[attr-defined]
-        url = participant_url(self.headers, fallback, self.server.public_url)  # type: ignore[attr-defined]
+        url = invite_url(
+            participant_url(self.headers, fallback, self.server.public_url),  # type: ignore[attr-defined]
+            self._join_code,
+        )
         if not url:  # no tunnel yet — see retro/server.py
             self._send_json(503, {"error": "link not ready"})
             return

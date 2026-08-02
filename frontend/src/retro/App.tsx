@@ -540,12 +540,13 @@ export function App({ boot }: { boot: RetroBoot }) {
 
       <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite the team">
         <p className={styles['popNote']}>
-          Scan the code, or send the link below — either way they land on the gate and enter the
-          share code.
+          Send the invite link — it carries the share code, so they land straight on the board.
+          Scanning the QR does the same. Keep both off anywhere public.
         </p>
         <Toast message={invite.notice} onDismiss={invite.dismiss} />
         <InviteQR
           qrSrc={apiUrl(session, '/api/qr')}
+          inviteUrl={invite.invite?.inviteUrl}
           shareUrl={invite.invite?.shareUrl}
           joinCode={invite.invite?.joinCode}
         />

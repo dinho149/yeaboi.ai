@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { copyText } from '../runtime/clipboard';
 import { CopyField } from './CopyField';
-import { InviteQR, inviteText } from './InviteQR';
+import { InviteQR } from './InviteQR';
 
 vi.mock('../runtime/clipboard', () => ({ copyText: vi.fn() }));
 const mockCopy = vi.mocked(copyText);
@@ -65,26 +65,26 @@ describe('<CopyField>', () => {
   });
 });
 
-describe('inviteText', () => {
-  it('sends the link and the code, in the order they are used', () => {
-    expect(inviteText('https://x.trycloudflare.com/', 'K3P9-2QXA')).toBe(
-      'https://x.trycloudflare.com/\nAccess code: K3P9-2QXA'
-    );
-  });
-
-  it('never invents a line for a value it does not have', () => {
-    // The invite is copied automatically on open, possibly before the fetch has
-    // landed. "Access code: undefined" pasted into a team chat is the failure.
-    expect(inviteText('https://x/', '')).toBe('https://x/');
-    expect(inviteText('', '')).toBe('');
-  });
-});
-
 describe('<InviteQR>', () => {
-  it('renders both copy fields once the values arrive', () => {
-    render(<InviteQR qrSrc="/api/qr?token=t" shareUrl="https://x/" joinCode="K3P9-2QXA" />);
+  it('renders every copy field once the values arrive', () => {
+    render(
+      <InviteQR
+        qrSrc="/api/qr?token=t"
+        inviteUrl="https://x/#code=K3P9-2QXA"
+        shareUrl="https://x/"
+        joinCode="K3P9-2QXA"
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Copy Invite' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy Link' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy Code' })).toBeTruthy();
+  });
+
+  it('offers the invite as a button, not only through the auto-copy', () => {
+    // `copyText` is entitled to refuse — insecure context, expired activation
+    // window — and the one-line invite must still have a way off the screen.
+    render(<InviteQR qrSrc="/api/qr?token=t" inviteUrl="https://x/#code=K3P9-2QXA" />);
+    expect(screen.getByText('https://x/#code=K3P9-2QXA')).toBeTruthy();
   });
 
   it('shows the QR alone until they do', () => {

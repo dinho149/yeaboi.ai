@@ -4672,7 +4672,7 @@ def _build_retro_screen(
         # promising a link that is never coming, directly under a status saying
         # the opposite.
         if public_url:
-            _jline("Works anywhere. They open the link, then type the code.", theme.muted)
+            _jline("Copy Invite sends one link that carries the code — one click and they're in.", theme.muted)
         elif link_failed:
             _jline("The secure link didn't start — press Retry Link to try again.", theme.warn)
         else:
@@ -4953,7 +4953,7 @@ def _build_poker_screen(
                 _row("Participant link", "unavailable" if link_failed else "preparing…", theme.muted)
             _row("Share code", poker_data.get("display_code", "—"), f"bold {theme.accent_bright}")
             if public_url:
-                _line("Works anywhere. They open the link, then type the code.", theme.muted)
+                _line("Copy Invite sends one link that carries the code — one click and they're in.", theme.muted)
             elif link_failed:
                 _line("The secure link didn't start — press Retry Link to try again.", theme.warn)
             else:
