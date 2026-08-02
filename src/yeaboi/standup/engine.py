@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -32,7 +31,18 @@ from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
     from yeaboi.agent.state import IssueFilingResult, TranscriptNudge, TranscriptReview, TranscriptSource
-from yeaboi.standup import automation, categories, collector, confidence, insights, sprint_context
+from yeaboi.standup import (
+    adjudicate,
+    automation,
+    categories,
+    collector,
+    confidence,
+    habits,
+    insights,
+    practice_feedback,
+    references,
+    sprint_context,
+)
 from yeaboi.standup.store import StandupStore
 
 logger = logging.getLogger(__name__)
@@ -374,6 +384,46 @@ def _enrich_aliases_from_items(alias_map: dict[str, set[str]], items: list[dict]
                     aliases |= _normalize_author(email)
 
 
+def _projected_item(item: dict) -> dict:
+    """The per-item shape the rest of the pipeline sees — one place, two callers.
+
+    Both the grouped activity and the open-ticket matching context go through
+    here, so a field one of them needs can never quietly exist on only one.
+    """
+    return {
+        "kind": item.get("kind", ""),
+        "title": item.get("title", ""),
+        "summary": item.get("summary", ""),
+        "status": item.get("status", ""),
+        "source": item.get("source", ""),
+        "key": item.get("key", ""),
+        "url": item.get("url", ""),
+        "repository": item.get("repository", ""),
+        "timestamp": item.get("timestamp", ""),
+        # PR items carry these; commits match against them so a
+        # PR's commits can fold under it (_nest_pr_commits).
+        "pr_id": item.get("pr_id", ""),
+        "branch": item.get("branch", ""),
+        # Practice detection (habits.py) reads a change's own words
+        # to decide whether it names a ticket — the branch and title
+        # above, plus the commit/PR description here. On a TICKET item
+        # this is instead the ticket's description + acceptance criteria
+        # + definition of done, which is what relatedness matches against.
+        "body": item.get("body", ""),
+        # Deliberately NOT named `changed_files`: categories.split_activity
+        # runs over these dicts and has never seen that key, so
+        # introducing it here would silently reclassify docs-only
+        # repository events out of Code and into Documentation.
+        # Empty means UNKNOWN — the collectors cap detail lookups —
+        # so every rule over it must be one-sided.
+        "changed_paths": tuple(item.get("changed_files") or ()),
+        # Azure Repos only: work items linked through the PR UI, and
+        # whether that lookup actually ran (see azure_devops.py).
+        "work_item_ids": tuple(item.get("work_item_ids") or ()),
+        "work_items_known": item.get("work_items_known", True),
+    }
+
+
 def _group_activity_by_author(
     items: list[dict], members: list[str], alias_map: dict[str, set[str]] | None = None
 ) -> dict[str, list[dict]]:
@@ -393,23 +443,7 @@ def _group_activity_by_author(
         author = (item.get("author") or "").strip()
         member = next((rev[a] for a in _normalize_author(author) if a in rev), None)
         if member is not None:
-            grouped[member].append(
-                {
-                    "kind": item.get("kind", ""),
-                    "title": item.get("title", ""),
-                    "summary": item.get("summary", ""),
-                    "status": item.get("status", ""),
-                    "source": item.get("source", ""),
-                    "key": item.get("key", ""),
-                    "url": item.get("url", ""),
-                    "repository": item.get("repository", ""),
-                    "timestamp": item.get("timestamp", ""),
-                    # PR items carry these; commits match against them so a
-                    # PR's commits can fold under it (_nest_pr_commits).
-                    "pr_id": item.get("pr_id", ""),
-                    "branch": item.get("branch", ""),
-                }
-            )
+            grouped[member].append(_projected_item(item))
     return grouped
 
 
@@ -417,7 +451,10 @@ def _rebuild_bundle(bundle: collector.ActivityBundle, items: list[dict]) -> coll
     """Return a copy of ``bundle`` holding only ``items``, with per-source counts recomputed.
 
     Carries errors, skipped, AND partial_sources — dropping partial_sources here
-    used to silently swallow partial-coverage warnings downstream.
+    used to silently swallow partial-coverage warnings downstream. Carries
+    reference_tickets for the same reason: they are matching context, so
+    filtering them alongside activity would quietly weaken the practice rules'
+    ability to exonerate.
     """
     per_source: dict[str, int] = {}
     for item in items:
@@ -430,6 +467,7 @@ def _rebuild_bundle(bundle: collector.ActivityBundle, items: list[dict]) -> coll
         errors=list(bundle.errors),
         skipped=list(bundle.skipped),
         partial_sources=list(bundle.partial_sources),
+        reference_tickets=list(bundle.reference_tickets),
     )
 
 
@@ -500,24 +538,25 @@ def _member_links(acts: list[dict]) -> tuple[tuple[str, str], ...]:
     return tuple(links)
 
 
+# Transcript-review findings shown in the standup's own notices before the list
+# is elided — enough to act on, few enough that the notices stay scannable.
+_MAX_TRANSCRIPT_NOTICES = 3
+
 # Commit → PR association lives in title text only: collectors emit pr_id and
 # branch on PR items, but a commit names its PR solely via its subject. The
 # real-world formats, one pattern each: GitHub/AzDO merge commits
 # ("Merge pull request #91 …" / "Merge pull request 48806 …"), AzDO squash
 # merges ("Merged PR 123: Title"), and parenthesised references — GitHub squash
 # merges end in "(#91)" and the collector's own PR-branch scan appends
-# "(PR #91)". All are gated on a matching PR existing in the same repository's
-# window, so a stray "(#12)" in prose cannot fold a commit under nothing.
-# Transcript-review findings shown in the standup's own notices before the list
-# is elided — enough to act on, few enough that the notices stay scannable.
-_MAX_TRANSCRIPT_NOTICES = 3
-
-_PR_NUMBER_RES = (
-    re.compile(r"Merge pull request #?(\d+)"),
-    re.compile(r"Merged PR (\d+):"),
-    re.compile(r"\((?:PR )?#(\d+)\)"),
-)
-_MERGE_BRANCH_RE = re.compile(r"Merge pull request .*? from (\S+)")
+# "(PR #91)".
+#
+# The patterns themselves live in `references` because habits.py needs the same
+# reading of a commit subject. All are gated *here* on a matching PR existing in
+# the same repository's window, so a stray "(#12)" in prose cannot fold a commit
+# under nothing. (The habit rules deliberately use the *ungated* reading — see
+# references.claims_pull_request.)
+_PR_NUMBER_RES = references.PR_NUMBER_RES
+_MERGE_BRANCH_RE = references.MERGE_BRANCH_RE
 
 
 def _nest_pr_commits(acts: list[dict]) -> list[dict]:
@@ -670,17 +709,19 @@ def _fallback_summary(acts: list[dict]) -> str:
     return "No activity detected."
 
 
-_TICKET_KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
-
-
 def _fallback_progress_note(yesterday_entry: dict, acts: list[dict]) -> str:
     """Carried-over-work note without an LLM: yesterday's ticket keys ∩ today's.
 
     Only states what the data proves (the same ticket keys appear on both
     days); anything more interpretive is left to the LLM path.
+
+    No prefix gate needed here (unlike ``export._ticket_key_map``): the
+    intersection with today's *activity keys* is itself the gate, so a "UTF-8"
+    in yesterday's prose can only survive if it is literally a ticket key the
+    collectors produced today.
     """
     yesterday_text = " ".join(str(v) for v in yesterday_entry.values())
-    yesterday_keys = set(_TICKET_KEY_RE.findall(yesterday_text))
+    yesterday_keys = set(references.find_ticket_keys(yesterday_text))
     today_keys = {str(a.get("key") or "") for a in acts}
     carried = sorted(yesterday_keys & today_keys)
     if not carried:
@@ -702,6 +743,7 @@ def _build_fallback_member_updates(
     coverage: dict[str, str] | None = None,
     blocker_signals: dict[str, tuple[str, ...]] | None = None,
     yesterday: dict[str, dict] | None = None,
+    practices: dict[str, tuple] | None = None,
 ) -> list[MemberUpdate]:
     """Deterministic per-member updates when the LLM is unavailable.
 
@@ -709,11 +751,15 @@ def _build_fallback_member_updates(
     activity titles); a self-report is carried alongside as supporting context,
     never replacing the activity view. Detected blocker signals become the
     blockers text directly, so blocker highlighting works without an LLM.
+
+    Practice signals are deterministic to begin with, so unlike the summaries
+    they are identical on both paths — nothing degrades when the LLM is gone.
     """
     updates: list[MemberUpdate] = []
     coverage = coverage or {category: categories.COVERED for category in categories.CATEGORIES}
     blocker_signals = blocker_signals or {}
     yesterday = yesterday or {}
+    practices = practices or {}
     for name, acts in grouped.items():
         split = categories.split_activity(acts)
         summary = _fallback_summary(acts)
@@ -752,6 +798,7 @@ def _build_fallback_member_updates(
                 ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
                 code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
                 documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
+                practices=practices.get(name, ()),
             )
         )
     # Self-reporters missing from the grouping (shouldn't happen — run_standup
@@ -798,6 +845,7 @@ def _summarize_members(
     grouped: dict[str, list[dict]] | None = None,
     blocker_signals: dict[str, tuple[str, ...]] | None = None,
     yesterday: dict[str, dict] | None = None,
+    practices: dict[str, tuple] | None = None,
 ) -> tuple[list[MemberUpdate], str, list[str]]:
     """Produce (member_updates, team_summary, warnings) via one LLM call + deterministic fallback.
 
@@ -821,14 +869,34 @@ def _summarize_members(
         grouped = _group_activity_by_author(bundle.items, members, alias_map)
     blocker_signals = blocker_signals or {}
     yesterday = yesterday or {}
+    # Practices never enter the prompt (they are already deterministic, and a
+    # PR description per item would double it) — they only ride along to be set
+    # on the MemberUpdates both paths build.
+    practices = practices or {}
     coverage = dict(category_coverage) or {category: categories.COVERED for category in categories.CATEGORIES}
 
     def _for_llm(acts: list[dict]) -> list[dict]:
         # URLs (and the keys they duplicate — titles already carry ticket ids,
         # as does the standalone summary field) are for rendering links, not
         # reasoning; strip them to keep the prompt lean. pr_id/branch/timestamp
-        # exist only so evidence rows can fold and sort — same treatment.
-        rendering_only = ("url", "key", "summary", "pr_id", "branch", "timestamp")
+        # exist only so evidence rows can fold and sort — same treatment, as do
+        # body/changed_paths/work_item_* which exist only for habits.py and
+        # would otherwise put a full PR description and 100 file paths per item
+        # into the prompt. This is a blacklist, so anything added to
+        # _group_activity_by_author lands in the prompt until it is named here —
+        # test_standup_engine pins the resulting key set for exactly that reason.
+        rendering_only = (
+            "url",
+            "key",
+            "summary",
+            "pr_id",
+            "branch",
+            "timestamp",
+            "body",
+            "changed_paths",
+            "work_item_ids",
+            "work_items_known",
+        )
         return [{k: v for k, v in a.items() if k not in rendering_only} for a in acts]
 
     # WIP (assigned in-progress tickets, possibly untouched in the window) is a
@@ -868,7 +936,12 @@ def _summarize_members(
     def _fallback(extra_warnings: list[str]) -> tuple[list[MemberUpdate], str, list[str]]:
         return (
             _build_fallback_member_updates(
-                grouped, self_reported, coverage, blocker_signals=blocker_signals, yesterday=yesterday
+                grouped,
+                self_reported,
+                coverage,
+                blocker_signals=blocker_signals,
+                yesterday=yesterday,
+                practices=practices,
             ),
             _build_fallback_team_summary(bundle, progress),
             extra_warnings,
@@ -982,6 +1055,7 @@ def _summarize_members(
                 ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
                 code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
                 documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
+                practices=practices.get(name, ()),
             )
         )
 
@@ -1071,6 +1145,10 @@ def run_standup(
         previous_run = store.get_previous_run(session_id, date_str)
         previous_report = previous_run[3] if previous_run else None
         prior_history = store.get_history(session_id, limit=10)
+        # The team's own thumbs up/down on earlier practice signals. Read here
+        # rather than taken as a parameter: it belongs to the session, so every
+        # surface that runs a standup gets it without having to remember to.
+        feedback_ledger = practice_feedback.load(store, session_id)
 
     # What the team corrected on the previous standup, if they corrected it.
     # The corrected *text* already reaches this run for free — a corrected row
@@ -1253,6 +1331,33 @@ def run_standup(
     yesterday = insights.yesterday_context(previous_report, transcript_corrections, corrections=corrections)
     if blocker_signals:
         logger.info("standup: blocker signals detected for %d member(s)", len(blocker_signals))
+    # Engineering-practice observations over the same grouping. Passed the
+    # coverage states because the tracker-shaped rules must stay silent when the
+    # tracker itself was unavailable, and the previous report so a signal that
+    # fired yesterday too can say so.
+    #
+    # The open tickets go in as MATCHING CONTEXT, never as activity: a change can
+    # belong to a ticket that saw no board movement today, and without them
+    # long-running work reads as unapproved scope. They are grouped by assignee
+    # through the same alias map so "a ticket this person holds" is answerable,
+    # and passed whole so a change can also match a teammate's ticket.
+    reference_grouped = _group_activity_by_author(bundle.reference_tickets, members, alias_map)
+    reference_items = [_projected_item(item) for item in bundle.reference_tickets]
+    practices = habits.detect_practices(
+        grouped,
+        config=config,
+        category_coverage=category_coverage,
+        previous_report=previous_report,
+        reference_grouped=reference_grouped,
+        reference_items=reference_items,
+        # The model half of the same question, and only ever a mute button —
+        # it returns changes to drop, so it cannot author a report about anyone.
+        # It is also where the team's recorded verdicts do their teaching: the
+        # ledger's deterministic half suppresses the exact changes they excused,
+        # this half generalises from the reasons they gave.
+        adjudicator=adjudicate.build_adjudicator(config, feedback_ledger.corrections()),
+        feedback=feedback_ledger.is_excused,
+    )
 
     # Confidence must use the roster-filtered activity, otherwise work by an
     # excluded outsider can make this team's sprint appear healthier. Prior
@@ -1282,6 +1387,7 @@ def run_standup(
         grouped=grouped,
         blocker_signals=blocker_signals,
         yesterday=yesterday,
+        practices=practices,
     )
 
     # Warnings the user must see: source auth failures (from the collector) first,
@@ -1357,6 +1463,9 @@ def run_standup(
         # Screenshots pasted into "My Update" — carried on the report so the
         # Markdown/HTML/Notion/Confluence exports can embed them.
         images=tuple(p for paths in self_reported_images.values() for p in paths),
+        # Rebuilt from the updates, not from `practices`, so a member dropped
+        # between detection and the report can never inflate the team count.
+        practice_rollup=habits.rollup({m.name: m.practices for m in member_updates if m.practices}),
     )
 
     # 6. Deliver, then record the run (so delivery status is captured).

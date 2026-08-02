@@ -69,11 +69,11 @@ class TestCollect:
     def test_tags_source_and_counts(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.tools.jira.jira_recent_activity",
-            lambda project, days=1, since=None: [{"author": "Alice", "kind": "issue", "title": "t"}],
+            lambda project, days=1, since=None, **kw: [{"author": "Alice", "kind": "issue", "title": "t"}],
         )
         monkeypatch.setattr(
             "yeaboi.tools.local_git.local_git_recent_commits",
-            lambda path, days=1, since=None: [{"author": "Bob", "kind": "commit", "title": "c"}],
+            lambda path, days=1, since=None, **kw: [{"author": "Bob", "kind": "commit", "title": "c"}],
         )
         bundle = collect_recent_activity(
             days=1,
@@ -92,7 +92,7 @@ class TestCollect:
         monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", boom)
         monkeypatch.setattr(
             "yeaboi.tools.local_git.local_git_recent_commits",
-            lambda path, days=1, since=None: [{"author": "Bob", "kind": "commit", "title": "c"}],
+            lambda path, days=1, since=None, **kw: [{"author": "Bob", "kind": "commit", "title": "c"}],
         )
         bundle = collect_recent_activity(
             sources={SOURCE_JIRA, SOURCE_LOCAL_GIT},
@@ -157,13 +157,13 @@ class TestCollect:
     def test_source_auth_error_recorded(self, monkeypatch):
         from yeaboi.standup.errors import StandupSourceError
 
-        def auth_fail(project, days=1, since=None):
+        def auth_fail(project, days=1, since=None, **kw):
             raise StandupSourceError("jira", "authentication failed — check token")
 
         monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", auth_fail)
         monkeypatch.setattr(
             "yeaboi.tools.local_git.local_git_recent_commits",
-            lambda path, days=1, since=None: [{"author": "Bob", "kind": "commit", "title": "c"}],
+            lambda path, days=1, since=None, **kw: [{"author": "Bob", "kind": "commit", "title": "c"}],
         )
         bundle = collect_recent_activity(
             sources={SOURCE_JIRA, SOURCE_LOCAL_GIT}, jira_project="PROJ", local_repo_path="/tmp/r"
@@ -213,11 +213,11 @@ class TestSincePassthrough:
 
         seen: dict = {}
 
-        def fake_jira(project, days=1, since=None):
+        def fake_jira(project, days=1, since=None, **kw):
             seen["jira"] = since
             return []
 
-        def fake_local(path, days=1, since=None):
+        def fake_local(path, days=1, since=None, **kw):
             seen["local_git"] = since
             return []
 
@@ -247,7 +247,7 @@ class TestSkippedSources:
         assert "azdo_repos" not in skipped
 
     def test_explicit_sources_record_no_skips(self, monkeypatch):
-        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", lambda project, days=1, since=None: [])
+        monkeypatch.setattr("yeaboi.tools.jira.jira_recent_activity", lambda project, days=1, since=None, **kw: [])
         bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ")
         assert bundle.skipped == []
 
@@ -275,13 +275,17 @@ class TestAzdoReposSource:
     def test_merges_commits_and_prs(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.tools.azure_devops.azdevops_recent_commits",
-            lambda project, days=1, since=None: [{"author": "A", "kind": "commit", "title": "c", "key": "abc12345"}],
+            lambda project, days=1, since=None, **kw: [
+                {"author": "A", "kind": "commit", "title": "c", "key": "abc12345"}
+            ],
         )
         monkeypatch.setattr(
             "yeaboi.tools.azure_devops.azdevops_recent_prs",
-            lambda project, days=1, since=None: [{"author": "A", "kind": "pr", "title": "p", "key": "!1"}],
+            lambda project, days=1, since=None, **kw: [{"author": "A", "kind": "pr", "title": "p", "key": "!1"}],
         )
-        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_recent_reviews", lambda project, days=1, since=None: [])
+        monkeypatch.setattr(
+            "yeaboi.tools.azure_devops.azdevops_recent_reviews", lambda project, days=1, since=None, **kw: []
+        )
         bundle = collect_recent_activity(sources={collector.SOURCE_AZDO_REPOS}, azdo_project="Proj")
         assert dict(bundle.counts) == {collector.SOURCE_AZDO_REPOS: 2}
         assert {i["kind"] for i in bundle.items} == {"commit", "pr"}
@@ -310,7 +314,7 @@ class TestDedupe:
     def test_local_git_constant_key_does_not_collapse_distinct_commits(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.tools.local_git.local_git_recent_commits",
-            lambda path, days=1, since=None: [
+            lambda path, days=1, since=None, **kw: [
                 {"author": "A", "kind": "commit", "title": "first", "key": "local"},
                 {"author": "A", "kind": "commit", "title": "second", "key": "local"},
             ],
@@ -321,7 +325,7 @@ class TestDedupe:
     def test_distinct_ticket_events_survive(self, monkeypatch):
         monkeypatch.setattr(
             "yeaboi.tools.jira.jira_recent_activity",
-            lambda project, days=1, since=None: [
+            lambda project, days=1, since=None, **kw: [
                 {"author": "A", "kind": "update", "title": "moved PROJ-1 'x' to In Review", "key": "PROJ-1"},
                 {"author": "A", "kind": "update", "title": "moved PROJ-1 'x' to Done", "key": "PROJ-1"},
             ],
@@ -341,3 +345,58 @@ class TestTotalExcludeKinds:
         )
         assert b.total() == 3
         assert b.total(exclude_kinds=("wip",)) == 1
+
+
+class TestReferenceTickets:
+    """Open tickets fetched as matching context for the practice rules.
+
+    They are not activity, and the collector must keep that distinction under
+    every failure mode — putting them in `items` would give them evidence rows,
+    category counts and prompt tokens.
+    """
+
+    def _jira(self, monkeypatch, *, open_tickets):
+        monkeypatch.setattr(
+            "yeaboi.tools.jira.jira_recent_activity",
+            lambda project, days=1, since=None, **kw: [{"author": "Alice", "kind": "issue", "title": "t"}],
+        )
+        monkeypatch.setattr("yeaboi.tools.jira.jira_open_tickets", open_tickets)
+
+    def test_open_tickets_land_off_the_activity_stream(self, monkeypatch):
+        self._jira(
+            monkeypatch,
+            open_tickets=lambda project, **kw: [{"kind": "ticket_context", "key": "PROJ-9", "title": "Old work"}],
+        )
+        bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ")
+
+        assert bundle.total() == 1  # the issue only
+        assert dict(bundle.counts) == {SOURCE_JIRA: 1}  # context is not counted as activity
+        assert [t["key"] for t in bundle.reference_tickets] == ["PROJ-9"]
+        assert bundle.reference_tickets[0]["source"] == SOURCE_JIRA
+
+    def test_a_failing_context_fetch_never_costs_the_activity(self, monkeypatch):
+        # This runs inside the source fetcher, AFTER its activity succeeded —
+        # letting it raise would make _run_source discard that activity.
+        def boom(*a, **k):
+            raise RuntimeError("jql rejected")
+
+        self._jira(monkeypatch, open_tickets=boom)
+        bundle = collect_recent_activity(sources={SOURCE_JIRA}, jira_project="PROJ")
+
+        assert bundle.total() == 1
+        assert bundle.reference_tickets == []
+        assert bundle.errors == []  # nothing worth telling a user about
+
+    def test_context_survives_the_roster_filter(self, monkeypatch):
+        # _rebuild_bundle drops non-roster ACTIVITY; dropping context alongside
+        # it would quietly weaken the rules' ability to excuse a change.
+        from yeaboi.standup.engine import _filter_bundle_to_members
+
+        bundle = ActivityBundle(
+            items=[{"author": "Outsider", "kind": "commit", "title": "c", "source": SOURCE_JIRA}],
+            counts=[(SOURCE_JIRA, 1)],
+            reference_tickets=[{"kind": "ticket_context", "key": "PROJ-9"}],
+        )
+        filtered = _filter_bundle_to_members(bundle, {"Alice": {"alice"}})
+        assert filtered.items == []
+        assert [t["key"] for t in filtered.reference_tickets] == ["PROJ-9"]

@@ -38,6 +38,9 @@ _CONFIG_DEFAULTS = {
     "automation_handling": "exclude",
     "transcript_dir": "",
     "transcript_review_enabled": True,
+    "habit_detection": "on",
+    "habit_rules": "",
+    "habit_ai_match": "on",
 }
 
 
@@ -183,6 +186,55 @@ def _standup_history(session_id: str, limit: int) -> dict:
     return {"session_id": resolved, "history": history, "latest_report": latest}
 
 
+def _standup_practice_feedback(session_id: str, member: str, rule: str, verdict: str, note: str, run_id: int) -> dict:
+    from yeaboi.mcp.tools_sessions import resolve_session_id
+    from yeaboi.paths import get_db_path
+    from yeaboi.standup import practice_feedback
+    from yeaboi.standup.habits import ALL_RULES
+    from yeaboi.standup.store import StandupStore
+
+    if not str(member or "").strip():
+        raise ValueError("member is required — a verdict is always about one person's signal")
+    if rule not in ALL_RULES:
+        raise ValueError(f"unknown practice rule {rule!r} — valid: {', '.join(ALL_RULES)}")
+    if verdict not in practice_feedback.VERDICTS:
+        raise ValueError(f"verdict must be one of {', '.join(practice_feedback.VERDICTS)}, got {verdict!r}")
+
+    resolved = resolve_session_id(session_id)
+    member = member.strip()
+    with StandupStore(get_db_path()) as store:
+        # 0 is the MCP-schema stand-in for "not given" (the tool takes an int,
+        # not an optional), and means the session's latest run.
+        target = run_id or store.get_latest_run_id(resolved)
+        # Read the signal before the write so an unapplied verdict can say which
+        # of the two ordinary causes it hit. Neither is an error: one is a stale
+        # view, the other a report older than this feature.
+        signal = practice_feedback.find_signal(store.get_run_by_id(target) if target else None, member, rule)
+        applied = practice_feedback.apply_verdict(
+            store,
+            session_id=resolved,
+            member=member,
+            rule=rule,
+            verdict=verdict,
+            note=note or "",
+            run_id=target,
+        )
+        ledger = practice_feedback.load(store, resolved)
+    if applied:
+        reason = ""
+    elif signal is None:
+        reason = f"no {rule} signal for {member} in that run — it may already have been answered"
+    else:
+        reason = f"that {rule} signal predates practice feedback, so there is nothing to remember"
+    return {
+        "session_id": resolved,
+        "applied": applied,
+        "reason": reason,
+        "excused_changes": len(ledger.excused),
+        "confirmed_changes": len(ledger.confirmed),
+    }
+
+
 def _standup_repositories(code_sources: list | None) -> dict:
     from yeaboi.standup.code_scope import CODE_SOURCES, discover_code_repositories, validate_code_sources
 
@@ -227,12 +279,16 @@ def _standup_config_set(
     automation_handling: str | None,
     transcript_dir: str | None,
     transcript_review_enabled: bool | None,
+    habit_detection: str | None,
+    habit_rules: str | None,
+    habit_ai_match: str | None,
 ) -> dict:
     from yeaboi.mcp.tools_sessions import resolve_session_id
     from yeaboi.paths import get_db_path
     from yeaboi.standup.automation import VALID_AUTOMATION_HANDLING
     from yeaboi.standup.code_scope import validate_code_sources
     from yeaboi.standup.documentation_scope import validate_documentation_sources
+    from yeaboi.standup.habits import VALID_HABIT_HANDLING, validate_habit_rules
     from yeaboi.standup.roster import validate_tracker_sources
     from yeaboi.standup.store import StandupStore
 
@@ -257,6 +313,13 @@ def _standup_config_set(
         raise ValueError(
             f"automation_handling must be one of {', '.join(VALID_AUTOMATION_HANDLING)}, got {automation_handling!r}"
         )
+    if habit_detection is not None and habit_detection not in VALID_HABIT_HANDLING:
+        raise ValueError(f"habit_detection must be one of {', '.join(VALID_HABIT_HANDLING)}, got {habit_detection!r}")
+    # Raises on an unknown rule id rather than silently dropping it — a typo'd
+    # rule would otherwise read as "that rule is switched off".
+    if habit_ai_match is not None and habit_ai_match not in VALID_HABIT_HANDLING:
+        raise ValueError(f"habit_ai_match must be one of {', '.join(VALID_HABIT_HANDLING)}, got {habit_ai_match!r}")
+    normalized_rules = None if habit_rules is None else validate_habit_rules(habit_rules)
     resolved = resolve_session_id(session_id)
     with StandupStore(get_db_path()) as store:
         current = store.load_config(resolved) or dict(_CONFIG_DEFAULTS)
@@ -323,6 +386,9 @@ def _standup_config_set(
                 if transcript_review_enabled is None
                 else transcript_review_enabled
             ),
+            "habit_detection": (current.get("habit_detection", "on") if habit_detection is None else habit_detection),
+            "habit_rules": (current.get("habit_rules", "") if normalized_rules is None else normalized_rules),
+            "habit_ai_match": (current.get("habit_ai_match", "on") if habit_ai_match is None else habit_ai_match),
         }
         store.save_config(resolved, **merged)
     logger.info("Standup config updated via MCP: session=%s enabled=%s", resolved, merged["enabled"])
@@ -443,6 +509,32 @@ def register(app) -> None:
         return await run_readonly(_standup_history, session_id, limit)
 
     @app.tool()
+    async def standup_practice_feedback(
+        member: str,
+        rule: str,
+        verdict: str,
+        session_id: str = "",
+        note: str = "",
+        run_id: int = 0,
+    ) -> dict:
+        """Tell the standup whether an engineering-practice signal was right about someone.
+
+        member is the name exactly as it appears in the report; rule is one of untracked-work,
+        untracked-docs, board-not-updated, wip-sprawl, large-change, no-pull-request,
+        commit-messages; verdict is 'down' (the signal was wrong) or 'up' (it was right).
+
+        'down' removes that signal from the stored report and remembers every change behind it,
+        so none of them is ever reported for that rule again. 'up' leaves the report alone and
+        records the change as a confirmed true positive. Both feed the optional LLM matching pass
+        as calibration, so note is worth writing on a 'down' — one sentence on why it was wrong
+        (e.g. 'that PR is the spike ticket, it just does not name it').
+
+        Returns applied=false, with a reason, when that member has no such signal in the run —
+        an already-voted or already-regenerated report, not an error. run_id 0 = the latest run.
+        Blank session_id = most recent session."""
+        return await run_readonly(_standup_practice_feedback, session_id, member, rule, verdict, note, run_id)
+
+    @app.tool()
     async def standup_config_get(session_id: str = "") -> dict:
         """Get a session's standup configuration (time, weekdays, delivery channels, aliases).
         config is null when nothing is configured yet. Blank session_id = most recent session."""
@@ -469,6 +561,9 @@ def register(app) -> None:
         automation_handling: str | None = None,
         transcript_dir: str | None = None,
         transcript_review_enabled: bool | None = None,
+        habit_detection: str | None = None,
+        habit_rules: str | None = None,
+        habit_ai_match: str | None = None,
     ) -> dict:
         """Update a session's standup configuration; omitted fields keep their current value.
         time is HH:MM (the meeting time), weekdays like '1-5' or '1,3,5', delivery_channels from
@@ -483,6 +578,11 @@ def register(app) -> None:
         transcript_dir is an optional EXTERNAL folder of standup meeting transcripts (the
         managed ~/.yeaboi/transcripts folder is always swept); transcript_review_enabled
         turns off the automatic transcript review that runs before each standup.
+        habit_detection turns the deterministic engineering-practice signals on/off ('on' default);
+        habit_rules is a comma-separated subset of untracked-work, untracked-docs, board-not-updated,
+        wip-sprawl, large-change, no-pull-request, commit-messages (empty = all of them).
+        habit_ai_match is 'on' (default) or 'off': when on, an LLM pass may excuse a change that
+        belongs to a ticket it never names. It can only ever suppress a signal, never raise one.
         NOTE: this saves the config only — installing the OS schedule (launchd/cron) is
         machine-local and done from the yeaboi TUI. Blank session_id = most recent session."""
         return await run_readonly(
@@ -506,4 +606,7 @@ def register(app) -> None:
             automation_handling,
             transcript_dir,
             transcript_review_enabled,
+            habit_detection,
+            habit_rules,
+            habit_ai_match,
         )

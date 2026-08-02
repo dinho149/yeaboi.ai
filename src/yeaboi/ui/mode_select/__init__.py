@@ -3307,6 +3307,116 @@ def _run_standup_saved_setup_confirm(
             return "cancel"
 
 
+def _run_standup_practice_review(
+    console: Console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    session_id: str,
+    member: str,
+    signals: list,
+) -> str:
+    """Record the reader's verdict on each of one member's practice signals.
+
+    A verdict per row rather than a checkbox list: the two answers do different
+    things (a thumbs-down suppresses and teaches, a thumbs-up only teaches), and
+    "unanswered" has to stay distinct from "answered no" or every signal nobody
+    looked at would count as confirmed.
+
+    Notes are asked for only on a thumbs-down, once per signal, after Enter — a
+    prompt per row while voting would make saying "that one's wrong" cost a
+    paragraph, and the whole point is that it costs a keystroke.
+
+    Returns a status line for the page below it.
+    """
+    from yeaboi.standup import practice_feedback
+    from yeaboi.standup.store import StandupStore
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_practice_review_screen
+
+    verdicts: dict[int, str] = {}
+    cursor = 0
+    message = ""
+    while True:
+        w, h = console.size
+        live.update(
+            _build_standup_practice_review_screen(
+                member, signals, verdicts, cursor, width=w, height=max(10, h - 1), message=message
+            )
+        )
+        key = read_key(timeout=frame_time) if supports_timeout else read_key()
+        if key in ("up", "scroll_up") and signals:
+            cursor = (cursor - 1) % len(signals)
+        elif key in ("down", "scroll_down") and signals:
+            cursor = (cursor + 1) % len(signals)
+        elif key in ("y", "Y") and signals:
+            verdicts[cursor] = practice_feedback.VERDICT_UP
+            message = ""
+        elif key in ("n", "N") and signals:
+            verdicts[cursor] = practice_feedback.VERDICT_DOWN
+            message = ""
+        elif key in ("c", "C") and signals:
+            verdicts.pop(cursor, None)
+            message = ""
+        elif key == "enter":
+            answered = {i: v for i, v in verdicts.items() if v}
+            if not answered:
+                message = "Answer at least one signal, or press Esc to leave them all alone."
+                continue
+            break
+        elif key in ("esc", "q"):
+            logger.info("standup: practice review cancelled for %s", member)
+            return ""
+
+    notes: dict[int, str] = {}
+    for idx in sorted(answered):
+        if answered[idx] != practice_feedback.VERDICT_DOWN:
+            continue
+        typed = _standup_read_line(
+            console,
+            live,
+            read_key,
+            frame_time,
+            supports_timeout,
+            prompt="Why was this wrong? (Enter to skip)",
+            step=f"Practices — {signals[idx].title}",
+            box_rows=3,
+        )
+        # Esc on the note cancels the note, not the verdict: the reader has
+        # already said the signal was wrong, and making them re-navigate to say
+        # it again would be the surest way to stop them ever saying it.
+        notes[idx] = typed or ""
+
+    applied = 0
+    try:
+        with StandupStore(_get_db_path()) as store:
+            for idx, verdict in sorted(answered.items()):
+                if practice_feedback.apply_verdict(
+                    store,
+                    session_id=session_id,
+                    member=member,
+                    rule=signals[idx].rule,
+                    verdict=verdict,
+                    note=notes.get(idx, ""),
+                ):
+                    applied += 1
+    except Exception as e:  # a feedback nicety must never take the page down
+        logger.error("standup: recording practice feedback failed: %s", e, exc_info=True)
+        return f"Could not save feedback: {e}"
+
+    hidden = sum(1 for i, v in answered.items() if v == practice_feedback.VERDICT_DOWN)
+    logger.info("standup: %d practice verdict(s) recorded for %s (%d hidden)", applied, member, hidden)
+    if not applied:
+        return "Those signals are no longer in the report — nothing recorded."
+    if hidden:
+        return f"Thanks — {_count_word(hidden, 'signal')} hidden and won't come back."
+    return f"Thanks — {_count_word(applied, 'signal')} confirmed."
+
+
+def _count_word(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
 def _standup_team_configure(
     console: Console,
     live,
@@ -3456,6 +3566,9 @@ def _standup_team_configure(
             automation_handling=merged.get("automation_handling", "exclude"),
             transcript_dir=merged.get("transcript_dir", ""),
             transcript_review_enabled=merged.get("transcript_review_enabled", True),
+            habit_detection=merged.get("habit_detection", "on"),
+            habit_rules=merged.get("habit_rules", ""),
+            habit_ai_match=merged.get("habit_ai_match", "on"),
         )
     logger.info(
         "standup team: saved session=%s sources=%s members=%d",
@@ -3620,6 +3733,9 @@ def _standup_code_configure(
             automation_handling=merged.get("automation_handling", "exclude"),
             transcript_dir=merged.get("transcript_dir", ""),
             transcript_review_enabled=merged.get("transcript_review_enabled", True),
+            habit_detection=merged.get("habit_detection", "on"),
+            habit_rules=merged.get("habit_rules", ""),
+            habit_ai_match=merged.get("habit_ai_match", "on"),
         )
     return True, (
         f"Code scope saved — {len(selected_github)} GitHub repo(s), {len(selected_azdo_projects)} Azure project(s)."
@@ -3718,6 +3834,9 @@ def _standup_documentation_configure(
             automation_handling=merged.get("automation_handling", "exclude"),
             transcript_dir=merged.get("transcript_dir", ""),
             transcript_review_enabled=merged.get("transcript_review_enabled", True),
+            habit_detection=merged.get("habit_detection", "on"),
+            habit_rules=merged.get("habit_rules", ""),
+            habit_ai_match=merged.get("habit_ai_match", "on"),
         )
     return True, f"Documentation scope saved — {len(selected)} provider(s); repository docs included."
 
@@ -3893,6 +4012,9 @@ def _standup_transcripts_configure(
             automation_handling=merged.get("automation_handling", "exclude"),
             transcript_dir=chosen_dir,
             transcript_review_enabled=auto,
+            habit_detection=merged.get("habit_detection", "on"),
+            habit_rules=merged.get("habit_rules", ""),
+            habit_ai_match=merged.get("habit_ai_match", "on"),
         )
     logger.info(
         "standup transcripts configured: session=%s dir=%s auto=%s",
@@ -4266,6 +4388,9 @@ def _run_standup_schedule_wizard(
             automation_handling=existing.get("automation_handling", "exclude"),
             transcript_dir=existing.get("transcript_dir", ""),
             transcript_review_enabled=existing.get("transcript_review_enabled", True),
+            habit_detection=existing.get("habit_detection", "on"),
+            habit_rules=existing.get("habit_rules", ""),
+            habit_ai_match=existing.get("habit_ai_match", "on"),
         )
     if enabled:
         msg = install_schedule(session_id, time_val, weekdays, lead_val)
@@ -4372,6 +4497,9 @@ def _standup_identity_configure(console: Console, live, read_key, frame_time, su
             automation_handling=existing.get("automation_handling", "exclude"),
             transcript_dir=existing.get("transcript_dir", ""),
             transcript_review_enabled=existing.get("transcript_review_enabled", True),
+            habit_detection=existing.get("habit_detection", "on"),
+            habit_rules=existing.get("habit_rules", ""),
+            habit_ai_match=existing.get("habit_ai_match", "on"),
         )
     logger.info("standup identity: saved (session=%s)", session_id)
     return "Identity saved."
@@ -5841,11 +5969,39 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
     anon = None
     anon_instruction = ""
 
+    def _detail_member_update():
+        """The MemberUpdate this detail view is showing, or None elsewhere."""
+        report = data.get("report")
+        if report is None:
+            return None
+        if view == "my_update":
+            name = data.get("my_name", "")
+        elif view.startswith("member:"):
+            name = view.split(":", 1)[1]
+        else:
+            return None
+        return next((m for m in report.member_updates if m.name == name), None)
+
+    def _votable_practices() -> list:
+        """This member's practice signals a verdict can be recorded against.
+
+        Empty while anonymized: the names on screen are masked, so a verdict
+        cast here would be about a person the store cannot match.
+        """
+        from yeaboi.standup import practice_feedback
+
+        if anon is not None:
+            return []
+        member = _detail_member_update()
+        return list(practice_feedback.votable(getattr(member, "practices", ()) or ()))
+
     def _actions() -> list[str]:
         if view == "overview":
             base = ["Generate", "Review", "Team", "Anonymize", "Identity", "Back"]
         else:
             base = ["Back", "Export", "Anonymize"]
+            if _votable_practices():
+                base.insert(1, "Practices")
         if data.get("report") is not None:
             base.insert(-1, "Share Online")
         if anon is not None:  # swap Anonymize → Adjust + Revert while masked
@@ -5981,6 +6137,29 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     msg = f"Transcript review failed: {e}"
                 data = _collect_standup_data(message=msg or "")
                 _reset_to_overview()
+            elif act == "Practices":  # was the coaching note right about this person?
+                logger.info("standup: Practices pressed (session=%s, view=%s)", session_id, view)
+                member = _detail_member_update()
+                msg = _run_standup_practice_review(
+                    console,
+                    live,
+                    read_key,
+                    frame_time,
+                    supports_timeout,
+                    session_id,
+                    getattr(member, "name", ""),
+                    _votable_practices(),
+                )
+                # A thumbs-down rewrote the stored report, so re-read it rather
+                # than filtering the copy on screen — the two must not disagree.
+                # Unlike every other refresh here we stay in the detail view, so
+                # the expanded-team flag has to be carried over by hand or the
+                # member rows this view was opened from vanish underneath it.
+                data = _collect_standup_data(message=msg)
+                data["team_expanded"] = team_expanded
+                # "Practices" disappears once the last signal is answered, which
+                # would otherwise leave the cursor past the end of the row.
+                sel = min(sel, len(_actions()) - 1)
             elif act == "Export":  # pick a destination (files / Notion / Confluence)
                 logger.info("standup: Export pressed (session=%s)", session_id)
                 if anon is not None:  # export the masked copy, matching the screen
@@ -6023,16 +6202,29 @@ def _run_standup_page(console: Console, live, read_key, frame_time: float, suppo
                     from yeaboi.ui.shared._components import STANDUP_THEME, standup_title
 
                     share_history = []
+                    share_run_id = None
                     if anon is None:  # masked shares carry no charts — skip the query
                         with _SStore(_ana_dbp) as _sstore:
                             share_history = _sstore.get_history(session_id, limit=30)
+                            share_run_id = _sstore.get_latest_run_id(session_id)
                     _run_output_share_flow(
                         console,
                         live,
                         read_key,
                         frame_time,
                         supports_timeout,
-                        document=standup_document(report, anon=anon, history=share_history),
+                        # session_id + run_id make the share correctable: a reader
+                        # who knows a practice signal is wrong can say so, and it
+                        # is written back here. Withheld while anonymized — the
+                        # names on that page are masks.
+                        document=standup_document(
+                            report,
+                            anon=anon,
+                            history=share_history,
+                            session_id="" if anon is not None else session_id,
+                            run_id=share_run_id or 0,
+                            db_path=_ana_dbp,
+                        ),
                         theme=STANDUP_THEME,
                         title_fn=standup_title,
                     )

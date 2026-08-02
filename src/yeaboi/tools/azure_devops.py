@@ -31,6 +31,7 @@ from yeaboi.config import (
     get_azure_devops_team,
     get_azure_devops_token,
 )
+from yeaboi.ticket_text import strip_html, ticket_text
 
 logger = logging.getLogger(__name__)
 _AZDO_DETAIL_SEMAPHORE = threading.BoundedSemaphore(6)
@@ -903,7 +904,47 @@ def _work_item_url(project: str, wi_id: str) -> str:
     return f"{base}/{quote(project)}/_workitems/edit/{wi_id}"
 
 
-def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> list[dict]:
+# The long-form fields the standup's practice matcher reads. They ride the
+# get_work_items batch we already make, so requesting them costs no extra
+# round trip. Azure DevOps has no per-work-item definition of done — it is a
+# per-team board-column property on a different API entirely — so the DoD half
+# of the Jira signal simply has no equivalent here.
+_AZDO_TEXT_FIELDS = ["System.Description", "Microsoft.VSTS.Common.AcceptanceCriteria"]
+
+
+def _get_work_items_with_text(wit_client, ids: list, base_fields: list[str], text_fields: list[str]) -> list:
+    """``get_work_items`` with the long-form fields, falling back to base on rejection.
+
+    A custom inherited process can remove AcceptanceCriteria, and Azure DevOps
+    answers a request naming a field its project does not have with a 400 — which
+    would empty the entire ticketing source. The description is a bonus; the work
+    items are the product.
+    """
+    if text_fields:
+        try:
+            return wit_client.get_work_items(ids, fields=[*base_fields, *text_fields]) or []
+        except Exception as e:
+            logger.warning("azdevops: work items with description/acceptance failed (%s) — retrying without", e)
+    return wit_client.get_work_items(ids, fields=base_fields) or []
+
+
+def _azdo_ticket_body(f: dict) -> str:
+    """A work item's description + acceptance criteria, flattened to plain text.
+
+    Both fields are HTML on Azure DevOps. Flattened rather than stripped naively
+    so bullet and paragraph boundaries survive — an acceptance list collapsed
+    onto one line reads as a single sentence to the matcher.
+    """
+    return ticket_text(
+        f.get("System.Description", "") or "",
+        f.get("Microsoft.VSTS.Common.AcceptanceCriteria", "") or "",
+        flatten=strip_html,
+    )
+
+
+def azdevops_recent_activity(
+    project: str = "", days: int = 1, since=None, *, include_ticket_text: bool = False
+) -> list[dict]:
     """Return work items changed since the window start, plus in-progress (WIP) items.
 
     The window is ``since → now`` when ``since`` (a datetime — always a midnight
@@ -915,6 +956,13 @@ def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> li
     change (System.ChangedBy), falling back to the assignee. WIP items
     (kind='wip') are assigned in-progress tickets untouched in the window —
     credited to their assignee — so quiet in-flight work stays visible.
+
+    ``include_ticket_text`` additionally puts each work item's description and
+    acceptance criteria on ``body``. Only the standup asks for it (its practice
+    rules match a change against the ticket it may belong to); reporting and
+    performance reuse this function over much longer windows and would pay for
+    text they drop immediately.
+
     Returns [] when Azure DevOps is unconfigured or the WIQL query fails.
     """
     project = project or get_azure_devops_project() or ""
@@ -952,12 +1000,13 @@ def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> li
             "System.ChangedBy",
             "System.ChangedDate",
         ]
+        text_fields = _AZDO_TEXT_FIELDS if include_ticket_text else []
         result = wit_client.query_by_wiql(wiql, top=100)
         items: list[dict] = []
         seen_ids: set[str] = set()
         if result.work_items:
             ids = [wi.id for wi in result.work_items]
-            work_items = wit_client.get_work_items(ids, fields=fields)
+            work_items = _get_work_items_with_text(wit_client, ids, fields, text_fields)
             for item in work_items:
                 f = item.fields
                 assigned_name, assigned_email = _identity_fields(f.get("System.AssignedTo"))
@@ -978,9 +1027,10 @@ def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> li
                         "timestamp": str(f.get("System.ChangedDate", ""))[:19],
                         "key": f"#{wi_id}",
                         "url": _work_item_url(project, wi_id),
+                        **({"body": _azdo_ticket_body(f)} if include_ticket_text else {}),
                     }
                 )
-        items.extend(_azdo_wip_items(wit_client, project, safe_project, seen_ids, fields))
+        items.extend(_azdo_wip_items(wit_client, project, safe_project, seen_ids, fields, text_fields))
         logger.info("azdevops_recent_activity: %d item(s) in last %d day(s)", len(items), days_back)
         return items
     except ValueError as e:
@@ -992,6 +1042,70 @@ def azdevops_recent_activity(project: str = "", days: int = 1, since=None) -> li
         return []
     except Exception as e:
         logger.warning("azdevops_recent_activity unexpected error: %s", e)
+        return []
+
+
+# States that mean "this ticket is finished". WIQL cannot query the state
+# CATEGORY portably, so the not-done filter is a name list, exactly as
+# _azdo_wip_items lists the in-progress names. A custom state that is really
+# done but is not listed here just leaves a ticket in the matching context —
+# harmless, since context can only ever suppress a report.
+_AZDO_DONE_STATES = ("Closed", "Done", "Removed", "Resolved", "Completed")
+
+
+def azdevops_open_work_items(project: str = "", *, limit: int = 200) -> list[dict]:
+    """Open (not-done) work items with their description and acceptance criteria.
+
+    These are NOT activity — see :func:`yeaboi.tools.jira.jira_open_tickets` for
+    the full rationale. Items carry ``kind="ticket_context"``. Returns [] on any
+    failure.
+    """
+    project = project.strip() or (get_azure_devops_project() or "")
+    if not project:
+        return []
+    try:
+        from azure.devops.v7_1.work_item_tracking.models import Wiql
+
+        wit_client, _ = _make_azdo_clients()
+        safe_project = project.replace("'", "''")
+        done = ", ".join(f"'{state}'" for state in _AZDO_DONE_STATES)
+        wiql = Wiql(
+            query=(
+                "SELECT [System.Id] FROM WorkItems"  # noqa: S608 - read-only WIQL; project escaped, states are literals
+                f" WHERE [System.TeamProject] = '{safe_project}'"
+                f" AND [System.State] NOT IN ({done})"
+                " ORDER BY [System.ChangedDate] DESC"
+            )
+        )
+        # get_work_items takes at most 200 ids in one batch, so the cap is a real
+        # bound rather than a courtesy.
+        result = wit_client.query_by_wiql(wiql, top=max(1, min(int(limit), 200)))
+        if not result.work_items:
+            return []
+        ids = [wi.id for wi in result.work_items]
+        base = ["System.Id", "System.Title", "System.State", "System.AssignedTo"]
+        out: list[dict] = []
+        for item in _get_work_items_with_text(wit_client, ids, base, _AZDO_TEXT_FIELDS):
+            f = item.fields
+            wi_id = str(f.get("System.Id", ""))
+            assigned_name, assigned_email = _identity_fields(f.get("System.AssignedTo"))
+            out.append(
+                {
+                    "author": assigned_name,
+                    "author_email": assigned_email,
+                    "kind": "ticket_context",
+                    "title": f.get("System.Title", ""),
+                    "status": f.get("System.State", ""),
+                    "timestamp": "",
+                    "key": f"#{wi_id}",
+                    "url": _work_item_url(project, wi_id),
+                    "body": _azdo_ticket_body(f),
+                }
+            )
+        logger.info("azdevops_open_work_items: %d open item(s) for matching context", len(out))
+        return out
+    except Exception as e:
+        logger.warning("azdevops_open_work_items failed: %s", e)
         return []
 
 
@@ -1054,8 +1168,21 @@ def azdevops_assignee_roster(project: str = "", days: int = 30) -> list[dict]:
         raise RuntimeError(_azdo_error_msg(exc)) from exc
 
 
-def _azdo_wip_items(wit_client, project: str, safe_project: str, seen_ids: set[str], fields: list[str]) -> list[dict]:
-    """Assigned in-progress work items — best-effort, degrades to [] on any failure."""
+def _azdo_wip_items(
+    wit_client,
+    project: str,
+    safe_project: str,
+    seen_ids: set[str],
+    fields: list[str],
+    text_fields: list[str] | None = None,
+) -> list[dict]:
+    """Assigned in-progress work items — best-effort, degrades to [] on any failure.
+
+    ``text_fields`` is threaded through rather than rediscovered so a carried-WIP
+    item arrives with the same ``body`` as one the changed-in-window query
+    returned; without it these tickets would be title-only and invisible to the
+    standup's relatedness matching.
+    """
     try:
         from azure.devops.v7_1.work_item_tracking.models import Wiql
 
@@ -1073,7 +1200,7 @@ def _azdo_wip_items(wit_client, project: str, safe_project: str, seen_ids: set[s
             return []
         ids = [wi.id for wi in result.work_items]
         out: list[dict] = []
-        for item in wit_client.get_work_items(ids, fields=fields):
+        for item in _get_work_items_with_text(wit_client, ids, fields, text_fields or []):
             f = item.fields
             wi_id = str(f.get("System.Id", ""))
             if wi_id in seen_ids:
@@ -1091,6 +1218,7 @@ def _azdo_wip_items(wit_client, project: str, safe_project: str, seen_ids: set[s
                     "timestamp": str(f.get("System.ChangedDate", ""))[:19],
                     "key": f"#{wi_id}",
                     "url": _work_item_url(project, wi_id),
+                    **({"body": _azdo_ticket_body(f)} if text_fields else {}),
                 }
             )
         return out
@@ -1419,6 +1547,55 @@ def _azdo_pr_changed_files(
         return []
 
 
+def _azdo_pr_work_item_ids(
+    git_client,
+    *,
+    project: str,
+    repository_id: str,
+    pr_id,
+    metadata_cache=None,
+) -> tuple[list[str], bool]:
+    """Work-item ids linked to an Azure Repos PR, plus whether the lookup succeeded.
+
+    The list endpoint that produced the PR does **not** populate
+    ``work_item_refs`` (which is why ``team_learning._azdo_pr_matches_work_item``
+    falls back to substring matching), so the links need their own call.
+
+    Returns ``(ids, known)``. ``known`` is the load-bearing half: an empty list
+    with ``known=True`` means "this PR really has no linked work item" — the
+    fact the untracked-work habit rule fires on — while ``known=False`` means
+    the lookup failed and the caller must stay silent. Conflating the two would
+    turn a transient API error into an accusation aimed at a named person.
+    """
+    if not pr_id:
+        return [], False
+
+    def _fetch() -> list[str]:
+        with _AZDO_DETAIL_SEMAPHORE:
+            refs = git_client.get_pull_request_work_item_refs(repository_id, pr_id, project=project)
+        return [str(rid) for ref in list(refs or ()) if (rid := getattr(ref, "id", None)) is not None]
+
+    try:
+        if metadata_cache is not None:
+            # cache_empty=False, like the changed-file lookups: "no links" is
+            # cheap to re-derive and must never be memoised from a bad run.
+            return list(
+                metadata_cache.get_or_compute(
+                    "azure_devops",
+                    "pr_work_items",
+                    f"{project}:{repository_id}:{pr_id}",
+                    str(pr_id),
+                    _fetch,
+                    cache_empty=False,
+                    replace_revisions=True,
+                )
+            ), True
+        return _fetch(), True
+    except Exception as exc:
+        logger.debug("azdevops PR work-item lookup failed for %s: %s", pr_id, exc)
+        return [], False
+
+
 def _analysis_repository(value):
     """Normalize an inventory dictionary into the SDK-like shape collectors use."""
     if not isinstance(value, dict):
@@ -1686,9 +1863,21 @@ def azdevops_recent_prs(
                 # Standup path: per-PR change lookups capped so a busy window
                 # can't turn into an API call per PR.
                 changed_files: list[dict] = []
+                # Work-item links share the same budget: past the cap we know
+                # neither the files nor the links, and `work_items_known=False`
+                # is what tells the habit rules to stay quiet about this PR.
+                work_item_ids: list[str] = []
+                work_items_known = False
                 if file_lookups < _MAX_CHANGED_FILE_LOOKUPS:
                     file_lookups += 1
                     changed_files = _azdo_pr_changed_files(
+                        git_client,
+                        project=selected_project,
+                        repository_id=repo.id,
+                        pr_id=pr_id,
+                        metadata_cache=metadata_cache,
+                    )
+                    work_item_ids, work_items_known = _azdo_pr_work_item_ids(
                         git_client,
                         project=selected_project,
                         repository_id=repo.id,
@@ -1712,6 +1901,12 @@ def azdevops_recent_prs(
                         "url": f"{repo_web}/pullrequest/{pr_id}" if repo_web and pr_id else "",
                         "repository": f"{selected_project}/{repo.name}",
                         "changed_files": changed_files,
+                        # Work items linked through the PR UI rather than named
+                        # in the branch/title/description — invisible to text
+                        # matching, so they travel as ids. See the docstring on
+                        # _azdo_pr_work_item_ids for why "known" ships with them.
+                        "work_item_ids": work_item_ids,
+                        "work_items_known": work_items_known,
                     }
                 )
             logger.info("azdevops_recent_prs: %d PR(s)", len(items))

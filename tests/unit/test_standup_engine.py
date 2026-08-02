@@ -1942,3 +1942,172 @@ class TestTranscriptEntryPoints:
         result = engine.file_transcript_issues(review_id, db_path=db_path)
         assert result.filed == 1
         assert seen["review"].review_id == review_id
+class TestLlmPayloadKeys:
+    """`engine._for_llm` is a blacklist, so a new grouped key reaches the prompt by default.
+
+    This pins the grouped key set instead of re-listing the blacklist: adding a
+    field to `_group_activity_by_author` fails here, and whoever adds it has to
+    decide out loud whether the model should see it. Without this guard, adding
+    `body` would silently put a full PR description in every member payload.
+    """
+
+    # Split by intent. Anything not in one of these two sets is undecided.
+    FOR_THE_MODEL = frozenset({"kind", "title", "summary", "status", "source", "repository"})
+    RENDERING_AND_RULES_ONLY = frozenset(
+        {"key", "url", "timestamp", "pr_id", "branch", "body", "changed_paths", "work_item_ids", "work_items_known"}
+    )
+
+    def _row(self) -> dict:
+        item = {
+            "author": "Alice",
+            "kind": "pr",
+            "title": "Add retry",
+            "status": "merged",
+            "source": "github",
+            "key": "#91",
+            "url": "https://x/pull/91",
+            "repository": "acme/web",
+            "timestamp": "2026-07-13T09:00:00",
+            "pr_id": "91",
+            "branch": "feature/retry",
+            "body": "A long pull request description that must never reach the prompt.",
+            "changed_files": [f"src/m{i}.py" for i in range(100)],
+            "work_item_ids": ["1234"],
+            "work_items_known": True,
+        }
+        return engine._group_activity_by_author([item], ["Alice"])["Alice"][0]
+
+    def test_every_grouped_key_is_classified(self):
+        undecided = set(self._row()) - self.FOR_THE_MODEL - self.RENDERING_AND_RULES_ONLY
+        assert not undecided, (
+            f"new grouped key(s) {sorted(undecided)} — decide whether the model should see them, "
+            "then add them here and (if not) to engine._for_llm's rendering_only tuple"
+        )
+
+    def test_the_habit_fields_survive_the_grouping(self):
+        row = self._row()
+        assert row["body"].startswith("A long pull request description")
+        assert len(row["changed_paths"]) == 100
+        assert row["work_item_ids"] == ("1234",)
+
+    def test_changed_files_is_renamed_not_carried(self):
+        # categories.split_activity reads these dicts; the canonical key would
+        # silently reclassify docs-only repository events out of Code.
+        assert "changed_files" not in self._row()
+
+
+class TestPracticesReachBothPaths:
+    def _grouped(self) -> dict:
+        return {
+            "Alice": [
+                {
+                    "kind": "pr",
+                    "key": "#91",
+                    "title": "Add retry",
+                    "branch": "feature/retry",
+                    "body": "",
+                    "status": "merged",
+                    "source": "github",
+                    "repository": "acme/web",
+                    "url": "https://x/pull/91",
+                    "work_items_known": True,
+                }
+            ]
+        }
+
+    def test_fallback_path_sets_practices(self):
+        from yeaboi.standup import habits
+
+        practices = habits.detect_practices(self._grouped())
+        updates = engine._build_fallback_member_updates(self._grouped(), {}, practices=practices)
+        assert updates[0].practices
+        assert updates[0].practices[0].rule == habits.RULE_UNTRACKED_WORK
+
+    def test_fallback_path_without_practices_is_empty_not_none(self):
+        updates = engine._build_fallback_member_updates(self._grouped(), {})
+        assert updates[0].practices == ()
+
+
+class TestPracticeFeedbackReachesTheRun:
+    """``run_standup`` reads the ledger itself rather than taking it as a parameter.
+
+    That is why it grew no new argument — every surface that runs a standup gets
+    the team's corrections without having to remember to pass them, and the
+    param-parity check stays green. What matters here is the wiring: both halves
+    of the ledger reach ``detect_practices``, and both are shaped by what the
+    store actually holds. Whether a given signal then fires is
+    ``test_standup_habits.py``'s job.
+    """
+
+    def _spy(self, monkeypatch) -> dict:
+        seen: dict = {}
+        real = engine.habits.detect_practices
+
+        def spy(grouped, **kw):
+            seen.update(kw)
+            return real(grouped, **kw)
+
+        monkeypatch.setattr(engine.habits, "detect_practices", spy)
+        return seen
+
+    def _run(self, monkeypatch, db_path, session):
+        _patch_common(
+            monkeypatch,
+            items=[{"author": "Alice", "kind": "commit", "title": "login page", "source": "github"}],
+            counts=[("github", 1)],
+        )
+        monkeypatch.setattr("yeaboi.config.is_llm_configured", lambda: (False, "no key"))
+        seen = self._spy(monkeypatch)
+        engine.run_standup(session, deliver=False, db_path=db_path, today=date(2026, 7, 10))
+        return seen
+
+    def test_an_empty_ledger_still_supplies_the_seam(self, monkeypatch, db_path, seeded_session):
+        seen = self._run(monkeypatch, db_path, seeded_session)
+        assert callable(seen["feedback"])
+        assert seen["feedback"]("untracked-work", "url:https://x/pull/91") is False
+
+    def test_a_recorded_verdict_reaches_detection(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.record_practice_feedback(
+                seeded_session,
+                rule="untracked-work",
+                handle="url:https://x/pull/91",
+                verdict="down",
+                note="that PR is the spike ticket",
+                subject="#91",
+            )
+        seen = self._run(monkeypatch, db_path, seeded_session)
+        assert seen["feedback"]("untracked-work", "url:https://x/pull/91") is True
+        # Scoped to its rule — the same change may still be an oversized one.
+        assert seen["feedback"]("large-change", "url:https://x/pull/91") is False
+
+    def test_the_reason_reaches_the_matching_pass(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        captured: list = []
+        monkeypatch.setattr(
+            engine.adjudicate, "build_adjudicator", lambda config, corrections=(): captured.append(corrections)
+        )
+        with StandupStore(db_path) as store:
+            store.record_practice_feedback(
+                seeded_session,
+                rule="untracked-work",
+                handle="h1",
+                verdict="down",
+                note="that PR is the spike ticket",
+                subject="#91",
+            )
+        self._run(monkeypatch, db_path, seeded_session)
+        assert captured and captured[0][0]["note"] == "that PR is the spike ticket"
+
+    def test_a_verdict_from_another_session_does_not_leak_in(self, monkeypatch, db_path, seeded_session):
+        from yeaboi.standup.store import StandupStore
+
+        with StandupStore(db_path) as store:
+            store.record_practice_feedback(
+                "someone-elses-session", rule="untracked-work", handle="url:https://x/pull/91", verdict="down"
+            )
+        seen = self._run(monkeypatch, db_path, seeded_session)
+        assert seen["feedback"]("untracked-work", "url:https://x/pull/91") is False

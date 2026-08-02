@@ -1,5 +1,7 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
+import json
+
 from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 from yeaboi.standup import export
@@ -1037,3 +1039,87 @@ class TestFirstMentionTitles:
         linked = next(r for r in member["summary"][0] if r.get("href"))
         assert linked["s"].endswith("…")
         assert len(linked["s"]) <= len("PSOT-9 ") + 60
+
+
+def _signal(**over):
+    from yeaboi.agent.state import PracticeSignal
+
+    base = dict(
+        rule="untracked-work",
+        title="Untracked work",
+        detail="#91 'Add retry' carries no ticket reference in the branch, title, or description.",
+        evidence=(("#91", "https://example.invalid/pull/91"),),
+    )
+    base.update(over)
+    return PracticeSignal(**base)
+
+
+class TestPracticesInExports:
+    def _report_with_practices(self, *signals, rollup=(("untracked-work", 1),)):
+        return _report(
+            member_updates=(MemberUpdate(name="Alice", summary="login page", practices=tuple(signals)),),
+            practice_rollup=rollup,
+        )
+
+    def test_markdown_renders_the_signal_and_its_evidence(self):
+        md = build_standup_markdown(self._report_with_practices(_signal()))
+        assert "**Untracked work:**" in md
+        assert "carries no ticket reference" in md
+        assert "https://example.invalid/pull/91" in md
+
+    def test_markdown_marks_a_repeat(self):
+        md = build_standup_markdown(self._report_with_practices(_signal(repeat=True)))
+        assert "again today" in md
+
+    def test_markdown_has_no_practice_bullet_when_there_are_none(self):
+        assert "Untracked work" not in build_standup_markdown(_report())
+
+    def test_payload_omits_practices_when_empty(self):
+        data = island(build_standup_html(_report()))["report"]
+        assert all("practices" not in member for member in data["members"])
+        assert data["practices"] == []
+
+    def test_payload_carries_the_signal_as_runs_and_links(self):
+        data = island(build_standup_html(self._report_with_practices(_signal())))["report"]
+        practice = data["members"][0]["practices"][0]
+        assert practice["rule"] == "untracked-work"
+        assert practice["title"] == "Untracked work"
+        # Prose crosses the wire as runs — no markup, ever.
+        assert isinstance(practice["detail"], list)
+        assert practice["evidence"] == [["#91", "https://example.invalid/pull/91"]]
+
+    def test_payload_never_carries_the_feedback_handles(self):
+        # Internal identity for the feedback ledger. An export is a file with
+        # nothing to vote from, so shipping them would be dead weight the
+        # reader can neither see nor use.
+        data = island(build_standup_html(self._report_with_practices(_signal(handles=("url:https://x/pull/91",)))))
+        assert "handles" not in data["report"]["members"][0]["practices"][0]
+        assert "url:https://x/pull/91" not in json.dumps(data)
+
+    def test_rollup_carries_its_label_and_a_member_count(self):
+        data = island(build_standup_html(self._report_with_practices(_signal())))["report"]
+        assert data["practices"] == [{"rule": "untracked-work", "count": 1, "title": "Untracked work"}]
+
+    def test_an_unknown_rule_id_still_gets_a_title(self):
+        # The engine owns the vocabulary; a rule the title map has not caught up
+        # with must still render as words rather than a raw slug.
+        report = self._report_with_practices(_signal(), rollup=(("invented-tomorrow", 2),))
+        data = island(build_standup_html(report))["report"]
+        assert data["practices"] == [{"rule": "invented-tomorrow", "count": 2, "title": "Invented tomorrow"}]
+
+    def test_ticket_keys_inside_a_practice_detail_linkify(self):
+        report = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="login page",
+                    ticketing_links=(("PSOT-12", "https://example.invalid/browse/PSOT-12"),),
+                    practices=(_signal(detail="PSOT-12 shipped but the board still has it not started."),),
+                ),
+            ),
+        )
+        runs = island(build_standup_html(report))["report"]["members"][0]["practices"][0]["detail"]
+        assert any(run.get("href") == "https://example.invalid/browse/PSOT-12" for run in runs)
+
+    def test_html_stays_self_contained_with_practices(self):
+        assert_self_contained(build_standup_html(self._report_with_practices(_signal())))

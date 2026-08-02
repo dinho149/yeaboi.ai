@@ -1,6 +1,6 @@
 """SQLite store for the Daily Standup mode.
 
-Persists six things in the shared ~/.scrum-agent/sessions.db:
+Persists seven things in the shared ~/.scrum-agent/sessions.db:
 - ``standup_config``      — per-session schedule + delivery preferences
 - ``standup_history``     — every run's serialized StandupReport + delivery status
 - ``standup_updates``     — user-typed "my update" text, consumed verbatim by the engine
@@ -11,6 +11,8 @@ Persists six things in the shared ~/.scrum-agent/sessions.db:
 - ``standup_gap_issues``  — the gap→GitHub-issue dedup ledger. Deliberately NOT
   session-scoped: the review loop improves yeaboi itself, so the same gap raised
   in two different projects belongs on the same issue.
+- ``standup_practice_feedback`` — one thumbs up/down per (rule, change), the team
+  telling the practice rules where they were wrong (see practice_feedback.py)
 
 Follows the exact patterns used by TeamProfileStore (team_profile.py): a separate
 store class opening its own connection to the same DB, autocommit mode, context
@@ -32,6 +34,7 @@ from pathlib import Path
 from yeaboi.agent.state import (
     ActivityEvidence,
     MemberUpdate,
+    PracticeSignal,
     StandupGap,
     StandupReport,
     TranscriptClaim,
@@ -71,6 +74,9 @@ CREATE TABLE IF NOT EXISTS standup_config (
     automation_handling TEXT NOT NULL DEFAULT 'exclude',
     transcript_dir    TEXT NOT NULL DEFAULT '',
     transcript_review_enabled INTEGER NOT NULL DEFAULT 1,
+    habit_detection   TEXT NOT NULL DEFAULT 'on',
+    habit_rules       TEXT NOT NULL DEFAULT '',
+    habit_ai_match    TEXT NOT NULL DEFAULT 'on',
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -138,6 +144,30 @@ CREATE TABLE IF NOT EXISTS standup_gap_issues (
     last_review_id INTEGER NOT NULL DEFAULT 0
 );"""
 
+# Its own constant so sessions.py's v25 migration can create exactly this table
+# on a database that was migrated ahead of ever opening a StandupStore.
+#
+# UNIQUE(session_id, rule, handle) is the whole conflict policy: one verdict per
+# change per rule, and a re-vote flips it instead of stacking a second row.
+# Keyed by rule, not by member — excusing a PR for ``untracked-work`` says
+# nothing about whether it is also an oversized change.
+_STANDUP_PRACTICE_FEEDBACK_SCHEMA = """\
+CREATE TABLE IF NOT EXISTS standup_practice_feedback (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT NOT NULL,
+    rule         TEXT NOT NULL,
+    handle       TEXT NOT NULL,
+    verdict      TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    member       TEXT NOT NULL DEFAULT '',
+    subject      TEXT NOT NULL DEFAULT '',
+    standup_date TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    UNIQUE(session_id, rule, handle)
+);"""
+
+_STANDUP_SCHEMA += "\n" + _STANDUP_PRACTICE_FEEDBACK_SCHEMA
+
 
 # ---------------------------------------------------------------------------
 # Serialisation helpers — StandupReport <-> JSON (same pattern as sessions.py)
@@ -176,6 +206,27 @@ def _dict_to_evidence(items: object) -> tuple[ActivityEvidence, ...]:
     )
 
 
+def _dict_to_practices(items: object) -> tuple[PracticeSignal, ...]:
+    """Rebuild practice signals from JSON-parsed dicts (missing → empty)."""
+    if not isinstance(items, list):
+        return ()
+    return tuple(
+        PracticeSignal(
+            rule=str(p.get("rule", "")),
+            title=str(p.get("title", "")),
+            detail=str(p.get("detail", "")),
+            # JSON turned each (label, url) tuple into a list — rebuild tuples.
+            evidence=tuple((str(e[0]), str(e[1])) for e in p.get("evidence", ()) if len(e) == 2),
+            repeat=bool(p.get("repeat", False)),
+            # Absent on reports written before feedback existed, which simply
+            # means none of their signals can be voted on.
+            handles=tuple(str(h) for h in (p.get("handles") or ()) if str(h)),
+        )
+        for p in items
+        if isinstance(p, dict)
+    )
+
+
 def _dict_to_standup_report(d: dict) -> StandupReport:
     """Reconstruct a StandupReport from a JSON-parsed dict.
 
@@ -209,6 +260,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
             ticketing_evidence=_dict_to_evidence(m.get("ticketing_evidence")),
             code_evidence=_dict_to_evidence(m.get("code_evidence")),
             documentation_evidence=_dict_to_evidence(m.get("documentation_evidence")),
+            practices=_dict_to_practices(m.get("practices")),
         )
         for m in d.get("member_updates", ())
     )
@@ -237,6 +289,7 @@ def _dict_to_standup_report(d: dict) -> StandupReport:
         warnings=tuple(d.get("warnings", ())),
         images=tuple(d.get("images", ())),
         annotations=annotations_from(d.get("annotations")),
+        practice_rollup=tuple((str(p[0]), int(p[1])) for p in d.get("practice_rollup", ()) if len(p) == 2),
     )
 
 
@@ -423,6 +476,15 @@ class StandupStore:
                ADD COLUMN transcript_dir TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN transcript_review_enabled INTEGER NOT NULL DEFAULT 1""",
+            # Engineering-practice detection (see standup/habits.py): whether
+            # the deterministic habit signals run at all ('on'/'off'), and an
+            # optional comma-separated subset of rule ids (empty = all of them).
+            """ALTER TABLE standup_config
+               ADD COLUMN habit_detection TEXT NOT NULL DEFAULT 'on'""",
+            """ALTER TABLE standup_config
+               ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''""",
+            """ALTER TABLE standup_config
+               ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'""",
         ):
             try:
                 self._conn.execute(statement)
@@ -478,6 +540,9 @@ class StandupStore:
         automation_handling: str = "exclude",
         transcript_dir: str = "",
         transcript_review_enabled: bool = True,
+        habit_detection: str = "on",
+        habit_rules: str = "",
+        habit_ai_match: str = "on",
     ) -> None:
         """Insert or update the standup schedule/delivery config for a session.
 
@@ -493,6 +558,15 @@ class StandupStore:
         NOTE: this writes EVERY column, so a caller that omits a keyword resets
         it to the default. Every full-pass call site must therefore pass every
         field — enforced by tests/unit/test_standup_config_call_sites.py.
+        ``automation_handling`` tune service-hook detection (standup/automation.py);
+        ``habit_detection`` / ``habit_rules`` tune practice detection
+        (standup/habits.py), and ``habit_ai_match`` switches off the
+        language-model pass that excuses a change belonging to a ticket it never
+        names (standup/adjudicate.py) — a separate switch because it is the only
+        part of practice detection that spends money.
+
+        **This is a full upsert with defaulted keywords**, so a caller that omits
+        a field resets it. Every call site must pass through the values it read.
         """
         now = self._now()
         channels_json = json.dumps(delivery_channels)
@@ -518,8 +592,9 @@ class StandupStore:
                     code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured,
                     documentation_sources, documentation_scope_configured,
                     automation_markers, automation_handling,
-                    transcript_dir, transcript_review_enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    transcript_dir, transcript_review_enabled,
+                    habit_detection, habit_rules, habit_ai_match, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(session_id) DO UPDATE SET
                    enabled = excluded.enabled,
                    time = excluded.time,
@@ -543,6 +618,9 @@ class StandupStore:
                    automation_handling = excluded.automation_handling,
                    transcript_dir = excluded.transcript_dir,
                    transcript_review_enabled = excluded.transcript_review_enabled,
+                   habit_detection = excluded.habit_detection,
+                   habit_rules = excluded.habit_rules,
+                   habit_ai_match = excluded.habit_ai_match,
                    updated_at = excluded.updated_at""",
             (
                 session_id,
@@ -568,6 +646,9 @@ class StandupStore:
                 automation_handling or "exclude",
                 transcript_dir,
                 int(transcript_review_enabled),
+                habit_detection or "on",
+                habit_rules,
+                habit_ai_match or "on",
                 now,
                 now,
             ),
@@ -608,7 +689,8 @@ class StandupStore:
             "my_aliases, tracker_sources, team_members, roster_configured, "
             "code_sources, github_repositories, azdo_projects, azdo_repositories, code_scope_configured, "
             "documentation_sources, documentation_scope_configured, automation_markers, automation_handling, "
-            "transcript_dir, transcript_review_enabled "
+            "transcript_dir, transcript_review_enabled, "
+            "habit_detection, habit_rules, habit_ai_match "
             "FROM standup_config WHERE session_id = ?",
             (session_id,),
         ).fetchone()
@@ -672,6 +754,9 @@ class StandupStore:
             # Default ON: a row written before this column existed still gets the
             # sweep, which is the behaviour a user who drops a transcript expects.
             "transcript_review_enabled": bool(row[22]) if row[22] is not None else True,
+            "habit_detection": row[23] or "on",
+            "habit_rules": row[24] or "",
+            "habit_ai_match": row[25] or "on",
         }
 
     # ── Self-reported updates ─────────────────────────────────────────────
@@ -910,6 +995,95 @@ class StandupStore:
         if deleted:
             logger.info("Deleted standup run id=%s", run_id)
         return deleted
+
+    def get_latest_run_id(self, session_id: str) -> int | None:
+        """The history row id of the most recent run, or None.
+
+        The standup page loads its report through ``get_latest_report``, which
+        answers with no id — and a thumbs-down has to write one row back. This
+        is the missing half, ordered identically so the two can never disagree.
+        """
+        row = self._conn.execute(
+            "SELECT id FROM standup_history WHERE session_id = ? ORDER BY run_at DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return int(row[0]) if row else None
+
+    def update_run_report(self, run_id: int, report: StandupReport) -> bool:
+        """Rewrite a stored run's report. Returns True if a row was updated.
+
+        The one mutating path over ``standup_history``, and deliberately narrow:
+        only ``report_json`` and the confidence it carries, never the run's
+        identity or timestamps. Used when a thumbs-down removes a signal, so
+        every later read — the TUI, an export, a re-share — sees the corrected
+        report rather than each filtering the same signal out again.
+        """
+        cursor = self._conn.execute(
+            "UPDATE standup_history SET report_json = ?, confidence_pct = ? WHERE id = ?",
+            (_standup_report_to_json(report), report.confidence_pct, run_id),
+        )
+        updated = (cursor.rowcount or 0) > 0
+        if updated:
+            logger.info("Updated standup run id=%s after practice feedback", run_id)
+        else:
+            logger.warning("Standup run id=%s not found — practice feedback report rewrite skipped", run_id)
+        return updated
+
+    # ── Practice feedback ledger (see standup/practice_feedback.py) ───────
+
+    def record_practice_feedback(
+        self,
+        session_id: str,
+        *,
+        rule: str,
+        handle: str,
+        verdict: str,
+        note: str = "",
+        member: str = "",
+        subject: str = "",
+        standup_date: str = "",
+    ) -> None:
+        """Upsert one verdict about one change.
+
+        ``ON CONFLICT`` rather than an insert: the same change can be voted on
+        again tomorrow (it is still open), and the team's latest word is the only
+        one that should count. ``created_at`` moves with it so the prompt's
+        "most recent examples" window means what it says.
+        """
+        self._conn.execute(
+            """INSERT INTO standup_practice_feedback
+                   (session_id, rule, handle, verdict, note, member, subject, standup_date, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(session_id, rule, handle) DO UPDATE SET
+                   verdict = excluded.verdict,
+                   note = excluded.note,
+                   member = excluded.member,
+                   subject = excluded.subject,
+                   standup_date = excluded.standup_date,
+                   created_at = excluded.created_at""",
+            (session_id, rule, handle, verdict, note, member, subject, standup_date, self._now()),
+        )
+
+    def load_practice_feedback(self, session_id: str, limit: int = 500) -> list[dict]:
+        """Every verdict for a session, newest first."""
+        rows = self._conn.execute(
+            "SELECT rule, handle, verdict, note, member, subject, standup_date, created_at "
+            "FROM standup_practice_feedback WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+        return [
+            {
+                "rule": r[0],
+                "handle": r[1],
+                "verdict": r[2],
+                "note": r[3],
+                "member": r[4],
+                "subject": r[5],
+                "standup_date": r[6],
+                "created_at": r[7],
+            }
+            for r in rows
+        ]
 
     # ── Team-wide (cross-session) reads — used by ceremony_history to feed
     #    Planning / Analysis with the team's recent standups. standup_history has
