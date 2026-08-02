@@ -2,6 +2,39 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.51.0",
+      "date": "2026-08-02",
+      "summary": "GitLab is now a supported code host. Connect your GitLab project in Setup → Credentials and yeaboi will scan your project for context, fetch your backlog, and let you create issues — all with support for self-hosted GitLab instances. This closes the gap where intake offered GitLab as a choice but then degraded to no repo context.",
+      "highlights": [
+        {
+          "text": "GitLab is now supported as a code host alongside GitHub, Jira, and Azure DevOps",
+          "areas": [
+            "usage",
+            "planning"
+          ]
+        },
+        {
+          "text": "GitLab projects provide repo context, README, and backlog to Standup and Roadmap Intake automatically",
+          "areas": [
+            "standup",
+            "planning"
+          ]
+        },
+        {
+          "text": "Self-hosted GitLab instances are supported — configure the instance URL in Setup → Credentials",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Issues can be created in GitLab the same way as Jira and Azure DevOps",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.50.0",
       "date": "2026-08-02",
       "summary": "Daily Standup now asks for the meeting transcript instead of waiting for one. Paste it from your clipboard, pipe it in, drag the file across, or point Standup at the folder your recordings already land in — Zoom, Google Meet and Downloads are detected and offered by name. When a standup runs and no transcript is ever checked against it, Standup says so: quietly at first, in the terminal only, and after several in a row it offers to turn the feature off rather than keep asking. An optional reminder can arrive shortly after your standup, and only when something is actually unchecked.",
