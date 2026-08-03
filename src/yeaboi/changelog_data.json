@@ -2,6 +2,37 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.52.0",
+      "date": "2026-08-03",
+      "summary": "Planning intake now supports Linear, the modern project management platform used by startups and scaleups. Teams using Linear can now unlock sprint planning, velocity tracking, backlog analysis, and write-back — the same capabilities that Jira and Azure DevOps users have. The three read tools fetch the active cycle, compute team velocity from completed work, and analyze the backlog size; the write tool creates stories with confirmation gates. Linear integrates cleanly with yeaboi's existing tracker abstraction, so Jira users and Azure DevOps teams are unaffected. Zero new dependencies: the implementation talks to Linear's GraphQL endpoint using the standard library.",
+      "highlights": [
+        {
+          "text": "Linear now works in planning intake: read board state, velocity, active cycles, and write stories back",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Linear read tools integrate seamlessly into the tracker seam alongside Jira and Azure DevOps",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Story write-back to Linear with human confirmation before creation",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Zero new dependencies — uses stdlib urllib over GraphQL like other integrations",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.51.0",
       "date": "2026-08-02",
       "summary": "Daily Standup now flags engineering practices that might cost your team later — work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed — no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",

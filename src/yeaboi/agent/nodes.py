@@ -1243,13 +1243,27 @@ def _is_azdevops_configured() -> bool:
     return is_azdevops_board_configured()
 
 
+def _is_linear_configured() -> bool:
+    """Check whether Linear credentials are set.
+
+    Returns True when LINEAR_API_KEY and LINEAR_TEAM_KEY are both non-empty.
+    The team key is required as well as the key because every Linear read is
+    scoped to a team — without one there is no board to read, so treating a
+    bare API key as "configured" would send the intake node down a path that
+    can only fail.
+    """
+    from yeaboi.config import get_linear_api_key, get_linear_team_key
+
+    return bool(get_linear_api_key() and get_linear_team_key())
+
+
 def _is_tracker_configured() -> bool:
-    """Check whether any issue tracker (Jira or Azure DevOps) is configured.
+    """Check whether any issue tracker (Jira, Azure DevOps, or Linear) is configured.
 
     Used by the intake node to decide whether to ask Q27 (sprint selection)
     interactively and whether to fetch velocity data.
     """
-    return _is_jira_configured() or _is_azdevops_configured()
+    return _is_jira_configured() or _is_azdevops_configured() or _is_linear_configured()
 
 
 def _fetch_jira_velocity() -> dict | None:
@@ -1323,21 +1337,59 @@ def _fetch_azdevops_velocity() -> dict | None:
     return None
 
 
-def _fetch_tracker_velocity(preferred: str = "") -> dict | None:
-    """Fetch velocity from the configured tracker (Jira or Azure DevOps).
+def _fetch_linear_velocity() -> dict | None:
+    """Fetch avg velocity AND team size from the last 3 closed Linear cycles.
 
-    When preferred is set ("jira" or "azdevops"), uses that tracker.
-    Otherwise tries Jira first, then falls back to Azure DevOps.
+    # See docs: "Scrum Standards" — capacity planning
+    #
+    # Thin wrapper around the linear_fetch_velocity @tool, identical in shape to
+    # _fetch_jira_velocity: the tool owns all connection logic and returns a JSON
+    # string, and this parses it back to a dict. No text parsing is needed (as it
+    # is for Azure DevOps) because linear_fetch_velocity deliberately emits the
+    # same JSON keys jira_fetch_velocity does.
+
+    Returns:
+        Dict with keys {team_velocity, jira_team_size, per_dev_velocity},
+        or None if Linear is unavailable or has no data.
+        When velocity is zero but team size is available, the dict includes
+        a ``velocity_error`` key — callers should skip velocity extraction
+        but still use ``jira_team_size``.
+    """
+    try:
+        from yeaboi.tools.linear import linear_fetch_velocity
+
+        result = linear_fetch_velocity.invoke({})
+        if result.startswith("Error"):
+            logger.debug("linear_fetch_velocity returned: %s", result)
+            return None
+        data = json.loads(result)
+        if "velocity_error" in data:
+            logger.debug("linear_fetch_velocity: zero velocity but team_size=%s", data.get("jira_team_size"))
+        return data
+    except Exception:
+        logger.debug("Failed to fetch Linear velocity", exc_info=True)
+    return None
+
+
+def _fetch_tracker_velocity(preferred: str = "") -> dict | None:
+    """Fetch velocity from the configured tracker (Jira, Azure DevOps, or Linear).
+
+    When preferred is set ("jira", "azdevops", or "linear"), uses that tracker.
+    Otherwise tries Jira first, then Azure DevOps, then Linear.
     """
     if preferred == "azdevops" and _is_azdevops_configured():
         return _fetch_azdevops_velocity()
     if preferred == "jira" and _is_jira_configured():
         return _fetch_jira_velocity()
+    if preferred == "linear" and _is_linear_configured():
+        return _fetch_linear_velocity()
     # No explicit preference — auto-detect
     if _is_jira_configured():
         return _fetch_jira_velocity()
     if _is_azdevops_configured():
         return _fetch_azdevops_velocity()
+    if _is_linear_configured():
+        return _fetch_linear_velocity()
     return None
 
 
@@ -1355,6 +1407,12 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
         status_message explains what happened — shown to the user so they know
         why sprint selection fell back to "Fresh start".
     """
+    # Linear is checked first only when explicitly preferred — otherwise the
+    # existing Jira → Azure DevOps order is preserved exactly and Linear becomes
+    # the last fallback at the bottom of this function.
+    if preferred == "linear" and _is_linear_configured():
+        return _fetch_linear_active_cycle()
+
     _use_jira = (preferred == "jira" and _is_jira_configured()) or (not preferred and _is_jira_configured())
     _use_azdevops = (preferred == "azdevops" and _is_azdevops_configured()) or (
         not preferred and not _is_jira_configured() and _is_azdevops_configured()
@@ -1396,7 +1454,32 @@ def _fetch_active_sprint_number(preferred: str = "") -> tuple[int | None, str | 
             logger.debug("Failed to fetch Azure DevOps iteration for sprint selection", exc_info=True)
             return None, None, f"Azure DevOps connection failed: {exc}"
 
+    if _is_linear_configured():
+        return _fetch_linear_active_cycle()
+
     return None, None, "No tracker configured"
+
+
+def _fetch_linear_active_cycle() -> tuple[int | None, str | None, str]:
+    """Return the active Linear cycle as (number, start_date, status_message).
+
+    # See docs: "Scrum Standards" — sprint planning
+    #
+    # Same contract as the Jira branch above, and just as short, because
+    # linear_fetch_active_cycle already emits the sprint_* JSON keys
+    # jira_fetch_active_sprint does — no per-tracker parsing is needed.
+    """
+    try:
+        from yeaboi.tools.linear import linear_fetch_active_cycle
+
+        result = linear_fetch_active_cycle.invoke({})
+        if result.startswith("Error"):
+            return None, None, result.removeprefix("Error: ")
+        data = json.loads(result)
+        return data["sprint_number"], data.get("start_date"), f"Active cycle: {data['sprint_name']}"
+    except Exception as exc:
+        logger.debug("Failed to fetch Linear cycle for sprint selection", exc_info=True)
+        return None, None, f"Linear connection failed: {exc}"
 
 
 # ---------------------------------------------------------------------------

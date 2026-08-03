@@ -77,3 +77,12 @@ def azdo_creds() -> dict[str, str]:
         "token": _env_or_skip("AZURE_DEVOPS_TOKEN"),
         "repo_url": _env_or_skip("AZURE_DEVOPS_SMOKE_REPO_URL"),
     }
+
+
+@pytest.fixture
+def linear_creds() -> dict[str, str]:
+    """Return Linear credentials or skip if any are missing."""
+    return {
+        "api_key": _env_or_skip("LINEAR_API_KEY"),
+        "team_key": _env_or_skip("LINEAR_TEAM_KEY"),
+    }

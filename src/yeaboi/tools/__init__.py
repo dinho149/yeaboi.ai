@@ -88,6 +88,12 @@ def get_tools() -> list[BaseTool]:
         jira_fetch_velocity,
         jira_read_board,
     )
+    from yeaboi.tools.linear import (
+        linear_create_issue,
+        linear_fetch_active_cycle,
+        linear_fetch_velocity,
+        linear_read_board,
+    )
     from yeaboi.tools.llm_tools import estimate_complexity, generate_acceptance_criteria
     from yeaboi.tools.notion import (
         notion_create_page,
@@ -123,6 +129,10 @@ def get_tools() -> list[BaseTool]:
         jira_create_epic,
         jira_create_story,
         jira_create_sprint,
+        linear_read_board,
+        linear_fetch_velocity,
+        linear_fetch_active_cycle,
+        linear_create_issue,
         load_project_context,
         confluence_search_docs,
         confluence_read_page,

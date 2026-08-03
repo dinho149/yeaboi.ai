@@ -12,6 +12,7 @@ gracefully when credentials are missing.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -237,3 +238,52 @@ class TestGeminiSmoke:
         assert response.content is not None
         assert len(response.content.strip()) > 0
         assert "SMOKE_OK" in response.content
+
+
+@pytest.mark.smoke
+class TestLinearSmoke:
+    """Live Linear GraphQL calls — the read tools only.
+
+    Linear has no Python SDK, so tools/linear.py hand-writes four GraphQL
+    queries against a schema nobody in CI can typecheck. That makes these the
+    highest-value smoke tests in the file: a field rename upstream would break
+    the tools while every mocked unit test stayed green.
+
+    Read-only on purpose. The write tool would leave an issue behind, and Linear
+    has no hard delete via the API — archiving is the closest thing, which still
+    leaves the issue identifier consumed in the user's real workspace.
+    """
+
+    def test_read_board_returns_a_team_summary(self, linear_creds, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", linear_creds["api_key"])
+        monkeypatch.setenv("LINEAR_TEAM_KEY", linear_creds["team_key"])
+        from yeaboi.tools.linear import linear_read_board
+
+        result = linear_read_board.invoke({})
+        assert not result.startswith("Error:"), result
+        assert f"({linear_creds['team_key']})" in result
+        assert "Backlog:" in result
+
+    def test_fetch_active_cycle_returns_the_sprint_json_shape(self, linear_creds, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", linear_creds["api_key"])
+        monkeypatch.setenv("LINEAR_TEAM_KEY", linear_creds["team_key"])
+        from yeaboi.tools.linear import linear_fetch_active_cycle
+
+        result = linear_fetch_active_cycle.invoke({})
+        # A team with cycles disabled is a legitimate configuration, not a
+        # failure — assert the shape only when a cycle actually came back.
+        if result.startswith("Error: No active cycle"):
+            pytest.skip("team has no active cycle")
+        assert not result.startswith("Error:"), result
+        data = json.loads(result)
+        assert isinstance(data["sprint_number"], int)
+        assert data["sprint_name"]
+
+    def test_bad_key_is_reported_not_raised(self, linear_creds, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "not-a-real-linear-key")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", linear_creds["team_key"])
+        from yeaboi.tools.linear import linear_read_board
+
+        result = linear_read_board.invoke({})
+        assert result.startswith("Error:")
+        assert "LINEAR_API_KEY" in result

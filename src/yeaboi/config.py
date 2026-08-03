@@ -399,6 +399,27 @@ def get_notion_root_page_id() -> str | None:
     return os.getenv("NOTION_ROOT_PAGE_ID") or None
 
 
+def get_linear_api_key() -> str | None:
+    """Return the Linear personal API key, or None if not set.
+
+    Linear's own credential — it shares nothing with Jira or Azure DevOps. The
+    key is sent as a bare ``Authorization`` header with NO ``Bearer`` prefix
+    (that form is reserved for OAuth2 access tokens). Created at Linear →
+    Settings → Security & access → Personal API keys; keys look like ``lin_api_…``.
+    """
+    return os.getenv("LINEAR_API_KEY") or None
+
+
+def get_linear_team_key() -> str | None:
+    """Return the optional default Linear team key (e.g. 'YEA'), or None if not set.
+
+    Linear's analogue of JIRA_PROJECT_KEY. The team key is the prefix on every
+    issue identifier ("YEA" in "YEA-42") — it is what scopes a board read, a
+    velocity sample, or an issue write when the agent does not name a team.
+    """
+    return os.getenv("LINEAR_TEAM_KEY") or None
+
+
 # ---------------------------------------------------------------------------
 # Storage & export destinations
 # ---------------------------------------------------------------------------
