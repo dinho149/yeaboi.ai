@@ -685,7 +685,7 @@ class TestAzdevopsFetchActiveIteration:
 class TestGetTools:
     def test_returns_thirty_tools(self):
         tools = get_tools()
-        assert len(tools) == 37
+        assert len(tools) == 41
 
     def test_all_are_base_tools(self):
         from langchain_core.tools import BaseTool
@@ -720,6 +720,10 @@ class TestGetTools:
             "jira_create_epic",
             "jira_create_story",
             "jira_create_sprint",
+            "linear_read_board",
+            "linear_fetch_velocity",
+            "linear_fetch_active_cycle",
+            "linear_create_issue",
             "confluence_search_docs",
             "confluence_read_page",
             "confluence_read_space",

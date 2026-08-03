@@ -22,7 +22,7 @@ Two matching layers:
    appear, whatever their shape. Values shorter than ``_MIN_SECRET_LEN`` are
    ignored so trivial strings ("true", "8080") never trigger redaction.
 2. **Pattern-based** — well-known token shapes (Anthropic/OpenAI keys, GitHub
-   tokens, Slack tokens/webhooks, AWS key ids, Atlassian/Notion tokens,
+   tokens, Slack tokens/webhooks, AWS key ids, Atlassian/Notion/Linear tokens,
    ``Bearer``/``Basic`` auth headers). Catches secrets that did NOT come from
    our env: pasted by the user, or echoed back in an API error body.
 
@@ -54,6 +54,7 @@ SECRET_ENV_KEYS: tuple[str, ...] = (
     "AZURE_DEVOPS_TOKEN",
     "CONFLUENCE_API_TOKEN",
     "NOTION_TOKEN",
+    "LINEAR_API_KEY",
     "STANDUP_SMTP_PASSWORD",
     "SLACK_WEBHOOK_URL",
     "AWS_ACCESS_KEY_ID",
@@ -79,6 +80,7 @@ _TOKEN_PATTERNS: tuple[str, ...] = (
     r"AKIA[0-9A-Z]{16}",
     r"ATATT[\w=+/-]{20,}",
     r"ntn_[A-Za-z0-9]{20,}",
+    r"lin_(?:api|oauth)_[A-Za-z0-9]{20,}",
     r"secret_[A-Za-z0-9]{30,}",
     r"hooks\.slack\.com/services/[\w/]+",
     r"(?i:bearer|basic)\s+[A-Za-z0-9._~+/=-]{16,}",

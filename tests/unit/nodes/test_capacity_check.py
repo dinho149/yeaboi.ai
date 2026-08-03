@@ -25,7 +25,13 @@ from yeaboi.agent.nodes import (
     _count_working_days,
     _detect_bank_holidays_for_window,
     _extract_capacity_deductions,
+    _fetch_active_sprint_number,
     _fetch_jira_velocity,
+    _fetch_linear_active_cycle,
+    _fetch_linear_velocity,
+    _fetch_tracker_velocity,
+    _is_linear_configured,
+    _is_tracker_configured,
     _parse_date_dmy,
     _parse_velocity_override,
     _prepare_bank_holiday_choices,
@@ -873,3 +879,136 @@ class TestExtractCapacityDeductionsWithLeave:
         qs = QuestionnaireState(answers={28: "No bank holidays", 29: "10%", 30: "No engineers onboarding"})
         result = _extract_capacity_deductions(qs)
         assert result["capacity_planned_leave_days"] == 0
+
+
+class TestLinearTrackerSeam:
+    """Tests for the Linear branch of the intake node's tracker seam.
+
+    Linear is the third tracker alongside Jira and Azure DevOps. Because
+    linear_fetch_velocity and linear_fetch_active_cycle deliberately emit the
+    same JSON keys their Jira twins do, these wrappers stay as thin as
+    _fetch_jira_velocity — which is exactly what these tests pin.
+    """
+
+    def test_is_configured_needs_both_vars(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        assert _is_linear_configured() is True
+
+    def test_is_not_configured_without_a_team_key(self, monkeypatch):
+        # A bare API key cannot address a board, so it must not count as configured.
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.delenv("LINEAR_TEAM_KEY", raising=False)
+        assert _is_linear_configured() is False
+
+    def test_is_not_configured_without_a_key(self, monkeypatch):
+        monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        assert _is_linear_configured() is False
+
+    @patch("yeaboi.tools.linear.linear_fetch_velocity")
+    def test_velocity_wrapper_parses_the_tool_json(self, mock_tool):
+        mock_tool.invoke.return_value = json.dumps({"team_velocity": 15, "jira_team_size": 2, "per_dev_velocity": 7.5})
+        result = _fetch_linear_velocity()
+        assert result == {"team_velocity": 15, "jira_team_size": 2, "per_dev_velocity": 7.5}
+
+    @patch("yeaboi.tools.linear.linear_fetch_velocity")
+    def test_velocity_wrapper_returns_none_on_error_string(self, mock_tool):
+        mock_tool.invoke.return_value = "Error: Linear is not configured."
+        assert _fetch_linear_velocity() is None
+
+    @patch("yeaboi.tools.linear.linear_fetch_velocity")
+    def test_velocity_wrapper_passes_through_the_zero_velocity_case(self, mock_tool):
+        mock_tool.invoke.return_value = json.dumps(
+            {"team_velocity": 0, "jira_team_size": 3, "per_dev_velocity": 0, "velocity_error": "no points"}
+        )
+        result = _fetch_linear_velocity()
+        assert result is not None
+        assert result["jira_team_size"] == 3
+
+    @patch("yeaboi.tools.linear.linear_fetch_active_cycle")
+    def test_active_cycle_wrapper_returns_number_date_and_message(self, mock_tool):
+        mock_tool.invoke.return_value = json.dumps(
+            {"sprint_number": 42, "sprint_name": "Hardening", "start_date": "2026-08-01"}
+        )
+        number, start, message = _fetch_linear_active_cycle()
+        assert number == 42
+        assert start == "2026-08-01"
+        assert message == "Active cycle: Hardening"
+
+    @patch("yeaboi.tools.linear.linear_fetch_active_cycle")
+    def test_active_cycle_wrapper_surfaces_the_error_text(self, mock_tool):
+        mock_tool.invoke.return_value = "Error: No active cycle on team 'YEA'"
+        number, start, message = _fetch_linear_active_cycle()
+        assert number is None
+        assert message == "No active cycle on team 'YEA'"
+
+    def test_tracker_velocity_uses_linear_when_it_is_the_only_tracker(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        for var in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        with (
+            patch("yeaboi.agent.nodes._is_azdevops_configured", return_value=False),
+            patch("yeaboi.agent.nodes._fetch_linear_velocity", return_value={"team_velocity": 15}) as mock_linear,
+        ):
+            assert _fetch_tracker_velocity() == {"team_velocity": 15}
+        mock_linear.assert_called_once()
+
+    def test_tracker_velocity_prefers_jira_over_linear_by_default(self, monkeypatch):
+        # Ordering is load-bearing: adding Linear must not change what an
+        # existing Jira user gets.
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        with (
+            patch("yeaboi.agent.nodes._is_jira_configured", return_value=True),
+            patch("yeaboi.agent.nodes._fetch_jira_velocity", return_value={"team_velocity": 25}),
+            patch("yeaboi.agent.nodes._fetch_linear_velocity") as mock_linear,
+        ):
+            assert _fetch_tracker_velocity() == {"team_velocity": 25}
+        mock_linear.assert_not_called()
+
+    def test_tracker_velocity_honours_an_explicit_linear_preference(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        with (
+            patch("yeaboi.agent.nodes._is_jira_configured", return_value=True),
+            patch("yeaboi.agent.nodes._fetch_jira_velocity") as mock_jira,
+            patch("yeaboi.agent.nodes._fetch_linear_velocity", return_value={"team_velocity": 15}),
+        ):
+            assert _fetch_tracker_velocity("linear") == {"team_velocity": 15}
+        mock_jira.assert_not_called()
+
+    def test_tracker_configured_is_true_with_only_linear(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        for var in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        with patch("yeaboi.agent.nodes._is_azdevops_configured", return_value=False):
+            assert _is_tracker_configured() is True
+
+    def test_active_sprint_number_falls_back_to_linear(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        for var in ("JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_PROJECT_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        with (
+            patch("yeaboi.agent.nodes._is_azdevops_configured", return_value=False),
+            patch(
+                "yeaboi.agent.nodes._fetch_linear_active_cycle",
+                return_value=(42, "2026-08-01", "Active cycle: Hardening"),
+            ),
+        ):
+            assert _fetch_active_sprint_number() == (42, "2026-08-01", "Active cycle: Hardening")
+
+    def test_active_sprint_number_honours_an_explicit_linear_preference(self, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key-for-tests")
+        monkeypatch.setenv("LINEAR_TEAM_KEY", "YEA")
+        with (
+            patch("yeaboi.agent.nodes._is_jira_configured", return_value=True),
+            patch(
+                "yeaboi.agent.nodes._fetch_linear_active_cycle",
+                return_value=(42, "2026-08-01", "Active cycle: Hardening"),
+            ),
+        ):
+            assert _fetch_active_sprint_number("linear")[0] == 42
