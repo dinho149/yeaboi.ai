@@ -120,10 +120,15 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Filing issues from a prepared JSON is classification + formatting,
-          # not deep reasoning — routed to Haiku. Pinned to the dated id because
-          # the bare `claude-haiku-4-5` alias stopped resolving (see the same
-          # note in auto-version.yml).
-          claude_args: '--model claude-haiku-4-5-20251001 --max-turns 15 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Read,Grep"'
+          # not deep reasoning — routed to Haiku. `fast` tier, see cowork/models.md.
+          #
+          # The `||` fallback is the dated id this job used to pin, kept so an
+          # unset variable reverts to prior behaviour and nothing else. Do NOT
+          # read it as evidence the bare alias is broken: that story was checked
+          # and was wrong on both halves — see the long note in auto-version.yml,
+          # which is where the correction lives.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_FAST || 'claude-haiku-4-5-20251001' }} --max-turns 15 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh issue comment:*),Read,Grep"
           prompt: |
             The deterministic flake detector just ran on `main`. Its results are in
             two files at the repo root:

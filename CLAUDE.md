@@ -51,7 +51,7 @@ make wt-list                      # list worktrees (branch, clean/dirty, path)
 make wt-rm NAME=my-feature        # remove worktree dir + branch
 ```
 
-Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/babysit-prs` (survey open PRs, spawn fix agents for red CI), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents).
+Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a session), `/sync-main` (rebase on latest main + re-verify), `/ship` (independent review → full tests → commit → push → PR), `/babysit-prs` (survey open PRs, spawn fix agents for red CI), `/migrate` (fan out a mechanical migration across many files via parallel worktree agents), `/cowork` (drive the standing workstreams — see below).
 
 ### Verification loop
 
@@ -62,6 +62,17 @@ Slash commands (in `.claude/commands/`): `/wt` (worktree ops from inside a sessi
 ### Orchestration conventions
 
 When driving multiple features at once, work as an **orchestrator**: one main session, one background agent per feature, each in its own worktree (`make wt-headless`). The orchestrator kicks off agents, tracks them, reviews **final diffs** (not intermediate steps), and runs `/ship` per feature when green. Use `make test-fast` in the inner loop; the full `make test` runs at ship time.
+
+## Cowork (`cowork/`)
+
+Fifteen standing workstreams, each scouting its own paths on a schedule via a Cowork routine. One per mode — **planning** (`agent/` + `prompts/` + `ui/session/`), standup, analysis, reporting, poker, retro, performance, roadmap, artifacts-sharing — plus security, integrations, tui-ux (including the `usage` and `settings` pages), web-ux, platform, and marketing. Cadence is tiered to surface size: weekly for large, fortnightly for mid, monthly for small. Routines are **account-scoped, not repo files**; `cowork/` is the versioned source of truth their prompts point at. Start at `cowork/README.md`.
+
+- **`cowork/definition-of-done.md` is the one contract**, binding on routines *and* on `/ship`: Linear ticket, tests, lint, security, surface parity, observability, web bundles, green CI, Notion page, Slack post.
+- **`cowork/house-rules.md`** holds the closed auto-lane allowlist. Everything not on it becomes a `cowork:proposal` GitHub issue; a human approves by adding `claude-implement`, which the existing `claude.yml` job then implements. GitHub issues are the queue — there is no other shared state between runs.
+- Three crew agents in `.claude/agents/`: `cowork-scout` (read-only survey), `cowork-scribe` (**the only writer to Linear/Slack/Notion/issues**), `cowork-builder` (implements one item in its charter's paths).
+- **`cowork/models.md` is the only file that names a model.** Everything else — routines, agents, `/ship`, `/migrate`, `/babysit-prs` — names a *tier* (`heavy`/`deep`/`standard`/`fast`/`inherit`); every agent stays `model: inherit` so the caller decides. The `.github/workflows/*.yml` jobs can't read a markdown table, so they read `vars.YEABOI_MODEL_*` repo variables with a `||` fallback pinned to prior behaviour. `tests/unit/test_cowork_models.py` fails if a model id is hardcoded anywhere else — including in `.claude/commands/` and `scripts/cowork_setup.py`.
+- **Setup is derived, never retyped.** `make cowork-setup` creates the eighteen GitHub labels (from `workstreams/`) and the four repo variables (from `models.md`); `/cowork deploy` registers the sixteen cron routines and the Linear labels, which need a Claude session because a routine is account-scoped with no CLI behind it. `make cowork-check` is the doctor — it fails when the README table, a routine file and the tier table disagree, which nothing at run time would ever notice. Connectors, the GitHub App, `AUTO_VERSION_PAT` and the three *event* routines stay manual and are reported on every run.
+- **The fleet has a lifecycle, and Python owns every comparison in it.** `/cowork status | deploy | run <name> | pause | resume | teardown`. The command makes the API calls and hands the `RemoteTrigger list` response to `scripts/cowork_setup.py --triggers`, which builds the request bodies, diffs the six compared fields, and edits the README URL column itself — the model posts what it is given and never diffs sixteen routines by eye. Two asymmetries are deliberate: **there is no delete** (teardown sets `enabled: false` and prints the URLs; it must not claim otherwise), and **`enabled` is reported but never reconciled**, so `deploy` cannot silently undo a `pause`. `environment_id` is likewise not compared — it is per-machine, and comparing it would flag every teammate's fleet as drifted.
 
 ## Front End (`frontend/` → `src/yeaboi/web/static/`)
 

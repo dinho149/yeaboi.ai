@@ -92,7 +92,9 @@ jobs:
           # gh api is scoped to repo reads (release notes/changelogs).
           # Release-notes-vs-usage verification is structured judgment — Sonnet
           # is enough; the safety policy (not the model) is the real gate.
-          claude_args: '--model claude-sonnet-5 --max-turns 20 --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment ${{ steps.pr.outputs.number }}:*),Bash(gh pr edit ${{ steps.pr.outputs.number }}:*),Bash(gh pr merge ${{ steps.pr.outputs.number }}:*),Bash(gh api repos/:*),Bash(gh release view:*),Read,Grep,Glob,WebFetch"'
+          # `standard` tier — see cowork/models.md. The `||` fallback is prior behaviour.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} --max-turns 20 --allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment ${{ steps.pr.outputs.number }}:*),Bash(gh pr edit ${{ steps.pr.outputs.number }}:*),Bash(gh pr merge ${{ steps.pr.outputs.number }}:*),Bash(gh api repos/:*),Bash(gh release view:*),Read,Grep,Glob,WebFetch"
           prompt: |
             You are the dependency-verification bot for this repository. Dependabot
             opened PR #${{ steps.pr.outputs.number }} and its CI has just passed.

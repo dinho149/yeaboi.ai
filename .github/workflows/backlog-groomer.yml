@@ -76,7 +76,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Many-item judgment (dedupe, prioritize) — Sonnet; Haiku tends to
           # mislabel near-duplicates.
-          claude_args: '--model claude-sonnet-5 --max-turns 30 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh issue create:*),Read"'
+          # `standard` tier — see cowork/models.md. The `||` fallback is prior behaviour.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} --max-turns 30 --allowedTools "Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh issue create:*),Read"
           prompt: |
             You are the backlog groomer. The open issues to groom are in `issues.json`
             at the repo root (bot-authored issues and the groomer's own report are

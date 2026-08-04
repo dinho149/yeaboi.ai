@@ -1,0 +1,91 @@
+{
+  "_comment": [
+    "One entry from a real `RemoteTrigger list` response, with the account, trigger and",
+    "connector ids replaced by synthetic ones. Nothing else is edited.",
+    "",
+    "Its whole job is to pin observed_trigger() against the shape the API actually returns.",
+    "Every other snapshot in the suite is generated from desired_trigger(), which means a",
+    "mirrored mistake in both functions would round-trip cleanly and pass — this file is the",
+    "one input neither function produced.",
+    "",
+    "Re-derive it by calling RemoteTrigger with action `list` and copying one entry."
+  ],
+  "data": [
+    {
+      "api_token_hint": "",
+      "created_at": "2026-08-04T04:07:25.755847Z",
+      "created_via": "http_api",
+      "creator": {
+        "account_uuid": "00000000-0000-4000-8000-000000000001"
+      },
+      "cron_expression": "0 6 * * 1,4",
+      "enabled": true,
+      "enabled_plugins": [],
+      "ended_reason": "",
+      "extra_marketplaces": [],
+      "id": "trig_000000000000000000000001",
+      "job_config": {
+        "ccr": {
+          "environment_id": "env_000000000000000000000001",
+          "events": [
+            {
+              "data": {
+                "message": {
+                  "content": "You are the `security` workstream for yeaboi. Read `cowork/routines/cron/security-sweep.md` in this repo and follow it exactly.",
+                  "role": "user"
+                },
+                "parent_tool_use_id": null,
+                "session_id": "",
+                "type": "user",
+                "uuid": "00000000-0000-4000-8000-000000000002"
+              }
+            }
+          ],
+          "session_context": {
+            "allowed_tools": ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"],
+            "model": "MODEL_ID_FROM_MODELS_MD",
+            "sources": [
+              {
+                "git_repository": {
+                  "url": "https://github.com/dinho149/yeaboi.ai"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "mcp_connections": [
+        {
+          "clear_tool_policy_overrides": false,
+          "connector_uuid": "00000000-0000-4000-8000-000000000003",
+          "name": "Linear",
+          "permitted_tools": [],
+          "tool_policy_overrides": [],
+          "url": "https://mcp.linear.app/mcp"
+        },
+        {
+          "clear_tool_policy_overrides": false,
+          "connector_uuid": "00000000-0000-4000-8000-000000000004",
+          "name": "Slack",
+          "permitted_tools": [],
+          "tool_policy_overrides": [],
+          "url": "https://mcp.slack.com/mcp"
+        },
+        {
+          "clear_tool_policy_overrides": false,
+          "connector_uuid": "00000000-0000-4000-8000-000000000005",
+          "name": "Notion",
+          "permitted_tools": [],
+          "tool_policy_overrides": [],
+          "url": "https://mcp.notion.com/mcp"
+        }
+      ],
+      "name": "cowork: security-sweep",
+      "next_run_at": "2026-08-06T06:05:16.594816070Z",
+      "persist_session": false,
+      "suspension_reason": "",
+      "updated_at": "2026-08-04T04:07:25.755847Z"
+    }
+  ],
+  "has_more": false
+}

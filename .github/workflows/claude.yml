@@ -43,9 +43,12 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Open-ended assistance keeps the default (Opus-tier) model; the turn
-          # cap is a cost guard against runaway sessions, not a quality lever.
-          claude_args: '--max-turns 50'
+          # Open-ended assistance runs at the `deep` tier (cowork/models.md) — a
+          # person is waiting on it. That matches the action's implicit default, so
+          # the `||` fallback just pins the prior behaviour. The turn cap is a cost
+          # guard against runaway sessions, not a quality lever.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_DEEP || 'claude-opus-5' }} --max-turns 50
 
   # Issue-to-PR: adding the `claude-implement` label to an issue kicks off an
   # implementation run that opens a PR. The PR then flows through ci.yml,
@@ -72,23 +75,40 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Full implementation runs stay on the default (Opus-tier) model; the
-          # higher turn cap covers implement + verify + PR without being unbounded.
-          claude_args: '--max-turns 75'
+          # This is the one job the `heavy` tier exists for (cowork/models.md):
+          # human-selected by adding a label, unattended for up to 90 turns through
+          # implement -> DoD gate -> review -> PR, with CI and a human merge as the
+          # net. Everything else in the fleet is shorter or more frequent.
+          # The `||` fallback is prior behaviour (the action's implicit Opus-tier
+          # default), so an unset variable costs less rather than more.
+          # The turn cap was raised from 75 when the cowork Definition of Done added
+          # the Linear / review steps — a truncated run leaves a half-open PR behind.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_HEAVY || 'claude-opus-5' }} --max-turns 90
           prompt: |
             Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}.
 
             1. Read the issue with `gh issue view ${{ github.event.issue.number }}` (including comments).
-            2. Create a branch named `feature/issue-${{ github.event.issue.number }}-<short-slug>` off main.
-            3. Implement the change following CLAUDE.md conventions (observability pillars,
+            2. Read `cowork/definition-of-done.md` — it is the contract this change must satisfy.
+               If the issue carries a `workstream:<name>` label, also Read
+               `cowork/workstreams/<name>.md` and stay inside the paths it declares.
+            3. Create a branch named `feature/issue-${{ github.event.issue.number }}-<short-slug>` off main.
+            4. Implement the change following CLAUDE.md conventions (observability pillars,
                TUI component standards, frozen-dataclass defaults, tests for every new function).
                Conventions are split across CLAUDE.md and `.claude/skills/*/SKILL.md` — Read
                the SKILL.md for each area you touch (see the skills index table in CLAUDE.md).
-            4. Verify: `make test` and `make lint` must both pass before you commit.
-            5. Commit (lowercase imperative message + the Co-Authored-By trailer from CLAUDE.md),
+            5. Verify: `make test` and `make lint` must both pass before you commit. If the change
+               touches `frontend/`, run `make web` and commit `src/yeaboi/web/static/` in the same
+               commit. If it adds a capability, add its `CAPABILITIES` row and its `FeatureTip`.
+            6. Commit (lowercase imperative message + the Co-Authored-By trailer from CLAUDE.md),
                push the branch, and open a PR against main whose body summarizes the change,
-               lists what was verified, and closes the issue (`Closes #${{ github.event.issue.number }}`).
-            6. Comment on the issue with a link to the PR.
+               lists what was verified, notes any DoD item that genuinely does not apply, and
+               closes the issue (`Closes #${{ github.event.issue.number }}`).
+            7. Label the PR `cowork` and, if the issue had one, its `workstream:<name>` label.
+            8. Comment on the issue with a link to the PR.
+
+            Do NOT post to Linear, Slack, or Notion from here — the `pr-merged-close-loop` cowork
+            routine owns DoD items 8 and 9, and it runs on merge.
 
             If the issue is too ambiguous to implement safely, do NOT guess: comment on the
             issue with the specific questions that need answering, and stop.

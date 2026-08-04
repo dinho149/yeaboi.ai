@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve cowork-setup cowork-check cowork-teardown
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -193,6 +193,27 @@ wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
 	    done; \
 	    git worktree prune; echo "[wt-rm-all] done."; \
 	  else echo "[wt-rm-all] aborted"; fi
+
+# --- Cowork — stand the standing workstreams up (see cowork/README.md) --------
+
+# Everything here is derived from cowork/ rather than typed twice: the labels come
+# from workstreams/, the model variables from models.md, the routines from the
+# README table. The half a shell cannot do — the account-scoped routines and the
+# Linear labels — is what /cowork covers (status, deploy, run, pause, teardown).
+
+cowork-setup: ## Create the cowork GitHub labels + model repo variables (idempotent)
+	$(UV) run python scripts/cowork_setup.py
+
+cowork-check: ## Verify cowork labels, repo variables, and routine/README agreement
+	@$(UV) run python scripts/cowork_setup.py --check
+
+# Deleting a workstream label strips it off every issue carrying it, and nothing
+# puts those back — hence the prompt, and hence the routines staying out of it.
+cowork-teardown: ## Delete the cowork GitHub labels + model repo variables (prompts to confirm)
+	@read -r -p "Delete the cowork labels and unset the model variables? Issues lose their labels. [y/N] " ans; \
+	  if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+	    $(UV) run python scripts/cowork_setup.py --teardown --labels --variables --yes; \
+	  else echo "[cowork] teardown aborted"; fi
 
 clean: ## Remove build artifacts and caches
 	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info

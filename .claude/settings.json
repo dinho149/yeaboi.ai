@@ -11,6 +11,11 @@
       "Bash(make pre-commit)",
       "Bash(make budget-report)",
       "Bash(make wt-list)",
+      "Bash(make cowork-check)",
+      "Bash(uv run python scripts/cowork_setup.py --check:*)",
+      "Bash(uv run python scripts/cowork_setup.py --json)",
+      "Bash(uv run python scripts/cowork_setup.py --plan:*)",
+      "Bash(uv run python scripts/cowork_setup.py --urls:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run ruff:*)",
       "Bash(uv sync:*)",
@@ -30,7 +35,9 @@
       "Bash(gh pr list:*)",
       "Bash(gh pr checks:*)",
       "Bash(gh run view:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh variable list:*)"
     ]
   },
   "hooks": {

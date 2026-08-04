@@ -53,9 +53,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Scoped remediation (fix a finding / bump a package, re-verify) —
-          # Sonnet-tier; the fix PR is re-scanned by CI and human-reviewed anyway.
-          claude_args: '--model claude-sonnet-5 --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Glob,Grep"'
+          # Scoped remediation (fix a finding / bump a package, re-verify) — the
+          # `standard` tier in cowork/models.md; the fix PR is re-scanned by CI and
+          # human-reviewed anyway. NEVER move this to `heavy`: that model reroutes
+          # cybersecurity queries to a less capable one, so the run would report as
+          # if it had read these paths without telling you which model did.
+          # The `||` fallback is prior behaviour.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
           prompt: |
             You are the security-remediation bot for this repository. The scheduled scanner
             found issues on `main`. Fix the genuine ones and open a pull request — you must
