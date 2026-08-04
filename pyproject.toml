@@ -131,7 +131,7 @@ artifacts = ["src/yeaboi/web/static/*.js", "src/yeaboi/web/static/*.css"]
 # The TypeScript sources ship in the sdist (so the build is reproducible from
 # it) but never in the wheel — see the `exclude` on the wheel target above.
 artifacts = ["src/yeaboi/web/static/*.js", "src/yeaboi/web/static/*.css"]
-exclude = ["frontend/node_modules", ".claude"]
+exclude = ["frontend/node_modules", ".claude", "cowork"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

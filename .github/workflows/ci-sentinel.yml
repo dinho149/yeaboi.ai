@@ -92,8 +92,11 @@ jobs:
           FAILED_RUN_ID: ${{ steps.dedupe.outputs.run_id }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Diagnosis is the hard case — keep the default (Opus-tier) model.
-          claude_args: '--max-turns 40 --allowedTools "Bash,Read,Edit,Write,Glob,Grep"'
+          # Diagnosis is the hard case — the `deep` tier in cowork/models.md, which
+          # is what the action's implicit default was already giving this job. The
+          # `||` fallback pins that prior behaviour explicitly.
+          claude_args: >-
+            --model ${{ vars.YEABOI_MODEL_DEEP || 'claude-opus-5' }} --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Glob,Grep"
           prompt: |
             CI failed on `main` (run id: ${{ steps.dedupe.outputs.run_id }}). You are
             on a fresh checkout of `main`. Diagnose the failure and act — NEVER push

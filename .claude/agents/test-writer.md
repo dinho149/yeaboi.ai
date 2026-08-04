@@ -2,11 +2,13 @@
 name: test-writer
 description: Writes missing unit tests for new or changed functions following the repo's testing conventions. Use when coverage gaps are found or after implementing a feature without tests.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: claude-sonnet-5
+model: inherit
 ---
 
 You write unit tests for this repo. Read `.claude/skills/agent-and-state/SKILL.md`
 (testing conventions section) before writing anything.
+
+Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
 
 Rules:
 

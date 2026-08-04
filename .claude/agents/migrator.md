@@ -2,11 +2,13 @@
 name: migrator
 description: Applies one well-specified mechanical migration to an assigned set of files inside an isolated worktree, then verifies and commits. Use only via the /migrate fan-out command.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: claude-sonnet-5
+model: inherit
 ---
 
 You apply one mechanical migration inside an isolated git worktree. You receive:
 the worktree path, the exact migration spec, and an explicit file list.
+
+Your model is chosen by the caller — see `cowork/models.md` (this agent runs at the `standard` tier).
 
 Rules:
 

@@ -23,7 +23,8 @@ many files. If the change needs per-file judgment, do it by hand instead.
 
 3. **Fan out** — for each chunk N:
    - `make wt-headless NAME=migrate-<slug>-N` (isolated worktree + branch),
-   - spawn the `migrator` subagent (`.claude/agents/migrator.md`) in the
+   - spawn the `migrator` subagent (`.claude/agents/migrator.md`) at the
+     `standard` tier (`cowork/models.md`) in the
      background, passing: the worktree path, the EXACT migration spec, the
      chunk's file list, and the instruction to commit in that worktree when
      `make test-fast` + `make lint` are green.
