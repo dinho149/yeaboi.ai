@@ -310,7 +310,11 @@
      (see _build_companion) — the source sprite faces right */
   /* one terminal cell, like every other row — and line-height 1 so the ▀▄
      halves tile into a solid sprite instead of a striped one */
-  .tui-duck{margin:0; line-height:1; letter-spacing:0; white-space:pre}
+  /* The sprite is half-block art: row N's ▄ has to meet row N+1's ▀ with no
+     seam. A browser line box at line-height:1 is the full font-size, but the
+     block glyphs are drawn shorter than the em — so the rows floated apart and
+     the duck came out in stripes. Pulling the leading in below 1 closes it. */
+  .tui-duck{margin:0; line-height:.82; letter-spacing:0; white-space:pre; font-size:15px}
   .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
