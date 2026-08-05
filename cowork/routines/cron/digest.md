@@ -39,10 +39,18 @@ The single decision point. It is the only routine that posts proposals to Slack.
      they are listed separately rather than ranked against scout finds, and by age rather than by
      impact: a reported bug that has waited a month is the fact worth surfacing
    - this week's marketing draft link, if one exists and no earlier digest has carried it
-   - the reminder that approval is adding `claude-implement` to an issue, and rejection is closing
-     it — Slack is write-only here, so the digest has to name the verb and where to do it
+   - the reminder that approval is ✅ on an item's thread reply (relayed within the hour — or
+     `/cowork run slack-relay` for right now) or adding `claude-implement` on GitHub, and rejection
+     is ❌ or closing the issue — the digest still names the verbs, because a reader who has
+     forgotten them has nowhere else to look
 
-   One message. Never a thread per item, never a second message on the same day.
+   Then **one reply in that message's thread per listed item** — every top-5 proposal and every
+   `feature-candidate` line — formatted `#<issue-number> — <verbatim title> — <issue link>`, the
+   number leading so `cron/slack-relay.md` can parse it. The thread replies are what make a single
+   reaction mean a single issue; without them ✅ on the digest would be ambiguous across five items.
+
+   One **channel-level** message, never a second on the same day — the channel-noise rule holds;
+   the per-item replies live inside its thread, not in the channel.
 
 4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
    "closed unapproved after 14 days — re-file if still relevant". Never touch an issue that carries

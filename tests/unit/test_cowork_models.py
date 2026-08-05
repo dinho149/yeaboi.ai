@@ -82,7 +82,7 @@ class TestModelsDocIsTheOnlySource:
     def test_no_slash_command_hardcodes_a_model(self, path: Path):
         """The commands spawn agents and register routines, so they pick tiers too.
 
-        ``/cowork`` is the sharp case: it writes the model onto sixteen
+        ``/cowork`` is the sharp case: it writes the model onto seventeen
         account-side routines, where a wrong id is invisible from the repo — the
         routine still fires and nothing anywhere reports which model read the
         code.

@@ -19,7 +19,8 @@ scout routine (per workstream, own cron)
         daily digest routine ranks ALL open proposals │
         across workstreams → ONE Slack post           │
                               │                       │
-            YOU add `claude-implement`, or close it to reject
+     YOU add `claude-implement` (on GitHub, or ✅ on the digest
+     thread — `cron/slack-relay.md`), or close / ❌ to reject
                               │                       │
         .github/workflows/claude.yml `implement` job ─┘
         Linear ticket → build → code-reviewer → PR ───▶
@@ -115,6 +116,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 |---|---|---|---|---|
 | `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_0111WtcVcpYDKaL6Jw9ZaPjD |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
+| `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |
 | `events/release-published-announce.md` | Release published | — | `standard` | |
@@ -143,7 +145,7 @@ same drift in `make test-fast`.
 `cowork:proposal`, `claude-implement`, `workstream:<name>` for each of the fifteen, and the seven
 `type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does the sixteen cron routines and mirrors the
+file cannot read a markdown table. `/cowork deploy` does the seventeen cron routines and mirrors the
 workstream labels onto the Linear `Yeaboi` team; both need a Claude session, since a routine is
 account-scoped and has no CLI behind it.
 
