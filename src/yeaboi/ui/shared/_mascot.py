@@ -319,6 +319,28 @@ def render_head_shades(lift: int, *, flip: bool = False) -> Group:
     return Group(*_pack(grid))
 
 
+def render_head_idle(frame: int, lift: int | None = None, *, flip: bool = False) -> Group:
+    """Resting head and shades gag at one common height.
+
+    :func:`render_head_shades` pads :data:`_SHADES_TOP_PAD` rows above the crown
+    so the raised pair has somewhere to float; :func:`render_head` does not. Cut
+    between the two mid-animation and the duck drops two terminal rows at the
+    moment the gag ends, which is the one thing a loop cannot hide. So anything
+    that plays the gag *occasionally* has to draw its resting frames at the
+    padded height too — that is all this is.
+
+    ``lift=None`` rests, with the usual breathing bob; anything else plays the
+    gag at that lift.
+    """
+    if lift is not None:
+        return render_head_shades(lift, flip=flip)
+    pad = ("." * len(DUCK_HEAD_FACE[0]),) * _SHADES_TOP_PAD
+    grid = pad + _bob(DUCK_HEAD, HEAD_BOB[frame % FRAMES])
+    if flip:
+        grid = tuple(row[::-1] for row in grid)
+    return Group(*_pack(grid))
+
+
 def render_head(frame: int, *, flip: bool = False, beak_open: bool = False) -> Group:
     """Small head companion: a gentle breathing bob (glints are baked in).
 

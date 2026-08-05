@@ -19,9 +19,22 @@ from rich.console import Group, RenderableType
 from rich.text import Text
 
 from yeaboi.ui.shared._components import build_page_panel
-from yeaboi.ui.shared._mascot import render_full, render_head, walk_cells
+from yeaboi.ui.shared._mascot import SHADES_LIFT_SEQUENCE, render_full, render_head_idle, walk_cells
 
 IDLE_SECONDS = 5 * 60
+
+# build_screensaver advances the sprite at this rate; `frame` below is derived
+# from it. Named because the shades gag has to land on the same grid — a lift
+# sequence stepping at a different rate than the bob reads as two animations.
+SAVER_FPS = 8
+# How often the idle head lifts its shades. The mode-select companion plays the
+# same double-shades gag on click; here it is on a timer, because nobody is
+# there to click — that is what idle means.
+#
+# Anything recording this as a loop wants a whole number of these: the bob
+# closes its cycle every second, but the clip only wraps invisibly on a
+# multiple of the gag period.
+SHADES_EVERY_SECONDS = 4.0
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -171,10 +184,25 @@ _SAVER_JUMP_H = 2  # rows he springs up onto bar level as he reaches the music t
 _SAVER_JUMP_HALF = 0.06  # half-width of the hop as a fraction of the walk period
 
 
+def _shades_lift(elapsed: float) -> int | None:
+    """Where the sunglasses are in the periodic gag, or None while resting.
+
+    Steps on the same 8-per-second grid as the bob, so the two never drift
+    against each other.
+    """
+    period = int(SHADES_EVERY_SECONDS * SAVER_FPS)
+    step = int(elapsed * SAVER_FPS) % period
+    # The gag sits at the *end* of each period, so the saver opens on the resting
+    # bob rather than halfway through a lift — which is what it would do at
+    # elapsed 0, and what a recorded loop would open on.
+    start = period - len(SHADES_LIFT_SEQUENCE)
+    return SHADES_LIFT_SEQUENCE[step - start] if step >= start else None
+
+
 def build_screensaver(*, width: int, height: int, elapsed: float | None = None) -> RenderableType:
     """Build a size-aware animated saver frame without mutating app content."""
     elapsed = idle_controller.animation_elapsed() if elapsed is None else elapsed
-    frame = int(elapsed * 8) % 8
+    frame = int(elapsed * SAVER_FPS) % 8
 
     # Roomy terminals: the duck waddles back and forth along the floor (feet
     # stepping) rather than standing still in the centre. Needs room for the 18-row
@@ -219,7 +247,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     if width >= 46 and height >= 22:
         art: RenderableType | None = render_full(frame)
     elif width >= 22 and height >= 13:
-        art = render_head(frame)
+        art = render_head_idle(frame, _shades_lift(elapsed))
     else:
         art = None
 
