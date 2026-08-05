@@ -67,7 +67,7 @@ Grid = tuple[str, ...]
 # No gravity. Ducks drift; nothing falls and nothing piles up. With gravity they
 # spent the clip settling into a twitching heap along the floor, which is the
 # opposite of mayhem.
-DRIFT_SPEED = (9.0, 20.0)  # initial speed, px/s
+DRIFT_SPEED = (26.0, 48.0)  # initial speed, px/s
 SPIN_SPEED = (-150.0, 150.0)  # deg/s; sign is direction
 
 # Elastic. Any energy loss at all and a gravity-free yard visibly winds down
@@ -265,6 +265,17 @@ def hero_lift(elapsed: float) -> int:
     return SHADES_LIFT_SEQUENCE[step_i - start] if step_i >= start else 0
 
 
+def hero_quack_grid() -> Grid:
+    """The hero mid-quack, at the same height as every other hero frame.
+
+    Same reason hero_grid always pads: compose() centres a sprite on the duck,
+    so a grid that is shorter puts his head lower. He is hit constantly, and
+    without this he bobs up and down on every impact.
+    """
+    pad = ("." * len(DUCK_HEAD_QUACK[0]),) * HERO_PAD
+    return scale(pad + DUCK_HEAD_QUACK, HERO_SCALE)
+
+
 def hero_grid(elapsed: float) -> Grid:
     """The anchored duck, running the shades gag on a timer.
 
@@ -327,7 +338,7 @@ class Duck:
         if self.is_hero:
             # Quacking beats the shades gag: he cannot be mid-cool-reveal and
             # mid-yelp at once, and the yelp is the one a duck to the face causes.
-            return scale(DUCK_HEAD_QUACK, HERO_SCALE) if now < self.quack_until else hero_grid(now)
+            return hero_quack_grid() if now < self.quack_until else hero_grid(now)
         level = 0
         if now < self.squish_until:
             # Flattest at the moment of impact, easing back out as the timer runs.
@@ -364,14 +375,27 @@ def make_ducks(count: int, width: int, height: int, rng: random.Random) -> list[
 
     ducks: list[Duck] = []
     margin = SPRITE_SIZE / 2
-    for _ in range(count):
-        # Rejection-sample a start clear of the hero, so nothing begins the clip
-        # already inside him and gets flung out on frame one.
-        x = y = 0.0
-        for _attempt in range(200):
-            x = rng.uniform(margin, width - margin)
-            y = rng.uniform(margin, height - margin)
-            if math.hypot(x - hero.x, y - hero.y) > hero.radius + DUCK_RADIUS + 2:
+
+    # Stratified, not uniform: one duck per cell of a coarse grid, jittered
+    # inside it. Twelve uniform samples clump — the first take left the whole
+    # left third empty, which is what uniform random looks like at this count,
+    # and the eye reads it as a mistake rather than as chance.
+    across = math.ceil(math.sqrt(count))
+    down = math.ceil(count / across)
+    cell_w = (width - 2 * margin) / across
+    cell_h = (height - 2 * margin) / down
+
+    for i in range(count):
+        col, row = i % across, i // across
+        # Rejection-sample within the cell so nothing starts inside the hero and
+        # gets flung out on frame one. Falls back to the cell centre.
+        x = margin + (col + 0.5) * cell_w
+        y = margin + (row + 0.5) * cell_h
+        for _attempt in range(60):
+            cx = margin + (col + rng.uniform(0.15, 0.85)) * cell_w
+            cy = margin + (row + rng.uniform(0.15, 0.85)) * cell_h
+            if math.hypot(cx - hero.x, cy - hero.y) > hero.radius + DUCK_RADIUS + 2:
+                x, y = cx, cy
                 break
         heading = rng.uniform(0, 2 * math.pi)
         speed = rng.uniform(*DRIFT_SPEED)
