@@ -203,12 +203,14 @@ class _FakeProc:
 
     def __init__(self) -> None:
         self.terminated = False
+        self.terminate_calls = 0  # a count, not a flag: a double stop() must not double-terminate
         self.killed = False
         self.returncode = 0
         self.stderr = io.StringIO("")  # drains immediately; no URL is ever emitted
 
     def terminate(self) -> None:
         self.terminated = True
+        self.terminate_calls += 1
 
     def kill(self) -> None:
         self.killed = True
@@ -300,6 +302,44 @@ class TestStartStopRace:
         assert result["url"] is None
         assert procs and procs[0].terminated  # spawned, but never left running
         assert t._proc is None
+
+    def test_stop_racing_the_reader_launch_tears_down_exactly_once(self, monkeypatch):
+        # The narrowest window in start(): the drain thread has been constructed but is
+        # not running yet. It is reachable — the share flow's cancel path stops the
+        # tunnel from the TUI thread while the setup worker is still inside start(), then
+        # stops it a second time once that worker is joined (two stop() call sites in
+        # ui/shared/_output_share.py). Publishing ``_reader`` *before* starting it made
+        # the first stop() join a thread that had never run — "RuntimeError: cannot join
+        # thread before it is started", raised straight out of the page's finally — and
+        # claiming the process handle separately from the reader let two stops terminate
+        # the same child twice. start() therefore assigns ``_reader`` only after
+        # ``reader.start()``, and stop() claims and blanks both handles in one breath.
+        procs: list[_FakeProc] = []
+
+        def _fake_popen(*args, **kwargs):
+            proc = _FakeProc()
+            procs.append(proc)
+            return proc
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _fake_popen)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        class _StopMidLaunch(threading.Thread):
+            """A drain thread that takes a stop() in the instant before it starts."""
+
+            def start(self) -> None:
+                if self.name == "retro-tunnel":  # never interfere with anyone else's threads
+                    t.stop()  # the page's finally, landing inside the window
+                super().start()
+
+        monkeypatch.setattr(tunnel.threading, "Thread", _StopMidLaunch)
+
+        assert t.start(timeout=1) is None  # the in-window stop must not raise out of start()
+        t.stop()  # and the second stop, after the worker is joined, is a clean no-op
+
+        assert len(procs) == 1
+        assert procs[0].terminate_calls == 1  # torn down once, not once per stop()
+        assert t._proc is None and t._reader is None
 
 
 class TestDnsLiveGate:
