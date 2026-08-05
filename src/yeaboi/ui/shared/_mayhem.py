@@ -586,7 +586,7 @@ def configure(duck_scale: int, hero_scale: int | None = None) -> None:
     squashed.cache_clear()
 
 
-def fits(width: int, height: int, coverage: float = 0.42) -> int:
+def fits(width: int, height: int, coverage: float = 0.34) -> int:
     """How many ducks fill ``coverage`` of a canvas, minus the hero's share.
 
     A screensaver cannot be handed a duck count: it gets whatever terminal the
