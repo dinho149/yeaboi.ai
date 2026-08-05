@@ -101,6 +101,18 @@ def _push_upstream_commit(tmp_path: Path, env: dict[str, str], branch: str = "ma
     return _git(other, "rev-parse", "HEAD", env=env)
 
 
+def _push_remote_only_branch(tmp_path: Path, env: dict[str, str], name: str) -> str:
+    """Create a branch that exists on origin but NOT in `repo` (a teammate's branch)."""
+    other = tmp_path / f"other-rb-{name.replace('/', '-')}"
+    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True, env=env)
+    _git(other, "checkout", "-qb", name, env=env)
+    (other / "rb.txt").write_text(f"{name}\n")
+    _git(other, "add", "-A", env=env)
+    _git(other, "commit", "-qm", "remote work", env=env)
+    _git(other, "push", "-q", "origin", name, env=env)
+    return _git(other, "rev-parse", "HEAD", env=env)
+
+
 def _run_wt(repo: Path, name: str, env: dict[str, str], action: str = "headless") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "scripts/wt.sh", name, action],
@@ -178,6 +190,45 @@ class TestExistingBranch:
         assert result.returncode == 0, result.stderr
         assert _git(repo, "rev-parse", "old-feat", env=env) == old
         assert "1 commit(s) behind" in result.stdout
+
+
+class TestRemoteBranch:
+    """A branch existing only on origin is continued, never shadowed by a re-cut."""
+
+    def test_remote_only_branch_is_checked_out_tracking(self, tmp_path: Path, repo: Path, env: dict[str, str]) -> None:
+        remote_tip = _push_remote_only_branch(tmp_path, env, "feat-r")
+        main_tip = _git(repo, "rev-parse", "HEAD", env=env)
+        assert remote_tip != main_tip
+
+        result = _run_wt(repo, "feat-r", env)
+
+        assert result.returncode == 0, result.stderr
+        # The regression this path exists to prevent: a fresh same-named branch
+        # cut from origin/main instead of the teammate's actual branch.
+        assert _git(repo, "rev-parse", "feat-r", env=env) == remote_tip
+        assert "checked out existing remote branch origin/feat-r" in result.stdout
+        # --track: a bare `git push` in the worktree must aim at origin/feat-r.
+        assert _git(repo, "config", "--get", "branch.feat-r.merge", env=env) == "refs/heads/feat-r"
+
+    def test_local_branch_wins_over_remote_of_same_name(self, tmp_path: Path, repo: Path, env: dict[str, str]) -> None:
+        local_tip = _git(repo, "rev-parse", "HEAD", env=env)
+        _git(repo, "branch", "feat-r", local_tip, env=env)
+        _push_remote_only_branch(tmp_path, env, "feat-r")
+
+        result = _run_wt(repo, "feat-r", env)
+
+        assert result.returncode == 0, result.stderr
+        assert _git(repo, "rev-parse", "feat-r", env=env) == local_tip
+
+    def test_nested_branch_name_creates_nested_worktree(self, tmp_path: Path, repo: Path, env: dict[str, str]) -> None:
+        """Slash-containing names (cowork/foo, 123-issue-title) must nest, not fail."""
+        remote_tip = _push_remote_only_branch(tmp_path, env, "cowork/nested-fix")
+
+        result = _run_wt(repo, "cowork/nested-fix", env)
+
+        assert result.returncode == 0, result.stderr
+        assert (repo / ".claude" / "worktrees" / "cowork" / "nested-fix").is_dir()
+        assert _git(repo, "rev-parse", "cowork/nested-fix", env=env) == remote_tip
 
 
 class TestLocalDefaultSync:

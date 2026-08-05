@@ -16,6 +16,13 @@
 # (no origin, failed fetch, unresolvable default branch, pre-existing branch)
 # prints why it took a local base instead.
 #
+# Branch resolution order: an existing LOCAL branch is reused as-is; else an
+# existing REMOTE branch (origin/<name>) is checked out tracking its remote
+# counterpart — so `make wt-new NAME=<teammate-branch>` continues that branch
+# instead of silently re-cutting a same-named one from origin/main; else a new
+# branch is cut from origin/main. scripts/wt-issue.sh resolves <name> from a
+# GitHub issue's linked branch / closing PR and delegates here.
+#
 # Provisioning per worktree: copy the main checkout's .env, create a uv venv with
 # the package installed editable (same as `make install`), install pre-commit
 # hooks, and (except for headless) write .vscode/ auto-launch files so opening
@@ -136,21 +143,35 @@ sync_local_default() {
   fi
 }
 
+report_behind() {
+  # An existing branch keeps its own history — rebasing it here could conflict
+  # or rewrite pushed commits, so only report the gap and let /sync-main do it.
+  [ -n "$BASE_REF" ] || return 0
+  local behind
+  behind="$(git -C "$ROOT" rev-list --count "$NAME..$BASE_REF" 2>/dev/null || echo 0)"
+  if [ "$behind" != "0" ]; then
+    echo "[wt] note: existing branch '$NAME' is $behind commit(s) behind $BASE_REF — run /sync-main in the worktree"
+  fi
+}
+
 if [ ! -d "$TARGET" ]; then
-  mkdir -p "$ROOT/.claude/worktrees"
+  # dirname, not the fixed worktrees dir: branch names may contain '/'
+  # (feature/foo, GitHub's 123-issue-title style), which nests the target.
+  # Known edge: if a worktree named exactly like the prefix exists (branch
+  # 'feat' AND 'feat/x'), the nested one lands inside the other's working tree.
+  mkdir -p "$(dirname "$TARGET")"
   resolve_base
   sync_local_default
-  # New branch by default; reuse the branch if it already exists.
+  # Reuse a local branch; else continue an existing remote branch; else cut new.
   if git -C "$ROOT" show-ref --verify --quiet "refs/heads/$NAME"; then
     git -C "$ROOT" worktree add "$TARGET" "$NAME"
-    # An existing branch keeps its own history — rebasing it here could conflict
-    # or rewrite pushed commits, so only report the gap and let /sync-main do it.
-    if [ -n "$BASE_REF" ]; then
-      behind="$(git -C "$ROOT" rev-list --count "$NAME..$BASE_REF" 2>/dev/null || echo 0)"
-      if [ "$behind" != "0" ]; then
-        echo "[wt] note: existing branch '$NAME' is $behind commit(s) behind $BASE_REF — run /sync-main in the worktree"
-      fi
-    fi
+    report_behind
+  elif git -C "$ROOT" show-ref --verify --quiet "refs/remotes/origin/$NAME"; then
+    # --track (unlike the --no-track below): the base IS this branch's remote
+    # counterpart, so a bare `git push` in the worktree should aim at it.
+    git -C "$ROOT" worktree add --track -b "$NAME" "$TARGET" "origin/$NAME"
+    echo "[wt] checked out existing remote branch origin/$NAME (tracking)"
+    report_behind
   elif [ -n "$BASE_REF" ]; then
     # --no-track: branching off a remote-tracking ref would otherwise set the new
     # branch's upstream to origin/main, so a bare `git push` in the worktree aims

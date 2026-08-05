@@ -42,11 +42,12 @@ Terminal GIFs for the README: `asciinema rec docs/demo.cast -c "yeaboi --dry-run
 
 ## Parallel Development (worktrees)
 
-Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout. Creating a worktree fetches `origin` and cuts the new branch from latest `origin/main` (and fast-forwards the main checkout's `main` when that is safe), so it does not inherit a stale local base. Reusing an existing branch leaves it untouched — the script reports how far behind it is; rebase it with `/sync-main`.
+Each feature gets its own git worktree under `<main checkout>/.claude/worktrees/<name>` with its own branch, `.env`, uv venv, and pre-commit hooks. Never develop two features in one checkout. Creating a worktree fetches `origin` and cuts the new branch from latest `origin/main` (and fast-forwards the main checkout's `main` when that is safe), so it does not inherit a stale local base. Reusing an existing local branch leaves it untouched, and a branch that exists only on `origin` is checked out tracking the remote branch rather than re-cut from main — the script reports how far behind it is; rebase it with `/sync-main`.
 
 ```bash
 make wt-new NAME=my-feature       # create worktree off latest origin/main + open VS Code with claude auto-running
 make wt-headless NAME=my-feature  # same, WITHOUT VS Code (for background-agent work)
+make wt-issue ISSUE=123           # worktree from the branch of GitHub issue 123 (linked branch / closing PR); HEADLESS=1 to skip VS Code
 make wt-list                      # list worktrees (branch, clean/dirty, path)
 make wt-rm NAME=my-feature        # remove worktree dir + branch
 ```
