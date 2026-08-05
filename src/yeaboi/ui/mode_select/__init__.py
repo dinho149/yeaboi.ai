@@ -10198,9 +10198,11 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     return
                 remote["status"] = "Starting secure Cloudflare tunnel (verifying it's reachable)…"
                 tunnel = CloudflareTunnel(server.port, binary=binary)
-                # Published BEFORE start(), which blocks for up to 45 s on the
-                # handshake and the DNS-propagation gate. The page's finally
-                # stops whatever is in this slot; assigning after start() (as
+                # Published BEFORE start(), which blocks for up to the 45 s
+                # handshake budget (URL + edge registration + a possible
+                # --region retry) plus the ~30 s DNS-propagation gate. The
+                # page's finally stops whatever is in this slot — stop() also
+                # cancels an in-flight start(); assigning after start() (as
                 # this did) meant closing a board during setup — now a routine
                 # path, since setup is no longer a deliberate button press —
                 # orphaned a cloudflared child still forwarding to that port.
