@@ -1185,8 +1185,15 @@ function initHeroDemo() {
 
   // Typewriter-reveals the selected mode's description, mirroring the real
   // screen's per-character desc_reveal fade.
-  function typeDesc(el, text) {
-    if (_heroTypeTimer) clearInterval(_heroTypeTimer);
+  // The description under the selected title types itself in, the way
+  // _build_mode_row reveals it a character at a time (desc_reveal). The real
+  // string lives on the element and is stashed on first run, so re-selecting a
+  // card mid-type never captures a half-typed line as the target.
+  function typeDesc(el) {
+    if (_heroTypeTimer) { clearInterval(_heroTypeTimer); _heroTypeTimer = null; }
+    if (!el) return;
+    var text = el.getAttribute('data-full') || el.textContent;
+    el.setAttribute('data-full', text);
     if (reducedMotion) { el.textContent = text; return; }
     el.textContent = '';
     var i = 0;
@@ -1197,22 +1204,24 @@ function initHeroDemo() {
     }, 16);
   }
 
-  // Set once the bubble is presenting a mode; the tip rotator then stands down
-  // rather than overwriting what the duck is saying.
-  var _duckPresenting = false;
-
   function show(i, opts) {
     var userInitiated = !opts || opts.userInitiated !== false;
     current = ((i % modes.length) + modes.length) % modes.length;
     modes.forEach(function (m, idx) {
-      m.classList.toggle('is-active', idx === current);
+      var on = idx === current;
+      m.classList.toggle('is-active', on);
+      // every other card's description is reset to its full text: it is hidden
+      // by a zero height, and a half-typed line left behind would show if that
+      // card were selected again before its own type-in started
+      if (!on) {
+        var d = m.querySelector('.tui-mode-desc');
+        if (d && d.getAttribute('data-full')) d.textContent = d.getAttribute('data-full');
+      }
     });
-    // The duck presents the selection: its bubble speaks the mode's own copy
-    // rather than a rotating tip, so scrolling the rail walks the companion
-    // through the modes. The inline description row is retired — one home for
-    // the copy, and the list stays a clean column of titles.
-    var speak = modes[current] && modes[current].getAttribute('data-desc');
-    if (speak) { _duckPresenting = true; typeDesc(document.getElementById('tui-tip'), speak); }
+    // The bubble is NOT part of this. It carries the rotating tips the app's
+    // companion actually speaks (_build_tip_rows); driving it from the scroll
+    // position meant the duck's line changed under you as the page moved.
+    typeDesc(modes[current] && modes[current].querySelector('.tui-mode-desc'));
     if (userInitiated) restartAuto();
   }
 
@@ -1347,7 +1356,6 @@ function initHeroDemo() {
     if (tipEl) tipEl.textContent = HERO_TIPS[tipIdx].replace(/^[^A-Za-z0-9]+/, '');
   }
   function rotateTip() {
-    if (_duckPresenting) return;  // the bubble is showing a mode, not a tip
     tipIdx = (tipIdx + 1) % HERO_TIPS.length;
     if (reducedMotion || !tipEl) { renderTip(); return; }
     tipEl.classList.add('fading');

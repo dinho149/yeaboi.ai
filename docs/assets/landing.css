@@ -14,6 +14,9 @@
        terminal off the left edge of the window. */
     --hero-max:1320px;
     width:100%; max-width:var(--hero-max);
+    /* tighter than the site-wide .wrap gutter — this row is a terminal and a
+       narrow caption column, and 40px a side was 80px of terminal */
+    padding-left:24px; padding-right:24px;
     /* body is inset by the fixed rail, so "centered" lands right of the true
        viewport centre — pull back by up to rail/2, clamped so the content
        never slides under the rail on narrower windows */
@@ -66,20 +69,30 @@
      arrow-key auto-cycle used. Pure CSS sticky + IntersectionObserver,
      no scroll library. ---- */
   .scrolly{
-    display:grid; grid-template-columns:minmax(0,1fr) 268px;
-    gap:44px; align-items:start;
+    /* Every pixel not spent on the rail or the gutters is terminal. At a 1440
+       viewport the hero column is only 1176 (the nav rail owns the rest), so
+       the frame's width is whatever this row does not take: a narrower step
+       column and tighter gutters are the only places to find it. */
+    display:grid; grid-template-columns:minmax(0,1fr) 232px;
+    gap:36px; align-items:start;
   }
   .scrolly-sticky{
     position:sticky; top:max(28px, calc(50vh - 340px));
     z-index:1;
   }
   .scrolly-sticky::before{
-    /* the frame's glow, moved here so it travels with the pinned terminal */
+    /* the frame's glow, moved here so it travels with the pinned terminal.
+       No filter:blur() — a radial gradient is already a smooth falloff, and
+       blurring one on a near-black page buys nothing while costing an
+       offscreen layer and quantising the low-alpha tail into visible blotches
+       with the blur box's own edges showing through them. The falloff does the
+       softening instead: both stops now reach full transparency well inside
+       the element, so nothing is clipped at its bounds. */
     content:""; position:absolute; inset:-12% -10%; z-index:0; pointer-events:none;
     background:
-      radial-gradient(50% 60% at 50% 22%, var(--accent-glow), transparent 72%),
-      radial-gradient(38% 42% at 22% 70%, rgba(80,150,210,.16), transparent 74%);
-    filter:blur(36px); opacity:.62;
+      radial-gradient(56% 66% at 50% 24%, var(--accent-glow), transparent 68%),
+      radial-gradient(46% 50% at 24% 68%, rgba(80,150,210,.13), transparent 66%);
+    opacity:.7;
   }
   .scrolly-steps{display:flex; flex-direction:column; padding:4vh 0 8vh}
   .scrolly-step{
@@ -126,7 +139,7 @@
        ground, heavy soft shadow. The one place on the page allowed to be
        fully opaque — it's the product. Sized for the app's real 80-column
        frame at a 14px cell. */
-    position:relative; z-index:1; width:100%; max-width:780px; margin:0 auto;
+    position:relative; z-index:1; width:100%; max-width:940px; margin:0 auto;
     background:#0a0b0d; border:1px solid var(--border-strong);
     border-radius:var(--radius-lg); overflow:hidden;
     box-shadow:var(--shadow-term), 0 0 0 1px rgba(0,0,0,.4);
@@ -176,10 +189,11 @@
   }
 
   .tui-splash{
-    /* min-height = the drawn menu's exact height (590px panel − 34px panel
-       padding − 2px border) so the Panel doesn't resize by a single pixel
-       when the splash hands over to the mode screen */
-    display:flex; align-items:center; justify-content:center; min-height:554px;
+    /* min-height = the drawn menu's exact height, measured, so the Panel does
+       not resize by a single pixel when the splash hands over to the mode
+       screen. Re-measure it after anything that changes a row's height (the
+       menu gap, the reserved description block). */
+    display:flex; align-items:center; justify-content:center; min-height:663px;
     animation:tui-splash-fade 2.4s ease forwards;
   }
   .tui-splash-word{
@@ -193,7 +207,12 @@
     .tui-splash{animation:none; opacity:0}
   }
 
-  .tui-menu{display:flex; flex-direction:column; gap:20px; animation:tui-fade .5s ease both}
+  /* gap:13 — tighter than it was, because the selected card now opens a
+     description block underneath itself the way the real list does, and the
+     frame has a fixed height to live inside. The app's own rows sit closer
+     together than 20px anyway; the breathing room came from the description
+     being missing. */
+  .tui-menu{display:flex; flex-direction:column; gap:13px; animation:tui-fade .5s ease both}
   /* the hidden attribute must actually hide: this class's display:flex is an
      author rule, so it silently overrides the UA's [hidden]{display:none} —
      without this, the "hidden" menu renders UNDER the splash during startup,
@@ -256,9 +275,17 @@
        and the Panel is terminal-fixed) so the frame never wobbles as
        different-length descriptions cycle. */
     margin:0; height:0; overflow:hidden; line-height:1.5; color:var(--t-text);
-    opacity:0; transition:opacity .2s, height .25s ease, margin .25s ease;
+    max-width:60ch; opacity:0;
+    transition:opacity .2s, height .25s ease, margin .25s ease;
   }
-  .tui-mode-desc{display:none}
+  .tui-mode.is-active .tui-mode-desc{
+    /* one blank row, then two reserved rows — exactly what _build_mode_row lays
+       out. Reserved rather than fitted: the height is the same for a one-line
+       and a two-line description, so arrowing down the list never moves the
+       rows below it. Exactly one card is active at any time, so the menu's
+       total height is constant too. */
+    height:3em; margin-top:1.5em; opacity:1;
+  }
   @media (hover:hover){
     .tui-mode:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px; border-radius:2px}
   }
@@ -280,19 +307,9 @@
     position:absolute; right:0; bottom:22px;
     display:flex; flex-direction:column; align-items:center; gap:0;
   }
-  /* the update box sits ABOVE the tip bubble in the same lane, amber, with its
-     title stamped on its own top border (Panel(title="update")) */
-  .tui-update{
-    position:relative; align-self:stretch; margin-bottom:12px;
-    border:1px solid rgb(150,110,45); border-radius:8px; padding:5px 12px 4px;
-  }
-  .tui-update-title{
-    position:absolute; left:12px; top:0; transform:translateY(-50%);
-    background:#0a0b0d; padding:0 5px; font-size:.92em; color:rgb(200,150,60);
-  }
-  .tui-update .v{margin:0; color:rgb(226,186,96)}
-  .tui-update .k{margin:0; color:var(--t-muted)}
-  .tui-update .k b{font-weight:700; color:rgb(210,210,220)}
+  /* (The amber update box that used to sit above the bubble is gone: it is a
+     state the app is only sometimes in, and a screenshot of the product should
+     not be advertising a release that is newer than the one on the page.) */
   /* BETA chip beside the Performance title, as the real list shows it */
   .tui-beta{
     display:inline-block; vertical-align:middle; margin-left:10px;
