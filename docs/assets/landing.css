@@ -146,11 +146,6 @@
        kerning pass, so a row of ▀▄█ tiles exactly like a terminal grid. */
     font-size:14px; line-height:1.5; padding:12px 14px 16px;
     font-variant-ligatures:none; font-kerning:none; text-rendering:optimizeSpeed;
-    /* faint phosphor scanlines — the texture that says "terminal", too
-       subtle to read as an effect, just enough to not read as a flat div */
-    background-image:repeating-linear-gradient(0deg,
-      rgba(255,255,255,.012) 0px, rgba(255,255,255,.012) 1px,
-      transparent 1px, transparent 3px);
   }
   /* <pre> carries its own UA font-family, which beats inheritance — so the block
      titles, splash wordmark and duck kept falling back to the webfont with no
@@ -314,7 +309,10 @@
      seam. A browser line box at line-height:1 is the full font-size, but the
      block glyphs are drawn shorter than the em — so the rows floated apart and
      the duck came out in stripes. Pulling the leading in below 1 closes it. */
-  .tui-duck{margin:0; line-height:.82; letter-spacing:0; white-space:pre; font-size:15px}
+  .tui-duck{
+    margin:0; line-height:1; letter-spacing:0; white-space:pre;
+    transform:scaleY(1.2); transform-origin:top center;
+  }
   .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
