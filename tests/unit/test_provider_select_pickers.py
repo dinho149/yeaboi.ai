@@ -245,7 +245,10 @@ class TestSelectScreen:
         assert _probe_row_count(out) == 2  # one card, two art rows
 
     def test_fade_style_applies_to_fade_indices(self):
-        faded = 2
+        # Phase 1 of the confirm transition: the unselected rows grey out while
+        # the selection is held on `selected_style` (_transitions.py:74).
+        faded = len(_PROVIDER_CARDS) - 1
+        assert faded != 0, "the faded row must not be the selected one"
         out = _render_ansi(_select(0, fade_indices=[faded], fade_style=_PROBE))
         assert _PROBE_FG in _art_row(out, _PROVIDER_CARDS[faded]["name"])
         for i, card in enumerate(_PROVIDER_CARDS):
@@ -253,6 +256,20 @@ class TestSelectScreen:
             # contiguous art to anchor on. The row count below covers it.
             if i not in (0, faded):
                 assert _PROBE_FG not in _art_row(out, card["name"])
+        assert _probe_row_count(out) == 2
+
+    def test_fade_style_applies_to_the_selected_row(self):
+        # A faded row and the selected row are the same row here, which no other
+        # test in this file arranges — and it is what the confirm pulse actually
+        # does: it puts the *selected* index in fade_indices and leaves
+        # selected_style empty (_transitions.py:37, and the pulse loop at :59).
+        #
+        # So the guard worth having is that the fade is not conditioned on the
+        # row being unselected. Add `and i != selected` to the fading arm in
+        # _screens.py — a plausible "the selection shimmers, let it be" tidy-up —
+        # and the pulse freezes with every other test here still green.
+        out = _render_ansi(_select(0, fade_indices=[0], fade_style=_PROBE))
+        assert _PROBE_FG in _art_row(out, _PROVIDER_CARDS[0]["name"])
         assert _probe_row_count(out) == 2
 
     def test_fade_style_without_indices_is_inert(self):
@@ -284,6 +301,12 @@ class TestSelectScreen:
     # Asserting a line count instead — the obvious "it must not overflow" test —
     # would be vacuous: build_page_panel passes an explicit `height` to Rich,
     # which pads or crops to it whatever the body contains.
+    #
+    # Both are strict, so they hard-fail the build the moment they pass. What
+    # makes them pass is "the body stopped overflowing 9 rows", which a shorter
+    # card list would also achieve — hence the guards below. The body needs
+    # 3n-1 rows for n cards, so the footer goes at n>=4 and the last card's own
+    # row at n>=5; measured, not derived on paper.
 
     @pytest.mark.xfail(
         strict=True,
@@ -291,6 +314,10 @@ class TestSelectScreen:
     )
     def test_progress_bar_survives_a_short_terminal(self):
         # Losing the footer costs the user the whole "where am I in setup" bar.
+        assert len(_PROVIDER_CARDS) >= 4, (
+            "at 3 cards or fewer the body fits a 24-row frame and keeps its footer — "
+            "this xfail would now pass for a reason unrelated to #153; recheck #153 before deleting it"
+        )
         out = _render_ansi(_select(0, width=80, height=_SHORT), height=_SHORT)
         assert _active_chip(out) == "LLM Provider"
 
@@ -304,8 +331,36 @@ class TestSelectScreen:
         # is last. That is the expensive half: a user on a 24-row terminal is
         # never shown the option that needs no API key and no spend, and nothing
         # on screen hints that the list continues.
+        assert len(_PROVIDER_CARDS) >= 5, (
+            "at 4 cards or fewer the last row still fits a 24-row frame (only the footer is lost) — "
+            "this xfail would now pass for a reason unrelated to #153; recheck #153 before deleting it"
+        )
         out = _render(_select(0, width=80, height=_SHORT), height=_SHORT)
         assert _art_top(_card("ollama")["name"]) in out
+
+
+def test_the_height_xfails_still_describe_a_layout_bug():
+    """The two #153 xfails assume list lengths; say so where it can be heard.
+
+    Each xfail carries the same guard inline, which stops a shorter card list
+    from turning it into a confusing XPASS. But an assertion that fails inside
+    an ``xfail`` is just another expected failure — the message never reaches
+    the run output. This test is the half that does: it fails loudly, by name,
+    the moment the assumption those xfails rest on stops holding.
+
+    Thresholds are measured, not derived: the body needs 3n-1 rows against a
+    9-row budget at height 24, so the footer goes at n>=4 and the last card's
+    own row at n>=5.
+    """
+    assert len(_PROVIDER_CARDS) >= 5, (
+        "the provider list shrank, so a 24-row frame may now fit it — the #153 xfails in "
+        "TestSelectScreen will silently stop testing the crop. Recheck #153 and delete them if it is gone."
+    )
+    assert len(_VC_OPTIONS) <= 3, (
+        "the version-control list grew, so a 24-row frame may no longer fit it — "
+        "TestVcSelectScreen.test_progress_bar_survives_a_short_terminal is about to fail with #153, "
+        "not a regression of its own."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -351,9 +406,23 @@ class TestVcSelectScreen:
         assert _probe_row_count(out) == 2
 
     def test_fade_style_applies_to_fade_indices(self):
+        # The fade-out that ends the step (__init__.py:912) greys the unselected
+        # rows while the selection is held on selected_style.
         faded = len(_VC_OPTIONS) - 1
+        assert faded != 0, "the faded row must not be the selected one"
         out = _render_ansi(_vc(0, fade_indices=[faded], fade_style=_PROBE))
         assert _PROBE_FG in _art_row(out, _VC_OPTIONS[faded]["name"])
+        assert _probe_row_count(out) == 2
+
+    def test_fade_style_applies_to_the_selected_row(self):
+        # Both of this picker's own fades put the selected index in fade_indices
+        # with selected_style empty: the entry fade-in passes every index
+        # (__init__.py:825) and the confirm pulse passes just the selected one
+        # (:898). Condition the fading arm in _screens_vc.py on the row being
+        # unselected and the entry fade-in stops animating entirely — the whole
+        # step would just appear, with nothing here to say so.
+        out = _render_ansi(_vc(0, fade_indices=[0], fade_style=_PROBE))
+        assert _PROBE_FG in _art_row(out, _VC_OPTIONS[0]["name"])
         assert _probe_row_count(out) == 2
 
     def test_fade_style_without_indices_is_inert(self):
@@ -372,5 +441,9 @@ class TestVcSelectScreen:
         # Two options rather than five, so this picker's body still fits a 24-row
         # frame and keeps its footer. Pinning that here is what makes the LLM
         # picker's xfail a statement about row count rather than about the frame.
+        assert len(_VC_OPTIONS) <= 3, (
+            "a 4th option would overflow a 24-row frame and lose this footer too — "
+            "that is #153, not a regression here; xfail this and say so"
+        )
         out = _render_ansi(_vc(0, width=80, height=_SHORT), height=_SHORT)
         assert _active_chip(out) == "Version Control"
