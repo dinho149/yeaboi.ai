@@ -17,8 +17,10 @@ workstream and any per-run focus; everything else is here.
 
 3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
    charter's paths. It returns ranked finds, each
-   classified `auto` or `propose` against the allowlist in house-rules. Nothing found is a normal
-   outcome: exit silently.
+   classified `auto` or `propose` against the allowlist in house-rules. The finds include up to 3
+   user-facing opportunities (`type: feature|improvement`) alongside defects — see the opportunity
+   pass in `.claude/agents/cowork-scout.md`; they ride the same ranking and the same propose lane.
+   Nothing found is a normal outcome: exit silently.
 
 4. **Deduplicate** — `gh issue list --label "workstream:<name>" --state open` and
    `gh issue list --label "workstream:<name>" --state closed --limit 50`. Drop any find that
@@ -31,12 +33,14 @@ workstream and any per-run focus; everything else is here.
    - **you** then spawn `code-reviewer` (`deep`) on `git diff main...HEAD` with a one-paragraph
      description of the find — the builder does not review its own work, and agents do not nest
    - resolve every `blocker` and `should-fix` finding, then have the builder open the PR labelled
-     `cowork` + `workstream:<name>`
+     `cowork` + `workstream:<name>` + the find's `type:<type>` — the merge ship note reads the type
+     off the PR, so a PR without one ships untagged
 
-6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which files
-   one GitHub issue each (`cowork:proposal` + `workstream:<name>`). **No Linear ticket, and no Slack
-   post.** The issue is the queue; the digest is the only thing that talks to Slack about proposals;
-   and Linear is opened at approval, not at proposal — see [definition-of-done.md](definition-of-done.md).
+6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which
+   files one GitHub issue each (`cowork:proposal` + `workstream:<name>` + `type:<type>`). **No
+   Linear ticket, and no Slack post.** The issue is the queue; the digest is the only thing that
+   talks to Slack about proposals; and Linear is opened at approval, not at proposal — see
+   [definition-of-done.md](definition-of-done.md).
 
 7. **Stop.** Do not follow interesting threads outside your charter. File them as proposals for the
    owning workstream and move on.

@@ -191,9 +191,29 @@ class TestPromptTemplate:
 
 
 class TestLabels:
-    def test_one_label_per_workstream_plus_the_three_shared(self):
+    def test_the_label_set_is_shared_plus_workstreams_plus_types(self):
         names = {label.name for label in setup.expected_labels()}
-        assert names == {"cowork", "cowork:proposal", "claude-implement"} | {f"workstream:{w}" for w in WORKSTREAMS}
+        assert names == (
+            {"cowork", "cowork:proposal", "claude-implement"}
+            | {f"workstream:{w}" for w in WORKSTREAMS}
+            | {f"type:{t}" for t in setup.PROPOSAL_TYPES}
+        )
+
+    def test_teardown_never_deletes_the_shared_type_labels(self):
+        # The feedback system labels user-filed issues type:*; deleting a label
+        # strips it off every issue on the repo, so teardown must leave them.
+        survivors = {label.name for label in setup.teardown_labels()}
+        assert not any(name.startswith("type:") for name in survivors)
+
+    def test_the_type_vocabulary_covers_the_feedback_system(self):
+        # feedback.py titles issues `[Bug] …` and labels them type:<kind>; the
+        # two systems share the repo's label namespace, and cowork-setup is the
+        # only machinery that creates labels — so every feedback type must have
+        # its label created here. Derived, not retyped: a fifth FEEDBACK_TYPE
+        # must fail this test until PROPOSAL_TYPES carries it.
+        from yeaboi.feedback import FEEDBACK_TYPES
+
+        assert {t.lower() for t in FEEDBACK_TYPES} <= set(setup.PROPOSAL_TYPES)
 
     def test_there_are_fifteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
@@ -806,7 +826,11 @@ class TestTeardown:
         assert setup.KEEP_LABEL not in {label.name for label in setup.teardown_labels()}
 
     def test_everything_else_cowork_creates_is_in_scope(self):
-        expected = {label.name for label in setup.expected_labels()} - {setup.KEEP_LABEL}
+        expected = {
+            label.name
+            for label in setup.expected_labels()
+            if label.name != setup.KEEP_LABEL and not label.name.startswith("type:")
+        }
         assert {label.name for label in setup.teardown_labels()} == expected
         assert len(expected) == len(WORKSTREAMS) + 2
 

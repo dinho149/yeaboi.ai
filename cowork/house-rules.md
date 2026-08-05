@@ -23,6 +23,11 @@ A find may skip the proposal step and go straight to a PR only when **every** co
 **Everything else proposes.** If you are arguing with yourself about whether something qualifies,
 it does not. Marketing always proposes.
 
+**`feature` and `improvement` finds always propose.** The opportunity pass in `cowork-scout.md`
+widens what scouts *look for*, not what builders may *ship unasked* — a user-facing opportunity is
+exactly the judgement call the proposal queue exists to put in front of a human. No opportunity ever
+qualifies for the auto lane.
+
 **Routine dependency bumps are not on this list**, though they look like they belong. Dependabot
 opens those PRs and `dependabot-auto.yml` verifies and merges them; a builder bumping the same
 dependency in its own branch produces a second PR that conflicts with the first. Nothing to
@@ -49,7 +54,8 @@ collision the paragraph above exists to prevent, and a CVE is not a reason to ca
 - **One coherent change per run.** No grab-bags.
 - **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no Slack message. A routine
   that always finds something is a routine inventing work.
-- **Label every PR** `cowork` and `workstream:<name>`. The `cowork` label is what guarantees
+- **Label every PR** `cowork`, `workstream:<name>`, and the find's `type:<type>` — the merge ship
+  note takes its `[type]` tag from the PR's labels. The `cowork` label is what guarantees
   `claude-review.yml` reviews it: that workflow skips `dependabot[bot]` and `github-actions[bot]`,
   and an unattended job's PR may carry one of those authors. An unlabelled PR can go unreviewed with
   nothing said about it.

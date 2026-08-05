@@ -27,6 +27,14 @@ XHTML), `tests/contract/` and its cassettes
 A broken or flaky contract test, a missing pagination guard with a cassette to prove it, dead code in
 a retired provider path. New provider capabilities always propose.
 
+## Opportunity space
+
+Where a `[feature]`/`[improvement]` find is most likely to be real here: third-party edges a user
+hits silently (truncated lists, rate limits swallowed, auth that expires without a message), setup
+steps that could self-verify instead of failing on first use, and capabilities one provider has that
+its sibling lacks for no recorded reason. The evidence bar in `cowork-scout.md` applies — name the
+friction, the gap, or the repeated step.
+
 ## Out of scope
 
 `tools/team_learning.py` (analysis). Slack/email delivery, which lives in `standup/delivery.py` and

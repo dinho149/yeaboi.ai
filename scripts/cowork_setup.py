@@ -4,7 +4,7 @@
 ``cowork/`` is a complete specification — fifteen charters, nineteen routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 18 labels, 4 variables and 19 web
+registered at claude.ai. Doing that by hand is 25 labels, 4 variables and 19 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -102,6 +102,23 @@ ROUTINE_URL = "https://claude.ai/code/routines/{id}"
 # approval gate `.github/workflows/claude.yml` watches for — so removing it with
 # the fleet would quietly break a workflow that has nothing to do with cowork.
 KEEP_LABEL = "claude-implement"
+
+# The proposal-type vocabulary, carried in issue titles as `[type][workstream] …`
+# and on issues as `type:<kind>` labels. Shared with the feedback system:
+# ``feedback.py`` titles issues `[Bug] …` and labels them `type:<kind>`, and
+# ``feedback-remediation.yml`` normalizes the same set — `other` exists for that
+# system and is never used by a cowork scout.
+PROPOSAL_TYPES = ("bug", "feature", "improvement", "chore", "docs", "security", "other")
+
+_TYPE_COLORS = {
+    "bug": "d73a4a",
+    "feature": "a2eeef",
+    "improvement": "84b6eb",
+    "chore": "ededed",
+    "docs": "0075ca",
+    "security": "ee0701",
+    "other": "cfd3d7",
+}
 
 _DASHES = {"—", "–", "-", ""}
 
@@ -265,6 +282,7 @@ def expected_labels() -> list[Label]:
         Label("claude-implement", "0e8a16", "Approved — the claude.yml implement job builds this"),
     ]
     labels += [Label(f"workstream:{name}", "1d76db", f"cowork workstream: {name}") for name in parse_workstreams()]
+    labels += [Label(f"type:{kind}", _TYPE_COLORS[kind], f"issue type: {kind}") for kind in PROPOSAL_TYPES]
     return labels
 
 
@@ -518,7 +536,7 @@ def existing_labels() -> set[str] | None:
     None rather than an empty set, and the same for the variables below: they are
     different facts and the difference matters. ``gh_ready()`` passing does not
     mean the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all eighteen labels
+    and an empty set read as truth makes the doctor report all twenty-five labels
     missing and ``apply_labels`` try to create every one of them.
     """
     result = _gh("label", "list", "--limit", "200", "--json", "name")
@@ -1069,8 +1087,11 @@ def apply_urls(path: str | Path) -> int:
 
 
 def teardown_labels() -> list[Label]:
-    """The labels teardown may delete — everything cowork adds, minus KEEP_LABEL."""
-    return [label for label in expected_labels() if label.name != KEEP_LABEL]
+    """The labels teardown may delete — everything cowork adds, minus KEEP_LABEL
+    and the shared ``type:*`` set, which the feedback system also relies on:
+    user-filed feedback issues carry them, and deleting a label strips it off
+    every issue on the repo."""
+    return [label for label in expected_labels() if label.name != KEEP_LABEL and not label.name.startswith("type:")]
 
 
 def apply_teardown(labels: bool, variables: bool) -> int:
@@ -1103,6 +1124,7 @@ def apply_teardown(labels: bool, variables: bool) -> int:
             else:
                 note(f"teardown: could not delete {label.name}", result.stderr.strip() or "unknown gh error")
         say(f"teardown: kept {KEEP_LABEL} — the claude.yml implement job gates on it")
+        say("teardown: kept the type:* labels — the feedback system shares them")
 
     if variables:
         current = existing_variables()

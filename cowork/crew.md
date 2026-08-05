@@ -31,7 +31,8 @@ The scout returns a list; nothing else is passed between agents implicitly.
 
 ```
 { "workstream": "security",
-  "finds": [ { "title", "why_it_matters", "paths", "impact": 1-5,
+  "finds": [ { "title", "type": "bug|feature|improvement|chore|docs|security",
+               "why_it_matters", "paths", "impact": 1-5,
                "effort": "S|M|L", "risk": "low|med|high", "lane": "auto|propose" } ] }
 ```
 

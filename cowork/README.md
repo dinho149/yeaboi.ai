@@ -139,8 +139,9 @@ from [models.md](models.md#workflows), and the routines from the table above —
 routine actually runs on is the one written down here. `tests/unit/test_cowork_setup.py` fails on the
 same drift in `make test-fast`.
 
-**What each command covers.** `make cowork-setup` does the eighteen GitHub labels (`cowork`,
-`cowork:proposal`, `claude-implement`, and `workstream:<name>` for each of the fifteen) and the four
+**What each command covers.** `make cowork-setup` does the twenty-five GitHub labels (`cowork`,
+`cowork:proposal`, `claude-implement`, `workstream:<name>` for each of the fifteen, and the seven
+`type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
 file cannot read a markdown table. `/cowork deploy` does the sixteen cron routines and mirrors the
 workstream labels onto the Linear `Yeaboi` team; both need a Claude session, since a routine is
@@ -180,4 +181,5 @@ would quietly end at the next deploy. `resume` is the only thing that turns the 
 Teardown is tiered, because the pieces are not equally reversible: routines by default, `--labels` and
 `--variables` opt in, `--all` adds the Linear labels. Deleting a `workstream:` label strips it off
 every issue carrying it and nothing puts those back. `claude-implement` is never deleted — it predates
-cowork and gates the `claude.yml` implement job.
+cowork and gates the `claude.yml` implement job. The `type:*` labels are never deleted either — the
+feedback system shares them, and user-filed feedback issues carry them.

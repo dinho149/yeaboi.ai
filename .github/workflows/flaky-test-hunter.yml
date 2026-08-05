@@ -16,8 +16,8 @@
 # the auto-lane allowlist in cowork/house-rules.md, but flakiness is a property
 # of CI *run history* and of repeated execution — neither of which a scout
 # reading files can observe. So the detector stays and its output moves: it files
-# `cowork:proposal` + `workstream:<owner>` issues into the one queue the daily
-# digest ranks, rather than a parallel `[Flaky]` backlog with its own half-life.
+# `cowork:proposal` + `workstream:<owner>` + `type:bug` issues into the one queue
+# the daily digest ranks, rather than a parallel flaky backlog with its own half-life.
 #
 # Loop-safe: the issues it files are `github-actions[bot]`-authored, which
 # triggers nothing (claude.yml only fires on the `claude-implement` label; the
@@ -147,8 +147,8 @@ jobs:
             Everything you file goes into the cowork queue, so the daily digest
             ranks it beside every other proposal instead of running a second,
             parallel backlog nobody reads. That means each issue carries
-            `cowork:proposal` + `workstream:<owner>` + `flaky-test`, and closes
-            with the approval line the cowork scribe uses.
+            `cowork:proposal` + `workstream:<owner>` + `type:bug` + `flaky-test`,
+            and closes with the approval line the cowork scribe uses.
 
             For EACH test id in `flaky.json`'s "flaky" list:
             1. Search existing issues: `gh issue list --label flaky-test --search "<test id>" --state all`.
@@ -158,8 +158,9 @@ jobs:
                its owning workstream: the `**Owns**` line in exactly one
                `cowork/workstreams/*.md` names that path or its directory. Use
                `workstream:platform` only if genuinely none of them do.
-            4. Open one issue titled exactly `[Flaky] <test id>` with labels
-               `cowork:proposal`, `workstream:<owner>` and `flaky-test`. Body: the
+            4. Open one issue titled exactly `[bug][<owner workstream>] flaky: <test id>`
+               with labels `cowork:proposal`, `workstream:<owner>`, `type:bug` and
+               `flaky-test`. Body: the
                rerun failure ratio, the test's file path, and a one-paragraph
                hypothesis of the likely cause (timing, ordering, shared state, real
                clock/random use). End with the line:
@@ -167,9 +168,10 @@ jobs:
                Do NOT propose or apply a fix — this is triage only.
 
             If `flaky.json`'s "flaky" list is empty but `flapped_shas.json` is not,
-            open (or update) a single issue `[Flaky] CI history shows intermittent
-            failures` labelled `cowork:proposal` + `workstream:platform` +
-            `flaky-test`, summarizing the flapped commits so a human can investigate.
+            open (or update) a single issue `[bug][platform] flaky: CI history shows
+            intermittent failures` labelled `cowork:proposal` + `workstream:platform` +
+            `type:bug` + `flaky-test`, summarizing the flapped commits so a human can
+            investigate.
 
             Keep every issue/comment concise. Never edit code, never open a PR.
             NEVER apply `claude-implement` — that is the human approval gate.
