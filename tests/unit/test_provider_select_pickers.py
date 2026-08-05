@@ -146,6 +146,31 @@ def _text_rows(out: str) -> set[str]:
     return {line.strip().strip("│").strip() for line in out.splitlines()}
 
 
+def _art_row(out: str, name: str) -> str:
+    """The one captured line carrying *name*'s art-top row, escapes and all.
+
+    Only meaningful for a row drawn in a single style — a uniformly styled row
+    emits its art as one contiguous span, whereas the shimmering selection is
+    styled per character and has no contiguous art to find. That asymmetry is
+    what ``_probe_row_count`` covers.
+    """
+    art = _art_top(name)
+    matches = [line for line in out.splitlines() if art in line]
+    assert len(matches) == 1, f"expected exactly one {name!r} art row in the capture, found {len(matches)}"
+    return matches[0]
+
+
+def _probe_row_count(out: str) -> int:
+    """How many captured lines carry the probe style.
+
+    A style override paints one card, which is two art rows. Counting them is
+    the half of the assertion ``_art_row`` cannot make: it catches an override
+    that leaked onto the shimmering selection, whose art is per-character styled
+    and so cannot be located by substring at all.
+    """
+    return sum(_PROBE_FG in line for line in out.splitlines())
+
+
 # ---------------------------------------------------------------------------
 # _build_select_screen — the LLM provider picker (wizard step 0)
 # ---------------------------------------------------------------------------
@@ -193,8 +218,12 @@ class TestSelectScreen:
 
     def test_selection_outside_visible_draws_no_tagline(self):
         # Mid-transition the selection can sit on a row that is not on screen yet;
-        # every drawn row then falls through to the plain separator branch.
-        rows = _text_rows(_render(_select(4, visible=[0, 1])))
+        # every drawn row then falls through to the plain separator branch. The
+        # selection is derived from the list length rather than hardcoded: a
+        # shrunken list would put a literal 4 out of range, matching no card, and
+        # the test would keep passing while asserting nothing.
+        offscreen = len(_PROVIDER_CARDS) - 1
+        rows = _text_rows(_render(_select(offscreen, visible=[0, 1])))
         for card in _PROVIDER_CARDS:
             if _tagline(card):
                 assert _tagline(card) not in rows
@@ -206,12 +235,25 @@ class TestSelectScreen:
         assert _active_chip(_render_ansi(_select(0, visible=[]))) == "LLM Provider"
 
     def test_selected_style_overrides_the_selected_row(self):
+        # Anchored to the selected card's own row: a bare "probe appears
+        # somewhere" scan would pass just as happily if the override landed on
+        # the wrong card, or on all of them.
         out = _render_ansi(_select(0, selected_style=_PROBE))
-        assert _PROBE_FG in out
+        assert _PROBE_FG in _art_row(out, _PROVIDER_CARDS[0]["name"])
+        for card in _PROVIDER_CARDS[1:]:
+            assert _PROBE_FG not in _art_row(out, card["name"])
+        assert _probe_row_count(out) == 2  # one card, two art rows
 
     def test_fade_style_applies_to_fade_indices(self):
-        out = _render_ansi(_select(0, fade_indices=[2], fade_style=_PROBE))
-        assert _PROBE_FG in out
+        faded = 2
+        out = _render_ansi(_select(0, fade_indices=[faded], fade_style=_PROBE))
+        assert _PROBE_FG in _art_row(out, _PROVIDER_CARDS[faded]["name"])
+        for i, card in enumerate(_PROVIDER_CARDS):
+            # Row 0 is the shimmering selection — per-character styles, so no
+            # contiguous art to anchor on. The row count below covers it.
+            if i not in (0, faded):
+                assert _PROBE_FG not in _art_row(out, card["name"])
+        assert _probe_row_count(out) == 2
 
     def test_fade_style_without_indices_is_inert(self):
         # fade_style alone must not repaint anything — the fading rows are named
@@ -294,7 +336,8 @@ class TestVcSelectScreen:
     def test_visible_restricts_the_rows_drawn(self):
         out = _render(_vc(0, visible=[0]))
         assert _art_top(_VC_OPTIONS[0]["name"]) in out
-        assert _art_top(_VC_OPTIONS[1]["name"]) not in out
+        for option in _VC_OPTIONS[1:]:
+            assert _art_top(option["name"]) not in out
 
     def test_empty_visible_still_renders_the_frame(self):
         assert "Version Control" in _text_rows(_render(_vc(0, visible=[])))
@@ -302,11 +345,16 @@ class TestVcSelectScreen:
 
     def test_selected_style_overrides_the_selected_row(self):
         out = _render_ansi(_vc(0, selected_style=_PROBE))
-        assert _PROBE_FG in out
+        assert _PROBE_FG in _art_row(out, _VC_OPTIONS[0]["name"])
+        for option in _VC_OPTIONS[1:]:
+            assert _PROBE_FG not in _art_row(out, option["name"])
+        assert _probe_row_count(out) == 2
 
     def test_fade_style_applies_to_fade_indices(self):
-        out = _render_ansi(_vc(0, fade_indices=[1], fade_style=_PROBE))
-        assert _PROBE_FG in out
+        faded = len(_VC_OPTIONS) - 1
+        out = _render_ansi(_vc(0, fade_indices=[faded], fade_style=_PROBE))
+        assert _PROBE_FG in _art_row(out, _VC_OPTIONS[faded]["name"])
+        assert _probe_row_count(out) == 2
 
     def test_fade_style_without_indices_is_inert(self):
         out = _render_ansi(_vc(0, fade_indices=[], fade_style=_PROBE))
@@ -315,10 +363,10 @@ class TestVcSelectScreen:
     def test_shimmer_tick_animates_the_selected_row(self):
         assert _render_ansi(_vc(0, shimmer_tick=0.0)) != _render_ansi(_vc(0, shimmer_tick=0.5))
 
-    def test_selecting_the_second_option_moves_the_highlight(self):
-        # The two rows must not render identically — the picker's only feedback
+    def test_selecting_another_option_moves_the_highlight(self):
+        # Two selections must not render identically — the picker's only feedback
         # is which name is lit.
-        assert _render_ansi(_vc(0)) != _render_ansi(_vc(1))
+        assert _render_ansi(_vc(0)) != _render_ansi(_vc(len(_VC_OPTIONS) - 1))
 
     def test_progress_bar_survives_a_short_terminal(self):
         # Two options rather than five, so this picker's body still fits a 24-row
