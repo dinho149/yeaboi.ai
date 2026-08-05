@@ -53,7 +53,7 @@ The rest do model-worthy work in their own session and carry a `**Model**` line.
 | `cron/digest.md` | `standard` | Ranks ~20 issue titles and writes one message |
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
 | `events/pr-opened-dod-audit.md` | `standard` | A nine-item checklist against a diff |
-| `events/pr-merged-close-loop.md` | `fast` | Linear → Done, one Slack line, a Notion page from a merged PR |
+| `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done, one Slack line, a Notion page from a merged PR |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |
 
 ### Agents

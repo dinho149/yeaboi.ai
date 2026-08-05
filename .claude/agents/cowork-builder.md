@@ -27,8 +27,10 @@ Procedure:
    change touches `frontend/`, run `make web` and commit `src/yeaboi/web/static/` in the same commit.
    If it adds a capability, add its `CAPABILITIES` row and its `FeatureTip`.
 6. Commit with a lowercase imperative message and the `Co-Authored-By` trailer from `CLAUDE.md`.
-   Push, then `gh pr create` against `main` with a Summary, a Test plan, the Linear link, and a line
-   for any DoD item that genuinely does not apply.
+   Push, then `gh pr create` against `main` with a Summary, a Test plan, a `Closes YEA-NN` line
+   using the ticket identifier from your inputs (the magic word is what makes the Linear GitHub
+   integration attach the PR and move the ticket to Done on merge — a bare Linear URL does
+   neither), and a line for any DoD item that genuinely does not apply.
 7. Label the PR `cowork` and `workstream:<name>`.
 
 Rules:

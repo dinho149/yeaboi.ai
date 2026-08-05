@@ -26,7 +26,8 @@ scout routine (per workstream, own cron)
         Linear ticket → build → code-reviewer → PR ───▶
                                                        │
                     pr-merged-close-loop ──────────────┘
-                    scribe: Linear → Done, Slack ship note, Notion page
+                    merge closes Linear via `Closes YEA-NN`;
+                    scribe: verify Done, Slack ship note, Notion page
 ```
 
 A proposal is a question, so it costs one GitHub issue and nothing else. The Linear ticket opens when
@@ -151,8 +152,12 @@ account-scoped and has no CLI behind it.
 
 **What neither can do**, and both report: connecting Linear/Slack/Notion at
 [claude.ai/customize/connectors](https://claude.ai/customize/connectors), installing the Claude GitHub
-App, setting the `AUTO_VERSION_PAT` secret, and the three **event** routines — the routines API takes
-a cron expression only, so those are added by hand.
+App, setting the `AUTO_VERSION_PAT` secret, the three **event** routines — the routines API takes
+a cron expression only, so those are added by hand — and the **Linear GitHub integration** on this
+repo (with issue-status automation on), which is what turns a PR body's `Closes YEA-NN` into the
+attach and the Done-on-merge transition. If that integration is off, every ticket silently stalls at
+In Review, and the only thing that would notice is `pr-merged-close-loop` — one of the hand-added
+event routines above.
 
 ## Running it afterwards
 
