@@ -1197,16 +1197,22 @@ function initHeroDemo() {
     }, 16);
   }
 
+  // Set once the bubble is presenting a mode; the tip rotator then stands down
+  // rather than overwriting what the duck is saying.
+  var _duckPresenting = false;
+
   function show(i, opts) {
     var userInitiated = !opts || opts.userInitiated !== false;
     current = ((i % modes.length) + modes.length) % modes.length;
     modes.forEach(function (m, idx) {
-      var active = idx === current;
-      m.classList.toggle('is-active', active);
-      var descEl = m.querySelector('.tui-mode-desc');
-      if (active) typeDesc(descEl, m.getAttribute('data-desc') || '');
-      else descEl.textContent = '';
+      m.classList.toggle('is-active', idx === current);
     });
+    // The duck presents the selection: its bubble speaks the mode's own copy
+    // rather than a rotating tip, so scrolling the rail walks the companion
+    // through the modes. The inline description row is retired — one home for
+    // the copy, and the list stays a clean column of titles.
+    var speak = modes[current] && modes[current].getAttribute('data-desc');
+    if (speak) { _duckPresenting = true; typeDesc(document.getElementById('tui-tip'), speak); }
     if (userInitiated) restartAuto();
   }
 
@@ -1266,6 +1272,7 @@ function initHeroDemo() {
     if (tipEl) tipEl.textContent = HERO_TIPS[tipIdx].replace(/^[^A-Za-z0-9]+/, '');
   }
   function rotateTip() {
+    if (_duckPresenting) return;  // the bubble is showing a mode, not a tip
     tipIdx = (tipIdx + 1) % HERO_TIPS.length;
     if (reducedMotion || !tipEl) { renderTip(); return; }
     tipEl.classList.add('fading');

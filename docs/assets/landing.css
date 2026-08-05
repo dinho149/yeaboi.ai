@@ -8,7 +8,7 @@
      terminal in .scrolly-sticky would never stick); clip just clips. */
   .hero{padding:0 0 110px; position:relative; overflow:clip}
   .hero > .wrap{
-    width:100%; max-width:1120px;
+    width:100%; max-width:1320px;
     /* body is inset by the fixed rail, so "centered" lands right of the true
        viewport centre — pull back by up to rail/2, clamped so the content
        never slides under the rail on narrower windows */
@@ -61,8 +61,8 @@
      arrow-key auto-cycle used. Pure CSS sticky + IntersectionObserver,
      no scroll library. ---- */
   .scrolly{
-    display:grid; grid-template-columns:minmax(0,1fr) 320px;
-    gap:56px; align-items:start;
+    display:grid; grid-template-columns:minmax(0,1fr) 268px;
+    gap:44px; align-items:start;
   }
   .scrolly-sticky{
     position:sticky; top:max(28px, calc(50vh - 340px));
@@ -193,6 +193,7 @@
        the ▀ row and the ▄ row, so each letter read as two split halves rather
        than one glyph. */
     margin:0; font-size:inherit; line-height:1; letter-spacing:0;
+    display:inline-block; vertical-align:middle;
     /* unselected: the app's exact dim — each channel halved, floored at 40
        (see _build_mode_row's _unsel_style), baked into --mcd per mode */
     color:rgb(var(--mcd)); transition:color .35s;
@@ -227,7 +228,7 @@
     margin:0; height:0; overflow:hidden; line-height:1.5; color:var(--t-text);
     opacity:0; transition:opacity .2s, height .25s ease, margin .25s ease;
   }
-  .tui-mode.is-active .tui-mode-desc{opacity:1; height:42px; margin:14px 0 0}
+  .tui-mode-desc{display:none}
   @media (hover:hover){
     .tui-mode:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px; border-radius:2px}
   }
@@ -248,6 +249,25 @@
   .tui-companion{
     position:absolute; right:0; bottom:22px;
     display:flex; flex-direction:column; align-items:center; gap:0;
+  }
+  /* the update box sits ABOVE the tip bubble in the same lane, amber, with its
+     title stamped on its own top border (Panel(title="update")) */
+  .tui-update{
+    position:relative; align-self:stretch; margin-bottom:12px;
+    border:1px solid rgb(150,110,45); border-radius:8px; padding:5px 12px 4px;
+  }
+  .tui-update-title{
+    position:absolute; left:12px; top:0; transform:translateY(-50%);
+    background:#0a0b0d; padding:0 5px; font-size:.92em; color:rgb(200,150,60);
+  }
+  .tui-update .v{margin:0; color:rgb(226,186,96)}
+  .tui-update .k{margin:0; color:var(--t-muted)}
+  .tui-update .k b{font-weight:700; color:rgb(210,210,220)}
+  /* BETA chip beside the Performance title, as the real list shows it */
+  .tui-beta{
+    display:inline-block; vertical-align:middle; margin-left:10px;
+    font-size:.78em; letter-spacing:.06em; color:rgb(226,186,96);
+    border:1px solid rgb(120,95,45); border-radius:4px; padding:0 5px;
   }
   /* the tip's speech bubble — Panel(box=ROUNDED) in the app */
   .tui-bubble{
@@ -274,7 +294,7 @@
   .tui-tail{margin:1px 0 0; color:rgb(120,135,150); line-height:1; font-size:1.1em}
   /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
      (see _build_companion) — the source sprite faces right */
-  .tui-duck{display:block; image-rendering:pixelated; margin-top:-2px; transform:scaleX(-1)}
+  .tui-duck{display:block; image-rendering:pixelated; margin-top:-1px; transform:scaleX(-1); width:104px; height:110px}
   .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
