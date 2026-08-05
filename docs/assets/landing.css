@@ -8,11 +8,16 @@
      terminal in .scrolly-sticky would never stick); clip just clips. */
   .hero{padding:0 0 110px; position:relative; overflow:clip}
   .hero > .wrap{
-    width:100%; max-width:1320px;
+    /* ONE source for the hero's width: the pull-back clamp below has to use the
+       same number as max-width. They were separate literals, so widening the
+       hero left the clamp on the old value — it over-pulled and shoved the
+       terminal off the left edge of the window. */
+    --hero-max:1320px;
+    width:100%; max-width:var(--hero-max);
     /* body is inset by the fixed rail, so "centered" lands right of the true
        viewport centre — pull back by up to rail/2, clamped so the content
        never slides under the rail on narrower windows */
-    transform:translateX(calc(-1 * min(var(--rail) / 2, max(0px, (100vw - var(--rail) - 1120px) / 2))));
+    transform:translateX(calc(-1 * min(var(--rail) / 2, max(0px, (100vw - var(--rail) - var(--hero-max)) / 2))));
   }
   .hero-copy{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -294,7 +299,9 @@
   .tui-tail{margin:1px 0 0; color:rgb(120,135,150); line-height:1; font-size:1.1em}
   /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
      (see _build_companion) — the source sprite faces right */
-  .tui-duck{display:block; image-rendering:pixelated; margin-top:-1px; transform:scaleX(-1); width:104px; height:110px}
+  /* one terminal cell, like every other row — and line-height 1 so the ▀▄
+     halves tile into a solid sprite instead of a striped one */
+  .tui-duck{margin:0; line-height:1; letter-spacing:0; white-space:pre}
   .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
@@ -303,10 +310,14 @@
      gives it its own rounded frame and the page Panel's bottom border curves up
      around it. The opaque background masks the border where it passes behind. */
   .tui-music{
-    position:absolute; right:18px; bottom:0; transform:translateY(50%);
-    background:#0a0b0d; padding:2px 10px; white-space:pre;
+    position:absolute; right:24px; bottom:-1px;
+    background:#0a0b0d; padding:1px 10px 2px; white-space:pre;
     font-size:.92em; color:var(--t-muted);
-    border:1px solid rgba(228,230,232,.45); border-radius:8px;
+    /* no bottom border, and bottom:-1px so the element covers the panel's own
+       bottom border across its width — the alcove is open underneath, exactly
+       as the app draws it (╰──╯ … gap … ╰──╯) */
+    border:1px solid rgba(228,230,232,.45); border-bottom:none;
+    border-radius:8px 8px 0 0;
   }
   .tui-music .hint{color:var(--t-dim)}
 
