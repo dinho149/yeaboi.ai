@@ -45,8 +45,8 @@ def test_subtitle_when_stopped():
     music._state.status = "stopped"
     text = build_music_subtitle().plain
     assert "off" in text
-    assert "ctrl+P play" in text
-    assert "ctrl+O channel" in text
+    assert "P play" in text
+    assert "O channel" in text
 
 
 def test_subtitle_when_playing():
@@ -55,25 +55,25 @@ def test_subtitle_when_playing():
     text = build_music_subtitle().plain
     assert music.CHANNELS[0]["name"] in text
     assert "playing" in text
-    assert "ctrl+P pause" in text
+    assert "P pause" in text
 
 
 def test_subtitle_when_paused():
     music._state.status = "paused"
     text = build_music_subtitle().plain
     assert "paused" in text
-    assert "ctrl+P play" in text
+    assert "P play" in text
 
 
 def test_subtitle_shows_crash_notice_when_stopped_with_error():
     # A player that died on its own reverts to "stopped" but leaves a last_error;
     # the bar shows it instead of a bare "off" so a broken player is diagnosable.
     music._state.status = "stopped"
-    music._state.last_error = "music stopped — stream unavailable, ctrl+P to retry"
+    music._state.last_error = "music stopped — stream unavailable, P to retry"
     text = build_music_subtitle().plain
     assert "stream unavailable" in text
     assert "off" not in text
-    assert "ctrl+P play" in text
+    assert "P play" in text
 
 
 def test_eq_bars_shape():
@@ -96,7 +96,7 @@ def test_subtitle_when_connecting():
     text = build_music_subtitle().plain
     assert "connecting" in text
     assert not any(c in _EQ_CHARS for c in text)  # no equalizer while buffering
-    assert "ctrl+P pause" in text
+    assert "P pause" in text
 
 
 def test_connecting_dots_shape(monkeypatch):

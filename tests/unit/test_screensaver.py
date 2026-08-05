@@ -65,7 +65,11 @@ def test_processing_is_excluded_and_idle_restarts_afterward(monkeypatch):
     assert controller.should_show() is True
 
 
-def test_read_key_consumes_wake_before_music_shortcut(monkeypatch):
+def test_music_controls_reach_the_player_through_the_saver(monkeypatch):
+    """The saver is what is on screen while you are listening to something, so
+    the music keys have to work *through* it — not be eaten as the key that
+    dismisses it. They also leave it up: changing track is no reason to decide
+    somebody came back."""
     controller, clock = _controller(seconds=1)
     monkeypatch.setattr(_screensaver, "idle_controller", controller)
     controller.begin_input_wait()
@@ -74,18 +78,37 @@ def test_read_key_consumes_wake_before_music_shortcut(monkeypatch):
 
     def fake_read(**_kwargs):
         _input._last_read_had_input = True
-        return "ctrl+p"
+        return "p"
 
     toggles: list[bool] = []
     monkeypatch.setattr(_input, "_read_key_impl", fake_read)
     monkeypatch.setattr("yeaboi.music.toggle", lambda: toggles.append(True))
 
     assert _input.read_key(timeout=0) == ""
-    assert toggles == []
-
-    # The same shortcut is actionable after the saver has been dismissed.
-    assert _input.read_key(timeout=0) == ""
     assert toggles == [True]
+    assert controller.is_active() is True
+
+    # And again, still without waking it.
+    assert _input.read_key(timeout=0) == ""
+    assert toggles == [True, True]
+    assert controller.is_active() is True
+
+
+def test_music_keys_do_not_fire_into_a_text_field(monkeypatch):
+    """They are bare letters now, so typing "op" in a prompt must not pause the
+    music and skip a channel."""
+
+    def fake_read(**_kwargs):
+        _input._last_read_had_input = True
+        return "p"
+
+    toggles: list[bool] = []
+    monkeypatch.setattr(_input, "_read_key_impl", fake_read)
+    monkeypatch.setattr("yeaboi.music.toggle", lambda: toggles.append(True))
+    monkeypatch.setattr(_input, "_text_entry", True)
+
+    assert _input.read_key(timeout=0) == "p"
+    assert toggles == []
 
 
 def test_ctrl_y_previews_saver_and_ctrl_y_again_only_wakes(monkeypatch):
