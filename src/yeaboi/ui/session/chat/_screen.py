@@ -18,6 +18,7 @@ displayed.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from io import StringIO
 
@@ -87,6 +88,58 @@ class ChoiceRows:
     options: list[tuple[str, bool]] = field(default_factory=list)
     highlight: int = 0
     multi: bool = False
+
+
+@dataclass
+class PipelineProgress:
+    """Live stage checklist drawn under the transcript while the plan builds.
+
+    Like ChoiceRows this renders as extra viewport lines recomputed per frame
+    (the pipeline loops already paint 30fps), so the spinner and elapsed
+    counters never freeze and the transcript's per-message caches are never
+    touched. stages: (label, "done"|"active"|"pending").
+    """
+
+    stages: list[tuple[str, str]] = field(default_factory=list)
+    step: int = 0
+    total: int = 6
+    run_started: float = 0.0
+    active_started: float = 0.0
+    active_node: str = ""  # driver bookkeeping: reset active_started on change
+
+
+_SPINNER_GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _progress_rows(progress: PipelineProgress, theme) -> list[Text]:
+    """The checklist rows: ✓ done, animated spinner + elapsed on the active
+    stage, dim ○ pending, and a [n/6] · total footer."""
+    now = time.monotonic()
+    rows: list[Text] = [Text("")]
+    for label, status in progress.stages:
+        row = Text("  ", no_wrap=True, overflow="crop")
+        if status == "done":
+            row.append("✓ ", style=f"bold {theme.accent_bright}")
+            row.append(label, style=theme.accent)
+        elif status == "active":
+            glyph = _SPINNER_GLYPHS[int(now * 10) % len(_SPINNER_GLYPHS)]
+            row.append(glyph + " ", style=f"bold {theme.accent_bright}")
+            row.append(label, style="bold white")
+            row.append("  " + _fmt_elapsed(now - progress.active_started), style="dim")
+        else:
+            row.append("○ ", style="dim")
+            row.append(label, style="dim")
+        rows.append(row)
+    footer = Text("  ", no_wrap=True, overflow="crop")
+    footer.append(f"[{progress.step}/{progress.total}]", style=f"bold {theme.accent}")
+    footer.append(" · total " + _fmt_elapsed(now - progress.run_started), style="dim")
+    rows.append(footer)
+    return rows
 
 
 def _column_metrics(width: int) -> tuple[int, int]:
@@ -183,6 +236,7 @@ def build_chat_screen(
     stream_text: str | None = None,
     border_override: str | None = None,
     console: Console | None = None,
+    progress: PipelineProgress | None = None,
 ) -> Panel:
     """Build the chat page.
 
@@ -310,6 +364,9 @@ def build_chat_screen(
             if not choices.multi and checked and i != choices.highlight:
                 row.append("  (suggested)", style="dim")
             lines.append(row)
+        lines.append(Text(""))
+    if progress is not None and progress.stages:
+        lines.extend(_progress_rows(progress, theme))
         lines.append(Text(""))
 
     total = len(lines)

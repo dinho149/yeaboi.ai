@@ -41,12 +41,14 @@ from yeaboi.prompts.intake import decorate_question_for_chat
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
 from yeaboi.ui.shared._input import set_text_entry
+from yeaboi.ui.shared._music_bar import quack_duck, set_duck_working
 from yeaboi.ui.shared._scroll import SCROLL_BOTTOM, coalesce_scroll
 
 from ._commands import ChatContext, dispatch, matching_commands
 from ._composer import ChatComposer, PasteImage, Submit, Truncated, Voice
+from ._duck import ChatDuck
 from ._question_view import derive_question_view
-from ._screen import ChoiceRows, build_chat_screen
+from ._screen import ChoiceRows, PipelineProgress, build_chat_screen
 from ._transcript import ChatTranscript
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,26 @@ _PIPELINE_NODES = (
 )
 
 _ACCEPT_WORDS = frozenset({"accept", "a", "ok", "yes", "looks good", "lgtm", "continue"})
+
+# What the duck quacks as each pipeline stage completes.
+_STAGE_QUIPS = {
+    "project_analyzer": "Analysis done!",
+    "feature_skip": "Epics drawn up!",
+    "feature_generator": "Epics drawn up!",
+    "story_writer": "Stories done!",
+    "task_decomposer": "Tasks sliced!",
+    "sprint_planner": "Sprints packed!",
+}
+
+# Which state key proves a pipeline step has produced its artifact.
+_PROGRESS_DONE_KEYS = {
+    "project_analyzer": "project_analysis",
+    "epic_review": "_epic_reviewed",
+    "feature_generator": "features",
+    "story_writer": "stories",
+    "task_decomposer": "tasks",
+    "sprint_planner": "sprints",
+}
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
@@ -141,6 +163,9 @@ class _ChatDriver:
         self._finish_requested = False  # /finish before the questionnaire exists
         self._anim0 = time.monotonic()
         self._dry_full_state: dict | None = None
+        self.duck = ChatDuck()  # sole owner of the corner duck's speech bubble
+        self.progress: PipelineProgress | None = None  # stage checklist while building
+        self._built_this_session = False  # a pipeline stage ran here (gates the celebration)
 
     # ------------------------------------------------------------------ utils
 
@@ -182,7 +207,13 @@ class _ChatDriver:
             stage=self._stage(),
             stream_text=stream_text,
             console=self.console,
+            progress=self.progress,
         )
+        line = self.duck.tick()
+        if line is not None:
+            # The chrome duck reads these off the panel (see MusicLive); the
+            # arbiter is the only writer, so features never fight over the bubble.
+            panel._duck_say, panel._duck_say_hold, panel._duck_say_seq = line
         self.live.update(panel)
         if self.follow or self.scroll_offset == SCROLL_BOTTOM:
             self.scroll_offset = self._bottom()
@@ -194,6 +225,15 @@ class _ChatDriver:
     def _note(self, text: str) -> None:
         self.transcript.add_system(text)
         self._pin_bottom()
+
+    def _bubble(self, text: str, hold: float | None = None) -> None:
+        """Give the corner duck an ephemeral line (an ack, a stage quip).
+
+        Additive only: anything the user might scroll back for stays a
+        transcript whisper — the bubble fades and leaves no record.
+        """
+        if self.duck.say(text, hold=hold):
+            logger.info("Duck bubble: %s", text)
 
     def _pin_bottom(self) -> None:
         self.scroll_offset = SCROLL_BOTTOM
@@ -244,6 +284,7 @@ class _ChatDriver:
         logger.info("Chat: export requested (scope=%s stage=%s)", scope or "ask", stage)
         _plan_export_flow(self.live, self.console, self._key, self.state, stage, scope=scope or "ask")
         self._note("Export finished.")
+        self._bubble("Export finished!")
 
     def _form_mode(self) -> None:
         """Full-screen questionnaire takeover — the legacy card loop, then back to chat.
@@ -324,6 +365,7 @@ class _ChatDriver:
             # Pre-intake: just record the preference; the size exchange honors it.
             self.state["_intake_mode"] = target_mode
             self._note(f"Got it — {label} plan.")
+            self._bubble(f"{label} it is!")
             return
         if self.dry_run:
             self._note("Size switching is not available in dry-run.")
@@ -442,21 +484,26 @@ class _ChatDriver:
 
         start = time.monotonic()
         first_token_logged = False
-        while thread.is_alive():
-            tick = time.monotonic() - start
-            stream_text = "".join(buffer)
-            if stream_text and not first_token_logged:
-                logger.info("Chat stream first token: %.2fs", tick)
-                first_token_logged = True
-            key = self._key(FRAME_TIME_30FPS)
-            self._processing_key(key, cancel)
-            self._render(processing=True, tick=tick, stream_text=stream_text or None)
+        set_duck_working(True)  # the corner duck bobs through every wait
+        try:
+            while thread.is_alive():
+                tick = time.monotonic() - start
+                stream_text = "".join(buffer)
+                if stream_text and not first_token_logged:
+                    logger.info("Chat stream first token: %.2fs", tick)
+                    first_token_logged = True
+                key = self._key(FRAME_TIME_30FPS)
+                self._processing_key(key, cancel)
+                self._render(processing=True, tick=tick, stream_text=stream_text or None)
+        finally:
+            set_duck_working(False)
         thread.join()
 
         if result_box[1] is not None:
             error = result_box[1]
             if isinstance(error, ChatStreamCancelledError):
                 self._note("Cancelled.")
+                self._bubble("Cancelled.")
                 return False
             from yeaboi.ui.session._utils import _classify_api_error
 
@@ -568,11 +615,40 @@ class _ChatDriver:
         step = _PIPELINE_STEPS.index(step_node) + 1 if step_node in _PIPELINE_STEPS else 0
         return _SPINNER_MESSAGES.get(node, "Working"), f"[{step}/{len(_PIPELINE_STEPS)}]"
 
+    def _refresh_progress(self, active_node: str | None) -> None:
+        """Rebuild the stage checklist from graph state (per stage entry/exit —
+        the per-frame animation lives in the screen's _progress_rows)."""
+        from yeaboi.repl._ui import _PIPELINE_STEPS, _SPINNER_MESSAGES
+
+        active = "feature_generator" if active_node == "feature_skip" else active_node
+        now = time.monotonic()
+        prog = self.progress or PipelineProgress(run_started=now)
+        stages: list[tuple[str, str]] = []
+        done = 0
+        for step_node in _PIPELINE_STEPS:
+            label = "Formatting epic" if step_node == "epic_review" else _SPINNER_MESSAGES.get(step_node, step_node)
+            if step_node == active:
+                status = "active"
+            elif self.state.get(_PROGRESS_DONE_KEYS[step_node]):
+                status = "done"
+                done += 1
+            else:
+                status = "pending"
+            stages.append((label, status))
+        prog.stages = stages
+        prog.total = len(_PIPELINE_STEPS)
+        prog.step = min(prog.total, done + (1 if active else 0))
+        if active and prog.active_node != active:
+            prog.active_node, prog.active_started = active, now
+        self.progress = prog
+
     def _run_pipeline_stage(self) -> bool:
         """Run one pipeline stage. Returns False when the turn failed/was cancelled."""
         node = predict_next_node(self.state) if not self.dry_run else self._dry_next_node()
         label, progress = self._stage_meta(node)
         self.subtitle = f"{label}… {progress}"
+        self._refresh_progress(node)
+        self._built_this_session = True
         logger.info("Pipeline stage entry (chat): %s", node)
         if self.dry_run:
             self._dry_run_stage(node)
@@ -580,9 +656,13 @@ class _ChatDriver:
             # Failed or cancelled — state is unchanged, so the caller must NOT
             # loop straight back here (that would retry forever with no way in).
             self.subtitle = ""
+            self.progress = None
             logger.warning("Pipeline stage failed (chat): %s", node)
             return False
         self.subtitle = ""
+        self._refresh_progress(None)  # the artifact landed → its row flips to ✓
+        quack_duck()
+        self._bubble(_STAGE_QUIPS.get(node, "Done!"))
         if self.bell:
             self.console.bell()
         pending = self.state.get("pending_review")
@@ -591,6 +671,7 @@ class _ChatDriver:
             # showing it here too would duplicate it and prompt for a reply
             # nobody is going to give.
             self._show_review_card(pending)
+            self.progress = None  # a review gate pauses the build — card takes over
         return True
 
     def _show_review_card(self, pending: str, *, prompt: bool = True) -> None:
@@ -622,6 +703,7 @@ class _ChatDriver:
             # /finish typed at an already-shown review gate must not re-add the card.
             self._show_review_card(pending, prompt=False)
         self._note("Auto-accepted (fast mode).")
+        self._bubble("Auto-accepted!")
         logger.info("Review decision (chat): auto-accept %s (fast mode)", pending)
         for key in (
             "pending_review",
@@ -639,8 +721,10 @@ class _ChatDriver:
         """Team-style epic reformat + review card before the feature stage."""
         from ._epic import reformat_epic_to_team_style
 
-        self.state["_epic_reviewed"] = True
         self.subtitle = "Formatting epic… [2/6]"
+        self._refresh_progress("epic_review")  # _epic_reviewed isn't set yet → row shows active
+        self.state["_epic_reviewed"] = True
+        self._built_this_session = True
         result_box: list = [None, None]
 
         def worker() -> None:
@@ -653,21 +737,29 @@ class _ChatDriver:
         thread.start()
         start = time.monotonic()
         cancel = threading.Event()  # reformat isn't cancellable; keys still buffer
-        while thread.is_alive():
-            self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-            self._render(processing=True, tick=time.monotonic() - start)
+        set_duck_working(True)
+        try:
+            while thread.is_alive():
+                self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
+                self._render(processing=True, tick=time.monotonic() - start)
+        finally:
+            set_duck_working(False)
         thread.join()
         if result_box[1] is not None:
             # reformat_epic_to_team_style catches its own failures, so this is
             # an unexpected error — the original epic stands, but say so.
             logger.error("Epic reformat step failed unexpectedly: %s", result_box[1])
         self.subtitle = ""
+        self._refresh_progress(None)
+        quack_duck()
+        self._bubble("Epic polished!")
         self.transcript.add_artifact("epic")
         if self.state.get("_chat_fast_forward"):
             self._note("Epic auto-accepted (fast mode).")
             logger.info("Epic review (chat): auto-accept (fast mode)")
             self._save()
             return
+        self.progress = None  # the epic gate waits for a verdict — card takes over
         self._say(
             "Here's the project epic. Reply **accept** to break it into epics and stories, or **edit** + your changes."
         )
@@ -835,6 +927,7 @@ class _ChatDriver:
             self.state = result
             self._save()
             self._note("Tracker sync finished.")
+            self._bubble("Synced!")
         else:
             self._note("Tracker sync cancelled.")
 
@@ -1188,9 +1281,13 @@ class _ChatDriver:
 
         start = time.monotonic()
         cancel = threading.Event()  # nothing to cancel; keys buffer as type-ahead
-        while time.monotonic() - start < _DRY_STAGE_SECONDS:
-            self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-            self._render(processing=True, tick=time.monotonic() - start)
+        set_duck_working(True)
+        try:
+            while time.monotonic() - start < _DRY_STAGE_SECONDS:
+                self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
+                self._render(processing=True, tick=time.monotonic() - start)
+        finally:
+            set_duck_working(False)
         if self._dry_full_state is None:
             from yeaboi.ui.session._dry_run import load_dry_run_state
 
@@ -1273,6 +1370,8 @@ class _ChatDriver:
             else:
                 self.choices = None
                 self.subtitle = "" if stage != "chat" else "Plan complete — keep refining, or /export"
+                if stage == "chat":
+                    self.progress = None  # the build is over — drop the checklist
                 if stage == "chat" and self.state.pop("_chat_fast_forward", None):
                     self._note("Fast mode done — the plan is complete. /export saves it.")
                     self._save()

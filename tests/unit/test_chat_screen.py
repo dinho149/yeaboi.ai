@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from yeaboi.ui.session.chat._composer import ChatComposer
-from yeaboi.ui.session.chat._screen import ChoiceRows, build_chat_screen
+from yeaboi.ui.session.chat._screen import ChoiceRows, PipelineProgress, build_chat_screen
 from yeaboi.ui.session.chat._transcript import ChatTranscript
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -135,6 +135,43 @@ class TestLayout:
     def test_scrollbar_track_always_visible(self):
         # Content fits, yet the dim rail (rgb(50,50,60)) is still drawn.
         assert "2;50;50;60" in _render(_screen())
+
+
+class TestPipelineProgressCard:
+    def _progress(self):
+        import time
+
+        now = time.monotonic()
+        return PipelineProgress(
+            stages=[
+                ("Analysing project", "done"),
+                ("Formatting epic", "done"),
+                ("Generating features", "active"),
+                ("Writing user stories", "pending"),
+            ],
+            step=3,
+            total=6,
+            run_started=now - 72,
+            active_started=now - 42,
+        )
+
+    def test_checklist_glyphs_elapsed_and_step_counter(self):
+        out = _ANSI.sub("", _render(_screen(progress=self._progress(), stage="pipeline", processing=True)))
+        assert "✓ Analysing project" in out
+        assert "✓ Formatting epic" in out
+        assert "Generating features" in out and "0:42" in out
+        assert "○ Writing user stories" in out
+        assert "[3/6]" in out and "total 1:12" in out
+
+    def test_active_row_carries_a_spinner_glyph(self):
+        from yeaboi.ui.session.chat._screen import _SPINNER_GLYPHS
+
+        out = _ANSI.sub("", _render(_screen(progress=self._progress(), stage="pipeline", processing=True)))
+        assert any(g in out for g in _SPINNER_GLYPHS)
+
+    def test_no_progress_renders_no_checklist(self):
+        out = _ANSI.sub("", _render(_screen(stage="pipeline", processing=True)))
+        assert "✓" not in out and "[3/6]" not in out
 
 
 class TestGeometry:
