@@ -114,7 +114,7 @@ def _render_recap(graph_state: dict):
         if i:
             counts.append("  ·  ", style="dim")
         counts.append(str(n), style="bold white")
-        counts.append(f" {label}")
+        counts.append(f" {label if n != 1 else label[:-1]}")
     counts.append("  ·  ", style="dim")
     counts.append(str(points), style="bold white")
     counts.append(" pts total")

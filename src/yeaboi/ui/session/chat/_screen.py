@@ -142,15 +142,25 @@ def _progress_rows(progress: PipelineProgress, theme) -> list[Text]:
     return rows
 
 
+_DUCK_LANE = 16  # chrome duck width + right margin (see _music_bar._DUCK_W)
+
+
 def _column_metrics(width: int) -> tuple[int, int]:
     """(column width, left margin) for the centered reading column.
 
     inner_w is the panel content area minus the scrollbar rail; the column
     keeps ≥ 8 spare columns so the margin never collapses below the house PAD.
+    The corner duck overlays the page's right edge, so the column shrinks and
+    leans left rather than sliding its right edge (the composer corner, the
+    user bubbles) underneath him; wide terminals re-center naturally.
     """
     inner_w = max(48, width - 7)
     col_w = max(40, min(_COL_W_MAX, inner_w - 8))
-    return col_w, max(len(PAD), (inner_w - col_w) // 2)
+    max_col = width - _DUCK_LANE - len(PAD) - 4
+    if max_col >= 40:
+        col_w = min(col_w, max_col)
+    margin = max(len(PAD), min((inner_w - col_w) // 2, width - _DUCK_LANE - col_w - 4))
+    return col_w, margin
 
 
 def _stage_dot(stage: str, graph_state: dict) -> int:
