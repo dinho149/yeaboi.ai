@@ -248,6 +248,63 @@ def test_say_seq_bump_restarts_identical_text(monkeypatch):
     assert _music_bar._say_start == 30.0
 
 
+def test_duck_working_cm_sets_and_clears():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with duck_working():
+        assert _music_bar._duck_working is True
+    assert _music_bar._duck_working is False
+
+
+def test_duck_working_cm_nesting_keeps_the_bob_until_the_outer_exit():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with duck_working():
+        with duck_working():
+            assert _music_bar._duck_working is True
+        assert _music_bar._duck_working is True  # inner exit must not stop the outer wait
+    assert _music_bar._duck_working is False
+
+
+def test_duck_working_cm_clears_on_exception():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with pytest.raises(RuntimeError):
+        with duck_working():
+            raise RuntimeError("worker blew up")
+    assert _music_bar._duck_working is False
+
+
+def test_duck_working_thread_bobs_for_the_workers_lifetime():
+    # The drop-in Thread factory the mode pages use: the duck bobs while the
+    # target runs and settles when it finishes, even if the target raises.
+    import threading
+
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+
+    started, release = threading.Event(), threading.Event()
+
+    def _work():
+        started.set()
+        release.wait(timeout=5)
+
+    t = duck_working_thread(_work, name="test-worker")
+    t.start()
+    assert started.wait(timeout=5)
+    assert _music_bar._duck_working is True
+    release.set()
+    t.join(timeout=5)
+    assert _music_bar._duck_working is False
+
+    def _boom():
+        raise RuntimeError("dead worker")
+
+    t2 = duck_working_thread(_boom, name="test-worker-boom")
+    t2.start()
+    t2.join(timeout=5)
+    assert _music_bar._duck_working is False
+
+
 def test_entrance_plays_once_per_process(monkeypatch):
     monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
     _music_bar.start_duck_entrance()

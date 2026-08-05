@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import math
 import time
+from contextlib import contextmanager
 
 from rich.live import Live
 from rich.panel import Panel
@@ -684,6 +685,45 @@ def set_duck_working(active: bool) -> None:
     _duck_working = active
 
 
+_duck_working_depth = 0  # duck_working() nesting — overlapping waits mustn't stomp each other
+
+
+@contextmanager
+def duck_working():
+    """Bob the duck for the duration of a wait (exception-safe, refcounted).
+
+    The mode pages wrap their worker-poll loops in this so the duck is the
+    liveness cue for every long operation. Refcounted because waits overlap
+    (a roster prefetch behind an analysis run): the bob stops only when the
+    OUTERMOST wait finishes.
+    """
+    global _duck_working_depth
+    _duck_working_depth += 1
+    set_duck_working(True)
+    try:
+        yield
+    finally:
+        _duck_working_depth -= 1
+        if _duck_working_depth <= 0:
+            set_duck_working(False)
+
+
+def duck_working_thread(target, *, name: str):
+    """A daemon worker Thread whose lifetime bobs the duck.
+
+    Drop-in for ``threading.Thread(target=..., name=..., daemon=True)`` at the
+    mode pages' worker-poll sites: the duck starts bobbing when the worker
+    starts and settles when it finishes (or dies), however the poll loop ends.
+    """
+    import threading
+
+    def _wrapped():
+        with duck_working():
+            target()
+
+    return threading.Thread(target=_wrapped, name=name, daemon=True)
+
+
 def _duck_frame() -> int:
     """Sprite frame for this draw: bobbing while working, still otherwise."""
     from yeaboi.ui.shared._mascot import FRAMES
@@ -739,9 +779,10 @@ def _reset_duck_state() -> None:
     global _duck_quack_start, _duck_quack_seconds, _duck_working, _duck_working_start
     global _duck_shades_start, _duck_slide_start, _duck_last_draw
     global _say_text, _say_start, _say_seq
-    global _duck_entrance_start, _duck_entrance_played
+    global _duck_entrance_start, _duck_entrance_played, _duck_working_depth
     _duck_quack_start, _duck_quack_seconds = 0.0, 0.6
     _duck_working, _duck_working_start = False, 0.0
+    _duck_working_depth = 0
     _duck_shades_start = _duck_slide_start = _duck_last_draw = 0.0
     _say_text, _say_start, _say_seq = "", 0.0, 0
     _duck_entrance_start, _duck_entrance_played = 0.0, False

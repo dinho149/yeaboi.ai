@@ -51,7 +51,7 @@ from yeaboi.ui.shared._animations import COLOR_RGB, FADE_IN_LEVELS, FADE_OUT_LEV
 from yeaboi.ui.shared._attachments import UNSUPPORTED_MESSAGE as _IMG_UNSUPPORTED
 from yeaboi.ui.shared._input import disable_bracketed_paste, enable_bracketed_paste
 from yeaboi.ui.shared._input import read_key as _read_key  # noqa: F401 — re-export for compat
-from yeaboi.ui.shared._music_bar import make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 
 logger = logging.getLogger(__name__)
 
@@ -244,14 +244,13 @@ def select_provider(
                 # the Live loop keeps animating a "Discovering…" screen — otherwise the
                 # render loop freezes and the user stares at a frozen frame. Same
                 # threaded-pulse pattern as _verify_pulsing and the verify loops.
-                import threading
 
                 discovered_box: list[list[str]] = []
 
                 def _do_discover() -> None:
                     discovered_box.append(fetch_available_models(provider, api_key_val))
 
-                thread = threading.Thread(target=_do_discover, daemon=True)
+                thread = duck_working_thread(_do_discover, name="model-discovery")
                 thread.start()
                 disc_start = time.monotonic()
                 while thread.is_alive():
@@ -307,14 +306,13 @@ def select_provider(
 
             def _verify_pulsing(model_id: str, render) -> tuple[bool, str]:
                 """Run _verify_model on a thread while `render(border_style)` pulses."""
-                import threading
 
                 result: list[tuple[bool, str]] = []
 
                 def _do() -> None:
                     result.append(_verify_model(provider, api_key_val, model_id))
 
-                thread = threading.Thread(target=_do, daemon=True)
+                thread = duck_working_thread(_do, name="model-verify")
                 thread.start()
                 pulse_start = time.monotonic()
                 while thread.is_alive():
@@ -357,7 +355,7 @@ def select_provider(
                 from yeaboi.ui.shared._screensaver import suppress_screensaver
 
                 with suppress_screensaver():
-                    thread = threading.Thread(target=_do, daemon=True)
+                    thread = duck_working_thread(_do, name="ollama-pull")
                     thread.start()
                     while thread.is_alive():
                         frac = prog["frac"]
@@ -574,15 +572,13 @@ def select_provider(
                             live.update(_build_input_screen(provider, input_value, width=w, height=h, error=error))
                             continue
 
-                        import threading
-
                         verify_result: list[tuple[bool, str]] = []
 
                         def _do_verify():
                             verify_result.append(_verify_api_key(provider, input_value.strip()))
 
                         logger.info("provider_select: verifying %s credentials", provider["full_name"])
-                        thread = threading.Thread(target=_do_verify, daemon=True)
+                        thread = duck_working_thread(_do_verify, name="key-verify")
                         thread.start()
 
                         pulse_start = time.monotonic()
@@ -944,15 +940,13 @@ def select_provider(
                             live.update(_build_vc_input_screen(vc, vc_input, width=w, height=h, error=vc_error))
                             continue
 
-                        import threading
-
                         verify_result: list[tuple[bool, str]] = []
 
                         def _do_vc_verify():
                             verify_result.append(_verify_vc_token(vc, vc_input.strip()))
 
                         logger.info("provider_select: verifying %s token", vc["name"])
-                        thread = threading.Thread(target=_do_vc_verify, daemon=True)
+                        thread = duck_working_thread(_do_vc_verify, name="vc-verify")
                         thread.start()
 
                         pulse_start = time.monotonic()

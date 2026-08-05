@@ -79,7 +79,7 @@ from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
-from yeaboi.ui.shared._music_bar import make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
@@ -549,7 +549,6 @@ def _run_preview_flow(
 
     def _regenerate(fn, label: str):
         """Run an LLM generation function in a background thread with animation."""
-        import threading
 
         logger.info("Regenerating %s via LLM", label)
 
@@ -561,7 +560,7 @@ def _run_preview_flow(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="planning-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1079,7 +1078,6 @@ def _run_sprint_review(
     (Esc). The caller uses this to decide whether to mark the session complete.
     """
     logger.info("Sprint review: generating sample sprint via LLM")
-    import threading as _threading
 
     from yeaboi.tools.team_learning import generate_sample_sprint
     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -1113,7 +1111,7 @@ def _run_sprint_review(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = _threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="sprint-sample-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1967,7 +1965,6 @@ def _run_anonymize_pass(
 
     # See docs: "Guardrails" — output masking for public sharing
     """
-    import threading
 
     from yeaboi.anonymize.engine import run_anonymize
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
@@ -1990,7 +1987,7 @@ def _run_anonymize_pass(
             logger.error("anonymize worker failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="anonymize", daemon=True)
+    thread = duck_working_thread(_worker, name="anonymize")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2257,7 +2254,7 @@ def _project_tracker_sync(
         finally:
             _sync_done.set()
 
-    _sync_thread = threading.Thread(target=_run_sync, daemon=True)
+    _sync_thread = duck_working_thread(_run_sync, name="tracker-sync")
     _sync_thread.start()
 
     # Show live scrolling log while the thread runs
@@ -2467,7 +2464,6 @@ def _standup_generate_flow(
     # Run the pipeline on a worker thread while the frame loop shows live
     # progress — collection + the LLM call can take many seconds, and without
     # this the input box just sat frozen (same pattern as the analysis pages).
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2477,7 +2473,7 @@ def _standup_generate_flow(
     def _worker() -> None:
         result_box[0] = _standup_generate(session_id, on_progress=progress.append)
 
-    thread = threading.Thread(target=_worker, name="standup-generate", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-generate")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2625,7 +2621,6 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
     a public GitHub repo needs a separate confirmation that shows what will be
     published. Returns a status message, or None when the user backs out.
     """
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2683,7 +2678,7 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
             logger.error("standup review failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="standup-review", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-review")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -3488,7 +3483,7 @@ def _standup_team_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-roster").start()
+    duck_working_thread(_discover, name="standup-roster").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -3640,7 +3635,7 @@ def _standup_code_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-code-repositories").start()
+    duck_working_thread(_discover, name="standup-code-repositories").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -4625,7 +4620,6 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
     screenshot paste work for free; the optional AI Polish step previews an
     LLM rewrite the user can accept or discard.
     """
-    import threading
     import webbrowser
 
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, polish_feedback, submit_feedback
@@ -4683,7 +4677,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             prev_view, prev_status = view, status
             view, status = "busy", busy_label
             out: list = []
-            thread = threading.Thread(target=lambda: out.append(target()), daemon=True)
+            thread = duck_working_thread(lambda: out.append(target()), name="busy")
             thread.start()
             pulse_start = time.monotonic()
             while thread.is_alive():
@@ -6944,7 +6938,7 @@ def _run_code_scope_select(
 
     logger.info("Analysis %s scope: discovering", provider)
     started = time.monotonic()
-    threading.Thread(target=_discover, name=cfg["thread"], daemon=True).start()
+    duck_working_thread(_discover, name=cfg["thread"]).start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -7125,7 +7119,7 @@ def _prefetch_roster(live, console: Console, sources: list, project_key: str, db
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7204,7 +7198,7 @@ def _prefetch_roster_result(live, console: Console, sources: list, project_key: 
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7805,7 +7799,7 @@ def _run_team_analysis_results(
                     finally:
                         retry_done.set()
 
-                threading.Thread(target=_retry, daemon=True).start()
+                duck_working_thread(_retry, name="analysis-retry").start()
                 retry_started = time.monotonic()
                 while not retry_done.is_set():
                     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -8089,7 +8083,7 @@ def _ensure_insights(
             done.set()
 
     t0 = time.monotonic()
-    threading.Thread(target=_work, daemon=True).start()
+    duck_working_thread(_work, name="performance-insights").start()
     anim = 0.0
     while not done.is_set():
         anim += frame_time
@@ -8796,7 +8790,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             except BaseException as e:  # noqa: BLE001 — re-surfaced on the UI thread below
                 result_box[1] = e
 
-        thread = threading.Thread(target=_worker, name="reporting-generate", daemon=True)
+        thread = duck_working_thread(_worker, name="reporting-generate")
         thread.start()
         start = time.monotonic()
         cancelling = False
@@ -9707,7 +9701,6 @@ def _run_roadmap_page(
         the standup-generate and retro-tunnel workers). The worker only writes
         into result_box/progress; all state/render updates stay on this thread.
         """
-        import threading
 
         progress: list[str] = ["Starting…"]
         result_box: list = [None]
@@ -9720,7 +9713,7 @@ def _run_roadmap_page(
             except Exception as e:  # never let an action crash the TUI
                 result_box[0] = e
 
-        thread = threading.Thread(target=_worker, name="roadmap-analyze", daemon=True)
+        thread = duck_working_thread(_worker, name="roadmap-analyze")
         thread.start()
         _spinners = "◐◓◑◒"
         started = time.monotonic()
@@ -10191,7 +10184,6 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
     # a worker thread; the frame-timed loop shows its progress and fills in the
     # participant link the moment it lands.
-    import threading as _threading
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -10257,7 +10249,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _threading.Thread(target=_worker, name="retro-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="retro-tunnel-setup").start()
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
@@ -10573,7 +10565,6 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
     runs in a subprocess; the freshly-installed code takes effect on the next
     launch, so the success screen tells the user to restart.
     """
-    import threading
 
     from yeaboi import update_check
     from yeaboi.ui.shared._screensaver import suppress_screensaver
@@ -10589,7 +10580,7 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
         result["ok"], result["detail"] = update_check.run_upgrade()
 
     spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = duck_working_thread(_worker, name="app-update")
     # Exclude the (potentially slow) network upgrade from idle tracking so the
     # screensaver doesn't take over mid-update.
     with suppress_screensaver():
@@ -10827,7 +10818,6 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         logger.info("poker setup: include_types=%s", ",".join(include_types))
 
     # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
-    import threading as _thr
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
     from yeaboi.ui.shared._components import POKER_THEME, poker_title
@@ -10838,7 +10828,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     def _fetch() -> None:
         result["tickets"] = poker_tickets.fetch_tickets(source, sprint=sprint, include_types=include_types)
 
-    worker = _thr.Thread(target=_fetch, name="poker-fetch", daemon=True)
+    worker = duck_working_thread(_fetch, name="poker-fetch")
     started = time.monotonic()
     worker.start()
     while worker.is_alive():
@@ -10966,7 +10956,6 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     # Tunnel state — see the retro loop for the full note. The short version: the
     # server binds loopback, so this tunnel is the only way a teammate reaches the
     # board, and it therefore starts by itself rather than on a button.
-    import threading as _thr
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -11023,7 +11012,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
     # Start it now — the board is open and the join code is already valid.
     _start_remote()
@@ -12320,10 +12309,7 @@ def select_mode(
                                 _ta_done.set()
 
                         _ta_thread_start = time.monotonic()
-                        _ta_thread = threading.Thread(
-                            target=_run_team_analysis_mode,
-                            daemon=True,
-                        )
+                        _ta_thread = duck_working_thread(_run_team_analysis_mode, name="team-analysis")
                         logger.info("Analysis: starting analysis (components=%s)", _ta_components)
                         _ta_thread.start()
 
@@ -13905,7 +13891,7 @@ def select_mode(
                         _ta_project_key,
                     )
                     _ta_thread_start = time.monotonic()
-                    _ta_thread = threading.Thread(target=_run_team_analysis, daemon=True)
+                    _ta_thread = duck_working_thread(_run_team_analysis, name="team-analysis")
                     _ta_thread.start()
 
                     # Processing animation while waiting
