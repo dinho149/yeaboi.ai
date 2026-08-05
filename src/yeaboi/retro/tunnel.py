@@ -192,16 +192,35 @@ class CloudflareTunnel:
         # Last stderr lines from cloudflared — surfaced on failure so the real reason
         # (QUIC blocked, trycloudflare 5xx, protocol deprecated, rate-limit) is visible.
         self._log_tail: deque[str] = deque(maxlen=15)
+        # start() runs on the board's setup worker thread while stop() is called from the
+        # TUI thread (the retro page's `finally`). The TUI publishes the tunnel object
+        # BEFORE calling start() precisely so an early exit can tear it down — but between
+        # construction and Popen() there is no process to terminate, so a stop() landing in
+        # that window used to return having done nothing, and the worker would then spawn a
+        # cloudflared nobody held a reference to. A leaked tunnel keeps forwarding to a
+        # closed port, and a later session reusing the port would silently inherit its
+        # public URL. This flag makes the intent to stop outlive that window: stop() records
+        # it, and start() refuses to spawn once it is set.
+        self._lock = threading.Lock()
+        self._stop_requested = False
 
     @property
     def public_url(self) -> str:
+        """The tunnel's public URL, or ``""`` when there is none to hand out.
+
+        Blank after a :meth:`start` a concurrent :meth:`stop` aborted, so it never
+        contradicts what ``start()`` returned by naming an already-dead tunnel.
+        """
         return self._url
 
     def start(self, *, timeout: float = 45.0) -> str | None:
         """Launch cloudflared and wait up to ``timeout`` s for the public URL.
 
         Returns the ``https://…trycloudflare.com`` URL, or ``None`` on failure
-        (binary unavailable, process died, or no URL within the timeout).
+        (binary unavailable, process died, no URL within the timeout, or a
+        concurrent :meth:`stop` — whether it landed before the process was
+        spawned or during the DNS wait, a URL is never reported for a tunnel
+        that has been asked to stop).
         """
         binary = self._binary or ensure_cloudflared()
         if binary is None:
@@ -210,26 +229,39 @@ class CloudflareTunnel:
 
         logger.info("retro: starting cloudflare tunnel for localhost:%d", self.port)
         try:
-            self._proc = subprocess.Popen(  # noqa: S603 - fixed, app-managed binary + args
-                [str(binary), "tunnel", "--no-autoupdate", "--url", f"http://localhost:{self.port}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
+            # Check-and-spawn under the lock so a stop() cannot slip between the check and
+            # Popen(). The lock covers only that pairing — never the URL wait or the DNS
+            # gate below, which block for tens of seconds and would freeze the TUI thread's
+            # stop() if held.
+            with self._lock:
+                if self._stop_requested:
+                    logger.warning("retro: cloudflare tunnel startup aborted by a concurrent stop")
+                    return None
+                proc = subprocess.Popen(  # noqa: S603 - fixed, app-managed binary + args
+                    [str(binary), "tunnel", "--no-autoupdate", "--url", f"http://localhost:{self.port}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                self._proc = proc
         except OSError as e:
             logger.warning("retro: could not launch cloudflared: %s", e)
             return None
 
         found = threading.Event()
 
+        # Everything below holds the process in a local, not via ``self._proc``: a
+        # concurrent stop() blanks that attribute the instant it terminates the child,
+        # and the drain thread and the URL wait both outlive that moment.
+
         def _drain() -> None:
             # Keep reading stderr for the tunnel's whole life: capture the URL once,
             # then keep draining so cloudflared's pipe buffer never fills and blocks it.
             # Every line is logged (DEBUG) + kept in a small tail so a failure is
             # diagnosable — previously cloudflared's own output was discarded.
-            assert self._proc is not None and self._proc.stderr is not None
-            for line in self._proc.stderr:
+            assert proc.stderr is not None
+            for line in proc.stderr:
                 line = line.rstrip()
                 if line:
                     self._log_tail.append(line)
@@ -240,16 +272,30 @@ class CloudflareTunnel:
                         self._url = m.group(0)
                         found.set()
 
-        self._reader = threading.Thread(target=_drain, name="retro-tunnel", daemon=True)
-        self._reader.start()
+        # Published only once it is running: stop() joins whatever is in ``_reader``,
+        # and a thread that has been created but not started cannot be joined.
+        reader = threading.Thread(target=_drain, name="retro-tunnel", daemon=True)
+        reader.start()
+        # Publish under the lock, and only if no stop() has landed in the meantime. A
+        # stop() that claimed ``_proc``/``_reader`` between the Popen above and here has
+        # already finished; assigning ``self._reader`` afterwards would re-publish a live
+        # handle onto a tunnel that is, by contract, stopped. Take ownership of the thread
+        # instead and join it here — bounded by the same 2 s stop() uses, and unconditional
+        # once the pipe is closed, since _drain then hits EOF immediately.
+        with self._lock:
+            stopped_mid_launch = self._stop_requested
+            if not stopped_mid_launch:
+                self._reader = reader
+        if stopped_mid_launch:
+            reader.join(timeout=2)
 
         # Wait for the URL, but bail early if the process exits first.
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if found.wait(timeout=0.2):
                 break
-            if self._proc.poll() is not None:  # cloudflared exited before emitting a URL
-                logger.warning("retro: cloudflared exited early (code %s)", self._proc.returncode)
+            if proc.poll() is not None:  # cloudflared exited before emitting a URL
+                logger.warning("retro: cloudflared exited early (code %s)", proc.returncode)
                 break
 
         if not self._url:
@@ -272,6 +318,23 @@ class CloudflareTunnel:
         # globally resolvable before declaring the tunnel ready.
         host = self._url.split("://", 1)[-1].split("/", 1)[0]
         self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
+
+        # The DNS gate is the longest window in start() — up to 30 s of polling plus a 3 s
+        # settle — and it runs outside the lock, so a stop() from the TUI thread lands here
+        # more often than anywhere else. That stop tears the process down correctly, but
+        # returning the URL anyway would hand the caller a link to an already-dead tunnel,
+        # which it then puts on screen. Report the failure the caller already handles.
+        #
+        # This is also where a stop the *gate itself* noticed arrives: _wait_dns_live
+        # returns False on a latched stop just as it does on a timeout, so there is one
+        # abort path here rather than two. Unwind ``_url`` with it — start() owns that
+        # field, and leaving it set would make ``public_url`` still report a dead link
+        # while start() says the tunnel failed.
+        with self._lock:
+            if self._stop_requested:
+                logger.warning("retro: cloudflare tunnel stopped while waiting for DNS; not reporting a URL")
+                self._url = ""
+                return None
         logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
         return self._url
 
@@ -309,11 +372,29 @@ class CloudflareTunnel:
         Best-effort: on timeout we still return the URL (the tunnel is up per cloudflared),
         but log a warning — a persistently-unresolvable host usually means the joining
         network blocks ``trycloudflare.com``.
+
+        A concurrent :meth:`stop` ends the wait early and is reported exactly like a
+        timeout (``False``, never an exception) — the caller already handles that.
         """
         google, cloudflare = "https://dns.google/resolve", "https://1.1.1.1/dns-query"
         start = time.monotonic()
         google_reachable = False
         while time.monotonic() < deadline:
+            # This loop is the longest wait in start() — up to 30 s of polling plus a 3 s
+            # settle — and it is exactly the window where a host backing out of the board
+            # lands, so it has to be able to hear a stop(). _output_share.py's teardown
+            # calls stop() then joins the setup worker, so without this the TUI sits for
+            # up to ~33 s doing nothing useful, worst of all on the network that blocks
+            # trycloudflare.com outright (DNS never resolves → the full deadline).
+            #
+            # The latch is read under the lock but the lock is *never* held across the DoH
+            # request below: the TUI thread's stop() must not block on a network call. The
+            # check sits at the top of the body so a stop landing during the previous sleep
+            # also skips a 4 s query, not just the sleep after it.
+            with self._lock:
+                if self._stop_requested:
+                    logger.info("retro: cloudflare tunnel DNS wait abandoned — stop requested")
+                    return False
             ext = self._dns_query(google, host)
             if ext:  # an ordinary public resolver sees it → joining teammates will too
                 logger.info("cloudflare quick tunnel DNS propagated")
@@ -337,21 +418,33 @@ class CloudflareTunnel:
         return False
 
     def stop(self) -> None:
-        """Terminate the tunnel process and free its resources."""
-        proc = self._proc
-        if proc is None:
+        """Terminate the tunnel process and free its resources.
+
+        Safe to call before, during or after :meth:`start`, and safe to call
+        twice. Calling it before the process exists still *latches* the request,
+        so a ``start()`` still in flight will not spawn one afterwards — which
+        makes a tunnel object single-use: once stopped, it never starts again.
+        """
+        # Claim both handles under the lock and blank them in the same breath, so a
+        # second stop() (the share flow calls one before and one after joining its
+        # worker) cannot terminate the same process twice or join a thread that the
+        # first call is already joining. The waits themselves happen outside the lock:
+        # start() needs it back to finish spawning.
+        with self._lock:
+            self._stop_requested = True
+            proc, self._proc = self._proc, None
+            reader, self._reader = self._reader, None
+        if proc is None and reader is None:
             return
-        try:
-            proc.terminate()
+        if proc is not None:
             try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        except Exception as e:
-            logger.debug("retro: error stopping tunnel: %s", e)
-        finally:
-            self._proc = None
-        if self._reader:
-            self._reader.join(timeout=2)
-            self._reader = None
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except Exception as e:
+                logger.debug("retro: error stopping tunnel: %s", e)
+        if reader is not None:
+            reader.join(timeout=2)
         logger.info("retro: tunnel stopped")

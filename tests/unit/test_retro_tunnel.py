@@ -1,11 +1,14 @@
 """Unit tests for the Retro Cloudflare tunnel helper (hermetic — no network)."""
 
 import hashlib
+import io
 import platform
 import stat
+import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -193,6 +196,245 @@ class TestCloudflareTunnel:
         t.stop()
         assert url
         assert any("cloudflared:" in r.getMessage() for r in caplog.records)
+
+
+class _FakeProc:
+    """Stand-in for a spawned cloudflared — records teardown, runs nothing."""
+
+    def __init__(self, stderr_text: str = "") -> None:
+        self.terminated = False
+        self.terminate_calls = 0  # a count, not a flag: a double stop() must not double-terminate
+        self.killed = False
+        self.returncode = 0
+        # Drains immediately; emits a URL only when a test asks for one.
+        self.stderr = io.StringIO(stderr_text)
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.terminate_calls += 1
+
+    def kill(self) -> None:
+        self.killed = True
+
+    def wait(self, timeout=None) -> int:
+        return 0
+
+    def poll(self) -> int:
+        return 0
+
+
+class TestStartStopRace:
+    """A stop() landing before start() reaches Popen must not leave a tunnel behind.
+
+    The TUI publishes the tunnel object *before* calling start() so the retro page's
+    `finally` can tear down a setup still in flight. Before the stop-requested latch,
+    a stop() in the window between construction and Popen() found `_proc is None`,
+    returned having done nothing, and the worker went on to spawn a cloudflared with
+    nobody left to stop it — a public URL still forwarding at a port a later session
+    could reuse.
+    """
+
+    def _no_spawn(self, monkeypatch) -> list:
+        """Replace Popen with a recorder, so a spawn is an observable event."""
+        spawned: list = []
+
+        def _fake_popen(*args, **kwargs):
+            spawned.append(args)
+            return _FakeProc()
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _fake_popen)
+        return spawned
+
+    def test_stop_before_start_prevents_spawn(self, tmp_path, monkeypatch, caplog):
+        spawned = self._no_spawn(monkeypatch)
+        t = tunnel.CloudflareTunnel(5173, binary=tmp_path / "cloudflared")
+
+        t.stop()  # the page's finally, arriving first
+        with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
+            assert t.start(timeout=5) is None
+
+        assert spawned == []
+        assert t._proc is None
+        assert any("aborted by a concurrent stop" in r.getMessage() for r in caplog.records)
+
+    def test_stop_during_binary_resolution_prevents_spawn(self, monkeypatch):
+        # The real window is wide: ensure_cloudflared() may download ~40 MB. Land the
+        # stop inside it, exactly as a host closing the board mid-setup would.
+        spawned = self._no_spawn(monkeypatch)
+        t = tunnel.CloudflareTunnel(5173)
+
+        def _resolve_then_stopped() -> Path:
+            t.stop()
+            return Path("/nonexistent/cloudflared")
+
+        monkeypatch.setattr(tunnel, "ensure_cloudflared", _resolve_then_stopped)
+        assert t.start(timeout=5) is None
+        assert spawned == []
+
+    def test_stop_racing_the_spawn_tears_the_process_down(self, monkeypatch):
+        # The one case where a process does get spawned: stop() arrives while Popen is
+        # mid-flight. It blocks on the lock start() holds across the spawn, then finds
+        # the new process and terminates it. Nothing is left running either way.
+        procs: list[_FakeProc] = []
+        in_popen = threading.Event()
+        release = threading.Event()
+
+        def _slow_popen(*args, **kwargs):
+            in_popen.set()
+            release.wait(timeout=5)
+            proc = _FakeProc()
+            procs.append(proc)
+            return proc
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _slow_popen)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        result: dict = {}
+        worker = threading.Thread(target=lambda: result.update(url=t.start(timeout=1)))
+        worker.start()
+        assert in_popen.wait(timeout=5)
+
+        stopper = threading.Thread(target=t.stop)
+        stopper.start()
+        release.set()
+        stopper.join(timeout=10)
+        worker.join(timeout=10)
+
+        assert result["url"] is None
+        assert procs and procs[0].terminated  # spawned, but never left running
+        assert t._proc is None
+
+    def test_stop_racing_the_reader_launch_tears_down_exactly_once(self, monkeypatch):
+        # The narrowest window in start(): the drain thread has been constructed but is
+        # not running yet. It is reachable — the share flow's cancel path stops the
+        # tunnel from the TUI thread while the setup worker is still inside start(), then
+        # stops it a second time once that worker is joined (two stop() call sites in
+        # ui/shared/_output_share.py). Publishing ``_reader`` *before* starting it made
+        # the first stop() join a thread that had never run — "RuntimeError: cannot join
+        # thread before it is started", raised straight out of the page's finally — and
+        # claiming the process handle separately from the reader let two stops terminate
+        # the same child twice. start() therefore assigns ``_reader`` only after
+        # ``reader.start()``, and stop() claims and blanks both handles in one breath.
+        procs: list[_FakeProc] = []
+
+        def _fake_popen(*args, **kwargs):
+            proc = _FakeProc()
+            procs.append(proc)
+            return proc
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _fake_popen)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        class _StopMidLaunch(threading.Thread):
+            """A drain thread that takes a stop() in the instant before it starts."""
+
+            def start(self) -> None:
+                if self.name == "retro-tunnel":  # never interfere with anyone else's threads
+                    t.stop()  # the page's finally, landing inside the window
+                super().start()
+
+        monkeypatch.setattr(tunnel.threading, "Thread", _StopMidLaunch)
+
+        assert t.start(timeout=1) is None  # the in-window stop must not raise out of start()
+        t.stop()  # and the second stop, after the worker is joined, is a clean no-op
+
+        assert len(procs) == 1
+        assert procs[0].terminate_calls == 1  # torn down once, not once per stop()
+        assert t._proc is None and t._reader is None
+
+    def test_stop_at_reader_launch_publishes_no_reader_handle(self, monkeypatch):
+        # Same window as above, but the tunnel goes on to succeed: cloudflared emits a URL,
+        # so start() never reaches its own failure-path stop(). Nothing else would blank
+        # ``_reader``, so this is what pins the publish-only-if-not-stopped rule: a stop()
+        # that has already claimed both handles and returned must not have a live reader
+        # handed back to it afterwards.
+        url_line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |\n"
+        monkeypatch.setattr(tunnel.subprocess, "Popen", lambda *a, **k: _FakeProc(url_line))
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_wait_dns_live", lambda self, host, *, deadline: True)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        class _StopMidLaunch(threading.Thread):
+            def start(self) -> None:
+                if self.name == "retro-tunnel":  # never interfere with anyone else's threads
+                    super().start()
+                    t.stop()  # the page's finally, landing the instant the drain thread runs
+                else:
+                    super().start()
+
+        monkeypatch.setattr(tunnel.threading, "Thread", _StopMidLaunch)
+
+        assert t.start(timeout=1) is None
+        assert t._reader is None and t._proc is None
+
+    def test_stop_during_the_dns_wait_reports_no_url(self, monkeypatch, caplog):
+        # The longest window in start(): _wait_dns_live polls for up to 30 s plus a 3 s
+        # settle, all outside the lock. A stop() landing there tore the process down
+        # correctly — but start() still returned the URL, so the board advertised a link to
+        # a tunnel that was already dead.
+        url_line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |\n"
+        monkeypatch.setattr(tunnel.subprocess, "Popen", lambda *a, **k: _FakeProc(url_line))
+        gated: list[str] = []
+
+        def _stop_mid_wait(self, host, *, deadline):
+            gated.append(host)
+            self.stop()  # the host closes the board while DNS is still propagating
+            return True
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_wait_dns_live", _stop_mid_wait)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
+            assert t.start(timeout=5) is None
+        assert gated == ["fake-tunnel-abcd.trycloudflare.com"]  # the URL was seen…
+        assert any("stopped while waiting for DNS" in r.getMessage() for r in caplog.records)  # …never handed out
+        assert t._proc is None
+
+    def test_stop_ends_the_dns_poll_early(self, monkeypatch):
+        # The check above runs *after* _wait_dns_live returns, so it shortened the report
+        # and not the wait: the gate's own poll loop had no way to hear a stop, and ran its
+        # full 30 s deadline plus settle regardless. _output_share.py's teardown calls
+        # stop() then joins the setup worker, so a host backing out of a share flow watched
+        # the TUI sit for ~33 s — worst on the network that blocks trycloudflare.com, where
+        # the host never resolves and the wait is always the full deadline. Drive the real
+        # loop here (only the resolver and the sleep are faked) with a stop landing mid-poll.
+        t = tunnel.CloudflareTunnel(5173)
+        queries: list[str] = []
+        slept: list[float] = []
+        monkeypatch.setattr(tunnel.time, "sleep", lambda s: slept.append(s))
+
+        def _never_resolves(self, base, host):
+            queries.append(base)
+            if len(queries) == 1:
+                t.stop()  # the host backs out while the record is still propagating
+            return False  # reachable resolver, NXDOMAIN for now — the loop keeps polling
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_dns_query", _never_resolves)
+
+        # The 30 s deadline start() passes. Without the latch check this polls it out.
+        assert t._wait_dns_live("nope.trycloudflare.com", deadline=time.monotonic() + 30.0) is False
+        assert len(queries) == 1  # broke at the top of the next pass, before re-querying
+        assert slept == [1.5]  # …one poll interval, not twenty — and no 3 s success settle
+
+    def test_stop_during_the_dns_wait_clears_the_public_url(self, monkeypatch):
+        # start() reports None on this path, but ``_url`` stayed set — so ``public_url``
+        # still named the (already dead) tunnel while start() said it had failed. No caller
+        # reads it after a failed start() today; this keeps that safe by construction
+        # rather than by nobody having tried it yet. Goes through the *real* DNS gate, so
+        # it also pins that the gate's own early return lands on start()'s existing abort
+        # path — one place unwinds ``_url``, not one per way of noticing the stop.
+        url_line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |\n"
+        monkeypatch.setattr(tunnel.subprocess, "Popen", lambda *a, **k: _FakeProc(url_line))
+        monkeypatch.setattr(tunnel.time, "sleep", lambda s: None)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        def _stop_then_nxdomain(self, base, host):
+            t.stop()  # the page's finally, landing inside the poll loop
+            return False
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_dns_query", _stop_then_nxdomain)
+
+        assert t.start(timeout=5) is None
+        assert t.public_url == ""  # nothing left behind to contradict that None
 
 
 class TestDnsLiveGate:
