@@ -38,14 +38,41 @@ Open one only for work that is **approved and starting** — an auto-lane item, 
 just received `claude-implement`. Never for a proposal. Linear carries work; GitHub issues carry
 candidates, and most candidates are answered no.
 
-**GitHub proposal issue** — labels `cowork:proposal` + `workstream:<name>`. Body in four short
-sections: **What**, **Why now**, **Evidence** (file:line or command output), **Effort** (S/M/L and
-what it would touch). Close with both verbs on one line, because an issue that only says how to
-approve leaves rejecting to silence:
-`Approve by adding the \`claude-implement\` label. Reject by closing this issue.`
+**GitHub proposal issue** — labels `cowork:proposal` + `workstream:<name>` + `type:<type>` (the
+scout's `type` field; when no scout is in the loop — a marketing contradiction, say — use the type
+the issue plainly is, and `docs` for docs-vs-code drift).
+
+Title: `[type][workstream] short simple title` — lowercase brackets, then a specific noun phrase or
+imperative under ~70 characters. `[bug][integrations] Detect truncated Jira list results`, not "The
+Jira integration may silently return incomplete results when…". The title is the digest line and the
+issue-list line; it has to survive both.
+
+Body — the executive summary first, because a human decides from it; the detail second, because an
+AI implements from it:
+
+```
+<2–4 plain sentences for the human deciding: what this is, who it
+affects, and what happens if nobody acts. No file paths, no jargon.>
+
+**Impact** <1–5> · **Effort** <S/M/L> · **Risk** <low/med/high>
+
+---
+
+**What** — the concrete change.
+**Why it matters** — the scout's `why_it_matters`, tightened, not dropped.
+**Evidence** — file:line or command output, verbatim from the scout.
+**Paths** — what it would touch.
+
+Approve by adding the `claude-implement` label. Reject by closing this issue.
+```
+
+Impact, effort and risk come from the scout's find — surface them, never re-score them. The closing
+line carries both verbs because an issue that only says how to approve leaves rejecting to silence.
 
 **Slack** — plain sentences, no preamble, no emoji headers. One message per event. Links are inline
-and named, never bare URLs.
+and named, never bare URLs. Lines that carry a proposal or a ship note lead with the same
+`[type][workstream]` tag as the issue title, then one short clause — a scannable line, never a
+run-on paragraph.
 
 **Notion** — search before creating; update an existing page rather than making a near-duplicate.
 Nest under 🤙 yeaboi. Title pages so they sort usefully (`Draft — <subject> — <YYYY-MM-DD>`).

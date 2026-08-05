@@ -48,6 +48,13 @@ A missing render test, a dead screen, an `is_new=True` tip that should have been
 ago, doc drift. Layout, copy, colour, key bindings, and navigation always propose — they are what the
 user sees.
 
+## Opportunity space
+
+Where a `[feature]`/`[improvement]` find is most likely to be real here: flows a user repeats every
+session (mode select, settings round-trips), outputs a user copies elsewhere by hand (the usage
+page's export), and parity gaps where a sibling mode's screen affords something this one's does not.
+The evidence bar in `cowork-scout.md` applies — name the friction, the gap, or the repeated step.
+
 ## Out of scope
 
 Browser surfaces of any kind (**web-ux**). `ui/session/` — the planning intake, review and editor

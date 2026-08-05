@@ -23,10 +23,17 @@ The single decision point. It is the only routine that posts proposals to Slack.
 2. **Rank across workstreams**, not within them. Impact over effort, with a deliberate thumb on the
    scale for: anything security-labelled, anything that unblocks another workstream, and anything a
    user would notice. Two items from the same workstream should not both be in the top three unless
-   they genuinely earn it — breadth beats depth in a digest.
+   they genuinely earn it — breadth beats depth in a digest. Rank `feature`/`improvement` proposals
+   together with everything else — no separate section, no discount for not being a bug. The `[type]`
+   tag in each line is what makes the mix visible; the thumbs on the scale above apply regardless of
+   type, and the `[security]` and `[feature]`/`[improvement]` tags make the first and third legible
+   at a glance.
 
 3. **Post one Slack message** to `#yeaboi-claude` via `cowork-scribe`:
-   - top 5 proposals, one line each: workstream · title · why now · issue link
+   - top 5 proposals, one line each: `<issue title> — why-now clause (issue link)`. The title comes
+     from the issue verbatim and already leads with its `[type][workstream]` tag — never add a
+     second one; for an old issue whose title lacks the tag, prepend it from the issue's labels. The
+     why-now is one clause, not a sentence chain — if a line wraps twice it is too long
    - the count of everything else, by workstream
    - the oldest 3 `feature-candidate` issues, under their own heading — these came from users, so
      they are listed separately rather than ranked against scout finds, and by age rather than by

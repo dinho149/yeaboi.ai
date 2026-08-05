@@ -56,8 +56,9 @@ a routine file, or when someone new joins.
 2. **Labels and variables.** `make cowork-setup`. Report the counts.
 3. **Linear labels.** Take `targets.linear` from `--json` for the team id, `list_issue_labels` for
    that team, then `create_issue_label` for each `workstream:<name>` in the manifest's `labels` that
-   is missing. The three non-workstream labels are GitHub-only — the proposal queue lives in GitHub
-   issues, and Linear only ever carries the workstream dimension.
+   is missing. The non-workstream labels (`cowork`, `cowork:proposal`, `claude-implement`, and the
+   `type:*` set) are GitHub-only — the proposal queue lives in GitHub issues, and Linear only ever
+   carries the workstream dimension.
 4. **Routines.** The account-scoped half, and the reason this is a command and not a make target.
    - Load the `schedule` skill first (Skill tool, `schedule`) for the current `RemoteTrigger`
      contract and how an `environment_id` is resolved. Do not work from memory: it is an account-side
@@ -132,7 +133,8 @@ Order:
    `make cowork-teardown`, which prompts, or to
    `uv run python scripts/cowork_setup.py --teardown [--labels] [--variables] --yes` when the user has
    already confirmed here. `claude-implement` is never deleted — it predates cowork and gates the
-   `claude.yml` implement job.
+   `claude.yml` implement job. The `type:*` labels are never deleted either — the feedback system
+   shares them.
 3. **Linear labels** (only with `--all`). Delete the `workstream:*` labels on the Linear team.
 
 Deleting a label strips it off every issue that carries it, and no re-run puts that back. If the user

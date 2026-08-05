@@ -21,8 +21,12 @@ This is where DoD items 1 (final state), 8, and 9 are satisfied. Everything belo
    updating an existing page over creating a near-duplicate; search first.
    Internal refactors, test-only changes, and dependency bumps get no Notion page.
 
-4. **Slack** — one message to `#yeaboi-claude`: what shipped in a sentence, the workstream label if
-   the PR has one, the PR link, the Linear link, and the Notion link when there is one.
+4. **Slack** — one message to `#yeaboi-claude`, led by the same tag the proposal carried:
+   `[type][workstream] <what shipped, one sentence>`, then the PR link, the Linear link, and the
+   Notion link when there is one. Take the type from the PR's own `type:*` label — step 1 already
+   fetched the labels, and both lanes put it there (sweep step 5 for auto, `claude.yml` step 9 for
+   approved proposals). If the PR has none (a human shipped without one), drop the type bracket
+   rather than guessing — the scribe never invents a classification.
 
 5. If any of the three fails, complete the others and post what failed in the Slack message. A dead
    Notion connector must not swallow the ship note.
