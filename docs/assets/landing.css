@@ -92,11 +92,16 @@
        with the blur box's own edges showing through them. The falloff does the
        softening instead: both stops now reach full transparency well inside
        the element, so nothing is clipped at its bounds. */
-    content:""; position:absolute; inset:-12% -10%; z-index:0; pointer-events:none;
+    content:""; position:absolute; inset:-16% -12%; z-index:0; pointer-events:none;
+    /* Centred on the frame, not high on it. The frame is opaque and sits on top,
+       so the only part of this that is ever seen is what escapes around the
+       edges: put the bright core anywhere other than the middle and it stops
+       being a halo and becomes a lit band with the frame's own straight edge
+       cutting it off. Centred, and weak, it reads as the glow it is. */
     background:
-      radial-gradient(56% 66% at 50% 24%, var(--accent-glow), transparent 68%),
-      radial-gradient(46% 50% at 24% 68%, rgba(80,150,210,.13), transparent 66%);
-    opacity:.7;
+      radial-gradient(62% 58% at 50% 50%, var(--accent-glow), transparent 72%),
+      radial-gradient(42% 38% at 26% 74%, rgba(80,150,210,.10), transparent 70%);
+    opacity:.45;
   }
   .scrolly-steps{display:flex; flex-direction:column; padding:4vh 0 8vh}
   .scrolly-step{
