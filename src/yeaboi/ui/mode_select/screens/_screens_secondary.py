@@ -2619,7 +2619,8 @@ def _build_usage_screen(
 
     panel = build_page_panel(content, theme=USAGE_THEME, height=height)
     panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
-    panel._duck_say = message  # the companion speaks the transient status
+    # The transient status is spoken through the shared duck voice by the usage
+    # loop; the chrome fences it to the default free margin.
     return panel
 
 
@@ -6030,10 +6031,8 @@ def _build_settings_screen(
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
 
-    # ── Transient status message (e.g. "Anthropic Key updated") ───
-    # The companion duck speaks it (see _duck_say on the returned panel) rather
-    # than it taking a body row.
-    message = config_data.get("_message", "")
+    # The transient status ("Anthropic Key updated") is spoken through the
+    # shared duck voice by the settings loop — nothing to lay out here.
 
     # ── Box geometry, resolved BEFORE the rows are built ──────────
     # Each section becomes its own bordered box laid out in an adaptive-width grid
@@ -6510,7 +6509,8 @@ def _build_settings_screen(
     # The controls ride in the bottom-left pocket as one more tab beside "back",
     # instead of taking a body row of their own.
     panel._hint_tab = hint
-    panel._duck_say = message  # the companion speaks the transient status
+    # The transient status ("Anthropic Key updated") is spoken through the
+    # shared duck voice by the settings loop; the chrome fences it.
     # Attach the tab click regions (labels + underline rows, absolute cols) so the
     # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
     panel._tab_regions = [

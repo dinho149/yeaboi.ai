@@ -4977,7 +4977,9 @@ def _run_mode_hub(
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
     from yeaboi.ui.shared._click import parse_click
+    from yeaboi.ui.shared._duck_voice import duck_voice
 
+    voice = duck_voice()  # toasts + the delete confirmation speak through the duck
     runs = load_runs()
     extra_text = extra_label() if extra_label is not None else ""
     selected = 0
@@ -4998,7 +5000,11 @@ def _run_mode_hub(
         selected = min(selected, _n_items() - 1)  # keep within the item range
         focus = 0
         confirm = False
+        voice.clear_sticky()  # any pending delete confirmation is moot now
         message = msg
+        if msg:
+            logger.info("%s hub: %s", mode, msg)
+            voice.say(msg)
 
     def _render_list() -> None:
         nonlocal _last_panel
@@ -5215,6 +5221,7 @@ def _run_mode_hub(
                 _reload("Run deleted.")
             elif k in ("esc", "q"):
                 confirm = False
+                voice.clear_sticky()
             _render_list()
             continue
         if k in SCROLL_KEYS or k in ("up", "down"):
@@ -5249,6 +5256,7 @@ def _run_mode_hub(
                 _open_snapshot(run)
             elif focus == 1:
                 confirm = True
+                voice.say_sticky(f'Delete "{run.title}"?  Enter to confirm')
             elif focus == 2:
                 msg = _export_via_picker(
                     console,
@@ -5262,9 +5270,12 @@ def _run_mode_hub(
                 )
                 if msg is not None:
                     message = msg
+                    logger.info("%s hub: %s", mode, msg)
+                    voice.say(msg)
         elif k in ("esc", "q"):
             break
         _render_list()
+    voice.clear_sticky()  # never carry a modal prompt onto the next page
     logger.info("%s hub: closed", mode)
 
 
@@ -12731,6 +12742,9 @@ def select_mode(
 
                         logger.info("Usage: Copy pressed")
                         _u_message = copy_markdown_status(build_usage_text(_usage_data))
+                        from yeaboi.ui.shared._duck_voice import duck_voice
+
+                        duck_voice().say(_u_message)  # the duck speaks the copy status
                     elif k in ("esc", "q"):
                         break
                     w, h = console.size
@@ -12763,6 +12777,7 @@ def select_mode(
                     settings_focus_move,
                     settings_tab_action,
                 )
+                from yeaboi.ui.shared._duck_voice import duck_voice as _settings_voice
 
                 _settings_data = _collect_settings_data()
                 _s_scroll, _s_tab = 0, 0
@@ -12845,6 +12860,7 @@ def select_mode(
                         _ap_msg = _settings_save_allowed_paths(_val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _ap_msg
+                        _settings_voice().say(_ap_msg)  # the duck speaks the save status
                     elif _save and _env == "YEABOI_HOME":
                         # Relocating the tree needs a move-or-leave answer and a write
                         # to the pinned bootstrap .env, so it saves through its own
@@ -12852,6 +12868,7 @@ def select_mode(
                         _dd_msg = _settings_save_data_dir(console, live, read_key, _FRAME_TIME, _supports_timeout, _val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _dd_msg
+                        _settings_voice().say(_dd_msg)
                     elif _save:
                         from yeaboi.config import apply_config_value
 
@@ -12868,6 +12885,7 @@ def select_mode(
                                 logger.debug("apply_level failed for %r", _val, exc_info=True)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                        _settings_voice().say(_settings_data["_message"])
                         logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
 
                 _s_panel = _render_settings(0.0)

@@ -1111,8 +1111,10 @@ class MusicLive(Live):
                     duck_voice,
                 )
 
-                if not duck_muted():
-                    voice = duck_voice()
+                voice = duck_voice()
+                # Mute silences the chatter, not confirmations: a sticky line
+                # is a modal prompt (Enter deletes!) and must stay visible.
+                if not duck_muted() or voice.sticky:
                     line = voice.tick()
                     if line is not None:
                         text, _line_hold, seq = line

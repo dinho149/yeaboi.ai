@@ -851,13 +851,13 @@ class TestSettingsScreen:
         assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
     def test_status_message_spoken_by_the_duck(self):
-        # The transient status no longer takes a body row: it's handed to the
-        # companion duck, who says it in a speech bubble (see _duck_say).
+        # The transient status no longer takes a body row: the settings loop
+        # hands it to the shared duck voice, so the builder stamps nothing.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         msg = "Data directory saved — restart yeaboi to fully apply"
         panel = _build_settings_screen({"_message": msg}, width=100, height=60)
-        assert panel._duck_say == msg
+        assert getattr(panel, "_duck_say", "") == ""
         assert "restart yeaboi" not in self._render({"_message": msg})  # not in the body
 
     def test_notion_token_masked(self):

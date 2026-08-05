@@ -117,8 +117,8 @@ class DuckVoice:
         repeats don't restart the fade unless the caller re-offers after it
         expired.
         """
-        if self.muted:
-            return False
+        if self.muted or not text:
+            return False  # nothing to say (an empty status must not hold the bubble)
         now = time.monotonic() if now is None else now
         hold = _SAY_HOLD if hold is None else hold
         live = self._line is not None and not self._expired(self._line, now)

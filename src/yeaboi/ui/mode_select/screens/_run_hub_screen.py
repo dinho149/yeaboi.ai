@@ -94,8 +94,8 @@ def _build_run_hub_screen(
     title = title_fn(shimmer_tick)
 
     sub_color = lerp_color(card_opacity, BLACK_RGB, (100, 100, 100))
-    # Transient toasts (export/delete/run-again results) are spoken by the duck now
-    # (see _duck_say below), so the subtitle row keeps its own label.
+    # Transient toasts (export/delete/run-again results) are spoken by the duck
+    # (the hub loop feeds the shared voice), so the subtitle row keeps its own label.
     if show_subtitle:
         sub = Text(_PAD + subtitle, style=sub_color, justify="left")
     else:
@@ -282,11 +282,11 @@ def _build_run_hub_screen(
     panel = build_page_panel(content, theme=theme, height=height, padding=(1, 2))
     panel._card_regions = card_regions  # (y_top, y_bot, item_index) per clickable card
     panel._btn_regions = btn_regions  # (x0, y0, x1, y1, label) for the selected card's buttons
-    # The duck carries both delete messages: the confirmation (sticky — it must wait
-    # for an answer rather than fading) and the "deleted" toast that follows.
-    if delete_popup_name and delete_popup_t > 0:
-        panel._duck_say = f'Delete "{delete_popup_name}"?  Enter to confirm'
-        panel._duck_say_sticky = True
-    elif message:
-        panel._duck_say = message
+    # The duck carries the delete confirmation and the toasts — but the hub loop
+    # speaks them through the shared voice (ui/shared/_duck_voice.py) now, not a
+    # raw _duck_say stamp. The builder only declares the bubble's free room: the
+    # cards are capped at box_w, so everything right of them is the duck's.
+    from yeaboi.ui.shared._duck_voice import default_bubble_room
+
+    panel._bubble_room = default_bubble_room(width, content_edge=len(_PAD) + box_w + 2)
     return panel

@@ -166,10 +166,11 @@ class TestLocalPerformanceSection:
         console = Console(file=StringIO(), width=100, height=40)
         console.print(panel)
         out = console.file.getvalue()
-        # Copy/Back moved out of the body into the bottom-left chrome tabs, and the
-        # toast moved out of the body too — the duck speaks it (_duck_say).
+        # Copy/Back moved out of the body into the bottom-left chrome tabs, and
+        # the toast moved out of the body too — the usage loop speaks it through
+        # the shared duck voice, so the builder stamps nothing itself.
         assert panel._copy_tab is True
-        assert panel._duck_say == "Copied to clipboard"
+        assert getattr(panel, "_duck_say", "") == ""
         assert "Copied to clipboard" not in out
 
 
