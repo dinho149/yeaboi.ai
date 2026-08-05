@@ -104,6 +104,36 @@ def _duck_react(quip_key: str, text: str | None = None) -> None:
     duck_voice().say(line)
 
 
+def _run_on_worker(target, render_frame, frame_time: float):
+    """Run ``target`` on a worker thread while the page keeps animating.
+
+    For calls that used to block the render thread solid (retro action items,
+    performance 1:1s, publish): ``render_frame(elapsed)`` runs every frame so
+    the page — and the working duck — stays live. Returns target()'s result;
+    re-raises whatever it raised, on this thread.
+    """
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+
+    result_box: list = [None, None]
+
+    def _work() -> None:
+        try:
+            result_box[0] = target()
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the UI thread below
+            result_box[1] = exc
+
+    thread = duck_working_thread(_work, name="mode-worker")
+    thread.start()
+    start = time.monotonic()
+    while thread.is_alive():
+        render_frame(time.monotonic() - start)
+        time.sleep(frame_time)
+    thread.join()
+    if result_box[1] is not None:
+        raise result_box[1]
+    return result_box[0]
+
+
 # ---------------------------------------------------------------------------
 # Constants used only by the orchestrator
 # ---------------------------------------------------------------------------
@@ -1935,8 +1965,28 @@ def _export_via_picker(
 
         return copy_markdown_status(markdown)
     from yeaboi.export_targets import publish_markdown
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
-    published = publish_markdown(dest, title=title, markdown=markdown)
+    _dest_label = {"notion": "Notion", "confluence": "Confluence"}.get(dest, dest)
+
+    def _publish_frame(elapsed: float) -> None:
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                [f"Publishing to {_dest_label}"],
+                width=w,
+                height=max(10, h - 1),
+                elapsed=elapsed,
+                anim_tick=elapsed,
+                label=f"Publishing to {_dest_label}",
+            )
+        )
+
+    # On a worker: publishing is a network call that used to freeze the frame
+    # loop (and the duck) until the page landed.
+    published = _run_on_worker(
+        lambda: publish_markdown(dest, title=title, markdown=markdown), _publish_frame, frame_time
+    )
     if published.ok:
         _duck_react("export_done")
     return published.message
@@ -8257,7 +8307,11 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
-                prep = run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp)
+                prep = _run_on_worker(
+                    lambda: run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
                 _show_detail(format_prep_lines(prep), f"1:1 Prep — {engineer}", "Prep generated.")
@@ -8270,8 +8324,12 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 transcript, transcript_images = transcript_result
                 from yeaboi.performance.engine import complete_one_on_one
 
-                record = complete_one_on_one(
-                    engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                record = _run_on_worker(
+                    lambda: complete_one_on_one(
+                        engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                    ),
+                    lambda _e: _render(),
+                    frame_time,
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
@@ -8280,7 +8338,11 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
-                review = run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp)
+                review = _run_on_worker(
+                    lambda: run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
                 _show_detail(format_review_lines(review), f"6-Month Review — {engineer}", "Review generated.")
@@ -10409,7 +10471,13 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     try:
                         from yeaboi.retro.engine import generate_action_items
 
-                        message = generate_action_items(board)
+                        # On a worker: the LLM call used to freeze the board
+                        # (and the duck) solid — now the frame loop keeps going.
+                        message = _run_on_worker(
+                            lambda: generate_action_items(board),
+                            lambda _e: _render(_data(), scroll, sel),
+                            frame_time,
+                        )
                         logger.info("retro: generate action items result: %s", message)
                         _duck_react("actions_done")
                     except Exception as e:  # defensive — never let it crash the TUI

@@ -161,6 +161,40 @@ class TestDuckReact:
         assert duck_voice().tick()[0] == DUCK_QUIPS["export_done"]
 
 
+class TestRunOnWorker:
+    """_run_on_worker — the thread + render-loop wrapper for ex-blocking calls."""
+
+    def test_returns_the_targets_result(self):
+        import yeaboi.ui.mode_select as ms
+
+        assert ms._run_on_worker(lambda: 42, lambda _e: None, 0.005) == 42
+
+    def test_reraises_the_targets_exception_on_this_thread(self):
+        import yeaboi.ui.mode_select as ms
+
+        with pytest.raises(ValueError, match="boom"):
+            ms._run_on_worker(lambda: (_ for _ in ()).throw(ValueError("boom")), lambda _e: None, 0.005)
+
+    def test_render_frame_runs_while_the_target_works(self):
+        import threading
+
+        import yeaboi.ui.mode_select as ms
+
+        release = threading.Event()
+        frames = []
+
+        def _slow():
+            release.wait(timeout=5)
+            return "done"
+
+        def _frame(elapsed):
+            frames.append(elapsed)
+            release.set()  # first rendered frame lets the worker finish
+
+        assert ms._run_on_worker(_slow, _frame, 0.005) == "done"
+        assert frames  # the page animated during the wait
+
+
 class TestBubbleFence:
     def test_default_room_leaves_the_content_edge_alone(self):
         # width 160, content to col 64: 160 - 16 (duck) - 64 - 7 (chrome) = 73
