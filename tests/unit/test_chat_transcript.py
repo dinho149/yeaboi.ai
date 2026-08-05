@@ -125,6 +125,35 @@ class TestArtifacts:
         assert "╭" in text and "╰" in text  # a real rounded Panel, not rule lines
 
 
+class TestRecapCard:
+    def _complete_state(self) -> dict:
+        from types import SimpleNamespace
+
+        return {
+            "features": ["f1", "f2"],
+            "stories": [SimpleNamespace(story_points=5), SimpleNamespace(story_points=3)],
+            "tasks": ["t1", "t2", "t3"],
+            "sprints": ["s1", "s2"],
+        }
+
+    def test_recap_counts_points_and_next_steps(self):
+        transcript = ChatTranscript()
+        transcript.add_artifact("recap")
+        lines = transcript.lines(90, self._complete_state(), _console(), theme=PLANNING_THEME)
+        text = "\n".join(_plain(lines))
+        assert "Plan complete" in text  # the card title
+        assert "2 epics" in text and "2 stories" in text
+        assert "3 tasks" in text and "2 sprints" in text
+        assert "8 pts total" in text
+        assert "/export" in text and "Esc Esc" in text
+
+    def test_recap_without_sprints_shows_placeholder(self):
+        transcript = ChatTranscript()
+        transcript.add_artifact("recap")
+        lines = transcript.lines(90, {}, _console(), theme=PLANNING_THEME)
+        assert lines  # unavailable-data placeholder path, no crash
+
+
 class TestChatMessage:
     def test_invalidate_clears_cache(self):
         m = ChatMessage("user", "hi")

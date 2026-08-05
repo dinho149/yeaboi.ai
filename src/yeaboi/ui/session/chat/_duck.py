@@ -27,6 +27,19 @@ PRIORITY_TIP = 3
 
 COACH_HOLD = 4.0  # coaching lines dwell a little longer than the default 2s
 
+# What the duck quacks at each intake phase boundary. Deliberately a few words
+# — NOT the full-sentence PHASE_INTROS, which the node already prepends into
+# the transcript; the bubble is a nudge, not a second narrator.
+PHASE_QUIPS: dict[str, str] = {
+    "project_context": "First: the project itself.",
+    "team_and_capacity": "Now — who's building it?",
+    "technical_context": "Tech stack time.",
+    "codebase_context": "Let's peek at the code.",
+    "risks_and_unknowns": "What could go wrong?",
+    "preferences": "How do you like to work?",
+    "capacity_planning": "Last stretch: capacity.",
+}
+
 
 @dataclass
 class _Line:

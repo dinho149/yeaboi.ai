@@ -41,7 +41,13 @@ from yeaboi.prompts.intake import decorate_question_for_chat
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
 from yeaboi.ui.shared._input import set_text_entry
-from yeaboi.ui.shared._music_bar import quack_duck, set_duck_working
+from yeaboi.ui.shared._music_bar import (
+    poke_duck,
+    quack_duck,
+    set_duck_working,
+    skip_duck_entrance,
+    start_duck_entrance,
+)
 from yeaboi.ui.shared._scroll import SCROLL_BOTTOM, coalesce_scroll
 
 from ._commands import ChatContext, dispatch, matching_commands
@@ -86,6 +92,8 @@ _PROGRESS_DONE_KEYS = {
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
+_IDLE_HINT_SECONDS = 8.0  # stuck on a question this long → the duck offers a hint
+_IDLE_TIP_AFTER_SECONDS = 3.0  # quiet this long (greeting / post-plan) → rotating tips
 
 
 def run_chat_session(
@@ -166,6 +174,9 @@ class _ChatDriver:
         self.duck = ChatDuck()  # sole owner of the corner duck's speech bubble
         self.progress: PipelineProgress | None = None  # stage checklist while building
         self._built_this_session = False  # a pipeline stage ran here (gates the celebration)
+        self._last_phase = ""  # intake phase last seen (quack on boundary)
+        self._hinted_q = -1  # question already idle-hinted (one per question)
+        self._idle_since = time.monotonic()  # last keypress — feeds hints + idle tips
 
     # ------------------------------------------------------------------ utils
 
@@ -939,7 +950,10 @@ class _ChatDriver:
             self._render()
             key = self._key(FRAME_TIME_30FPS)
             if not key:
+                self._idle_tick()
                 continue
+            self._idle_since = time.monotonic()
+            skip_duck_entrance()  # typing beats choreography (no-op once settled)
             if self.notice and key != "":
                 self.notice = ""
 
@@ -1058,6 +1072,11 @@ class _ChatDriver:
 
     def _greeting_flow(self) -> None:
         """Greeting + size + description — all pre-graph, all in _chat_preamble."""
+        # The one-time entrance: he waddles into his corner while the greeting
+        # is read (chrome-only, non-blocking; the resume path never gets here).
+        start_duck_entrance()
+        self._bubble("Quack — let's plan!", hold=4.0)
+        logger.info("Duck entrance started (greeting)")
         self._say(GREETING_TEXT)
         self._preamble_add("ai", GREETING_TEXT)
         preset_mode = self.state.get("_intake_mode", "")
@@ -1226,6 +1245,11 @@ class _ChatDriver:
         ):
             if self.state.get(key):
                 self.transcript.add_artifact(kind)
+        if self.state.get("sprints"):
+            # A finished plan resumes with its recap card — silently: the
+            # celebration (quack + shades) fired when the build completed and
+            # must not replay on every resume (_built_this_session gates it).
+            self.transcript.add_artifact("recap")
         self._pin_bottom()
         logger.info("Chat transcript rebuilt: %d messages", len(self.transcript.messages))
 
@@ -1355,6 +1379,7 @@ class _ChatDriver:
             if stage == "intake":
                 view = derive_question_view(self.state)
                 self.subtitle = " · ".join(s for s in (view.progress, view.phase_label) if s)
+                self._coach_phase()
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
                     self.choices = ChoiceRows(options=list(view.choices), highlight=highlight, multi=view.multi_select)
@@ -1372,6 +1397,7 @@ class _ChatDriver:
                 self.subtitle = "" if stage != "chat" else "Plan complete — keep refining, or /export"
                 if stage == "chat":
                     self.progress = None  # the build is over — drop the checklist
+                    self._maybe_celebrate_completion()
                 if stage == "chat" and self.state.pop("_chat_fast_forward", None):
                     self._note("Fast mode done — the plan is complete. /export saves it.")
                     self._save()
@@ -1410,6 +1436,90 @@ class _ChatDriver:
         self._save()
         logger.info("Chat session ended: quit=%s messages=%d", self.quit, len(self.transcript.messages))
         return self.state
+
+    def _coach_phase(self) -> None:
+        """Quack + a short lead-in when the intake crosses a phase boundary."""
+        from ._duck import COACH_HOLD, PHASE_QUIPS, PRIORITY_COACH
+
+        qs = self._qs()
+        phase = str(qs.current_phase) if qs is not None else ""
+        if not phase or phase == self._last_phase:
+            return
+        self._last_phase = phase
+        quip = PHASE_QUIPS.get(phase)
+        if quip and self.duck.say(quip, priority=PRIORITY_COACH, hold=COACH_HOLD):
+            quack_duck()
+            logger.info("Duck coaching (phase): %s", quip)
+
+    def _intake_hint(self, q: int) -> str | None:
+        """The one idle hint a question may earn, keyed off what it accepts."""
+        from yeaboi.prompts.intake import QUESTION_DEFAULTS, is_choice_question
+
+        if q > 20:
+            return "/finish builds the rest with defaults"
+        if is_choice_question(q):
+            return "Type the number — or ↑/↓ then Enter"
+        if q in QUESTION_DEFAULTS:
+            return "/defaults fills this phase for you"
+        return None
+
+    def _idle_tick(self) -> None:
+        """No key this frame — hints and idle tips ride the quiet moments.
+
+        Cheap by construction (a couple of clock compares per frame); the say()
+        calls are no-ops while the same line is already showing.
+        """
+        now = time.monotonic()
+        if not self.composer.is_empty():
+            return
+        stage = self._stage()
+        if stage == "intake" and self.state.get("messages"):
+            qs = self._qs()
+            q = qs.current_question if qs is not None and not qs.completed else 0
+            if q > 0 and q != self._hinted_q and now - self._idle_since > _IDLE_HINT_SECONDS:
+                hint = self._intake_hint(q)
+                self._hinted_q = q  # one shot per question, even when it has no hint
+                if hint:
+                    from ._duck import COACH_HOLD, PRIORITY_COACH
+
+                    if self.duck.say(hint, priority=PRIORITY_COACH, hold=COACH_HOLD, now=now):
+                        logger.info("Duck coaching (idle hint): %s", hint)
+            return
+        # Rotating tips: only where nothing is in flight and nothing is asked —
+        # the greeting (pre-description) and the post-plan free chat.
+        if stage == "chat" or (stage == "intake" and not self.state.get("messages")):
+            if now - self._idle_since < _IDLE_TIP_AFTER_SECONDS:
+                return
+            from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS, current_tip
+
+            from ._duck import PRIORITY_TIP
+
+            _idx, tip = current_tip(now - self._anim0)
+            text = tip.text.split("Tip:", 1)[-1].strip()
+            # No logging here: this runs per frame and rotates every 6s — the
+            # arbiter's no-op-on-same-text rule keeps it cheap.
+            self.duck.say(text, priority=PRIORITY_TIP, hold=TIP_ROTATE_SECONDS - 1.0, now=now)
+
+    def _maybe_celebrate_completion(self) -> None:
+        """One-time completion beat: recap card + duck celebration.
+
+        Fires only on the transition — a pipeline stage ran in THIS session
+        (resume shows the recap silently via _rebuild_transcript) and the
+        recap isn't already in the transcript.
+        """
+        if not self.state.get("sprints") or not self._built_this_session:
+            return
+        if any(m.artifact_kind == "recap" for m in self.transcript.messages):
+            return
+        self.transcript.add_artifact("recap")
+        self._say(
+            "That's the whole plan — every stage is done. Keep refining anything you like, or /export to save it."
+        )
+        quack_duck()
+        poke_duck()  # the double-shades gag — he's earned it
+        self._bubble("Quack! Plan's done.")
+        logger.info("Plan complete (chat): recap card + celebration")
+        self._pin_bottom()
 
     def _resolve_choice(self, answer: str, q_num: int) -> str:
         from yeaboi.repl._questionnaire import _resolve_choice_input

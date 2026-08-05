@@ -696,6 +696,8 @@ def _duck_frame() -> int:
 # One-time entrance (the planning chat's greeting): state lives here so the
 # waddle-in survives re-renders; the walk itself is drawn by draw_companion_duck.
 _DUCK_ENTRANCE_SECONDS = 1.5
+_DUCK_MINI_W = 22  # render width of the walking mini duck (see MINI_WIDTH)
+_DUCK_ENTRANCE_DISTANCE = 40  # how far left of the corner the waddle starts
 _duck_entrance_start = 0.0
 _duck_entrance_played = False  # at most once per process — never on resume
 
@@ -713,6 +715,23 @@ def skip_duck_entrance() -> None:
     """Jump the entrance straight to the settled corner pose (first keypress)."""
     global _duck_entrance_start
     _duck_entrance_start = 0.0
+
+
+def _duck_entrance_progress() -> float | None:
+    """0..1 progress of the waddle-in, or None when no entrance is playing.
+
+    On completion it clears itself and stamps the arrival quack — the same
+    clock-stamp handoff the shades gag uses, so there is nothing to clean up.
+    """
+    global _duck_entrance_start
+    if not _duck_entrance_start:
+        return None
+    p = (time.monotonic() - _duck_entrance_start) / _DUCK_ENTRANCE_SECONDS
+    if p >= 1.0:
+        _duck_entrance_start = 0.0
+        quack_duck()  # he arrives with a hello
+        return None
+    return max(0.0, p)
 
 
 def _reset_duck_state() -> None:
@@ -753,7 +772,7 @@ def draw_companion_duck(
     from yeaboi.ui.shared._animations import ease_out_cubic
     from yeaboi.ui.shared._mascot import render_head, render_head_shades
 
-    global _duck_region
+    global _duck_region, _duck_slide_start, _duck_last_draw
     _duck_region = None
     if not lines or not lines[-1]:
         return
@@ -763,6 +782,44 @@ def draw_companion_duck(
     # through the tinted page around the duck.
     bstyle = lines[-1][0].style
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+    # One-time entrance: the mini duck waddles rightward along the pocket roof
+    # into his corner (flip=False faces the direction of travel, exactly as the
+    # screensaver's outbound leg), then the normal head pose takes over — he
+    # "turns around" to face the page. Bubble and click-region wait for arrival.
+    _entrance = _duck_entrance_progress()
+    if _entrance is not None:
+        from yeaboi.ui.shared._mascot import render_mini
+
+        _frame_i = int((time.monotonic() - _duck_entrance_start) * 8)
+        mini_rows = console.render_lines(
+            render_mini(_frame_i), options.update_width(_DUCK_MINI_W), pad=True, style=bg_style
+        )
+        mh = len(mini_rows)
+        rest_ml = width - _DUCK_MINI_W - _DUCK_RIGHT_MARGIN
+        if len(lines) < mh + 5 or rest_ml < 2:
+            # No room to walk — end the entrance and settle immediately.
+            skip_duck_entrance()
+        else:
+            now = time.monotonic()
+            # Pin the standard slide fully settled so the handoff is seamless
+            # (a fresh-entry gap would otherwise replay the corner glide).
+            _duck_slide_start, _duck_last_draw = now - _DUCK_SLIDE_SECONDS, now
+            ml = int(
+                max(1, rest_ml - _DUCK_ENTRANCE_DISTANCE)
+                + (rest_ml - max(1, rest_ml - _DUCK_ENTRANCE_DISTANCE)) * _entrance
+            )
+            mr = min(ml + _DUCK_MINI_W, width - 1)
+            bottom = len(lines) - 4
+            top = bottom - mh + 1
+            for i, drow in enumerate(mini_rows):
+                r = top + i
+                if r < 0:
+                    continue
+                visible = drow if (mr - ml) >= _DUCK_MINI_W else list(Segment.divide(drow, [mr - ml]))[0]
+                left, _mid, right = Segment.divide(lines[r], [ml, mr, width])
+                lines[r] = list(left) + list(visible) + list(right)
+            return
+
     # Mid-gag he wears the lifted shades (revealing the pair underneath);
     # otherwise the frame comes from the working-bob clock and the bill from the
     # quack clock (both idle → the familiar still pose, frame 0, bill closed).
@@ -782,7 +839,6 @@ def draw_companion_duck(
     # the duck (the welcome draws its own, so it never calls this) — restart the
     # slide so the mascot glides in from the right edge into its corner. Continuous
     # sub-page re-renders keep the gap tiny, so it settles and stays put.
-    global _duck_slide_start, _duck_last_draw
     now = time.monotonic()
     if now - _duck_last_draw > _DUCK_SLIDE_GAP:
         _duck_slide_start = now

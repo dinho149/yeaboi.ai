@@ -255,6 +255,47 @@ def test_entrance_plays_once_per_process(monkeypatch):
     assert _music_bar._duck_entrance_start == 0.0
 
 
+def test_entrance_walks_the_mini_duck_toward_the_corner(monkeypatch):
+    # During the entrance the (wider) mini duck is composited walking rightward;
+    # its leftmost ink column advances with progress, and the sprite is taller
+    # than the settled 7-row head.
+    def ink_cols_and_rows(clock):
+        monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+        from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+        panel = Panel(Text("body"), height=30, padding=(1, 2))
+        console = Console(width=120, height=30, file=StringIO())
+        lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
+        rows = ["".join(seg.text for seg in row) for row in lines]
+        cols = [r.find("█") for r in rows if "█" in r]
+        return (min(cols) if cols else -1), sum(1 for r in rows if "█" in r)
+
+    _music_bar._duck_entrance_start = 100.0
+    early_col, early_rows = ink_cols_and_rows(100.15)  # 10% in
+    _music_bar._duck_entrance_start = 100.0
+    late_col, late_rows = ink_cols_and_rows(101.2)  # 80% in
+    assert 0 < early_col < late_col  # he moved right
+    _music_bar._reset_duck_state()
+    settled_col, settled_rows = ink_cols_and_rows(200.0)
+    assert early_rows > settled_rows  # full-body mini vs the settled head
+
+
+def test_entrance_completion_hands_back_and_quacks(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 100.0)
+    _music_bar._duck_entrance_start = 100.0 - _music_bar._DUCK_ENTRANCE_SECONDS - 0.1
+    assert _music_bar._duck_entrance_progress() is None  # finished → cleared
+    assert _music_bar._duck_entrance_start == 0.0
+    assert _music_bar._duck_quack_start == 100.0  # the arrival hello
+
+
+def test_skip_entrance_jumps_to_settled(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 100.0)
+    _music_bar.start_duck_entrance()
+    _music_bar.skip_duck_entrance()
+    assert _music_bar._duck_entrance_progress() is None
+    assert _music_bar._duck_quack_start == 0.0  # a skipped arrival doesn't quack
+
+
 def test_reset_duck_state_restores_idle():
     _music_bar.quack_duck()
     _music_bar.set_duck_working(True)

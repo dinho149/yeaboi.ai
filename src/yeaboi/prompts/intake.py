@@ -617,15 +617,36 @@ FOLLOW_UP_TEMPLATES: dict[int, str] = {
 # ---------------------------------------------------------------------------
 
 CHAT_QUESTION_PREAMBLES: dict[int, str] = {
+    1: "Right — from the top.",
     2: "Let's ground the basics first.",
     3: "Good — now the why.",
     4: "Almost through the essentials.",
+    5: "While we're on the big picture —",
     6: "Now, about the people building this —",
+    7: "And a bit more detail on that —",
     8: "Let's talk timing.",
+    9: "Numbers help a lot here —",
     10: "A quick delivery question —",
     11: "On to the technical side.",
+    12: "Still on tech —",
+    13: "One on architecture —",
+    14: "Nearly done with the tech tour —",
     15: "About the code itself —",
+    16: "A few practical ones now —",
+    17: "This one unlocks a lot —",
+    18: "Getting a feel for the shape of it —",
+    19: "On to the plumbing —",
+    20: "Be honest — every codebase has some.",
+    21: "Time to look at the risks.",
+    22: "Now the things outside your control —",
+    23: "Let's draw the line somewhere.",
+    24: "Nearly there — process next.",
+    25: "A quick quality check —",
+    26: "Almost done — delivery next.",
     27: "Last stretch: capacity.",
+    28: "The unglamorous but important bits —",
+    29: "Real life happens —",
+    30: "Last one, then the summary.",
 }
 
 

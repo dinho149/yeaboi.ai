@@ -235,6 +235,218 @@ class TestPipelineProgress:
         assert [id(m._cache) for m in driver.transcript.messages] == caches
 
 
+class TestDuckEntrance:
+    def test_entrance_starts_on_the_fresh_greeting(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        calls: list[str] = []
+        monkeypatch.setattr(driver_mod, "start_duck_entrance", lambda: calls.append("start"))
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), {"messages": []})
+        driver.run()
+        assert calls == ["start"]
+
+    def test_resume_never_starts_the_entrance(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        calls: list[str] = []
+        monkeypatch.setattr(driver_mod, "start_duck_entrance", lambda: calls.append("start"))
+        qs = QuestionnaireState(completed=True)
+        state = {
+            "messages": [HumanMessage(content="d")],
+            "questionnaire": qs,
+            "project_analysis": object(),
+            "features": ["f"],
+            "stories": ["s"],
+            "tasks": ["t"],
+            "sprints": ["sp"],
+            "_epic_reviewed": True,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), state)
+        driver.run()
+        assert calls == []
+
+    def test_first_keypress_skips_the_entrance(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        skips: list[str] = []
+        monkeypatch.setattr(driver_mod, "skip_duck_entrance", lambda: skips.append("skip"))
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), {"messages": []})
+        driver.run()
+        assert skips  # every real keypress skips (a no-op once settled)
+
+
+class TestIntakeCoaching:
+    def _intake_state(self, q: int = 2) -> dict:
+        qs = QuestionnaireState(intake_mode="smart")
+        qs.current_question = q
+        return {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="Q?")],
+            "questionnaire": qs,
+            "_chat_greeting_done": True,
+        }
+
+    def test_phase_boundary_quacks_once(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+        from yeaboi.ui.session.chat._duck import PHASE_QUIPS
+
+        quacks: list[int] = []
+        monkeypatch.setattr(driver_mod, "quack_duck", lambda *a: quacks.append(1))
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(q=2))
+        driver._coach_phase()
+        assert quacks == [1]
+        assert driver.duck._line.text == PHASE_QUIPS["project_context"]
+        driver._coach_phase()  # same phase — no second quack
+        assert quacks == [1]
+
+    def test_idle_hint_appears_after_a_stall(self):
+        import time
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(q=25))
+        driver._idle_since = time.monotonic() - 10.0
+        driver._idle_tick()
+        assert driver.duck._line is not None
+        assert driver.duck._line.text == "/finish builds the rest with defaults"
+        assert driver._hinted_q == 25
+
+    def test_hint_fires_at_most_once_per_question(self):
+        import time
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(q=25))
+        driver._idle_since = time.monotonic() - 10.0
+        driver._idle_tick()
+        driver.duck._line = None  # bubble faded
+        driver._idle_tick()  # still on Q25 — no re-hint
+        assert driver.duck._line is None
+
+    def test_hint_waits_for_the_stall(self):
+        import time
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(q=25))
+        driver._idle_since = time.monotonic()  # just pressed a key
+        driver._idle_tick()
+        assert driver.duck._line is None
+
+    def test_typing_suppresses_coaching(self):
+        import time
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(q=25))
+        driver.composer.set_text("half an answer")
+        driver._idle_since = time.monotonic() - 10.0
+        driver._idle_tick()
+        assert driver.duck._line is None
+
+
+class TestIdleTips:
+    def test_tips_rotate_in_free_chat(self):
+        import time
+
+        from yeaboi.ui.session.chat._duck import PRIORITY_TIP
+
+        qs = QuestionnaireState(completed=True)
+        state = {
+            "messages": [HumanMessage(content="d")],
+            "questionnaire": qs,
+            "project_analysis": object(),
+            "features": ["f"],
+            "stories": ["s"],
+            "tasks": ["t"],
+            "sprints": ["sp"],
+            "_epic_reviewed": True,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._idle_since = time.monotonic() - 5.0
+        driver._idle_tick()
+        assert driver.duck._line is not None
+        assert driver.duck._line.priority == PRIORITY_TIP
+        assert "Tip:" not in driver.duck._line.text  # prefix stripped for the bubble
+
+    def test_tips_active_on_the_greeting(self):
+        import time
+
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._idle_since = time.monotonic() - 5.0
+        driver._idle_tick()
+        assert driver.duck._line is not None
+
+    def test_tips_suppressed_mid_intake(self):
+        import time
+
+        qs = QuestionnaireState(intake_mode="smart")
+        qs.current_question = 5
+        state = {
+            "messages": [HumanMessage(content="d"), AIMessage(content="Q?")],
+            "questionnaire": qs,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._idle_since = time.monotonic() - 5.0  # long enough for a tip, not a hint
+        driver._idle_tick()
+        assert driver.duck._line is None
+
+
+class TestCompletionRecap:
+    def _complete_state(self) -> dict:
+        qs = QuestionnaireState(completed=True)
+        return {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="done")],
+            "questionnaire": qs,
+            "project_analysis": object(),
+            "features": ["f"],
+            "stories": ["s"],
+            "tasks": ["t"],
+            "sprints": ["sp"],
+            "_epic_reviewed": True,
+            "_chat_greeting_done": True,
+        }
+
+    def test_recap_added_once_with_celebration_after_a_build(self, monkeypatch):
+        # A build that finished in THIS session (not resume — the transcript
+        # has no recap yet) celebrates exactly once.
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        calls: list[str] = []
+        monkeypatch.setattr(driver_mod, "quack_duck", lambda *a: calls.append("quack"))
+        monkeypatch.setattr(driver_mod, "poke_duck", lambda: calls.append("poke"))
+        driver = _driver(FakeGraph([]), _keys([]), self._complete_state())
+        driver._built_this_session = True  # a stage ran in this session
+        driver._maybe_celebrate_completion()
+        kinds = [m.artifact_kind for m in driver.transcript.messages]
+        assert kinds.count("recap") == 1
+        assert calls == ["quack", "poke"]
+        assert driver.duck._line is not None and driver.duck._line.text == "Quack! Plan's done."
+        # A second pass through the chat stage must not re-add or re-celebrate.
+        driver._maybe_celebrate_completion()
+        assert [m.artifact_kind for m in driver.transcript.messages].count("recap") == 1
+        assert calls == ["quack", "poke"]
+
+    def test_no_celebration_when_no_stage_ran_this_session(self):
+        driver = _driver(FakeGraph([]), _keys([]), self._complete_state())
+        driver._maybe_celebrate_completion()
+        assert not any(m.artifact_kind == "recap" for m in driver.transcript.messages)
+
+    def test_resume_shows_recap_silently(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        calls: list[str] = []
+        monkeypatch.setattr(driver_mod, "quack_duck", lambda *a: calls.append("quack"))
+        monkeypatch.setattr(driver_mod, "poke_duck", lambda: calls.append("poke"))
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), self._complete_state())
+        driver.run()  # resume path: _rebuild_transcript, no stage ran here
+        kinds = [m.artifact_kind for m in driver.transcript.messages]
+        assert kinds.count("recap") == 1
+        assert calls == []  # no quack, no shades on resume
+
+    def test_incomplete_plan_never_gets_a_recap(self):
+        state = self._complete_state()
+        state.pop("sprints")
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._built_this_session = True
+        driver._maybe_celebrate_completion()
+        assert not any(m.artifact_kind == "recap" for m in driver.transcript.messages)
+
+
 class TestDuckBubble:
     def test_render_stamps_the_bubble_on_the_panel(self):
         driver = _driver(FakeGraph([]), _keys([]), {"messages": []})

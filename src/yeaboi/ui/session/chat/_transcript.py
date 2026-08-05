@@ -79,6 +79,8 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
         return _render_tui_stories(graph_state["stories"], graph_state.get("features", []), graph_state=graph_state)
     if kind == "tasks" and graph_state.get("tasks"):
         return _render_tui_tasks(graph_state["tasks"], graph_state.get("stories", []), graph_state.get("features", []))
+    if kind == "recap" and graph_state.get("sprints"):
+        return _render_recap(graph_state)
     if kind == "sprints" and graph_state.get("sprints"):
         team_override = graph_state.get("_capacity_team_override", 0)
         return _render_tui_sprint_plan(
@@ -93,6 +95,38 @@ def _artifact_renderable(kind: str, graph_state: dict, render_w: int):
     return None
 
 
+def _render_recap(graph_state: dict):
+    """The closing recap card: what the finished plan contains, and what to do
+    next. Computed from live graph_state like every other card, so a later
+    edit that regenerates stories can never leave stale counts behind."""
+    from rich.console import Group
+
+    stories = graph_state.get("stories", []) or []
+    points = sum(getattr(s, "story_points", 0) or 0 for s in stories)
+    counts = Text()
+    parts = [
+        (len(graph_state.get("features", []) or []), "epics"),
+        (len(stories), "stories"),
+        (len(graph_state.get("tasks", []) or []), "tasks"),
+        (len(graph_state.get("sprints", []) or []), "sprints"),
+    ]
+    for i, (n, label) in enumerate(parts):
+        if i:
+            counts.append("  ·  ", style="dim")
+        counts.append(str(n), style="bold white")
+        counts.append(f" {label}")
+    counts.append("  ·  ", style="dim")
+    counts.append(str(points), style="bold white")
+    counts.append(" pts total")
+    steps = Text()
+    steps.append("Next:  ", style="dim")
+    steps.append("/export", style="bold")
+    steps.append(" saves it   ·   keep chatting to refine   ·   ", style="dim")
+    steps.append("Esc Esc", style="bold")
+    steps.append(" to leave", style="dim")
+    return Group(counts, Text(""), steps)
+
+
 _ARTIFACT_TITLES = {
     "intake_summary": "Your answers",
     "analysis": "Analysis",
@@ -101,6 +135,7 @@ _ARTIFACT_TITLES = {
     "stories": "Stories",
     "tasks": "Tasks",
     "sprints": "Sprint plan",
+    "recap": "Plan complete",
 }
 
 
