@@ -2,6 +2,38 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.52.0",
+      "date": "2026-08-05",
+      "summary": "Analysis mode now discovers and offers GitHub as a code source in the setup wizard — owners, organizations, and repositories are discovered automatically, and the choice is saved to Settings for future runs. GitHub was technically supported all along but gated behind a configuration key that had no UI surface; now it reaches parity with Azure DevOps, which was always offered once connected.",
+      "highlights": [
+        {
+          "text": "GitHub is now discoverable and selectable in the Analysis setup wizard, on equal footing with Azure DevOps",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "GitHub owners and organizations are discovered automatically from the configured token, no manual entry needed",
+          "areas": [
+            "analysis"
+          ]
+        },
+        {
+          "text": "Chosen GitHub owners persist in Settings → GitHub → Analysis Owners for future runs and CLI commands",
+          "areas": [
+            "analysis",
+            "settings"
+          ]
+        },
+        {
+          "text": "Fine-grained GitHub PATs now work with Analysis — even if they cannot list organizations, the picker will find them via visible repositories",
+          "areas": [
+            "analysis"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.51.0",
       "date": "2026-08-02",
       "summary": "Daily Standup now flags engineering practices that might cost your team later — work that lands with no ticket, a board left stale after a merge, too many changes open at once, or changes too big to review. Seven deterministic rules catch these patterns per team member, capped at three signals each. Every signal names the exact changes it observed — no LLM is involved in detection. Wrong calls are answered: teammates can thumbs-down to hide a signal and it remembers; thumbs-up confirms it. Answers appear in the TUI, over MCP, and in the shared HTML page where the teammate reading it usually spots the mistake first.",
