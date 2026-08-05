@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import re
 
+import pytest
 from rich.console import Console
 from rich.panel import Panel
 
@@ -39,6 +40,9 @@ _PROBE_FG = "38;2;1;2;3"
 # content build at a height that fits the whole picker; the crop behaviour gets
 # its own test rather than silently swallowing every other assertion.
 _TALL = 40
+# The classic terminal height, and the builders' own default — a real user's
+# frame, not a contrived one.
+_SHORT = 24
 
 
 def _render(panel: Panel, *, width: int = 80, height: int = _TALL) -> str:
@@ -102,6 +106,18 @@ def _active_chip(out: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _has_subtitle(out: str, text: str) -> bool:
+    """True when *text* appears on the frame's subtitle row, not just anywhere.
+
+    The VC picker's subtitle is "Version Control" and its active progress chip is
+    labelled "Version Control" too (``_STEPS[3]``), so a plain ``in`` check passes
+    with the subtitle row deleted — it only re-proves the chip. The chip row is
+    the one drawn with the ▟/▛ parallelogram caps, so excluding those lines
+    isolates the subtitle.
+    """
+    return any(text in line and "▟" not in line and "▛" not in line for line in out.splitlines())
+
+
 # ---------------------------------------------------------------------------
 # _build_select_screen — the LLM provider picker (wizard step 0)
 # ---------------------------------------------------------------------------
@@ -112,7 +128,7 @@ class TestSelectScreen:
         assert isinstance(_select(0), Panel)
 
     def test_subtitle_renders(self):
-        assert "Select your LLM provider" in _render(_select(0))
+        assert _has_subtitle(_render(_select(0)), "Select your LLM provider")
 
     def test_every_provider_row_renders(self):
         # Provider names are drawn as two-line block art, not plain text, so the
@@ -151,11 +167,10 @@ class TestSelectScreen:
             assert card["tagline"] not in out
 
     def test_empty_visible_still_renders_the_frame(self):
-        # The first transition frame has nothing revealed yet — the title,
-        # subtitle and progress bar must still draw.
-        out = _render(_select(0, visible=[]))
-        assert "Select your LLM provider" in out
-        assert "LLM Provider" in out
+        # The first transition frame has nothing revealed yet — the subtitle and
+        # the progress bar must still draw.
+        assert _has_subtitle(_render(_select(0, visible=[])), "Select your LLM provider")
+        assert _active_chip(_render_ansi(_select(0, visible=[]))) == "LLM Provider"
 
     def test_selected_style_overrides_the_selected_row(self):
         out = _render_ansi(_select(0, selected_style=_PROBE))
@@ -182,11 +197,23 @@ class TestSelectScreen:
         assert _active_chip(_render_ansi(_select(0))) == "LLM Provider"
         assert _active_chip(_render_ansi(_select(0, step=2))) == "Docs"
 
-    def test_render_never_exceeds_the_frame_height(self):
-        # More providers than fit a short terminal: the frame is fixed-height and
-        # does not scroll, so it must crop rather than push the progress bar off.
-        out = _render(_select(0, width=80, height=24), height=24)
-        assert out.count("\n") <= 24
+    @pytest.mark.xfail(
+        strict=True,
+        reason="five provider rows overflow a 24-row frame and crop the progress bar away "
+        "— see the cowork proposal for the provider-select height crop",
+    )
+    def test_progress_bar_survives_a_short_terminal(self):
+        # The frame is fixed-height and does not scroll, so overflowing body rows
+        # push the footer off the bottom. 24 rows is the classic terminal size and
+        # the height the picker is actually built at (`h` comes from
+        # `console.size` — see ui/provider_select/__init__.py), so a user on a
+        # short terminal loses the whole "where am I in setup" progress bar.
+        #
+        # Asserting the line count instead would be vacuous: build_page_panel
+        # passes an explicit `height` to Rich, which pads or crops to it whatever
+        # the body contains.
+        out = _render_ansi(_select(0, width=80, height=_SHORT), height=_SHORT)
+        assert _active_chip(out) == "LLM Provider"
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +226,9 @@ class TestVcSelectScreen:
         assert isinstance(_vc(0), Panel)
 
     def test_subtitle_renders(self):
-        assert "Version Control" in _render(_vc(0))
+        # "Version Control" is also the active chip's label here, so this asserts
+        # on the subtitle row specifically — see _has_subtitle.
+        assert _has_subtitle(_render(_vc(0)), "Version Control")
 
     def test_every_option_row_renders(self):
         # GitHub and Skip — "Skip" is an option, not a key binding, so it has to
@@ -218,8 +247,8 @@ class TestVcSelectScreen:
         assert _art_top(_VC_OPTIONS[1]["name"]) not in out
 
     def test_empty_visible_still_renders_the_frame(self):
-        out = _render(_vc(0, visible=[]))
-        assert "Version Control" in out
+        assert _has_subtitle(_render(_vc(0, visible=[])), "Version Control")
+        assert _active_chip(_render_ansi(_vc(0, visible=[]))) == "Version Control"
 
     def test_selected_style_overrides_the_selected_row(self):
         out = _render_ansi(_vc(0, selected_style=_PROBE))
@@ -241,6 +270,9 @@ class TestVcSelectScreen:
         # is which name is lit.
         assert _render_ansi(_vc(0)) != _render_ansi(_vc(1))
 
-    def test_render_never_exceeds_the_frame_height(self):
-        out = _render(_vc(0, width=80, height=24), height=24)
-        assert out.count("\n") <= 24
+    def test_progress_bar_survives_a_short_terminal(self):
+        # Two options rather than five, so this picker's body still fits a 24-row
+        # frame and keeps its footer. Pinning that here is what makes the LLM
+        # picker's xfail a statement about row count rather than about the frame.
+        out = _render_ansi(_vc(0, width=80, height=_SHORT), height=_SHORT)
+        assert _active_chip(out) == "Version Control"
