@@ -114,6 +114,32 @@ class TestSaveAndLoad:
         projects = load_projects()
         assert projects == []
 
+    def test_chat_fields_roundtrip(self, _isolate_config_dir):
+        # Chat-planning presentation state must survive resume: the greeting
+        # flag skips the pre-intake exchange, the preamble rebuilds the
+        # transcript (it lives OUTSIDE messages — see agent/state.py).
+        state = {
+            "messages": ["msg"],
+            "_chat_greeting_done": True,
+            "_chat_preamble": [
+                {"role": "ai", "text": "Hey — tell me about your project."},
+                {"role": "user", "text": "a todo app"},
+            ],
+            "_chat_fast_forward": True,
+        }
+        save_project_snapshot("proj-chat", state)
+        loaded = load_graph_state("proj-chat")
+        assert loaded["_chat_greeting_done"] is True
+        assert loaded["_chat_preamble"] == state["_chat_preamble"]
+        # /finish fast mode must survive resume so a fast run keeps auto-running.
+        assert loaded["_chat_fast_forward"] is True
+
+    def test_old_snapshot_without_chat_fields_loads(self, _isolate_config_dir):
+        save_project_snapshot("proj-old", {"messages": ["msg"]})
+        loaded = load_graph_state("proj-old")
+        assert "_chat_greeting_done" not in loaded
+        assert "_chat_preamble" not in loaded
+
     def test_preserves_created_at_on_upsert(self, _isolate_config_dir):
         save_project_snapshot("proj-1", {"messages": ["a"]})
         raw1 = json.loads((_isolate_config_dir / "projects.json").read_text())

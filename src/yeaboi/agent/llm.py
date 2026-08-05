@@ -371,6 +371,10 @@ def get_llm(
             temperature=temperature,
             timeout=request_timeout,
             max_retries=0 if request_timeout is not None else 2,
+            # OpenAI only includes token usage in streaming responses when the
+            # request opts in; without this, a streamed chat turn would record
+            # zero usage in track_usage(). No-op for plain invoke().
+            stream_usage=True,
         )
 
     if provider == "google":

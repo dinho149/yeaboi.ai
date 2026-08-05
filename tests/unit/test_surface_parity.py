@@ -195,7 +195,7 @@ CAPABILITIES: dict[str, dict] = {
             ("yeaboi.roadmap.engine", "intake_mode_for"),
         },
         "mcp_tools": Exempt("no roadmap_analyze tool yet — tracked follow-up gap (newer than the MCP surface)"),
-        "tui_mode": Exempt("a Planning intake card in _INTAKE_CARDS (Small/Large/Offline/Roadmap), not a mode card"),
+        "tui_mode": Exempt("a Planning intake card in _INTAKE_CARDS (Chat/Roadmap/Offline), not a mode card"),
         "cli": Exempt("interactive source picker + intake handoff; a headless roadmap path is a tracked gap"),
         "skill": Exempt("no plugin skill yet — tracked follow-up gap"),
     },

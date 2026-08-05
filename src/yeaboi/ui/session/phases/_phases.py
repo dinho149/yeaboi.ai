@@ -24,7 +24,7 @@ from yeaboi.repl._review import (
 )
 from yeaboi.repl._ui import _PIPELINE_STEPS, _SPINNER_MESSAGES, _predict_next_node
 from yeaboi.ui.session._renderers import _render_pipeline_artifacts
-from yeaboi.ui.session._utils import _invoke_graph_thread, _invoke_with_animation
+from yeaboi.ui.session._utils import _invoke_with_animation
 
 # Re-export intake and review phase functions for backward compatibility.
 # The __init__.py and other callers import these from _phases.
@@ -38,17 +38,12 @@ from yeaboi.ui.session.phases._phases_review import (  # noqa: F401
     _get_edit_input,
     _phase_intake_review,
 )
-from yeaboi.ui.session.screens._screens_pipeline import _build_chat_screen, _build_pipeline_screen
+from yeaboi.ui.session.screens._screens_pipeline import _build_pipeline_screen
 from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll
 
 logger = logging.getLogger(__name__)
-
-# Sentinel scroll offset meaning "pin to the last line". Any screen builder
-# clamps it down to its real maximum for display and publishes that maximum via
-# scroll_meta, which the loop then adopts. Larger than any realistic line count.
-_SCROLL_BOTTOM = 1_000_000_000
 
 
 def _plan_slug(graph_state: dict) -> str:
@@ -57,15 +52,38 @@ def _plan_slug(graph_state: dict) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in name.lower()).strip("-") or "project"
 
 
-def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str) -> None:
-    """Export the plan via the shared destination picker (files / Notion / Confluence).
+def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str, *, scope: str = "plan") -> None:
+    """Export the plan and/or chat transcript via the shared destination picker.
 
     Files land in the planning export dir (~/.yeaboi/exports/planning/<project>/,
     honouring the YEABOI_HOME data-dir override) — unified with the other modes
     instead of the old scrum-plan.* in the current working directory. Blocks on
     the success screen (min 1 s + a key press); returns straight away on Back/Esc.
+
+    scope: "plan" (default — the two existing call sites are unchanged),
+    "transcript" (scrum-chat.md only), "both", or "ask" (the chat's bare
+    /export — a small choice screen picks the scope first).
     """
     from yeaboi.ui.shared._export_picker import pick_export_destination
+
+    if scope == "ask":
+        choice = _pipeline_choice_screen(
+            live,
+            console,
+            key_fn,
+            title="Export",
+            subtitle="What would you like to export?",
+            options=["Plan (HTML + Markdown)", "Chat transcript", "Both"],
+            step=0,
+            total=0,
+            stage_label="Export",
+            progress="",
+        )
+        if choice is None:
+            return
+        scope = ("plan", "transcript", "both")[choice]
+    include_plan = scope in ("plan", "both")
+    include_transcript = scope in ("transcript", "both")
 
     def _open_setup():
         # Same suspend-wizard-resume dance as Settings → Configure.
@@ -78,32 +96,60 @@ def _plan_export_flow(live, console, key_fn, graph_state: dict, stage: str) -> N
         return
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_project_export_success_screen
 
+    def _transcript_markdown() -> str:
+        from yeaboi.transcript import build_chat_transcript_markdown
+
+        return build_chat_transcript_markdown(graph_state)
+
     if dest == "files":
-        from yeaboi.html_exporter import export_plan_html
         from yeaboi.paths import get_planning_export_dir
-        from yeaboi.repl._io import _export_plan_markdown
 
         out_dir = get_planning_export_dir(_plan_slug(graph_state))
-        html_path = export_plan_html(graph_state, stage=stage, path=out_dir / "scrum-plan.html")
-        md_path = _export_plan_markdown(graph_state, path=out_dir / "scrum-plan.md")
-        logger.info("Exported: HTML=%s, MD=%s", html_path, md_path)
-        body = f"HTML  {html_path}\nMD    {md_path}"
-        subtitle = "Exported (HTML + MD)"
+        body_lines = []
+        if include_plan:
+            from yeaboi.html_exporter import export_plan_html
+            from yeaboi.repl._io import _export_plan_markdown
+
+            html_path = export_plan_html(graph_state, stage=stage, path=out_dir / "scrum-plan.html")
+            md_path = _export_plan_markdown(graph_state, path=out_dir / "scrum-plan.md")
+            logger.info("Exported: HTML=%s, MD=%s", html_path, md_path)
+            body_lines.append(f"HTML  {html_path}")
+            body_lines.append(f"MD    {md_path}")
+        if include_transcript:
+            from yeaboi.transcript import export_chat_transcript
+
+            chat_path = export_chat_transcript(graph_state, out_dir / "scrum-chat.md")
+            body_lines.append(f"CHAT  {chat_path}")
+        body = "\n".join(body_lines)
+        subtitle = "Exported"
     elif dest == "copy":
         from yeaboi.clipboard import copy_markdown_status
         from yeaboi.repl._io import build_plan_markdown
 
-        subtitle = copy_markdown_status(build_plan_markdown(graph_state))
-        body = "Sprint plan Markdown copied — paste it anywhere."
+        parts = []
+        if include_plan:
+            parts.append(build_plan_markdown(graph_state))
+        if include_transcript:
+            parts.append(_transcript_markdown())
+        subtitle = copy_markdown_status("\n\n---\n\n".join(parts))
+        what = {"plan": "Sprint plan", "transcript": "Chat transcript", "both": "Plan + transcript"}[scope]
+        body = f"{what} Markdown copied — paste it anywhere."
     else:
         from yeaboi.export_targets import publish_markdown
-        from yeaboi.repl._io import build_plan_markdown
 
         name = getattr(graph_state.get("project_analysis"), "project_name", "")
-        title = f"Sprint Plan — {name}" if name else "Sprint Plan"
-        result = publish_markdown(dest, title=title, markdown=build_plan_markdown(graph_state))
-        body = result.url or result.message
-        subtitle = result.message if result.ok else f"Export failed — {result.message}"
+        results = []
+        if include_plan:
+            from yeaboi.repl._io import build_plan_markdown
+
+            title = f"Sprint Plan — {name}" if name else "Sprint Plan"
+            results.append(publish_markdown(dest, title=title, markdown=build_plan_markdown(graph_state)))
+        if include_transcript:
+            title = f"Chat Transcript — {name}" if name else "Chat Transcript"
+            results.append(publish_markdown(dest, title=title, markdown=_transcript_markdown()))
+        body = "\n".join(r.url or r.message for r in results)
+        failed = [r for r in results if not r.ok]
+        subtitle = f"Export failed — {failed[0].message}" if failed else results[-1].message
 
     w, h = console.size
     live.update(_build_project_export_success_screen(body, width=w, height=h, subtitle=subtitle, mode="planning"))
@@ -1784,248 +1830,3 @@ def _drain_sandbox_consents(console, live, _key, run_turn, note_message) -> None
         logger.info("sandbox consent: auto-retrying turn after grant of %s", paths_txt)
         note_message(retry_text)
         run_turn(retry_text)
-
-
-def _phase_chat(
-    live: Live,
-    console: Console,
-    graph,
-    graph_state: dict,
-    _key,
-    export_only: bool,
-    project_id: str = "",
-) -> None:
-    """Post-pipeline chat — the user can ask questions or export.
-
-    For export_only mode, just exports and returns.
-    """
-    logger.info("_phase_chat started")
-    from yeaboi.persistence import save_project_snapshot
-    from yeaboi.repl._io import _export_plan_markdown
-
-    if export_only:
-        _export_plan_markdown(graph_state)
-        return
-
-    messages: list[tuple[str, str]] = []
-    input_value = ""
-    scroll_offset = 0
-    _chat_scroll_meta: dict = {}
-
-    # Ctrl+V image paste — per-message attachments; surviving [image #N] chips
-    # ride to the agent node via invoke_state["chat_images"] (see agent/state.py).
-    from yeaboi.ui.shared._attachments import handle_ctrl_v, referenced_images
-
-    chat_attachments: list[str] = []
-    paste_notice = ""
-
-    def _set_paste_notice(msg: str) -> None:
-        nonlocal paste_notice
-        paste_notice = msg
-
-    # Follow the newest message until the user scrolls up; new messages re-pin to
-    # the bottom only while following. Manual scroll keys break the follow.
-    _chat_follow = True
-
-    def _chat_bottom() -> int:
-        return _chat_scroll_meta.get("max_offset", 0)
-
-    def _run_graph_turn(text: str, chat_images: list[str]) -> None:
-        """Submit one user turn: graph.invoke on a worker thread + pulsing animation.
-
-        Shared by the Enter handler and the sandbox consent auto-retry, so a
-        synthetic retry message goes through exactly the same machinery as a
-        typed one (threading, error handling, snapshot, scroll pinning).
-        """
-        nonlocal graph_state, scroll_offset, _chat_follow
-        # The message itself stays text-only (nodes string-op on .content);
-        # surviving screenshots travel via the chat_images state field and are
-        # attached inside call_model.
-        user_msg = HumanMessage(content=text)
-        invoke_state = {**graph_state, "messages": [*graph_state.get("messages", []), user_msg]}
-        if chat_images:
-            invoke_state["chat_images"] = chat_images
-            logger.info("Chat message includes %d pasted image(s)", len(chat_images))
-
-        # Show processing state while the worker thread runs the graph.
-        result_box: list = [None, None]
-        thread = threading.Thread(
-            target=_invoke_graph_thread,
-            args=(graph, invoke_state, result_box),
-            daemon=True,
-        )
-        thread.start()
-
-        start = time.monotonic()
-        while thread.is_alive():
-            tick = time.monotonic() - start
-            w, h = console.size
-            live.update(
-                _build_chat_screen(
-                    messages,
-                    "",
-                    scroll_offset,
-                    width=w,
-                    height=h,
-                    processing=True,
-                    tick=tick,
-                    shimmer_tick=tick,
-                    scroll_meta=_chat_scroll_meta,
-                )
-            )
-            time.sleep(FRAME_TIME_30FPS)
-        thread.join()
-
-        if result_box[0] is not None:
-            graph_state = result_box[0]
-            ai_msgs = graph_state.get("messages", [])
-            if ai_msgs and isinstance(ai_msgs[-1], AIMessage):
-                messages.append(("ai", ai_msgs[-1].content))
-            # Save Point D — persist after chat messages
-            if project_id:
-                save_project_snapshot(project_id, graph_state)
-        elif result_box[1] is not None:
-            logger.error("Chat graph invoke failed: %s", result_box[1])
-            messages.append(("ai", f"Error: {result_box[1]}"))
-
-        # New reply — pin to the bottom (adopted after the next render).
-        scroll_offset = _SCROLL_BOTTOM
-        _chat_follow = True
-
-    w, h = console.size
-    live.update(
-        _build_chat_screen(messages, input_value, scroll_offset, width=w, height=h, scroll_meta=_chat_scroll_meta)
-    )
-
-    # Denials can also queue during the earlier pipeline turns (project context
-    # loading, tracker tools) — surface them the moment the chat prompt opens.
-    _drain_sandbox_consents(
-        console,
-        live,
-        _key,
-        lambda t: _run_graph_turn(t, []),
-        lambda t: messages.append(("user", t)),
-    )
-
-    _chat_anim0 = time.monotonic()  # shimmer title clock
-    while True:
-        key = _key()
-        if key and key != "":
-            paste_notice = ""
-
-        if key == "esc":
-            return
-        elif key == "enter":
-            if not input_value.strip():
-                continue
-
-            text = input_value.strip()
-
-            # Handle export command
-            if text.lower() == "export":
-                logger.info("Chat: export requested")
-                _plan_export_flow(live, console, _key, graph_state, "complete")
-                messages.append(("ai", "Plan exported successfully."))
-                input_value = ""
-                # Pin to the newest line: request past-the-end, the builder clamps
-                # for display AND publishes the true bottom, which we then adopt.
-                scroll_offset = _SCROLL_BOTTOM
-                w, h = console.size
-                live.update(
-                    _build_chat_screen(
-                        messages, input_value, scroll_offset, width=w, height=h, scroll_meta=_chat_scroll_meta
-                    )
-                )
-                scroll_offset = _chat_bottom()
-                _chat_follow = True
-                continue
-
-            if text.lower() in {"exit", "quit"}:
-                return
-
-            messages.append(("user", text))
-            input_value = ""
-            logger.debug("Chat message sent: len=%d", len(text))
-
-            chat_images = referenced_images(text, chat_attachments)
-            chat_attachments = []
-            _run_graph_turn(text, chat_images)
-
-            # Turn complete (thread joined, result handled) — before the input
-            # prompt returns, surface any filesystem-sandbox denials the
-            # agent's tools hit during the turn. A grant auto-retries via a
-            # synthetic user turn through _run_graph_turn.
-            _drain_sandbox_consents(
-                console,
-                live,
-                _key,
-                lambda t: _run_graph_turn(t, []),
-                lambda t: messages.append(("user", t)),
-            )
-
-        elif key in ("up", "scroll_up", "pageup", "home"):
-            _ns = coalesce_scroll(scroll_offset, key, _chat_scroll_meta, _key)
-            if _ns == scroll_offset:
-                continue  # already at the top — skip the repaint (no shimmer flicker)
-            # Any upward scroll stops following the newest message.
-            _chat_follow = False
-            scroll_offset = _ns
-        elif key in ("down", "scroll_down", "pagedown", "end"):
-            _ns = coalesce_scroll(scroll_offset, key, _chat_scroll_meta, _key)
-            if _ns == scroll_offset:
-                continue  # already at the bottom — skip the repaint
-            scroll_offset = _ns
-            # Re-pin to follow mode once the user scrolls back to the bottom.
-            if scroll_offset >= _chat_scroll_meta.get("max_offset", 0):
-                _chat_follow = True
-        elif key == "backspace":
-            input_value = input_value[:-1]
-        elif key == "clear":
-            input_value = ""
-        elif isinstance(key, str) and key.startswith("paste:"):
-            input_value += key[6:]
-        elif key == "ctrl+v":
-            w, h = console.size
-            live.update(
-                _build_chat_screen(
-                    messages,
-                    input_value,
-                    scroll_offset,
-                    width=w,
-                    height=h,
-                    scroll_meta=_chat_scroll_meta,
-                    notice="Pasting image…",
-                )
-            )
-            chip = handle_ctrl_v(
-                chat_attachments,
-                scope_id=graph_state.get("_attachment_scope", "") or "planning",
-                set_notice=_set_paste_notice,
-            )
-            if chip:
-                input_value += chip
-                paste_notice = f"Screenshot attached as {chip}"
-        elif isinstance(key, str) and len(key) == 1 and key.isprintable():
-            input_value += key
-        elif key == "":
-            pass
-        else:
-            continue
-
-        w, h = console.size
-        live.update(
-            _build_chat_screen(
-                messages,
-                input_value,
-                scroll_offset,
-                width=w,
-                height=h,
-                shimmer_tick=time.monotonic() - _chat_anim0,
-                scroll_meta=_chat_scroll_meta,
-                notice=paste_notice,
-            )
-        )
-        # Adopt the builder's clamped bottom when following or when we requested
-        # past-the-end, so the loop counter matches what's displayed.
-        if _chat_follow or scroll_offset == _SCROLL_BOTTOM:
-            scroll_offset = _chat_bottom()

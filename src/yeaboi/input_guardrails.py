@@ -16,6 +16,7 @@ Four-layer input validation, cheapest first:
 
 import logging
 import re
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,15 @@ MAX_INPUT_CHARS: int = 5_000
 Generous enough for detailed project descriptions and multi-paragraph
 answers, but prevents accidental pastes of entire files or deliberate
 context-window flooding.
+"""
+
+MAX_CHAT_INPUT_CHARS: int = 10_000
+"""Maximum characters accepted per live-chat message (planning chat).
+
+Larger than MAX_INPUT_CHARS because the chat composer supports pasting
+whole documents via /paste. One constant owns the chat: the composer
+truncates paste insertions at this limit and submit-time validation uses
+the same number, so truncation and validation can never disagree.
 """
 
 # ---------------------------------------------------------------------------
@@ -374,3 +384,44 @@ def validate_input(text: str) -> str | None:
     Order: length → injection → profanity (all regex, instant) → allowlist + LLM (last).
     """
     return check_input_length(text) or check_prompt_injection(text) or check_profanity(text) or check_off_topic(text)
+
+
+class GuardrailBlock(NamedTuple):
+    """A blocked chat input: which layer fired, and the user-facing message.
+
+    The layer name exists so callers can log "blocked: layer=%s len=%d"
+    without ever logging the input content itself.
+    """
+
+    layer: str
+    message: str
+
+
+def validate_chat_input(text: str, *, intake: bool = False) -> GuardrailBlock | None:
+    """Pre-submit guardrails for the planning live chat. None means clean.
+
+    Always runs the three regex layers (instant, no network): length at the
+    chat cap (MAX_CHAT_INPUT_CHARS, not MAX_INPUT_CHARS — see that constant's
+    docstring), prompt injection, profanity.
+
+    The off-topic layer (allowlist, then a cheap LLM classifier) runs only
+    when ``intake=True`` — i.e. for greeting/size/description/intake-Q&A
+    turns, where the allowlist already passes command words, numbers, and
+    project vocabulary instantly and the classifier fails open. Post-plan
+    refinement chat skips it entirely: refinement turns ("make sprint 2
+    lighter") are on-topic by construction once a plan exists, and an LLM
+    call on every chat submit is latency the critical path can't afford.
+    """
+    if len(text) > MAX_CHAT_INPUT_CHARS:
+        return GuardrailBlock(
+            "length",
+            f"Input too long ({len(text):,} chars). "
+            f"Maximum is {MAX_CHAT_INPUT_CHARS:,} characters — please shorten your message.",
+        )
+    if message := check_prompt_injection(text):
+        return GuardrailBlock("injection", message)
+    if message := check_profanity(text):
+        return GuardrailBlock("profanity", message)
+    if intake and (message := check_off_topic(text)):
+        return GuardrailBlock("off_topic", message)
+    return None

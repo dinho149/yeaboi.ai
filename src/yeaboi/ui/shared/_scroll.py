@@ -24,6 +24,13 @@ from __future__ import annotations
 # intent and one-line-per-notch feels sluggish on long content.
 WHEEL_STEP = 3
 
+# Sentinel offset meaning "pin to the newest line". A loop requests
+# past-the-end; the builder clamps for display AND publishes the true bottom
+# via publish_geometry, which the loop then adopts. Used by follow-the-bottom
+# transcripts (the planning chat) where the real maximum is only known after
+# the builder wraps the content at the current width.
+SCROLL_BOTTOM = 1_000_000_000
+
 # Every key that apply_scroll() acts on. Scroll loops branch on `k in SCROLL_KEYS`
 # so a single membership test routes all scrolling (arrows, wheel, page, home/end)
 # through one handler instead of a per-key elif chain.

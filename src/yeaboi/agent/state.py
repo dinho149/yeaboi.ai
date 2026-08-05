@@ -1298,6 +1298,18 @@ class ScrumState(_RequiredState, total=False):
     # See docs: "Project Intake Questionnaire" — smart intake
     _intake_mode: str
 
+    # Chat-planning presentation state (TUI live chat only; never read by
+    # graph nodes). The greeting + size exchange happens BEFORE the first
+    # graph invocation and must stay out of `messages` — project_intake reads
+    # messages[0] as the project description. _chat_preamble records that
+    # exchange for transcript rebuild/export: [{"role": "user"|"ai", "text": str}].
+    _chat_greeting_done: bool
+    _chat_preamble: list[dict]
+    # /finish fast mode: the chat driver auto-accepts every review gate while
+    # this is set. Persisted so a fast run resumed mid-pipeline keeps
+    # auto-running; the driver clears it when the plan completes.
+    _chat_fast_forward: bool
+
     # Project analysis — structured synthesis of intake answers.
     # Set once by project_analyzer node; no reducer needed (single value).
     project_analysis: ProjectAnalysis

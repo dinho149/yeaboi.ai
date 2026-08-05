@@ -608,6 +608,42 @@ FOLLOW_UP_TEMPLATES: dict[int, str] = {
 
 
 # ---------------------------------------------------------------------------
+# Chat presentation — conversational lead-ins for the planning live chat.
+#
+# The chat TUI renders the SAME node-built question text as every other
+# surface (REPL, headless), decorated at render time only. This keeps node
+# output byte-identical across surfaces — answers, extraction, and therefore
+# planning results are unaffected by the chat skin.
+# ---------------------------------------------------------------------------
+
+CHAT_QUESTION_PREAMBLES: dict[int, str] = {
+    2: "Let's ground the basics first.",
+    3: "Good — now the why.",
+    4: "Almost through the essentials.",
+    6: "Now, about the people building this —",
+    8: "Let's talk timing.",
+    10: "A quick delivery question —",
+    11: "On to the technical side.",
+    15: "About the code itself —",
+    27: "Last stretch: capacity.",
+}
+
+
+def decorate_question_for_chat(q_num: int, text: str) -> str:
+    """Prepend a conversational lead-in to a question for the chat surface.
+
+    Presentation-only: the question text (including any numbered [1]/[2]
+    option lines, which must stay verbatim for choice parsing pre-selection)
+    is never altered — unknown question numbers return the text unchanged.
+    Only the TUI chat calls this; REPL and headless render the raw text.
+    """
+    preamble = CHAT_QUESTION_PREAMBLES.get(q_num)
+    if not preamble:
+        return text
+    return f"{preamble}\n\n{text}"
+
+
+# ---------------------------------------------------------------------------
 # Step 5: Cross-Question Validation — catch contradictions before analysis
 # See docs: "Project Intake Questionnaire" — cross-question validation
 #
