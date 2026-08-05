@@ -114,9 +114,9 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_0111WtcVcpYDKaL6Jw9ZaPjD |
+| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
-| `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | |
+| `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |
 | `events/release-published-announce.md` | Release published | — | `standard` | |
