@@ -2,6 +2,35 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.53.1",
+      "date": "2026-08-05",
+      "summary": "Fixed share links from retro and poker boards serving Cloudflare errors forever. Tunnel readiness now verifies that cloudflared has fully registered with the edge (not just started up and printed its URL), and recovers automatically if the regional DNS lookup fails by retrying with a pinned US region. Cancelling a board session now cleanly stops any in-flight tunnel startup, preventing orphaned processes.",
+      "highlights": [
+        {
+          "text": "Share links now wait for tunnel to register with Cloudflare edge before advertising the URL",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        },
+        {
+          "text": "Regional DNS lookup failures automatically retry with --region us, unblocking resolvers that answer incomplete SRV records",
+          "areas": [
+            "retro",
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Cancelled board sessions now cleanly stop tunnel startup, preventing orphaned processes",
+          "areas": [
+            "retro",
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.53.0",
       "date": "2026-08-05",
       "summary": "Planning mode is now a continuous live chat instead of a card-based questionnaire. Type naturally, and the agent streams its thoughts while it gathers your project goals, team shape, and delivery timeline. Slash commands (type `/help` mid-draft) let you skip questions, reset to defaults, switch to the classic form, or wrap up fast with `/finish`. Watch artifact cards — epics, features, stories, tasks, sprints — render in the transcript as they're drafted. New projects can pick Small or Large at the start, or just describe your project and let the classifier decide. The chat stays in sync with the headless engine, so exports and platform partners see the same project shape.",
