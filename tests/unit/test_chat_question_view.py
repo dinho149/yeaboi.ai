@@ -61,6 +61,55 @@ class TestStaticChoices:
         view = derive_question_view(_state(qs))
         assert view.choices is None
 
+    def test_mode_hidden_row_dropped_in_smart_mode(self):
+        # Q10's "1–2 sprints" re-litigates the size answer — hidden in chat
+        # when the user already chose Large (intake_mode="smart").
+        qs = QuestionnaireState()
+        qs.current_question = 10
+        qs.intake_mode = "smart"
+        view = derive_question_view(_state(qs))
+        labels = [label for label, _ in view.choices]
+        assert "1–2 sprints" not in labels
+        assert labels == [opt for opt in QUESTION_METADATA[10].options if opt != "1–2 sprints"]
+
+    def test_mode_hidden_row_keeps_default_preselection(self):
+        qs = QuestionnaireState()
+        qs.current_question = 10
+        qs.intake_mode = "smart"
+        view = derive_question_view(_state(qs))
+        meta = QUESTION_METADATA[10]
+        # Precondition, not a guard — a silent pass if Q10 loses its default
+        # would make this test vacuous.
+        assert meta.default_index is not None
+        selected = [label for label, sel in view.choices if sel]
+        assert selected == [meta.options[meta.default_index]]
+
+    def test_mode_hidden_row_shown_outside_smart_mode(self):
+        for mode in ("small_project", ""):
+            qs = QuestionnaireState()
+            qs.current_question = 10
+            qs.intake_mode = mode
+            view = derive_question_view(_state(qs))
+            assert [label for label, _ in view.choices] == list(QUESTION_METADATA[10].options)
+
+    def test_mode_hidden_row_survives_when_suggested(self):
+        # If the extractor pulled "1–2 sprints" out of the description, the
+        # pre-selected row must stay visible — hiding it would drop the
+        # suggestion silently.
+        qs = QuestionnaireState()
+        qs.current_question = 10
+        qs.intake_mode = "smart"
+        qs.suggested_answers = {10: "1–2 sprints"}
+        view = derive_question_view(_state(qs))
+        assert ("1–2 sprints", True) in view.choices
+
+    def test_mode_filter_leaves_other_questions_alone(self):
+        qs = QuestionnaireState()
+        qs.current_question = 2
+        qs.intake_mode = "smart"
+        view = derive_question_view(_state(qs))
+        assert [label for label, _ in view.choices] == list(QUESTION_METADATA[2].options)
+
     def test_multi_choice_preselects_from_comma_suggestion(self):
         multi_q = next(q for q, m in QUESTION_METADATA.items() if m.question_type == "multi_choice")
         meta = QUESTION_METADATA[multi_q]

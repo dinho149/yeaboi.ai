@@ -7,18 +7,28 @@ design: these branches encode the private QuestionnaireState machinery (PTO
 sub-loop, tracker choice, Q27 sprint selection, probed questions), and any
 drift here changes which answer string reaches the node — i.e. planning
 results. Keep changes mirrored with the recorded-state tests.
+
+One sanctioned exception: CHAT_MODE_HIDDEN_CHOICES hides rows the pre-graph
+size answer made redundant (Q10's "1–2 sprints" after the user chose Large),
+so the chat can show fewer rows than the REPL/form for the same question.
+Typed digits stay consistent because _resolve_choice passes the displayed
+labels to _resolve_choice_input — the answer string itself is always one of
+the canonical meta.options.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
-from yeaboi.prompts.intake import PHASE_LABELS, QUESTION_METADATA, is_choice_question
+from yeaboi.prompts.intake import CHAT_MODE_HIDDEN_CHOICES, PHASE_LABELS, QUESTION_METADATA, is_choice_question
 from yeaboi.repl._io import _get_active_suggestion
 from yeaboi.repl._questionnaire import _split_intake_preamble
+
+logger = logging.getLogger(__name__)
 
 # Q27 (sprint selection) is single-select among the dynamic follow-up menus;
 # Q6 member selection is multi-select. Same table as the phase loop used.
@@ -96,6 +106,20 @@ def derive_question_view(graph_state: dict) -> QuestionView:
             # The pre-selected option IS the suggestion — drop the text form.
             if view.suggestion and pre_select_idx is not None:
                 view.suggestion = None
+
+    # Chat-only: hide rows made redundant by the pre-graph size answer
+    # (e.g. "1–2 sprints" after the user already chose Large). A pre-selected
+    # row survives — hiding it would silently drop an extracted suggestion.
+    hidden = CHAT_MODE_HIDDEN_CHOICES.get((cur_q, qs.intake_mode or ""))
+    if hidden and view.choices:
+        before = len(view.choices)
+        view.choices = [(opt, sel) for opt, sel in view.choices if opt not in hidden or sel]
+        if len(view.choices) != before:
+            # Once per question turn, never per frame — the caller derives the
+            # view when the intake advances, not while rendering.
+            logger.debug(
+                "chat: hid %d choice row(s) for Q%d in %s mode", before - len(view.choices), cur_q, qs.intake_mode
+            )
 
     # Dynamic choices — follow-up probes or node-generated menus (tracker
     # choice, Q27 sprint pick, Q6 member select). They override static ones.
