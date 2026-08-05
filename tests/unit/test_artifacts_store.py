@@ -148,6 +148,27 @@ class TestRecording:
         assert not any(name.startswith("delete") for name in dir(store))
 
 
+def _strip_provenance(conn, table):
+    """Remove the v21 columns by rebuilding the table.
+
+    Not ``ALTER TABLE … DROP COLUMN``: that rewrites the stored CREATE TABLE
+    text and chokes on the inline comments some schemas carry ("incomplete
+    input"), so a swallowed error would leave the column in place and make the
+    migration test vacuous. The result is asserted so setup cannot silently
+    no-op.
+    """
+    keep = ", ".join(
+        row[1] for row in conn.execute(f"PRAGMA table_info({table})") if row[1] not in ("origin", "edited_from_id")
+    )
+    conn.executescript(
+        f"CREATE TABLE {table}_pre AS SELECT {keep} FROM {table};"
+        f"DROP TABLE {table};"
+        f"ALTER TABLE {table}_pre RENAME TO {table};"
+    )
+    remaining = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    assert not {"origin", "edited_from_id"} & remaining, table
+
+
 class TestMigration:
     """A v20 database must reach v21 cleanly, and twice must be the same as once."""
 
@@ -160,11 +181,7 @@ class TestMigration:
         conn.execute("UPDATE schema_info SET schema_version = 20")
         conn.execute("DROP TABLE IF EXISTS artifact_edits")
         for table in ("standup_history", "retro_history", "reporting_history"):
-            for column in ("origin", "edited_from_id"):
-                try:
-                    conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
-                except sqlite3.OperationalError:
-                    pass
+            _strip_provenance(conn, table)
         conn.commit()
         conn.close()
         return path
@@ -222,6 +239,125 @@ class TestMigration:
         SessionStore(migrated).close()
         for table in ("standup_history", "retro_history", "reporting_history", "artifact_edits"):
             assert self._columns(fresh, table) == self._columns(migrated, table), table
+
+
+class TestVersionCollisionRepair:
+    """A DB stamped past 21 by the colliding lineage must still gain the columns.
+
+    A pre-rebase branch used version 21 for a different migration and stamped
+    shared databases with it, so main's v21 (edit provenance) was skipped while
+    the DB migrated on to v25. Migration v26 re-runs the idempotent body.
+    """
+
+    _TABLES = (
+        "standup_history",
+        "retro_history",
+        "reporting_history",
+        "roadmap_history",
+        "performance_one_on_ones",
+        "performance_reviews",
+    )
+
+    def _collided_db(self, tmp_path):
+        from yeaboi.sessions import SessionStore
+
+        path = tmp_path / "sessions.db"
+        SessionStore(path).close()  # creates at CURRENT_SCHEMA_VERSION
+        conn = sqlite3.connect(str(path))
+        conn.execute("UPDATE schema_info SET schema_version = 25")
+        conn.execute("DROP TABLE IF EXISTS artifact_edits")
+        for table in self._TABLES:
+            _strip_provenance(conn, table)
+        conn.commit()
+        conn.close()
+        return path
+
+    def _columns(self, path, table):
+        conn = sqlite3.connect(str(path))
+        try:
+            return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        finally:
+            conn.close()
+
+    def test_collided_db_upgrades_to_current(self, tmp_path):
+        from yeaboi.sessions import CURRENT_SCHEMA_VERSION, SessionStore
+
+        path = self._collided_db(tmp_path)
+        store = SessionStore(path)
+        try:
+            assert not store.schema_mismatch
+        finally:
+            store.close()
+        conn = sqlite3.connect(str(path))
+        try:
+            assert conn.execute("SELECT schema_version FROM schema_info").fetchone()[0] == CURRENT_SCHEMA_VERSION
+            assert conn.execute("SELECT COUNT(*) FROM artifact_edits").fetchone()[0] == 0
+        finally:
+            conn.close()
+
+    @pytest.mark.parametrize(
+        "table",
+        [
+            "standup_history",
+            "retro_history",
+            "reporting_history",
+            "roadmap_history",
+            "performance_one_on_ones",
+            "performance_reviews",
+        ],
+    )
+    def test_provenance_columns_repaired(self, tmp_path, table):
+        from yeaboi.sessions import SessionStore
+
+        path = self._collided_db(tmp_path)
+        SessionStore(path).close()
+        assert {"origin", "edited_from_id"} <= self._columns(path, table)
+
+    def test_existing_rows_backfill_generated(self, tmp_path):
+        path = self._collided_db(tmp_path)
+        conn = sqlite3.connect(str(path))
+        conn.execute(
+            "INSERT INTO standup_history (session_id, run_at, standup_date) VALUES ('s1', 'now', '2026-08-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        from yeaboi.sessions import SessionStore
+
+        SessionStore(path).close()
+        conn = sqlite3.connect(str(path))
+        try:
+            row = conn.execute("SELECT origin, edited_from_id FROM standup_history").fetchone()
+            assert row == ("generated", 0)
+        finally:
+            conn.close()
+
+    def test_repair_twice_is_harmless(self, tmp_path):
+        from yeaboi.sessions import SessionStore
+
+        path = self._collided_db(tmp_path)
+        SessionStore(path).close()
+        SessionStore(path).close()  # already repaired — must not raise
+
+    def test_newer_stamp_still_heals(self, tmp_path):
+        # A future lineage stamping past 26 must not re-create the trap: the
+        # schema_mismatch branch runs no migrations, so it applies the
+        # idempotent repair directly.
+        from yeaboi.sessions import CURRENT_SCHEMA_VERSION, SessionStore
+
+        path = self._collided_db(tmp_path)
+        conn = sqlite3.connect(str(path))
+        conn.execute("UPDATE schema_info SET schema_version = ?", (CURRENT_SCHEMA_VERSION + 5,))
+        conn.commit()
+        conn.close()
+
+        store = SessionStore(path)
+        try:
+            assert store.schema_mismatch  # the warning still fires
+        finally:
+            store.close()
+        for table in self._TABLES:
+            assert {"origin", "edited_from_id"} <= self._columns(path, table)
 
 
 class TestEditedRunsSupersede:

@@ -112,6 +112,19 @@ class RetroStore:
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.isolation_level = None  # autocommit
         self._conn.executescript(_RETRO_SCHEMA)
+        # Idempotent migration: edit-provenance columns (sessions.py v21/v26).
+        # A v21 version-number collision could leave a shared DB stamped past
+        # 21 without them, and the CLI and MCP tools open this store without
+        # ever constructing a SessionStore; record_run and get_base_run read
+        # `origin`, so heal here too.
+        for statement in (
+            "ALTER TABLE retro_history ADD COLUMN origin TEXT NOT NULL DEFAULT 'generated'",
+            "ALTER TABLE retro_history ADD COLUMN edited_from_id INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                self._conn.execute(statement)
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 

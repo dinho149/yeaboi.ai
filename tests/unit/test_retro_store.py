@@ -135,3 +135,33 @@ class TestSavedRunsHub:
             assert store.delete_run(drop) is True
             assert store.delete_run(drop) is False
             assert {r["id"] for r in store.get_all_history()} == {keep}
+
+
+class TestProvenanceSelfHeal:
+    """A retro_history missing the v21 provenance columns heals on store open.
+
+    The v21 schema-version collision could leave a shared DB stamped past 21
+    without origin/edited_from_id, and the CLI and MCP tools open this store
+    without ever constructing a SessionStore (whose v26 migration is the other
+    repair path).
+    """
+
+    def test_pre_v21_table_heals_on_open(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "sessions.db"
+        RetroStore(path).close()
+        conn = sqlite3.connect(str(path))
+        keep = ", ".join(
+            r[1] for r in conn.execute("PRAGMA table_info(retro_history)") if r[1] not in ("origin", "edited_from_id")
+        )
+        conn.executescript(
+            f"CREATE TABLE pre AS SELECT {keep} FROM retro_history;"
+            "DROP TABLE retro_history;"
+            "ALTER TABLE pre RENAME TO retro_history;"
+        )
+        conn.close()
+        with RetroStore(path) as store:
+            cols = {r[1] for r in store._conn.execute("PRAGMA table_info(retro_history)")}
+            assert {"origin", "edited_from_id"} <= cols
+            assert store.record_run(_report()) > 0  # the INSERT that names origin

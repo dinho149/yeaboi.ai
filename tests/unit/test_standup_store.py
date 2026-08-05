@@ -287,6 +287,56 @@ class TestRunHistory:
             assert store.get_latest_report("s1") is None
 
 
+class TestProvenanceSelfHeal:
+    """A standup_history table missing the v21 provenance columns heals on open.
+
+    The v21 schema-version collision could leave a shared DB stamped past 21
+    without `origin`/`edited_from_id`, and several entry points (--standup-run,
+    the MCP tools) open this store without ever constructing a SessionStore —
+    whose v26 migration is the other repair path.
+    """
+
+    def test_pre_v21_history_table_heals_on_open(self, db_path):
+        import sqlite3
+
+        from yeaboi.standup.store import _standup_report_to_json
+
+        legacy = _make_report(date="2026-07-09")
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(
+            """CREATE TABLE standup_history (
+                   id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                   session_id      TEXT NOT NULL,
+                   run_at          TEXT NOT NULL,
+                   standup_date    TEXT NOT NULL DEFAULT '',
+                   sprint_day      INTEGER NOT NULL DEFAULT 0,
+                   confidence_pct  INTEGER NOT NULL DEFAULT 0,
+                   report_json     TEXT NOT NULL DEFAULT '',
+                   delivery_status TEXT NOT NULL DEFAULT '{}',
+                   status          TEXT NOT NULL DEFAULT 'success',
+                   error           TEXT NOT NULL DEFAULT ''
+               );"""
+        )
+        conn.execute(
+            "INSERT INTO standup_history (session_id, run_at, standup_date, report_json) VALUES (?, ?, ?, ?)",
+            ("s1", "2026-07-09T10:00:00", "2026-07-09", _standup_report_to_json(legacy)),
+        )
+        conn.commit()
+        conn.close()
+
+        with StandupStore(db_path) as store:
+            # The exact origin-reading queries Generate runs, in run order.
+            previous = store.get_previous_run("s1", "2026-07-10")
+            assert previous is not None
+            row_id, origin, edited_from_id, report = previous
+            assert origin == "generated"
+            assert edited_from_id == 0
+            assert report.date == "2026-07-09"
+            assert store.record_run(_make_report()) > row_id
+            base = store.get_base_run(session_id="s1")
+            assert base is not None
+
+
 class TestSavedRunsHub:
     """get_all_history / get_run_by_id / delete_run — power the TUI saved-runs hub."""
 

@@ -146,3 +146,31 @@ class TestTeamWide:
             store.record_review(SixMonthReview(engineer="Bob", overall="y"))
             reviews = store.get_recent_reviews()
         assert {r.engineer for r in reviews} == {"Ada", "Bob"}
+
+
+class TestProvenanceSelfHeal:
+    """Performance tables missing the v21 provenance columns heal on store open.
+
+    The v21 schema-version collision could leave a shared DB stamped past 21
+    without origin/edited_from_id, and the CLI and MCP tools open this store
+    without ever constructing a SessionStore (whose v26 migration is the other
+    repair path).
+    """
+
+    def test_pre_v21_tables_heal_on_open(self, db_path):
+        import sqlite3
+
+        PerformanceStore(db_path).close()
+        conn = sqlite3.connect(str(db_path))
+        for table in ("performance_one_on_ones", "performance_reviews"):
+            keep = ", ".join(
+                r[1] for r in conn.execute(f"PRAGMA table_info({table})") if r[1] not in ("origin", "edited_from_id")
+            )
+            conn.executescript(
+                f"CREATE TABLE pre AS SELECT {keep} FROM {table};DROP TABLE {table};ALTER TABLE pre RENAME TO {table};"
+            )
+        conn.close()
+        with PerformanceStore(db_path) as store:
+            for table in ("performance_one_on_ones", "performance_reviews"):
+                cols = {r[1] for r in store._conn.execute(f"PRAGMA table_info({table})")}
+                assert {"origin", "edited_from_id"} <= cols, table
