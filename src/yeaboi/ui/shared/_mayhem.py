@@ -100,7 +100,7 @@ NORMAL_STEPS = 16
 # times the cell size, so doubling the sprite and halving the font leaves him
 # exactly as big while doubling the detail he is drawn with. Pair this with a
 # smaller terminal font, not with a bigger duck.
-DUCK_SCALE = 2
+DUCK_SCALE = 1
 
 # The anchored duck in the middle — twice the crowd again, immovable, and the
 # fixed point the whole scene is arranged around.
@@ -558,7 +558,14 @@ def compose(ducks: list[Duck], now: float, cols: int, rows: int) -> Group:
     return Group(*lines)
 
 
-def configure(duck_scale: int) -> None:
+# Below this many pixel-columns the hero cannot be 2x without dominating: the
+# sprite is 16 wide whatever the font, so on a ~95-column canvas — which is what
+# an ordinary 16pt terminal gives — a doubled hero is a third of the width on his
+# own and the yard reads as one giant duck with company.
+HERO_2X_MIN_WIDTH = 150
+
+
+def configure(duck_scale: int, hero_scale: int | None = None) -> None:
     """Re-derive every size-dependent constant for a different sprite scale.
 
     2x is right for a recording, where the terminal font can be made tiny to pay
@@ -568,7 +575,7 @@ def configure(duck_scale: int) -> None:
     global DUCK_SCALE, SOURCE, SOURCE_QUACK, SPRITE_SIZE, DUCK_RADIUS
     global HERO_SCALE, HERO_W, HERO_H, HERO_RADIUS, GLASSES_RADIUS
     DUCK_SCALE = duck_scale
-    HERO_SCALE = duck_scale * 2
+    HERO_SCALE = hero_scale if hero_scale is not None else duck_scale * 2
     SOURCE = scale(DUCK_HEAD, DUCK_SCALE)
     SOURCE_QUACK = scale(DUCK_HEAD_QUACK, DUCK_SCALE)
     SPRITE_SIZE = math.ceil(math.hypot(len(SOURCE[0]) * MAX_STRETCH, len(SOURCE)))
@@ -579,7 +586,7 @@ def configure(duck_scale: int) -> None:
     squashed.cache_clear()
 
 
-def fits(width: int, height: int, coverage: float = 0.34) -> int:
+def fits(width: int, height: int, coverage: float = 0.42) -> int:
     """How many ducks fill ``coverage`` of a canvas, minus the hero's share.
 
     A screensaver cannot be handed a duck count: it gets whatever terminal the
@@ -599,7 +606,7 @@ def fits(width: int, height: int, coverage: float = 0.34) -> int:
 # rising elapsed, so stepping incrementally is O(1) per frame; recomputing from
 # zero each time would be O(elapsed) and get slower the longer it ran.
 _yard: list[Duck] = []
-_yard_key: tuple[int, int, int] = (0, 0, 0)
+_yard_key: tuple[int, int, int, int] = (0, 0, 0, 0)
 _yard_at: float = 0.0
 _STEP = 1.0 / 60
 
@@ -614,8 +621,10 @@ def render(width: int, height: int, elapsed: float, *, seed: int = 3) -> Rendera
     global _yard, _yard_key, _yard_at
 
     px_h = height * 2
-    key = (width, px_h, seed)
+    hero_scale = DUCK_SCALE * 2 if width >= HERO_2X_MIN_WIDTH else DUCK_SCALE
+    key = (width, px_h, seed, hero_scale)
     if key != _yard_key or elapsed < _yard_at:
+        configure(DUCK_SCALE, hero_scale)
         # noqa S311: ducks, not nonces. Reproducibility is the requirement.
         _yard = make_ducks(fits(width, px_h), width, px_h, random.Random(seed))  # noqa: S311
         _yard_key, _yard_at = key, 0.0
