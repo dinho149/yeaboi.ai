@@ -67,6 +67,11 @@ def _render_ansi(panel: Panel, *, width: int = 80, height: int = _TALL) -> str:
         color_system="truecolor",
         legacy_windows=False,
         highlight=False,
+        # Rich reads NO_COLOR from the environment even with force_terminal +
+        # color_system set, and strips every SGR when it is present. Pinning it
+        # keeps the escape-matching assertions below from failing on the machine
+        # of anyone who sets NO_COLOR=1 while CI stays green.
+        no_color=False,
     )
     console.print(panel)
     return console.file.getvalue()
@@ -82,6 +87,22 @@ def _vc(selected: int = 0, **kwargs) -> Panel:
     """Build the version-control picker at a frame height that fits every row."""
     kwargs.setdefault("height", _TALL)
     return _build_vc_select_screen(selected, **kwargs)
+
+
+def _card(provider_val: str) -> dict:
+    """The provider card for *provider_val* — by identity, never by list index."""
+    return next(card for card in _PROVIDER_CARDS if card["provider_val"] == provider_val)
+
+
+def _tagline(card: dict) -> str:
+    """A card's tagline, read the way the screen reads it.
+
+    ``_screens.py`` uses ``.get("tagline", "")`` and falls through to the plain
+    separator when there is none, so the tests must tolerate a card without one
+    instead of raising ``KeyError`` and taking the suite down with an error
+    rather than a failure.
+    """
+    return card.get("tagline", "")
 
 
 def _art_top(name: str) -> str:
@@ -106,16 +127,23 @@ def _active_chip(out: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _has_subtitle(out: str, text: str) -> bool:
-    """True when *text* appears on the frame's subtitle row, not just anywhere.
+def _text_rows(out: str) -> set[str]:
+    """The frame's content rows, stripped of the page panel's border and padding.
 
-    The VC picker's subtitle is "Version Control" and its active progress chip is
-    labelled "Version Control" too (``_STEPS[3]``), so a plain ``in`` check passes
-    with the subtitle row deleted — it only re-proves the chip. The chip row is
-    the one drawn with the ▟/▛ parallelogram caps, so excluding those lines
-    isolates the subtitle.
+    Whole rows rather than a substring scan over the whole capture, because both
+    kinds of substring collision are live here:
+
+    - across rows: the VC picker's subtitle is "Version Control" and so is its
+      active progress chip (``_STEPS[3]``), so ``"Version Control" in out`` holds
+      with the subtitle row deleted — it only re-proves the chip;
+    - within a row: Anthropic's tagline ("Recommended cloud · API key required")
+      ends with OpenAI's ("Cloud · API key required") bar the capital, so the day
+      someone normalises that copy a substring check starts claiming OpenAI's
+      tagline is on screen when it is not.
+
+    An exact row match is immune to both.
     """
-    return any(text in line and "▟" not in line and "▛" not in line for line in out.splitlines())
+    return {line.strip().strip("│").strip() for line in out.splitlines()}
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +156,7 @@ class TestSelectScreen:
         assert isinstance(_select(0), Panel)
 
     def test_subtitle_renders(self):
-        assert _has_subtitle(_render(_select(0)), "Select your LLM provider")
+        assert "Select your LLM provider" in _text_rows(_render(_select(0)))
 
     def test_every_provider_row_renders(self):
         # Provider names are drawn as two-line block art, not plain text, so the
@@ -141,16 +169,20 @@ class TestSelectScreen:
         # The selected card's separator row doubles as its tagline — the "what am
         # I signing up for" line. Ollama's is the one that makes the free option
         # visible before any card is entered.
-        ollama = next(i for i, c in enumerate(_PROVIDER_CARDS) if c["provider_val"] == "ollama")
-        out = _render(_select(ollama))
-        assert _PROVIDER_CARDS[ollama]["tagline"] in out
+        ollama = _PROVIDER_CARDS.index(_card("ollama"))
+        tagline = _tagline(_PROVIDER_CARDS[ollama])
+        assert tagline, "the free/local option must carry a tagline"
+        assert tagline in _text_rows(_render(_select(ollama)))
 
     def test_unselected_rows_hide_their_taglines(self):
         # Only one tagline is ever on screen; the rest are plain separators.
-        out = _render(_select(0))
-        assert _PROVIDER_CARDS[0]["tagline"] in out
+        rows = _text_rows(_render(_select(0)))
+        assert _tagline(_PROVIDER_CARDS[0]) in rows
         for card in _PROVIDER_CARDS[1:]:
-            assert card["tagline"] not in out
+            # A card with no tagline has no row to look for — the blank separator
+            # it draws instead is not evidence of anything.
+            if _tagline(card):
+                assert _tagline(card) not in rows
 
     def test_visible_restricts_the_rows_drawn(self):
         # The intro/outro transitions reveal and retract rows one at a time.
@@ -162,14 +194,15 @@ class TestSelectScreen:
     def test_selection_outside_visible_draws_no_tagline(self):
         # Mid-transition the selection can sit on a row that is not on screen yet;
         # every drawn row then falls through to the plain separator branch.
-        out = _render(_select(4, visible=[0, 1]))
+        rows = _text_rows(_render(_select(4, visible=[0, 1])))
         for card in _PROVIDER_CARDS:
-            assert card["tagline"] not in out
+            if _tagline(card):
+                assert _tagline(card) not in rows
 
     def test_empty_visible_still_renders_the_frame(self):
         # The first transition frame has nothing revealed yet — the subtitle and
         # the progress bar must still draw.
-        assert _has_subtitle(_render(_select(0, visible=[])), "Select your LLM provider")
+        assert "Select your LLM provider" in _text_rows(_render(_select(0, visible=[])))
         assert _active_chip(_render_ansi(_select(0, visible=[]))) == "LLM Provider"
 
     def test_selected_style_overrides_the_selected_row(self):
@@ -197,23 +230,40 @@ class TestSelectScreen:
         assert _active_chip(_render_ansi(_select(0))) == "LLM Provider"
         assert _active_chip(_render_ansi(_select(0, step=2))) == "Docs"
 
+    # Both xfails below pin the same defect, #153 (YEA-37), from its two ends.
+    # `_build_screen_frame` gives the middle a fixed budget — at height 24,
+    # `middle_h` clamps to 9 rows against a five-card body that needs 14 — and
+    # neither scrolls nor windows the overflow, so Rich crops from the bottom:
+    # first the last provider rows, then the footer. 24 rows is the classic
+    # terminal size and the height the picker is really built at (`h` comes from
+    # `console.size` — see ui/provider_select/__init__.py:207), so this is a
+    # default-terminal experience, not a contrived one.
+    #
+    # Asserting a line count instead — the obvious "it must not overflow" test —
+    # would be vacuous: build_page_panel passes an explicit `height` to Rich,
+    # which pads or crops to it whatever the body contains.
+
     @pytest.mark.xfail(
         strict=True,
-        reason="five provider rows overflow a 24-row frame and crop the progress bar away "
-        "— see the cowork proposal for the provider-select height crop",
+        reason="#153: five provider rows overflow a 24-row frame and crop the progress bar away",
     )
     def test_progress_bar_survives_a_short_terminal(self):
-        # The frame is fixed-height and does not scroll, so overflowing body rows
-        # push the footer off the bottom. 24 rows is the classic terminal size and
-        # the height the picker is actually built at (`h` comes from
-        # `console.size` — see ui/provider_select/__init__.py), so a user on a
-        # short terminal loses the whole "where am I in setup" progress bar.
-        #
-        # Asserting the line count instead would be vacuous: build_page_panel
-        # passes an explicit `height` to Rich, which pads or crops to it whatever
-        # the body contains.
+        # Losing the footer costs the user the whole "where am I in setup" bar.
         out = _render_ansi(_select(0, width=80, height=_SHORT), height=_SHORT)
         assert _active_chip(out) == "LLM Provider"
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="#153: the last provider rows are cropped at a 24-row frame, "
+        "so Ollama — the free, no-API-key option — is never seen",
+    )
+    def test_last_provider_row_survives_a_short_terminal(self):
+        # The crop takes the bottom rows before it reaches the footer, and Ollama
+        # is last. That is the expensive half: a user on a 24-row terminal is
+        # never shown the option that needs no API key and no spend, and nothing
+        # on screen hints that the list continues.
+        out = _render(_select(0, width=80, height=_SHORT), height=_SHORT)
+        assert _art_top(_card("ollama")["name"]) in out
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +277,8 @@ class TestVcSelectScreen:
 
     def test_subtitle_renders(self):
         # "Version Control" is also the active chip's label here, so this asserts
-        # on the subtitle row specifically — see _has_subtitle.
-        assert _has_subtitle(_render(_vc(0)), "Version Control")
+        # on the subtitle row specifically — see _text_rows.
+        assert "Version Control" in _text_rows(_render(_vc(0)))
 
     def test_every_option_row_renders(self):
         # GitHub and Skip — "Skip" is an option, not a key binding, so it has to
@@ -247,7 +297,7 @@ class TestVcSelectScreen:
         assert _art_top(_VC_OPTIONS[1]["name"]) not in out
 
     def test_empty_visible_still_renders_the_frame(self):
-        assert _has_subtitle(_render(_vc(0, visible=[])), "Version Control")
+        assert "Version Control" in _text_rows(_render(_vc(0, visible=[])))
         assert _active_chip(_render_ansi(_vc(0, visible=[]))) == "Version Control"
 
     def test_selected_style_overrides_the_selected_row(self):
