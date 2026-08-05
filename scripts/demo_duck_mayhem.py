@@ -52,7 +52,6 @@ from yeaboi.ui.shared._mascot import (  # noqa: E402
     DUCK_HEAD_FACE,
     DUCK_HEAD_GLASSES,
     DUCK_HEAD_QUACK,
-    SHADES_LIFT_SEQUENCE,
     _compose,
     _pack_cells,
     _shift,
@@ -69,13 +68,19 @@ Grid = tuple[str, ...]
 # opposite of mayhem.
 DRIFT_SPEED = (26.0, 48.0)  # initial speed, px/s
 SPIN_SPEED = (-150.0, 150.0)  # deg/s; sign is direction
+# Half-angle of the cone each duck sets off in, aimed at the middle.
+CROSSING_SPREAD = math.radians(65)
 
 # Elastic. Any energy loss at all and a gravity-free yard visibly winds down
 # over eight seconds, with nothing to put the energy back.
 BOUNCE = 1.0
 
 QUACK_SECONDS = 0.22  # beak stays open this long after a hit
-ROT_STEPS = 24  # baked angles, i.e. 15 degrees apart
+# Rendered angles. At 24 (15 degrees apart) a duck spinning at 150 deg/s
+# changes pose six frames at a time and visibly clunks round; 48 halves the
+# step to 7.5 degrees and it reads as turning. Costs nothing but cache
+# entries, since these are built on demand rather than all up front.
+ROT_STEPS = 48
 
 # Squash and stretch on impact, recovering over SQUISH_SECONDS. Each entry is a
 # height multiplier; width takes the inverse, capped, so he reads as compressing
@@ -111,8 +116,18 @@ DUCK_SCALE = 2
 # The anchored duck in the middle — twice the crowd again, immovable, and the
 # fixed point the whole scene is arranged around.
 HERO_SCALE = DUCK_SCALE * 2
-HERO_SHADES_EVERY = 3.0
-HERO_SHADES_FPS = 8
+# Every 1.6s, not the saver's 3. The clip is four seconds long before it
+# ping-pongs, so a three-second cycle can land almost entirely outside the
+# window — the gag was rendering correctly and still looked frozen, because at
+# most one lift fell inside the take and a dozen ducks were flying over it.
+HERO_SHADES_EVERY = 1.6
+# Its own sequence rather than the app's SHADES_LIFT_SEQUENCE, and stepped more
+# than twice as fast. The app's is a slow reveal with a long hold at the top,
+# which suits a calm idle screen and is far too languid next to a dozen ducks
+# ricocheting around — it read as the glasses being stuck rather than lifting.
+# This pops up, holds a beat, drops: eight steps at 20/s, so 0.4s end to end.
+HERO_SHADES_FPS = 20
+HERO_LIFT_SEQUENCE = (2, 4, 5, 5, 5, 3, 1, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -214,23 +229,6 @@ def squashed(angle_idx: int, level: int, normal_idx: int, quack: bool) -> Grid:
     return rotate(squash(upright, SQUISH_CURVE[level - 1]), normal, SPRITE_SIZE)
 
 
-def bake(grid: Grid) -> tuple[tuple[Grid, ...], ...]:
-    """Every squash level at every angle, once, at import.
-
-    Five levels by twenty-four angles is 120 small grids per sprite — built once
-    in a few milliseconds, then indexed for the rest of the run. Doing either
-    transform live would be the same arithmetic a thousand times a second for
-    results that never change.
-    """
-    levels = (1.0, *SQUISH_CURVE)
-    return tuple(
-        tuple(rotate(squash(grid, level), i * 360.0 / ROT_STEPS, SPRITE_SIZE) for i in range(ROT_STEPS))
-        for level in levels
-    )
-
-
-ROTATED = bake(SOURCE)
-ROTATED_QUACK = bake(SOURCE_QUACK)
 # Collision radius from the *unrotated* sprite, not from the diagonal canvas it
 # is baked onto — the corners of that canvas are empty, and using them would
 # have ducks bouncing off each other's whitespace.
@@ -261,31 +259,28 @@ def hero_lift(elapsed: float) -> int:
     """How far the shades are currently raised, in source pixels. 0 at rest."""
     period = int(HERO_SHADES_EVERY * HERO_SHADES_FPS)
     step_i = int(elapsed * HERO_SHADES_FPS) % period
-    start = period - len(SHADES_LIFT_SEQUENCE)
-    return SHADES_LIFT_SEQUENCE[step_i - start] if step_i >= start else 0
+    start = period - len(HERO_LIFT_SEQUENCE)
+    return HERO_LIFT_SEQUENCE[step_i - start] if step_i >= start else 0
 
 
-def hero_quack_grid() -> Grid:
-    """The hero mid-quack, at the same height as every other hero frame.
+def hero_grid(elapsed: float, quacking: bool = False) -> Grid:
+    """The anchored duck: shades gag on a timer, open beak when hit, both at once.
 
-    Same reason hero_grid always pads: compose() centres a sprite on the duck,
-    so a grid that is shorter puts his head lower. He is hit constantly, and
-    without this he bobs up and down on every impact.
-    """
-    pad = ("." * len(DUCK_HEAD_QUACK[0]),) * HERO_PAD
-    return scale(pad + DUCK_HEAD_QUACK, HERO_SCALE)
+    The beak used to be a separate sprite that replaced this one, and the result
+    was that the gag never played at all — he is hit several times a second, so
+    the quack frame was up almost permanently and the sunglasses looked frozen.
+    Composing instead of choosing fixes it: the quack head is just a different
+    base to lay the glasses over.
 
-
-def hero_grid(elapsed: float) -> Grid:
-    """The anchored duck, running the shades gag on a timer.
-
-    Mirrors render_head_shades' composition rather than calling it: that returns
-    a packed renderable, and everything here stays an unpacked pixel grid until
-    the final blit.
+    Mirrors render_head_shades' composition rather than calling it, because that
+    returns a packed renderable and everything here stays an unpacked pixel grid
+    until the final blit. Always padded, at rest as well as mid-gag: compose()
+    centres a sprite on its duck, so a grid that changed height would bob.
     """
     pad = ("." * len(DUCK_HEAD_FACE[0]),) * HERO_PAD
-    face, glasses = pad + DUCK_HEAD_FACE, pad + DUCK_HEAD_GLASSES
-    return scale(_compose(face, glasses, _shift(glasses, hero_lift(elapsed))), HERO_SCALE)
+    base = pad + (DUCK_HEAD_QUACK if quacking else DUCK_HEAD_FACE)
+    glasses = pad + DUCK_HEAD_GLASSES
+    return scale(_compose(base, glasses, _shift(glasses, hero_lift(elapsed))), HERO_SCALE)
 
 
 def blit(canvas: list[list[str]], sprite: Grid, left: int, top: int) -> None:
@@ -338,7 +333,7 @@ class Duck:
         if self.is_hero:
             # Quacking beats the shades gag: he cannot be mid-cool-reveal and
             # mid-yelp at once, and the yelp is the one a duck to the face causes.
-            return hero_quack_grid() if now < self.quack_until else hero_grid(now)
+            return hero_grid(now, quacking=now < self.quack_until)
         level = 0
         if now < self.squish_until:
             # Flattest at the moment of impact, easing back out as the timer runs.
@@ -397,7 +392,13 @@ def make_ducks(count: int, width: int, height: int, rng: random.Random) -> list[
             if math.hypot(cx - hero.x, cy - hero.y) > hero.radius + DUCK_RADIUS + 2:
                 x, y = cx, cy
                 break
-        heading = rng.uniform(0, 2 * math.pi)
+        # Head broadly for the middle rather than in any direction at all. Left
+        # to chance, a duck starting in a corner spends the whole clip rattling
+        # around in it and never comes near anything — which is what left the
+        # left-hand ducks looking stranded. The spread is wide enough that they
+        # do not all converge on the hero like a target.
+        toward = math.atan2(hero.y - y, hero.x - x)
+        heading = toward + rng.uniform(-CROSSING_SPREAD, CROSSING_SPREAD)
         speed = rng.uniform(*DRIFT_SPEED)
         ducks.append(
             Duck(
