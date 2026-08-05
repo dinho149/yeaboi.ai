@@ -213,7 +213,9 @@ class CloudflareTunnel:
 
         Returns the ``https://…trycloudflare.com`` URL, or ``None`` on failure
         (binary unavailable, process died, no URL within the timeout, or a
-        concurrent :meth:`stop` that landed before the process was spawned).
+        concurrent :meth:`stop` — whether it landed before the process was
+        spawned or during the DNS wait, a URL is never reported for a tunnel
+        that has been asked to stop).
         """
         binary = self._binary or ensure_cloudflared()
         if binary is None:
@@ -269,7 +271,18 @@ class CloudflareTunnel:
         # and a thread that has been created but not started cannot be joined.
         reader = threading.Thread(target=_drain, name="retro-tunnel", daemon=True)
         reader.start()
-        self._reader = reader
+        # Publish under the lock, and only if no stop() has landed in the meantime. A
+        # stop() that claimed ``_proc``/``_reader`` between the Popen above and here has
+        # already finished; assigning ``self._reader`` afterwards would re-publish a live
+        # handle onto a tunnel that is, by contract, stopped. Take ownership of the thread
+        # instead and join it here — bounded by the same 2 s stop() uses, and unconditional
+        # once the pipe is closed, since _drain then hits EOF immediately.
+        with self._lock:
+            stopped_mid_launch = self._stop_requested
+            if not stopped_mid_launch:
+                self._reader = reader
+        if stopped_mid_launch:
+            reader.join(timeout=2)
 
         # Wait for the URL, but bail early if the process exits first.
         deadline = time.monotonic() + timeout
@@ -300,6 +313,16 @@ class CloudflareTunnel:
         # globally resolvable before declaring the tunnel ready.
         host = self._url.split("://", 1)[-1].split("/", 1)[0]
         self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
+
+        # The DNS gate is the longest window in start() — up to 30 s of polling plus a 3 s
+        # settle — and it runs outside the lock, so a stop() from the TUI thread lands here
+        # more often than anywhere else. That stop tears the process down correctly, but
+        # returning the URL anyway would hand the caller a link to an already-dead tunnel,
+        # which it then puts on screen. Report the failure the caller already handles.
+        with self._lock:
+            if self._stop_requested:
+                logger.warning("retro: cloudflare tunnel stopped while waiting for DNS; not reporting a URL")
+                return None
         logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
         return self._url
 

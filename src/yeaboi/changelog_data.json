@@ -2,6 +2,25 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.52.1",
+      "date": "2026-08-05",
+      "summary": "Closing a retro board while its share link was still being set up could leave a background sharing process running — and in rare cases hand a later retro a link nobody thought was live. Closing the board now cancels that setup cleanly, and a retro closed part-way through no longer reports a share link that is already dead.",
+      "highlights": [
+        {
+          "text": "Closing a retro board while its share link is still being prepared now cancels the setup cleanly, with nothing left running behind it",
+          "areas": [
+            "retro"
+          ]
+        },
+        {
+          "text": "A retro closed part-way through setup no longer shows a share link that has already stopped working",
+          "areas": [
+            "retro"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.52.0",
       "date": "2026-08-05",
       "summary": "Analysis mode now discovers and offers GitHub as a code source in the setup wizard — owners, organizations, and repositories are discovered automatically, and the choice is saved to Settings for future runs. GitHub was technically supported all along but gated behind a configuration key that had no UI surface; now it reaches parity with Azure DevOps, which was always offered once connected.",
