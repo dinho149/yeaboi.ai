@@ -317,6 +317,27 @@ def test_entrance_plays_once_per_process(monkeypatch):
     assert _music_bar._duck_entrance_start == 0.0
 
 
+def test_entrance_replay_plays_again_per_card_entry(monkeypatch):
+    # Default stays once-per-process (the chat greeting), but a mode card entry
+    # passes replay=True so the duck walks in with every page.
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    _music_bar.skip_duck_entrance()  # settled
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 60.0)
+    _music_bar.start_duck_entrance()  # once-per-process default: no-op
+    assert _music_bar._duck_entrance_start == 0.0
+    _music_bar.start_duck_entrance(replay=True)  # a mode card entry replays
+    assert _music_bar._duck_entrance_start == 60.0
+
+
+def test_entrance_replay_never_restarts_mid_waddle(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.4)
+    _music_bar.start_duck_entrance(replay=True)  # mid-stride: keep walking
+    assert _music_bar._duck_entrance_start == 5.0
+
+
 def test_entrance_walks_the_mini_duck_toward_the_corner(monkeypatch):
     # During the entrance the (wider) mini duck is composited walking rightward;
     # its leftmost ink column advances with progress, and the sprite is taller

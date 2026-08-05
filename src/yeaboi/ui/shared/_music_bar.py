@@ -742,10 +742,17 @@ _duck_entrance_start = 0.0
 _duck_entrance_played = False  # at most once per process — never on resume
 
 
-def start_duck_entrance() -> None:
-    """Play the waddle-into-the-corner entrance (no-op after the first time)."""
+def start_duck_entrance(*, replay: bool = False) -> None:
+    """Play the waddle-into-the-corner entrance.
+
+    Once per process by default (the chat greeting keeps its original feel).
+    ``replay=True`` plays it again — used when a mode card is entered from the
+    menu, so the duck walks in with every page. A no-op mid-waddle either way.
+    """
     global _duck_entrance_start, _duck_entrance_played
-    if _duck_entrance_played:
+    if _duck_entrance_start:
+        return  # already walking in — don't restart mid-stride
+    if _duck_entrance_played and not replay:
         return
     _duck_entrance_played = True
     _duck_entrance_start = time.monotonic()

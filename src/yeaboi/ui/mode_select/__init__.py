@@ -11879,6 +11879,13 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
+            # The duck walks into the corner of whichever page the card opens —
+            # the chat-greeting entrance, replayed per card entry. Any keypress
+            # skips it (read_key calls skip_duck_entrance app-wide).
+            from yeaboi.ui.shared._music_bar import start_duck_entrance
+
+            start_duck_entrance(replay=True)
+
             # ── Route: Team Analysis mode → dedicated analysis flow ──────
             if chosen["key"] == "team-analysis":
                 logger.info("Analysis mode selected")

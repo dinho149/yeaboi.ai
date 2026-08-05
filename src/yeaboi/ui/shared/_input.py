@@ -421,6 +421,13 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     if key == "ctrl+c":
         raise KeyboardInterrupt
 
+    # Any real keypress skips the duck's waddle-in — the user is here to work,
+    # and the entrance must never make them wait (same rule as the chat).
+    if key:
+        from yeaboi.ui.shared._music_bar import skip_duck_entrance
+
+        skip_duck_entrance()
+
     # 'c' toggles the app-wide controls drawer, but ONLY where its tab is showing
     # and nothing is being typed into — a bare letter must not shadow a page's own
     # 'c' (copy on Usage, changelog on the welcome screen) or eat a character.
