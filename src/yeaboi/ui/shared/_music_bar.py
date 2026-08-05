@@ -1095,6 +1095,38 @@ class MusicLive(Live):
             # A page can also hand the duck a line to speak (transient status).
             duck_say = str(getattr(renderable, "_duck_say", "") or "")
             _sticky = bool(getattr(renderable, "_duck_say_sticky", False))
+            _hold = getattr(renderable, "_duck_say_hold", None)
+            _seq = int(getattr(renderable, "_duck_say_seq", 0) or 0)
+            if not duck_say and with_duck:
+                # A page that didn't stamp a line itself gets the app-wide
+                # shared voice (lazy import — _duck_voice imports our fade
+                # constants). Fenced so a bubble can never overlap content:
+                # truncated to the page's declared free columns (_bubble_room,
+                # or the conservative default) and skipped below the minimum.
+                # No logging here — this runs per frame (mascot spec).
+                from yeaboi.ui.shared._duck_voice import (
+                    _BUBBLE_MIN_COLS,
+                    default_bubble_room,
+                    duck_muted,
+                    duck_voice,
+                )
+
+                if not duck_muted():
+                    voice = duck_voice()
+                    line = voice.tick()
+                    if line is not None:
+                        text, _line_hold, seq = line
+                        room = getattr(renderable, "_bubble_room", None)
+                        room = default_bubble_room(width) if room is None else int(room)
+                        if room >= _BUBBLE_MIN_COLS:
+                            if len(text) > room:
+                                text = text[: max(1, room - 1)].rstrip() + "…"
+                            duck_say, _seq = text, seq
+                            # Sticky rides the no-fade branch; keep hold None
+                            # there (a sticky hold is inf, which the fade
+                            # envelope can't take).
+                            _sticky = voice.sticky
+                            _hold = None if _sticky else _line_hold
             _frame = _MusicPocketFrame(
                 renderable,
                 with_duck=with_duck,
@@ -1104,8 +1136,8 @@ class MusicLive(Live):
                 duck_say=duck_say,
             )
             _frame.duck_say_sticky = _sticky
-            _frame.duck_say_hold = getattr(renderable, "_duck_say_hold", None)
-            _frame.duck_say_seq = int(getattr(renderable, "_duck_say_seq", 0) or 0)
+            _frame.duck_say_hold = _hold
+            _frame.duck_say_seq = _seq
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()

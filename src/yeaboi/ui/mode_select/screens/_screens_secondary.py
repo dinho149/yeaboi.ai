@@ -549,7 +549,11 @@ def _build_team_analysis_screen(
 
     # The results page keeps the proven card colour (slightly lighter than the
     # analysis page tint) so its dense card layout reads as one elevated surface.
-    return build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    # Tables and meters run to width-7 — no free margin, so the duck's shared
+    # bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 # Component picker — order + friendly labels. Each component runs over its OWN
@@ -5124,7 +5128,11 @@ def _build_retro_screen(
         *action_lines,
     )
 
-    return build_page_panel(content, theme=RETRO_THEME, height=height)
+    panel = build_page_panel(content, theme=RETRO_THEME, height=height)
+    # The four-column card grid runs to the right edge — no free margin, so
+    # the duck's shared bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 _voice_hint_cache: str | None = None

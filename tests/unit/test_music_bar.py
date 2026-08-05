@@ -29,9 +29,13 @@ def _reset(monkeypatch):
     _music_bar._back_region = None
     _music_bar._back_retracting = False
     _music_bar._reset_duck_state()  # bubble + quack/working/entrance clocks are module-global too
+    from yeaboi.ui.shared import _duck_voice
+
+    _duck_voice._reset()  # the shared voice + its mute flag are module-global too
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None
+    _duck_voice._reset()
 
 
 # ── Subtitle content ──────────────────────────────────────────────────────────
@@ -434,6 +438,102 @@ def test_too_small_screen_marks_itself_no_companion_duck():
 
     panel = _build_too_small_screen(60, 20)
     assert getattr(panel, "_no_companion_duck", False) is True
+
+
+def test_shared_voice_line_is_stamped_by_the_chrome(monkeypatch):
+    # A page that never touches _duck_say still gets the app-wide voice's line:
+    # the chrome ticks the singleton and stamps the frame itself.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say == "Exported!"
+    assert frame.duck_say_seq > 0
+
+
+def test_panel_stamped_line_wins_over_the_shared_voice(monkeypatch):
+    # The chat (and any page with its own fence) stamps panel attrs directly —
+    # that always takes precedence over the singleton.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("shared line")
+    panel = Panel(Text("body"))
+    panel._duck_say = "my own line"
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == "my own line"
+
+
+def test_bubble_room_zero_suppresses_the_shared_line(monkeypatch):
+    # Pages whose content reaches the right edge (retro board, analysis
+    # results) declare no room — the bubble is skipped, never overlapped.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 0
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_shared_line_truncates_to_the_declared_room(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("A rather long completion line")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 13
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say.endswith("…")
+    assert len(frame.duck_say) <= 13
+
+
+def test_shared_line_skipped_below_minimum_room(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = dv._BUBBLE_MIN_COLS - 1
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_global_mute_suppresses_the_shared_line(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    dv.set_duck_muted(True)
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_sticky_shared_line_rides_the_no_fade_path(monkeypatch):
+    # A sticky confirmation is stamped with the sticky flag and NO hold — its
+    # infinite hold must never reach the fade envelope.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say_sticky('Delete "sprint 3"?')
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say.startswith("Delete")
+    assert frame.duck_say_sticky is True
+    assert frame.duck_say_hold is None
+
+
+def test_no_companion_duck_page_never_ticks_the_voice(monkeypatch):
+    # A page that opted out of the duck gets no bubble either.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._no_companion_duck = True
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
 
 
 def test_get_renderable_leaves_popup_subtitle_untouched():
