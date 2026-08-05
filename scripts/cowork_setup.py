@@ -87,7 +87,7 @@ CONNECTORS = ("Linear", "Slack", "Notion")
 # auto lane, and spawn the three crew agents. Kept here rather than in the slash
 # command so every routine gets the same set and it is reviewable in one place.
 #
-# One set for all sixteen, including `digest` and `marketing-daily`, whose own
+# One set for all sixteen, including `digest` and `marketing-weekly`, whose own
 # files say never to edit a file. That is a deliberate difference from the
 # connector list above, and rests on a different argument: a connector is a
 # capability to reach *outside* the repo, where the blast radius is somebody
@@ -420,6 +420,72 @@ def check_repo(report: Report) -> None:
                 f"{routine.path} declares tier `{file_tier.group(1)}` but README says {table_tier}",
                 "make the routine file and the README table agree",
             )
+
+    check_charter_coverage(report)
+
+
+# --- charter coverage --------------------------------------------------------
+
+# Modules deliberately claimed by no charter, each with the reason. Keep this
+# empty if you can: an entry here is a file no scout will ever read.
+UNOWNED_MODULES: dict[str, str] = {
+    "__init__.py": "package marker — no behaviour to scout",
+}
+
+
+def _owns_block(text: str) -> str:
+    """The ``**Owns**`` paragraph of one charter — up to the first blank line.
+
+    Scoped rather than whole-document, for the same reason ``_section`` is: a
+    charter says ``**`telemetry.py` is not this feature**`` and ``**`tools/team_learning.py`
+    is not yours**`` in its standing concerns, and reading the file whole counts
+    those disclaimers as claims. Every module named that way happens to be owned
+    elsewhere today, so the check would pass on luck, and the next module excused
+    by a "not yours" sentence would pass silently — which is the failure this
+    exists to catch.
+    """
+    match = re.search(r"^\*\*Owns\*\*(.*?)(?:\n\s*\n|\Z)", text, re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def owned_modules() -> set[str]:
+    """Every ``src/yeaboi/*.py`` basename claimed in a charter's ``**Owns**`` block.
+
+    Substring matching within that block, deliberately: a charter writes
+    ``paths.py`` in one place and ``src/yeaboi/paths.py`` in another, and both
+    should count. The cost is that a *nested* path matches its basename too —
+    platform's ``mcp/.../__init__.py`` reads as a claim on ``src/yeaboi/__init__.py``.
+    Excusing beats matching, so anything in ``UNOWNED_MODULES`` is subtracted:
+    the declared reason stays load-bearing rather than being quietly shadowed by
+    a coincidence somebody could delete without noticing.
+    """
+    claims = "\n".join(_owns_block(p.read_text(encoding="utf-8")) for p in sorted(WORKSTREAMS_DIR.glob("*.md")))
+    found = {p.name for p in (REPO_ROOT / "src" / "yeaboi").glob("*.py") if p.name in claims}
+    return found - set(UNOWNED_MODULES)
+
+
+def check_charter_coverage(report: Report) -> None:
+    """Every top-level module belongs to a charter, or says why it does not.
+
+    The label check below proves the fifteen charters agree with the fifteen
+    labels; nothing proved they covered the repo. Fourteen modules were claimed by
+    nobody when this was written — a scout reads only the paths its charter
+    declares, so an unclaimed file is one no routine will ever look at, and the
+    fleet reports itself healthy the whole time. That is the failure this catches:
+    silent by construction, exactly like the tier drift above.
+    """
+    package = REPO_ROOT / "src" / "yeaboi"
+    if not package.is_dir():  # running against a copied fixture repo
+        return
+
+    owned = owned_modules()
+    for module in sorted(p.name for p in package.glob("*.py")):
+        if module in owned or module in UNOWNED_MODULES:
+            continue
+        report.fail(
+            f"src/yeaboi/{module} is claimed by no charter",
+            "name it in a cowork/workstreams/*.md `**Owns**` line, or add it to UNOWNED_MODULES with a reason",
+        )
 
 
 # --- gh ----------------------------------------------------------------------

@@ -11,7 +11,7 @@ Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = platfor
   the week's merges against `CAPABILITIES` in `tests/unit/test_surface_parity.py`. A capability with
   no MCP tool, no CLI flag, or no plugin skill and no `Exempt("reason")` is a proposal for the
   workstream that shipped it, not for you.
-- **Workflow health** — for each of the 13 workflows: has it run recently
+- **Workflow health** — for each of the 11 workflows: has it run recently
   (`gh run list --workflow <file> --limit 1`)? A scheduled workflow with no runs in a month has
   silently stopped. Check `smoke.yml`'s `if: false` is still deliberate and that `AUTO_VERSION_PAT`
   is still doing its job (without it, Claude Review stops receiving `workflow_run` events).

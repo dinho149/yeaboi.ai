@@ -23,7 +23,7 @@ Procedure:
 3. Prefer evidence over impression. A find is worth reporting when you can point at a file, a
    command's output, or a specific contradiction. "Could be cleaner" is not a find.
 4. Classify each find `auto` or `propose` against the allowlist in `house-rules.md`. The allowlist is
-   closed: if the find does not clearly sit in one of its six categories **and** clear every
+   closed: if the find does not clearly sit in one of its five categories **and** clear every
    condition, it is `propose`. When you are arguing with yourself, it is `propose`.
 5. Deduplicate against `gh issue list --label "workstream:<name>" --state all --limit 60`. A find that
    restates an open proposal, or one closed unapproved, is dropped.

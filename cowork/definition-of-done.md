@@ -18,8 +18,14 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 ## Rules
 
 - **Items 1, 8 and 9 are always done by the `cowork-scribe` agent**, never inline. See [crew.md](crew.md).
-- **Item 1 happens first**, before any code is written. The ticket is how work is discoverable while
-  it is in flight, not a receipt afterwards.
+- **Item 1 happens first**, before any code is written — which means at **approval**, not at proposal.
+  The auto lane opens the ticket before the builder starts. The propose lane opens it when
+  `claude-implement` lands, because that is when code starts. A proposal is not work in flight; it is
+  a question, and most of them are answered no.
+
+  Filing a ticket per proposal cost four writes across two trackers for every idea, and left a dead
+  ticket behind each of the ~70% that age out unapproved. GitHub issues are the queue — Linear
+  carries work, not candidates.
 - **Items 8 and 9 happen on merge**, not on PR open — driven by the `pr-merged-close-loop` routine.
 - Items 2–7 are the *gate*: they block the PR. A PR that cannot pass them is not opened; the finding
   is filed as a proposal instead.

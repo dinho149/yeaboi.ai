@@ -1,8 +1,13 @@
 # web-ux
 
-**Owns** — `frontend/` (5 bundles: deck, export, gate, poker, retro), `src/yeaboi/web/`
-(`assets.py`, `brand.py`, `security.py` markup side), `html_theme.py`, `html_exporter.py`,
-`docs/` (the yeaboi.ai site), `scripts/dev_*.py`, `gen_web_types.py`, `gen_site_seo.py`, `gen_og_card.py`
+**Owns** — `frontend/` (5 bundles: deck, export, gate, poker, retro), `src/yeaboi/web/assets.py` and
+`brand.py`, `html_theme.py`, `html_exporter.py`, `charts.py`, `names.py` (the join-screen word
+lists both boards ship), `docs/` (the yeaboi.ai site), `scripts/dev_*.py`, `gen_web_types.py`,
+`gen_site_seo.py`, `gen_og_card.py`
+
+**`web/security.py` is not yours** — it belongs to **security**, whole. It used to be split here as
+"the markup side", which was the one overlapping claim in fifteen charters and the one place two
+routines could have collided on a file. A header or CSP change is a security proposal.
 
 **Cadence** — Thu 07:00 UTC
 
