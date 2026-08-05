@@ -155,7 +155,10 @@
   /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
   .tui-panel{
     position:relative; border:1px solid rgba(228,230,232,.45);
-    border-radius:10px; padding:20px 24px 14px;
+    border-radius:10px;
+    /* the app's padding=(1,2) — two CELLS, not a round pixel count, or every
+       row inside sits a third of a character further in than the app's does */
+    padding:20px 2ch 14px;
   }
 
   .tui-splash{
@@ -317,7 +320,11 @@
   .tui-duck{margin:0; line-height:0; font-size:inherit}
   .tui-duck .r{display:block; height:2ch}
   .tui-duck i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
-  .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
+  /* left:4ch, not 0 — _build_version_row leads with _PAD precisely so its left
+     edge lines up with the mode titles above rather than sitting flush to the
+     panel padding, and staggering the two is what made the titles read as
+     over-indented */
+  .tui-version{position:absolute; left:4ch; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
