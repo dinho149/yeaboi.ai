@@ -18,6 +18,7 @@ displayed.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from io import StringIO
 
@@ -89,15 +90,88 @@ class ChoiceRows:
     multi: bool = False
 
 
+@dataclass
+class PipelineProgress:
+    """Live stage checklist drawn under the transcript while the plan builds.
+
+    Like ChoiceRows this renders as extra viewport lines recomputed per frame
+    (the pipeline loops already paint 30fps), so the spinner and elapsed
+    counters never freeze and the transcript's per-message caches are never
+    touched. stages: (label, "done"|"active"|"pending").
+    """
+
+    stages: list[tuple[str, str]] = field(default_factory=list)
+    step: int = 0
+    total: int = 6
+    run_started: float = 0.0
+    active_started: float = 0.0
+    active_node: str = ""  # driver bookkeeping: reset active_started on change
+
+
+_SPINNER_GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
+def _progress_rows(progress: PipelineProgress, theme) -> list[Text]:
+    """The checklist rows: ✓ done, animated spinner + elapsed on the active
+    stage, dim ○ pending, and a [n/6] · total footer."""
+    now = time.monotonic()
+    rows: list[Text] = [Text("")]
+    for label, status in progress.stages:
+        row = Text("  ", no_wrap=True, overflow="crop")
+        if status == "done":
+            row.append("✓ ", style=f"bold {theme.accent_bright}")
+            row.append(label, style=theme.accent)
+        elif status == "active":
+            glyph = _SPINNER_GLYPHS[int(now * 10) % len(_SPINNER_GLYPHS)]
+            row.append(glyph + " ", style=f"bold {theme.accent_bright}")
+            row.append(label, style="bold white")
+            row.append("  " + _fmt_elapsed(now - progress.active_started), style="dim")
+        else:
+            row.append("○ ", style="dim")
+            row.append(label, style="dim")
+        rows.append(row)
+    footer = Text("  ", no_wrap=True, overflow="crop")
+    footer.append(f"[{progress.step}/{progress.total}]", style=f"bold {theme.accent}")
+    footer.append(" · total " + _fmt_elapsed(now - progress.run_started), style="dim")
+    rows.append(footer)
+    return rows
+
+
+_DUCK_LANE = 16  # chrome duck width + right margin (see _music_bar._DUCK_W)
+_BUBBLE_RESERVE = 19  # speech-bubble chrome (7) + minimum readable text (12)
+
+
 def _column_metrics(width: int) -> tuple[int, int]:
     """(column width, left margin) for the centered reading column.
 
     inner_w is the panel content area minus the scrollbar rail; the column
     keeps ≥ 8 spare columns so the margin never collapses below the house PAD.
+    The corner duck overlays the page's right edge, so the column shrinks and
+    leans left rather than sliding its right edge (the composer corner, the
+    user bubbles) underneath him; wide terminals re-center naturally.
     """
     inner_w = max(48, width - 7)
     col_w = max(40, min(_COL_W_MAX, inner_w - 8))
-    return col_w, max(len(PAD), (inner_w - col_w) // 2)
+    max_col = width - _DUCK_LANE - len(PAD) - 4
+    # Leave the duck a speech lane wherever the column can afford it: without
+    # the extra 19 columns (bubble chrome + minimum text) his quips only fit
+    # past ~180 cols and every bubble silently vanishes on normal terminals.
+    # Below the 76-col floor the reading column wins — no bubble, and the
+    # transcript whispers carry everything durable.
+    if max_col - _BUBBLE_RESERVE >= 76:
+        max_col -= _BUBBLE_RESERVE
+    if max_col >= 40:
+        col_w = min(col_w, max_col)
+    margin_cap = width - _DUCK_LANE - col_w - 4
+    if margin_cap - _BUBBLE_RESERVE >= len(PAD):
+        margin_cap -= _BUBBLE_RESERVE  # stop centering just short of his lane
+    margin = max(len(PAD), min((inner_w - col_w) // 2, margin_cap))
+    return col_w, margin
 
 
 def _stage_dot(stage: str, graph_state: dict) -> int:
@@ -183,6 +257,7 @@ def build_chat_screen(
     stream_text: str | None = None,
     border_override: str | None = None,
     console: Console | None = None,
+    progress: PipelineProgress | None = None,
 ) -> Panel:
     """Build the chat page.
 
@@ -310,6 +385,9 @@ def build_chat_screen(
             if not choices.multi and checked and i != choices.highlight:
                 row.append("  (suggested)", style="dim")
             lines.append(row)
+        lines.append(Text(""))
+    if progress is not None and progress.stages:
+        lines.extend(_progress_rows(progress, theme))
         lines.append(Text(""))
 
     total = len(lines)

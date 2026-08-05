@@ -589,6 +589,14 @@ class TestSettingsScreen:
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
+    def test_duck_row_on_the_system_tab(self):
+        # The duck-bubble mute is a persisted preference (DUCK_ENABLED) with a
+        # Settings row beside Tips — default on, "false" shows off.
+        on = self._render({}, height=60, active_tab=1)
+        assert "Duck" in on and "on" in on
+        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=1)
+        assert "Duck" in off
+
     def test_system_tab_hint_mentions_log_level(self):
         output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
@@ -851,13 +859,13 @@ class TestSettingsScreen:
         assert "none — sandboxed to data dir" in self._text(panel, width=160, height=44)
 
     def test_status_message_spoken_by_the_duck(self):
-        # The transient status no longer takes a body row: it's handed to the
-        # companion duck, who says it in a speech bubble (see _duck_say).
+        # The transient status no longer takes a body row: the settings loop
+        # hands it to the shared duck voice, so the builder stamps nothing.
         from yeaboi.ui.mode_select.screens._screens_secondary import _build_settings_screen
 
         msg = "Data directory saved — restart yeaboi to fully apply"
         panel = _build_settings_screen({"_message": msg}, width=100, height=60)
-        assert panel._duck_say == msg
+        assert getattr(panel, "_duck_say", "") == ""
         assert "restart yeaboi" not in self._render({"_message": msg})  # not in the body
 
     def test_notion_token_masked(self):

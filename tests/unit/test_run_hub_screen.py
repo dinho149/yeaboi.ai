@@ -9,12 +9,22 @@ saved run renders it through the mode's OWN rich builder (not a flat text view),
 
 import io
 
+import pytest
 from rich.console import Console
 from rich.panel import Panel
 
 from yeaboi.ui.mode_select.screens._project_cards import RunSummary
 from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
+from yeaboi.ui.shared import _duck_voice
 from yeaboi.ui.shared._components import reporting_title, standup_title
+
+
+@pytest.fixture(autouse=True)
+def _fresh_voice():
+    # The hub speaks through the module-global shared voice — isolate per test.
+    _duck_voice._reset()
+    yield
+    _duck_voice._reset()
 
 
 def _text(panel: Panel, width: int = 100, height: int = 30) -> str:
@@ -51,23 +61,26 @@ class TestHubList:
         out = _text(panel)
         assert "Delete" in out and "Export" in out
 
-    def test_delete_confirmation_comes_from_the_duck(self):
-        # The red centred overlay was replaced by the companion duck asking: the
-        # panel hands the line to the chrome via _duck_say, sticky so it waits for
-        # an answer instead of fading out like a transient toast.
+    def test_builder_never_stamps_the_duck_itself(self):
+        # The confirmation and the toasts moved to the shared voice (the hub
+        # LOOP feeds it; see TestHubDeleteConfirm) — the builder only declares
+        # the bubble's free room and never writes _duck_say raw.
         panel = _build_run_hub_screen(
-            _runs(), 2, title_fn=standup_title, delete_popup_name="Standup — 2026-07-03", delete_popup_t=1.0
+            _runs(),
+            2,
+            title_fn=standup_title,
+            delete_popup_name="Standup — 2026-07-03",
+            delete_popup_t=1.0,
+            message="Deleted.",
         )
-        assert panel._duck_say == 'Delete "Standup — 2026-07-03"?  Enter to confirm'
-        assert panel._duck_say_sticky is True
-        assert "Enter to confirm" not in _text(panel)  # no longer in the page body
+        assert getattr(panel, "_duck_say", "") == ""
+        assert "Enter to confirm" not in _text(panel)  # not in the page body either
 
-    def test_delete_result_message_comes_from_the_duck(self):
-        # The follow-up toast ("Deleted.") rides the same channel, non-sticky so it
-        # fades itself out.
-        panel = _build_run_hub_screen(_runs(), 0, title_fn=standup_title, message="Deleted.")
-        assert panel._duck_say == "Deleted."
-        assert getattr(panel, "_duck_say_sticky", False) is False
+    def test_builder_declares_generous_bubble_room(self):
+        # Cards are capped at ~56 cols, so on a wide terminal everything right
+        # of them belongs to the duck's bubble.
+        panel = _build_run_hub_screen(_runs(), 0, title_fn=standup_title, width=160)
+        assert panel._bubble_room >= _duck_voice._BUBBLE_MIN_COLS
 
     def test_small_terminal_does_not_crash(self):
         # Just needs to render without raising at a cramped size.
@@ -118,9 +131,9 @@ class TestHubExtraCard:
             extra_label="⏰ Set up a schedule",
         )
         _text(panel, height=20)  # must render at a cramped height without raising
-        # The confirmation is spoken by the companion duck, not drawn in the body
-        # (see TestHubList.test_delete_confirmation_comes_from_the_duck).
-        assert "Enter to confirm" in panel._duck_say
+        # The confirmation is spoken through the shared voice by the hub loop,
+        # not drawn in the body (see TestHubDeleteConfirm).
+        assert "Enter to confirm" not in _text(panel, height=20)
 
     def test_small_terminal_with_extra_card_does_not_crash(self):
         _text(
@@ -412,9 +425,10 @@ class TestHubScheduleCardLoop:
 
         ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
         assert calls == ["s1"]  # wizard invoked with the latest session
-        # The wizard's message surfaces as the hub toast on the reload render —
-        # handed to the companion duck rather than taking a body row.
-        assert rendered[-1]._duck_say == "Schedule saved."
+        # The wizard's message surfaces as a duck toast — the loop feeds the
+        # shared voice rather than stamping a body row or a panel attr.
+        line = _duck_voice.duck_voice().tick()
+        assert line is not None and line[0] == "Schedule saved."
 
     def test_no_session_shows_hint_instead_of_wizard(self, tmp_path, monkeypatch):
         import yeaboi.ui.mode_select as ms
@@ -446,7 +460,57 @@ class TestHubScheduleCardLoop:
             return next(keys, "q")
 
         ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
-        assert "No session yet" in rendered[-1]._duck_say  # the duck says it
+        line = _duck_voice.duck_voice().tick()
+        assert line is not None and "No session yet" in line[0]  # the duck says it
+
+
+class TestHubDeleteConfirm:
+    """The delete confirmation is a sticky duck line owned by the hub loop."""
+
+    def _run(self, tmp_path, monkeypatch, keys):
+        import yeaboi.ui.mode_select as ms
+        from yeaboi.agent.state import StandupReport
+        from yeaboi.standup.store import StandupStore
+
+        db = tmp_path / "sessions.db"
+        with StandupStore(db) as store:
+            store.record_run(StandupReport(date="2026-07-01", session_id="s1", team_summary="ok"))
+        monkeypatch.setattr(ms, "_ana_dbp", db)
+
+        class _Console:
+            size = (120, 40)
+
+            def print(self, *a, **k):
+                pass
+
+        class _Live:
+            def update(self, *a, **k):
+                pass
+
+        it = iter(keys)
+
+        def read_key(timeout=None):
+            return next(it, "q")
+
+        ms._run_standup_hub(_Console(), _Live(), read_key, 0.05, True)
+
+    def test_delete_focus_enter_raises_a_sticky_confirmation(self, tmp_path, monkeypatch):
+        voice = _duck_voice.duck_voice()
+        seen = []
+        real = voice.say_sticky
+        monkeypatch.setattr(voice, "say_sticky", lambda text, **kw: seen.append(text) or real(text, **kw))
+        # Focus the Delete button on the run row, raise the confirm, cancel it.
+        self._run(tmp_path, monkeypatch, ["right", "enter", "esc", "q"])
+        assert seen and seen[0].startswith('Delete "')
+        assert "Enter to confirm" in seen[0]
+        assert voice.tick() is None  # Esc cleared the sticky line
+
+    def test_confirming_delete_speaks_the_toast(self, tmp_path, monkeypatch):
+        self._run(tmp_path, monkeypatch, ["right", "enter", "enter", "q"])
+        voice = _duck_voice.duck_voice()
+        line = voice.tick()
+        assert line is not None and line[0] == "Run deleted."
+        assert not voice.sticky
 
 
 class TestHubSchedulePrefersEnabledSession:

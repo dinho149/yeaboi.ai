@@ -171,6 +171,37 @@ def test_tips_disabled_case_insensitive(monkeypatch):
     assert is_tips_enabled() is False
 
 
+def test_duck_enabled_by_default(monkeypatch):
+    from yeaboi.config import is_duck_enabled
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    assert is_duck_enabled() is True
+
+
+def test_duck_disabled_when_false(monkeypatch):
+    from yeaboi.config import is_duck_enabled
+
+    monkeypatch.setenv("DUCK_ENABLED", "FALSE")
+    assert is_duck_enabled() is False
+
+
+def test_set_duck_enabled_round_trips(monkeypatch, tmp_path):
+    from yeaboi.config import is_duck_enabled, set_duck_enabled
+
+    config_file = tmp_path / ".env"
+    monkeypatch.setattr("yeaboi.config.get_config_file", lambda: config_file)
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+
+    set_duck_enabled(False)
+    assert os.environ["DUCK_ENABLED"] == "false"
+    assert "DUCK_ENABLED" in config_file.read_text()
+    assert is_duck_enabled() is False
+
+    set_duck_enabled(True)
+    assert os.environ["DUCK_ENABLED"] == "true"
+    assert is_duck_enabled() is True
+
+
 def test_set_tips_enabled_round_trips(monkeypatch, tmp_path):
     # Point config at a temp file so we don't touch the real ~/.yeaboi/.env.
     config_file = tmp_path / ".env"

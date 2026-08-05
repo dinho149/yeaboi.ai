@@ -549,7 +549,11 @@ def _build_team_analysis_screen(
 
     # The results page keeps the proven card colour (slightly lighter than the
     # analysis page tint) so its dense card layout reads as one elevated surface.
-    return build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    panel = build_page_panel(content, theme=ANALYSIS_THEME, bg=_ANALYSIS_CARD_BG_RGB, height=height)
+    # Tables and meters run to width-7 — no free margin, so the duck's shared
+    # bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 # Component picker — order + friendly labels. Each component runs over its OWN
@@ -2122,6 +2126,43 @@ def _build_import_screen(
     return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
+def _with_bubble_room(panel, width: int):
+    """Opt this page into the shared duck bubble (ordinary lines are opt-in).
+
+    Only pages whose right side is dependably free declare a room; everywhere
+    else the duck still quacks but never draws a bubble over content.
+    """
+    from yeaboi.ui.shared._duck_voice import default_bubble_room
+
+    panel._bubble_room = default_bubble_room(width)
+    return panel
+
+
+# Braille spinner for the active progress row — the same cadence the planning
+# chat's build checklist uses, so every loading screen animates identically.
+_ACTIVITY_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+# Per-stage first-seen clock, keyed by component id. The progress events carry
+# no timestamps, so the renderer notes when it first saw each stage (in
+# anim_tick time) to show a per-stage elapsed. Cleared whenever anim_tick jumps
+# backwards — that's a new run starting its clock at zero.
+_activity_first_seen: dict[str, float] = {}
+_activity_last_tick = 0.0
+
+
+def _activity_stage_elapsed(component_id: str, anim_tick: float) -> float:
+    global _activity_last_tick
+    if anim_tick < _activity_last_tick - 1.0:
+        _activity_first_seen.clear()
+    _activity_last_tick = anim_tick
+    return anim_tick - _activity_first_seen.setdefault(component_id, anim_tick)
+
+
+def _fmt_mmss(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def _build_activity_progress_rows(
     progress: list,
     *,
@@ -2133,6 +2174,8 @@ def _build_activity_progress_rows(
     Structured component events carry an authoritative lifecycle state. Plain
     string callbacks only announce that work started, so earlier strings remain
     activity history instead of being incorrectly promoted to "completed".
+    Active rows spin (braille, like the chat's build checklist) and carry a
+    per-stage elapsed; structured runs get a ``[n/total] · total m:ss`` footer.
     """
     from yeaboi.analysis.progress import is_component_progress
 
@@ -2149,6 +2192,7 @@ def _build_activity_progress_rows(
             legacy_activity.append(item)
 
     dots = "." * (int(anim_tick * 2) % 4)
+    spin = _ACTIVITY_SPINNER[int(anim_tick * 10) % len(_ACTIVITY_SPINNER)]
     rows: list[Text] = []
     if component_order:
         for component_id in component_order:
@@ -2191,8 +2235,9 @@ def _build_activity_progress_rows(
                     parts.append(f"{secondary_count:,} {secondary_unit}")
                 if detail:
                     parts.append(detail)
+                parts.append(_fmt_mmss(_activity_stage_elapsed(component_id, anim_tick)))
                 suffix = f"{dots} · " + " · ".join(parts) if parts else dots
-                marker, style = "▸", f"bold {theme.accent_bright}"
+                marker, style = spin, f"bold {theme.accent_bright}"
             rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
 
         if any(bool(component_states[item].get("read_only")) for item in component_order):
@@ -2205,6 +2250,15 @@ def _build_activity_progress_rows(
             )
         if legacy_activity:
             rows.append(Text(_PAD + f"      ↳ {legacy_activity[-1]}", style=theme.muted, justify="left"))
+        _terminal = {"completed", "partial", "no_data", "fallback", "failed"}
+        resolved = sum(1 for c in component_order if component_states[c]["status"] in _terminal)
+        rows.append(
+            Text(
+                _PAD + f"  [{resolved}/{len(component_order)}] · total {_fmt_mmss(anim_tick)}",
+                style=theme.muted,
+                justify="left",
+            )
+        )
         return rows
 
     for activity in legacy_activity[:-1]:
@@ -2212,7 +2266,7 @@ def _build_activity_progress_rows(
     if legacy_activity:
         rows.append(
             Text(
-                _PAD + f"  ▸ {legacy_activity[-1]}{dots}",
+                _PAD + f"  {spin} {legacy_activity[-1]}{dots}",
                 style=f"bold {theme.accent_bright}",
                 justify="left",
             )
@@ -2270,7 +2324,9 @@ def _build_analysis_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
 
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # The checklist hugs the left gutter, so the loading screen's right side is
+    # dependably free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_project_export_success_screen(
@@ -2615,8 +2671,11 @@ def _build_usage_screen(
 
     panel = build_page_panel(content, theme=USAGE_THEME, height=height)
     panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
-    panel._duck_say = message  # the companion speaks the transient status
-    return panel
+    # The copy toast is spoken through the shared duck voice by the usage loop.
+    # Deliberate opt-in: the box grid can reach the duck's rows, but the toast
+    # is this page's only feedback and brief — the trade-off this page always
+    # shipped with, now bounded by the fence instead of unfenced.
+    return _with_bubble_room(panel, width)
 
 
 def _build_standup_screen(
@@ -5124,7 +5183,11 @@ def _build_retro_screen(
         *action_lines,
     )
 
-    return build_page_panel(content, theme=RETRO_THEME, height=height)
+    panel = build_page_panel(content, theme=RETRO_THEME, height=height)
+    # The four-column card grid runs to the right edge — no free margin, so
+    # the duck's shared bubble is suppressed here (he still bobs and quacks).
+    panel._bubble_room = 0
+    return panel
 
 
 _voice_hint_cache: str | None = None
@@ -5523,8 +5586,9 @@ def _build_standup_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
     # theme, not STANDUP_THEME: this loading screen is shared — poker ticket
-    # fetch and the anonymize pass reuse it with their own mode's theme.
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # fetch and the anonymize pass reuse it with their own mode's theme. Its
+    # left-gutter checklist leaves the right side free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_standup_input_screen(
@@ -5830,7 +5894,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 3
+_SETTINGS_MAX_STRETCH = 4  # per-box leveling allowance — grew with the Advanced box (Duck row)
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -6022,10 +6086,8 @@ def _build_settings_screen(
     theme = SETTINGS_THEME
     title = settings_title(shimmer_tick)
 
-    # ── Transient status message (e.g. "Anthropic Key updated") ───
-    # The companion duck speaks it (see _duck_say on the returned panel) rather
-    # than it taking a body row.
-    message = config_data.get("_message", "")
+    # The transient status ("Anthropic Key updated") is spoken through the
+    # shared duck voice by the settings loop — nothing to lay out here.
 
     # ── Box geometry, resolved BEFORE the rows are built ──────────
     # Each section becomes its own bordered box laid out in an adaptive-width grid
@@ -6259,6 +6321,11 @@ def _build_settings_screen(
         _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
         _row(
             "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
+        )
+        # Duck bubble default on; only the literal "false" mutes it (matches is_duck_enabled).
+        _duck_on = config_data.get("DUCK_ENABLED", "").strip().lower() != "false"
+        _row(
+            "Duck", "on" if _duck_on else "off", value_style=theme.good if _duck_on else theme.muted, env="DUCK_ENABLED"
         )
         langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
         _row("LangSmith", langsmith, env="LANGSMITH_TRACING")
@@ -6502,7 +6569,10 @@ def _build_settings_screen(
     # The controls ride in the bottom-left pocket as one more tab beside "back",
     # instead of taking a body row of their own.
     panel._hint_tab = hint
-    panel._duck_say = message  # the companion speaks the transient status
+    # The save toast ("Anthropic Key updated") is spoken through the shared
+    # duck voice by the settings loop. Deliberate opt-in, same trade-off as
+    # the usage page: brief feedback beats silence, bounded by the fence.
+    _with_bubble_room(panel, width)
     # Attach the tab click regions (labels + underline rows, absolute cols) so the
     # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
     panel._tab_regions = [

@@ -123,6 +123,7 @@ class TestExportRoadmapViaPicker:
             captured.update(dest=dest, title=title, markdown=markdown)
 
             class _R:
+                ok = True  # the real PublishResult carries ok — the picker reads it
                 message = "Published."
 
             return _R()

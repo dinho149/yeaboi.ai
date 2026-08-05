@@ -79,11 +79,71 @@ from yeaboi.ui.shared._beta_notice import show_beta_notice
 from yeaboi.ui.shared._click import button_click, parse_click
 from yeaboi.ui.shared._input import esc_came_from_back_tab, set_text_entry
 from yeaboi.ui.shared._input import read_key as _read_key
-from yeaboi.ui.shared._music_bar import make_live
+from yeaboi.ui.shared._music_bar import duck_working_thread, make_live
 from yeaboi.ui.shared._scroll import SCROLL_KEYS, coalesce_scroll, coalesce_steps
 from yeaboi.ui.shared._voice_input import DoubleTapSpace
 
 logger = logging.getLogger(__name__)
+
+
+def _duck_react(quip_key: str, text: str | None = None) -> None:
+    """Quack + speak a completion quip through the shared duck voice.
+
+    The one helper every mode's completion moment calls — strictly reactive
+    (something just finished), never ambient. ``text`` overrides the DUCK_QUIPS
+    entry for dynamic lines ("3 projects recommended."). Logs once per trigger.
+    """
+    from yeaboi.ui.shared._duck_voice import DUCK_QUIPS, duck_voice
+    from yeaboi.ui.shared._music_bar import quack_duck
+
+    line = text or DUCK_QUIPS.get(quip_key, "")
+    if not line:
+        return
+    logger.info("duck react: %s (%s)", quip_key, line)
+    quack_duck()
+    duck_voice().say(line)
+
+
+def _run_on_worker(target, render_frame, frame_time: float, *, drain=None):
+    """Run ``target`` on a worker thread while the page keeps animating.
+
+    For calls that used to block the render thread solid (retro action items,
+    performance 1:1s, publish): ``render_frame(elapsed)`` runs every frame so
+    the page — and the working duck — stays live. Returns target()'s result;
+    re-raises whatever it raised, on this thread.
+
+    ``drain``: pass the page's ``read_key`` (only when the terminal supports
+    timeouts — a blocking read_key would hang here) and any keys typed during
+    the wait are swallowed afterwards — otherwise they'd replay against
+    whatever view the result switched to (an impatient double-Enter must not
+    press a button on a screen the user never saw).
+    """
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+
+    result_box: list = [None, None]
+
+    def _work() -> None:
+        try:
+            result_box[0] = target()
+        except BaseException as exc:  # noqa: BLE001 — re-raised on the UI thread below
+            result_box[1] = exc
+
+    thread = duck_working_thread(_work, name="mode-worker")
+    thread.start()
+    start = time.monotonic()
+    while thread.is_alive():
+        render_frame(time.monotonic() - start)
+        time.sleep(frame_time)
+    thread.join()
+    if drain is not None:
+        # Bounded: a real tty buffer holds a handful of keys; an unbounded
+        # loop would spin forever against a test fake that never runs dry.
+        for _ in range(64):
+            if not drain(timeout=0):
+                break
+    if result_box[1] is not None:
+        raise result_box[1]
+    return result_box[0]
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +609,6 @@ def _run_preview_flow(
 
     def _regenerate(fn, label: str):
         """Run an LLM generation function in a background thread with animation."""
-        import threading
 
         logger.info("Regenerating %s via LLM", label)
 
@@ -561,7 +620,7 @@ def _run_preview_flow(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="planning-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1079,7 +1138,6 @@ def _run_sprint_review(
     (Esc). The caller uses this to decide whether to mark the session complete.
     """
     logger.info("Sprint review: generating sample sprint via LLM")
-    import threading as _threading
 
     from yeaboi.tools.team_learning import generate_sample_sprint
     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -1113,7 +1171,7 @@ def _run_sprint_review(
             except Exception as exc:
                 result_box[1] = exc
 
-        thread = _threading.Thread(target=_worker, daemon=True)
+        thread = duck_working_thread(_worker, name="sprint-sample-regenerate")
         thread.start()
         start = time.monotonic()
         while thread.is_alive():
@@ -1387,6 +1445,7 @@ def _collect_settings_data() -> dict:
         "SESSION_PRUNE_DAYS",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
+        "DUCK_ENABLED",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
         "SLACK_WEBHOOK_URL",
@@ -1904,7 +1963,13 @@ def _export_via_picker(
     if dest is None:
         return None
     if dest == "files":
-        return files_export()
+        msg = files_export()
+        # Some exporters report failure/no-op as a message rather than raising
+        # ("Nothing to export yet…", "Export failed: …") — only a real export
+        # ("Exported to …") earns the quack.
+        if msg and "Exported" in msg:
+            _duck_react("export_done")
+        return msg
     if extra_handlers and dest in extra_handlers:
         return extra_handlers[dest]()
 
@@ -1917,8 +1982,34 @@ def _export_via_picker(
 
         return copy_markdown_status(markdown)
     from yeaboi.export_targets import publish_markdown
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
-    return publish_markdown(dest, title=title, markdown=markdown).message
+    _dest_label = {"notion": "Notion", "confluence": "Confluence"}.get(dest, dest)
+
+    def _publish_frame(elapsed: float) -> None:
+        w, h = console.size
+        live.update(
+            _build_standup_progress_screen(
+                [f"Publishing to {_dest_label}"],
+                width=w,
+                height=max(10, h - 1),
+                elapsed=elapsed,
+                anim_tick=elapsed,
+                label=f"Publishing to {_dest_label}",
+            )
+        )
+
+    # On a worker: publishing is a network call that used to freeze the frame
+    # loop (and the duck) until the page landed.
+    published = _run_on_worker(
+        lambda: publish_markdown(dest, title=title, markdown=markdown),
+        _publish_frame,
+        frame_time,
+        drain=read_key if supports_timeout else None,
+    )
+    if published.ok:
+        _duck_react("export_done")
+    return published.message
 
 
 _ANON_PICKER_MODES = {"planning", "analysis", "standup", "retro", "performance", "reporting"}
@@ -1967,7 +2058,6 @@ def _run_anonymize_pass(
 
     # See docs: "Guardrails" — output masking for public sharing
     """
-    import threading
 
     from yeaboi.anonymize.engine import run_anonymize
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
@@ -1990,7 +2080,7 @@ def _run_anonymize_pass(
             logger.error("anonymize worker failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="anonymize", daemon=True)
+    thread = duck_working_thread(_worker, name="anonymize")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2011,7 +2101,10 @@ def _run_anonymize_pass(
         time.sleep(1 / 30)
     thread.join()
     res = result_box[0]
-    return None if (res is None or isinstance(res, Exception)) else res
+    if res is not None and not isinstance(res, Exception):
+        _duck_react("anonymize_done")
+        return res
+    return None
 
 
 def _anon_export(
@@ -2257,7 +2350,7 @@ def _project_tracker_sync(
         finally:
             _sync_done.set()
 
-    _sync_thread = threading.Thread(target=_run_sync, daemon=True)
+    _sync_thread = duck_working_thread(_run_sync, name="tracker-sync")
     _sync_thread.start()
 
     # Show live scrolling log while the thread runs
@@ -2309,6 +2402,8 @@ def _project_tracker_sync(
     epic = getattr(sr, "epic_key", None) or getattr(sr, "epic_id", None) or ""
     prefix = f"Epic: {epic} — " if epic else ""
     summary = ", ".join(parts) or "Nothing to sync"
+    if created and not sr.errors:
+        _duck_react("sync_done")
     # Show first error for diagnosis
     if sr.errors:
         first_err = sr.errors[0][:80]
@@ -2467,7 +2562,6 @@ def _standup_generate_flow(
     # Run the pipeline on a worker thread while the frame loop shows live
     # progress — collection + the LLM call can take many seconds, and without
     # this the input box just sat frozen (same pattern as the analysis pages).
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2477,7 +2571,7 @@ def _standup_generate_flow(
     def _worker() -> None:
         result_box[0] = _standup_generate(session_id, on_progress=progress.append)
 
-    thread = threading.Thread(target=_worker, name="standup-generate", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-generate")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -2494,7 +2588,10 @@ def _standup_generate_flow(
         )
         time.sleep(1 / 30)
     thread.join()
-    return result_box[0]
+    msg = result_box[0]
+    if msg and not str(msg).startswith("Generate failed"):
+        _duck_react("standup_done")
+    return msg
 
 
 _REVIEW_STEP_NAMES = ["Source", "Review", "File"]
@@ -2625,7 +2722,6 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
     a public GitHub repo needs a separate confirmation that shows what will be
     published. Returns a status message, or None when the user backs out.
     """
-    import threading
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
 
@@ -2683,7 +2779,7 @@ def _standup_review_flow(console: Console, live, read_key, frame_time, supports_
             logger.error("standup review failed: %s", e, exc_info=True)
             result_box[0] = e
 
-    thread = threading.Thread(target=_worker, name="standup-review", daemon=True)
+    thread = duck_working_thread(_worker, name="standup-review")
     thread.start()
     start = time.monotonic()
     while thread.is_alive():
@@ -3488,7 +3584,7 @@ def _standup_team_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-roster").start()
+    duck_working_thread(_discover, name="standup-roster").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -3640,7 +3736,7 @@ def _standup_code_configure(
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_discover, daemon=True, name="standup-code-repositories").start()
+    duck_working_thread(_discover, name="standup-code-repositories").start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -4625,7 +4721,6 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
     screenshot paste work for free; the optional AI Polish step previews an
     LLM rewrite the user can accept or discard.
     """
-    import threading
     import webbrowser
 
     from yeaboi.feedback import FEEDBACK_AREAS, FEEDBACK_TYPES, polish_feedback, submit_feedback
@@ -4683,7 +4778,7 @@ def _run_feedback_page(console: Console, live, read_key, frame_time: float, supp
             prev_view, prev_status = view, status
             view, status = "busy", busy_label
             out: list = []
-            thread = threading.Thread(target=lambda: out.append(target()), daemon=True)
+            thread = duck_working_thread(lambda: out.append(target()), name="busy")
             thread.start()
             pulse_start = time.monotonic()
             while thread.is_alive():
@@ -4977,7 +5072,9 @@ def _run_mode_hub(
     """
     from yeaboi.ui.mode_select.screens._run_hub_screen import _build_run_hub_screen
     from yeaboi.ui.shared._click import parse_click
+    from yeaboi.ui.shared._duck_voice import duck_voice
 
+    voice = duck_voice()  # toasts + the delete confirmation speak through the duck
     runs = load_runs()
     extra_text = extra_label() if extra_label is not None else ""
     selected = 0
@@ -4998,7 +5095,11 @@ def _run_mode_hub(
         selected = min(selected, _n_items() - 1)  # keep within the item range
         focus = 0
         confirm = False
+        voice.clear_sticky()  # any pending delete confirmation is moot now
         message = msg
+        if msg:
+            logger.info("%s hub: %s", mode, msg)
+            voice.say(msg)
 
     def _render_list() -> None:
         nonlocal _last_panel
@@ -5215,6 +5316,7 @@ def _run_mode_hub(
                 _reload("Run deleted.")
             elif k in ("esc", "q"):
                 confirm = False
+                voice.clear_sticky()
             _render_list()
             continue
         if k in SCROLL_KEYS or k in ("up", "down"):
@@ -5249,6 +5351,11 @@ def _run_mode_hub(
                 _open_snapshot(run)
             elif focus == 1:
                 confirm = True
+                # Cap the title so the prompt (with its load-bearing "Enter to
+                # confirm") fits the bubble even on an 84-col terminal — sticky
+                # lines are never truncated by the chrome.
+                _t = run.title if len(run.title) <= 18 else run.title[:17].rstrip() + "…"
+                voice.say_sticky(f'Delete "{_t}"?  Enter to confirm')
             elif focus == 2:
                 msg = _export_via_picker(
                     console,
@@ -5262,9 +5369,12 @@ def _run_mode_hub(
                 )
                 if msg is not None:
                     message = msg
+                    logger.info("%s hub: %s", mode, msg)
+                    voice.say(msg)
         elif k in ("esc", "q"):
             break
         _render_list()
+    voice.clear_sticky()  # never carry a modal prompt onto the next page
     logger.info("%s hub: closed", mode)
 
 
@@ -6933,7 +7043,7 @@ def _run_code_scope_select(
 
     logger.info("Analysis %s scope: discovering", provider)
     started = time.monotonic()
-    threading.Thread(target=_discover, name=cfg["thread"], daemon=True).start()
+    duck_working_thread(_discover, name=cfg["thread"]).start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
@@ -7114,7 +7224,7 @@ def _prefetch_roster(live, console: Console, sources: list, project_key: str, db
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7193,7 +7303,7 @@ def _prefetch_roster_result(live, console: Console, sources: list, project_key: 
             done.set()
 
     started = time.monotonic()
-    threading.Thread(target=_runner, daemon=True).start()
+    duck_working_thread(_runner, name="analysis-roster-prefetch").start()
     tick = 0.0
     while not done.is_set():
         tick += _FRAME_TIME
@@ -7794,7 +7904,7 @@ def _run_team_analysis_results(
                     finally:
                         retry_done.set()
 
-                threading.Thread(target=_retry, daemon=True).start()
+                duck_working_thread(_retry, name="analysis-retry").start()
                 retry_started = time.monotonic()
                 while not retry_done.is_set():
                     from yeaboi.ui.mode_select.screens._screens_secondary import (
@@ -8078,7 +8188,7 @@ def _ensure_insights(
             done.set()
 
     t0 = time.monotonic()
-    threading.Thread(target=_work, daemon=True).start()
+    duck_working_thread(_work, name="performance-insights").start()
     anim = 0.0
     while not done.is_set():
         anim += frame_time
@@ -8221,8 +8331,15 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
-                prep = run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp)
+                state["message"] = f"Generating 1:1 prep for {engineer}…"
+                prep = _run_on_worker(
+                    lambda: run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
+                )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_prep_lines(prep), f"1:1 Prep — {engineer}", "Prep generated.")
             elif label == "1:1 Complete":
                 transcript_result = _performance_get_transcript(console, live, read_key, frame_time, supports_timeout)
@@ -8233,17 +8350,31 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 transcript, transcript_images = transcript_result
                 from yeaboi.performance.engine import complete_one_on_one
 
-                record = complete_one_on_one(
-                    engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                state["message"] = f"Completing the 1:1 for {engineer}…"
+                record = _run_on_worker(
+                    lambda: complete_one_on_one(
+                        engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
+                    ),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
+                _duck_react("artifact_done")
                 _show_detail(format_completion_lines(record), f"1:1 Summary — {engineer}", f"Completed — {sent}.")
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
-                review = run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp)
+                state["message"] = f"Generating the 6-month review for {engineer}…"
+                review = _run_on_worker(
+                    lambda: run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp),
+                    lambda _e: _render(),
+                    frame_time,
+                    drain=read_key if supports_timeout else None,
+                )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_review_lines(review), f"6-Month Review — {engineer}", "Review generated.")
             elif label == "Notes":
                 note = _standup_read_line(
@@ -8785,7 +8916,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
             except BaseException as e:  # noqa: BLE001 — re-surfaced on the UI thread below
                 result_box[1] = e
 
-        thread = threading.Thread(target=_worker, name="reporting-generate", daemon=True)
+        thread = duck_working_thread(_worker, name="reporting-generate")
         thread.start()
         start = time.monotonic()
         cancelling = False
@@ -8821,6 +8952,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         if err is None and result_box[0] is not None:
             report = result_box[0]
             logger.info("reporting: report generated — %d item(s)", len(report.delivered_items))
+            _duck_react("report_done")
             _show_report(report, _delivered_msg(report))
         elif isinstance(err, ReportCancelledError):
             logger.info("reporting: generate cancelled")
@@ -9696,7 +9828,6 @@ def _run_roadmap_page(
         the standup-generate and retro-tunnel workers). The worker only writes
         into result_box/progress; all state/render updates stay on this thread.
         """
-        import threading
 
         progress: list[str] = ["Starting…"]
         result_box: list = [None]
@@ -9709,19 +9840,34 @@ def _run_roadmap_page(
             except Exception as e:  # never let an action crash the TUI
                 result_box[0] = e
 
-        thread = threading.Thread(target=_worker, name="roadmap-analyze", daemon=True)
+        thread = duck_working_thread(_worker, name="roadmap-analyze")
         thread.start()
-        _spinners = "◐◓◑◒"
         started = time.monotonic()
-        state["busy"] = True  # spinner-only screen — hide the source options underneath
+        state["busy"] = True  # loading screen replaces the source options underneath
+        # The consistent loading screen (spinner + activity rows + elapsed) the
+        # other modes use, in the roadmap accent — not a hand-rolled status line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import PLANNING_THEME, planning_title
+
         while thread.is_alive():
             elapsed = time.monotonic() - started
-            spin = _spinners[int(elapsed * 8) % len(_spinners)]
-            state["message"] = f"{spin} {progress[-1]}  ({int(elapsed)}s — usually ~30s)"
-            _render()
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=PLANNING_THEME,  # roadmap is a Planning sub-page (same accent)
+                    title=planning_title(elapsed),
+                    label="Analyzing roadmap",
+                )
+            )
             time.sleep(1 / 30)
         thread.join()
         state["busy"] = False
+        state["message"] = ""
 
         outcome = result_box[0]
         if isinstance(outcome, Exception) or outcome is None:
@@ -9746,6 +9892,8 @@ def _run_roadmap_page(
         plural = "s" if n != 1 else ""
         state["message"] = f"{n} project{plural} recommended." if n else ""
         logger.info("roadmap analyze: %d project(s)", n)
+        if n:
+            _duck_react("roadmap_done", state["message"])
 
     def _enter_locator() -> None:
         """Ask for the selected source's locator, then analyze."""
@@ -10180,7 +10328,6 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
     # Setup (binary download + tunnel handshake + DNS gate) is slow, so it runs on
     # a worker thread; the frame-timed loop shows its progress and fills in the
     # participant link the moment it lands.
-    import threading as _threading
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -10224,6 +10371,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 # own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:  # never let the worker crash anything
                 logger.error("retro: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -10246,7 +10394,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _threading.Thread(target=_worker, name="retro-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="retro-tunnel-setup").start()
 
     # Start it now. The board is open and the join code is already valid; the link
     # is the one piece that takes a few seconds to exist.
@@ -10368,8 +10516,20 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                     try:
                         from yeaboi.retro.engine import generate_action_items
 
-                        message = generate_action_items(board)
+                        # On a worker: the LLM call used to freeze the board
+                        # (and the duck) solid — now the frame loop keeps going.
+                        message = "Drafting action items…"
+                        message = _run_on_worker(
+                            lambda: generate_action_items(board),
+                            lambda _e: _render(_data(), scroll, sel),
+                            frame_time,
+                            drain=read_key if supports_timeout else None,
+                        )
                         logger.info("retro: generate action items result: %s", message)
+                        # "never raises" means an empty board comes back as a
+                        # message — no cards, no drafts, no celebratory quack.
+                        if not message.startswith("Add some cards first"):
+                            _duck_react("actions_done")
                     except Exception as e:  # defensive — never let it crash the TUI
                         logger.error("retro: generate action items failed: %s", e, exc_info=True)
                         message = f"Generate failed: {e}"
@@ -10562,7 +10722,6 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
     runs in a subprocess; the freshly-installed code takes effect on the next
     launch, so the success screen tells the user to restart.
     """
-    import threading
 
     from yeaboi import update_check
     from yeaboi.ui.shared._screensaver import suppress_screensaver
@@ -10578,7 +10737,7 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
         result["ok"], result["detail"] = update_check.run_upgrade()
 
     spin = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    thread = threading.Thread(target=_worker, daemon=True)
+    thread = duck_working_thread(_worker, name="app-update")
     # Exclude the (potentially slow) network upgrade from idle tracking so the
     # screensaver doesn't take over mid-update.
     with suppress_screensaver():
@@ -10816,7 +10975,6 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
         logger.info("poker setup: include_types=%s", ",".join(include_types))
 
     # ── Step 5: fetch tickets (worker thread + progress screen) ───────────
-    import threading as _thr
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
     from yeaboi.ui.shared._components import POKER_THEME, poker_title
@@ -10827,7 +10985,7 @@ def _run_poker_setup(console: Console, live, read_key, frame_time: float, suppor
     def _fetch() -> None:
         result["tickets"] = poker_tickets.fetch_tickets(source, sprint=sprint, include_types=include_types)
 
-    worker = _thr.Thread(target=_fetch, name="poker-fetch", daemon=True)
+    worker = duck_working_thread(_fetch, name="poker-fetch")
     started = time.monotonic()
     worker.start()
     while worker.is_alive():
@@ -10955,7 +11113,6 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
     # Tunnel state — see the retro loop for the full note. The short version: the
     # server binds loopback, so this tunnel is the only way a teammate reaches the
     # board, and it therefore starts by itself rather than on a button.
-    import threading as _thr
 
     remote: dict = {"tunnel": None, "url": "", "status": "", "starting": False, "failed": False}
 
@@ -10990,6 +11147,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 # loopback address the host's own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:
                 logger.error("poker: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -11012,7 +11170,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
         remote["starting"] = True
         remote["failed"] = False
         remote["status"] = "Setting up the secure link…"
-        _thr.Thread(target=_worker, name="poker-tunnel-setup", daemon=True).start()
+        duck_working_thread(_worker, name="poker-tunnel-setup").start()
 
     # Start it now — the board is open and the join code is already valid.
     _start_remote()
@@ -11148,6 +11306,8 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             report = board_to_report(board)
             with PokerStore(_ana_dbp) as store:
                 store.record_run(report)
+            if any(t.estimated for t in report.tickets):
+                _duck_react("poker_done")  # lands on the hub the page returns to
         except Exception as e:
             logger.warning("poker: flush to store failed: %s", e)
         if remote.get("tunnel") is not None:
@@ -11755,6 +11915,13 @@ def select_mode(
                 )
                 time.sleep(_FRAME_TIME)
 
+            # The duck walks into the corner of whichever page the card opens —
+            # the chat-greeting entrance, replayed per card entry. Any keypress
+            # skips it (read_key calls skip_duck_entrance app-wide).
+            from yeaboi.ui.shared._music_bar import start_duck_entrance
+
+            start_duck_entrance(replay=True)
+
             # ── Route: Team Analysis mode → dedicated analysis flow ──────
             if chosen["key"] == "team-analysis":
                 logger.info("Analysis mode selected")
@@ -12309,10 +12476,7 @@ def select_mode(
                                 _ta_done.set()
 
                         _ta_thread_start = time.monotonic()
-                        _ta_thread = threading.Thread(
-                            target=_run_team_analysis_mode,
-                            daemon=True,
-                        )
+                        _ta_thread = duck_working_thread(_run_team_analysis_mode, name="team-analysis")
                         logger.info("Analysis: starting analysis (components=%s)", _ta_components)
                         _ta_thread.start()
 
@@ -12404,6 +12568,7 @@ def select_mode(
                         if _ta_result_box[0] and not _ta_error_box[0]:
                             # Persist + analysis log already handled inside
                             # run_team_analysis (one code path with CLI/MCP).
+                            _duck_react("analysis_done")
 
                             # Show results (overview + section cards). In 'both'
                             # mode the loop toggles between the two trackers and
@@ -12731,6 +12896,9 @@ def select_mode(
 
                         logger.info("Usage: Copy pressed")
                         _u_message = copy_markdown_status(build_usage_text(_usage_data))
+                        from yeaboi.ui.shared._duck_voice import duck_voice
+
+                        duck_voice().say(_u_message)  # the duck speaks the copy status
                     elif k in ("esc", "q"):
                         break
                     w, h = console.size
@@ -12763,6 +12931,7 @@ def select_mode(
                     settings_focus_move,
                     settings_tab_action,
                 )
+                from yeaboi.ui.shared._duck_voice import duck_voice as _settings_voice
 
                 _settings_data = _collect_settings_data()
                 _s_scroll, _s_tab = 0, 0
@@ -12845,6 +13014,7 @@ def select_mode(
                         _ap_msg = _settings_save_allowed_paths(_val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _ap_msg
+                        _settings_voice().say(_ap_msg)  # the duck speaks the save status
                     elif _save and _env == "YEABOI_HOME":
                         # Relocating the tree needs a move-or-leave answer and a write
                         # to the pinned bootstrap .env, so it saves through its own
@@ -12852,6 +13022,7 @@ def select_mode(
                         _dd_msg = _settings_save_data_dir(console, live, read_key, _FRAME_TIME, _supports_timeout, _val)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = _dd_msg
+                        _settings_voice().say(_dd_msg)
                     elif _save:
                         from yeaboi.config import apply_config_value
 
@@ -12859,6 +13030,12 @@ def select_mode(
                         # page re-reads the environment, so a file-only write wouldn't
                         # show until a restart.
                         apply_config_value(_env, _val)
+                        if _env == "DUCK_ENABLED":
+                            # Apply the mute now — duck_muted() caches the flag,
+                            # so a file-only write wouldn't show until restart.
+                            from yeaboi.ui.shared._duck_voice import set_duck_muted
+
+                            set_duck_muted(_val.strip().lower() == "false")
                         if _env == "LOG_LEVEL" and _val:
                             from yeaboi.logging_setup import apply_level
 
@@ -12868,6 +13045,7 @@ def select_mode(
                                 logger.debug("apply_level failed for %r", _val, exc_info=True)
                         _settings_data = _collect_settings_data()
                         _settings_data["_message"] = f"{_label} {'cleared' if not _val else 'updated'}"
+                        _settings_voice().say(_settings_data["_message"])
                         logger.info("Settings: %s %s", _env, "cleared" if not _val else "updated")
 
                 _s_panel = _render_settings(0.0)
@@ -13887,7 +14065,7 @@ def select_mode(
                         _ta_project_key,
                     )
                     _ta_thread_start = time.monotonic()
-                    _ta_thread = threading.Thread(target=_run_team_analysis, daemon=True)
+                    _ta_thread = duck_working_thread(_run_team_analysis, name="team-analysis")
                     _ta_thread.start()
 
                     # Processing animation while waiting
@@ -13980,6 +14158,7 @@ def select_mode(
                         # Continue shows the coaching insights first (Back
                         # returns to the results overview); Continue on the
                         # insights and Esc both fall through to intake below.
+                        _duck_react("analysis_done")
                         _ta_examples = _ta_examples_box[0] or {}
                         _ta_sprint_names = _ta_sprint_names_box[0]
                         _ta_full = _ta_result_box[0] or {}

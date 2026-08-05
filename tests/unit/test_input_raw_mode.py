@@ -230,6 +230,22 @@ class TestGlobalLetterShortcuts:
         key, toggled = self._press_c(monkeypatch, tab_visible=True, typing=True)
         assert not toggled and key == "c"
 
+    def test_any_keypress_skips_the_duck_entrance(self):
+        # The waddle-in must never make the user wait: the app-wide key layer
+        # jumps it to the settled pose on the first real key, on every page.
+        from yeaboi.ui.shared import _music_bar
+        from yeaboi.ui.shared._input import push_back_key, read_key
+
+        _music_bar._reset_duck_state()
+        try:
+            _music_bar.start_duck_entrance()
+            assert _music_bar._duck_entrance_start > 0
+            push_back_key("x")
+            assert read_key(timeout=0) == "x"
+            assert _music_bar._duck_entrance_start == 0.0
+        finally:
+            _music_bar._reset_duck_state()
+
     def test_ctrl_c_quits_outright(self, monkeypatch):
         # ISIG is cleared so it arrives as a keypress; read_key re-raises it, so
         # the conventional interrupt behaves exactly as it looks (no chord).

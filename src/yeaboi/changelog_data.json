@@ -2,6 +2,53 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.54.0",
+      "date": "2026-08-05",
+      "summary": "The planning duck is now the TUI's living mascot across every mode. He waddles into the corner whenever you enter a mode, head-bobs through every long wait (standups, 1:1s, reports, syncs, shares), and quacks a short quip when those operations complete. A sticky rubber-duck tier serves hidden confirmations — delete prompts are now unmissable even on narrow terminals, and the bubble lane stays off the right edge so your composer never overlaps with encouragement. The shared loading screens gained live progress: a braille spinner, per-stage elapsed timing, and a [n/total] footer. Retro action drafting, performance 1:1 generation, and Notion/Confluence publishing no longer freeze the screen — they run on background workers with a live busy affordance. The duck is mutable per-session via /duck in the chat, and globally via the new Duck row in Settings → System.",
+      "highlights": [
+        {
+          "text": "Living mascot: the duck waddles in when you open a mode and head-bobs through every long wait",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Completion quips: duck quacks a short reactive message when standups, reports, syncs, shares, or analysis exports finish",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Unfrozen waits: retro action drafting, performance 1:1 generation, and Notion/Confluence publishing run on workers with live progress instead of freezing",
+          "areas": [
+            "retro",
+            "performance",
+            "general"
+          ]
+        },
+        {
+          "text": "Sticky confirmations: delete prompts and other critical modals now show as a sticky duck tier, unmissable even below 97 columns",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Live progress meters: loading screens show a braille spinner, per-stage elapsed time, and [n/total] footer; planning chat shows a full build checklist with recap card",
+          "areas": [
+            "planning",
+            "general"
+          ]
+        },
+        {
+          "text": "Duck mute control: /duck in planning chat or Settings → System → Duck row; persisted per-user via DUCK_ENABLED",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.53.1",
       "date": "2026-08-05",
       "summary": "Fixed share links from retro and poker boards serving Cloudflare errors forever. Tunnel readiness now verifies that cloudflared has fully registered with the edge (not just started up and printed its URL), and recovers automatically if the regional DNS lookup fails by retrying with a pinned US region. Cancelling a board session now cleanly stops any in-flight tunnel startup, preventing orphaned processes.",
@@ -63,6 +110,31 @@
           "text": "Chat and form modes are swappable mid-intake, and `/finish` auto-accepts all remaining questions for a fast path through the pipeline",
           "areas": [
             "planning"
+          ]
+        },
+        {
+          "text": "The corner duck is now the TUI's experience layer: he head-bobs through every long wait, quacks a short quip when a standup, report, analysis, export, sync or share link completes, and waddles into the corner whenever you open a mode",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Loading screens gained a live checklist — braille spinner, per-stage elapsed and a [n/total] progress footer — and the planning chat shows a full build checklist with a completion recap card",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Duck bubble mute: /duck in the planning chat or the new Duck row in Settings → System (persisted as DUCK_ENABLED); delete confirmations stay visible regardless",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Retro action-item drafting, performance 1:1 generation and Notion/Confluence publishing no longer freeze the screen — they run on workers with live progress",
+          "areas": [
+            "retro",
+            "performance"
           ]
         }
       ]

@@ -30,5 +30,12 @@ class TestDecorateQuestionForChat:
             decorated = decorate_question_for_chat(q_num, text)
             assert decorated.endswith(text)
 
-    def test_preambles_only_name_real_questions(self):
-        assert set(CHAT_QUESTION_PREAMBLES) <= set(INTAKE_QUESTIONS)
+    def test_every_question_has_a_preamble(self):
+        # Full coverage: the interview should read conversationally end to end,
+        # and a question added without a lead-in should be a visible decision.
+        assert set(CHAT_QUESTION_PREAMBLES) == set(INTAKE_QUESTIONS)
+
+    def test_preambles_are_distinct_and_short(self):
+        texts = list(CHAT_QUESTION_PREAMBLES.values())
+        assert len(set(texts)) == len(texts)  # 30 identical "Now…"s is a form again
+        assert all(len(t) <= 60 for t in texts)

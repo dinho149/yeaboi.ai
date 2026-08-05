@@ -732,7 +732,8 @@ class TestBuildAnalysisProgressScreen:
         assert "Fetching sprints" in output
         assert "✓ Fetching sprints" not in output
         assert "• Fetching sprints" in output
-        assert "▸ Building profile" in output
+        # The active row spins (braille) instead of a static ▸ now.
+        assert any(f"{g} Building profile" in output for g in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
     def test_legacy_activity_uses_planning_card_theme(self):
         result = _build_analysis_progress_screen(
@@ -767,8 +768,9 @@ class TestBuildAnalysisProgressScreen:
             "Docs · Confluence space: PSO",
         ]
         output = _render(_build_analysis_progress_screen(progress, width=100, height=24))
-        assert "▸ Fetching sprint history" in output
-        assert "▸ Scanning AI footprint" in output
+        spinners = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        assert any(f"{g} Fetching sprint history" in output for g in spinners)
+        assert any(f"{g} Scanning AI footprint" in output for g in spinners)
         assert "✓ Fetching sprint history" not in output
         assert "Docs · Confluence space: PSO" in output
 
@@ -791,7 +793,7 @@ class TestBuildAnalysisProgressScreen:
         ]
         output = _render(_build_analysis_progress_screen(progress, width=100, height=24))
         assert "✓ Fetching sprint history" in output
-        assert "▸ Fetching sprint history" not in output
+        assert not any(f"{g} Fetching sprint history" in output for g in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 
         result = _build_analysis_progress_screen(progress, mode="analysis", width=100, height=24)
         completed = next(
@@ -840,6 +842,56 @@ class TestBuildAnalysisProgressScreen:
         for tick in [0.0, 0.25, 0.5, 0.75, 1.0]:
             result = _build_analysis_progress_screen(["Working..."], anim_tick=tick, width=80, height=24)
             assert isinstance(result, Panel)
+
+    def test_spinner_glyph_advances_with_the_clock(self):
+        a = _render(_build_analysis_progress_screen(["Working..."], anim_tick=0.0, width=80, height=24))
+        b = _render(_build_analysis_progress_screen(["Working..."], anim_tick=0.35, width=80, height=24))
+        ga = next(g for g in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" if f"{g} Working" in a)
+        gb = next(g for g in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏" if f"{g} Working" in b)
+        assert ga != gb
+
+    def test_structured_run_gets_a_count_and_total_footer(self):
+        progress = [
+            {
+                "kind": "analysis_component",
+                "component_id": "footer:done",
+                "label": "Fetching sprint history",
+                "status": "completed",
+                "detail": "",
+            },
+            {
+                "kind": "analysis_component",
+                "component_id": "footer:running",
+                "label": "Scanning AI footprint",
+                "status": "running",
+                "detail": "",
+            },
+        ]
+        output = _render(_build_analysis_progress_screen(progress, anim_tick=75.0, width=100, height=24))
+        assert "[1/2]" in output
+        assert "total 1:15" in output
+
+    def test_running_row_carries_a_per_stage_elapsed(self):
+        def _screen(tick):
+            return _render(
+                _build_analysis_progress_screen(
+                    [
+                        {
+                            "kind": "analysis_component",
+                            "component_id": "elapsed:stage",
+                            "label": "Scanning AI footprint",
+                            "status": "running",
+                            "detail": "",
+                        }
+                    ],
+                    anim_tick=tick,
+                    width=100,
+                    height=24,
+                )
+            )
+
+        _screen(0.0)  # first sight starts this stage's clock
+        assert "0:42" in _screen(42.0)
 
     def test_analysis_mode_renders(self):
         """Analysis mode should render without error and use analysis title."""

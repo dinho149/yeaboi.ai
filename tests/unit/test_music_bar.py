@@ -28,11 +28,14 @@ def _reset(monkeypatch):
     _music_bar._back_presence = 0.0  # back-tab animation state is module-global
     _music_bar._back_region = None
     _music_bar._back_retracting = False
-    _music_bar._say_text = ""  # duck-bubble state is module-global too
-    _music_bar._say_start = 0.0
+    _music_bar._reset_duck_state()  # bubble + quack/working/entrance clocks are module-global too
+    from yeaboi.ui.shared import _duck_voice
+
+    _duck_voice._reset()  # the shared voice + its mute flag are module-global too
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None
+    _duck_voice._reset()
 
 
 # ── Subtitle content ──────────────────────────────────────────────────────────
@@ -165,6 +168,228 @@ def test_duck_say_bubble_drawn_beside_the_duck():
     assert "Anthropic Key updated" in text
 
 
+def _duck_rows(clock, monkeypatch, *, settled=True):
+    """Plain-text rows of a rendered frame at a frozen clock, slide settled."""
+    if settled:
+        _music_bar._duck_slide_start = clock - 10.0
+        _music_bar._duck_last_draw = clock - 0.01
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=24, padding=(1, 2))
+    console = Console(width=120, height=24, file=StringIO())
+    lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
+    return ["".join(seg.text for seg in row) for row in lines]
+
+
+def test_quack_duck_opens_the_beak_during_its_window(monkeypatch):
+    # quack_duck() toggles the bill at _DUCK_QUACK_HZ for its window: at a phase
+    # where the bill is open the head renders differently from the closed pose.
+    closed = _duck_rows(100.0, monkeypatch)
+    _music_bar._reset_duck_state()
+    _music_bar._duck_quack_start = 100.0 - (1.5 / _music_bar._DUCK_QUACK_HZ)  # int(e*hz)=1 → open
+    open_ = _duck_rows(100.0, monkeypatch)
+    assert closed != open_
+
+
+def test_quack_duck_coalesces_while_one_is_playing(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 50.0)
+    _music_bar.quack_duck()
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 50.2)  # mid-quack
+    _music_bar.quack_duck()
+    assert _music_bar._duck_quack_start == 50.0  # second call did not restart it
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 51.0)  # finished
+    _music_bar.quack_duck()
+    assert _music_bar._duck_quack_start == 51.0
+
+
+def test_working_duck_bobs_over_time(monkeypatch):
+    # set_duck_working(True) drives the head-bob: the sprite changes across
+    # frames instead of holding the constant frame-0 pose.
+    _music_bar.set_duck_working(True)
+    _music_bar._duck_working_start = 100.0
+    a = _duck_rows(100.0, monkeypatch)  # frame 0
+    _music_bar.set_duck_working(True)
+    _music_bar._duck_working_start = 100.0
+    b = _duck_rows(100.375, monkeypatch)  # frame 3 (HEAD_BOB shifts the head down)
+    assert a != b
+    _music_bar.set_duck_working(False)
+    assert _music_bar._duck_frame() == 0  # idle → still pose
+
+
+def test_say_hold_extends_the_bubble_dwell():
+    from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_HOLD, _say_brightness
+
+    _music_bar._say_start = 0.0
+    after_default_hold = _SAY_FADE_IN + _SAY_HOLD + 1.0
+    assert _say_brightness(after_default_hold) < 1.0  # default dwell has ended
+    assert _say_brightness(after_default_hold, hold=_SAY_HOLD + 2.0) == 1.0  # still holding
+
+
+def test_say_seq_bump_restarts_identical_text(monkeypatch):
+    # The same text twice is normally swallowed (say != _say_text guard); a
+    # bumped seq restarts the fade so repeated statuses still show.
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=20, padding=(1, 2))
+
+    def render_at(clock, seq):
+        monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+        frame = _MusicPocketFrame(panel, duck_say="Export finished.")
+        frame.duck_say_seq = seq
+        console = Console(width=120, height=20, file=StringIO())
+        console.render_lines(frame, console.options, pad=True)
+
+    render_at(10.0, seq=1)
+    assert _music_bar._say_start == 10.0
+    render_at(20.0, seq=1)  # same text, same seq → fade NOT restarted
+    assert _music_bar._say_start == 10.0
+    render_at(30.0, seq=2)  # same text, new seq → restarted
+    assert _music_bar._say_start == 30.0
+
+
+def test_duck_working_cm_sets_and_clears():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with duck_working():
+        assert _music_bar._duck_working is True
+    assert _music_bar._duck_working is False
+
+
+def test_duck_working_cm_nesting_keeps_the_bob_until_the_outer_exit():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with duck_working():
+        with duck_working():
+            assert _music_bar._duck_working is True
+        assert _music_bar._duck_working is True  # inner exit must not stop the outer wait
+    assert _music_bar._duck_working is False
+
+
+def test_duck_working_cm_clears_on_exception():
+    from yeaboi.ui.shared._music_bar import duck_working
+
+    with pytest.raises(RuntimeError):
+        with duck_working():
+            raise RuntimeError("worker blew up")
+    assert _music_bar._duck_working is False
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_duck_working_thread_bobs_for_the_workers_lifetime():
+    # The drop-in Thread factory the mode pages use: the duck bobs while the
+    # target runs and settles when it finishes, even if the target raises.
+    import threading
+
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+
+    started, release = threading.Event(), threading.Event()
+
+    def _work():
+        started.set()
+        release.wait(timeout=5)
+
+    t = duck_working_thread(_work, name="test-worker")
+    t.start()
+    assert started.wait(timeout=5)
+    assert _music_bar._duck_working is True
+    release.set()
+    t.join(timeout=5)
+    assert _music_bar._duck_working is False
+
+    def _boom():
+        raise RuntimeError("dead worker")
+
+    t2 = duck_working_thread(_boom, name="test-worker-boom")
+    t2.start()
+    t2.join(timeout=5)
+    assert _music_bar._duck_working is False
+
+
+def test_entrance_plays_once_per_process(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    assert _music_bar._duck_entrance_start == 5.0
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 99.0)
+    _music_bar.start_duck_entrance()  # second call is a no-op
+    assert _music_bar._duck_entrance_start == 5.0
+    _music_bar.skip_duck_entrance()
+    assert _music_bar._duck_entrance_start == 0.0
+
+
+def test_entrance_replay_plays_again_per_card_entry(monkeypatch):
+    # Default stays once-per-process (the chat greeting), but a mode card entry
+    # passes replay=True so the duck walks in with every page.
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    _music_bar.skip_duck_entrance()  # settled
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 60.0)
+    _music_bar.start_duck_entrance()  # once-per-process default: no-op
+    assert _music_bar._duck_entrance_start == 0.0
+    _music_bar.start_duck_entrance(replay=True)  # a mode card entry replays
+    assert _music_bar._duck_entrance_start == 60.0
+
+
+def test_entrance_replay_never_restarts_mid_waddle(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.4)
+    _music_bar.start_duck_entrance(replay=True)  # mid-stride: keep walking
+    assert _music_bar._duck_entrance_start == 5.0
+
+
+def test_entrance_walks_the_mini_duck_toward_the_corner(monkeypatch):
+    # During the entrance the (wider) mini duck is composited walking rightward;
+    # its leftmost ink column advances with progress, and the sprite is taller
+    # than the settled 7-row head.
+    def ink_cols_and_rows(clock):
+        monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+        from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+        panel = Panel(Text("body"), height=30, padding=(1, 2))
+        console = Console(width=120, height=30, file=StringIO())
+        lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
+        rows = ["".join(seg.text for seg in row) for row in lines]
+        cols = [r.find("█") for r in rows if "█" in r]
+        return (min(cols) if cols else -1), sum(1 for r in rows if "█" in r)
+
+    _music_bar._duck_entrance_start = 100.0
+    early_col, early_rows = ink_cols_and_rows(100.15)  # 10% in
+    _music_bar._duck_entrance_start = 100.0
+    late_col, late_rows = ink_cols_and_rows(101.2)  # 80% in
+    assert 0 < early_col < late_col  # he moved right
+    _music_bar._reset_duck_state()
+    settled_col, settled_rows = ink_cols_and_rows(200.0)
+    assert early_rows > settled_rows  # full-body mini vs the settled head
+
+
+def test_entrance_completion_hands_back_and_quacks(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 100.0)
+    _music_bar._duck_entrance_start = 100.0 - _music_bar._DUCK_ENTRANCE_SECONDS - 0.1
+    assert _music_bar._duck_entrance_progress() is None  # finished → cleared
+    assert _music_bar._duck_entrance_start == 0.0
+    assert _music_bar._duck_quack_start == 100.0  # the arrival hello
+
+
+def test_skip_entrance_jumps_to_settled(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 100.0)
+    _music_bar.start_duck_entrance()
+    _music_bar.skip_duck_entrance()
+    assert _music_bar._duck_entrance_progress() is None
+    assert _music_bar._duck_quack_start == 0.0  # a skipped arrival doesn't quack
+
+
+def test_reset_duck_state_restores_idle():
+    _music_bar.quack_duck()
+    _music_bar.set_duck_working(True)
+    _music_bar.start_duck_entrance()
+    _music_bar._say_text, _music_bar._say_seq = "hi", 3
+    _music_bar._reset_duck_state()
+    assert not _music_bar._duck_working and _music_bar._duck_quack_start == 0.0
+    assert _music_bar._say_text == "" and _music_bar._say_seq == 0
+    assert not _music_bar._duck_entrance_played and _music_bar._duck_entrance_start == 0.0
+
+
 def test_back_tab_absent_without_flag():
     # Default frame (with_back=False) draws no back tab.
     from yeaboi.ui.shared._music_bar import _MusicPocketFrame
@@ -292,6 +517,145 @@ def test_too_small_screen_marks_itself_no_companion_duck():
 
     panel = _build_too_small_screen(60, 20)
     assert getattr(panel, "_no_companion_duck", False) is True
+
+
+def test_shared_voice_line_is_stamped_by_the_chrome(monkeypatch):
+    # A page that opted in (declared bubble room) gets the app-wide voice's
+    # line with zero render wiring: the chrome ticks the singleton and stamps
+    # the frame itself.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 40
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == "Exported!"
+    assert frame.duck_say_seq > 0
+
+
+def test_page_without_declared_room_stays_silent(monkeypatch):
+    # Ordinary lines are opt-in: a page that never declared _bubble_room gets
+    # no bubble (its content may reach the right edge) — the quack still lands.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_panel_stamped_line_wins_over_the_shared_voice(monkeypatch):
+    # The chat (and any page with its own fence) stamps panel attrs directly —
+    # that always takes precedence over the singleton.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("shared line")
+    panel = Panel(Text("body"))
+    panel._duck_say = "my own line"
+    panel._bubble_room = 40
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == "my own line"
+
+
+def test_bubble_room_zero_suppresses_the_shared_line(monkeypatch):
+    # Pages whose content reaches the right edge (retro board, analysis
+    # results) declare no room — the bubble is skipped, never overlapped.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 0
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_sticky_bypasses_the_fence_and_is_never_truncated(monkeypatch):
+    # A sticky line is a modal prompt (Enter deletes!) — it renders whole even
+    # on a page that declared no room or a tiny one; losing "Enter to confirm"
+    # would make the next Enter destructive with no visible prompt.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    prompt = 'Delete "Standup — 2026-…"?  Enter to confirm'
+    dv.duck_voice().say_sticky(prompt)
+    panel = Panel(Text("body"))
+    panel._bubble_room = 0  # even a bubble-suppressed page shows the prompt
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == prompt  # whole, no ellipsis
+    assert frame.duck_say_sticky is True
+
+
+def test_sticky_shows_even_when_globally_muted(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.set_duck_muted(True)
+    dv.duck_voice().say_sticky("Sure?")
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say == "Sure?"
+
+
+def test_shared_line_truncates_to_the_declared_room(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("A rather long completion line")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 13
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say.endswith("…")
+    assert len(frame.duck_say) <= 13
+
+
+def test_shared_line_skipped_below_minimum_room(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = dv._BUBBLE_MIN_COLS - 1
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_global_mute_suppresses_the_shared_line(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    dv.set_duck_muted(True)
+    panel = Panel(Text("body"))
+    panel._bubble_room = 40
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
+
+
+def test_sticky_shared_line_rides_the_no_fade_path(monkeypatch):
+    # A sticky confirmation is stamped with the sticky flag and NO hold — its
+    # infinite hold must never reach the fade envelope.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say_sticky('Delete "sprint 3"?')
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say.startswith("Delete")
+    assert frame.duck_say_sticky is True
+    assert frame.duck_say_hold is None
+
+
+def test_no_companion_duck_page_never_ticks_the_voice(monkeypatch):
+    # A page that opted out of the duck gets no bubble either.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._no_companion_duck = True
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == ""
 
 
 def test_get_renderable_leaves_popup_subtitle_untouched():
