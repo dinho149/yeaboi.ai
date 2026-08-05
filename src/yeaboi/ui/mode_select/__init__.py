@@ -86,6 +86,24 @@ from yeaboi.ui.shared._voice_input import DoubleTapSpace
 logger = logging.getLogger(__name__)
 
 
+def _duck_react(quip_key: str, text: str | None = None) -> None:
+    """Quack + speak a completion quip through the shared duck voice.
+
+    The one helper every mode's completion moment calls — strictly reactive
+    (something just finished), never ambient. ``text`` overrides the DUCK_QUIPS
+    entry for dynamic lines ("3 projects recommended."). Logs once per trigger.
+    """
+    from yeaboi.ui.shared._duck_voice import DUCK_QUIPS, duck_voice
+    from yeaboi.ui.shared._music_bar import quack_duck
+
+    line = text or DUCK_QUIPS.get(quip_key, "")
+    if not line:
+        return
+    logger.info("duck react: %s (%s)", quip_key, line)
+    quack_duck()
+    duck_voice().say(line)
+
+
 # ---------------------------------------------------------------------------
 # Constants used only by the orchestrator
 # ---------------------------------------------------------------------------
@@ -1902,7 +1920,9 @@ def _export_via_picker(
     if dest is None:
         return None
     if dest == "files":
-        return files_export()
+        msg = files_export()
+        _duck_react("export_done")  # files_export raises on failure
+        return msg
     if extra_handlers and dest in extra_handlers:
         return extra_handlers[dest]()
 
@@ -1916,7 +1936,10 @@ def _export_via_picker(
         return copy_markdown_status(markdown)
     from yeaboi.export_targets import publish_markdown
 
-    return publish_markdown(dest, title=title, markdown=markdown).message
+    published = publish_markdown(dest, title=title, markdown=markdown)
+    if published.ok:
+        _duck_react("export_done")
+    return published.message
 
 
 _ANON_PICKER_MODES = {"planning", "analysis", "standup", "retro", "performance", "reporting"}
@@ -2008,7 +2031,10 @@ def _run_anonymize_pass(
         time.sleep(1 / 30)
     thread.join()
     res = result_box[0]
-    return None if (res is None or isinstance(res, Exception)) else res
+    if res is not None and not isinstance(res, Exception):
+        _duck_react("anonymize_done")
+        return res
+    return None
 
 
 def _anon_export(
@@ -2306,6 +2332,8 @@ def _project_tracker_sync(
     epic = getattr(sr, "epic_key", None) or getattr(sr, "epic_id", None) or ""
     prefix = f"Epic: {epic} — " if epic else ""
     summary = ", ".join(parts) or "Nothing to sync"
+    if created and not sr.errors:
+        _duck_react("sync_done")
     # Show first error for diagnosis
     if sr.errors:
         first_err = sr.errors[0][:80]
@@ -2490,7 +2518,10 @@ def _standup_generate_flow(
         )
         time.sleep(1 / 30)
     thread.join()
-    return result_box[0]
+    msg = result_box[0]
+    if msg and not str(msg).startswith("Generate failed"):
+        _duck_react("standup_done")
+    return msg
 
 
 _REVIEW_STEP_NAMES = ["Source", "Review", "File"]
@@ -8228,6 +8259,7 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
 
                 prep = run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp)
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_prep_lines(prep), f"1:1 Prep — {engineer}", "Prep generated.")
             elif label == "1:1 Complete":
                 transcript_result = _performance_get_transcript(console, live, read_key, frame_time, supports_timeout)
@@ -8243,12 +8275,14 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
+                _duck_react("artifact_done")
                 _show_detail(format_completion_lines(record), f"1:1 Summary — {engineer}", f"Completed — {sent}.")
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
                 review = run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp)
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
+                _duck_react("artifact_done")
                 _show_detail(format_review_lines(review), f"6-Month Review — {engineer}", "Review generated.")
             elif label == "Notes":
                 note = _standup_read_line(
@@ -8826,6 +8860,7 @@ def _run_reporting_page(console: Console, live, read_key, frame_time: float, sup
         if err is None and result_box[0] is not None:
             report = result_box[0]
             logger.info("reporting: report generated — %d item(s)", len(report.delivered_items))
+            _duck_react("report_done")
             _show_report(report, _delivered_msg(report))
         elif isinstance(err, ReportCancelledError):
             logger.info("reporting: generate cancelled")
@@ -9750,6 +9785,8 @@ def _run_roadmap_page(
         plural = "s" if n != 1 else ""
         state["message"] = f"{n} project{plural} recommended." if n else ""
         logger.info("roadmap analyze: %d project(s)", n)
+        if n:
+            _duck_react("roadmap_done", state["message"])
 
     def _enter_locator() -> None:
         """Ask for the selected source's locator, then analyze."""
@@ -10227,6 +10264,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
                 # own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:  # never let the worker crash anything
                 logger.error("retro: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -10373,6 +10411,7 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
                         message = generate_action_items(board)
                         logger.info("retro: generate action items result: %s", message)
+                        _duck_react("actions_done")
                     except Exception as e:  # defensive — never let it crash the TUI
                         logger.error("retro: generate action items failed: %s", e, exc_info=True)
                         message = f"Generate failed: {e}"
@@ -10990,6 +11029,7 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
                 # loopback address the host's own browser arrived on.
                 server.set_public_url(remote["url"])
                 remote["status"] = "Link ready — send it and the code to your team."
+                _duck_react("link_ready")
             except Exception as e:
                 logger.error("poker: secure link setup failed: %s", e, exc_info=True)
                 remote["status"] = f"Secure link failed — {e}"
@@ -12401,6 +12441,7 @@ def select_mode(
                         if _ta_result_box[0] and not _ta_error_box[0]:
                             # Persist + analysis log already handled inside
                             # run_team_analysis (one code path with CLI/MCP).
+                            _duck_react("analysis_done")
 
                             # Show results (overview + section cards). In 'both'
                             # mode the loop toggles between the two trackers and
@@ -13984,6 +14025,7 @@ def select_mode(
                         # Continue shows the coaching insights first (Back
                         # returns to the results overview); Continue on the
                         # insights and Esc both fall through to intake below.
+                        _duck_react("analysis_done")
                         _ta_examples = _ta_examples_box[0] or {}
                         _ta_sprint_names = _ta_sprint_names_box[0]
                         _ta_full = _ta_result_box[0] or {}

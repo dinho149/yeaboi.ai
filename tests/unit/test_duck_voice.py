@@ -114,6 +114,53 @@ class TestQuips:
         assert len(set(DUCK_QUIPS.values())) == len(DUCK_QUIPS)
 
 
+class TestDuckReact:
+    """_duck_react — the one helper every mode completion moment calls."""
+
+    def test_react_quacks_and_speaks_the_quip(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        quacks = []
+        monkeypatch.setattr("yeaboi.ui.shared._music_bar.quack_duck", lambda *a, **k: quacks.append(1))
+        ms._duck_react("standup_done")
+        assert quacks == [1]
+        assert duck_voice().tick()[0] == DUCK_QUIPS["standup_done"]
+
+    def test_react_dynamic_text_overrides_the_table(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        monkeypatch.setattr("yeaboi.ui.shared._music_bar.quack_duck", lambda *a, **k: None)
+        ms._duck_react("roadmap_done", "3 projects recommended.")
+        assert duck_voice().tick()[0] == "3 projects recommended."
+
+    def test_unknown_key_without_text_is_silent(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        quacks = []
+        monkeypatch.setattr("yeaboi.ui.shared._music_bar.quack_duck", lambda *a, **k: quacks.append(1))
+        ms._duck_react("no-such-event")
+        assert quacks == []
+        assert duck_voice().tick() is None
+
+    def test_files_export_via_picker_reacts(self, monkeypatch):
+        import yeaboi.ui.mode_select as ms
+
+        monkeypatch.setattr("yeaboi.ui.shared._music_bar.quack_duck", lambda *a, **k: None)
+        monkeypatch.setattr(ms, "_pick_dest", lambda *a, **k: "files")
+        msg = ms._export_via_picker(
+            None,
+            None,
+            lambda *a, **k: "q",
+            0.05,
+            True,
+            mode="standup",
+            files_export=lambda: "Exported to ~/exports",
+            get_document=lambda: ("t", "md"),
+        )
+        assert msg == "Exported to ~/exports"
+        assert duck_voice().tick()[0] == DUCK_QUIPS["export_done"]
+
+
 class TestBubbleFence:
     def test_default_room_leaves_the_content_edge_alone(self):
         # width 160, content to col 64: 160 - 16 (duck) - 64 - 7 (chrome) = 73

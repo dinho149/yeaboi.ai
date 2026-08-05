@@ -275,6 +275,7 @@ def test_duck_working_cm_clears_on_exception():
     assert _music_bar._duck_working is False
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_duck_working_thread_bobs_for_the_workers_lifetime():
     # The drop-in Thread factory the mode pages use: the duck bobs while the
     # target runs and settles when it finishes, even if the target raises.
