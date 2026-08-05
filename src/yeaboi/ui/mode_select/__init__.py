@@ -1377,6 +1377,9 @@ def _collect_settings_data() -> dict:
         "AZURE_DEVOPS_TOKEN",
         "AZURE_DEVOPS_TEAM",
         "GITHUB_TOKEN",
+        # Analysis' GitHub repository estate (comma-separated owners/orgs) — the
+        # default that lets CLI/MCP/headless runs scan GitHub without --github-owner.
+        "TEAM_ANALYSIS_GITHUB_OWNERS",
         "VOICE_MODEL",
         "AWS_REGION",
         "AWS_PROFILE",
@@ -6830,25 +6833,86 @@ def _run_member_select(
             return "cancel"
 
 
-def _run_code_project_select(
+# Everything that differs between the two code hosts' scope pickers. The screen,
+# the discovery thread and the key loop are identical, so they live once in
+# _run_code_scope_select and read their wording from here; a second copy of that
+# 70-line body would drift the moment either host gains a state.
+_CODE_SCOPE_PROVIDERS: dict[str, dict] = {
+    "github": {
+        "heading": "GitHub owners",
+        "unit": "owners",
+        "spinner": "Discovering GitHub owners and organisations…",
+        "thread": "analysis-github-owners",
+        # Owner granularity is what the engine takes (github_analysis_inventory
+        # walks an owner's repos), so the cost of one checkbox needs stating.
+        "hint": "Every non-archived repo with activity in the window is scanned.",
+        "empty": "No GitHub owners were visible to the configured token",
+        "require": "Select at least one GitHub owner.",
+        # Nothing pre-checked when config names no owners: discovery here is
+        # UNBOUNDED (personal login + every org, each fanning out to a whole repo
+        # estate), so an all-checked default would scan everything visible after
+        # three Enters. The user says which owners are theirs.
+        "select_all_default": False,
+    },
+    "azdo": {
+        "heading": "Azure projects",
+        "unit": "projects",
+        "spinner": "Discovering accessible Azure projects…",
+        "thread": "analysis-azdo-projects",
+        "hint": "",
+        "empty": "No Azure projects were accessible with the configured PAT",
+        "require": "Select at least one Azure project.",
+        # Azure is only ever offered when a project is already configured, so the
+        # config default always matches; all-checked is its pre-existing fallback.
+        "select_all_default": True,
+    },
+}
+
+
+def _code_scope_discovery(provider: str):
+    """(discover, configured_default) callables for one code host.
+
+    Imported lazily and separately from the driver so tests can monkeypatch the
+    underlying tool functions, and so a missing provider SDK never costs the
+    other host its picker."""
+    if provider == "github":
+        from yeaboi.config import get_team_analysis_github_owners
+        from yeaboi.tools.github import github_list_owners
+
+        return github_list_owners, get_team_analysis_github_owners
+    if provider == "azdo":
+        from yeaboi.config import get_team_analysis_azdo_projects
+        from yeaboi.tools.azure_devops import azdevops_list_projects
+
+        return azdevops_list_projects, get_team_analysis_azdo_projects
+    # Fail loudly: silently falling through to Azure would discover the wrong
+    # host's scope under a third host's heading.
+    raise ValueError(f"unknown code-scope provider: {provider}")
+
+
+def _run_code_scope_select(
     live,
     console: Console,
     read_key,
     frame_time: float,
     supports_timeout: bool,
-    initial_projects: list[str] | None = None,
+    *,
+    provider: str,
+    initial: list[str] | None = None,
 ) -> list[str] | str:
-    """Discover accessible Azure projects and choose the code scope for this run.
+    """Discover a code host's scope (GitHub owners, Azure projects) and pick it.
 
-    ``initial_projects`` restores a previous selection on wizard re-entry (discovery
-    itself re-runs; only the checked state carries over)."""
+    ``initial`` restores a previous selection on wizard re-entry (discovery itself
+    re-runs; only the checked state carries over). Discovery failure is a warning
+    on the screen, not an exit — the configured default still lets the run go
+    ahead."""
     import threading
 
-    from yeaboi.config import get_team_analysis_azdo_projects
-    from yeaboi.tools.azure_devops import azdevops_list_projects
+    cfg = _CODE_SCOPE_PROVIDERS[provider]
+    discover, configured_default = _code_scope_discovery(provider)
     from yeaboi.ui.mode_select.screens._screens_secondary import (
         _build_analysis_progress_screen,
-        _build_code_project_select_screen,
+        _build_code_scope_select_screen,
     )
 
     result: list = [None]
@@ -6857,54 +6921,67 @@ def _run_code_project_select(
 
     def _discover() -> None:
         try:
-            result[0] = azdevops_list_projects()
+            result[0] = discover()
         except Exception as exc:
+            # The screen shows this, but a run that quietly fell back to config
+            # would otherwise leave no trace of WHY its scope was narrow.
+            logger.warning("Analysis %s scope discovery failed: %s", provider, exc)
             error[0] = str(exc)
-            result[0] = list(get_team_analysis_azdo_projects())
+            result[0] = list(configured_default())
         finally:
             done.set()
 
+    logger.info("Analysis %s scope: discovering", provider)
     started = time.monotonic()
-    threading.Thread(target=_discover, name="analysis-azdo-projects", daemon=True).start()
+    threading.Thread(target=_discover, name=cfg["thread"], daemon=True).start()
     tick = 0.0
     while not done.is_set():
         tick += frame_time
         w, h = console.size
         live.update(
             _build_analysis_progress_screen(
-                ["Discovering accessible Azure projects…"],
+                [cfg["spinner"]],
                 width=w,
                 height=h,
                 elapsed=time.monotonic() - started,
                 anim_tick=tick,
-                source="azdo",
+                source=provider,
                 mode="analysis",
             )
         )
         time.sleep(frame_time)
 
-    projects = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
-    if not projects:
-        return "cancel"
-    if initial_projects is not None:
-        wanted = {name.lower() for name in initial_projects}
-        checked = {idx for idx, name in enumerate(projects) if name.lower() in wanted}
+    items = sorted(dict.fromkeys(result[0] or ()), key=str.lower)
+    if initial is not None:
+        wanted = {name.lower() for name in initial}
+        checked = {idx for idx, name in enumerate(items) if name.lower() in wanted}
     else:
         checked = set()
     if not checked:
-        defaults = {name.lower() for name in get_team_analysis_azdo_projects()}
-        checked = {idx for idx, name in enumerate(projects) if name.lower() in defaults}
-    if not checked:
-        checked = set(range(len(projects)))
+        defaults = {name.lower() for name in configured_default()}
+        checked = {idx for idx, name in enumerate(items) if name.lower() in defaults}
+    if not checked and cfg["select_all_default"]:
+        checked = set(range(len(items)))
     cursor = 0
-    message = f"Discovery warning: {error[0]}" if error[0] else ""
+    # An empty estate is a real outcome, not a crash: stay on the screen and say
+    # why, so Esc back to the sources step is an informed choice.
+    if error[0]:
+        message = f"Discovery warning: {error[0]}"
+    elif not items:
+        message = cfg["empty"] + " — press Esc to go back."
+    else:
+        message = ""
     while True:
         w, h = console.size
         live.update(
-            _build_code_project_select_screen(
-                projects,
+            _build_code_scope_select_screen(
+                items,
                 checked,
                 cursor,
+                heading=cfg["heading"],
+                unit=cfg["unit"],
+                empty_label=cfg["empty"],
+                hint=cfg["hint"],
                 width=w,
                 height=h,
                 message=message,
@@ -6912,18 +6989,27 @@ def _run_code_project_select(
         )
         key = read_key(timeout=frame_time) if supports_timeout else read_key()
         if key in ("up", "down", "left", "right", "scroll_up", "scroll_down"):
-            cursor = _move_analysis_list_cursor(cursor, key, len(projects))
-        elif key == " ":
+            cursor = _move_analysis_list_cursor(cursor, key, len(items))
+        elif key == " " and items:
             checked.symmetric_difference_update({cursor})
             message = ""
-        elif key in ("a", "A"):
-            checked = set() if len(checked) == len(projects) else set(range(len(projects)))
+        elif key in ("a", "A") and items:
+            checked = set() if len(checked) == len(items) else set(range(len(items)))
             message = ""
         elif key == "enter":
             if not checked:
-                message = "Select at least one Azure project."
+                # "Select at least one…" is impossible advice with nothing to
+                # select, so an empty estate names the way out instead.
+                message = cfg["require"] if items else cfg["empty"] + " — press Esc to go back."
                 continue
-            return [projects[idx] for idx in sorted(checked)]
+            selected = [items[idx] for idx in sorted(checked)]
+            logger.info(
+                "Analysis %s scope: %d discovered, %d selected",
+                provider,
+                len(items),
+                len(selected),
+            )
+            return selected
         elif key in ("esc", "q"):
             return "cancel"
 
@@ -7177,7 +7263,20 @@ def _run_analysis_roster_lookup(
 # loops (and exited the app). Esc/"cancel" moves the index backward; steps whose
 # predicate no longer holds are transparent in BOTH directions, so backing over
 # e.g. the model offer after switching to Quick depth skips it cleanly.
-_WIZARD_STEPS = ("features", "sources", "code_projects", "depth", "model", "window", "members", "review")
+# One entry per SCREEN — the walker below expresses "back" only as index -= 1, so
+# a step that ran two pickers could not offer Esc between them. Hence one scope
+# step per code host, ordered github-then-azdo to match the Code row's order.
+_WIZARD_STEPS = (
+    "features",
+    "sources",
+    "github_owners",
+    "azdo_projects",
+    "depth",
+    "model",
+    "window",
+    "members",
+    "review",
+)
 
 
 def _run_analysis_setup_wizard(
@@ -7206,6 +7305,7 @@ def _run_analysis_setup_wizard(
     state: dict = {
         "features": None,
         "components": None,
+        "github_owners": None,
         "azdo_projects": None,
         "depth": "deep",
         "model": None,
@@ -7245,8 +7345,9 @@ def _run_analysis_setup_wizard(
         comps = state["components"] or {}
         if step in ("features", "sources", "review"):
             return True
-        if step == "code_projects":
-            return bool(fs & {"ai_footprint", "code_health"}) and "azdo" in (comps.get("code") or [])
+        if step in ("github_owners", "azdo_projects"):
+            host = "github" if step == "github_owners" else "azdo"
+            return bool(fs & {"ai_footprint", "code_health"}) and host in (comps.get("code") or [])
         if step == "depth":
             return _depth_applicable()
         if step == "model":
@@ -7261,12 +7362,17 @@ def _run_analysis_setup_wizard(
         comps = state["components"] or {}
         members = state["members"] if _applicable("members") else None
         trackers = comps.get("delivery") or roster_fallback
+        # Each host's scope is gated on its OWN applicability, so de-selecting a
+        # code host at the sources step coerces its stale picks out of the payload
+        # (the same discipline that keeps a stale Deep depth out of a docs-only run).
+        scope: dict[str, list[str]] = {}
+        for _step, _host in (("github_owners", "github"), ("azdo_projects", "azdo")):
+            if _applicable(_step) and state[_step]:
+                scope[_host] = state[_step]
         return {
             "features": state["features"],
             "components": comps,
-            "analysis_scope": (
-                {"azdo": state["azdo_projects"]} if _applicable("code_projects") and state["azdo_projects"] else {}
-            ),
+            "analysis_scope": scope,
             "depth": _effective_depth(),
             "model": state["model"] if _applicable("model") else None,
             "window_days": state["window_days"] if _applicable("window") else 120,
@@ -7346,18 +7452,19 @@ def _run_analysis_setup_wizard(
                 return "back"
             state["components"] = chosen
             return "next"
-        if step == "code_projects":
-            chosen = _run_code_project_select(
+        if step in ("github_owners", "azdo_projects"):
+            chosen = _run_code_scope_select(
                 live,
                 console,
                 read_key,
                 frame_time,
                 supports_timeout,
-                initial_projects=state["azdo_projects"],
+                provider="github" if step == "github_owners" else "azdo",
+                initial=state[step],
             )
             if chosen == "cancel":
                 return "back"
-            state["azdo_projects"] = chosen
+            state[step] = chosen
             return "next"
         if step == "depth":
             chosen = _run_analysis_depth_select(
@@ -12113,15 +12220,18 @@ def select_mode(
                         from yeaboi.analysis import run_team_analysis
                         from yeaboi.analysis.engine import (
                             AnalysisCancelledError,
-                            _available_code_sources,
                             _available_doc_sources,
                             _available_sources,
+                            _offerable_code_sources,
                         )
 
                         # Unified component grid: each component picks its OWN configured
                         # sub-sources (delivery \u2190 jira/azdevops, code \u2190 github/azdo, docs
-                        # \u2190 confluence/notion). The wizard owns Esc-back navigation;
-                        # backing out of its first step returns to the analysis screen.
+                        # \u2190 confluence/notion). The Code row lists hosts the wizard can
+                        # SCOPE, not only ones already scoped in config \u2014 GitHub owners are
+                        # discovered in-wizard, so a bare token is enough to offer it. The
+                        # wizard owns Esc-back navigation; backing out of its first step
+                        # returns to the analysis screen.
                         _ta_setup = _run_analysis_setup_wizard(
                             live,
                             console,
@@ -12130,7 +12240,7 @@ def select_mode(
                             _supports_timeout,
                             grid={
                                 "delivery": _available_sources(),
-                                "code": _available_code_sources(),
+                                "code": _offerable_code_sources(),
                                 "docs": _available_doc_sources(),
                             },
                             roster_fallback=_available_sources(),
@@ -13689,8 +13799,8 @@ def select_mode(
 
                     from yeaboi.analysis.engine import (
                         AnalysisCancelledError,
-                        _available_code_sources,
                         _available_doc_sources,
+                        _offerable_code_sources,
                     )
 
                     # The wizard owns the whole setup sequence (Esc steps back one
@@ -13704,7 +13814,8 @@ def select_mode(
                         _supports_timeout,
                         grid={
                             "delivery": _delivery_grid,
-                            "code": _available_code_sources(),
+                            # Offerable, not merely configured — see the sibling call site.
+                            "code": _offerable_code_sources(),
                             "docs": _available_doc_sources(),
                         },
                         roster_fallback=_delivery_grid,

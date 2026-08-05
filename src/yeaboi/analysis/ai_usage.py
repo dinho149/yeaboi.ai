@@ -546,7 +546,7 @@ def collect_ai_activity(
             ",".join(github_owners) or "unconfigured",
             "repository estate",
             "inaccessible",
-            "TEAM_ANALYSIS_GITHUB_OWNERS / GITHUB_TOKEN not set",
+            "no GitHub token or owners — set Settings → GitHub, pass --github-owner, or pick owners in Analysis setup",
         )
 
     azdo_projects = scope.get("azdo") or list(get_team_analysis_azdo_projects())

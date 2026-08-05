@@ -714,3 +714,45 @@ class TestCliRunLearn:
         buf = io.StringIO()
         _run_learn(Console(file=buf, width=100))
         assert "No tracker configured" in buf.getvalue()
+
+
+class TestOfferableCodeSources:
+    """The Code row's gate, which is deliberately looser than the headless one.
+
+    ``_offerable_code_sources`` answers "what can the wizard set up during this
+    run"; ``_available_code_sources`` answers "what is scannable with zero further
+    input" and drives the headless component default. Collapsing the two would
+    either hide GitHub from the picker (the bug) or make headless runs emit an
+    empty code section for a user who never configured owners.
+    """
+
+    @staticmethod
+    def _gates(monkeypatch, *, gh_token="", gh_owners=(), azdo_token="", azdo_projects=()):
+        from yeaboi.analysis.engine import _available_code_sources, _offerable_code_sources
+
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: gh_token)
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: tuple(gh_owners))
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_token", lambda: azdo_token)
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_azdo_projects", lambda: tuple(azdo_projects))
+        return _offerable_code_sources(), _available_code_sources()
+
+    def test_bare_token_is_offerable_but_not_yet_scannable(self, monkeypatch):
+        offerable, available = self._gates(monkeypatch, gh_token="ghp_x")
+        assert offerable == ["github"]
+        assert available == []
+
+    def test_configured_owners_satisfy_both_gates(self, monkeypatch):
+        offerable, available = self._gates(monkeypatch, gh_token="ghp_x", gh_owners=("acme",))
+        assert offerable == ["github"] and available == ["github"]
+
+    def test_no_token_offers_nothing(self, monkeypatch):
+        # Owners without a token are unusable — the picker must not offer a host
+        # whose discovery call would fail on the next screen.
+        offerable, available = self._gates(monkeypatch, gh_owners=("acme",))
+        assert offerable == [] and available == []
+
+    def test_azure_gate_is_unchanged_by_the_split(self, monkeypatch):
+        offerable, available = self._gates(monkeypatch, azdo_token="pat", azdo_projects=("Infra",))
+        assert offerable == ["azdo"] and available == ["azdo"]
+        offerable, available = self._gates(monkeypatch, azdo_token="pat")
+        assert offerable == [] and available == []
