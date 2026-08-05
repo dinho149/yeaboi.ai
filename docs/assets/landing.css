@@ -147,10 +147,10 @@
     font-size:14px; line-height:1.5; padding:12px 14px 16px;
     font-variant-ligatures:none; font-kerning:none; text-rendering:optimizeSpeed;
   }
-  /* <pre> carries its own UA font-family, which beats inheritance — so the block
-     titles, splash wordmark and duck kept falling back to the webfont with no
-     block coverage even after .tui switched stacks. Font only: the scanlines
-     belong to the screen, and repeating them per-<pre> striped the sprites. */
+  /* <pre> carries its own UA font-family, which beats inheritance — so the
+     splash wordmark kept falling back to the webfont, which has no box-drawing
+     coverage, even after .tui switched stacks. (The mode titles and the duck no
+     longer go through a font at all; see .tui-mode-title and .tui-duck.) */
   .tui pre{font-family:inherit; font-size:inherit}
   /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
   .tui-panel{
@@ -191,40 +191,44 @@
     padding-left:4ch; /* the app's PAD = "    " before every title/desc row */
     font-size:inherit; font-family:inherit;
   }
-  .tui-mode-title{
-    /* zero letter-spacing, tight line-height — these ▀▄█░ block glyphs are
-       designed to tile edge-to-edge with no gap, exactly like a real
-       terminal's character grid; any spacing breaks them into a dotted
-       mess instead of solid letterforms. Same cell size as every other row —
-       a terminal has exactly one grid.
+  /* The titles are the app's own two-row block typeface (_ascii_font.py), but
+     they are NOT set in a font here — they are a mask.
 
-       line-height MUST be exactly 1: at 1.1 the leading opened a seam between
-       the ▀ row and the ▄ row, so each letter read as two split halves rather
-       than one glyph. */
-    margin:0; font-size:inherit; line-height:1; letter-spacing:0;
+     A browser draws U+2580–259F (▀▄█░) with whatever the font supplies, and no
+     monospace font fills the cell the way a terminal does: the ▀ row and the ▄
+     row miss each other by a sub-pixel, the columns antialias apart, and ░ is a
+     real 25% stipple rather than the negative space this font intends it as. The
+     result is mottled letterforms. iTerm2, Kitty and Alacritty all sidestep this
+     the same way — they ignore the font for that range and fill the cell
+     geometrically. So do we: each glyph becomes rects in an SVG mask (--mask,
+     generated from render_ascii_text), one cell = 1 unit wide × 2 tall, and ░
+     contributes nothing. The paint is then just a background, which is why the
+     shimmer below still works. */
+  .tui-mode-title{
     display:inline-block; vertical-align:middle;
+    width:calc(var(--cols) * 1ch); height:4ch;   /* a cell is one advance wide, two tall */
+    -webkit-mask:var(--mask) no-repeat center/100% 100%;
+            mask:var(--mask) no-repeat center/100% 100%;
     /* unselected: the app's exact dim — each channel halved, floored at 40
        (see _build_mode_row's _unsel_style), baked into --mcd per mode */
-    color:rgb(var(--mcd)); transition:color .35s;
+    background-color:rgb(var(--mcd)); transition:background-color .35s;
   }
   .tui-mode.is-active .tui-mode-title{
     /* selected: full accent with the app's traveling white shimmer hotspot
        (shimmer_style: 0.6 sweeps/sec) — a narrow white band crossing the
-       block letters, painted via background-clip:text */
-    color:transparent;
+       block letters. The mask clips it to the letterforms. */
+    background-color:transparent;
     background-image:linear-gradient(90deg,
       rgb(var(--mc)) 0%, rgb(var(--mc)) 42%,
       rgb(255,255,255) 50%,
       rgb(var(--mc)) 58%, rgb(var(--mc)) 100%);
     background-size:300% 100%;
-    -webkit-background-clip:text; background-clip:text;
     animation:tui-shimmer 1.67s linear infinite;
   }
   @keyframes tui-shimmer{from{background-position:100% 0} to{background-position:0% 0}}
   @media (prefers-reduced-motion:reduce){
     .tui-mode.is-active .tui-mode-title{
-      color:rgb(var(--mc)); background-image:none; animation:none;
-      -webkit-background-clip:border-box; background-clip:border-box;
+      background-color:rgb(var(--mc)); background-image:none; animation:none;
     }
   }
   .tui-mode-desc{
@@ -303,16 +307,16 @@
   .tui-tail{margin:1px 0 0; color:rgb(120,135,150); line-height:1; font-size:1.1em}
   /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
      (see _build_companion) — the source sprite faces right */
-  /* one terminal cell, like every other row — and line-height 1 so the ▀▄
-     halves tile into a solid sprite instead of a striped one */
-  /* The sprite is half-block art: row N's ▄ has to meet row N+1's ▀ with no
-     seam. A browser line box at line-height:1 is the full font-size, but the
-     block glyphs are drawn shorter than the em — so the rows floated apart and
-     the duck came out in stripes. Pulling the leading in below 1 closes it. */
-  .tui-duck{
-    margin:0; line-height:1; letter-spacing:0; white-space:pre;
-    transform:scaleY(1.2); transform-origin:top center;
-  }
+  /* No glyphs here either, and for a second reason on top of the mask story
+     above: _pack_cells packs TWO source pixels into one cell — a ▀ carries the
+     top colour as foreground and the bottom colour as background. Markup that
+     keeps only `color` throws half the sprite away, which is why the duck came
+     out as disconnected specks. Each cell is a box instead, and a two-colour
+     cell is a hard-stop gradient at 50%. Nothing is measured against a font, so
+     the rows meet exactly and the aspect is the terminal's own 1:2. */
+  .tui-duck{margin:0; line-height:0; font-size:inherit}
+  .tui-duck .r{display:block; height:2ch}
+  .tui-duck i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
   .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
