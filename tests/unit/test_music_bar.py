@@ -28,8 +28,7 @@ def _reset(monkeypatch):
     _music_bar._back_presence = 0.0  # back-tab animation state is module-global
     _music_bar._back_region = None
     _music_bar._back_retracting = False
-    _music_bar._say_text = ""  # duck-bubble state is module-global too
-    _music_bar._say_start = 0.0
+    _music_bar._reset_duck_state()  # bubble + quack/working/entrance clocks are module-global too
     monkeypatch.setattr(music, "is_music_available", lambda: (True, ""))
     yield
     _music_bar._active = None
@@ -163,6 +162,108 @@ def test_duck_say_bubble_drawn_beside_the_duck():
     lines = console.render_lines(frame, console.options, pad=True)
     text = "\n".join("".join(seg.text for seg in row) for row in lines)
     assert "Anthropic Key updated" in text
+
+
+def _duck_rows(clock, monkeypatch, *, settled=True):
+    """Plain-text rows of a rendered frame at a frozen clock, slide settled."""
+    if settled:
+        _music_bar._duck_slide_start = clock - 10.0
+        _music_bar._duck_last_draw = clock - 0.01
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=24, padding=(1, 2))
+    console = Console(width=120, height=24, file=StringIO())
+    lines = console.render_lines(_MusicPocketFrame(panel), console.options, pad=True)
+    return ["".join(seg.text for seg in row) for row in lines]
+
+
+def test_quack_duck_opens_the_beak_during_its_window(monkeypatch):
+    # quack_duck() toggles the bill at _DUCK_QUACK_HZ for its window: at a phase
+    # where the bill is open the head renders differently from the closed pose.
+    closed = _duck_rows(100.0, monkeypatch)
+    _music_bar._reset_duck_state()
+    _music_bar._duck_quack_start = 100.0 - (1.5 / _music_bar._DUCK_QUACK_HZ)  # int(e*hz)=1 → open
+    open_ = _duck_rows(100.0, monkeypatch)
+    assert closed != open_
+
+
+def test_quack_duck_coalesces_while_one_is_playing(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 50.0)
+    _music_bar.quack_duck()
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 50.2)  # mid-quack
+    _music_bar.quack_duck()
+    assert _music_bar._duck_quack_start == 50.0  # second call did not restart it
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 51.0)  # finished
+    _music_bar.quack_duck()
+    assert _music_bar._duck_quack_start == 51.0
+
+
+def test_working_duck_bobs_over_time(monkeypatch):
+    # set_duck_working(True) drives the head-bob: the sprite changes across
+    # frames instead of holding the constant frame-0 pose.
+    _music_bar.set_duck_working(True)
+    _music_bar._duck_working_start = 100.0
+    a = _duck_rows(100.0, monkeypatch)  # frame 0
+    _music_bar.set_duck_working(True)
+    _music_bar._duck_working_start = 100.0
+    b = _duck_rows(100.375, monkeypatch)  # frame 3 (HEAD_BOB shifts the head down)
+    assert a != b
+    _music_bar.set_duck_working(False)
+    assert _music_bar._duck_frame() == 0  # idle → still pose
+
+
+def test_say_hold_extends_the_bubble_dwell():
+    from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_HOLD, _say_brightness
+
+    _music_bar._say_start = 0.0
+    after_default_hold = _SAY_FADE_IN + _SAY_HOLD + 1.0
+    assert _say_brightness(after_default_hold) < 1.0  # default dwell has ended
+    assert _say_brightness(after_default_hold, hold=_SAY_HOLD + 2.0) == 1.0  # still holding
+
+
+def test_say_seq_bump_restarts_identical_text(monkeypatch):
+    # The same text twice is normally swallowed (say != _say_text guard); a
+    # bumped seq restarts the fade so repeated statuses still show.
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=20, padding=(1, 2))
+
+    def render_at(clock, seq):
+        monkeypatch.setattr(_music_bar.time, "monotonic", lambda: clock)
+        frame = _MusicPocketFrame(panel, duck_say="Export finished.")
+        frame.duck_say_seq = seq
+        console = Console(width=120, height=20, file=StringIO())
+        console.render_lines(frame, console.options, pad=True)
+
+    render_at(10.0, seq=1)
+    assert _music_bar._say_start == 10.0
+    render_at(20.0, seq=1)  # same text, same seq → fade NOT restarted
+    assert _music_bar._say_start == 10.0
+    render_at(30.0, seq=2)  # same text, new seq → restarted
+    assert _music_bar._say_start == 30.0
+
+
+def test_entrance_plays_once_per_process(monkeypatch):
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 5.0)
+    _music_bar.start_duck_entrance()
+    assert _music_bar._duck_entrance_start == 5.0
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: 99.0)
+    _music_bar.start_duck_entrance()  # second call is a no-op
+    assert _music_bar._duck_entrance_start == 5.0
+    _music_bar.skip_duck_entrance()
+    assert _music_bar._duck_entrance_start == 0.0
+
+
+def test_reset_duck_state_restores_idle():
+    _music_bar.quack_duck()
+    _music_bar.set_duck_working(True)
+    _music_bar.start_duck_entrance()
+    _music_bar._say_text, _music_bar._say_seq = "hi", 3
+    _music_bar._reset_duck_state()
+    assert not _music_bar._duck_working and _music_bar._duck_quack_start == 0.0
+    assert _music_bar._say_text == "" and _music_bar._say_seq == 0
+    assert not _music_bar._duck_entrance_played and _music_bar._duck_entrance_start == 0.0
 
 
 def test_back_tab_absent_without_flag():

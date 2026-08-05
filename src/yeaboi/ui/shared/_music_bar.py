@@ -404,19 +404,22 @@ _SAY_TEXT = (198, 198, 208)  # soft grey-white, as the tip body
 _SAY_BORDER = (110, 110, 124)
 _say_text = ""  # the message currently being shown
 _say_start = 0.0  # when it appeared (monotonic)
+_say_seq = 0  # sequence stamp of the shown message (repeat text + new seq = new fade)
 
 
-def _say_brightness(now_t: float) -> float:
+def _say_brightness(now_t: float, hold: float | None = None) -> float:
     """0..1 brightness for the duck's bubble: fade in, hold, fade out, then 0
-    (which stops it being drawn at all, so the message clears itself)."""
+    (which stops it being drawn at all, so the message clears itself).
+    ``hold`` overrides the default dwell — longer lines (tips) get longer holds."""
     e = now_t - _say_start
+    dwell = _SAY_HOLD if hold is None else hold
     if e < 0:
         return 0.0
     if e < _SAY_FADE_IN:
         return e / _SAY_FADE_IN
-    if e < _SAY_FADE_IN + _SAY_HOLD:
+    if e < _SAY_FADE_IN + dwell:
         return 1.0
-    out = e - _SAY_FADE_IN - _SAY_HOLD
+    out = e - _SAY_FADE_IN - dwell
     return max(0.0, 1.0 - out / _SAY_FADE_OUT)
 
 
@@ -638,7 +641,102 @@ def _duck_shades_lift() -> int | None:
     return SHADES_LIFT_SEQUENCE[i]
 
 
-def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky: bool = False) -> None:
+# ── Caller-driven duck animation (quack / working-bob / entrance) ────────────
+# Same clock-stamp pattern as the shades gag: a caller stamps a start time and
+# the draw code derives the frame from it, so there is no animation thread and
+# nothing to clean up. The chat drives these around its long waits and stage
+# completions. NO logging anywhere below — this is all per-frame draw state;
+# the trigger sites log instead (see the logging skill).
+_DUCK_QUACK_HZ = 6.0  # bill open/close cycles per second, as the welcome tip quack
+_duck_quack_start = 0.0
+_duck_quack_seconds = 0.6
+_duck_working = False
+_duck_working_start = 0.0
+
+
+def quack_duck(seconds: float = 0.6) -> None:
+    """Open/close the chrome duck's bill for ``seconds`` (a short quack).
+
+    A quack already in flight is left to finish — back-to-back triggers (e.g.
+    fast-mode stages completing in quick succession) coalesce into one quack
+    instead of a stutter.
+    """
+    global _duck_quack_start, _duck_quack_seconds
+    now = time.monotonic()
+    if now - _duck_quack_start < _duck_quack_seconds:
+        return
+    _duck_quack_start, _duck_quack_seconds = now, seconds
+
+
+def _duck_beak_open() -> bool:
+    """Whether the bill is open this frame (toggling at _DUCK_QUACK_HZ)."""
+    if not _duck_quack_start:
+        return False
+    e = time.monotonic() - _duck_quack_start
+    return 0 <= e < _duck_quack_seconds and int(e * _DUCK_QUACK_HZ) % 2 == 1
+
+
+def set_duck_working(active: bool) -> None:
+    """Toggle the duck's head-bob loop — the liveness cue during long waits."""
+    global _duck_working, _duck_working_start
+    if active and not _duck_working:
+        _duck_working_start = time.monotonic()
+    _duck_working = active
+
+
+def _duck_frame() -> int:
+    """Sprite frame for this draw: bobbing while working, still otherwise."""
+    from yeaboi.ui.shared._mascot import FRAMES
+
+    if not _duck_working:
+        return 0
+    return int((time.monotonic() - _duck_working_start) * 8) % FRAMES
+
+
+# One-time entrance (the planning chat's greeting): state lives here so the
+# waddle-in survives re-renders; the walk itself is drawn by draw_companion_duck.
+_DUCK_ENTRANCE_SECONDS = 1.5
+_duck_entrance_start = 0.0
+_duck_entrance_played = False  # at most once per process — never on resume
+
+
+def start_duck_entrance() -> None:
+    """Play the waddle-into-the-corner entrance (no-op after the first time)."""
+    global _duck_entrance_start, _duck_entrance_played
+    if _duck_entrance_played:
+        return
+    _duck_entrance_played = True
+    _duck_entrance_start = time.monotonic()
+
+
+def skip_duck_entrance() -> None:
+    """Jump the entrance straight to the settled corner pose (first keypress)."""
+    global _duck_entrance_start
+    _duck_entrance_start = 0.0
+
+
+def _reset_duck_state() -> None:
+    """Test helper: restore every module-global duck clock to idle."""
+    global _duck_quack_start, _duck_quack_seconds, _duck_working, _duck_working_start
+    global _duck_shades_start, _duck_slide_start, _duck_last_draw
+    global _say_text, _say_start, _say_seq
+    global _duck_entrance_start, _duck_entrance_played
+    _duck_quack_start, _duck_quack_seconds = 0.0, 0.6
+    _duck_working, _duck_working_start = False, 0.0
+    _duck_shades_start = _duck_slide_start = _duck_last_draw = 0.0
+    _say_text, _say_start, _say_seq = "", 0.0, 0
+    _duck_entrance_start, _duck_entrance_played = 0.0, False
+
+
+def draw_companion_duck(
+    console,
+    options,
+    lines: list,
+    say: str = "",
+    say_sticky: bool = False,
+    say_hold: float | None = None,
+    say_seq: int = 0,
+) -> None:
     """Overlay the mascot duck in the bottom-right corner of ``lines``, in place.
 
     The duck sits just above the music pocket (which owns the bottom three rows),
@@ -665,9 +763,15 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
     # through the tinted page around the duck.
     bstyle = lines[-1][0].style
     bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
-    # Mid-gag he wears the lifted shades (revealing the pair underneath).
+    # Mid-gag he wears the lifted shades (revealing the pair underneath);
+    # otherwise the frame comes from the working-bob clock and the bill from the
+    # quack clock (both idle → the familiar still pose, frame 0, bill closed).
     _lift = _duck_shades_lift()
-    _head = render_head(0, flip=True) if _lift is None else render_head_shades(_lift, flip=True)
+    _head = (
+        render_head(_duck_frame(), flip=True, beak_open=_duck_beak_open())
+        if _lift is None
+        else render_head_shades(_lift, flip=True)
+    )
     duck_rows = console.render_lines(_head, options.update_width(_DUCK_W), pad=True, style=bg_style)
     dh = len(duck_rows)
     # Need room for the duck + a gap + the 3-row pocket; skip on tiny panels.
@@ -709,15 +813,17 @@ def draw_companion_duck(console, options, lines: list, say: str = "", say_sticky
 
     # ── Speech bubble, to the left of his head ────────────────────────────────
     # A fresh message restarts the fade; once it has faded back out the bubble
-    # stops drawing, so the status clears itself after a couple of seconds.
-    global _say_text, _say_start
-    if say and say != _say_text:
-        _say_text, _say_start = say, time.monotonic()
+    # stops drawing, so the status clears itself after a couple of seconds. A
+    # bumped ``say_seq`` restarts the fade even for identical text — without it a
+    # repeated status ("Export finished." twice) would be swallowed silently.
+    global _say_text, _say_start, _say_seq
+    if say and (say != _say_text or say_seq != _say_seq):
+        _say_text, _say_start, _say_seq = say, time.monotonic(), say_seq
     if not say or say != _say_text:
         return
     # Sticky lines (a confirmation awaiting an answer) fade IN but never out — they
     # stay until the page stops asking.
-    bright = 1.0 if say_sticky else _say_brightness(time.monotonic())
+    bright = 1.0 if say_sticky else _say_brightness(time.monotonic(), hold=say_hold)
     if say_sticky:
         bright = min(1.0, max(0.25, (time.monotonic() - _say_start) / _SAY_FADE_IN))
     if bright <= 0.0:
@@ -783,6 +889,8 @@ class _MusicPocketFrame:
         self.hint_tab = hint_tab  # a page's control hints, as one more tab
         self.duck_say = duck_say  # transient status the companion speaks
         self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
+        self.duck_say_hold = None  # per-message dwell override (None = default)
+        self.duck_say_seq = 0  # bump to restart the fade for identical text
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
@@ -803,7 +911,15 @@ class _MusicPocketFrame:
         _qualifies = self.hint_tab is not None and bool(self.hint_tab.plain.strip())
         draw_controls_pocket(console, options, lines, page_hint=self.hint_tab, target=1.0 if _qualifies else 0.0)
         if self.with_duck:
-            draw_companion_duck(console, options, lines, say=self.duck_say, say_sticky=self.duck_say_sticky)
+            draw_companion_duck(
+                console,
+                options,
+                lines,
+                say=self.duck_say,
+                say_sticky=self.duck_say_sticky,
+                say_hold=self.duck_say_hold,
+                say_seq=self.duck_say_seq,
+            )
         # Newlines go BETWEEN rows, never after the last one. A trailing
         # Segment.line() on a full-height frame pushes the cursor past the final
         # row and scrolls the whole frame up by one — the "bottom border moves up
@@ -932,6 +1048,8 @@ class MusicLive(Live):
                 duck_say=duck_say,
             )
             _frame.duck_say_sticky = _sticky
+            _frame.duck_say_hold = getattr(renderable, "_duck_say_hold", None)
+            _frame.duck_say_seq = int(getattr(renderable, "_duck_say_seq", 0) or 0)
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()
