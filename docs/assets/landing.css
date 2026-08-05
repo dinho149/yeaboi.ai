@@ -234,26 +234,47 @@
 
   /* bottom furniture — the app's tip block + version row (_build_tip_rows /
      _build_version_row), pinned under the centred mode list */
-  .tui-foot{margin-top:26px; display:flex; flex-direction:column; gap:4px}
+  /* The foot is now two lanes: the version row holds the left, the companion
+     (tip bubble → tail → duck) stacks up the right, exactly as
+     _build_companion lays it out. */
+  .tui-foot{
+    margin-top:26px; display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
+  }
+  .tui-companion{display:flex; flex-direction:column; align-items:center; gap:0; flex:0 0 auto}
+  /* the tip's speech bubble — Panel(box=ROUNDED) in the app */
+  .tui-bubble{
+    border:1px solid rgb(90,100,110); border-radius:8px;
+    padding:2px 10px 0; max-width:34ch; position:relative;
+  }
   .tui-tip{
-    margin:0; text-align:center; color:rgb(198,198,208);
+    margin:0; color:rgb(198,198,208);
     transition:opacity .9s ease; /* cross-fade stand-in for tip_brightness lerp */
   }
   .tui-tip.fading{opacity:0}
-  .tui-tip-dots{margin:0; text-align:center; color:rgb(70,70,82)}
-  .tui-tip-dots .on{color:rgb(226,186,96)}
-  .tui-tip-hint{margin-left:2.5em}
-  .tui-tip-hint b{font-weight:700; color:rgb(210,210,220)}
-  .tui-version{margin:6px 0 0; color:rgb(70,70,82)}
+  /* browse keys sit ON the bubble's bottom border (Panel.subtitle), so they
+     read as part of the tip box rather than a separate row */
+  .tui-bubble-keys{
+    margin:0; position:absolute; left:50%; bottom:0; transform:translate(-50%,50%);
+    background:#0a0b0d; padding:0 6px; white-space:pre;
+    font-size:.92em; color:rgb(120,120,140);
+  }
+  .tui-bubble-keys .on{color:rgb(198,198,208)}
+  .tui-bubble-keys .gap{padding:0 .9em}
+  .tui-bubble-keys b{font-weight:700; color:rgb(210,210,220)}
+  .tui-tail{margin:2px 0 0; color:rgb(120,135,150); line-height:1}
+  .tui-duck{display:block; image-rendering:pixelated; margin-top:-2px}
+  .tui-version{margin:0; color:rgb(70,70,82)}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
-  /* music status stamped on the Panel's bottom BORDER, right-aligned
-     (MusicLive sets Panel.subtitle) — masks the border behind it */
+  /* The music status is a BOXED pocket now, not a flat subtitle: draw_music_pocket
+     gives it its own rounded frame and the page Panel's bottom border curves up
+     around it. The opaque background masks the border where it passes behind. */
   .tui-music{
-    position:absolute; right:22px; bottom:0; transform:translateY(50%);
-    background:#0a0b0d; padding:0 8px; white-space:pre;
+    position:absolute; right:18px; bottom:0; transform:translateY(50%);
+    background:#0a0b0d; padding:2px 10px; white-space:pre;
     font-size:.92em; color:var(--t-muted);
+    border:1px solid rgba(228,230,232,.45); border-radius:8px;
   }
   .tui-music .hint{color:var(--t-dim)}
 

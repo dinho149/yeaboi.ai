@@ -1257,20 +1257,13 @@ function initHeroDemo() {
 
   // ---- tip block rotation (mirrors _build_tip_rows + current_tip) ----
   var tipEl = document.getElementById('tui-tip');
-  var dotsEl = document.getElementById('tui-tip-dots');
   var tipIdx = 0;
   function renderTip() {
-    if (tipEl) tipEl.textContent = HERO_TIPS[tipIdx];
-    if (dotsEl) {
-      dotsEl.textContent = '';
-      for (var d = 0; d < HERO_TIPS.length; d++) {
-        if (d) dotsEl.appendChild(document.createTextNode(' '));
-        var dot = document.createElement('span');
-        dot.textContent = d === tipIdx ? '●' : '○';
-        if (d === tipIdx) dot.className = 'on';
-        dotsEl.appendChild(dot);
-      }
-    }
+    // No position dots: the real screen dropped them when the tip moved into
+    // the duck's bubble (an auto-rotating tip needs no position indicator), and
+    // _build_companion strips the tip's leading emoji before speaking it — the
+    // bubble carries the words only.
+    if (tipEl) tipEl.textContent = HERO_TIPS[tipIdx].replace(/^[^A-Za-z0-9]+/, '');
   }
   function rotateTip() {
     tipIdx = (tipIdx + 1) % HERO_TIPS.length;

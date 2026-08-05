@@ -162,13 +162,24 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
                 <p class="tui-mode-desc" aria-hidden="true"></p>
               </button>
 
+              <!-- The foot mirrors the real welcome screen since the companion
+                   landed: the tip is no longer a centred row with position dots
+                   but a speech bubble in the duck's lane, browse keys stamped on
+                   the bubble's own bottom border, a ▾ tail, then the duck. The
+                   version row keeps the left. -->
               <div class="tui-foot" aria-hidden="true">
-                <p class="tui-tip" id="tui-tip">💡 Tip: resume your last session any time with --resume</p>
-                <p class="tui-tip-dots"><span id="tui-tip-dots"></span><span class="tui-tip-hint">press <b>t</b> to hide</span></p>
-                <p class="tui-version"><span class="v">v1.2.0</span><span class="sep">  ·  </span><b>c</b><span class="lbl"> changelog</span><span class="sep">  ·  </span><b>f</b><span class="lbl"> feedback</span></p>
+                <p class="tui-version"><span class="v">v2.52.0</span><span class="sep">  ·  </span><b>c</b><span class="lbl"> changelog</span><span class="sep">  ·  </span><b>f</b><span class="lbl"> feedback</span><span class="sep">  ·  </span><b>a</b><span class="lbl"> all tips</span></p>
+                <div class="tui-companion">
+                  <div class="tui-bubble">
+                    <p class="tui-tip" id="tui-tip">Tip: resume your last session any time with --resume</p>
+                    <p class="tui-bubble-keys"><span class="on">[ prev  ]</span> next<span class="gap"></span><b>t</b> hide</p>
+                  </div>
+                  <p class="tui-tail">▾</p>
+                  <img class="tui-duck" src="/assets/duck-base.png" alt="" width="60" height="64" loading="lazy" decoding="async" />
+                </div>
               </div>
             </div>
-            <span class="tui-music" aria-hidden="true"><span class="off">♪ off</span>  <span class="hint">^P play · ^O channel</span></span>
+            <span class="tui-music" aria-hidden="true"><span class="off">♪ off</span>  <span class="hint">ctrl+P play · ctrl+O channel</span></span>
           </div>
         </div>
       </div>
