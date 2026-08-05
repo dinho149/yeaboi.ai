@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.53.0",
+      "date": "2026-08-05",
+      "summary": "Planning mode is now a continuous live chat instead of a card-based questionnaire. Type naturally, and the agent streams its thoughts while it gathers your project goals, team shape, and delivery timeline. Slash commands (type `/help` mid-draft) let you skip questions, reset to defaults, switch to the classic form, or wrap up fast with `/finish`. Watch artifact cards — epics, features, stories, tasks, sprints — render in the transcript as they're drafted. New projects can pick Small or Large at the start, or just describe your project and let the classifier decide. The chat stays in sync with the headless engine, so exports and platform partners see the same project shape.",
+      "highlights": [
+        {
+          "text": "Planning mode is now a continuous live chat that streams agent thoughts as it gathers project details",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Slash commands (`/help`, `/skip`, `/finish`, `/form`, `/edit`, `/export` and more) for mid-draft control without typing the full response",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Watch epics, features, stories, tasks and sprints render as cards in the transcript while the agent drafts them",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Choose project size up-front (Small/Large) or describe your project and let the classifier size it",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Chat and form modes are swappable mid-intake, and `/finish` auto-accepts all remaining questions for a fast path through the pipeline",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.52.0",
       "date": "2026-08-05",
       "summary": "Analysis mode now discovers and offers GitHub as a code source in the setup wizard — owners, organizations, and repositories are discovered automatically, and the choice is saved to Settings for future runs. GitHub was technically supported all along but gated behind a configuration key that had no UI surface; now it reaches parity with Azure DevOps, which was always offered once connected.",
