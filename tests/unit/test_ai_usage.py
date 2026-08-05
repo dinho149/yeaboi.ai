@@ -406,6 +406,52 @@ class TestCollectAiActivity:
         assert items and items[0]["source"] == "github"
         assert repos == ["GitHub (remote): o/r"]
 
+    def test_scope_owners_bypass_the_legacy_single_repo_shim(self, monkeypatch):
+        # The wizard now supplies owners, which must win over STANDUP_GITHUB_REPO:
+        # scanning one repo when the user picked an org IS the bug being fixed.
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "o/r")
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "tok")
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ())
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_token", lambda: None)
+        seen: list = []
+
+        def _inventory(owners, days=120, include_trees=True):
+            seen.append(tuple(owners))
+            return [{"provider": "github", "container": "acme", "name": "acme/api", "active": True, "paths": []}]
+
+        monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _inventory)
+        monkeypatch.setattr(
+            "yeaboi.tools.github.github_recent_commits",
+            lambda repo, days=1, **k: [{"kind": "commit", "author": "A", "title": "x", "body": ""}],
+        )
+        monkeypatch.setattr("yeaboi.tools.github.github_recent_prs", lambda repo, days=1, **k: [])
+        _items, sources, _coverage, repos = collect_ai_activity("jira", "PROJ", analysis_scope={"github": ["acme"]})
+        assert seen == [("acme",)]
+        assert sources == ["github"]
+        assert repos == ["GitHub (remote): acme/api"]
+
+    def test_legacy_single_repo_shim_still_fires_without_a_scope(self, monkeypatch):
+        # Headless runs with only STANDUP_GITHUB_REPO keep their 1-repo behaviour —
+        # the picker must not have widened anyone's scan by side effect.
+        monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "o/r")
+        monkeypatch.setattr("yeaboi.config.get_github_token", lambda: "tok")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_project", lambda: "")
+        monkeypatch.setattr("yeaboi.config.get_azure_devops_token", lambda: None)
+        monkeypatch.delenv("TEAM_ANALYSIS_GITHUB_OWNERS", raising=False)
+
+        def _boom(*a, **k):
+            raise AssertionError("estate discovery must not run without configured owners")
+
+        monkeypatch.setattr("yeaboi.tools.github.github_analysis_inventory", _boom)
+        monkeypatch.setattr(
+            "yeaboi.tools.github.github_recent_commits",
+            lambda repo, days=1, **k: [{"kind": "commit", "author": "A", "title": "x", "body": ""}],
+        )
+        monkeypatch.setattr("yeaboi.tools.github.github_recent_prs", lambda repo, days=1, **k: [])
+        _items, sources, _coverage, repos = collect_ai_activity("jira", "PROJ")
+        assert sources == ["github"] and repos == ["GitHub (remote): o/r"]
+
     def test_sub_sources_restricts_to_azdo_only(self, monkeypatch):
         # GitHub is configured but not requested → skipped; only Azure Repos scanned.
         monkeypatch.setattr("yeaboi.config.get_standup_github_repo", lambda: "o/r")

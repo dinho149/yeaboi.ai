@@ -776,3 +776,99 @@ class TestGithubRecentReviews:
         assert _author_type(self._user("acme-scan[bot]")) == "bot"
         assert _author_type(self._user("alice")) == ""
         assert _author_type(None) == ""
+
+
+class TestGithubListOwners:
+    """Owner discovery for the Analysis setup picker.
+
+    Three independent lookups are unioned because no single one covers every
+    token shape — the tests pin that a token which can do only one of them still
+    produces a usable list rather than an empty picker.
+    """
+
+    @staticmethod
+    def _user(login: str, *, orgs=(), repos=(), orgs_fail=False, repos_fail=False):
+        def _get_orgs():
+            if orgs_fail:
+                raise RuntimeError("read:org scope missing")
+            return list(orgs)
+
+        def _get_repos(**_kwargs):
+            if repos_fail:
+                raise RuntimeError("repo listing forbidden")
+            return list(repos)
+
+        user = MagicMock()
+        user.login = login
+        user.get_orgs.side_effect = _get_orgs
+        user.get_repos.side_effect = _get_repos
+        return user
+
+    @staticmethod
+    def _named(login: str):
+        return MagicMock(login=login)
+
+    @staticmethod
+    def _repo(owner_login: str):
+        return MagicMock(owner=MagicMock(login=owner_login))
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_unions_login_orgs_and_repo_owners(self, mock_client):
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user(
+            "dinho",
+            orgs=[self._named("Acme-Corp")],
+            # Acme-Corp repeats via a repo, and a repo can reveal an org the
+            # orgs endpoint never returned — both must collapse to one entry.
+            repos=[self._repo("Acme-Corp"), self._repo("zeta-labs"), self._repo("dinho")],
+        )
+
+        assert github_list_owners() == ["Acme-Corp", "dinho", "zeta-labs"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_org_listing_failure_still_returns_the_login(self, mock_client):
+        # A fine-grained PAT commonly cannot list orgs at all; losing the login
+        # too would leave the picker empty for the most common modern token.
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user("dinho", orgs_fail=True, repos_fail=True)
+
+        assert github_list_owners() == ["dinho"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_repo_listing_recovers_orgs_the_token_cannot_enumerate(self, mock_client):
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.return_value = self._user(
+            "dinho", orgs_fail=True, repos=[self._repo("acme-corp")]
+        )
+
+        assert github_list_owners() == ["acme-corp", "dinho"]
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_auth_failure_propagates_to_the_caller(self, mock_client):
+        # The picker owns the fallback (configured owners + an on-screen warning),
+        # so a dead client must not be flattened into "no owners exist".
+        import pytest
+
+        from yeaboi.tools.github import github_list_owners
+
+        mock_client.return_value.get_user.side_effect = RuntimeError("bad credentials")
+
+        with pytest.raises(RuntimeError, match="bad credentials"):
+            github_list_owners()
+
+    @patch("yeaboi.tools.github._get_github_client")
+    def test_repo_listing_is_ordered_by_recent_push_not_name(self, mock_client):
+        # The slice is a bound on a possibly huge list; sorting by name would drop
+        # everything past the cut, hiding a "z…" org from the picker — exactly the
+        # invisible-GitHub failure this lookup exists to prevent.
+        from yeaboi.tools.github import github_list_owners
+
+        user = self._user("dinho", orgs_fail=True, repos=[self._repo("zeta-labs")])
+        mock_client.return_value.get_user.return_value = user
+
+        github_list_owners()
+
+        assert user.get_repos.call_args.kwargs == {"sort": "pushed", "direction": "desc"}

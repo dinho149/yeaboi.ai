@@ -998,41 +998,59 @@ def _build_member_select_screen(
     return build_page_panel(content, theme=ANALYSIS_THEME, height=height)
 
 
-def _build_code_project_select_screen(
-    projects: list[str],
+def _build_code_scope_select_screen(
+    items: list[str],
     checked: set[int],
     cursor: int,
     *,
+    heading: str = "Azure projects",
+    unit: str = "projects",
+    empty_label: str = "No projects found",
+    hint: str = "",
     width: int = 80,
     height: int = 24,
     message: str = "",
 ) -> Panel:
-    """Azure code-project multi-select for one Analysis run."""
+    """Code-scope multi-select for one Analysis run (Azure projects, GitHub owners).
+
+    One screen for both hosts: they differ only in wording, and a second copy
+    would drift the moment either gains a state. ``hint`` states what selecting an
+    entry costs — GitHub owners expand to every active repo underneath them, which
+    the user has no other way to see before pressing Enter."""
     theme = ANALYSIS_THEME
     rows: list[Text] = []
-    for idx, project in enumerate(projects):
+    for idx, item in enumerate(items):
         rows.append(
             _analysis_toggle_row(
-                project,
+                item,
                 "",
                 focused=idx == cursor,
                 selected=idx in checked,
             )
         )
     header = _analysis_setup_header(
-        "Azure projects",
+        heading,
         "Arrows move · Space selects · A selects all · Enter continues",
         message=message,
     )
+    # Empty discovery is a real outcome (a token with no visible orgs, a PAT
+    # scoped to nothing) — say so in the list rather than render a blank viewport.
+    if not items:
+        viewport_renderable = _analysis_toggle_row(empty_label, "", focused=False, enabled=False)
+    else:
+        viewport_renderable = _analysis_toggle_viewport(rows, cursor, height=height, header_h=12)
+    scope_lines = [Text(_PAD + f"{len(checked)} of {len(items)} {unit} selected", style=theme.accent_bright)]
+    if hint:
+        scope_lines.append(Text(_PAD + hint, style=theme.muted))
     return build_page_panel(
         Group(
             Text(""),
             _analysis_setup_title(width, height),
             Text(""),
             *header,
-            Text(_PAD + f"{len(checked)} of {len(projects)} projects selected", style=theme.accent_bright),
+            *scope_lines,
             Text(""),
-            _analysis_toggle_viewport(rows, cursor, height=height, header_h=12),
+            viewport_renderable,
         ),
         theme=ANALYSIS_THEME,
         height=height,
@@ -1079,10 +1097,13 @@ def _build_analysis_setup_review_screen(
         for component in ("delivery", "code", "docs")
         for source in components.get(component, [])
     ]
-    projects = analysis_scope.get("azdo") or []
     source_value = _summarize(source_names)
-    if projects:
-        source_value += f"\nAzure projects: {_summarize(projects)}"
+    # Both code hosts can carry a scope; the compact branch below folds the extra
+    # lines onto one with " · ", so adding a host costs no layout work.
+    for _scope_key, _scope_label in (("github", "GitHub owners"), ("azdo", "Azure projects")):
+        _scope_values = analysis_scope.get(_scope_key) or []
+        if _scope_values:
+            source_value += f"\n{_scope_label}: {_summarize(_scope_values)}"
     people_value = _summarize(members) if members else "All available team members"
     settings = f"{depth.title()} · {window_days} days"
     if model:
@@ -6158,6 +6179,25 @@ def _build_settings_screen(
         _heading("GitHub", wide=True)
         _row("Token", config_data.get("GITHUB_TOKEN", ""), masked=True, env="GITHUB_TOKEN")
         _token_help("GITHUB_TOKEN")
+        # The repository estate Analysis scans (comma-separated owners/orgs). The
+        # TUI wizard discovers and picks these per run, so this row is the default
+        # that lets CLI/MCP/headless runs reach GitHub without --github-owner.
+        _gh_owners = config_data.get("TEAM_ANALYSIS_GITHUB_OWNERS", "")
+        # Unset does not mean "nothing will be scanned": the getter falls back to
+        # the owner of STANDUP_GITHUB_REPO, so name that owner rather than imply
+        # headless runs have no estate at all.
+        _gh_legacy = (config_data.get("STANDUP_GITHUB_REPO", "") or "").split("/", 1)[0]
+        _gh_placeholder = (
+            f"{_gh_legacy} (from Standup repo) — chosen per run in Analysis setup"
+            if _gh_legacy
+            else "not set — chosen per run in Analysis setup"
+        )
+        _row(
+            "Analysis Owners",
+            _gh_owners or _gh_placeholder,
+            value_style="" if _gh_owners else theme.dim,
+            env="TEAM_ANALYSIS_GITHUB_OWNERS",
+        )
 
     def _sec_notion() -> None:
         # Independent doc tool (its own integration token, unlike Confluence).

@@ -169,6 +169,50 @@ def github_analysis_inventory(
     return out
 
 
+def github_list_owners(limit: int = 100) -> list[str]:
+    """List the GitHub owners/orgs visible to the configured token.
+
+    Feeds the Analysis setup picker, whose selection becomes the ``owners``
+    argument of :func:`github_analysis_inventory`. Three sources are unioned
+    because no single one is sufficient: the authenticated login (always
+    available), the user's organisations (classic PATs with ``read:org``), and
+    the owner of every visible repository — a *fine-grained* PAT commonly cannot
+    list orgs at all yet can still see that org's repos, which would otherwise
+    leave the picker empty for the most common modern token.
+
+    A failure in either optional lookup is logged and skipped rather than raised,
+    so a narrow token still yields the login. A client/auth failure propagates —
+    the caller owns the fallback (mirrors ``azdevops_list_projects``).
+    """
+    client = _get_github_client()
+    user = client.get_user()
+    owners: set[str] = set()
+    login = str(getattr(user, "login", "") or "").strip()
+    if login:
+        owners.add(login)
+    try:
+        for org in user.get_orgs()[:limit]:
+            name = str(getattr(org, "login", "") or "").strip()
+            if name:
+                owners.add(name)
+    except Exception as exc:
+        logger.warning("github_list_owners: organisation listing failed: %s", exc)
+    try:
+        # Most-recently-pushed first, NOT alphabetical: the slice is a bound on a
+        # potentially huge repo list, and sorting by name would drop everything
+        # past the cut — silently hiding a "z…" org from the picker, which is the
+        # very failure this lookup exists to prevent. Recency also matches what
+        # the scan itself considers (repos active within the window).
+        for repo in user.get_repos(sort="pushed", direction="desc")[:limit]:
+            name = str(getattr(getattr(repo, "owner", None), "login", "") or "").strip()
+            if name:
+                owners.add(name)
+    except Exception as exc:
+        logger.warning("github_list_owners: repository listing failed: %s", exc)
+    logger.info("github_list_owners: %d owner(s) discovered", len(owners))
+    return sorted(owners, key=str.lower)
+
+
 @tool
 def github_read_repo(repo_url: str, max_depth: int = 2) -> str:
     """Read the repository file tree and return a structured summary.

@@ -772,6 +772,34 @@ class TestAllowedPaths:
         assert get_allowed_paths() == ("/existing", "/new")
 
 
+class TestTeamAnalysisGithubOwners:
+    """The GitHub estate Analysis scans (TEAM_ANALYSIS_GITHUB_OWNERS).
+
+    Now settable from Settings and pickable per run, so the parse and the legacy
+    fallback are what the TUI's pre-checked defaults are built from.
+    """
+
+    def test_csv_parsed_and_deduped(self, monkeypatch):
+        from yeaboi.config import get_team_analysis_github_owners
+
+        monkeypatch.setenv("TEAM_ANALYSIS_GITHUB_OWNERS", "acme, zeta ,acme,,  ")
+        assert get_team_analysis_github_owners() == ("acme", "zeta")
+
+    def test_falls_back_to_the_standup_repo_owner(self, monkeypatch):
+        from yeaboi.config import get_team_analysis_github_owners
+
+        monkeypatch.delenv("TEAM_ANALYSIS_GITHUB_OWNERS", raising=False)
+        monkeypatch.setenv("STANDUP_GITHUB_REPO", "acme/widget")
+        assert get_team_analysis_github_owners() == ("acme",)
+
+    def test_empty_when_nothing_is_configured(self, monkeypatch):
+        from yeaboi.config import get_team_analysis_github_owners
+
+        monkeypatch.delenv("TEAM_ANALYSIS_GITHUB_OWNERS", raising=False)
+        monkeypatch.delenv("STANDUP_GITHUB_REPO", raising=False)
+        assert get_team_analysis_github_owners() == ()
+
+
 class TestStorageAndExportConfig:
     """Data-dir override + setup-owned publish destinations (with natural fallbacks)."""
 

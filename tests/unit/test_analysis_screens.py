@@ -31,7 +31,7 @@ from yeaboi.ui.mode_select.screens._screens_secondary import (
     _build_analysis_review_screen,
     _build_analysis_setup_review_screen,
     _build_analysis_window_screen,
-    _build_code_project_select_screen,
+    _build_code_scope_select_screen,
     _build_component_select_screen,
     _build_generate_confirm_screen,
     _build_instructions_review_screen,
@@ -76,7 +76,7 @@ def _make_body_lines(n: int = 10, prefix: str = "Line") -> list:
 
 def test_code_project_picker_shows_selected_scope():
     rendered = _render(
-        _build_code_project_select_screen(
+        _build_code_scope_select_screen(
             ["Infrastructure", "Product"],
             {1},
             1,
@@ -87,6 +87,46 @@ def test_code_project_picker_shows_selected_scope():
     assert "ANALYSIS SETUP" in rendered and "AZURE PROJECTS" in rendered
     assert "1 of 2 projects selected" in rendered
     assert "Product" in rendered
+
+
+def test_code_scope_picker_rebrands_for_github():
+    rendered = _render(
+        _build_code_scope_select_screen(
+            ["acme-corp", "dinho"],
+            {0},
+            0,
+            heading="GitHub owners",
+            unit="owners",
+            hint="Every non-archived repo with activity in the window is scanned.",
+            width=90,
+            height=24,
+        )
+    )
+    assert "GITHUB OWNERS" in rendered
+    assert "1 of 2 owners selected" in rendered
+    assert "acme-corp" in rendered
+    # The cost of one checkbox (an owner fans out to every active repo) has to be
+    # visible BEFORE Enter — there is no other screen that states it.
+    assert "non-archived repo" in rendered
+
+
+def test_code_scope_picker_explains_an_empty_estate():
+    # A token with no visible orgs is a real outcome; a blank viewport reads as a
+    # rendering bug and leaves the user with nothing to act on.
+    rendered = _render(
+        _build_code_scope_select_screen(
+            [],
+            set(),
+            0,
+            heading="GitHub owners",
+            unit="owners",
+            empty_label="No GitHub owners were visible to the configured token",
+            width=90,
+            height=24,
+        )
+    )
+    assert "No GitHub owners were visible" in rendered
+    assert "0 of 0 owners selected" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -1731,6 +1771,45 @@ class TestAnalysisSetupReviewScreen:
         assert "Alice, Bob" in out
         assert "Deep · 120 days" in out and "qwen3:4b" in out
 
+    def test_both_code_hosts_show_their_own_scope(self):
+        # The review screen is the last chance to notice the wrong owner was
+        # picked, so neither host may be summarised away.
+        out = _render(
+            _build_analysis_setup_review_screen(
+                features=["ai_footprint"],
+                components={"code": ["github", "azdo"]},
+                members=None,
+                analysis_scope={"github": ["acme-corp"], "azdo": ["Infrastructure"]},
+                depth="deep",
+                window_days=120,
+                width=100,
+                height=34,
+            ),
+            width=100,
+        )
+        assert "GitHub owners: acme-corp" in out
+        assert "Azure projects: Infrastructure" in out
+
+    def test_compact_review_folds_both_scopes_onto_one_line(self):
+        # The compact branch renders one Text per label, so the newline-separated
+        # scope lines have to be folded with " · " to survive it at all.
+        out = _render(
+            _build_analysis_setup_review_screen(
+                features=["ai_footprint"],
+                components={"code": ["github", "azdo"]},
+                members=None,
+                analysis_scope={"github": ["acme-corp"], "azdo": ["Infrastructure"]},
+                depth="deep",
+                window_days=120,
+                width=86,
+                height=24,
+            ),
+            width=86,
+        )
+        sources_line = next(line for line in out.splitlines() if "Sources" in line)
+        assert "GitHub owners: acme-corp" in sources_line
+        assert "Azure projects:" in sources_line
+
     def test_review_loop_can_go_back_or_run(self):
         from yeaboi.ui.mode_select import _run_analysis_setup_review
 
@@ -2072,19 +2151,115 @@ class TestComponentAndMemberLoops:
         assert result == {"delivery": ["azdevops"], "code": ["github", "azdo"], "docs": ["confluence"]}
 
     def test_code_project_initial_selection_is_restored(self, monkeypatch):
-        from yeaboi.ui.mode_select import _run_code_project_select
+        from yeaboi.ui.mode_select import _run_code_scope_select
 
         monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_list_projects", lambda: ["Alpha", "Beta", "Gamma"])
         monkeypatch.setattr("yeaboi.config.get_team_analysis_azdo_projects", lambda: [])
-        result = _run_code_project_select(
+        result = _run_code_scope_select(
             self._FakeLive(),
             self._console(),
             self._reader(["enter"]),
             0.01,
             True,
-            initial_projects=["beta"],
+            provider="azdo",
+            initial=["beta"],
         )
         assert result == ["Beta"]
+
+    def _github_scope(self, keys, monkeypatch, *, owners=None, initial=None, discover=None):
+        from yeaboi.ui.mode_select import _run_code_scope_select
+
+        monkeypatch.setattr(
+            "yeaboi.tools.github.github_list_owners",
+            discover or (lambda: list(owners if owners is not None else ["acme-corp", "dinho"])),
+        )
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ())
+        return _run_code_scope_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(keys),
+            0.01,
+            True,
+            provider="github",
+            initial=initial,
+        )
+
+    def test_github_owner_picker_pre_checks_nothing_without_configured_owners(self, monkeypatch):
+        # Discovery here is unbounded — personal login plus every org, each one a
+        # whole repo estate. Pre-checking all of it would make three Enters scan
+        # everything the token can see, so Enter must refuse until the user picks.
+        assert self._github_scope([" ", "enter"], monkeypatch) == ["acme-corp"]
+
+    def test_github_owner_picker_refuses_an_empty_pick(self, monkeypatch):
+        assert self._github_scope(["enter", "down", " ", "enter"], monkeypatch) == ["dinho"]
+
+    def test_github_owner_picker_pre_checks_configured_owners(self, monkeypatch):
+        # A saved Settings default IS an explicit choice, so it arrives checked.
+        from yeaboi.ui.mode_select import _run_code_scope_select
+
+        monkeypatch.setattr("yeaboi.tools.github.github_list_owners", lambda: ["acme-corp", "dinho"])
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ("acme-corp",))
+        result = _run_code_scope_select(
+            self._FakeLive(),
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            provider="github",
+        )
+        assert result == ["acme-corp"]
+
+    def test_github_owner_initial_selection_is_restored(self, monkeypatch):
+        assert self._github_scope(["enter"], monkeypatch, initial=["DINHO"]) == ["dinho"]
+
+    def test_github_owner_empty_estate_names_the_way_out(self, monkeypatch):
+        # "Select at least one GitHub owner." is impossible advice with an empty
+        # list — Enter has to point at the only key that works.
+        from yeaboi.ui.mode_select import _run_code_scope_select
+
+        monkeypatch.setattr("yeaboi.tools.github.github_list_owners", lambda: [])
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ())
+        captured: list = []
+        live = self._FakeLive()
+        live.update = captured.append
+        _run_code_scope_select(
+            live,
+            self._console(),
+            self._reader(["enter", "esc"]),
+            0.01,
+            True,
+            provider="github",
+        )
+        assert "press Esc to go back" in _render(captured[-1])
+
+    def test_github_owner_discovery_failure_falls_back_to_config(self, monkeypatch):
+        # Discovery failing must not strand the wizard: the configured default
+        # still lets the run proceed, with the reason on screen.
+        from yeaboi.ui.mode_select import _run_code_scope_select
+
+        def _boom():
+            raise RuntimeError("bad credentials")
+
+        monkeypatch.setattr("yeaboi.tools.github.github_list_owners", _boom)
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ("fallback-org",))
+        captured: list = []
+        live = self._FakeLive()
+        live.update = captured.append
+        result = _run_code_scope_select(
+            live,
+            self._console(),
+            self._reader(["enter"]),
+            0.01,
+            True,
+            provider="github",
+        )
+        assert result == ["fallback-org"]
+        assert "bad credentials" in _render(captured[-1])
+
+    def test_github_owner_empty_estate_stays_on_screen(self, monkeypatch):
+        # Enter with nothing to select must not return an empty scope — Esc is the
+        # only way out, so the user goes back and de-selects GitHub deliberately.
+        assert self._github_scope(["enter", "esc"], monkeypatch, owners=[]) == "cancel"
 
     def test_member_selection_can_be_restored_after_review_back(self):
         from yeaboi.ui.mode_select import _run_member_select
@@ -2194,6 +2369,8 @@ class TestAnalysisSetupWizard:
 
     _DOCS_ONLY = {"delivery": [], "code": [], "docs": ["confluence"]}
     _DELIVERY_ONLY = {"delivery": ["jira"], "code": [], "docs": []}
+    _GITHUB_ONLY = {"delivery": [], "code": ["github"], "docs": []}
+    _BOTH_HOSTS = {"delivery": [], "code": ["github", "azdo"], "docs": []}
 
     def _wizard(self, monkeypatch, keys, grid, *, roster=("Alice",), preflight=None, lookup_fails=False):
         from types import SimpleNamespace
@@ -2204,6 +2381,12 @@ class TestAnalysisSetupWizard:
             "yeaboi.analysis.llm_runtime.get_ollama_analysis_preflight",
             lambda db_path: preflight or {"offer": False},
         )
+        # Code-scope discovery is a network call per host; stub both regardless of
+        # the grid so a step that becomes applicable mid-test can never reach out.
+        monkeypatch.setattr("yeaboi.tools.github.github_list_owners", lambda: ["acme-corp", "dinho"])
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_github_owners", lambda: ())
+        monkeypatch.setattr("yeaboi.tools.azure_devops.azdevops_list_projects", lambda: ["Infra", "Product"])
+        monkeypatch.setattr("yeaboi.config.get_team_analysis_azdo_projects", lambda: ())
         lookup_result = (
             None if lookup_fails else SimpleNamespace(members=[SimpleNamespace(name=name) for name in roster])
         )
@@ -2274,6 +2457,45 @@ class TestAnalysisSetupWizard:
         # instead of exiting the app.
         keys = ["enter", "enter", "enter", "esc", "esc", "esc"]
         assert self._wizard(monkeypatch, keys, self._DELIVERY_ONLY, lookup_fails=True) is None
+
+    def test_github_owners_reach_the_run_config(self, monkeypatch):
+        # The whole point of the fix: a GitHub-only code estate produces a scope
+        # the engine can act on, without any AzDO involvement.
+        # features → sources → owners ("a" selects all, since nothing is
+        # pre-checked without configured owners) → depth → window → members → review
+        keys = ["enter", "enter", "a", "enter", "enter", "enter", "enter", "enter"]
+        config = self._wizard(monkeypatch, keys, self._GITHUB_ONLY)
+        assert config["components"] == {"code": ["github"]}
+        assert config["analysis_scope"] == {"github": ["acme-corp", "dinho"]}
+
+    def test_esc_from_azure_picker_lands_on_github_picker_with_its_pick_intact(self, monkeypatch):
+        # Two scope screens, so Esc must step between them — the reason each host
+        # gets its own wizard step rather than one combined screen.
+        keys = [
+            *["enter", "enter"],  # features → sources
+            *[" ", "enter"],  # owners: check the first owner only
+            *["esc"],  # azdo projects → back to owners
+            *["enter"],  # owners again, selection restored
+            *["enter", "enter", "enter", "enter", "enter"],  # azdo → depth → window → members → review
+        ]
+        config = self._wizard(monkeypatch, keys, self._BOTH_HOSTS)
+        assert config["analysis_scope"]["github"] == ["acme-corp"]
+        assert config["analysis_scope"]["azdo"] == ["Infra", "Product"]
+
+    def test_deselecting_github_coerces_its_scope_out(self, monkeypatch):
+        # Same discipline as the stale-depth case: a host dropped at the sources
+        # step must not leak its owners into the payload.
+        keys = [
+            *["enter", "enter", "a", "enter"],  # features → sources → owners (all)
+            *["enter", "enter", "enter", "enter"],  # azdo → depth → window → members
+            *["esc"] * 6,  # review→members→window→depth→azdo→owners→sources
+            *["down", " ", "enter"],  # sources: deselect github, leaving azdo
+            *["enter", "enter", "enter", "enter", "enter"],  # azdo → depth → window → members → review
+        ]
+        config = self._wizard(monkeypatch, keys, self._BOTH_HOSTS)
+        assert config["components"]["code"] == ["azdo"]
+        assert "github" not in config["analysis_scope"]
+        assert config["analysis_scope"]["azdo"] == ["Infra", "Product"]
 
     def test_empty_roster_is_transparent_in_both_directions(self, monkeypatch):
         # Forward: members auto-advances to review. Backward: Esc from review
