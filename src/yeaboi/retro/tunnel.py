@@ -206,6 +206,11 @@ class CloudflareTunnel:
 
     @property
     def public_url(self) -> str:
+        """The tunnel's public URL, or ``""`` when there is none to hand out.
+
+        Blank after a :meth:`start` a concurrent :meth:`stop` aborted, so it never
+        contradicts what ``start()`` returned by naming an already-dead tunnel.
+        """
         return self._url
 
     def start(self, *, timeout: float = 45.0) -> str | None:
@@ -319,9 +324,16 @@ class CloudflareTunnel:
         # more often than anywhere else. That stop tears the process down correctly, but
         # returning the URL anyway would hand the caller a link to an already-dead tunnel,
         # which it then puts on screen. Report the failure the caller already handles.
+        #
+        # This is also where a stop the *gate itself* noticed arrives: _wait_dns_live
+        # returns False on a latched stop just as it does on a timeout, so there is one
+        # abort path here rather than two. Unwind ``_url`` with it — start() owns that
+        # field, and leaving it set would make ``public_url`` still report a dead link
+        # while start() says the tunnel failed.
         with self._lock:
             if self._stop_requested:
                 logger.warning("retro: cloudflare tunnel stopped while waiting for DNS; not reporting a URL")
+                self._url = ""
                 return None
         logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
         return self._url
@@ -360,11 +372,29 @@ class CloudflareTunnel:
         Best-effort: on timeout we still return the URL (the tunnel is up per cloudflared),
         but log a warning — a persistently-unresolvable host usually means the joining
         network blocks ``trycloudflare.com``.
+
+        A concurrent :meth:`stop` ends the wait early and is reported exactly like a
+        timeout (``False``, never an exception) — the caller already handles that.
         """
         google, cloudflare = "https://dns.google/resolve", "https://1.1.1.1/dns-query"
         start = time.monotonic()
         google_reachable = False
         while time.monotonic() < deadline:
+            # This loop is the longest wait in start() — up to 30 s of polling plus a 3 s
+            # settle — and it is exactly the window where a host backing out of the board
+            # lands, so it has to be able to hear a stop(). _output_share.py's teardown
+            # calls stop() then joins the setup worker, so without this the TUI sits for
+            # up to ~33 s doing nothing useful, worst of all on the network that blocks
+            # trycloudflare.com outright (DNS never resolves → the full deadline).
+            #
+            # The latch is read under the lock but the lock is *never* held across the DoH
+            # request below: the TUI thread's stop() must not block on a network call. The
+            # check sits at the top of the body so a stop landing during the previous sleep
+            # also skips a 4 s query, not just the sleep after it.
+            with self._lock:
+                if self._stop_requested:
+                    logger.info("retro: cloudflare tunnel DNS wait abandoned — stop requested")
+                    return False
             ext = self._dns_query(google, host)
             if ext:  # an ordinary public resolver sees it → joining teammates will too
                 logger.info("cloudflare quick tunnel DNS propagated")

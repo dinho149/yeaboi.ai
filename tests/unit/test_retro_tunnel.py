@@ -373,8 +373,10 @@ class TestStartStopRace:
         # a tunnel that was already dead.
         url_line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |\n"
         monkeypatch.setattr(tunnel.subprocess, "Popen", lambda *a, **k: _FakeProc(url_line))
+        gated: list[str] = []
 
         def _stop_mid_wait(self, host, *, deadline):
+            gated.append(host)
             self.stop()  # the host closes the board while DNS is still propagating
             return True
 
@@ -383,9 +385,56 @@ class TestStartStopRace:
 
         with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
             assert t.start(timeout=5) is None
-        assert t.public_url  # the URL was seen…
+        assert gated == ["fake-tunnel-abcd.trycloudflare.com"]  # the URL was seen…
         assert any("stopped while waiting for DNS" in r.getMessage() for r in caplog.records)  # …never handed out
         assert t._proc is None
+
+    def test_stop_ends_the_dns_poll_early(self, monkeypatch):
+        # The check above runs *after* _wait_dns_live returns, so it shortened the report
+        # and not the wait: the gate's own poll loop had no way to hear a stop, and ran its
+        # full 30 s deadline plus settle regardless. _output_share.py's teardown calls
+        # stop() then joins the setup worker, so a host backing out of a share flow watched
+        # the TUI sit for ~33 s — worst on the network that blocks trycloudflare.com, where
+        # the host never resolves and the wait is always the full deadline. Drive the real
+        # loop here (only the resolver and the sleep are faked) with a stop landing mid-poll.
+        t = tunnel.CloudflareTunnel(5173)
+        queries: list[str] = []
+        slept: list[float] = []
+        monkeypatch.setattr(tunnel.time, "sleep", lambda s: slept.append(s))
+
+        def _never_resolves(self, base, host):
+            queries.append(base)
+            if len(queries) == 1:
+                t.stop()  # the host backs out while the record is still propagating
+            return False  # reachable resolver, NXDOMAIN for now — the loop keeps polling
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_dns_query", _never_resolves)
+
+        # The 30 s deadline start() passes. Without the latch check this polls it out.
+        assert t._wait_dns_live("nope.trycloudflare.com", deadline=time.monotonic() + 30.0) is False
+        assert len(queries) == 1  # broke at the top of the next pass, before re-querying
+        assert slept == [1.5]  # …one poll interval, not twenty — and no 3 s success settle
+
+    def test_stop_during_the_dns_wait_clears_the_public_url(self, monkeypatch):
+        # start() reports None on this path, but ``_url`` stayed set — so ``public_url``
+        # still named the (already dead) tunnel while start() said it had failed. No caller
+        # reads it after a failed start() today; this keeps that safe by construction
+        # rather than by nobody having tried it yet. Goes through the *real* DNS gate, so
+        # it also pins that the gate's own early return lands on start()'s existing abort
+        # path — one place unwinds ``_url``, not one per way of noticing the stop.
+        url_line = "INF |  https://fake-tunnel-abcd.trycloudflare.com  |\n"
+        monkeypatch.setattr(tunnel.subprocess, "Popen", lambda *a, **k: _FakeProc(url_line))
+        monkeypatch.setattr(tunnel.time, "sleep", lambda s: None)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        def _stop_then_nxdomain(self, base, host):
+            t.stop()  # the page's finally, landing inside the poll loop
+            return False
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_dns_query", _stop_then_nxdomain)
+
+        assert t.start(timeout=5) is None
+        assert t.public_url == ""  # nothing left behind to contradict that None
 
 
 class TestDnsLiveGate:
