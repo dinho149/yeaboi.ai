@@ -365,7 +365,11 @@
      around it. The opaque background masks the border where it passes behind. */
   .tui-music{
     position:absolute; right:24px; bottom:-1px;
-    background:#0a0b0d; padding:1px 10px 2px; white-space:pre;
+    /* two rows tall, because that is what the alcove is: draw_music_pocket
+       spends one row on the roof (╭──╮) and the next on the music itself,
+       before the panel's border row underneath. A single-row box was the roof
+       sitting straight on the text. */
+    background:#0a0b0d; padding:11px 10px 10px; white-space:pre;
     font-size:.92em; color:var(--t-muted);
     /* no bottom border, and bottom:-1px so the element covers the panel's own
        bottom border across its width — the alcove is open underneath, exactly
