@@ -2126,6 +2126,31 @@ def _build_import_screen(
     return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
+# Braille spinner for the active progress row — the same cadence the planning
+# chat's build checklist uses, so every loading screen animates identically.
+_ACTIVITY_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+# Per-stage first-seen clock, keyed by component id. The progress events carry
+# no timestamps, so the renderer notes when it first saw each stage (in
+# anim_tick time) to show a per-stage elapsed. Cleared whenever anim_tick jumps
+# backwards — that's a new run starting its clock at zero.
+_activity_first_seen: dict[str, float] = {}
+_activity_last_tick = 0.0
+
+
+def _activity_stage_elapsed(component_id: str, anim_tick: float) -> float:
+    global _activity_last_tick
+    if anim_tick < _activity_last_tick - 1.0:
+        _activity_first_seen.clear()
+    _activity_last_tick = anim_tick
+    return anim_tick - _activity_first_seen.setdefault(component_id, anim_tick)
+
+
+def _fmt_mmss(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s // 60}:{s % 60:02d}"
+
+
 def _build_activity_progress_rows(
     progress: list,
     *,
@@ -2137,6 +2162,8 @@ def _build_activity_progress_rows(
     Structured component events carry an authoritative lifecycle state. Plain
     string callbacks only announce that work started, so earlier strings remain
     activity history instead of being incorrectly promoted to "completed".
+    Active rows spin (braille, like the chat's build checklist) and carry a
+    per-stage elapsed; structured runs get a ``[n/total] · total m:ss`` footer.
     """
     from yeaboi.analysis.progress import is_component_progress
 
@@ -2153,6 +2180,7 @@ def _build_activity_progress_rows(
             legacy_activity.append(item)
 
     dots = "." * (int(anim_tick * 2) % 4)
+    spin = _ACTIVITY_SPINNER[int(anim_tick * 10) % len(_ACTIVITY_SPINNER)]
     rows: list[Text] = []
     if component_order:
         for component_id in component_order:
@@ -2195,8 +2223,9 @@ def _build_activity_progress_rows(
                     parts.append(f"{secondary_count:,} {secondary_unit}")
                 if detail:
                     parts.append(detail)
+                parts.append(_fmt_mmss(_activity_stage_elapsed(component_id, anim_tick)))
                 suffix = f"{dots} · " + " · ".join(parts) if parts else dots
-                marker, style = "▸", f"bold {theme.accent_bright}"
+                marker, style = spin, f"bold {theme.accent_bright}"
             rows.append(Text(_PAD + f"  {marker} {label}{suffix}", style=style, justify="left"))
 
         if any(bool(component_states[item].get("read_only")) for item in component_order):
@@ -2209,6 +2238,15 @@ def _build_activity_progress_rows(
             )
         if legacy_activity:
             rows.append(Text(_PAD + f"      ↳ {legacy_activity[-1]}", style=theme.muted, justify="left"))
+        _terminal = {"completed", "partial", "no_data", "fallback", "failed"}
+        resolved = sum(1 for c in component_order if component_states[c]["status"] in _terminal)
+        rows.append(
+            Text(
+                _PAD + f"  [{resolved}/{len(component_order)}] · total {_fmt_mmss(anim_tick)}",
+                style=theme.muted,
+                justify="left",
+            )
+        )
         return rows
 
     for activity in legacy_activity[:-1]:
@@ -2216,7 +2254,7 @@ def _build_activity_progress_rows(
     if legacy_activity:
         rows.append(
             Text(
-                _PAD + f"  ▸ {legacy_activity[-1]}{dots}",
+                _PAD + f"  {spin} {legacy_activity[-1]}{dots}",
                 style=f"bold {theme.accent_bright}",
                 justify="left",
             )

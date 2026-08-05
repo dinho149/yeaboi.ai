@@ -9812,17 +9812,32 @@ def _run_roadmap_page(
 
         thread = duck_working_thread(_worker, name="roadmap-analyze")
         thread.start()
-        _spinners = "◐◓◑◒"
         started = time.monotonic()
-        state["busy"] = True  # spinner-only screen — hide the source options underneath
+        state["busy"] = True  # loading screen replaces the source options underneath
+        # The consistent loading screen (spinner + activity rows + elapsed) the
+        # other modes use, in the roadmap accent — not a hand-rolled status line.
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_progress_screen
+        from yeaboi.ui.shared._components import PLANNING_THEME, planning_title
+
         while thread.is_alive():
             elapsed = time.monotonic() - started
-            spin = _spinners[int(elapsed * 8) % len(_spinners)]
-            state["message"] = f"{spin} {progress[-1]}  ({int(elapsed)}s — usually ~30s)"
-            _render()
+            w, h = console.size
+            live.update(
+                _build_standup_progress_screen(
+                    list(progress),
+                    width=w,
+                    height=max(10, h - 1),
+                    elapsed=elapsed,
+                    anim_tick=elapsed,
+                    theme=PLANNING_THEME,  # roadmap is a Planning sub-page (same accent)
+                    title=planning_title(elapsed),
+                    label="Analyzing roadmap",
+                )
+            )
             time.sleep(1 / 30)
         thread.join()
         state["busy"] = False
+        state["message"] = ""
 
         outcome = result_box[0]
         if isinstance(outcome, Exception) or outcome is None:
