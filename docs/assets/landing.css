@@ -238,13 +238,23 @@
      (tip bubble → tail → duck) stacks up the right, exactly as
      _build_companion lays it out. */
   .tui-foot{
-    margin-top:26px; display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
+    /* The two lanes do NOT share a flex row: the bubble is wide and the version
+       row is long, so side by side they overflowed the panel. In the app they
+       never compete — the bubble sits high on the right where the left is empty,
+       and only the narrow duck is ever level with the version text. Absolute
+       placement inside a sized foot reproduces that. */
+    position:relative; margin-top:22px; min-height:158px;
   }
-  .tui-companion{display:flex; flex-direction:column; align-items:center; gap:0; flex:0 0 auto}
+  .tui-companion{
+    position:absolute; right:0; bottom:22px;
+    display:flex; flex-direction:column; align-items:center; gap:0;
+  }
   /* the tip's speech bubble — Panel(box=ROUNDED) in the app */
   .tui-bubble{
     border:1px solid rgb(90,100,110); border-radius:8px;
-    padding:2px 10px 0; max-width:34ch; position:relative;
+    /* bottom padding clears the keys row that straddles the border — without it
+       the keys sat on top of the tip's last line */
+    padding:3px 12px 8px; max-width:34ch; position:relative;
   }
   .tui-tip{
     margin:0; color:rgb(198,198,208);
@@ -261,9 +271,11 @@
   .tui-bubble-keys .on{color:rgb(198,198,208)}
   .tui-bubble-keys .gap{padding:0 .9em}
   .tui-bubble-keys b{font-weight:700; color:rgb(210,210,220)}
-  .tui-tail{margin:2px 0 0; color:rgb(120,135,150); line-height:1}
-  .tui-duck{display:block; image-rendering:pixelated; margin-top:-2px}
-  .tui-version{margin:0; color:rgb(70,70,82)}
+  .tui-tail{margin:1px 0 0; color:rgb(120,135,150); line-height:1; font-size:1.1em}
+  /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
+     (see _build_companion) — the source sprite faces right */
+  .tui-duck{display:block; image-rendering:pixelated; margin-top:-2px; transform:scaleX(-1)}
+  .tui-version{position:absolute; left:0; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
@@ -331,9 +343,18 @@
     isolation:isolate;
   }
   /* An odd card count leaves the last row short: 7 modes in a 3-wide grid put
-     Reporting alone beside two empty cells. The final card spans the full row
-     instead, so the block still reads as a finished rectangle. */
-  .modes > .mode-card:last-child:nth-child(3n + 1){grid-column:1 / -1}
+     Reporting alone beside two empty cells. The final card spans the row — but
+     spanning alone just trades two empty cells for one empty card, so it also
+     switches to a horizontal layout: heading, copy and tag sit side by side and
+     fill the width with content. Reverts to the normal stacked card at the
+     single-column breakpoint, where nothing is spanning. */
+  .modes > .mode-card:last-child:nth-child(3n + 1){
+    grid-column:1 / -1; min-height:0;
+    flex-direction:row; align-items:center; gap:32px;
+  }
+  .modes > .mode-card:last-child:nth-child(3n + 1) .mode-head{flex:0 0 auto; min-width:180px}
+  .modes > .mode-card:last-child:nth-child(3n + 1) > p{max-width:60ch}
+  .modes > .mode-card:last-child:nth-child(3n + 1) .mode-tag{flex:0 0 auto; margin-left:auto}
   .mode-card{
     position:relative; min-height:225px;
     background:rgba(255,255,255,.022); isolation:isolate;
@@ -641,6 +662,10 @@
     .hero-demo{margin-top:20px; padding-bottom:0}
     .modes{grid-template-columns:1fr}
     .mode-card{min-height:0; padding:22px 20px 20px}
+    /* nothing spans at one column, so the last card goes back to the stacked
+       layout every other card uses */
+    .modes > .mode-card:last-child:nth-child(3n + 1){flex-direction:column; align-items:stretch; gap:12px}
+    .modes > .mode-card:last-child:nth-child(3n + 1) .mode-tag{margin-left:0}
     /* pipeline: a horizontal snap carousel instead of five stacked cards —
        one swipe-height instead of ~5 screens; the 76% column leaves the next
        stage peeking in as the scroll affordance */
