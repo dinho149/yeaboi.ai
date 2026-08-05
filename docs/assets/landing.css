@@ -87,6 +87,19 @@
     gap:14px; opacity:.25; transition:opacity .45s ease;
   }
   .scrolly-step.is-active{opacity:1}
+  /* Scroll-driven fade (site.js adds .is-driven once it is actually running, so
+     the rules above stay the no-JS and reduced-motion baseline). A step's
+     opacity comes from how near its middle is to the viewport's: full through
+     the centre band, gone by a third of a viewport out. The point is that a step
+     never reaches the top or bottom edge — it has finished arriving, and starts
+     leaving, well inside the page. */
+  .scrolly-steps.is-driven .scrolly-step{
+    opacity:var(--step-o,0); transition:none;
+    transform:translateY(var(--step-y,0));
+  }
+  /* while a line is still churning through glyphs it wears the step's own
+     accent, then eases back to its resting colour as the text resolves */
+  .scrolly-step .decoding{color:var(--sh)}
   .step-k{
     margin:0; font-family:var(--mono); font-size:.78rem; font-weight:600;
     letter-spacing:.14em; text-transform:uppercase; color:var(--sh);
@@ -94,6 +107,7 @@
   .scrolly-step h3{
     margin:0; font-family:var(--display); font-weight:620; font-size:1.35rem;
     letter-spacing:-.02em; line-height:1.25; color:var(--text);
+    transition:color .5s ease;
   }
   .scrolly-step > p:not(.step-k){
     margin:0; color:var(--text-muted); font-size:.98rem; line-height:1.65;
@@ -340,6 +354,32 @@
        as the app draws it (╰──╯ … gap … ╰──╯) */
     border:1px solid rgba(228,230,232,.45); border-bottom:none;
     border-radius:8px 8px 0 0;
+  }
+  /* The wall does not meet the border at a right angle: draw_music_pocket's
+     border row is ╰───╯ · gap · ╰───╯, so the panel's bottom border RISES into
+     each alcove wall through a rounded join. Two 8px quarter-arcs sit just
+     outside the pocket, ╯ on the left and ╰ on the right.
+
+     The arc is a radial-gradient RING rather than a rounded border, because the
+     8px it spans is 8px of the panel's own bottom border that has to be covered
+     — and a border-radius would clip exactly the corner where the cover is
+     needed. A gradient is not clipped, so the box can be opaque underneath and
+     still draw the curve on top. (An earlier pass masked with two offset copies
+     of the pocket's silhouette instead; those ran the full height of the bar and
+     showed as vertical seams either side of it.) */
+  .tui-music::before,.tui-music::after{
+    content:""; position:absolute; bottom:0; width:8px; height:8px;
+    background-color:#0a0b0d; background-repeat:no-repeat;
+  }
+  .tui-music::before{
+    right:100%;
+    background-image:radial-gradient(circle 8px at 0 0,
+      transparent 0 7px, rgba(228,230,232,.45) 7px 8px, transparent 8px);
+  }
+  .tui-music::after{
+    left:100%;
+    background-image:radial-gradient(circle 8px at 100% 0,
+      transparent 0 7px, rgba(228,230,232,.45) 7px 8px, transparent 8px);
   }
   .tui-music .hint{color:var(--t-dim)}
 

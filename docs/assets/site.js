@@ -1245,16 +1245,91 @@ function initHeroDemo() {
     }, 3400);
   }
 
+  // A line resolves out of noise rather than simply appearing — the glyph pool
+  // is the terminal's own shade/box characters plus the alphabet, so the churn
+  // reads as a decode and not as mojibake.
+  var DECODE_POOL = '░▒▓█▌▐▚▞0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#*<>/[]{}$%&@';
+  function decodeInto(el, dur) {
+    // The element's real text is stashed on first run: a scroll that re-enters a
+    // step mid-decode would otherwise capture the scrambled text as the target.
+    var real = el.getAttribute('data-decode') || el.textContent;
+    el.setAttribute('data-decode', real);
+    if (el._decodeRaf) cancelAnimationFrame(el._decodeRaf);
+    var n = real.length;
+    // Each index resolves at its own point in the run — mostly left-to-right,
+    // with enough jitter that the line settles raggedly instead of by wipe.
+    var at = [];
+    for (var i = 0; i < n; i++) at.push(Math.min(0.94, (i / n) * 0.66 + Math.random() * 0.32));
+    el.classList.add('decoding');
+    var t0 = performance.now();
+    el._decodeRaf = requestAnimationFrame(function frame(now) {
+      var p = (now - t0) / dur;
+      if (p >= 1) {
+        el.textContent = real;
+        el.classList.remove('decoding');
+        el._decodeRaf = 0;
+        return;
+      }
+      var out = '';
+      for (var j = 0; j < n; j++) {
+        // whitespace is never scrambled, so the line keeps its shape throughout
+        out += (real[j] === ' ' || p >= at[j])
+          ? real[j]
+          : DECODE_POOL.charAt((Math.random() * DECODE_POOL.length) | 0);
+      }
+      el.textContent = out;
+      el._decodeRaf = requestAnimationFrame(frame);
+    });
+  }
+
   if (scrollDriven) {
     _heroStepIO = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (!en.isIntersecting) return;
         var i = parseInt(en.target.getAttribute('data-step'), 10) || 0;
+        var fresh = !en.target.classList.contains('is-active');
         steps.forEach(function (s) { s.classList.toggle('is-active', s === en.target); });
         show(i, { userInitiated: false });
+        if (fresh && !reducedMotion) {
+          decodeInto(en.target.querySelector('.step-k'), 460);
+          decodeInto(en.target.querySelector('h3'), 620);
+        }
       });
     }, { rootMargin: '-45% 0px -45% 0px', threshold: 0 });
     steps.forEach(function (s) { _heroStepIO.observe(s); });
+  }
+
+  // Proximity fade. The rail used to sit at a flat .25 and only brighten in the
+  // middle, so a step was legible right up against the top and bottom edges of
+  // the window. Opacity now comes from how near the step's middle is to the
+  // viewport's: solid through the centre, and away by a third of a viewport
+  // out — it has finished arriving, and starts leaving, well inside the page.
+  if (scrollDriven && !reducedMotion) {
+    var rail = document.querySelector('.scrolly-steps');
+    if (rail) rail.classList.add('is-driven');
+    var stepsQueued = false;
+    var paintSteps = function () {
+      stepsQueued = false;
+      var vh = window.innerHeight || 1;
+      steps.forEach(function (s) {
+        var r = s.getBoundingClientRect();
+        var d = Math.abs(r.top + r.height / 2 - vh / 2) / vh;
+        // full inside 5% of centre, nothing past 33% — the 66%-of-viewport
+        // window is a shade wider than a step (62vh), so consecutive steps
+        // cross-fade rather than leaving a blank rail between them
+        var o = Math.max(0, Math.min(1, (0.33 - d) / 0.28));
+        s.style.setProperty('--step-o', o.toFixed(3));
+        s.style.setProperty('--step-y', ((1 - o) * 16).toFixed(1) + 'px');
+      });
+    };
+    var queueSteps = function () {
+      if (stepsQueued) return;
+      stepsQueued = true;
+      requestAnimationFrame(paintSteps);
+    };
+    window.addEventListener('scroll', queueSteps, { passive: true });
+    window.addEventListener('resize', queueSteps);
+    paintSteps();
   }
   root.addEventListener('pointerenter', function () { if (_heroTimer) clearInterval(_heroTimer); });
   root.addEventListener('pointerleave', restartAuto);
