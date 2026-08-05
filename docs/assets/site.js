@@ -1171,11 +1171,24 @@ function initHeroDemo() {
       el.style.fontSize = Math.max(10, Math.min(16, w / (cols * 0.6))) + 'px';
     });
   }
+  // Where the panel's bottom border has to stop and start again, so the music
+  // alcove is open underneath (draw_music_pocket's ╰──╯ · gap · ╰──╯). CSS
+  // cannot work this out: the pocket's width comes from the length of its text.
+  // The ±8 is the quarter-arc either side, which draws its own curve there.
+  function sizePocketGap() {
+    var panel = root.querySelector('.tui-panel');
+    var music = root.querySelector('.tui-music');
+    if (!panel || !music) return;
+    var p = panel.getBoundingClientRect(), m = music.getBoundingClientRect();
+    panel.style.setProperty('--gap-l', (m.left - p.left - 8) + 'px');
+    panel.style.setProperty('--gap-r', (m.right - p.left + 8) + 'px');
+  }
+  sizePocketGap();
   sizePhoneTitles();
   // re-size on viewport changes (e.g. phone rotation) — the 900px matchMedia
   // re-init doesn't fire for width changes that stay on one side of it
   if (_heroSizeHandler) window.removeEventListener('resize', _heroSizeHandler);
-  _heroSizeHandler = sizePhoneTitles;
+  _heroSizeHandler = function () { sizePhoneTitles(); sizePocketGap(); };
   window.addEventListener('resize', _heroSizeHandler, { passive: true });
 
   var current = 0;

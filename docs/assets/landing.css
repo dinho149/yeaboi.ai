@@ -144,18 +144,20 @@
     .scrolly-steps{display:none}
   }
   .app-frame{
-    /* A real terminal WINDOW, not a floating panel: chrome bar, solid deep
-       ground, heavy soft shadow. The one place on the page allowed to be
-       fully opaque — it's the product. Sized for the app's real 80-column
-       frame at a 14px cell. */
+    /* A real terminal WINDOW, not a floating panel: chrome bar, light border,
+       heavy soft shadow. No ground of its own — the page shows through, and
+       what reads as the terminal is the border and the chrome. Sized for the
+       app's real 80-column frame at a 14px cell. */
     position:relative; z-index:1; width:100%; max-width:940px; margin:0 auto;
-    background:#0a0b0d; border:1px solid var(--border-strong);
+    background:transparent; border:1px solid var(--border-strong);
     border-radius:var(--radius-lg); overflow:hidden;
     box-shadow:var(--shadow-term), 0 0 0 1px rgba(0,0,0,.4);
   }
   .tui-bar{
     display:flex; align-items:center; gap:7px; padding:12px 16px;
-    background:linear-gradient(180deg,#15171b,#0f1114);
+    /* a tint rather than a fill, so the bar still separates from the screen
+       below it without putting the ground back */
+    background:rgba(255,255,255,.03);
     border-bottom:1px solid var(--border);
   }
   .tui-bar .dot{width:11px; height:11px; border-radius:50%}
@@ -190,11 +192,37 @@
   .tui pre{font-family:inherit; font-size:inherit}
   /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
   .tui-panel{
-    position:relative; border:1px solid rgba(228,230,232,.45);
+    position:relative;
+    /* The border is transparent HERE and redrawn on ::before, which is the only
+       way to interrupt it under the music alcove now that the frame has no
+       ground of its own. It used to be masked by painting the pocket a solid
+       #0a0b0d; with the page showing through, that solid is a dark rectangle
+       against the glow — measured 10-20 units of blue off its surroundings.
+       The width stays for layout, so nothing shifts. */
+    border:1px solid transparent;
     border-radius:10px;
     /* the app's padding=(1,2) — two CELLS, not a round pixel count, or every
        row inside sits a third of a character further in than the app's does */
     padding:20px 2ch 14px;
+  }
+  .tui-panel::before{
+    content:""; position:absolute; inset:-1px; pointer-events:none;
+    border:1px solid rgba(228,230,232,.45); border-radius:10px;
+    /* Two mask layers, unioned: everything above the bottom band, plus the
+       bottom band minus the alcove's span. --gap-l/--gap-r are set by site.js
+       from the pocket's measured box (its width is text-driven, so CSS cannot
+       know it). The band is 14px, short enough that the bottom corners — which
+       live in the last 10px at either end — are outside the gap and survive. */
+    -webkit-mask-image:linear-gradient(#000,#000),
+      linear-gradient(90deg,#000 0 var(--gap-l,100%),transparent var(--gap-l,100%) var(--gap-r,100%),#000 var(--gap-r,100%));
+            mask-image:linear-gradient(#000,#000),
+      linear-gradient(90deg,#000 0 var(--gap-l,100%),transparent var(--gap-l,100%) var(--gap-r,100%),#000 var(--gap-r,100%));
+    -webkit-mask-size:100% calc(100% - 14px),100% 14px;
+            mask-size:100% calc(100% - 14px),100% 14px;
+    -webkit-mask-position:top left,bottom left;
+            mask-position:top left,bottom left;
+    -webkit-mask-repeat:no-repeat;
+            mask-repeat:no-repeat;
   }
 
   .tui-splash{
@@ -325,11 +353,11 @@
     position:relative; margin-top:auto; padding-top:22px; min-height:130px;
   }
   .tui-companion{
-    /* bottom:46px, a row clear of the music alcove — the sprite carries
-       _SHADES_TOP_PAD's two blank cell rows on top so the box never resizes
-       mid-gag, and that padding grows upward, so this anchor is what keeps his
-       feet off the pocket's roof */
-    position:absolute; right:0; bottom:46px;
+    /* bottom:30px — down on the alcove's roof, clearing it by a few pixels
+       rather than a whole row. The sprite carries _SHADES_TOP_PAD's two blank
+       cell rows on top so the box never resizes mid-gag, and that padding grows
+       upward, so this anchor is what sets where his feet land. */
+    position:absolute; right:0; bottom:30px;
     display:flex; flex-direction:column; align-items:center; gap:0;
   }
   /* (The amber update box that used to sit above the bubble is gone: it is a
@@ -379,7 +407,7 @@
        spends one row on the roof (╭──╮) and the next on the music itself,
        before the panel's border row underneath. A single-row box was the roof
        sitting straight on the text. */
-    background:#0a0b0d; padding:11px 10px 10px; white-space:pre;
+    background:transparent; padding:11px 10px 10px; white-space:pre;
     font-size:.92em; color:var(--t-muted);
     /* no bottom border, and bottom:-1px so the element covers the panel's own
        bottom border across its width — the alcove is open underneath, exactly
@@ -401,7 +429,7 @@
      showed as vertical seams either side of it.) */
   .tui-music::before,.tui-music::after{
     content:""; position:absolute; bottom:0; width:8px; height:8px;
-    background-color:#0a0b0d; background-repeat:no-repeat;
+    background-repeat:no-repeat;
   }
   .tui-music::before{
     right:100%;
