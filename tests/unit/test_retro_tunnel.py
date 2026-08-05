@@ -1,11 +1,14 @@
 """Unit tests for the Retro Cloudflare tunnel helper (hermetic — no network)."""
 
 import hashlib
+import io
 import platform
 import stat
+import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -193,6 +196,110 @@ class TestCloudflareTunnel:
         t.stop()
         assert url
         assert any("cloudflared:" in r.getMessage() for r in caplog.records)
+
+
+class _FakeProc:
+    """Stand-in for a spawned cloudflared — records teardown, runs nothing."""
+
+    def __init__(self) -> None:
+        self.terminated = False
+        self.killed = False
+        self.returncode = 0
+        self.stderr = io.StringIO("")  # drains immediately; no URL is ever emitted
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def kill(self) -> None:
+        self.killed = True
+
+    def wait(self, timeout=None) -> int:
+        return 0
+
+    def poll(self) -> int:
+        return 0
+
+
+class TestStartStopRace:
+    """A stop() landing before start() reaches Popen must not leave a tunnel behind.
+
+    The TUI publishes the tunnel object *before* calling start() so the retro page's
+    `finally` can tear down a setup still in flight. Before the stop-requested latch,
+    a stop() in the window between construction and Popen() found `_proc is None`,
+    returned having done nothing, and the worker went on to spawn a cloudflared with
+    nobody left to stop it — a public URL still forwarding at a port a later session
+    could reuse.
+    """
+
+    def _no_spawn(self, monkeypatch) -> list:
+        """Replace Popen with a recorder, so a spawn is an observable event."""
+        spawned: list = []
+
+        def _fake_popen(*args, **kwargs):
+            spawned.append(args)
+            return _FakeProc()
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _fake_popen)
+        return spawned
+
+    def test_stop_before_start_prevents_spawn(self, tmp_path, monkeypatch, caplog):
+        spawned = self._no_spawn(monkeypatch)
+        t = tunnel.CloudflareTunnel(5173, binary=tmp_path / "cloudflared")
+
+        t.stop()  # the page's finally, arriving first
+        with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
+            assert t.start(timeout=5) is None
+
+        assert spawned == []
+        assert t._proc is None
+        assert any("aborted by a concurrent stop" in r.getMessage() for r in caplog.records)
+
+    def test_stop_during_binary_resolution_prevents_spawn(self, monkeypatch):
+        # The real window is wide: ensure_cloudflared() may download ~40 MB. Land the
+        # stop inside it, exactly as a host closing the board mid-setup would.
+        spawned = self._no_spawn(monkeypatch)
+        t = tunnel.CloudflareTunnel(5173)
+
+        def _resolve_then_stopped() -> Path:
+            t.stop()
+            return Path("/nonexistent/cloudflared")
+
+        monkeypatch.setattr(tunnel, "ensure_cloudflared", _resolve_then_stopped)
+        assert t.start(timeout=5) is None
+        assert spawned == []
+
+    def test_stop_racing_the_spawn_tears_the_process_down(self, monkeypatch):
+        # The one case where a process does get spawned: stop() arrives while Popen is
+        # mid-flight. It blocks on the lock start() holds across the spawn, then finds
+        # the new process and terminates it. Nothing is left running either way.
+        procs: list[_FakeProc] = []
+        in_popen = threading.Event()
+        release = threading.Event()
+
+        def _slow_popen(*args, **kwargs):
+            in_popen.set()
+            release.wait(timeout=5)
+            proc = _FakeProc()
+            procs.append(proc)
+            return proc
+
+        monkeypatch.setattr(tunnel.subprocess, "Popen", _slow_popen)
+        t = tunnel.CloudflareTunnel(5173, binary=Path("/nonexistent/cloudflared"))
+
+        result: dict = {}
+        worker = threading.Thread(target=lambda: result.update(url=t.start(timeout=1)))
+        worker.start()
+        assert in_popen.wait(timeout=5)
+
+        stopper = threading.Thread(target=t.stop)
+        stopper.start()
+        release.set()
+        stopper.join(timeout=10)
+        worker.join(timeout=10)
+
+        assert result["url"] is None
+        assert procs and procs[0].terminated  # spawned, but never left running
+        assert t._proc is None
 
 
 class TestDnsLiveGate:
