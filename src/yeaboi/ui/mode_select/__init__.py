@@ -104,13 +104,19 @@ def _duck_react(quip_key: str, text: str | None = None) -> None:
     duck_voice().say(line)
 
 
-def _run_on_worker(target, render_frame, frame_time: float):
+def _run_on_worker(target, render_frame, frame_time: float, *, drain=None):
     """Run ``target`` on a worker thread while the page keeps animating.
 
     For calls that used to block the render thread solid (retro action items,
     performance 1:1s, publish): ``render_frame(elapsed)`` runs every frame so
     the page — and the working duck — stays live. Returns target()'s result;
     re-raises whatever it raised, on this thread.
+
+    ``drain``: pass the page's ``read_key`` (only when the terminal supports
+    timeouts — a blocking read_key would hang here) and any keys typed during
+    the wait are swallowed afterwards — otherwise they'd replay against
+    whatever view the result switched to (an impatient double-Enter must not
+    press a button on a screen the user never saw).
     """
     from yeaboi.ui.shared._music_bar import duck_working_thread
 
@@ -129,6 +135,12 @@ def _run_on_worker(target, render_frame, frame_time: float):
         render_frame(time.monotonic() - start)
         time.sleep(frame_time)
     thread.join()
+    if drain is not None:
+        # Bounded: a real tty buffer holds a handful of keys; an unbounded
+        # loop would spin forever against a test fake that never runs dry.
+        for _ in range(64):
+            if not drain(timeout=0):
+                break
     if result_box[1] is not None:
         raise result_box[1]
     return result_box[0]
@@ -1952,7 +1964,11 @@ def _export_via_picker(
         return None
     if dest == "files":
         msg = files_export()
-        _duck_react("export_done")  # files_export raises on failure
+        # Some exporters report failure/no-op as a message rather than raising
+        # ("Nothing to export yet…", "Export failed: …") — only a real export
+        # ("Exported to …") earns the quack.
+        if msg and "Exported" in msg:
+            _duck_react("export_done")
         return msg
     if extra_handlers and dest in extra_handlers:
         return extra_handlers[dest]()
@@ -1986,7 +2002,10 @@ def _export_via_picker(
     # On a worker: publishing is a network call that used to freeze the frame
     # loop (and the duck) until the page landed.
     published = _run_on_worker(
-        lambda: publish_markdown(dest, title=title, markdown=markdown), _publish_frame, frame_time
+        lambda: publish_markdown(dest, title=title, markdown=markdown),
+        _publish_frame,
+        frame_time,
+        drain=read_key if supports_timeout else None,
     )
     if published.ok:
         _duck_react("export_done")
@@ -5332,7 +5351,11 @@ def _run_mode_hub(
                 _open_snapshot(run)
             elif focus == 1:
                 confirm = True
-                voice.say_sticky(f'Delete "{run.title}"?  Enter to confirm')
+                # Cap the title so the prompt (with its load-bearing "Enter to
+                # confirm") fits the bubble even on an 84-col terminal — sticky
+                # lines are never truncated by the chrome.
+                _t = run.title if len(run.title) <= 18 else run.title[:17].rstrip() + "…"
+                voice.say_sticky(f'Delete "{_t}"?  Enter to confirm')
             elif focus == 2:
                 msg = _export_via_picker(
                     console,
@@ -8308,10 +8331,12 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             if label == "1:1 Prep":
                 from yeaboi.performance.engine import run_one_on_one_prep
 
+                state["message"] = f"Generating 1:1 prep for {engineer}…"
                 prep = _run_on_worker(
                     lambda: run_one_on_one_prep(engineer, session_id=session_id, db_path=_ana_dbp),
                     lambda _e: _render(),
                     frame_time,
+                    drain=read_key if supports_timeout else None,
                 )
                 logger.info("performance: 1:1 prep generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
@@ -8325,12 +8350,14 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
                 transcript, transcript_images = transcript_result
                 from yeaboi.performance.engine import complete_one_on_one
 
+                state["message"] = f"Completing the 1:1 for {engineer}…"
                 record = _run_on_worker(
                     lambda: complete_one_on_one(
                         engineer, transcript, session_id=session_id, db_path=_ana_dbp, images=transcript_images
                     ),
                     lambda _e: _render(),
                     frame_time,
+                    drain=read_key if supports_timeout else None,
                 )
                 sent = "email sent" if not record.warnings else "see notices"
                 logger.info("performance: 1:1 completed for engineer=%s (%s)", engineer, sent)
@@ -8339,10 +8366,12 @@ def _run_performance_page(console: Console, live, read_key, frame_time: float, s
             elif label == "6mo Review":
                 from yeaboi.performance.engine import run_six_month_review
 
+                state["message"] = f"Generating the 6-month review for {engineer}…"
                 review = _run_on_worker(
                     lambda: run_six_month_review(engineer, session_id=session_id, db_path=_ana_dbp),
                     lambda _e: _render(),
                     frame_time,
+                    drain=read_key if supports_timeout else None,
                 )
                 logger.info("performance: 6-month review generated for engineer=%s", engineer)
                 _duck_react("artifact_done")
@@ -10489,13 +10518,18 @@ def _run_retro_page(console: Console, live, read_key, frame_time: float, support
 
                         # On a worker: the LLM call used to freeze the board
                         # (and the duck) solid — now the frame loop keeps going.
+                        message = "Drafting action items…"
                         message = _run_on_worker(
                             lambda: generate_action_items(board),
                             lambda _e: _render(_data(), scroll, sel),
                             frame_time,
+                            drain=read_key if supports_timeout else None,
                         )
                         logger.info("retro: generate action items result: %s", message)
-                        _duck_react("actions_done")
+                        # "never raises" means an empty board comes back as a
+                        # message — no cards, no drafts, no celebratory quack.
+                        if not message.startswith("Add some cards first"):
+                            _duck_react("actions_done")
                     except Exception as e:  # defensive — never let it crash the TUI
                         logger.error("retro: generate action items failed: %s", e, exc_info=True)
                         message = f"Generate failed: {e}"
@@ -11272,6 +11306,8 @@ def _run_poker_page(console: Console, live, read_key, frame_time: float, support
             report = board_to_report(board)
             with PokerStore(_ana_dbp) as store:
                 store.record_run(report)
+            if any(t.estimated for t in report.tickets):
+                _duck_react("poker_done")  # lands on the hub the page returns to
         except Exception as e:
             logger.warning("poker: flush to store failed: %s", e)
         if remote.get("tunnel") is not None:

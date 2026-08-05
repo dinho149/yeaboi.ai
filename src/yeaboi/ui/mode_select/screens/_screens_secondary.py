@@ -2126,6 +2126,18 @@ def _build_import_screen(
     return build_page_panel(content, theme=PLANNING_THEME, height=height)
 
 
+def _with_bubble_room(panel, width: int):
+    """Opt this page into the shared duck bubble (ordinary lines are opt-in).
+
+    Only pages whose right side is dependably free declare a room; everywhere
+    else the duck still quacks but never draws a bubble over content.
+    """
+    from yeaboi.ui.shared._duck_voice import default_bubble_room
+
+    panel._bubble_room = default_bubble_room(width)
+    return panel
+
+
 # Braille spinner for the active progress row — the same cadence the planning
 # chat's build checklist uses, so every loading screen animates identically.
 _ACTIVITY_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -2312,7 +2324,9 @@ def _build_analysis_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
 
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # The checklist hugs the left gutter, so the loading screen's right side is
+    # dependably free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_project_export_success_screen(
@@ -2657,9 +2671,11 @@ def _build_usage_screen(
 
     panel = build_page_panel(content, theme=USAGE_THEME, height=height)
     panel._copy_tab = bool(actions and "Copy" in actions)  # show the 'c copy' tab
-    # The transient status is spoken through the shared duck voice by the usage
-    # loop; the chrome fences it to the default free margin.
-    return panel
+    # The copy toast is spoken through the shared duck voice by the usage loop.
+    # Deliberate opt-in: the box grid can reach the duck's rows, but the toast
+    # is this page's only feedback and brief — the trade-off this page always
+    # shipped with, now bounded by the fence instead of unfenced.
+    return _with_bubble_room(panel, width)
 
 
 def _build_standup_screen(
@@ -5570,8 +5586,9 @@ def _build_standup_progress_screen(
 
     content = Group(Text(""), title, Text(""), *body)
     # theme, not STANDUP_THEME: this loading screen is shared — poker ticket
-    # fetch and the anonymize pass reuse it with their own mode's theme.
-    return build_page_panel(content, theme=theme, border_style=theme.accent, height=height)
+    # fetch and the anonymize pass reuse it with their own mode's theme. Its
+    # left-gutter checklist leaves the right side free for the duck's bubble.
+    return _with_bubble_room(build_page_panel(content, theme=theme, border_style=theme.accent, height=height), width)
 
 
 def _build_standup_input_screen(
@@ -6552,8 +6569,10 @@ def _build_settings_screen(
     # The controls ride in the bottom-left pocket as one more tab beside "back",
     # instead of taking a body row of their own.
     panel._hint_tab = hint
-    # The transient status ("Anthropic Key updated") is spoken through the
-    # shared duck voice by the settings loop; the chrome fences it.
+    # The save toast ("Anthropic Key updated") is spoken through the shared
+    # duck voice by the settings loop. Deliberate opt-in, same trade-off as
+    # the usage page: brief feedback beats silence, bounded by the fence.
+    _with_bubble_room(panel, width)
     # Attach the tab click regions (labels + underline rows, absolute cols) so the
     # loop can hit-test tab clicks — see settings_tab_regions / the settings loop.
     panel._tab_regions = [

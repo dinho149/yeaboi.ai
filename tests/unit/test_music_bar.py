@@ -520,15 +520,29 @@ def test_too_small_screen_marks_itself_no_companion_duck():
 
 
 def test_shared_voice_line_is_stamped_by_the_chrome(monkeypatch):
-    # A page that never touches _duck_say still gets the app-wide voice's line:
-    # the chrome ticks the singleton and stamps the frame itself.
+    # A page that opted in (declared bubble room) gets the app-wide voice's
+    # line with zero render wiring: the chrome ticks the singleton and stamps
+    # the frame itself.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.duck_voice().say("Exported!")
+    panel = Panel(Text("body"))
+    panel._bubble_room = 40
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == "Exported!"
+    assert frame.duck_say_seq > 0
+
+
+def test_page_without_declared_room_stays_silent(monkeypatch):
+    # Ordinary lines are opt-in: a page that never declared _bubble_room gets
+    # no bubble (its content may reach the right edge) — the quack still lands.
     from yeaboi.ui.shared import _duck_voice as dv
 
     monkeypatch.delenv("DUCK_ENABLED", raising=False)
     dv.duck_voice().say("Exported!")
     frame = _wide_ml(Panel(Text("body"))).get_renderable()
-    assert frame.duck_say == "Exported!"
-    assert frame.duck_say_seq > 0
+    assert frame.duck_say == ""
 
 
 def test_panel_stamped_line_wins_over_the_shared_voice(monkeypatch):
@@ -540,6 +554,7 @@ def test_panel_stamped_line_wins_over_the_shared_voice(monkeypatch):
     dv.duck_voice().say("shared line")
     panel = Panel(Text("body"))
     panel._duck_say = "my own line"
+    panel._bubble_room = 40
     frame = _wide_ml(panel).get_renderable()
     assert frame.duck_say == "my own line"
 
@@ -555,6 +570,32 @@ def test_bubble_room_zero_suppresses_the_shared_line(monkeypatch):
     panel._bubble_room = 0
     frame = _wide_ml(panel).get_renderable()
     assert frame.duck_say == ""
+
+
+def test_sticky_bypasses_the_fence_and_is_never_truncated(monkeypatch):
+    # A sticky line is a modal prompt (Enter deletes!) — it renders whole even
+    # on a page that declared no room or a tiny one; losing "Enter to confirm"
+    # would make the next Enter destructive with no visible prompt.
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    prompt = 'Delete "Standup — 2026-…"?  Enter to confirm'
+    dv.duck_voice().say_sticky(prompt)
+    panel = Panel(Text("body"))
+    panel._bubble_room = 0  # even a bubble-suppressed page shows the prompt
+    frame = _wide_ml(panel).get_renderable()
+    assert frame.duck_say == prompt  # whole, no ellipsis
+    assert frame.duck_say_sticky is True
+
+
+def test_sticky_shows_even_when_globally_muted(monkeypatch):
+    from yeaboi.ui.shared import _duck_voice as dv
+
+    monkeypatch.delenv("DUCK_ENABLED", raising=False)
+    dv.set_duck_muted(True)
+    dv.duck_voice().say_sticky("Sure?")
+    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    assert frame.duck_say == "Sure?"
 
 
 def test_shared_line_truncates_to_the_declared_room(monkeypatch):
@@ -586,7 +627,9 @@ def test_global_mute_suppresses_the_shared_line(monkeypatch):
     monkeypatch.delenv("DUCK_ENABLED", raising=False)
     dv.duck_voice().say("Exported!")
     dv.set_duck_muted(True)
-    frame = _wide_ml(Panel(Text("body"))).get_renderable()
+    panel = Panel(Text("body"))
+    panel._bubble_room = 40
+    frame = _wide_ml(panel).get_renderable()
     assert frame.duck_say == ""
 
 

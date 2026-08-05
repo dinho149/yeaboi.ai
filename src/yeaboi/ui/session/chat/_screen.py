@@ -143,6 +143,7 @@ def _progress_rows(progress: PipelineProgress, theme) -> list[Text]:
 
 
 _DUCK_LANE = 16  # chrome duck width + right margin (see _music_bar._DUCK_W)
+_BUBBLE_RESERVE = 19  # speech-bubble chrome (7) + minimum readable text (12)
 
 
 def _column_metrics(width: int) -> tuple[int, int]:
@@ -157,9 +158,19 @@ def _column_metrics(width: int) -> tuple[int, int]:
     inner_w = max(48, width - 7)
     col_w = max(40, min(_COL_W_MAX, inner_w - 8))
     max_col = width - _DUCK_LANE - len(PAD) - 4
+    # Leave the duck a speech lane wherever the column can afford it: without
+    # the extra 19 columns (bubble chrome + minimum text) his quips only fit
+    # past ~180 cols and every bubble silently vanishes on normal terminals.
+    # Below the 76-col floor the reading column wins — no bubble, and the
+    # transcript whispers carry everything durable.
+    if max_col - _BUBBLE_RESERVE >= 76:
+        max_col -= _BUBBLE_RESERVE
     if max_col >= 40:
         col_w = min(col_w, max_col)
-    margin = max(len(PAD), min((inner_w - col_w) // 2, width - _DUCK_LANE - col_w - 4))
+    margin_cap = width - _DUCK_LANE - col_w - 4
+    if margin_cap - _BUBBLE_RESERVE >= len(PAD):
+        margin_cap -= _BUBBLE_RESERVE  # stop centering just short of his lane
+    margin = max(len(PAD), min((inner_w - col_w) // 2, margin_cap))
     return col_w, margin
 
 

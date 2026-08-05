@@ -52,8 +52,6 @@ DUCK_QUIPS: dict[str, str] = {
     "actions_done": "Actions drafted!",
     "analysis_done": "Team mapped!",
     "poker_done": "Points dealt!",
-    "copy_done": "Copied!",
-    "settings_saved": "Saved!",
     "artifact_done": "Done and dusted!",
     "anonymize_done": "Scrubbed clean!",
 }

@@ -686,6 +686,16 @@ def set_duck_working(active: bool) -> None:
 
 
 _duck_working_depth = 0  # duck_working() nesting — overlapping waits mustn't stomp each other
+_duck_working_lock = None  # created lazily; the CM runs on worker threads
+
+
+def _working_lock():
+    global _duck_working_lock
+    if _duck_working_lock is None:
+        import threading
+
+        _duck_working_lock = threading.Lock()
+    return _duck_working_lock
 
 
 @contextmanager
@@ -693,19 +703,22 @@ def duck_working():
     """Bob the duck for the duration of a wait (exception-safe, refcounted).
 
     The mode pages wrap their worker-poll loops in this so the duck is the
-    liveness cue for every long operation. Refcounted because waits overlap
-    (a roster prefetch behind an analysis run): the bob stops only when the
-    OUTERMOST wait finishes.
+    liveness cue for every long operation. Refcounted (under a lock — the CM
+    runs on worker threads, and two workers finishing together must not lose
+    a decrement) because waits overlap: the bob stops only when the OUTERMOST
+    wait finishes.
     """
     global _duck_working_depth
-    _duck_working_depth += 1
-    set_duck_working(True)
+    with _working_lock():
+        _duck_working_depth += 1
+        set_duck_working(True)
     try:
         yield
     finally:
-        _duck_working_depth -= 1
-        if _duck_working_depth <= 0:
-            set_duck_working(False)
+        with _working_lock():
+            _duck_working_depth -= 1
+            if _duck_working_depth <= 0:
+                set_duck_working(False)
 
 
 def duck_working_thread(target, *, name: str):
@@ -1154,7 +1167,6 @@ class MusicLive(Live):
                 # No logging here — this runs per frame (mascot spec).
                 from yeaboi.ui.shared._duck_voice import (
                     _BUBBLE_MIN_COLS,
-                    default_bubble_room,
                     duck_muted,
                     duck_voice,
                 )
@@ -1167,16 +1179,25 @@ class MusicLive(Live):
                     if line is not None:
                         text, _line_hold, seq = line
                         room = getattr(renderable, "_bubble_room", None)
-                        room = default_bubble_room(width) if room is None else int(room)
-                        if room >= _BUBBLE_MIN_COLS:
+                        if voice.sticky:
+                            # A sticky line bypasses the room fence and is never
+                            # truncated — losing "Enter to confirm" (or the whole
+                            # prompt) would make the next Enter delete invisibly.
+                            # Only a terminal too narrow for the bubble itself
+                            # skips it, in the draw path. Hold stays None: a
+                            # sticky hold is inf, which the fade envelope can't
+                            # take, and the sticky branch ignores it anyway.
+                            duck_say, _seq, _sticky, _hold = text, seq, True, None
+                        elif room is not None and int(room) >= _BUBBLE_MIN_COLS:
+                            # Ordinary lines render only where the page opted in
+                            # with a declared _bubble_room — grid pages whose
+                            # content reaches the right edge stay silent rather
+                            # than overlapped (the quack still lands).
+                            room = int(room)
                             if len(text) > room:
                                 text = text[: max(1, room - 1)].rstrip() + "…"
                             duck_say, _seq = text, seq
-                            # Sticky rides the no-fade branch; keep hold None
-                            # there (a sticky hold is inf, which the fade
-                            # envelope can't take).
-                            _sticky = voice.sticky
-                            _hold = None if _sticky else _line_hold
+                            _hold = _line_hold
             _frame = _MusicPocketFrame(
                 renderable,
                 with_duck=with_duck,

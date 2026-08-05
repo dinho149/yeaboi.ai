@@ -64,6 +64,31 @@
           "areas": [
             "planning"
           ]
+        },
+        {
+          "text": "The corner duck is now the TUI's experience layer: he head-bobs through every long wait, quacks a short quip when a standup, report, analysis, export, sync or share link completes, and waddles into the corner whenever you open a mode",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Loading screens gained a live checklist — braille spinner, per-stage elapsed and a [n/total] progress footer — and the planning chat shows a full build checklist with a completion recap card",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Duck bubble mute: /duck in the planning chat or the new Duck row in Settings → System (persisted as DUCK_ENABLED); delete confirmations stay visible regardless",
+          "areas": [
+            "tui"
+          ]
+        },
+        {
+          "text": "Retro action-item drafting, performance 1:1 generation and Notion/Confluence publishing no longer freeze the screen — they run on workers with live progress",
+          "areas": [
+            "retro",
+            "performance"
+          ]
         }
       ]
     },

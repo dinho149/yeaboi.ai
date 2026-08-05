@@ -661,7 +661,9 @@ class _ChatDriver:
             label = "Formatting epic" if step_node == "epic_review" else _SPINNER_MESSAGES.get(step_node, step_node)
             if step_node == active:
                 status = "active"
-            elif self.state.get(_PROGRESS_DONE_KEYS[step_node]):
+            elif self.state.get(_PROGRESS_DONE_KEYS.get(step_node, "")):
+                # .get twice: a pipeline step added to repl/_ui without a row
+                # here must render as pending, not KeyError a build mid-run.
                 status = "done"
                 done += 1
             else:

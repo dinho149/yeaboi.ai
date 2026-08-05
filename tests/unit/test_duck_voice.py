@@ -160,6 +160,28 @@ class TestDuckReact:
         assert msg == "Exported to ~/exports"
         assert duck_voice().tick()[0] == DUCK_QUIPS["export_done"]
 
+    def test_no_op_export_does_not_react(self, monkeypatch):
+        # Some exporters report failure as a message rather than raising — a
+        # "Nothing to export yet" must not earn a "Saved it!" quack.
+        import yeaboi.ui.mode_select as ms
+
+        quacks = []
+        monkeypatch.setattr("yeaboi.ui.shared._music_bar.quack_duck", lambda *a, **k: quacks.append(1))
+        monkeypatch.setattr(ms, "_pick_dest", lambda *a, **k: "files")
+        msg = ms._export_via_picker(
+            None,
+            None,
+            lambda *a, **k: "q",
+            0.05,
+            True,
+            mode="standup",
+            files_export=lambda: "Nothing to export yet — press Generate first.",
+            get_document=lambda: ("t", "md"),
+        )
+        assert msg.startswith("Nothing to export")
+        assert quacks == []
+        assert duck_voice().tick() is None
+
 
 class TestRunOnWorker:
     """_run_on_worker — the thread + render-loop wrapper for ex-blocking calls."""

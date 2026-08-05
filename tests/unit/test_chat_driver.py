@@ -464,6 +464,15 @@ class TestDuckBubble:
         assert said.endswith("…")
         assert len(said) <= driver._bubble_room(200)
 
+    def test_bubble_renders_on_a_normal_terminal(self):
+        # Regression: the reading column reserves a speech lane from ~120 cols
+        # up, so quips appear on ordinary terminals — not only past ~180.
+        for w in (120, 140, 160):
+            driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=w)
+            driver._bubble("Synced!")
+            driver._render()
+            assert getattr(driver.live.last, "_duck_say", "") == "Synced!", w
+
     def test_duck_toggle_mutes_and_unmutes(self, monkeypatch, tmp_path):
         # /duck persists via set_duck_enabled — point config at a temp file so
         # the test never touches the real ~/.yeaboi/.env.
