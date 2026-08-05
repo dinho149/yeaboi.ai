@@ -2,6 +2,31 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.55.0",
+      "date": "2026-08-05",
+      "summary": "The idle screensaver expanded from a single duck to a yard of them — ten-odd heads adrift in zero gravity, spinning and ricocheting off each other and an anchored duck in the middle. The screensaver activates with Ctrl+Y as before, and still reads as a single resting duck on terminals smaller than 60x24, so the existing single-duck graphics cover those smaller screens.",
+      "highlights": [
+        {
+          "text": "Idle screensaver now shows a yard of ricocheting ducks with pixel-perfect collisions and real rotation",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Ducks bounce off each other and the frame edges with squash physics; anchored hero duck in the center never moves",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Sprite rotation is memoised with 48 angles and 5 squash levels for smooth performance",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.54.0",
       "date": "2026-08-05",
       "summary": "The planning duck is now the TUI's living mascot across every mode. He waddles into the corner whenever you enter a mode, head-bobs through every long wait (standups, 1:1s, reports, syncs, shares), and quacks a short quip when those operations complete. A sticky rubber-duck tier serves hidden confirmations — delete prompts are now unmissable even on narrow terminals, and the bubble lane stays off the right edge so your composer never overlaps with encouragement. The shared loading screens gained live progress: a braille spinner, per-stage elapsed timing, and a [n/total] footer. Retro action drafting, performance 1:1 generation, and Notion/Confluence publishing no longer freeze the screen — they run on background workers with a live busy affordance. The duck is mutable per-session via /duck in the chat, and globally via the new Duck row in Settings → System.",
