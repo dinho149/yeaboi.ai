@@ -32,10 +32,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from rich.align import Align  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.live import Live  # noqa: E402
 
-from yeaboi.ui.shared._screensaver import build_screensaver  # noqa: E402
+from yeaboi.ui.shared._mascot import render_head_idle  # noqa: E402
+from yeaboi.ui.shared._screensaver import SAVER_FPS, _shades_lift, build_screensaver  # noqa: E402
 
 # build_screensaver advances at int(elapsed * 8) % 8 — eight frames, eight per
 # second, so the bob closes its cycle on the second. Loop length is not a
@@ -52,6 +54,11 @@ HEAD_MAX_H = 21
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--head", action="store_true", help="force the head-only band")
+    parser.add_argument(
+        "--bare",
+        action="store_true",
+        help="head only, no page panel — the terminal's own background shows through",
+    )
     parser.add_argument("--loops", type=float, default=0, help="exit after N animation cycles (0 = forever)")
     parser.add_argument("--fps", type=float, default=60.0, help="redraw rate")
     args = parser.parse_args()
@@ -73,8 +80,21 @@ def main() -> int:
     # the alternate screen and writes one atomic frame per refresh, so the
     # animation cannot tear. auto_refresh off so this loop is the only thing
     # deciding when a frame exists.
+    def render(elapsed: float):
+        # --bare skips build_screensaver's page panel. The panel paints NEUTRAL_BG
+        # across the whole frame, which is right inside the app and wrong for an
+        # asset that wants to sit on some other background: a transparent sprite
+        # cell is (" ", None), so with no panel the terminal's own colour shows
+        # through and the profile decides what the duck stands on.
+        if not args.bare:
+            return build_screensaver(width=width, height=height, elapsed=elapsed)
+        frame = int(elapsed * SAVER_FPS) % 8
+        # height is required for vertical centring — without it Align has no box
+        # to centre inside and the duck sits at the top of the frame.
+        return Align.center(render_head_idle(frame, _shades_lift(elapsed)), vertical="middle", height=height)
+
     with Live(
-        build_screensaver(width=width, height=height, elapsed=0.0),
+        render(0.0),
         console=console,
         auto_refresh=False,
         screen=True,
@@ -84,7 +104,7 @@ def main() -> int:
             elapsed = time.monotonic() - start
             if deadline is not None and elapsed >= deadline:
                 return 0
-            live.update(build_screensaver(width=width, height=height, elapsed=elapsed), refresh=True)
+            live.update(render(elapsed), refresh=True)
             time.sleep(frame_time)
 
 
