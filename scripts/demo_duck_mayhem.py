@@ -38,6 +38,7 @@ import random
 import sys
 import time
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -77,17 +78,39 @@ QUACK_SECONDS = 0.22  # beak stays open this long after a hit
 ROT_STEPS = 24  # baked angles, i.e. 15 degrees apart
 
 # Squash and stretch on impact, recovering over SQUISH_SECONDS. Each entry is a
-# height multiplier; width takes the inverse so the duck keeps roughly his area
-# and reads as compressing rather than shrinking. The stretch is capped, because
-# a duck squashed to 58% would otherwise be nearly twice as wide as he is tall
-# and stop looking like a duck at all.
-SQUISH_SECONDS = 0.18
-SQUISH_CURVE = (0.58, 0.70, 0.82, 0.92)
-MAX_STRETCH = 1.25
+# height multiplier; width takes the inverse, capped, so he reads as compressing
+# rather than shrinking.
+#
+# Deliberately gentle. The first version squashed to 58% and looked broken: at
+# that depth the sunglasses and beak are folded into each other, and stacked on
+# top of a rotation there is no reading of the frame in which it is a duck. The
+# eye registers a squash from very little — a fifth of the height is plenty, and
+# the point is the impact reading as an impact, not the pose being legible.
+SQUISH_SECONDS = 0.16
+SQUISH_CURVE = (0.80, 0.87, 0.93, 0.97)
+MAX_STRETCH = 1.10
+# Quantised impact directions. The squash flattens along the contact normal —
+# the face that hit the wall is the face that goes flat, like a ball — so it has
+# to be applied in world space, after the duck's own rotation. Sixteen
+# directions is 22.5 degrees apart, finer than anyone can pick out mid-bounce.
+NORMAL_STEPS = 16
 
-# The anchored duck in the middle. Twice the size, immovable, and the fixed
-# point the whole scene is arranged around.
-HERO_SCALE = 2
+# Crowd sprites are upscaled before they are rotated, and this is the single
+# thing that decides whether a rotated duck still looks like a duck.
+#
+# The sunglasses are one pixel thick in the source art. Rotate 16x14 by anything
+# that is not a multiple of 90 and that pixel lands between two others and is
+# lost, which turns the face to mush. At 2x it is two pixels thick and survives.
+#
+# It costs nothing on screen: a duck's size in the frame is its cell footprint
+# times the cell size, so doubling the sprite and halving the font leaves him
+# exactly as big while doubling the detail he is drawn with. Pair this with a
+# smaller terminal font, not with a bigger duck.
+DUCK_SCALE = 2
+
+# The anchored duck in the middle — twice the crowd again, immovable, and the
+# fixed point the whole scene is arranged around.
+HERO_SCALE = DUCK_SCALE * 2
 HERO_SHADES_EVERY = 3.0
 HERO_SHADES_FPS = 8
 
@@ -160,9 +183,35 @@ def rotate(grid: Grid, degrees: float, size: int | None = None) -> Grid:
     return tuple(out)
 
 
-# One canvas for every (squash, angle) pair: the widest the sprite ever gets,
-# on its diagonal.
-SPRITE_SIZE = math.ceil(math.hypot(len(DUCK_HEAD[0]) * MAX_STRETCH, len(DUCK_HEAD)))
+SOURCE = scale(DUCK_HEAD, DUCK_SCALE)
+SOURCE_QUACK = scale(DUCK_HEAD_QUACK, DUCK_SCALE)
+
+# One canvas for every (squash, angle) pair: the widest the sprite ever gets, on
+# its diagonal.
+SPRITE_SIZE = math.ceil(math.hypot(len(SOURCE[0]) * MAX_STRETCH, len(SOURCE)))
+
+
+@cache
+def squashed(angle_idx: int, level: int, normal_idx: int, quack: bool) -> Grid:
+    """A duck at ``angle_idx``, flattened along world direction ``normal_idx``.
+
+    Squashing along an arbitrary world axis is three steps: turn that axis
+    vertical, squash vertically, turn back. Written out, the whole transform is
+    R(normal) . S_v(f) . R(angle - normal) applied to the source.
+
+    Cached rather than pre-baked. The full table is 5 levels x 24 angles x 16
+    normals x 2 beaks — 3,840 grids, several seconds of import for a set of
+    which a given clip touches a few hundred. lru_cache pays only for what is
+    actually asked for, and every combination repeats constantly once the yard
+    is moving.
+    """
+    source = SOURCE_QUACK if quack else SOURCE
+    if level == 0:
+        return rotate(source, angle_idx * 360.0 / ROT_STEPS, SPRITE_SIZE)
+    normal = normal_idx * 360.0 / NORMAL_STEPS
+    angle = angle_idx * 360.0 / ROT_STEPS
+    upright = rotate(source, angle - normal, SPRITE_SIZE)
+    return rotate(squash(upright, SQUISH_CURVE[level - 1]), normal, SPRITE_SIZE)
 
 
 def bake(grid: Grid) -> tuple[tuple[Grid, ...], ...]:
@@ -180,16 +229,40 @@ def bake(grid: Grid) -> tuple[tuple[Grid, ...], ...]:
     )
 
 
-ROTATED = bake(DUCK_HEAD)
-ROTATED_QUACK = bake(DUCK_HEAD_QUACK)
+ROTATED = bake(SOURCE)
+ROTATED_QUACK = bake(SOURCE_QUACK)
 # Collision radius from the *unrotated* sprite, not from the diagonal canvas it
 # is baked onto — the corners of that canvas are empty, and using them would
 # have ducks bouncing off each other's whitespace.
-DUCK_RADIUS = max(len(DUCK_HEAD[0]), len(DUCK_HEAD)) / 2.0
+DUCK_RADIUS = max(len(SOURCE[0]), len(SOURCE)) / 2.0
+
+# Where the sunglasses sit inside the source art, so the collider can be put on
+# them. Derived rather than typed in, or it silently drifts if the art changes.
+_GLASSES_PX = [(x, y) for y, row in enumerate(DUCK_HEAD_GLASSES) for x, ch in enumerate(row) if ch != "."]
+GLASSES_X0, GLASSES_X1 = min(x for x, _ in _GLASSES_PX), max(x for x, _ in _GLASSES_PX)
+GLASSES_Y0, GLASSES_Y1 = min(y for _, y in _GLASSES_PX), max(y for _, y in _GLASSES_PX)
+# A circle is a poor fit for something 12 wide and 3 tall, so this splits the
+# difference — big enough to feel solid, small enough not to bounce ducks off
+# thin air either side of him.
+GLASSES_RADIUS = (GLASSES_X1 - GLASSES_X0 + 1) / 3.0 * HERO_SCALE
 
 HERO_W = len(DUCK_HEAD[0]) * HERO_SCALE
 HERO_H = len(DUCK_HEAD) * HERO_SCALE
 HERO_RADIUS = max(HERO_W, HERO_H) / 2.0
+
+
+# Blank rows above the crown for the raised pair to float into. Always present,
+# even at rest: a grid that grew when the gag started would shift the head half a
+# dozen pixels every three seconds, because compose() centres on the duck.
+HERO_PAD = 4
+
+
+def hero_lift(elapsed: float) -> int:
+    """How far the shades are currently raised, in source pixels. 0 at rest."""
+    period = int(HERO_SHADES_EVERY * HERO_SHADES_FPS)
+    step_i = int(elapsed * HERO_SHADES_FPS) % period
+    start = period - len(SHADES_LIFT_SEQUENCE)
+    return SHADES_LIFT_SEQUENCE[step_i - start] if step_i >= start else 0
 
 
 def hero_grid(elapsed: float) -> Grid:
@@ -199,15 +272,9 @@ def hero_grid(elapsed: float) -> Grid:
     a packed renderable, and everything here stays an unpacked pixel grid until
     the final blit.
     """
-    period = int(HERO_SHADES_EVERY * HERO_SHADES_FPS)
-    step_i = int(elapsed * HERO_SHADES_FPS) % period
-    start = period - len(SHADES_LIFT_SEQUENCE)
-    if step_i < start:
-        return scale(DUCK_HEAD, HERO_SCALE)
-    lift = SHADES_LIFT_SEQUENCE[step_i - start]
-    pad = ("." * len(DUCK_HEAD_FACE[0]),) * 4
+    pad = ("." * len(DUCK_HEAD_FACE[0]),) * HERO_PAD
     face, glasses = pad + DUCK_HEAD_FACE, pad + DUCK_HEAD_GLASSES
-    return scale(_compose(face, glasses, _shift(glasses, lift)), HERO_SCALE)
+    return scale(_compose(face, glasses, _shift(glasses, hero_lift(elapsed))), HERO_SCALE)
 
 
 def blit(canvas: list[list[str]], sprite: Grid, left: int, top: int) -> None:
@@ -239,9 +306,16 @@ class Duck:
     spin: float = 0.0
     quack_until: float = -1.0
     squish_until: float = -1.0
+    # Direction the last hit came from, quantised. The squash flattens along it.
+    squish_normal: int = 0
     radius: float = DUCK_RADIUS
     anchored: bool = False
     is_hero: bool = False
+    # The hero's raised sunglasses: a collider with no sprite of its own, live
+    # only while they are actually off his head. Ducks bounce off them.
+    is_shades: bool = False
+    enabled: bool = True
+    base_y: float = 0.0
 
     @property
     def mass(self) -> float:
@@ -254,14 +328,22 @@ class Duck:
             # Quacking beats the shades gag: he cannot be mid-cool-reveal and
             # mid-yelp at once, and the yelp is the one a duck to the face causes.
             return scale(DUCK_HEAD_QUACK, HERO_SCALE) if now < self.quack_until else hero_grid(now)
-        tables = ROTATED_QUACK if now < self.quack_until else ROTATED
         level = 0
         if now < self.squish_until:
-            # Fully squashed at the moment of impact, easing back to resting as
-            # the timer runs out.
+            # Flattest at the moment of impact, easing back out as the timer runs.
             remaining = (self.squish_until - now) / SQUISH_SECONDS
             level = 1 + min(len(SQUISH_CURVE) - 1, int((1.0 - remaining) * len(SQUISH_CURVE)))
-        return tables[level][int(self.angle / (360.0 / ROT_STEPS)) % ROT_STEPS]
+        angle_idx = int(self.angle / (360.0 / ROT_STEPS)) % ROT_STEPS
+        return squashed(angle_idx, level, self.squish_normal, now < self.quack_until)
+
+
+def _hit(duck: Duck, now: float, nx: float, ny: float) -> None:
+    """Record an impact: open the beak, and flatten along the contact normal."""
+    duck.quack_until = now + QUACK_SECONDS
+    if duck.is_hero or duck.is_shades:
+        return  # immovable things do not visibly give
+    duck.squish_until = now + SQUISH_SECONDS
+    duck.squish_normal = round(math.degrees(math.atan2(ny, nx)) / (360.0 / NORMAL_STEPS)) % NORMAL_STEPS
 
 
 def make_ducks(count: int, width: int, height: int, rng: random.Random) -> list[Duck]:
@@ -303,6 +385,23 @@ def make_ducks(count: int, width: int, height: int, rng: random.Random) -> list[
                 spin=rng.uniform(*SPIN_SPEED),
             )
         )
+    # The raised sunglasses, as a collider with no sprite. Its resting centre is
+    # the glasses' own centre inside the hero grid; step() lifts it from there.
+    gx = (GLASSES_X0 + GLASSES_X1) / 2 - (len(DUCK_HEAD[0]) - 1) / 2
+    gy = HERO_PAD + (GLASSES_Y0 + GLASSES_Y1) / 2 - (HERO_PAD + len(DUCK_HEAD) - 1) / 2
+    ducks.append(
+        Duck(
+            x=hero.x + gx * HERO_SCALE,
+            y=hero.y + gy * HERO_SCALE,
+            vx=0.0,
+            vy=0.0,
+            radius=GLASSES_RADIUS,
+            anchored=True,
+            is_shades=True,
+            enabled=False,
+            base_y=hero.y + gy * HERO_SCALE,
+        )
+    )
     ducks.append(hero)
     return ducks
 
@@ -310,6 +409,14 @@ def make_ducks(count: int, width: int, height: int, rng: random.Random) -> list[
 def step(ducks: list[Duck], dt: float, now: float, width: int, height: int) -> None:
     """Advance one fixed timestep. Mutates in place."""
     margin = SPRITE_SIZE / 2
+
+    # The sunglasses are only solid while they are actually off his head.
+    lift = hero_lift(now)
+    for duck in ducks:
+        if duck.is_shades:
+            duck.enabled = lift > 0
+            duck.y = duck.base_y - lift * HERO_SCALE
+
     for duck in ducks:
         if duck.anchored:
             continue
@@ -321,24 +428,26 @@ def step(ducks: list[Duck], dt: float, now: float, width: int, height: int) -> N
         # radius, so a rotated duck never has a corner cut off by the frame edge.
         if duck.x <= margin:
             duck.x, duck.vx = margin, abs(duck.vx) * BOUNCE
-            duck.quack_until, duck.squish_until = now + QUACK_SECONDS, now + SQUISH_SECONDS
+            _hit(duck, now, -1.0, 0.0)
         elif duck.x >= width - margin:
             duck.x, duck.vx = width - margin, -abs(duck.vx) * BOUNCE
-            duck.quack_until, duck.squish_until = now + QUACK_SECONDS, now + SQUISH_SECONDS
+            _hit(duck, now, 1.0, 0.0)
         if duck.y <= margin:
             duck.y, duck.vy = margin, abs(duck.vy) * BOUNCE
-            duck.quack_until, duck.squish_until = now + QUACK_SECONDS, now + SQUISH_SECONDS
+            _hit(duck, now, 0.0, -1.0)
         elif duck.y >= height - margin:
             duck.y, duck.vy = height - margin, -abs(duck.vy) * BOUNCE
-            duck.quack_until, duck.squish_until = now + QUACK_SECONDS, now + SQUISH_SECONDS
+            _hit(duck, now, 0.0, 1.0)
 
     # Circle against circle, resolved after everyone has moved so the outcome
     # does not depend on list order. Circles and not boxes because these things
     # rotate: an axis-aligned box around a spinning sprite is the wrong shape at
     # most of the baked angles.
     for i, a in enumerate(ducks):
+        if not a.enabled:
+            continue
         for b in ducks[i + 1 :]:
-            if a.anchored and b.anchored:
+            if not b.enabled or (a.anchored and b.anchored):
                 continue
             dx, dy = b.x - a.x, b.y - a.y
             dist = math.hypot(dx, dy)
@@ -395,11 +504,9 @@ def step(ducks: list[Duck], dt: float, now: float, width: int, height: int) -> N
                 b.vy += (new_b - bvn) * ny
                 a.spin, b.spin = b.spin, a.spin
 
-            a.quack_until = b.quack_until = now + QUACK_SECONDS
-            # Only the crowd squashes; the hero is immovable and an immovable
-            # thing that visibly gives on impact reads as wrong.
-            a.squish_until = a.squish_until if a.is_hero else now + SQUISH_SECONDS
-            b.squish_until = b.squish_until if b.is_hero else now + SQUISH_SECONDS
+            # Each flattens against the other, so the normals are opposite.
+            _hit(a, now, nx, ny)
+            _hit(b, now, -nx, -ny)
 
     # Separation runs after the wall clamps, so a duck shoved by a neighbour can
     # end up part-way out of frame. Clamp last and the walls always win — which
@@ -423,6 +530,8 @@ def compose(ducks: list[Duck], now: float, cols: int, rows: int) -> Group:
     # Hero last, so the crowd passes behind him rather than over his face. He is
     # one of the ducks now, so this is a draw order and not a special case.
     for duck in sorted(ducks, key=lambda d: d.is_hero):
+        if duck.is_shades:
+            continue  # a collider, drawn as part of the hero
         sprite = duck.sprite(now)
         blit(canvas, sprite, int(duck.x - len(sprite[0]) / 2), int(duck.y - len(sprite) / 2))
 
