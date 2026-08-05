@@ -93,7 +93,7 @@ class TestFilesAgreeWithTheTable:
 
     @pytest.mark.parametrize("routine", ROUTINES, ids=_routine_ids)
     def test_a_declared_model_line_matches_the_table(self, routine):
-        """The five non-sweeps carry their own ``**Model**`` line; it must agree.
+        """The six non-sweeps carry their own ``**Model**`` line; it must agree.
 
         The fourteen sweeps deliberately have none — they take their tier from
         ``sweep-procedure.md`` — so this asserts agreement where a line exists
@@ -117,6 +117,7 @@ class TestFilesAgreeWithTheTable:
             [
                 "cron/digest.md",
                 "cron/marketing-weekly.md",
+                "cron/slack-relay.md",
                 "events/pr-merged-close-loop.md",
                 "events/pr-opened-dod-audit.md",
                 "events/release-published-announce.md",
@@ -371,7 +372,7 @@ class TestManifest:
             "repo",
             "repo_url",
             "connectors",
-            "allowed_tools",
+            "default_allowed_tools",
             "targets",
             "labels",
             "variables",
@@ -379,7 +380,7 @@ class TestManifest:
         }
         assert len(payload["routines"]) == len(ROUTINES)
         assert payload["connectors"] == ["Linear", "Slack", "Notion"]
-        assert "Task" in payload["allowed_tools"], "a sweep spawns the crew agents"
+        assert "Task" in payload["default_allowed_tools"], "a sweep spawns the crew agents"
 
     def test_every_cron_routine_carries_what_registration_needs(self, monkeypatch):
         monkeypatch.setattr(setup.shutil, "which", lambda _: None)
@@ -724,7 +725,7 @@ class TestTriggerPlan:
     def test_a_first_deploy_names_what_only_the_account_can_supply(self):
         """The API accepts an empty string, so nothing downstream would notice.
 
-        Sixteen routines register pointing at no repository, on no environment,
+        Seventeen routines register pointing at no repository, on no environment,
         with every connector attached — and it looks like it worked until the
         first Monday.
         """
@@ -754,6 +755,77 @@ class TestTriggerPlan:
         """Captured either way depending on how /cowork saved the response."""
         entries = _perfect_snapshot()
         assert setup.snapshot({"data": entries}) == setup.snapshot(entries) == entries
+
+
+class TestToolOverrides:
+    """slack-relay is the one routine registered with RemoteTrigger.
+
+    The relay drives pause/resume/run from inside its own session, which needs
+    the tool; a *sweep* that could reach the routines API would be a sweep that
+    can un-pause the fleet, so the override is per-routine and the plan treats
+    any deviation — in either direction — as drift.
+    """
+
+    def _tools_of(self, body: dict) -> list[str]:
+        return body["job_config"]["ccr"]["session_context"]["allowed_tools"]
+
+    def test_the_relay_registers_with_remote_trigger(self):
+        relay = next(r for r in ROUTINES if r.name == "slack-relay")
+        body = setup.desired_trigger(relay, REPO_URL, ENVIRONMENT, CONNECTORS)
+        assert "RemoteTrigger" in self._tools_of(body)
+
+    def test_no_other_routine_registers_with_remote_trigger(self):
+        for routine in CRON_ROUTINES:
+            if routine.name == "slack-relay":
+                continue
+            body = setup.desired_trigger(routine, REPO_URL, ENVIRONMENT, CONNECTORS)
+            assert "RemoteTrigger" not in self._tools_of(body), (
+                f"{routine.path} would register with RemoteTrigger — only the relay carries it"
+            )
+
+    def test_a_live_relay_missing_remote_trigger_is_drift(self):
+        """The failure a stale deploy leaves behind: a relay that cannot pause anything."""
+        snapshot = _perfect_snapshot()
+        context = _by_name(snapshot, "slack-relay")["job_config"]["ccr"]["session_context"]
+        context["allowed_tools"] = [tool for tool in context["allowed_tools"] if tool != "RemoteTrigger"]
+        plan = setup.trigger_plan(snapshot)
+        assert [action.name for action in plan.update] == ["slack-relay"]
+        assert "allowed_tools" in plan.update[0].fields
+
+    def test_a_sweep_granted_remote_trigger_is_drift(self):
+        snapshot = _perfect_snapshot()
+        context = _by_name(snapshot, "retro-sweep")["job_config"]["ccr"]["session_context"]
+        context["allowed_tools"] = [*context["allowed_tools"], "RemoteTrigger"]
+        plan = setup.trigger_plan(snapshot)
+        assert [action.name for action in plan.update] == ["retro-sweep"]
+        assert "allowed_tools" in plan.update[0].fields
+
+    def test_the_relay_is_narrowed_not_just_widened(self):
+        """The one routine reading attacker-influenceable text every hour gets no
+        Write/Edit, and spawns no crew."""
+        tools = setup.routine_tools("slack-relay")
+        assert not {"Write", "Edit", "Task"} & set(tools)
+
+    def test_every_override_names_a_real_routine(self):
+        """A renamed relay would otherwise silently lose its extra tools."""
+        stems = {routine.name for routine in ROUTINES}
+        assert set(setup.TOOL_OVERRIDES) <= stems, (
+            f"TOOL_OVERRIDES names routines that do not exist: {sorted(set(setup.TOOL_OVERRIDES) - stems)}"
+        )
+
+    def test_the_doctor_fails_on_a_stale_override_key(self, monkeypatch):
+        """The invariant above, exercised through check_repo's own failure path —
+        deleting the doctor branch must not leave the suite green."""
+        monkeypatch.setitem(setup.TOOL_OVERRIDES, "not-a-routine", ())
+        report = setup.Report()
+        setup.check_repo(report)
+        assert any("not-a-routine" in problem for problem in report.problems)
+
+    def test_the_manifest_carries_the_per_routine_tools(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)
+        by_name = {routine["name"]: routine for routine in setup.manifest()["routines"]}
+        assert "RemoteTrigger" in by_name["slack-relay"]["allowed_tools"]
+        assert "RemoteTrigger" not in by_name["retro-sweep"]["allowed_tools"]
 
 
 class TestUrlWriteback:
@@ -811,7 +883,10 @@ class TestUrlWriteback:
         blank = re.sub(
             r"(^\| `cron/digest\.md`(?:[^|\n]*\|){4})[^|\n]*\|", r"\1 |", setup.README.read_text(), flags=re.M
         )
-        assert setup.missing_urls(blank) == ["cron/digest.md"]
+        # Relative to the real README's own blanks: the file may itself carry
+        # rows in exactly this added-but-not-deployed state, and that is the
+        # point — but blanking digest must add digest and nothing else.
+        assert set(setup.missing_urls(blank)) - set(setup.missing_urls()) == {"cron/digest.md"}
 
 
 class TestTeardown:

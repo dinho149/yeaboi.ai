@@ -49,7 +49,11 @@ collision the paragraph above exists to prevent, and a CVE is not a reason to ca
   the owning workstream. Never edit another workstream's files — this is what keeps two routines off
   `src/yeaboi/ui/mode_select/__init__.py` (14k LOC, the repo's worst merge surface).
 - **Never apply `claude-implement`.** Only a human does. That label is the approval gate; a routine
-  applying it would be approving its own work.
+  applying it would be approving its own work. The one carve-out is `routines/cron/slack-relay.md`,
+  which applies the label (or closes an issue) **only** as the relay of a ✅/❌ reaction from a human
+  on its written allowlist, and records who and the message link on the issue. The human is
+  approving; the relay is transport — it never applies the label to anything no allowlisted human
+  reacted to.
 - **Never push to `main`, never merge a PR, never `--force`.**
 - **One coherent change per run.** No grab-bags.
 - **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no Slack message. A routine

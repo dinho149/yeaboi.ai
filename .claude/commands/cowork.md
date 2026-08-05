@@ -18,7 +18,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 the routine table, `cowork/models.md` the tier table, `cowork/workstreams/` the label list,
 `cowork/definition-of-done.md` the Linear/Slack/Notion target ids — and `scripts/cowork_setup.py` has
 already parsed all four. Read its output; do not read those tables yourself, and do not assemble a
-request body or diff two routines in your head. Sixteen routines × six fields is exactly the work
+request body or diff two routines in your head. Seventeen routines × six fields is exactly the work
 that goes right most of the time, and "most of the time" here is a sweep silently running last
 month's prompt.
 
@@ -85,7 +85,7 @@ a routine file, or when someone new joins.
      - `repo_url` — the script resolves this from `gh` on its own; if it still appears here, `gh` is
        not authenticated.
 
-     A body carrying an empty string for any of these is one the API will happily accept. Sixteen
+     A body carrying an empty string for any of these is one the API will happily accept. Seventeen
      routines then register pointing at no repository, and it looks like it worked until the first
      Monday.
 5. **URLs.** Re-`list` (ids only exist after a create), save it, then
@@ -111,8 +111,11 @@ closest.
 ## `pause` / `resume`
 
 `RemoteTrigger` `action: "update"` with a body of `{"enabled": false}` or `{"enabled": true}`, one
-call per routine. With no names, every `cowork: *` routine. Fully reversible, and nothing else about
-the routine changes.
+call per routine. With no names, every `cowork: *` routine — **including `cowork: slack-relay`**, so
+say in the report that Slack control is off too and resuming is a local verb from here. (The relay's
+own `pause all` from Slack excludes itself for exactly this reason; a local session pausing
+everything is fine because a local session can also resume.) Fully reversible, and nothing else
+about the routine changes.
 
 `deploy` deliberately does **not** re-enable a paused routine — otherwise a pause would end at the
 next deploy with nothing to say it had. `status` reports paused routines every run so a fleet that is

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, nineteen routines, a
+``cowork/`` is a complete specification — fifteen charters, twenty routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 25 labels, 4 variables and 19 web
+registered at claude.ai. Doing that by hand is 25 labels, 4 variables and 20 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -87,13 +87,32 @@ CONNECTORS = ("Linear", "Slack", "Notion")
 # auto lane, and spawn the three crew agents. Kept here rather than in the slash
 # command so every routine gets the same set and it is reviewable in one place.
 #
-# One set for all sixteen, including `digest` and `marketing-weekly`, whose own
-# files say never to edit a file. That is a deliberate difference from the
-# connector list above, and rests on a different argument: a connector is a
-# capability to reach *outside* the repo, where the blast radius is somebody
-# else's inbox, while a stray edit in a routine's own checkout ends up in a PR a
-# human reads. Narrow this per routine only if that stops being true.
+# One shared set, including `digest` and `marketing-weekly`, whose own files say
+# never to edit a file. That is a deliberate difference from the connector list
+# above, and rests on a different argument: a connector is a capability to reach
+# *outside* the repo, where the blast radius is somebody else's inbox, while a
+# stray edit in a routine's own checkout ends up in a PR a human reads. Widen or
+# narrow per routine only through TOOL_OVERRIDES below, so the exceptions stay
+# reviewable in the same place as the rule.
 ALLOWED_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite")
+
+# The per-routine exceptions to ALLOWED_TOOLS, keyed by routine stem.
+TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
+    # slack-relay relays a human's verbs and nothing else: gh and the manifest
+    # (Bash), the repo and its own allowlist (Read/Glob/Grep), and the routines
+    # API (RemoteTrigger) for pause/resume/run — which nothing else gets: a
+    # sweep that can reach the routines API is a sweep that can un-pause the
+    # fleet. Write/Edit/Task are deliberately absent: the relay's own file
+    # forbids editing anything, it spawns no crew, and it is the one routine
+    # that reads attacker-influenceable channel text every hour.
+    "slack-relay": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "TodoWrite"),
+}
+
+
+def routine_tools(name: str) -> tuple[str, ...]:
+    """The tool set one routine is registered with."""
+    return TOOL_OVERRIDES.get(name, ALLOWED_TOOLS)
+
 
 # Where a registered routine lives, for the README's URL column.
 ROUTINE_URL = "https://claude.ai/code/routines/{id}"
@@ -395,6 +414,16 @@ def check_repo(report: Report) -> None:
             "create the routine file or drop the row",
         )
 
+    # A TOOL_OVERRIDES key that names no routine is a renamed or deleted routine
+    # that silently lost its extra tools — the relay without RemoteTrigger still
+    # runs, and reports it cannot pause anything, every hour.
+    stems = {Path(name).stem for name in on_disk}
+    for stray in sorted(set(TOOL_OVERRIDES) - stems):
+        report.fail(
+            f"TOOL_OVERRIDES names `{stray}`, which matches no routine file",
+            "rename the key to the routine's current stem or remove the entry",
+        )
+
     for routine in parse_routines():
         # A row whose file is missing was already reported above; the checks below
         # all read that file, so there is nothing left to say about it.
@@ -661,7 +690,7 @@ def manifest() -> dict:
         "repo": repo_slug() if shutil.which("gh") else None,
         "repo_url": repo_url(),
         "connectors": list(CONNECTORS),
-        "allowed_tools": list(ALLOWED_TOOLS),
+        "default_allowed_tools": list(ALLOWED_TOOLS),
         "targets": parse_targets(),
         "labels": [{"name": label.name, "description": label.description} for label in expected_labels()],
         "variables": parse_model_variables(),
@@ -678,6 +707,7 @@ def manifest() -> dict:
                 "tier": routine.tier,
                 "model": routine.model_id,
                 "prompt": routine.prompt,
+                "allowed_tools": list(routine_tools(routine.name)),
             }
             for routine in parse_routines()
         ],
@@ -688,7 +718,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across sixteen routines is exactly
+# split is the point: comparing seven fields across seventeen routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -700,7 +730,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering sixteen routines that already exist.
+    propose registering seventeen routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -758,7 +788,7 @@ def desired_trigger(
                     }
                 ],
                 "session_context": {
-                    "allowed_tools": list(ALLOWED_TOOLS),
+                    "allowed_tools": list(routine_tools(routine.name)),
                     "model": routine.model_id,
                     "sources": [{"git_repository": {"url": repo_url}}],
                 },
@@ -963,7 +993,7 @@ def trigger_plan(
             "cron": (current["cron"], routine.cron),
             "model": (current["model"], routine.model_id),
             "prompt": (current["prompt"], routine.prompt),
-            "allowed_tools": (current["allowed_tools"], tuple(sorted(ALLOWED_TOOLS))),
+            "allowed_tools": (current["allowed_tools"], tuple(sorted(routine_tools(routine.name)))),
             "repo_url": (current["repo_url"], repo_url),
             "connectors": (current["connectors"], tuple(sorted(CONNECTORS))),
         }
@@ -997,7 +1027,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers sixteen routines pointing at no repository — which looks like it
+    # registers seventeen routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.create:
         if not repo_url:
@@ -1032,7 +1062,7 @@ def trigger_plan(
 def readme_with_urls(text: str, urls: dict[str, str]) -> str:
     """Fill the registered-routines URL column from a plan's ``urls``.
 
-    Done here, on whole rows, rather than asked of the command as sixteen edits.
+    Done here, on whole rows, rather than asked of the command as seventeen edits.
     The first version of this asked for the edits and got none of them, which is
     how a table that claims to record what is running came to record nothing.
 
