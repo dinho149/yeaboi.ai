@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_FADE_OUT, _SAY_HOLD
 
 # Priority ladder: LOWER numbers win. Events (an ack, a stage quip, the
-# celebration) beat coaching, which beats the idle tip rotation — so a tip can
-# never talk over "Stories done!", and coaching owns the bubble during intake.
+# celebration) beat coaching — so a phase lead-in can never talk over
+# "Stories done!". There is deliberately NO ambient tier below coaching:
+# rotating feature-tips were tried here and read as noise over the composer
+# (user feedback) — the bubble only speaks when something actually happened.
 PRIORITY_EVENT = 1
 PRIORITY_COACH = 2
-PRIORITY_TIP = 3
 
 COACH_HOLD = 4.0  # coaching lines dwell a little longer than the default 2s
 
@@ -56,6 +57,13 @@ class ChatDuck:
     def __init__(self) -> None:
         self._seq = 0
         self._line: _Line | None = None
+        self.muted = False  # /duck — the user asked for quiet
+
+    def mute(self, muted: bool) -> None:
+        """Silence (or restore) the bubble; muting drops the current line too."""
+        self.muted = muted
+        if muted:
+            self._line = None
 
     def _expired(self, line: _Line, now: float) -> bool:
         return now - line.at > _SAY_FADE_IN + line.hold + _SAY_FADE_OUT
@@ -70,6 +78,8 @@ class ChatDuck:
         already showing at the same priority is a no-op — repeats don't restart
         the fade unless the caller re-offers after it expired.
         """
+        if self.muted:
+            return False
         now = time.monotonic() if now is None else now
         hold = _SAY_HOLD if hold is None else hold
         live = self._line is not None and not self._expired(self._line, now)

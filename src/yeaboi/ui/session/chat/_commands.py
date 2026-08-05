@@ -45,6 +45,7 @@ class ChatContext:
     enter_form: Callable[[], None]  # full-screen questionnaire takeover (/form)
     fast_forward: Callable[[], None]  # defaults + auto-accept everything (/finish)
     plan_complete: Callable[[], bool]  # sprints exist — nothing left to fast-forward
+    toggle_duck: Callable[[], None]  # mute/unmute the companion duck's bubble (/duck)
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,10 @@ def _cmd_quit(ctx: ChatContext, args: str) -> None:
     ctx.request_quit()
 
 
+def _cmd_duck(ctx: ChatContext, args: str) -> None:
+    ctx.toggle_duck()
+
+
 COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("help", "list commands and shortcuts", _cmd_help),
     SlashCommand("export", "save the plan and/or chat transcript", _cmd_export),
@@ -172,6 +177,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand("paste", "paste from clipboard keeping line breaks", _cmd_paste),
     SlashCommand("small", "switch to a Small plan", _cmd_small),
     SlashCommand("large", "switch to a Large plan", _cmd_large),
+    SlashCommand("duck", "mute or unmute the duck's speech bubble", _cmd_duck),
     SlashCommand("quit", "leave planning (progress is saved)", _cmd_quit),
 )
 

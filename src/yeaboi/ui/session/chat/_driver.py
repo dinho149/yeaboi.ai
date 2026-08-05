@@ -93,7 +93,7 @@ _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
 _IDLE_HINT_SECONDS = 8.0  # stuck on a question this long → the duck offers a hint
-_IDLE_TIP_AFTER_SECONDS = 3.0  # quiet this long (greeting / post-plan) → rotating tips
+_BUBBLE_MIN_COLS = 12  # narrower than this and a bubble is skipped, not squeezed
 
 
 def run_chat_session(
@@ -224,10 +224,27 @@ class _ChatDriver:
         if line is not None:
             # The chrome duck reads these off the panel (see MusicLive); the
             # arbiter is the only writer, so features never fight over the bubble.
-            panel._duck_say, panel._duck_say_hold, panel._duck_say_seq = line
+            # The bubble may only use the empty margin RIGHT of the reading
+            # column — never the composer/transcript (user feedback: a wide
+            # bubble over the Message box reads as interference). Too narrow →
+            # skipped entirely; the transcript already carries anything durable.
+            text, hold, seq = line
+            room = self._bubble_room(w)
+            if room >= _BUBBLE_MIN_COLS:
+                if len(text) > room:
+                    text = text[: max(1, room - 1)].rstrip() + "…"
+                panel._duck_say, panel._duck_say_hold, panel._duck_say_seq = text, hold, seq
         self.live.update(panel)
         if self.follow or self.scroll_offset == SCROLL_BOTTOM:
             self.scroll_offset = self._bottom()
+
+    def _bubble_room(self, width: int) -> int:
+        """Text columns a bubble may use: the gap between the reading column's
+        right edge and the duck, minus the bubble borders/tail/gap (7 cols)."""
+        from ._screen import _DUCK_LANE, _column_metrics
+
+        col_w, margin = _column_metrics(width)
+        return (width - _DUCK_LANE) - (margin + col_w + 4) - 7
 
     def _say(self, text: str) -> None:
         self.transcript.add_assistant(text)
@@ -283,6 +300,7 @@ class _ChatDriver:
             enter_form=self._form_mode,
             fast_forward=self._fast_forward,
             plan_complete=lambda: bool(self.state.get("sprints")),
+            toggle_duck=self._toggle_duck,
         )
 
     def _request_quit(self) -> None:
@@ -1485,20 +1503,19 @@ class _ChatDriver:
                     if self.duck.say(hint, priority=PRIORITY_COACH, hold=COACH_HOLD, now=now):
                         logger.info("Duck coaching (idle hint): %s", hint)
             return
-        # Rotating tips: only where nothing is in flight and nothing is asked —
-        # the greeting (pre-description) and the post-plan free chat.
-        if stage == "chat" or (stage == "intake" and not self.state.get("messages")):
-            if now - self._idle_since < _IDLE_TIP_AFTER_SECONDS:
-                return
-            from yeaboi.ui.shared._tips import TIP_ROTATE_SECONDS, current_tip
+        # Deliberately nothing else: rotating feature-tips were tried here and
+        # read as noise over the composer (user feedback) — outside intake the
+        # duck only reacts, never volunteers.
 
-            from ._duck import PRIORITY_TIP
-
-            _idx, tip = current_tip(now - self._anim0)
-            text = tip.text.split("Tip:", 1)[-1].strip()
-            # No logging here: this runs per frame and rotates every 6s — the
-            # arbiter's no-op-on-same-text rule keeps it cheap.
-            self.duck.say(text, priority=PRIORITY_TIP, hold=TIP_ROTATE_SECONDS - 1.0, now=now)
+    def _toggle_duck(self) -> None:
+        """/duck — mute or unmute the companion's speech bubble."""
+        self.duck.mute(not self.duck.muted)
+        logger.info("Duck bubble %s", "muted" if self.duck.muted else "unmuted")
+        if self.duck.muted:
+            self._note("Duck muted — he'll keep working quietly. /duck brings his bubble back.")
+        else:
+            self._note("Duck's bubble is back.")
+            self._bubble("Quack!")
 
     def _maybe_celebrate_completion(self) -> None:
         """One-time completion beat: recap card + duck celebration.

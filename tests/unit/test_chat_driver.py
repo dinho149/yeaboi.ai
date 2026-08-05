@@ -36,14 +36,14 @@ def _keys(sequence: list[str]):
     return _key
 
 
-def _console() -> Console:
-    return Console(file=StringIO(), width=100, height=40, force_terminal=True, color_system="truecolor")
+def _console(width: int = 100) -> Console:
+    return Console(file=StringIO(), width=width, height=40, force_terminal=True, color_system="truecolor")
 
 
-def _driver(graph, keys, state=None, *, dry_run: bool = False) -> _ChatDriver:
+def _driver(graph, keys, state=None, *, dry_run: bool = False, width: int = 100) -> _ChatDriver:
     return _ChatDriver(
         FakeLive(),
-        _console(),
+        _console(width),
         graph,
         state if state is not None else {"messages": []},
         keys,
@@ -337,11 +337,13 @@ class TestIntakeCoaching:
         assert driver.duck._line is None
 
 
-class TestIdleTips:
-    def test_tips_rotate_in_free_chat(self):
-        import time
+class TestNoIdleTips:
+    # Rotating feature-tips in the bubble were removed after user feedback —
+    # a wide tip over the composer read as interference. Outside intake the
+    # duck only reacts to events; idling must never make him volunteer.
 
-        from yeaboi.ui.session.chat._duck import PRIORITY_TIP
+    def test_idle_free_chat_stays_quiet(self):
+        import time
 
         qs = QuestionnaireState(completed=True)
         state = {
@@ -356,32 +358,15 @@ class TestIdleTips:
             "_chat_greeting_done": True,
         }
         driver = _driver(FakeGraph([]), _keys([]), state)
-        driver._idle_since = time.monotonic() - 5.0
+        driver._idle_since = time.monotonic() - 60.0
         driver._idle_tick()
-        assert driver.duck._line is not None
-        assert driver.duck._line.priority == PRIORITY_TIP
-        assert "Tip:" not in driver.duck._line.text  # prefix stripped for the bubble
+        assert driver.duck._line is None
 
-    def test_tips_active_on_the_greeting(self):
+    def test_idle_greeting_stays_quiet(self):
         import time
 
         driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
-        driver._idle_since = time.monotonic() - 5.0
-        driver._idle_tick()
-        assert driver.duck._line is not None
-
-    def test_tips_suppressed_mid_intake(self):
-        import time
-
-        qs = QuestionnaireState(intake_mode="smart")
-        qs.current_question = 5
-        state = {
-            "messages": [HumanMessage(content="d"), AIMessage(content="Q?")],
-            "questionnaire": qs,
-            "_chat_greeting_done": True,
-        }
-        driver = _driver(FakeGraph([]), _keys([]), state)
-        driver._idle_since = time.monotonic() - 5.0  # long enough for a tip, not a hint
+        driver._idle_since = time.monotonic() - 60.0
         driver._idle_tick()
         assert driver.duck._line is None
 
@@ -449,7 +434,8 @@ class TestCompletionRecap:
 
 class TestDuckBubble:
     def test_render_stamps_the_bubble_on_the_panel(self):
-        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        # Wide terminal: the free margin right of the reading column fits it.
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=200)
         driver._bubble("Export finished!")
         driver._render()
         panel = driver.live.last
@@ -457,9 +443,39 @@ class TestDuckBubble:
         assert getattr(panel, "_duck_say_seq", 0) >= 1
 
     def test_render_stamps_nothing_when_silent(self):
-        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=200)
         driver._render()
         assert getattr(driver.live.last, "_duck_say", "") == ""
+
+    def test_bubble_skipped_when_it_would_cross_the_column(self):
+        # At 100 cols there is no free margin beside the composer — the bubble
+        # must be skipped entirely, never drawn over the Message box (user
+        # feedback: an overlapping bubble reads as interference).
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=100)
+        driver._bubble("Export finished!")
+        driver._render()
+        assert getattr(driver.live.last, "_duck_say", "") == ""
+
+    def test_long_bubble_truncated_to_the_free_margin(self):
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=200)
+        driver._bubble("A very long line " * 12)
+        driver._render()
+        said = getattr(driver.live.last, "_duck_say", "")
+        assert said.endswith("…")
+        assert len(said) <= driver._bubble_room(200)
+
+    def test_duck_toggle_mutes_and_unmutes(self):
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=200)
+        driver._bubble("Stories done!")
+        driver._toggle_duck()
+        assert driver.duck.muted
+        driver._render()
+        assert getattr(driver.live.last, "_duck_say", "") == ""  # dropped immediately
+        assert any("Duck muted" in m.text for m in driver.transcript.messages)
+        driver._toggle_duck()
+        assert not driver.duck.muted
+        driver._render()
+        assert getattr(driver.live.last, "_duck_say", "") == "Quack!"
 
     def test_guardrail_block_is_transcript_only(self):
         # Blocks are durable context the user may scroll back to — never a

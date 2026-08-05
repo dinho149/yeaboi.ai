@@ -23,6 +23,7 @@ def _ctx(**overrides) -> ChatContext:
         enter_form=MagicMock(),
         fast_forward=MagicMock(),
         plan_complete=lambda: False,
+        toggle_duck=MagicMock(),
     )
     defaults.update(overrides)
     return ChatContext(**defaults)
@@ -177,6 +178,14 @@ class TestFormCommand:
         dispatch(ctx, "/form")
         ctx.enter_form.assert_not_called()
         assert "Unknown command" in ctx.add_system.call_args[0][0]
+
+
+class TestDuckCommand:
+    def test_duck_is_always_available_and_toggles(self):
+        ctx = _ctx()
+        assert any(c.name == "duck" for c in matching_commands(ctx, "/duck"))
+        assert dispatch(ctx, "/duck") is True
+        ctx.toggle_duck.assert_called_once()
 
 
 class TestFinishCommand:

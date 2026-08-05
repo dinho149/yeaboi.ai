@@ -4,38 +4,46 @@ from yeaboi.ui.session.chat._duck import (
     COACH_HOLD,
     PRIORITY_COACH,
     PRIORITY_EVENT,
-    PRIORITY_TIP,
     ChatDuck,
 )
 from yeaboi.ui.shared._music_bar import _SAY_FADE_IN, _SAY_FADE_OUT, _SAY_HOLD
 
 
 class TestPriorityLadder:
-    def test_event_beats_a_live_tip(self):
+    def test_event_beats_a_live_coaching_line(self):
         duck = ChatDuck()
-        duck.say("a tip", priority=PRIORITY_TIP, now=0.0)
+        duck.say("Let's talk timing.", priority=PRIORITY_COACH, now=0.0)
         assert duck.say("Stories done!", priority=PRIORITY_EVENT, now=0.1)
         assert duck.tick(now=0.2)[0] == "Stories done!"
 
-    def test_tip_never_interrupts_a_live_event(self):
+    def test_coach_never_interrupts_a_live_event(self):
         duck = ChatDuck()
         duck.say("Stories done!", priority=PRIORITY_EVENT, now=0.0)
-        assert not duck.say("a tip", priority=PRIORITY_TIP, now=0.1)
+        assert not duck.say("Let's talk timing.", priority=PRIORITY_COACH, now=0.1)
         assert duck.tick(now=0.2)[0] == "Stories done!"
 
-    def test_tip_takes_over_after_the_event_expires(self):
+    def test_coach_takes_over_after_the_event_expires(self):
         duck = ChatDuck()
         duck.say("Stories done!", priority=PRIORITY_EVENT, now=0.0)
         after = _SAY_FADE_IN + _SAY_HOLD + _SAY_FADE_OUT + 0.1
-        assert duck.say("a tip", priority=PRIORITY_TIP, now=after)
-        assert duck.tick(now=after + 0.1)[0] == "a tip"
+        assert duck.say("Let's talk timing.", priority=PRIORITY_COACH, now=after)
+        assert duck.tick(now=after + 0.1)[0] == "Let's talk timing."
 
-    def test_coach_sits_between_events_and_tips(self):
+
+class TestMute:
+    def test_muted_duck_refuses_lines_and_drops_the_current_one(self):
         duck = ChatDuck()
-        duck.say("a tip", priority=PRIORITY_TIP, now=0.0)
-        assert duck.say("Let's talk timing.", priority=PRIORITY_COACH, now=0.1)
-        assert not duck.say("another tip", priority=PRIORITY_TIP, now=0.2)
-        assert duck.say("Auto-accepted!", priority=PRIORITY_EVENT, now=0.3)
+        duck.say("Stories done!", now=0.0)
+        duck.mute(True)
+        assert duck.tick(now=0.1) is None  # live line dropped immediately
+        assert not duck.say("Tasks sliced!", now=0.2)
+
+    def test_unmuting_restores_the_bubble(self):
+        duck = ChatDuck()
+        duck.mute(True)
+        duck.mute(False)
+        assert duck.say("Quack!", now=0.0)
+        assert duck.tick(now=0.1)[0] == "Quack!"
 
 
 class TestLifecycle:
