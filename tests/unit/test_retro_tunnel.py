@@ -135,11 +135,21 @@ class TestEnsureCloudflared:
         assert tunnel.ensure_cloudflared() is None
 
 
-def _fake_cloudflared(tmp_path, *, emit_url: bool) -> "object":
-    """Write a fake cloudflared shell script that mimics stderr output."""
+def _fake_cloudflared(tmp_path, *, emit_url: bool, register: bool = True) -> "object":
+    """Write a fake cloudflared shell script that mimics stderr output.
+
+    ``register`` controls whether it also emits the ``Registered tunnel connection``
+    line — the real readiness signal. URL-without-registration is exactly the state
+    that serves Cloudflare error 1033 to visitors.
+    """
     script = tmp_path / "cloudflared"
     if emit_url:
-        body = '#!/bin/sh\necho "INF |  https://fake-tunnel-abcd.trycloudflare.com  |" >&2\nsleep 5\n'
+        lines = ['echo "INF |  https://fake-tunnel-abcd.trycloudflare.com  |" >&2']
+        if register:
+            lines.append('echo "INF Registered tunnel connection connIndex=0 protocol=quic" >&2')
+        # sleep 1, not longer: stop() joins the reader thread, which only ends when the
+        # fake exits and releases the stderr fd — a long sleep is pure test wall-clock.
+        body = "#!/bin/sh\n" + "\n".join(lines) + "\nsleep 1\n"
     else:
         body = "#!/bin/sh\necho 'INF starting' >&2\nexit 0\n"
     script.write_text(body)
@@ -164,6 +174,72 @@ class TestCloudflareTunnel:
         binary = _fake_cloudflared(tmp_path, emit_url=False)
         t = tunnel.CloudflareTunnel(5173, binary=binary)
         assert t.start(timeout=5) is None
+
+    def test_url_without_registration_is_a_failure(self, tmp_path, monkeypatch, caplog):
+        # The URL banner prints before cloudflared has connected to the edge; if no
+        # connection ever registers, visitors get Cloudflare error 1033. start() must
+        # treat that as a failure, not hand out a dead URL.
+        monkeypatch.setattr(tunnel, "_REGISTER_GRACE", 1.0)
+        binary = _fake_cloudflared(tmp_path, emit_url=True, register=False)
+        t = tunnel.CloudflareTunnel(5173, binary=binary)
+        with caplog.at_level("WARNING", logger="yeaboi.retro.tunnel"):
+            assert t.start(timeout=1) is None
+        assert t.public_url == ""
+        assert any("1033" in r.getMessage() for r in caplog.records)
+
+    def test_stop_during_start_prevents_region_retry(self, tmp_path, monkeypatch):
+        # A teardown that lands mid-handshake must cancel the whole start(), never be
+        # followed by the --region retry launching a cloudflared nobody will stop.
+        launches = []
+
+        def fake_attempt(self, binary, *, deadline, extra_args=()):
+            launches.append(extra_args)
+            self._log_tail.append("ERR expected at least 2 Cloudflare Regions regions, but SRV only returned 1")
+            self.stop()  # the owner's finally fires while the attempt is in flight
+            return None
+
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_attempt", fake_attempt)
+        t = tunnel.CloudflareTunnel(5173, binary=tmp_path / "unused")
+        assert t.start(timeout=5) is None
+        assert launches == [()]
+
+    def test_region_srv_failure_retries_pinned_to_us(self, tmp_path, monkeypatch):
+        # A broken local resolver (ISP router / filtering DNS) makes cloudflared exit with
+        # "expected at least 2 Cloudflare Regions…" right after the URL banner — permanent
+        # 1033 for visitors. start() must retry pinned to --region us, which works there.
+        monkeypatch.setattr(tunnel.CloudflareTunnel, "_wait_dns_live", lambda self, host, *, deadline: True)
+        script = tmp_path / "cloudflared"
+        marker = tmp_path / "launches"
+        script.write_text(
+            "#!/bin/sh\n"
+            f'echo run >> "{marker}"\n'
+            'case "$*" in\n'
+            "  *--region\\ us*)\n"
+            '    echo "INF |  https://fake-tunnel-abcd.trycloudflare.com  |" >&2\n'
+            '    echo "INF Registered tunnel connection connIndex=0 protocol=quic" >&2\n'
+            "    sleep 1;;\n"
+            "  *)\n"
+            '    echo "INF |  https://dead-tunnel-abcd.trycloudflare.com  |" >&2\n'
+            "    echo 'ERR Initiating shutdown error=\"expected at least 2 Cloudflare Regions"
+            " regions, but SRV only returned 1\"' >&2\n"
+            "    exit 1;;\n"
+            "esac\n"
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        t = tunnel.CloudflareTunnel(5173, binary=script)
+        assert t.start(timeout=10) == "https://fake-tunnel-abcd.trycloudflare.com"
+        t.stop()
+        assert marker.read_text().count("run") == 2
+
+    def test_other_failures_do_not_retry(self, tmp_path):
+        # The region retry is targeted: any other exit reason still fails once, cleanly.
+        script = tmp_path / "cloudflared"
+        marker = tmp_path / "launches"
+        script.write_text(f'#!/bin/sh\necho run >> "{marker}"\necho "ERR some other failure" >&2\nexit 1\n')
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        t = tunnel.CloudflareTunnel(5173, binary=script)
+        assert t.start(timeout=5) is None
+        assert marker.read_text().count("run") == 1
 
     def test_start_none_when_binary_unavailable(self, monkeypatch):
         monkeypatch.setattr(tunnel, "ensure_cloudflared", lambda: None)

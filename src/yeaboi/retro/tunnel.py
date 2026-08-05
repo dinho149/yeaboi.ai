@@ -41,6 +41,25 @@ logger = logging.getLogger(__name__)
 # cloudflared prints the assigned URL to stderr inside a banner box; match it anywhere.
 _URL_RE = re.compile(r"https://[a-z0-9][a-z0-9-]*\.trycloudflare\.com")
 
+# The URL banner only means the hostname was *allocated* — it prints before cloudflared
+# has connected to Cloudflare's edge. A visitor who opens the URL in that window (or when
+# the connection never comes up at all, e.g. the network blocks QUIC/UDP 7844 and the
+# http2 fallback too) gets Cloudflare error 1033: the hostname resolves, but no tunnel is
+# registered behind it. Readiness therefore additionally gates on this log line, which
+# cloudflared emits once per established edge connection.
+_REGISTERED_RE = re.compile(r"Registered tunnel connection")
+
+# Minimum time to wait for edge registration after the URL banner. Registration normally
+# lands within a second, but when QUIC (UDP 7844) is blocked cloudflared only falls back
+# to http2 after its QUIC attempts time out, which takes a while.
+_REGISTER_GRACE = 20.0
+
+# cloudflared discovers the edge via DNS SRV records for two global regions and exits when
+# the local resolver answers incompletely ("expected at least 2 Cloudflare Regions…") —
+# seen with ISP-router/filtering DNS. Pinning ``--region us`` queries per-region hostnames
+# instead and drops the two-region requirement, so start() retries with it on this error.
+_REGION_SRV_RE = re.compile(r"expected at least \d+ Cloudflare Regions")
+
 # We pin an exact cloudflared release (not the moving ``latest`` tag) and verify the
 # downloaded bytes against a bundled SHA-256 map before we ever mark the file
 # executable or run it. This closes the supply-chain gap: even if GitHub served a
@@ -191,27 +210,74 @@ class CloudflareTunnel:
         self._url = ""
         # Last stderr lines from cloudflared — surfaced on failure so the real reason
         # (QUIC blocked, trycloudflare 5xx, protocol deprecated, rate-limit) is visible.
-        self._log_tail: deque[str] = deque(maxlen=15)
+        # Sized to hold both launches' output when the --region retry also fails, so the
+        # first attempt's root cause is still in the final warning.
+        self._log_tail: deque[str] = deque(maxlen=30)
+        # Set by stop(): cancels an in-flight start() so a teardown during the handshake
+        # can never be followed by a retry launching a cloudflared nobody will stop.
+        self._stopped = threading.Event()
 
     @property
     def public_url(self) -> str:
         return self._url
 
     def start(self, *, timeout: float = 45.0) -> str | None:
-        """Launch cloudflared and wait up to ``timeout`` s for the public URL.
+        """Launch cloudflared and wait up to ``timeout`` s for a *connected* tunnel.
 
-        Returns the ``https://…trycloudflare.com`` URL, or ``None`` on failure
-        (binary unavailable, process died, or no URL within the timeout).
+        ``timeout`` is one overall budget covering the URL banner, edge registration,
+        and — if the first launch dies to the two-region SRV error — the single
+        ``--region us`` retry; the ~30 s DNS-propagation gate runs after that. Returns
+        the ``https://…trycloudflare.com`` URL once cloudflared has registered an edge
+        connection behind it, or ``None`` on failure or when ``stop()`` cancels an
+        in-flight start.
         """
         binary = self._binary or ensure_cloudflared()
         if binary is None:
             return None
         self._binary = binary
+        self._stopped.clear()
 
-        logger.info("retro: starting cloudflare tunnel for localhost:%d", self.port)
+        deadline = time.monotonic() + timeout
+        url = self._attempt(binary, deadline=deadline)
+        if url is None and not self._stopped.is_set() and any(_REGION_SRV_RE.search(line) for line in self._log_tail):
+            # Broken local DNS (see _REGION_SRV_RE): cloudflared allocated the URL but
+            # exited before connecting — the persistent-error-1033 shape. Pinning one
+            # region uses per-region hostnames the same resolver answers fine. The tail
+            # is kept, not cleared, so a failed retry's warning still shows this root cause.
+            logger.warning(
+                "retro: local DNS returned incomplete Cloudflare region records — retrying pinned to the US region"
+            )
+            url = self._attempt(binary, deadline=deadline, extra_args=("--region", "us"))
+        if url is None:
+            return None
+
+        # cloudflared prints the URL several seconds BEFORE the quick-tunnel hostname's DNS
+        # record actually goes live. Handing the URL out at that instant means a teammate
+        # who opens it immediately hits NXDOMAIN — which their browser/OS then *negatively
+        # caches*, so even retries keep failing for a while. Wait until the record is
+        # globally resolvable before declaring the tunnel ready.
+        host = url.split("://", 1)[-1].split("/", 1)[0]
+        self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
+        logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
+        return url
+
+    def _attempt(self, binary: Path, *, deadline: float, extra_args: tuple[str, ...] = ()) -> str | None:
+        """One cloudflared launch: wait for the URL banner, then for an edge connection.
+
+        On any failure the process is stopped and ``None`` returned; ``_log_tail`` keeps
+        cloudflared's last lines so the caller can see *why* (and decide to retry).
+        """
+        if self._stopped.is_set():
+            return None
+        logger.info(
+            "retro: starting cloudflare tunnel for localhost:%d (binary=%s, extra_args=%s)",
+            self.port,
+            binary,
+            " ".join(extra_args) or "-",
+        )
         try:
-            self._proc = subprocess.Popen(  # noqa: S603 - fixed, app-managed binary + args
-                [str(binary), "tunnel", "--no-autoupdate", "--url", f"http://localhost:{self.port}"],
+            proc = subprocess.Popen(  # noqa: S603 - fixed, app-managed binary + args
+                [str(binary), "tunnel", "--no-autoupdate", *extra_args, "--url", f"http://localhost:{self.port}"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -220,39 +286,52 @@ class CloudflareTunnel:
         except OSError as e:
             logger.warning("retro: could not launch cloudflared: %s", e)
             return None
+        self._proc = proc
+        self._url = ""
+        if self._stopped.is_set():  # stop() raced the launch and missed the new process
+            self._terminate()
+            return None
 
         found = threading.Event()
+        registered = threading.Event()
+        # Per-attempt URL slot: a previous attempt's drain thread that outlives its
+        # join(timeout=2) must never be able to write this attempt's (or the final) URL.
+        state = {"url": ""}
 
         def _drain() -> None:
             # Keep reading stderr for the tunnel's whole life: capture the URL once,
             # then keep draining so cloudflared's pipe buffer never fills and blocks it.
             # Every line is logged (DEBUG) + kept in a small tail so a failure is
             # diagnosable — previously cloudflared's own output was discarded.
-            assert self._proc is not None and self._proc.stderr is not None
-            for line in self._proc.stderr:
+            assert proc.stderr is not None
+            for line in proc.stderr:
                 line = line.rstrip()
                 if line:
                     self._log_tail.append(line)
                     logger.debug("cloudflared: %s", line)
-                if not self._url:
+                if not state["url"]:
                     m = _URL_RE.search(line)
                     if m:
-                        self._url = m.group(0)
+                        state["url"] = m.group(0)
                         found.set()
+                if not registered.is_set() and _REGISTERED_RE.search(line):
+                    registered.set()
 
         self._reader = threading.Thread(target=_drain, name="retro-tunnel", daemon=True)
         self._reader.start()
 
-        # Wait for the URL, but bail early if the process exits first.
-        deadline = time.monotonic() + timeout
+        # Wait for the URL, but bail early if the process exits or stop() cancels us.
         while time.monotonic() < deadline:
             if found.wait(timeout=0.2):
                 break
-            if self._proc.poll() is not None:  # cloudflared exited before emitting a URL
-                logger.warning("retro: cloudflared exited early (code %s)", self._proc.returncode)
+            if self._stopped.is_set():
+                self._terminate()
+                return None
+            if proc.poll() is not None:  # cloudflared exited before emitting a URL
+                logger.warning("retro: cloudflared exited early (code %s)", proc.returncode)
                 break
 
-        if not self._url:
+        if not state["url"]:
             # Surface cloudflared's own last words at warning level so the reason is
             # visible in retro.log without enabling DEBUG.
             if self._log_tail:
@@ -262,18 +341,44 @@ class CloudflareTunnel:
                 )
             else:
                 logger.warning("retro: cloudflare tunnel failed to produce a URL (no cloudflared output)")
-            self.stop()
+            self._terminate()
             return None
 
-        # cloudflared prints the URL several seconds BEFORE the quick-tunnel hostname's DNS
-        # record actually goes live. Handing the URL out at that instant means a teammate
-        # who opens it immediately hits NXDOMAIN — which their browser/OS then *negatively
-        # caches*, so even retries keep failing for a while. Wait until the record is
-        # globally resolvable before declaring the tunnel ready.
-        host = self._url.split("://", 1)[-1].split("/", 1)[0]
-        self._wait_dns_live(host, deadline=time.monotonic() + 30.0)
-        logger.info("cloudflare quick tunnel ready (local_port=%d)", self.port)
+        # The URL alone is not readiness: until cloudflared registers an edge connection,
+        # visitors get Cloudflare error 1033 (hostname allocated, no tunnel behind it).
+        # Registration normally lands within a second of the URL; cap the extra wait at
+        # _REGISTER_GRACE (QUIC→http2 fallback time) while staying inside the caller's budget.
+        if not self._wait_registered(proc, registered, deadline=min(deadline, time.monotonic() + _REGISTER_GRACE)):
+            logger.warning(
+                "retro: cloudflare tunnel URL was issued but no edge connection registered — visitors "
+                "would see Cloudflare error 1033. The network may block the tunnel protocol "
+                "(QUIC/UDP 7844 and the http2 fallback). binary=%s; cloudflared said:\n%s",
+                binary,
+                "\n".join(self._log_tail) or "(no output)",
+            )
+            self._terminate()
+            return None
+        self._url = state["url"]
         return self._url
+
+    def _wait_registered(self, proc: subprocess.Popen, registered: threading.Event, *, deadline: float) -> bool:
+        """Block until cloudflared registers an edge connection, or the deadline/process death.
+
+        Returns True once ``Registered tunnel connection`` has been seen on stderr. Bails
+        early (False) if cloudflared exits first — no connection is coming from a dead
+        process — or if ``stop()`` cancelled the start.
+        """
+        while time.monotonic() < deadline:
+            if registered.wait(timeout=0.2):
+                logger.info("retro: cloudflare tunnel edge connection registered")
+                return True
+            if self._stopped.is_set():
+                logger.info("retro: tunnel start cancelled while waiting for edge registration")
+                return False
+            if proc.poll() is not None:
+                logger.warning("retro: cloudflared exited before registering a connection")
+                return False
+        return registered.is_set()
 
     def _dns_query(self, base: str, host: str) -> bool | None:
         """DoH A-record lookup. Returns True (resolves), False (NXDOMAIN), None (endpoint error)."""
@@ -337,7 +442,17 @@ class CloudflareTunnel:
         return False
 
     def stop(self) -> None:
-        """Terminate the tunnel process and free its resources."""
+        """Terminate the tunnel and cancel any in-flight ``start()`` (including its retry).
+
+        The cancel flag is what makes teardown-during-setup safe: without it, a
+        ``stop()`` that lands mid-handshake could be followed by the ``--region us``
+        retry launching a fresh cloudflared that nothing ever stops.
+        """
+        self._stopped.set()
+        self._terminate()
+
+    def _terminate(self) -> None:
+        """Kill the current cloudflared process and reap its reader thread."""
         proc = self._proc
         if proc is None:
             return
