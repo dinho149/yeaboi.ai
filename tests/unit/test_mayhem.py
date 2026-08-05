@@ -147,18 +147,23 @@ class TestSprites:
             turned = sum(row.count(ch) for row in _mayhem.squashed(angle, 0, 0, False) for ch in set(row) if ch != ".")
             assert turned > upright * 0.7
 
-    def test_the_shades_gag_actually_lifts(self):
-        """It rendered correctly for a while and still never appeared, because
-        the open-beak frame replaced the head instead of composing into it."""
-        lifts = {_mayhem.hero_lift(t / 60) for t in range(int(_mayhem.HERO_SHADES_EVERY * 60))}
-        assert max(lifts) >= 3
-        assert 0 in lifts
+    def test_the_hero_holds_completely_still(self):
+        """He is hit several times a second, so a reacting hero flaps
+        constantly — and beside a yard that is already all motion there is
+        nowhere for the eye to rest."""
+        hero = next(d for d in _yard() if d.is_hero)
+        hero.quack_until = 1e9  # pretend he is being hit without pause
+        frames = {hero.sprite(t / 60) for t in range(240)}
+        assert len(frames) == 1
 
-    def test_the_gag_plays_while_quacking(self):
-        """The hero is hit several times a second; if a quack hid the gag, the
-        sunglasses would look frozen."""
-        quacking = {_mayhem.hero_grid(t / 60, quacking=True) for t in range(int(_mayhem.HERO_SHADES_EVERY * 60))}
-        assert len(quacking) > 1
+    def test_the_gag_still_works_when_switched_back_on(self):
+        """HERO_STATIC is a setting, not a deletion."""
+        _mayhem.HERO_STATIC = False
+        try:
+            lifts = {_mayhem.hero_lift(t / 60) for t in range(int(_mayhem.HERO_SHADES_EVERY * 60))}
+            assert max(lifts) >= 3 and 0 in lifts
+        finally:
+            _mayhem.HERO_STATIC = True
 
     def test_hero_frames_are_all_one_size(self):
         """compose() centres a sprite on its duck, so a grid that changed height

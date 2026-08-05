@@ -109,6 +109,11 @@ HERO_SCALE = DUCK_SCALE * 2
 # ping-pongs, so a three-second cycle can land almost entirely outside the
 # window — the gag was rendering correctly and still looked frozen, because at
 # most one lift fell inside the take and a dozen ducks were flying over it.
+# The anchored duck holds completely still: no shades gag, no beak. He is hit
+# several times a second, so a reacting hero flaps constantly, and next to a
+# yard that is already all motion the eye has nowhere to rest. Set False to give
+# him the gag back.
+HERO_STATIC = True
 HERO_SHADES_EVERY = 1.6
 # Its own sequence rather than the app's SHADES_LIFT_SEQUENCE, and stepped more
 # than twice as fast. The app's is a slow reveal with a long hold at the top,
@@ -246,6 +251,8 @@ HERO_PAD = 4
 
 def hero_lift(elapsed: float) -> int:
     """How far the shades are currently raised, in source pixels. 0 at rest."""
+    if HERO_STATIC:
+        return 0
     period = int(HERO_SHADES_EVERY * HERO_SHADES_FPS)
     step_i = int(elapsed * HERO_SHADES_FPS) % period
     start = period - len(HERO_LIFT_SEQUENCE)
@@ -322,7 +329,7 @@ class Duck:
         if self.is_hero:
             # Quacking beats the shades gag: he cannot be mid-cool-reveal and
             # mid-yelp at once, and the yelp is the one a duck to the face causes.
-            return hero_grid(now, quacking=now < self.quack_until)
+            return hero_grid(now, quacking=not HERO_STATIC and now < self.quack_until)
         level = 0
         if now < self.squish_until:
             # Flattest at the moment of impact, easing back out as the timer runs.
