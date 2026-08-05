@@ -157,7 +157,7 @@
     animation:tui-splash-fade 2.4s ease forwards;
   }
   .tui-splash-word{
-    margin:0; font-size:13px; line-height:1.2; letter-spacing:0; text-align:center;
+    margin:0; font-size:13px; line-height:1; letter-spacing:0; text-align:center;
     color:#4664b4; text-shadow:0 0 16px var(--accent-glow);
   }
   @keyframes tui-splash-fade{
@@ -187,8 +187,12 @@
        designed to tile edge-to-edge with no gap, exactly like a real
        terminal's character grid; any spacing breaks them into a dotted
        mess instead of solid letterforms. Same cell size as every other row —
-       a terminal has exactly one grid. */
-    margin:0; font-size:inherit; line-height:1.1; letter-spacing:0;
+       a terminal has exactly one grid.
+
+       line-height MUST be exactly 1: at 1.1 the leading opened a seam between
+       the ▀ row and the ▄ row, so each letter read as two split halves rather
+       than one glyph. */
+    margin:0; font-size:inherit; line-height:1; letter-spacing:0;
     /* unselected: the app's exact dim — each channel halved, floored at 40
        (see _build_mode_row's _unsel_style), baked into --mcd per mode */
     color:rgb(var(--mcd)); transition:color .35s;
@@ -305,6 +309,10 @@
        down for its opacity to have built up. */
     isolation:isolate;
   }
+  /* An odd card count leaves the last row short: 7 modes in a 3-wide grid put
+     Reporting alone beside two empty cells. The final card spans the full row
+     instead, so the block still reads as a finished rectangle. */
+  .modes > .mode-card:last-child:nth-child(3n + 1){grid-column:1 / -1}
   .mode-card{
     position:relative; min-height:225px;
     background:rgba(255,255,255,.022); isolation:isolate;
