@@ -172,6 +172,9 @@ class _ChatDriver:
         self._anim0 = time.monotonic()
         self._dry_full_state: dict | None = None
         self.duck = ChatDuck()  # sole owner of the corner duck's speech bubble
+        from yeaboi.config import is_duck_enabled
+
+        self.duck.mute(not is_duck_enabled())  # honour a persisted /duck or Settings mute
         self.progress: PipelineProgress | None = None  # stage checklist while building
         self._built_this_session = False  # a pipeline stage ran here (gates the celebration)
         self._last_phase = ""  # intake phase last seen (quack on boundary)
@@ -1508,8 +1511,15 @@ class _ChatDriver:
         # duck only reacts, never volunteers.
 
     def _toggle_duck(self) -> None:
-        """/duck — mute or unmute the companion's speech bubble."""
+        """/duck — mute or unmute the companion's speech bubble, app-wide."""
+        from yeaboi.config import set_duck_enabled
+        from yeaboi.ui.shared._duck_voice import set_duck_muted
+
         self.duck.mute(not self.duck.muted)
+        # The mute is global: it also silences the shared voice every other
+        # page speaks through, and persists so it survives restarts.
+        set_duck_muted(self.duck.muted)
+        set_duck_enabled(not self.duck.muted)
         logger.info("Duck bubble %s", "muted" if self.duck.muted else "unmuted")
         if self.duck.muted:
             self._note("Duck muted — he'll keep working quietly. /duck brings his bubble back.")

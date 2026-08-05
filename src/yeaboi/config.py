@@ -168,6 +168,24 @@ def set_tips_enabled(enabled: bool) -> None:
     logger.info("Tips %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
+def is_duck_enabled() -> bool:
+    """Return True if the corner duck's speech bubble may show lines (default on).
+
+    Mirrors :func:`is_tips_enabled`: any value other than "false" keeps the
+    bubble on, so an unset var means enabled. Only the bubble is gated — the
+    duck himself (bob, quack, shades) always stays.
+    """
+    return os.getenv("DUCK_ENABLED", "true").strip().lower() != "false"
+
+
+def set_duck_enabled(enabled: bool) -> None:
+    """Persist the duck-bubble on/off preference to ~/.scrum-agent/.env and apply it now."""
+    value = "true" if enabled else "false"
+    config_file = set_config_value("DUCK_ENABLED", value)
+    os.environ["DUCK_ENABLED"] = value
+    logger.info("Duck bubble %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
+
+
 def is_music_enabled() -> bool:
     """Return True if background music was left enabled (default off).
 

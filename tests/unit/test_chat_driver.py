@@ -464,7 +464,11 @@ class TestDuckBubble:
         assert said.endswith("…")
         assert len(said) <= driver._bubble_room(200)
 
-    def test_duck_toggle_mutes_and_unmutes(self):
+    def test_duck_toggle_mutes_and_unmutes(self, monkeypatch, tmp_path):
+        # /duck persists via set_duck_enabled — point config at a temp file so
+        # the test never touches the real ~/.yeaboi/.env.
+        monkeypatch.setattr("yeaboi.config.get_config_file", lambda: tmp_path / ".env")
+        monkeypatch.delenv("DUCK_ENABLED", raising=False)  # teardown restores absence
         driver = _driver(FakeGraph([]), _keys([]), {"messages": []}, width=200)
         driver._bubble("Stories done!")
         driver._toggle_duck()
