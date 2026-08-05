@@ -207,6 +207,14 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     # Roomy terminals: the duck waddles back and forth along the floor (feet
     # stepping) rather than standing still in the centre. Needs room for the 18-row
     # duck + the caption/hint + the pocket-clearance reserve.
+    # A yard of ducks, for any terminal with room to swing them. Below this the
+    # crowd has nowhere to go and it reads as a jam rather than mayhem, so the
+    # older single-duck bands still handle the small end.
+    if width >= 60 and height >= 24:
+        from yeaboi.ui.shared._mayhem import render as render_mayhem
+
+        return build_page_panel(render_mayhem(width - 6, height - 2, elapsed), height=max(1, height), padding=(0, 2))
+
     if width >= 46 and height >= 26:
         content_h = max(1, height - 2)  # inside the border
         inner_w = width - 6  # borders (2) + horizontal padding (4)
