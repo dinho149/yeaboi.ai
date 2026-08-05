@@ -5877,7 +5877,7 @@ _SETTINGS_FOCUS_BG = "rgb(44,52,68)"
 # is simply left as space below the column. The balancing pass keeps the shortfall
 # small, so this is enough to land level in practice — it exists to stop a lone
 # one-row box being blown up to match a column of six-row ones.
-_SETTINGS_MAX_STRETCH = 3
+_SETTINGS_MAX_STRETCH = 4  # per-box leveling allowance — grew with the Advanced box (Duck row)
 
 _TAB_INDENT = 4  # left margin of the tab bar — aligned with the SETTINGS title
 _TAB_GAP = 3  # spaces between tab labels
@@ -6304,6 +6304,11 @@ def _build_settings_screen(
         _tips_on = config_data.get("TIPS_ENABLED", "").strip().lower() != "false"
         _row(
             "Tips", "on" if _tips_on else "off", value_style=theme.good if _tips_on else theme.muted, env="TIPS_ENABLED"
+        )
+        # Duck bubble default on; only the literal "false" mutes it (matches is_duck_enabled).
+        _duck_on = config_data.get("DUCK_ENABLED", "").strip().lower() != "false"
+        _row(
+            "Duck", "on" if _duck_on else "off", value_style=theme.good if _duck_on else theme.muted, env="DUCK_ENABLED"
         )
         langsmith = "enabled" if config_data.get("LANGSMITH_TRACING") == "true" else "disabled"
         _row("LangSmith", langsmith, env="LANGSMITH_TRACING")

@@ -1433,6 +1433,7 @@ def _collect_settings_data() -> dict:
         "SESSION_PRUNE_DAYS",
         "LANGSMITH_TRACING",
         "TIPS_ENABLED",
+        "DUCK_ENABLED",
         # Daily Standup delivery config (secrets masked by the settings screen)
         "STANDUP_GITHUB_REPO",
         "SLACK_WEBHOOK_URL",
@@ -12986,6 +12987,12 @@ def select_mode(
                         # page re-reads the environment, so a file-only write wouldn't
                         # show until a restart.
                         apply_config_value(_env, _val)
+                        if _env == "DUCK_ENABLED":
+                            # Apply the mute now — duck_muted() caches the flag,
+                            # so a file-only write wouldn't show until restart.
+                            from yeaboi.ui.shared._duck_voice import set_duck_muted
+
+                            set_duck_muted(_val.strip().lower() == "false")
                         if _env == "LOG_LEVEL" and _val:
                             from yeaboi.logging_setup import apply_level
 

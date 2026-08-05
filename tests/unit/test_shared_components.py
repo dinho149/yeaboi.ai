@@ -589,6 +589,14 @@ class TestSettingsScreen:
         assert "Log Level" in system  # Advanced section
         assert "Anthropic Key" not in system  # credentials are on another tab
 
+    def test_duck_row_on_the_system_tab(self):
+        # The duck-bubble mute is a persisted preference (DUCK_ENABLED) with a
+        # Settings row beside Tips — default on, "false" shows off.
+        on = self._render({}, height=60, active_tab=1)
+        assert "Duck" in on and "on" in on
+        off = self._render({"DUCK_ENABLED": "false"}, height=60, active_tab=1)
+        assert "Duck" in off
+
     def test_system_tab_hint_mentions_log_level(self):
         output = self._render({}, height=40, active_tab=1)  # System tab (Advanced → log level)
         assert "log level" in output.lower()
