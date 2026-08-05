@@ -1125,31 +1125,14 @@ function rescanReveals() {
 var _heroTimer = null;
 var _heroTypeTimer = null;
 var _heroRevealTimer = null;
-var _heroTipTimer = null;
-var _heroTipSwapTimer = null;
 var _heroStepIO = null;
 var _heroSizeHandler = null;
 
-// The real welcome-screen tip rotation (src/yeaboi/ui/shared/_tips.py):
-// voice tip first, the general tips, music tip last; one rotates in every
-// TIP_ROTATE_SECONDS (6s), cross-fading, with position dots underneath.
-var HERO_TIPS = [
-  '\u{1F3A4} Tip: double-tap Space in any text field to dictate',
-  '\u{1F4A1} Tip: resume your last session any time with --resume',
-  '\u{1F4A1} Tip: push epics & stories straight to Jira or Azure DevOps',
-  '\u{1F4A1} Tip: export a plan to HTML or JSON for sharing and CI/CD',
-  '\u{1F4A1} Tip: import a filled-in questionnaire with --questionnaire',
-  '\u{1F4A1} Tip: switch between --theme dark and --theme light',
-  '\u{1F4A1} Tip: run headless with --non-interactive for scripts & pipelines',
-  '\u{1F3B5} Tip: press Ctrl+P for focus music · Ctrl+O to switch channel',
-];
 
 function initHeroDemo() {
   if (_heroTimer) { clearInterval(_heroTimer); _heroTimer = null; }
   if (_heroTypeTimer) { clearInterval(_heroTypeTimer); _heroTypeTimer = null; }
   if (_heroRevealTimer) { clearTimeout(_heroRevealTimer); _heroRevealTimer = null; }
-  if (_heroTipTimer) { clearInterval(_heroTipTimer); _heroTipTimer = null; }
-  if (_heroTipSwapTimer) { clearTimeout(_heroTipSwapTimer); _heroTipSwapTimer = null; }
   if (_heroStepIO) { _heroStepIO.disconnect(); _heroStepIO = null; }
   var root = document.getElementById('hero-demo');
   if (!root) return;
@@ -1345,33 +1328,11 @@ function initHeroDemo() {
   root.addEventListener('focusin', function () { if (_heroTimer) clearInterval(_heroTimer); });
   root.addEventListener('focusout', restartAuto);
 
-  // ---- tip block rotation (mirrors _build_tip_rows + current_tip) ----
-  var tipEl = document.getElementById('tui-tip');
-  var tipIdx = 0;
-  function renderTip() {
-    // No position dots: the real screen dropped them when the tip moved into
-    // the duck's bubble (an auto-rotating tip needs no position indicator), and
-    // _build_companion strips the tip's leading emoji before speaking it — the
-    // bubble carries the words only.
-    if (tipEl) tipEl.textContent = HERO_TIPS[tipIdx].replace(/^[^A-Za-z0-9]+/, '');
-  }
-  function rotateTip() {
-    tipIdx = (tipIdx + 1) % HERO_TIPS.length;
-    if (reducedMotion || !tipEl) { renderTip(); return; }
-    tipEl.classList.add('fading');
-    _heroTipSwapTimer = setTimeout(function () {
-      renderTip();
-      tipEl.classList.remove('fading');
-    }, 900);
-  }
-
   function revealMenu() {
     if (splash) splash.style.display = 'none';
     if (menu) menu.hidden = false;
     show(0, { userInitiated: false });
     restartAuto();
-    renderTip();
-    _heroTipTimer = setInterval(rotateTip, 6000); // TIP_ROTATE_SECONDS
   }
   if (reducedMotion) {
     revealMenu();

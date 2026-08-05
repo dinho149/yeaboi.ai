@@ -6,7 +6,11 @@
   /* overflow:clip, NOT hidden — hidden would make .hero the scrollport that
      position:sticky resolves against (it never scrolls, so the pinned
      terminal in .scrolly-sticky would never stick); clip just clips. */
-  .hero{padding:0 0 110px; position:relative; overflow:clip}
+  /* overflow-clip-margin: the terminal's shadow reaches ~100px past the frame
+     (0 40px 90px -30px), and a bare clip cut it off against the hero's own box
+     — a straight edge through a soft shadow, which reads as a rendering fault.
+     The margin lets the paint bleed that far before the clip applies. */
+  .hero{padding:0 0 110px; position:relative; overflow:clip; overflow-clip-margin:140px}
   .hero > .wrap{
     /* ONE source for the hero's width: the pull-back clamp below has to use the
        same number as max-width. They were separate literals, so widening the
@@ -211,8 +215,17 @@
      description block underneath itself the way the real list does, and the
      frame has a fixed height to live inside. The app's own rows sit closer
      together than 20px anyway; the breathing room came from the description
-     being missing. */
-  .tui-menu{display:flex; flex-direction:column; gap:13px; animation:tui-fade .5s ease both}
+     being missing.
+
+     min-height holds the frame at the size the splash was drawn to, and the two
+     auto margins (below, and on .tui-foot) split whatever is left over equally
+     — so the list sits centred in the space above the foot instead of hugging
+     the top of the panel. */
+  .tui-menu{
+    display:flex; flex-direction:column; gap:13px; min-height:663px;
+    animation:tui-fade .5s ease both;
+  }
+  .tui-menu > .tui-mode:first-of-type{margin-top:auto}
   /* the hidden attribute must actually hide: this class's display:flex is an
      author rule, so it silently overrides the UA's [hidden]{display:none} —
      without this, the "hidden" menu renders UNDER the splash during startup,
@@ -224,7 +237,7 @@
   .tui-mode{
     -webkit-appearance:none; appearance:none; background:none; border:none; padding:0;
     display:block; width:100%; text-align:left; cursor:pointer;
-    padding-left:4ch; /* the app's PAD = "    " before every title/desc row */
+    padding-left:2ch; /* pulled back in off the panel's left edge */
     font-size:inherit; font-family:inherit;
   }
   /* The titles are the app's own two-row block typeface (_ascii_font.py), but
@@ -296,12 +309,15 @@
      (tip bubble → tail → duck) stacks up the right, exactly as
      _build_companion lays it out. */
   .tui-foot{
-    /* The two lanes do NOT share a flex row: the bubble is wide and the version
+    /* The two lanes do NOT share a flex row: the duck is wide and the version
        row is long, so side by side they overflowed the panel. In the app they
-       never compete — the bubble sits high on the right where the left is empty,
+       never compete — the companion sits on the right where the left is empty,
        and only the narrow duck is ever level with the version text. Absolute
-       placement inside a sized foot reproduces that. */
-    position:relative; margin-top:22px; min-height:158px;
+       placement inside a sized foot reproduces that.
+
+       margin-top:auto pins the foot to the bottom; the matching auto above the
+       first mode row splits the slack evenly, centring the list. */
+    position:relative; margin-top:auto; padding-top:22px; min-height:130px;
   }
   .tui-companion{
     position:absolute; right:0; bottom:22px;
@@ -316,29 +332,9 @@
     font-size:.78em; letter-spacing:.06em; color:rgb(226,186,96);
     border:1px solid rgb(120,95,45); border-radius:4px; padding:0 5px;
   }
-  /* the tip's speech bubble — Panel(box=ROUNDED) in the app */
-  .tui-bubble{
-    border:1px solid rgb(90,100,110); border-radius:8px;
-    /* bottom padding clears the keys row that straddles the border — without it
-       the keys sat on top of the tip's last line */
-    padding:3px 12px 8px; max-width:34ch; position:relative;
-  }
-  .tui-tip{
-    margin:0; color:rgb(198,198,208);
-    transition:opacity .9s ease; /* cross-fade stand-in for tip_brightness lerp */
-  }
-  .tui-tip.fading{opacity:0}
-  /* browse keys sit ON the bubble's bottom border (Panel.subtitle), so they
-     read as part of the tip box rather than a separate row */
-  .tui-bubble-keys{
-    margin:0; position:absolute; left:50%; bottom:0; transform:translate(-50%,50%);
-    background:#0a0b0d; padding:0 6px; white-space:pre;
-    font-size:.92em; color:rgb(120,120,140);
-  }
-  .tui-bubble-keys .on{color:rgb(198,198,208)}
-  .tui-bubble-keys .gap{padding:0 .9em}
-  .tui-bubble-keys b{font-weight:700; color:rgb(210,210,220)}
-  .tui-tail{margin:1px 0 0; color:rgb(120,135,150); line-height:1; font-size:1.1em}
+  /* (No tip bubble. The mode's own description now carries the copy, under the
+     title where the list puts it, so a second block of prose in the corner was
+     saying nothing the screen did not already say. The duck stays.) */
   /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
      (see _build_companion) — the source sprite faces right */
   /* No glyphs here either, and for a second reason on top of the mask story
@@ -355,7 +351,7 @@
      edge lines up with the mode titles above rather than sitting flush to the
      panel padding, and staggering the two is what made the titles read as
      over-indented */
-  .tui-version{position:absolute; left:4ch; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
+  .tui-version{position:absolute; left:2ch; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
