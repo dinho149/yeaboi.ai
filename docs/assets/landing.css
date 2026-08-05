@@ -140,14 +140,23 @@
     --t-text:#e4e6e8;          /* rich "white" */
     --t-muted:#787890;         /* theme.muted rgb(120,120,140) */
     --t-dim:#62676f;           /* theme.dim */
-    color:var(--t-text); font-family:var(--mono);
-    font-size:13.5px; line-height:1.5; padding:12px 14px 16px;
+    color:var(--t-text); font-family:var(--tui-mono);
+    /* integer font-size: at 13.5px the cell width lands on a fraction and the
+       block glyphs get sub-pixel gaps between columns. No ligatures, and no
+       kerning pass, so a row of ▀▄█ tiles exactly like a terminal grid. */
+    font-size:14px; line-height:1.5; padding:12px 14px 16px;
+    font-variant-ligatures:none; font-kerning:none; text-rendering:optimizeSpeed;
     /* faint phosphor scanlines — the texture that says "terminal", too
        subtle to read as an effect, just enough to not read as a flat div */
     background-image:repeating-linear-gradient(0deg,
       rgba(255,255,255,.012) 0px, rgba(255,255,255,.012) 1px,
       transparent 1px, transparent 3px);
   }
+  /* <pre> carries its own UA font-family, which beats inheritance — so the block
+     titles, splash wordmark and duck kept falling back to the webfont with no
+     block coverage even after .tui switched stacks. Font only: the scanlines
+     belong to the screen, and repeating them per-<pre> striped the sprites. */
+  .tui pre{font-family:inherit; font-size:inherit}
   /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
   .tui-panel{
     position:relative; border:1px solid rgba(228,230,232,.45);
