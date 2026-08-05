@@ -111,18 +111,13 @@ _MODE_CARDS: list[dict[str, Any]] = [
 
 _INTAKE_CARDS: list[dict[str, Any]] = [
     {
-        "key": "small_project",
-        "title": "Small",
-        "description": "1-2 tickets, one quick sprint. Just goal, team, and stack — no capacity planning.",
-        "available": True,
-        "color": "rgb(70,100,180)",
-    },
-    {
-        # Key stays "smart" — Large reuses the existing smart intake engine
-        # (full capacity, bank-holiday, and multi-sprint planning). See intake.py.
-        "key": "smart",
-        "title": "Large",
-        "description": "Multi-ticket epics with full capacity, bank-holiday, and multi-sprint planning.",
+        # The live-chat front door: the agent asks (or infers from the
+        # description) whether the work is Small or Large, replacing the old
+        # small_project/smart cards. run_session treats "chat" as
+        # "ask the size in conversation"; /small and /large force it.
+        "key": "chat",
+        "title": "Plan",
+        "description": "Describe your project in chat — the agent asks what it needs and sizes it Small or Large.",
         "available": True,
         "color": "rgb(70,100,180)",
     },

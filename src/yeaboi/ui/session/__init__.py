@@ -61,7 +61,6 @@ from yeaboi.ui.session.screens._screens_input import (  # noqa: F401
     _build_question_screen,
 )
 from yeaboi.ui.session.screens._screens_pipeline import (  # noqa: F401
-    _build_chat_screen,
     _build_edit_prompt_screen,
     _build_pipeline_screen,
 )
@@ -108,7 +107,9 @@ def run_session(
     Args:
         live: The Rich Live instance from mode_select.py (already active).
         console: The Rich Console for size queries.
-        intake_mode: "smart" / "small_project" / "quick" — which intake flow to use.
+        intake_mode: "chat" (live chat asks the size in-conversation),
+            "smart" / "small_project" (preset — the chat announces it), or
+            "quick" — which intake flow to use.
         questionnaire: Pre-populated questionnaire (from import flow). Usually None.
         resume_project_id: If resuming, the existing project ID to reuse.
         resume_graph_state: If resuming, the pre-loaded graph state dict.
@@ -224,6 +225,39 @@ def _run_session_body(
     if questionnaire is not None:
         questionnaire.intake_mode = intake_mode
         graph_state["questionnaire"] = questionnaire
+
+    # ── Live chat: the conversational front end over the same graph ────────
+    # Every interactive planning run — new ("chat" asks the size in
+    # conversation; a preset mode from the roadmap hand-off is announced) and
+    # resumed (the transcript is rebuilt from persisted messages) — goes
+    # through the chat driver. The legacy phase pipeline remains only for
+    # export_only (headless auto-answer) and questionnaire imports.
+    if not export_only and questionnaire is None:
+        if graph_state.get("_intake_mode") == "chat":
+            graph_state["_intake_mode"] = ""  # "" = ask the size in chat
+        from yeaboi.ui.session.chat import run_chat_session
+
+        logger.info("Phase transition: chat")
+        final_state = run_chat_session(
+            live,
+            console,
+            graph,
+            graph_state,
+            _key,
+            project_id=project_id,
+            bell=bell,
+            dry_run=dry_run,
+            initial_description=initial_description,
+        )
+        if final_state is None:
+            return
+        if project_id and final_state.get("sprints"):
+            from yeaboi.persistence import generate_scrum_md
+
+            generate_scrum_md(project_id)
+            logger.info("SCRUM.md generated: project_id=%s", project_id)
+        logger.info("Session complete")
+        return
 
     logger.info("Phase transition: description_input")
     # ── Phase A: Description Input ─────────────────────────────────────

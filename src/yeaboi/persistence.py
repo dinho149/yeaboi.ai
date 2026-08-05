@@ -197,6 +197,9 @@ def save_graph_state(project_id: str, graph_state: dict[str, Any]) -> None:
         "last_review_decision",
         "last_review_feedback",
         "jira_epic_key",
+        "_chat_greeting_done",
+        "_chat_preamble",
+        "_chat_fast_forward",
     ):
         if key in graph_state:
             val = graph_state[key]
@@ -382,6 +385,9 @@ def load_graph_state(project_id: str) -> dict[str, Any] | None:
         "pending_review",
         "last_review_feedback",
         "jira_epic_key",
+        "_chat_greeting_done",
+        "_chat_preamble",
+        "_chat_fast_forward",
     ):
         if key in raw:
             graph_state[key] = raw[key]

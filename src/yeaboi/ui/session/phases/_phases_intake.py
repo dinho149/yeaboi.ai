@@ -270,10 +270,16 @@ def _phase_intake_questions(
     graph_state: dict,
     _key,
     export_only: bool,
+    *,
+    return_state_on_esc: bool = False,
 ) -> dict | None:
     """Loop through intake questions in TUI until questionnaire completes or enters review.
 
-    Returns updated graph_state, or None if user cancelled.
+    Returns updated graph_state, or None if user cancelled. The chat driver's
+    /form takeover passes return_state_on_esc=True: the node mutates the shared
+    QuestionnaireState in place, so a None return would leave the caller holding
+    recorded answers with stale `messages` — Esc must hand the loop's rebound
+    graph_state back instead of discarding it.
     """
     logger.info("_phase_intake_questions started")
     while True:
@@ -394,7 +400,8 @@ def _phase_intake_questions(
         )
 
         if answer is None:
-            return None  # Esc
+            logger.info("Intake questions exit: esc (return_state=%s)", return_state_on_esc)
+            return graph_state if return_state_on_esc else None
 
         # Resolve choice/suggestion input
         if isinstance(qs, QuestionnaireState) and not qs.completed:
@@ -426,7 +433,8 @@ def _phase_intake_questions(
                         prefill=sugg,
                     )
                     if answer is None:
-                        return None  # Esc
+                        logger.info("Intake questions exit: esc (return_state=%s)", return_state_on_esc)
+                        return graph_state if return_state_on_esc else None
 
             # Resolve numeric choice
             if qs.editing_question is not None:
@@ -477,7 +485,8 @@ def _phase_intake_questions(
             question_screen_kwargs=screen_kwargs,
         )
         if result is None:
-            return None
+            logger.info("Intake questions exit: invoke cancelled (return_state=%s)", return_state_on_esc)
+            return graph_state if return_state_on_esc else None
 
         graph_state = result
 

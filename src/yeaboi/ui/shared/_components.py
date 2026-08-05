@@ -62,10 +62,14 @@ class Theme:
     # their distinct accent hues (titles, separators) but share this backdrop —
     # per-mode background tints were dropped for a uniform look across screens.
     bg: str = NEUTRAL_BG
+    # Elevated-surface tint for in-page cards/bubbles (a dark shade of the mode
+    # accent, channels kept ≤ 40 so foreground styles stay readable). Empty
+    # string = the mode has no card surfaces; renderers must skip the tint.
+    card_bg: str = ""
 
 
 ANALYSIS_THEME = Theme()
-PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)")
+PLANNING_THEME = Theme(accent="rgb(110,140,220)", accent_bright="rgb(140,170,255)", card_bg="rgb(20,24,38)")
 USAGE_THEME = Theme(accent="rgb(220,160,60)", accent_bright="rgb(255,200,80)")
 SETTINGS_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
 STANDUP_THEME = Theme(accent="rgb(200,100,180)", accent_bright="rgb(255,150,220)")
@@ -620,6 +624,23 @@ def build_progress_dots(
             progress.append("\u25cb", style="rgb(60,60,70)")
         progress.append(f" {stage_name}", style="dim" if i != current else "bold white")
     return progress
+
+
+def build_key_hints(pairs: list[tuple[str, str]], *, pad: str = "") -> Text:
+    """Build a keycap hint row: key in bright grey, label in dim grey.
+
+    The welcome screen's hint idiom (`[ prev  ] next  g open`) promoted to a
+    shared primitive so chat and future pages render keyboard guidance the
+    same way. Keys read as caps because they are the only bright tokens on an
+    otherwise quiet row — no boxes, no inverse video.
+    """
+    row = Text(pad, justify="left")
+    for i, (key_label, what) in enumerate(pairs):
+        if i:
+            row.append("   ")
+        row.append(key_label, style="bold rgb(210,210,220)")
+        row.append(f" {what}", style="rgb(110,110,125)")
+    return row
 
 
 def build_meter(

@@ -37,6 +37,11 @@ class TestTheme:
         assert t.warn == "blue"
         assert t.muted == "rgb(120,120,140)"  # default
 
+    def test_card_bg_defaults_empty(self):
+        # Only modes with card surfaces set a tint; renderers must skip "".
+        assert Theme().card_bg == ""
+        assert PLANNING_THEME.card_bg == "rgb(20,24,38)"
+
     def test_usage_theme_amber(self):
         from yeaboi.ui.shared._components import USAGE_THEME
 
@@ -262,6 +267,22 @@ class TestBuildProgressDots:
         t = Theme(accent="red", accent_bright="bold red")
         result = build_progress_dots(["A", "B"], 0, theme=t)
         assert isinstance(result, Text)
+
+
+class TestBuildKeyHints:
+    def test_keys_bright_labels_dim(self):
+        from yeaboi.ui.shared._components import build_key_hints
+
+        row = build_key_hints([("Enter", "send"), ("/", "commands")], pad="  ")
+        assert row.plain == "  Enter send   / commands"
+        styles = [str(span.style) for span in row.spans]
+        assert any("bold" in s for s in styles)  # the keycaps
+        assert any("rgb(110,110,125)" in s for s in styles)  # the labels
+
+    def test_empty_pairs(self):
+        from yeaboi.ui.shared._components import build_key_hints
+
+        assert build_key_hints([]).plain == ""
 
 
 class TestBuildMeter:

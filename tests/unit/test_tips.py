@@ -193,7 +193,7 @@ def test_build_tips_text_marks_beta(monkeypatch):
     monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (True, ""))
     lines = _tips.build_tips_text().splitlines()
     perf_line = next(line for line in lines if "Performance preps 1:1s" in line)
-    planning_line = next(line for line in lines if "Planning breaks a project" in line)
+    planning_line = next(line for line in lines if "Planning is one continuous chat" in line)
     assert "(BETA)" in perf_line
     assert "(BETA)" not in planning_line
     _clear_cache()

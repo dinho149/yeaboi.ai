@@ -175,6 +175,9 @@ _SCALAR_KEYS = {
     "_intake_mode",
     "output_format",
     "context_sources",
+    "_chat_greeting_done",
+    "_chat_preamble",
+    "_chat_fast_forward",
 }
 
 
