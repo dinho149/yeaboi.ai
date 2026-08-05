@@ -73,9 +73,24 @@ jobs:
           number=$(jq -r '.number' <<< "$pr")
           draft=$(jq -r '.draft' <<< "$pr")
           author=$(jq -r '.user.login' <<< "$pr")
-          echo "PR #$number by $author (draft=$draft)"
-          if [ "$draft" = "true" ] || [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; then
-            echo "Draft or bot-authored PR — skipping review."
+          # `.labels[]?` rather than `.labels[]`: a payload without the key makes
+          # jq exit non-zero, and `run:` steps are `bash -e`, so the review job
+          # would die rather than fall through to the skip below.
+          cowork=$(jq -r '[.labels[]?.name] | index("cowork") != null' <<< "$pr")
+          echo "PR #$number by $author (draft=$draft, cowork=$cowork)"
+          # `cowork`-labelled PRs are never skipped for authorship. The claude.yml
+          # `implement` job opens them unattended from an issue a human approved,
+          # and if the action pushes as github-actions[bot] the bot filter below
+          # would silently drop the review on exactly the PRs that most need one.
+          # This is the same failure shape as the AUTO_VERSION_PAT incident above:
+          # no run, no skip notice, no signal. Drafts are still skipped.
+          if [ "$draft" = "true" ]; then
+            echo "Draft PR — skipping review."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$cowork" != "true" ] && { [ "$author" = "dependabot[bot]" ] || [ "$author" = "github-actions[bot]" ]; }; then
+            echo "Bot-authored PR without the cowork label — skipping review."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi

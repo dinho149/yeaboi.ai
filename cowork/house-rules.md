@@ -14,15 +14,26 @@ A find may skip the proposal step and go straight to a PR only when **every** co
 
 …**and** it falls in one of these categories, which is the complete list:
 
-1. security patch to a known guardrail gap or a CVE from `pip-audit`
+1. security patch to a known guardrail gap, or a `pip-audit` CVE — see the carve-out below
 2. a flaky or outright broken test
 3. dead code removal
 4. documentation drift (docs that contradict the code)
-5. dependency bump
-6. lint / type-annotation cleanup
+5. lint / type-annotation cleanup
 
 **Everything else proposes.** If you are arguing with yourself about whether something qualifies,
 it does not. Marketing always proposes.
+
+**Routine dependency bumps are not on this list**, though they look like they belong. Dependabot
+opens those PRs and `dependabot-auto.yml` verifies and merges them; a builder bumping the same
+dependency in its own branch produces a second PR that conflicts with the first. Nothing to
+consolidate — the producer is a GitHub service, not a workflow. Leave the bump; a *usage* fix the
+bump requires is ordinary work and proposes like anything else.
+
+**A `pip-audit` CVE is the one exception**, because waiting for Dependabot's next scheduled run is
+not an acceptable posture on a known exploitable version. It stays auto-lane, with one precondition:
+check `gh pr list --author "app/dependabot" --state open` first, and if a PR already bumps that
+dependency, **drive that PR instead of opening your own**. Two PRs raising the same pin is the exact
+collision the paragraph above exists to prevent, and a CVE is not a reason to cause it.
 
 ## Guardrails
 
@@ -38,8 +49,10 @@ it does not. Marketing always proposes.
 - **One coherent change per run.** No grab-bags.
 - **Nothing to do is a valid, common outcome.** Exit quietly — no issue, no Slack message. A routine
   that always finds something is a routine inventing work.
-- **Label every PR** `cowork` and `workstream:<name>`, so `claude-review.yml` picks it up (it only
-  skips `dependabot[bot]` and `github-actions[bot]`).
+- **Label every PR** `cowork` and `workstream:<name>`. The `cowork` label is what guarantees
+  `claude-review.yml` reviews it: that workflow skips `dependabot[bot]` and `github-actions[bot]`,
+  and an unattended job's PR may carry one of those authors. An unlabelled PR can go unreviewed with
+  nothing said about it.
 
 ## Verification is not optional
 

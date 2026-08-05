@@ -1,10 +1,10 @@
 # platform
 
 **Owns** — `src/yeaboi/cli.py` (2.5k LOC), `config.py`, `paths.py`, `logging_setup.py`,
-`telemetry.py`, `feedback.py`, `setup_wizard.py`, the MCP **server** (`mcp/server.py`, `runtime.py`,
-`sampling.py`, `__init__.py`), the `claude-plugin/` scaffold, `src/yeaboi/skills/` (the shipped
-OpenClaw skill), `.github/workflows/`, `Makefile`, `pyproject.toml`, `packaging/`,
-`tests/unit/test_surface_parity.py`
+`telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
+**server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
+scaffold, `src/yeaboi/skills/` (the shipped OpenClaw skill), `.github/workflows/`, `Makefile`,
+`pyproject.toml`, `packaging/`, `tests/unit/test_surface_parity.py`
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 
@@ -23,7 +23,9 @@ you. You own the server they plug into and the registry that proves they exist.
   or land in `HIDDEN_PARAMS` with a reason. `db_path`/`today`/`on_progress`/`dry_run` are injection
   seams and always hidden.
 - **All paths come from `paths.py`.** A hardcoded `Path.home() / ".yeaboi"` anywhere is a finding.
-- **CI health** — this repo has 13 workflows. Watch for: workflows that silently stopped firing
+- **CI health** — this repo has 11 workflows (`backlog-groomer.yml` and `security-scan.yml` were
+  retired into cowork: the digest ranks and ages out the queue, and `security-sweep` runs
+  `make security` twice weekly at `deep`). Watch for: workflows that silently stopped firing
   (`auto-version.yml` needs `AUTO_VERSION_PAT` or Claude Review stops receiving `workflow_run`
   events), disabled jobs that were meant to be temporary (`smoke.yml` is `if: false`), and actions
   pinned to versions that have moved.

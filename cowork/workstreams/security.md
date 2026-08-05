@@ -16,7 +16,9 @@
   writing its own headers is a finding.
 - **Guardrail coverage vs. adversarial input** — `tests/unit/guardrails/test_guardrails_adversarial.py`
   and `nodes/test_parser_adversarial.py` should grow with every new input surface.
-- **`make security`** — ruff SAST (flake8-bandit `S`) plus `pip-audit`. A new CVE is auto-lane.
+- **`make security`** — ruff SAST (flake8-bandit `S`) plus `pip-audit`. A new CVE is auto-lane, and
+  is the one dependency bump that is — but check for an open Dependabot PR on that dependency first
+  and drive that one instead of opening a second. See [house-rules.md](../house-rules.md).
 - **Secret leakage** — `redaction.py` must cover every new log call and every new export field.
   gitleaks runs in CI; a redaction gap it cannot see is the one worth hunting.
 - **Filesystem sandbox** — `fs_policy.py` + `YEABOI_ALLOWED_PATHS`. Any new file write must go

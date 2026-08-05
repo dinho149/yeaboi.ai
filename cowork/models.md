@@ -35,8 +35,8 @@ drops to something cheap and wrong.
 **Security never runs on `heavy`.** Fable 5 automatically reroutes cybersecurity queries to less
 capable models. That is fine for a chat and unacceptable for an unattended survey: you would not know
 which model actually read `fs_policy.py`, `redaction.py`, or the CSP invariants, and the run would
-report as if it had. This applies to `security-sweep`, `security-scan.yml`, and any auto-lane item in
-the `security` workstream.
+report as if it had. This applies to `security-sweep` and to any auto-lane item in the `security`
+workstream.
 
 ## Assignments
 
@@ -49,7 +49,7 @@ The rest do model-worthy work in their own session and carry a `**Model**` line.
 |---|---|---|
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
 | the other 13 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
-| `cron/marketing-daily.md` | `deep` | Drafts prose inline rather than delegating; the prose is the output |
+| `cron/marketing-weekly.md` | `deep` | Drafts prose inline rather than delegating; the prose is the output |
 | `cron/digest.md` | `standard` | Ranks ~20 issue titles and writes one message |
 | `events/pr-opened-dod-audit.md` | `standard` | A nine-item checklist against a diff |
 | `events/pr-merged-close-loop.md` | `fast` | Linear → Done, one Slack line, a Notion page from a merged PR |
@@ -84,22 +84,25 @@ are not sensitive, and masking them in logs would only make failures harder to r
 
 | Workflow job | Tier | Why |
 |---|---|---|
-| `claude.yml` `implement` | `heavy` | The one job Fable is actually for: human-selected, unattended, up to 90 turns through implement → DoD gate → review → PR, with CI and your merge as the net |
+| `claude.yml` `implement` | `heavy` | The one job Fable is actually for: human-selected, unattended, up to 110 turns through Linear ticket → implement → DoD gate → code-reviewer → PR, with CI and your merge as the net |
 | `claude.yml` `claude` (assist) | `deep` | Open-ended, and a person is waiting on it |
 | `claude-review.yml` | `deep` | Judgement quality is the whole point; volume is already gated to green PRs |
 | `ci-sentinel.yml` | `deep` | Diagnosing a red `main` from a log is the hard case |
-| `security-scan.yml` | `standard` | Scoped remediation, re-scanned by CI and human-reviewed. **Never `heavy`** |
-| `backlog-groomer.yml` | `standard` | Label normalisation and cross-linking |
 | `dependabot-auto.yml` | `standard` | Reads a diff and a changelog, decides merge or escalate |
 | `feedback-remediation.yml` | `standard` | Classifies and routes issues against a written rubric |
 | `auto-version.yml` | `fast` | Reads a diff, picks patch/minor/major |
-| `flaky-test-hunter.yml` | `fast` | Counts retries and files one issue |
+| `flaky-test-hunter.yml` | `fast` | Counts retries and files one proposal into the cowork queue |
 
 **The `||` fallback encodes prior behaviour, not the tier.** Each job is written as:
 
 ```yaml
-claude_args: '--model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} …'
+claude_args: >-
+  --model ${{ vars.YEABOI_MODEL_STANDARD || 'claude-sonnet-5' }} --max-turns 30
 ```
+
+A `>-` block scalar, not a quoted one: the expression already contains single quotes around the
+fallback, and nesting those inside a single-quoted YAML scalar does not parse. Every workflow uses
+the block form.
 
 An unset variable renders empty and a bare `--model ` breaks the argument, so the fallback is
 mandatory. It is deliberately pinned to **what that job ran on before this table existed** — so

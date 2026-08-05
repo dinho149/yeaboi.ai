@@ -116,7 +116,7 @@ class TestFilesAgreeWithTheTable:
         assert sorted(declaring) == sorted(
             [
                 "cron/digest.md",
-                "cron/marketing-daily.md",
+                "cron/marketing-weekly.md",
                 "events/pr-merged-close-loop.md",
                 "events/pr-opened-dod-audit.md",
                 "events/release-published-announce.md",
@@ -211,6 +211,86 @@ class TestLabels:
         for label in setup.expected_labels():
             assert re.fullmatch(r"[0-9a-f]{6}", label.color), f"{label.name} has a malformed colour"
             assert label.description
+
+
+class TestCharterCoverage:
+    """The charters must cover the repo, not merely agree with the label list.
+
+    A scout reads only the paths its charter declares, so a module no charter
+    names is one no routine will ever open — and every routine still reports
+    itself healthy. Fourteen top-level modules were in that state when this class
+    was written.
+    """
+
+    def test_every_top_level_module_is_owned_or_excused(self):
+        report = setup.Report()
+        setup.check_charter_coverage(report)
+        assert report.ok, report.problems
+
+    def test_an_unclaimed_module_fails(self, tmp_path, monkeypatch):
+        package = tmp_path / "src" / "yeaboi"
+        package.mkdir(parents=True)
+        (package / "orphan.py").write_text("", encoding="utf-8")
+        monkeypatch.setattr(setup, "REPO_ROOT", tmp_path)
+
+        report = setup.Report()
+        setup.check_charter_coverage(report)
+        assert not report.ok
+
+    def test_the_excuse_list_names_a_reason(self):
+        for module, reason in setup.UNOWNED_MODULES.items():
+            assert reason.strip(), f"{module} is excused with no reason"
+
+    def test_an_excused_module_is_never_also_reported_as_owned(self):
+        """The declaration wins over an accidental substring match.
+
+        `__init__.py` is excused as a package marker, and is *also* matched by
+        platform's `mcp/.../__init__.py`. If the coincidence were allowed to
+        stand in for the reason, deleting that nested path from a charter would
+        silently turn the excuse back on with nothing to say it had.
+        """
+        assert not (setup.owned_modules() & set(setup.UNOWNED_MODULES))
+
+    def test_ownership_is_read_from_the_owns_block_only(self, tmp_path, monkeypatch):
+        """A charter disclaiming a module must not read as claiming it.
+
+        Charters say things like "**`telemetry.py` is not this feature**" in their
+        standing concerns. Matching the whole document counts that as ownership,
+        so the next module excused by a "not yours" sentence would pass the check
+        silently — the exact failure the check exists to catch.
+        """
+        charters = tmp_path / "cowork" / "workstreams"
+        charters.mkdir(parents=True)
+        (charters / "example.md").write_text(
+            "# example\n\n**Owns** — `src/yeaboi/claimed.py`\n\n"
+            "## Standing concerns\n\n- **`disclaimed.py` is not yours** — it belongs to platform.\n",
+            encoding="utf-8",
+        )
+        package = tmp_path / "src" / "yeaboi"
+        package.mkdir(parents=True)
+        for name in ("claimed.py", "disclaimed.py"):
+            (package / name).write_text("", encoding="utf-8")
+        monkeypatch.setattr(setup, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(setup, "WORKSTREAMS_DIR", charters)
+
+        assert setup.owned_modules() == {"claimed.py"}
+
+    def test_a_multi_line_owns_block_is_read_whole(self, tmp_path, monkeypatch):
+        """Real `**Owns**` lines wrap over several lines; all of them count."""
+        charters = tmp_path / "cowork" / "workstreams"
+        charters.mkdir(parents=True)
+        (charters / "example.md").write_text(
+            "# example\n\n**Owns** — `src/yeaboi/first.py`,\n`second.py`, `third.py`\n\n## Standing concerns\n",
+            encoding="utf-8",
+        )
+        package = tmp_path / "src" / "yeaboi"
+        package.mkdir(parents=True)
+        for name in ("first.py", "second.py", "third.py"):
+            (package / name).write_text("", encoding="utf-8")
+        monkeypatch.setattr(setup, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(setup, "WORKSTREAMS_DIR", charters)
+
+        assert setup.owned_modules() == {"first.py", "second.py", "third.py"}
 
 
 class TestModelsTable:

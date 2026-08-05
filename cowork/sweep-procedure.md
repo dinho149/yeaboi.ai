@@ -6,9 +6,14 @@ workstream and any per-run focus; everything else is here.
 1. **Read** [house-rules.md](house-rules.md), [models.md](models.md), your charter in
    `workstreams/<name>.md`, and the `.claude/skills/*/SKILL.md` your charter names.
 
-2. **Check for work in flight** — `gh pr list --label "workstream:<name>" --state open`.
-   If a PR is open: drive it to green (fix CI, answer review comments) and **stop**. That is the
-   whole run.
+2. **Check for work in flight** — `gh pr list --label "workstream:<name>" --state open --json
+   number,createdAt,url`. If a PR is open: drive it to green (fix CI, answer review comments) and
+   **stop**. That is the whole run.
+
+   If that PR is already green and more than 7 days old, comment once on it saying the workstream has
+   been blocked on it since `<date>` and has scouted nothing in the meantime. One open PR per
+   workstream plus a weekly cadence means an unmerged PR stops this workstream indefinitely, and
+   without that comment the digest would report the silence as if the scout had found nothing.
 
 3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
    charter's paths. It returns ranked finds, each
@@ -28,9 +33,10 @@ workstream and any per-run focus; everything else is here.
    - resolve every `blocker` and `should-fix` finding, then have the builder open the PR labelled
      `cowork` + `workstream:<name>`
 
-6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which files one GitHub
-   issue each (`cowork:proposal` + `workstream:<name>`) with a cross-linked Linear ticket. **No Slack
-   post** — the daily digest routine is the only thing that talks to Slack about proposals.
+6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which files
+   one GitHub issue each (`cowork:proposal` + `workstream:<name>`). **No Linear ticket, and no Slack
+   post.** The issue is the queue; the digest is the only thing that talks to Slack about proposals;
+   and Linear is opened at approval, not at proposal — see [definition-of-done.md](definition-of-done.md).
 
 7. **Stop.** Do not follow interesting threads outside your charter. File them as proposals for the
    owning workstream and move on.

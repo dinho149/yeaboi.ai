@@ -362,5 +362,5 @@ jobs:
           if [ ! -f "$LOG" ]; then
             echo "::warning::No SDK log at $LOG — could not classify this failure. The action may have moved the file; check the step output above and update this path."
           elif grep -q '"api_error_status": *401' "$LOG"; then
-            echo "::error::Claude rejected this repository's credential with HTTP 401. The secret exists and is well-formed, so it has expired or been revoked. Fix: run 'claude setup-token' on a machine logged into the Claude subscription, then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}'. This same secret backs claude-review, ci-sentinel, dependabot-auto, security-scan, backlog-groomer, flaky-test-hunter, feedback-remediation and claude — they are all down until it is replaced."
+            echo "::error::Claude rejected this repository's credential with HTTP 401. The secret exists and is well-formed, so it has expired or been revoked. Fix: run 'claude setup-token' on a machine logged into the Claude subscription, then 'gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo ${{ github.repository }}'. This same secret backs claude-review, ci-sentinel, dependabot-auto, flaky-test-hunter, feedback-remediation and claude — they are all down until it is replaced."
           fi

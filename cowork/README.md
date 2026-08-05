@@ -14,22 +14,26 @@ scout routine (per workstream, own cron)
       │                                               │
       └─ propose lane ─ scribe files a GitHub issue   │
                         `cowork:proposal` + `workstream:X`
-                        + cross-linked Linear ticket  │
+                        (no Linear ticket yet)        │
                               │                       │
         daily digest routine ranks ALL open proposals │
         across workstreams → ONE Slack post           │
                               │                       │
-            YOU add `claude-implement` to what you want
+            YOU add `claude-implement`, or close it to reject
                               │                       │
         .github/workflows/claude.yml `implement` job ─┘
-        builds and opens the PR ──────────────────────▶
+        Linear ticket → build → code-reviewer → PR ───▶
                                                        │
                     pr-merged-close-loop ──────────────┘
                     scribe: Linear → Done, Slack ship note, Notion page
 ```
 
-Unapproved proposals are closed by the digest routine after 14 days. GitHub issues *are* the queue —
-there is no other shared state between routine runs.
+A proposal is a question, so it costs one GitHub issue and nothing else. The Linear ticket opens when
+the answer is yes — at approval for the propose lane, before the builder starts for the auto lane.
+
+Unapproved proposals are closed by the digest routine after 14 days, and closing one yourself is how
+you say no sooner. GitHub issues *are* the queue — there is no other shared state between routine
+runs.
 
 ## Where things live
 
@@ -105,11 +109,11 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/artifacts-sharing-sweep.md` | `30 7 11,25 * *` | artifacts-sharing | `standard` | https://claude.ai/code/routines/trig_015ePKNpPQA489nHYYEC7PMp |
 | `cron/roadmap-sweep.md` | `30 7 12 * *` | roadmap | `standard` | https://claude.ai/code/routines/trig_01KGntRSahscuEFg66ojoZTP |
 
-**Daily and event-driven**
+**Cross-cutting and event-driven**
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/marketing-daily.md` | `0 8 * * *` | marketing | `deep` | https://claude.ai/code/routines/trig_0111WtcVcpYDKaL6Jw9ZaPjD |
+| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_0111WtcVcpYDKaL6Jw9ZaPjD |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |

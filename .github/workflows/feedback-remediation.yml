@@ -1,10 +1,15 @@
 # Feedback remediation — nightly triage of new GitHub issues.
 #
-# Sibling to backlog-groomer, but with teeth: where the groomer only *nominates*
-# candidates, this one actually routes actionable bugs into the existing
-# `claude-implement` pathway (which opens a normal fix PR through CI + review +
-# human merge). It is the "Claude kicks off Claude" hand-off — composed through
-# the proven implement workflow rather than duplicating checkout/push logic.
+# It classifies fresh issues and nominates the actionable ones with
+# `feature-candidate`, which a human converts to `claude-implement` to open a fix
+# PR through CI + review + human merge.
+#
+# It used to apply `claude-implement` itself, capped at 3/run. That directly
+# contradicted `cowork/house-rules.md` — "Only a human does. That label is the
+# approval gate; a routine applying it would be approving its own work" — which
+# six other files restate. The human-only gate is the invariant the whole cowork
+# design rests on, so the cap is now on nominations and the label is never
+# applied here.
 #
 # Auth: runs on the hosted claude-code-action with the App's
 # CLAUDE_CODE_OAUTH_TOKEN — the SAME subscription-backed token as every other
@@ -13,9 +18,10 @@
 # ANTHROPIC_API_KEY; this rewrite avoids that — no extra billing, no new secret.)
 #
 # Safety: `issues: write` only — it structurally cannot touch PRs or merge.
-# Idempotent via the `triaged` label cursor, caps `claude-implement` at 3/run,
-# skips bot authors, and the workflow_dispatch path defaults to dry-run (which
-# also drops all write tools, so a dry run physically cannot change anything).
+# Idempotent via the `triaged` label cursor, caps bug nominations at 3/run,
+# never applies `claude-implement`, skips bot authors, and the workflow_dispatch
+# path defaults to dry-run (which also drops all write tools, so a dry run
+# physically cannot change anything).
 
 name: Feedback Remediation
 
@@ -124,24 +130,29 @@ jobs:
                prefix) and a missing `area:*` label (infer from the body). Never
                remove existing labels.
             3. Route by your classification:
-               - bug, actionable, and specific enough to implement -> add
-                 `claude-implement` so the implement workflow opens a fix PR, BUT
-                 apply it to AT MOST 3 issues this run (the most clearly actionable
-                 ones). Any further actionable bugs get `feedback:fix-queued`
-                 instead (they wait for a future run).
+               - bug, actionable, and specific enough to implement ->
+                 `feature-candidate`, so a human can green-light it by adding
+                 `claude-implement`. Apply it to AT MOST 3 issues this run (the
+                 most clearly actionable ones). Any further actionable bugs get
+                 `feedback:fix-queued` instead (they wait for a future run).
                - feature request -> `feature-candidate` (a human green-lights it).
                - question / too vague to act on -> post ONE comment asking for the
                  specific missing detail, then add `feedback:needs-info`.
                - not actionable feedback / noise -> `feedback:noise`. NEVER close
                  an issue.
 
-            Be conservative with `claude-implement`: only well-specified,
-            self-contained bugs where the fix is obvious. When unsure between
-            implement and queue, queue it.
+            NEVER apply the `claude-implement` label yourself. It is the human
+            approval gate that `cowork/house-rules.md` reserves for a person, and a
+            workflow applying it is the system approving its own work. Nominate
+            with `feature-candidate` and stop there.
+
+            Be conservative with `feature-candidate` on bugs: only well-specified,
+            self-contained ones where the fix is obvious. When unsure between
+            nominating and queueing, queue it.
 
             DIGEST: if today is Monday (UTC) — check with `date -u +%u` returning 1
             — also create-or-update ONE issue titled exactly `Feedback digest`
             (find it with `gh issue list --search "Feedback digest in:title"
-            --state open`). Body: counts by outcome this run, the issues sent to
-            `claude-implement`, and the `feedback:fix-queued` backlog. On other
-            days, skip the digest. Skip entirely on a dry run.
+            --state open`). Body: counts by outcome this run, the issues nominated
+            with `feature-candidate`, and the `feedback:fix-queued` backlog. On
+            other days, skip the digest. Skip entirely on a dry run.

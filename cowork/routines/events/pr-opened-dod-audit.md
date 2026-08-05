@@ -1,8 +1,16 @@
 # PR opened — DoD audit
 
 **Trigger** — GitHub event, pull request `opened` and `synchronized`
-**Filters** — skip drafts; skip authors `dependabot[bot]` and `github-actions[bot]`
+**Filters** — skip drafts; skip authors `dependabot[bot]` and `github-actions[bot]` unless the PR is labelled `cowork`
 **Model** — `standard` ([models.md](../../models.md))
+
+Keep that filter on **one line**. `scripts/cowork_setup.py` parses it with a single-line regex, and
+it is the text a human copies into the web form for an event routine the API cannot register — a
+wrapped second line is silently dropped, taking the carve-out with it.
+
+The carve-out exists because the `claude.yml` implement job opens PRs unattended from an issue a
+human approved. If the action pushes as a bot, the authorship filter would drop the process audit on
+exactly the PRs nobody watched being written. `claude-review.yml` carries the same one.
 
 `claude-review.yml` already reviews the *code*. This checks the *process* — whether the nine items in
 [definition-of-done.md](../../definition-of-done.md) are actually met.
