@@ -386,11 +386,10 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             # ui/shared/_attachments.py. Note: Cmd+V on macOS stays a terminal
             # *text* paste; Ctrl+V is the image binding, like Claude Code.
             return "ctrl+v"
-        # Return global music controls as internal key names. The public wrapper
-        # performs the action only after giving an active screensaver first chance
-        # to consume the event as its wake-only key.
-        if ch in ("\x10", "\x0f"):
-            return "ctrl+p" if ch == "\x10" else "ctrl+o"
+        # Music is bound to bare P and O — see the wrapper, which is where the
+        # binding is decided. Ctrl+P and Ctrl+O are left to fall through as the
+        # raw control characters they are; they used to be the binding.
+
         if ch == "\x19":
             return "ctrl+y"
         if ch == "\x03":
@@ -409,10 +408,35 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     screen action runs. Timed polls that return no input leave the idle baseline
     untouched.
     """
-    from yeaboi.ui.shared._screensaver import begin_input_wait, handle_input_event, show_screensaver_now
+    from yeaboi.ui.shared._screensaver import (
+        begin_input_wait,
+        handle_input_event,
+        screensaver_active,
+        show_screensaver_now,
+    )
 
     begin_input_wait()
     key = _read_key_impl(stdin=stdin, timeout=timeout)
+
+    # Music first, and deliberately ahead of wake handling: the saver is what
+    # plays while you are listening to something, so the controls have to reach
+    # the player *through* it rather than being eaten as the key that dismisses
+    # it. Bare letters, so they must not fire into a text field.
+    if key in ("p", "o") and not _text_entry:
+        from yeaboi import music
+
+        if screensaver_active():
+            # Leave the saver up and the idle clock alone — changing the track is
+            # not a reason to decide somebody came back.
+            pass
+        elif _last_read_had_input:
+            handle_input_event()
+        if key == "p":
+            music.toggle()
+        else:
+            music.cycle_channel()
+        return ""
+
     if _last_read_had_input and handle_input_event():
         return ""
 
@@ -445,17 +469,6 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
         show_screensaver_now()
         return ""
 
-    # Ctrl+P / Ctrl+O are global background-music controls. Keeping them after
-    # wake handling prevents the key that dismisses the saver from also changing
-    # playback state.
-    if key in ("ctrl+p", "ctrl+o"):
-        from yeaboi import music
-
-        if key == "ctrl+p":
-            music.toggle()
-        else:
-            music.cycle_channel()
-        return ""
     return key
 
 

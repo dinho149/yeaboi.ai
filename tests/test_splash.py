@@ -154,7 +154,7 @@ class TestShowSplash:
     def test_uses_plain_live_not_music_live(self):
         """The splash must use a plain Live, not MusicLive.
 
-        MusicLive stamps the persistent music bar (ctrl+P/ctrl+O controls) onto every
+        MusicLive stamps the persistent music bar (P/O controls) onto every
         Panel's border. Those controls belong to the interactive screens, so the
         bar should first appear on the mode-select menu — never on the intro. If
         the splash ever switches back to make_live/MusicLive, the bar reappears

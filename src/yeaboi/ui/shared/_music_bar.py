@@ -74,7 +74,7 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
     """Return the compact music status line for a Panel's bottom border.
 
     Shows the player state plus the two control-chord hints, e.g.
-    ``♪ Lofi · playing   ctrl+P pause · ctrl+O channel``. When ffplay isn't installed it
+    ``♪ Lofi · playing   P pause · O channel``. When ffplay isn't installed it
     shows a dim, one-line install hint instead so the feature stays discoverable;
     when a spawned player died on its own it shows a dim crash notice in place of
     ``off`` (see :func:`yeaboi.music.last_error`).
@@ -91,7 +91,7 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
         # why rather than a bare "off" so a silently-broken player is diagnosable.
         err = music.last_error()
         line.append(f"♪ {err} " if err else "♪ off ", style=theme.dim if err else theme.muted)
-        toggle_hint = "ctrl+P play"
+        toggle_hint = "P play"
     else:
         line.append("♪ ", style=theme.accent)
         line.append(music.current_channel_name(), style=theme.accent_bright)
@@ -106,13 +106,13 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
             else:
                 line.append("playing ", style=theme.value)
                 line.append(_eq_bars(), style=theme.accent_bright)  # animated equalizer
-            toggle_hint = "ctrl+P pause"
+            toggle_hint = "P pause"
         else:
             line.append("paused", style=theme.value)
-            toggle_hint = "ctrl+P play"
+            toggle_hint = "P play"
     # Single tidy gap between the status/equalizer and the control hints (was a
     # double gap that left the visualizer stranded).
-    line.append(f"  {toggle_hint} · ctrl+O channel ", style=theme.dim)
+    line.append(f"  {toggle_hint} · O channel ", style=theme.dim)
     return line
 
 

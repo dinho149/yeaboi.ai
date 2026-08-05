@@ -2,6 +2,31 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.56.0",
+      "date": "2026-08-05",
+      "summary": "The idle screensaver now responds to music controls (P to play/pause, O to skip) without dismissing the saver, so you can change tracks while the ducks drift on screen. The anchored hero duck lifts his shades less frequently (every 11s instead of 1.6s) for a more natural look, and his reactions to impacts are now optional and separate from his animation. Both the lift interval and impact reactions are configurable per-session.",
+      "highlights": [
+        {
+          "text": "Music controls P and O now work through the idle screensaver without dismissing it",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Hero duck shades animation slowed from 1.6s to 11s intervals for a more natural appearance",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Hero duck shades and impact reactions are now separately configurable settings",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.55.0",
       "date": "2026-08-05",
       "summary": "The idle screensaver expanded from a single duck to a yard of them — ten-odd heads adrift in zero gravity, spinning and ricocheting off each other and an anchored duck in the middle. The screensaver activates with Ctrl+Y as before, and still reads as a single resting duck on terminals smaller than 60x24, so the existing single-duck graphics cover those smaller screens.",

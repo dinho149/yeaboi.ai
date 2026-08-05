@@ -83,6 +83,13 @@ class IdleController:
             self._waiting_for_input = False
             return False
 
+    def is_active(self) -> bool:
+        """Whether the saver is on screen. Unlike handle_input_event this only
+        asks — it does not wake anything — so a key that is allowed to work
+        *through* the saver can check first."""
+        with self._lock:
+            return self._active
+
     def should_show(self) -> bool:
         """Return whether the saver should replace the current renderable."""
         now = self._clock()
@@ -138,6 +145,10 @@ def begin_input_wait() -> None:
 
 def handle_input_event() -> bool:
     return idle_controller.handle_input_event()
+
+
+def screensaver_active() -> bool:
+    return idle_controller.is_active()
 
 
 def show_screensaver_now() -> bool:
