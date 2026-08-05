@@ -325,7 +325,11 @@
     position:relative; margin-top:auto; padding-top:22px; min-height:130px;
   }
   .tui-companion{
-    position:absolute; right:0; bottom:22px;
+    /* bottom:46px, a row clear of the music alcove — the sprite carries
+       _SHADES_TOP_PAD's two blank cell rows on top so the box never resizes
+       mid-gag, and that padding grows upward, so this anchor is what keeps his
+       feet off the pocket's roof */
+    position:absolute; right:0; bottom:46px;
     display:flex; flex-direction:column; align-items:center; gap:0;
   }
   /* (The amber update box that used to sit above the bubble is gone: it is a
@@ -349,14 +353,20 @@
      out as disconnected specks. Each cell is a box instead, and a two-colour
      cell is a hard-stop gradient at 50%. Nothing is measured against a font, so
      the rows meet exactly and the aspect is the terminal's own 1:2. */
-  .tui-duck{margin:0; line-height:0; font-size:inherit}
+  .tui-duck{margin:0; line-height:0; font-size:inherit; cursor:pointer}
+  .tui-duck:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px}
   .tui-duck .r{display:block; height:2ch}
   .tui-duck i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
   /* left:4ch, not 0 — _build_version_row leads with _PAD precisely so its left
      edge lines up with the mode titles above rather than sitting flush to the
      panel padding, and staggering the two is what made the titles read as
      over-indented */
-  .tui-version{position:absolute; left:2ch; bottom:24px; margin:0; color:rgb(70,70,82); white-space:nowrap}
+  /* bottom:-6px drops it into the panel's bottom padding on purpose. The music
+     pocket's TEXT row is the last interior row of the screen, and
+     _build_version_row is that same row — "bottom-left, opposite the music bar".
+     They belong on one line; the foot's own box bottom is two rows higher than
+     that, so the row has to reach past it. */
+  .tui-version{position:absolute; left:2ch; bottom:-6px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}

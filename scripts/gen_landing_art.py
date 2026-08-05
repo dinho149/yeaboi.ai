@@ -1,4 +1,4 @@
-"""Emit font-free markup for the landing page's terminal mockup.
+"""Emit font-free markup and sprite data for the landing page's terminal mockup.
 
 A browser draws U+2580-259F with the *font*; iTerm2/Kitty/Alacritty ignore the
 font for those and fill the cell procedurally, which is why block art looks
@@ -8,14 +8,27 @@ the shapes become geometry, not glyphs.
   - mode titles  -> an SVG mask (one rect per half-cell), so the existing
                     colour + shimmer CSS still paints it
   - the duck     -> a grid of cells whose background carries both halves
-                    (the old markup kept only the foreground, losing the
-                    bottom half of every two-colour cell)
+                    (markup that keeps only the foreground loses the bottom
+                    half of every two-colour cell)
+  - the gag      -> the same grid at each lift of SHADES_LIFT_SEQUENCE, encoded
+                    small enough to sit in site.js and be rebuilt on click
+
+Run it and paste; nothing here writes to docs/ on its own.
 """
 
 from urllib.parse import quote
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._mascot import head_cells
+from yeaboi.ui.shared._mascot import (
+    _SHADES_TOP_PAD,
+    DUCK_HEAD_FACE,
+    DUCK_HEAD_GLASSES,
+    MASCOT_PALETTE,
+    SHADES_LIFT_SEQUENCE,
+    _compose,
+    _pack_cells,
+    _shift,
+)
 
 TITLES = [
     "Analysis",
@@ -31,6 +44,10 @@ TITLES = [
 
 # A terminal cell is one advance wide and two half-rows tall.
 _FILL = {"█": (0, 2), "▀": (0, 1), "▄": (1, 1)}  # glyph -> (top offset, height) in half-cells
+
+# Stable index per palette colour, so the encoded frames below are just digits.
+_COLOURS = [f"rgb({r},{g},{b})" for r, g, b in MASCOT_PALETTE.values()]
+_INDEX = {c: i for i, c in enumerate(_COLOURS)}
 
 
 def mask_for(text: str) -> tuple[str, int]:
@@ -54,28 +71,70 @@ def mask_for(text: str) -> tuple[str, int]:
     return "data:image/svg+xml," + quote(svg, safe="/:=?"), cols
 
 
-def duck() -> str:
+def shade_cells(lift: int) -> list[list[tuple[str, str | None]]]:
+    """The head with its shades raised by *lift*, as (glyph, style) cells.
+
+    Mirrors render_head_shades — including the top padding, which every frame
+    carries so the sprite's box never changes size mid-animation.
+    """
+    pad = ("." * len(DUCK_HEAD_FACE[0]),) * _SHADES_TOP_PAD
+    face = pad + DUCK_HEAD_FACE
+    glasses = pad + DUCK_HEAD_GLASSES
+    grid = _compose(face, glasses, _shift(glasses, lift))
+    return _pack_cells(tuple(row[::-1] for row in grid))  # flip: he faces the menu
+
+
+def _halves(glyph: str, style: str | None) -> tuple[str | None, str | None]:
+    """A cell's (top, bottom) colours. _pack_cells packs two source pixels into
+    one cell, so a ▀ carries the top colour as foreground and the bottom as
+    background — reading only the foreground throws half the sprite away."""
+    if style is None:
+        return None, None
+    if " on " in style:
+        top, bot = style.split(" on ")
+        return top, bot
+    if glyph == "█":
+        return style, style
+    if glyph == "▀":
+        return style, None
+    return None, style
+
+
+def duck_html(lift: int = 0) -> str:
     out = []
-    for row in head_cells(flip=True):
+    for row in shade_cells(lift):
         cells = []
         for glyph, style in row:
-            if style is None:
+            top, bot = _halves(glyph, style)
+            if top is None and bot is None:
                 cells.append("<i></i>")
-                continue
-            if " on " in style:
-                fg, bg = style.split(" on ")
-            elif glyph == "█":
-                fg = bg = style
-            elif glyph == "▀":
-                fg, bg = style, "transparent"
+            elif top == bot:
+                cells.append(f'<i style="background:{top}"></i>')
             else:
-                fg, bg = "transparent", style
-            if fg == bg:
-                cells.append(f'<i style="background:{fg}"></i>')
-            else:
-                cells.append(f'<i style="background:linear-gradient(to bottom,{fg} 50%,{bg} 50%)"></i>')
+                a, b = top or "transparent", bot or "transparent"
+                cells.append(f'<i style="background:linear-gradient(to bottom,{a} 50%,{b} 50%)"></i>')
         out.append('<span class="r">' + "".join(cells) + "</span>")
     return "\n".join(out)
+
+
+def frames_js() -> str:
+    """Palette + one string per distinct lift, for site.js to rebuild on click.
+
+    Two chars per cell (top index, bottom index), '.' for a transparent half,
+    rows separated by '|'. ~1.3KB for the whole gag, versus four more copies of
+    the markup in the page.
+    """
+    lifts = sorted(set(SHADES_LIFT_SEQUENCE))
+    frames = {}
+    for lift in lifts:
+        rows = []
+        for row in shade_cells(lift):
+            rows.append("".join("".join("." if c is None else str(_INDEX[c]) for c in _halves(g, s)) for g, s in row))
+        frames[lift] = "|".join(rows)
+    pal = ",".join(f"'{c}'" for c in _COLOURS)
+    body = ",".join(f"{lift}:'{frames[lift]}'" for lift in lifts)
+    seq = ",".join(str(n) for n in SHADES_LIFT_SEQUENCE)
+    return f"var DUCK_PALETTE = [{pal}];\nvar DUCK_FRAMES = {{{body}}};\nvar DUCK_LIFTS = [{seq}];"
 
 
 if __name__ == "__main__":
@@ -83,5 +142,7 @@ if __name__ == "__main__":
         url, cols = mask_for(t)
         print(f"=== {t} cols={cols}")
         print(url)
-    print("=== DUCK")
-    print(duck())
+    print("=== DUCK (lift 0, the resting frame)")
+    print(duck_html(0))
+    print("=== FRAMES")
+    print(frames_js())
