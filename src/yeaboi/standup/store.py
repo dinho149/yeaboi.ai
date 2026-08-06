@@ -485,6 +485,16 @@ class StandupStore:
                ADD COLUMN habit_rules TEXT NOT NULL DEFAULT ''""",
             """ALTER TABLE standup_config
                ADD COLUMN habit_ai_match TEXT NOT NULL DEFAULT 'on'""",
+            # Edit-provenance columns (sessions.py v21/v26): a v21 version-number
+            # collision could leave a DB stamped past 21 without them, and
+            # several entry points (--standup-run, the MCP tools) open this
+            # store without ever constructing a SessionStore. record_run,
+            # get_previous_run and get_base_run all read `origin`, so heal here
+            # too.
+            """ALTER TABLE standup_history
+               ADD COLUMN origin TEXT NOT NULL DEFAULT 'generated'""",
+            """ALTER TABLE standup_history
+               ADD COLUMN edited_from_id INTEGER NOT NULL DEFAULT 0""",
         ):
             try:
                 self._conn.execute(statement)

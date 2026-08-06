@@ -52,8 +52,10 @@ class TestSchemaVersion:
         # transcript columns; v23 adds the Standup practice-detection config
         # (habit_detection / habit_rules); v24 adds its LLM relatedness switch
         # (habit_ai_match); v25 adds the practice feedback ledger
-        # (standup_practice_feedback).
-        assert CURRENT_SCHEMA_VERSION == 25
+        # (standup_practice_feedback); v26 re-applies v21 — a pre-rebase
+        # lineage stamped shared DBs at 21 with a different meaning, so the
+        # provenance columns could be missing from a DB already at v25.
+        assert CURRENT_SCHEMA_VERSION == 26
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

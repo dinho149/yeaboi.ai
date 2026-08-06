@@ -2,6 +2,31 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.55.2",
+      "date": "2026-08-06",
+      "summary": "Fixed standup mode's Generate command failing with \"no such column: origin\" error. The issue was caused by a schema version collision in the session database — a migration that added edit-provenance tracking (`origin` column) was skipped due to version numbering conflicts, but code continued to query for those columns. The fix re-applies the missing migration idempotently, hardens the schema version tracking to prevent duplicates, and adds self-healing to all standalone mode stores so they can repair their own tables on opening.",
+      "highlights": [
+        {
+          "text": "Fixed standup Generate command crashing with \"no such column: origin\" error",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Database schema repairs are now idempotent and self-healing across all mode stores",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Session database schema version tracking deduplicated and race-guarded to prevent future collisions",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.55.1",
       "date": "2026-08-06",
       "summary": "Fixed planning mode's live chat asking about project size twice. The greeting's small-vs-large answer now properly flows through the chat, with mode-aware lead-ins for follow-up questions that acknowledge the earlier choice. Smart mode chat also hides the redundant sprint-count row that only appears for large projects.",
