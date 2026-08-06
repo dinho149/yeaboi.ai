@@ -41,7 +41,7 @@ runs.
 
 | File | What it is |
 |---|---|
-| [definition-of-done.md](definition-of-done.md) | The nine-item contract. Binding on routines **and** on `/ship`. |
+| [definition-of-done.md](definition-of-done.md) | The ten-item contract. Binding on routines **and** on `/ship`. |
 | [house-rules.md](house-rules.md) | Guardrails + the closed auto-lane allowlist. |
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
@@ -142,9 +142,9 @@ from [models.md](models.md#workflows), and the routines from the table above —
 routine actually runs on is the one written down here. `tests/unit/test_cowork_setup.py` fails on the
 same drift in `make test-fast`.
 
-**What each command covers.** `make cowork-setup` does the twenty-five GitHub labels (`cowork`,
-`cowork:proposal`, `claude-implement`, `workstream:<name>` for each of the fifteen, and the seven
-`type:*` labels shared with the feedback system) and the four
+**What each command covers.** `make cowork-setup` does the twenty-six GitHub labels (`cowork`,
+`cowork:proposal`, `claude-implement`, `feedback-override`, `workstream:<name>` for each of the
+fifteen, and the seven `type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
 file cannot read a markdown table. `/cowork deploy` does the seventeen cron routines and mirrors the
 workstream labels onto the Linear `Yeaboi` team; both need a Claude session, since a routine is
@@ -153,9 +153,12 @@ account-scoped and has no CLI behind it.
 **What neither can do**, and both report: connecting Linear/Slack/Notion at
 [claude.ai/customize/connectors](https://claude.ai/customize/connectors), installing the Claude GitHub
 App, setting the `AUTO_VERSION_PAT` secret, the three **event** routines — the routines API takes
-a cron expression only, so those are added by hand — and the **Linear GitHub integration** on this
-repo (with issue-status automation on), which is what turns a PR body's `Closes YEA-NN` into the
-attach and the Done-on-merge transition. If that integration is off, every ticket silently stalls at
+a cron expression only, so those are added by hand — the **`pr-feedback` status context** on the
+`main-branch` ruleset's required checks (DoD item 10; without it `.github/workflows/pr-feedback.yml`
+still computes and posts a red status, and GitHub simply lets the PR merge anyway — see
+`.claude/skills/ci-and-release/SKILL.md` for the `gh api` that verifies it) — and the **Linear GitHub
+integration** on this repo (with issue-status automation on), which is what turns a PR body's
+`Closes YEA-NN` into the attach and the Done-on-merge transition. If that integration is off, every ticket silently stalls at
 In Review, and the only thing that would notice is `pr-merged-close-loop` — one of the hand-added
 event routines above.
 
@@ -187,6 +190,8 @@ would quietly end at the next deploy. `resume` is the only thing that turns the 
 
 Teardown is tiered, because the pieces are not equally reversible: routines by default, `--labels` and
 `--variables` opt in, `--all` adds the Linear labels. Deleting a `workstream:` label strips it off
-every issue carrying it and nothing puts those back. `claude-implement` is never deleted — it predates
-cowork and gates the `claude.yml` implement job. The `type:*` labels are never deleted either — the
-feedback system shares them, and user-filed feedback issues carry them.
+every issue carrying it and nothing puts those back. Two labels are never deleted, and neither belongs
+to cowork: `claude-implement` predates it and gates the `claude.yml` implement job, and
+`feedback-override` is the only way past the `pr-feedback` merge gate — an escape hatch you have to
+hand-create during the emergency it exists for is not an escape hatch. The `type:*` labels are never
+deleted either — the feedback system shares them, and user-filed feedback issues carry them.

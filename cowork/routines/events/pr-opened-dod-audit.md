@@ -12,7 +12,7 @@ The carve-out exists because the `claude.yml` implement job opens PRs unattended
 human approved. If the action pushes as a bot, the authorship filter would drop the process audit on
 exactly the PRs nobody watched being written. `claude-review.yml` carries the same one.
 
-`claude-review.yml` already reviews the *code*. This checks the *process* — whether the nine items in
+`claude-review.yml` already reviews the *code*. This checks the *process* — whether the ten items in
 [definition-of-done.md](../../definition-of-done.md) are actually met.
 
 ## Run
@@ -32,14 +32,31 @@ exactly the PRs nobody watched being written. `claude-review.yml` carries the sa
    - **7 Web bundles** — `frontend/` changed but `src/yeaboi/web/static/` did not
    - **8–9 Notion + Slack** — **always "pending merge"**, never unmet. They are done by
      `pr-merged-close-loop`.
+   - **10 Review feedback** — **always "pending merge"**, never unmet. The feedback does not exist
+     yet when this runs; the `pr-feedback` status is what judges it, and this routine is one of the
+     things it judges.
 3. Post **one** comment via `cowork-scribe`: a checklist with a one-line reason for every unmet item
    and the exact file or command that would settle it. If everything is met or pending, post
    `DoD: all items met or pending merge.` and nothing more.
-4. On `synchronized`, **edit the existing comment** rather than adding another. Find it by its
-   `<!-- cowork-dod -->` marker.
+4. **End the comment with this exact line, on its own:**
+
+   ```
+   <!-- cowork-dod open=N -->
+   ```
+
+   where N counts the items you marked **unmet** — items you marked *met* or *pending merge* count
+   zero, so a clean audit is `open=0`. The marker is both the anchor for step 5 and the verdict
+   `scripts/pr_feedback.py` counts: while N is above zero and unanswered, the `pr-feedback` commit
+   status blocks the merge. A comment posted without the `open=` part reads as *no verdict at all*
+   rather than as a pass — the gate will not let a routine clear it by staying quiet.
+5. On `synchronized`, **edit the existing comment** rather than adding another. Find it by its
+   `<!-- cowork-dod` marker.
 
 ## Stop conditions
 
 - This routine is advisory. Never request changes, never block, never fail a check, never merge.
+  The `open=` count in step 4 is not an exception to that: you report a number, and
+  `.github/workflows/pr-feedback.yml` decides what it means. Never inflate it to force attention,
+  and never zero it to unblock someone.
 - Never label a PR `claude-implement` or apply any label at all.
 - Judge the diff, not the author. No commentary on style or approach — that is `claude-review.yml`'s job.

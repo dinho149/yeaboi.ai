@@ -1,6 +1,6 @@
 # Definition of Done
 
-The single contract. Every cowork routine and every `/ship` run must satisfy all nine items.
+The single contract. Every cowork routine and every `/ship` run must satisfy all ten items.
 Nothing is "done" because the code works — it is done when the loop is closed.
 
 | # | Item | How it is checked |
@@ -14,6 +14,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 | 7 | **Web bundles** — anything under `frontend/` ⇒ `make web` and the rebuilt `src/yeaboi/web/static/` committed in the *same* commit | CI `web` job |
 | 8 | **Notion** — page created or updated under 🤙 yeaboi for any user-facing change | scribe |
 | 9 | **Slack** — one `#yeaboi-claude` post: what shipped, PR link, Linear link | scribe |
+| 10 | **Review feedback** — every finding the PR's reviewers rated blocker or should-fix is fixed or answered, and every human review thread is resolved by someone who replied to it | the `pr-feedback` commit status (`scripts/pr_feedback.py`), required by the `main-branch` ruleset |
 
 ## Rules
 
@@ -34,6 +35,20 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   ticket lingering in In Review after its PR merged is a bug in the loop, not a cosmetic detail.
 - Items 2–7 are the *gate*: they block the PR. A PR that cannot pass them is not opened; the finding
   is filed as a proposal instead.
+- **Item 10 gates the merge, not the open** — it is the one item that cannot be satisfied before the
+  PR exists. `claude-review.yml` fires on `workflow_run` after CI succeeds, so its review arrives
+  minutes after `/ship` has already exited, and a human's comment can arrive days later. Answering it
+  is a second sitting: `/pr-feedback <n>`, or `/babysit-prs fix` across every open PR.
+
+  This item is the youngest of the ten and the only one that was ever *silently* skipped rather than
+  argued about. Five things comment on a PR here and, before the `pr-feedback` status existed, nothing
+  read a word of any of it back — the reviewers are all deliberately advisory, so findings landed on
+  the timeline and PRs merged straight past them. The rest of the contract is enforced by `make test`
+  and CI; this one had nothing behind it at all, which is precisely why it needed a required check
+  rather than another sentence in a markdown file.
+
+  It is answered, not obeyed: a finding you disagree with is closed by a reply saying why, which the
+  next review pass reads and stops raising. What is not allowed is silence.
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a
   Python-only change), say so in the PR body in one line. Silence is not an exemption.
 

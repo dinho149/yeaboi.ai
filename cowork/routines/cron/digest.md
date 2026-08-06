@@ -73,6 +73,12 @@ The single decision point. It is the only routine that posts proposals to Slack.
    is forbidden from scouting until that PR merges. Name it and its PR, and do not count it against
    the 21-day line. Silence with no open PR is the case worth worrying about.
 
+   Say *what* is blocking each one, because the two causes need different people. Run
+   `uv run python scripts/pr_feedback.py --pr <n>` per blocked PR: red CI is a machine problem an
+   agent can pick up, while unanswered review feedback is waiting on a judgment somebody has to make.
+   A workstream stalled three weeks on two unanswered findings reads as "blocked on PR #123" without
+   this, which is indistinguishable from a slow build and gets treated like one.
+
 6. **Report the calibration line** — for each workstream, the approval rate over the last 90 days:
    proposals that received `claude-implement` ÷ proposals filed. One
    `gh issue list --label "workstream:<name>" --state all --limit 200 --json number,labels,createdAt`

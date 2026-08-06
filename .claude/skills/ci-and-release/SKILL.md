@@ -31,6 +31,7 @@ Workflows in `.github/workflows/`:
 | `publish.yml` | Push to `main` | if `pyproject.toml` version has no tag yet: test → build → PyPI publish (OIDC) → tag + GitHub Release (else no-op) |
 | `claude-review.yml` | CI workflow succeeds on a PR (`workflow_run`) | Async Claude code + security review comment; only fires when all CI checks passed (no tokens burned on red PRs); advisory only, never blocks merge (skips drafts, bots, and Dependabot PRs) |
 | `dependabot-auto.yml` | CI workflow succeeds on a Dependabot PR (`workflow_run`) | Claude verifies each bump (release notes vs our actual usage), posts a `SAFE-TO-MERGE` / `NEEDS-HUMAN` verdict comment, and enables auto-merge for safe ones. Pip **majors** and minor+ bumps of TUI/agent-critical packages (`rich`, `sqlite-vec`, `langgraph`, `langchain*`, `anthropic`) always get the `needs-human` label instead. Auto-merge waits on the required checks, so nothing red can land |
+| `pr-feedback.yml` | PR opened/synced, any comment or review, and Claude Review completing (`workflow_run`) | Posts the **`pr-feedback` commit status** — red while a blocker/should-fix finding or an unresolved human review thread is unanswered. DoD item 10, and the one gate that is *not* advisory: every other commenter on a PR here is explicitly forbidden from blocking, which is how work merged past review comments for months. No Claude call — `scripts/pr_feedback.py` counts machine-readable verdict markers the reviewers stamp on their own comments. Escape hatch: the `feedback-override` label |
 | `smoke.yml` | Weekly cron | Live API smoke tests |
 | `codeql.yml` | Push/PR to `main` + weekly cron (Tue) | CodeQL deep static analysis (`security-extended`), `python` + `actions` languages; non-blocking (not in the ruleset), findings land in the Security tab / PR annotations. Free only while the repo is public |
 | `claude.yml` | `@claude` mention, or `claude-implement` label on an issue | On-demand Claude Code assistance; the label triggers an implementation run that opens a PR |
@@ -38,7 +39,16 @@ Workflows in `.github/workflows/`:
 | `ci-sentinel.yml` | CI fails on `main` (`workflow_run`) | Claude diagnoses the red main build and opens a `ci-sentinel/…` fix PR (label `ci-sentinel`) or a `ci-red-main` issue; never pushes main. The `head_branch == 'main'` filter + open-PR dedupe prevent self-retrigger |
 | `feedback-remediation.yml` | Nightly cron | A bash pre-step collects fresh (untriaged, human-authored) issues → Claude (Sonnet, `claude-code-action`) classifies each, applies the `triaged` cursor + `type:*`/`area:*` labels, and routes — up to 3 actionable bugs get `feature-candidate`, overflow → `feedback:fix-queued`, features → `feature-candidate`, vague → comment + `feedback:needs-info`, noise → `feedback:noise` (never closes); Monday digest. **Never applies `claude-implement`** — it used to, capped at 3/run, which contradicted the human-only approval gate in `cowork/house-rules.md` that six other files restate. Runs on the App `CLAUDE_CODE_OAUTH_TOKEN` (no `ANTHROPIC_API_KEY` — an earlier Agent-SDK draft was rewired off the SDK because the SDK is barred from subscription auth). `workflow_dispatch` defaults to dry-run, which also strips all write tools |
 
-Merge gating: the `main-branch` ruleset requires the five ci.yml checks (Unit tests, Integration & contract tests, Lint, Format check, Security scan) to pass before **any** PR can merge; auto-merge (enabled repo-wide) fires only when they're green. Golden evaluators stay non-blocking by design.
+Merge gating: the `main-branch` ruleset requires the five ci.yml checks (Unit tests, Integration & contract tests, Lint, Format check, Security scan) **plus `pr-feedback`** to pass before **any** PR can merge; auto-merge (enabled repo-wide) fires only when they're green. Golden evaluators stay non-blocking by design.
+
+**`pr-feedback` has to be added to that ruleset by hand, and nothing in this repo can do it.** The workflow posts a commit status either way, so a missing entry does not fail loudly — it fails by the check going red on a PR that then merges anyway, which is indistinguishable at a glance from the check working. Verify with:
+
+```bash
+gh api repos/:owner/:repo/rulesets --jq '.[] | select(.name=="main-branch") | .id'
+gh api repos/:owner/:repo/rulesets/<id> --jq '.rules[] | select(.type=="required_status_checks")'
+```
+
+`pr-feedback` must appear in `required_status_checks_policy.required_status_checks[].context`. It belongs in the same manual-prerequisite bucket as `AUTO_VERSION_PAT` and the Claude GitHub App: set once, invisible when absent, and load-bearing. A PR that is genuinely stuck behind a broken gate is cleared with the `feedback-override` label rather than by removing the requirement.
 
 ### When a Claude workflow fails
 

@@ -195,7 +195,7 @@ class TestLabels:
     def test_the_label_set_is_shared_plus_workstreams_plus_types(self):
         names = {label.name for label in setup.expected_labels()}
         assert names == (
-            {"cowork", "cowork:proposal", "claude-implement"}
+            {"cowork", "cowork:proposal", "claude-implement", "feedback-override"}
             | {f"workstream:{w}" for w in WORKSTREAMS}
             | {f"type:{t}" for t in setup.PROPOSAL_TYPES}
         )
@@ -359,7 +359,7 @@ class TestTargets:
         assert all(targets.values())
 
     def test_the_dod_checklist_is_not_read_as_a_target(self):
-        # The nine-item table above ## Targets has the same three-cell shape and a
+        # The ten-item table above ## Targets has the same three-cell shape and a
         # backticked last column, so reading the file whole yields `make test`.
         assert "make test" not in setup.parse_targets().values()
 
@@ -890,21 +890,22 @@ class TestUrlWriteback:
 
 
 class TestTeardown:
-    def test_claude_implement_is_never_deleted(self):
-        """It predates cowork and gates the claude.yml implement job.
+    def test_the_gate_labels_are_never_deleted(self):
+        """Neither belongs to cowork, and both gate something that outlives it.
 
-        Removing it with the fleet would break approvals on a workflow that has
-        nothing to do with cowork, and the breakage is silent: adding the label
-        to an issue would simply do nothing.
+        ``claude-implement`` predates cowork and gates the claude.yml implement
+        job; ``feedback-override`` is the escape hatch on the pr-feedback merge
+        gate. Removing either with the fleet would break a live gate, and the
+        breakage is silent: applying a label that does not exist does nothing.
         """
-        assert setup.KEEP_LABEL == "claude-implement"
-        assert setup.KEEP_LABEL not in {label.name for label in setup.teardown_labels()}
+        assert setup.KEEP_LABELS == {"claude-implement", "feedback-override"}
+        assert not (setup.KEEP_LABELS & {label.name for label in setup.teardown_labels()})
 
     def test_everything_else_cowork_creates_is_in_scope(self):
         expected = {
             label.name
             for label in setup.expected_labels()
-            if label.name != setup.KEEP_LABEL and not label.name.startswith("type:")
+            if label.name not in setup.KEEP_LABELS and not label.name.startswith("type:")
         }
         assert {label.name for label in setup.teardown_labels()} == expected
         assert len(expected) == len(WORKSTREAMS) + 2
@@ -1000,7 +1001,7 @@ class TestGhWrites:
         monkeypatched = setup.apply_teardown(labels=True, variables=True)
         deleted = {args[2] for args in gh.calls if args[:2] == ("label", "delete")}
         assert monkeypatched == 0
-        assert setup.KEEP_LABEL not in deleted
+        assert not (setup.KEEP_LABELS & deleted)
         assert deleted == {label.name for label in setup.teardown_labels()}
 
     def test_teardown_unsets_every_model_variable(self, gh):
