@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve cowork-setup cowork-check cowork-teardown
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-check cowork-teardown
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -197,6 +197,14 @@ wt-rm-all: ## Remove ALL worktrees under .claude/worktrees/ (prompts to confirm)
 	    done; \
 	    git worktree prune; echo "[wt-rm-all] done."; \
 	  else echo "[wt-rm-all] aborted"; fi
+
+# --- PR feedback — the merge gate on unanswered review comments ---------------
+
+# Five things comment on a PR here and nothing used to read any of it back. This
+# reports what is still unanswered; the `pr-feedback` commit status posted by
+# .github/workflows/pr-feedback.yml is what actually holds the merge.
+pr-feedback: ## Report unanswered review feedback on a PR (PR=123, or the current branch's)
+	@$(UV) run python scripts/pr_feedback.py $(if $(PR),--pr $(PR),)
 
 # --- Cowork — stand the standing workstreams up (see cowork/README.md) --------
 

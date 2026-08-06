@@ -7,8 +7,14 @@ workstream and any per-run focus; everything else is here.
    `workstreams/<name>.md`, and the `.claude/skills/*/SKILL.md` your charter names.
 
 2. **Check for work in flight** — `gh pr list --label "workstream:<name>" --state open --json
-   number,createdAt,url`. If a PR is open: drive it to green (fix CI, answer review comments) and
-   **stop**. That is the whole run.
+   number,createdAt,url`. If a PR is open: drive it to green and **stop**. That is the whole run.
+   Green means both halves:
+   - **CI** — `gh pr checks <n>`, then fix what is red.
+   - **Feedback** — `make pr-feedback PR=<n>`, then follow the procedure in
+     `.claude/commands/pr-feedback.md`: read what was actually said, fix what is right, reply with
+     `<!-- addressed: <producer> -->` and a reason to what is not, and resolve human threads only
+     after replying to them. DoD item 10. This line used to read "answer review comments" in
+     brackets with nothing behind it, and for months nothing did.
 
    If that PR is already green and more than 7 days old, comment once on it saying the workstream has
    been blocked on it since `<date>` and has scouted nothing in the meantime. One open PR per

@@ -4,7 +4,7 @@
 `telemetry.py`, `feedback.py`, `setup_wizard.py`, `update_check.py`, `changelog.py`, the MCP
 **server** (`mcp/server.py`, `runtime.py`, `sampling.py`, `__init__.py`), the `claude-plugin/`
 scaffold, `src/yeaboi/skills/` (the shipped OpenClaw skill), `.github/workflows/`, `Makefile`,
-`pyproject.toml`, `packaging/`, `tests/unit/test_surface_parity.py`
+`pyproject.toml`, `packaging/`, `scripts/pr_feedback.py`, `tests/unit/test_surface_parity.py`
 
 **Skills** — `.claude/skills/project-map/SKILL.md`, `.claude/skills/ci-and-release/SKILL.md`
 
@@ -23,7 +23,14 @@ you. You own the server they plug into and the registry that proves they exist.
   or land in `HIDDEN_PARAMS` with a reason. `db_path`/`today`/`on_progress`/`dry_run` are injection
   seams and always hidden.
 - **All paths come from `paths.py`.** A hardcoded `Path.home() / ".yeaboi"` anywhere is a finding.
-- **CI health** — this repo has 11 workflows (`backlog-groomer.yml` and `security-scan.yml` were
+- **The `pr-feedback` gate is load-bearing and quiet when broken.** `scripts/pr_feedback.py` plus
+  `.github/workflows/pr-feedback.yml` are what stop a PR merging past unanswered review findings —
+  DoD item 10. Two failures there are invisible: the status context dropping out of the `main-branch`
+  ruleset (the check still runs, still goes red, and blocks nothing), and a producer changing its
+  comment format so the marker stops parsing (which reads as "the review never ran" — loud — but a
+  *reversed* mistake, a marker that always parses as zero, would be silent). Check the ruleset
+  actually requires the context.
+- **CI health** — this repo has 12 workflows (`backlog-groomer.yml` and `security-scan.yml` were
   retired into cowork: the digest ranks and ages out the queue, and `security-sweep` runs
   `make security` twice weekly at `deep`). Watch for: workflows that silently stopped firing
   (`auto-version.yml` needs `AUTO_VERSION_PAT` or Claude Review stops receiving `workflow_run`

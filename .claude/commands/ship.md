@@ -6,7 +6,7 @@ Ship the current feature branch. Arguments (optional): $ARGUMENTS — may includ
 
 Follow these steps **in order**. If any step fails, stop, report what failed, and fix it before continuing. Never skip the verification steps.
 
-The contract this branch must satisfy is `cowork/definition-of-done.md` — the same nine items the cowork routines ship against. Read it; the steps below are how it is executed interactively.
+The contract this branch must satisfy is `cowork/definition-of-done.md` — the same ten items the cowork routines ship against. Read it; the steps below are how it is executed interactively.
 
 1. **Sanity check** — run `git branch --show-current`. If on `main`, stop: create a feature branch first.
 
@@ -25,6 +25,12 @@ The contract this branch must satisfy is `cowork/definition-of-done.md` — the 
 
 6. **Auto-merge (only if `auto-merge` was passed)** — confirm the change is genuinely low-risk (docs, chore, small fix; no `src/yeaboi/agent/`, schema, or workflow changes), then run `gh pr merge --auto --squash`. If it is not low-risk, say so and skip this step. The `Closes YEA-NN` line from step 5 carries the ticket to Done when the merge lands — no extra Linear step here.
 
-7. **Report** — output the PR URL and a one-line status.
+7. **Hand off the review loop (DoD item 10)** — say plainly that the PR is **not done yet**, and why: `claude-review.yml` fires on `workflow_run` *after* CI succeeds, which is minutes from now, so at this moment its review does not exist. The `code-reviewer` pass in step 2 is not it — that one had no CI results, no diff-on-`main` context, and nobody else's eyes.
 
-DoD items 8 (Notion) and 9 (Slack) are **not** done here — the `pr-merged-close-loop` cowork routine fires them on merge, so a branch that never merges never announces itself. The Linear → Done transition on merge rides the `Closes YEA-NN` line via the GitHub integration; the routine only verifies and repairs it.
+   Name the follow-up: `/pr-feedback <n>` once CI is green, or `/babysit-prs` across every open PR. Do not wait for it here; a `/ship` that blocks for ten minutes gets run less often, and the `pr-feedback` status is holding the merge in the meantime whether anyone waits or not.
+
+   This is also why step 6 needs no extra guard: `gh pr merge --auto` waits on the required checks, and `pr-feedback` is one of them, so an auto-merge cannot outrun the review.
+
+8. **Report** — output the PR URL and a one-line status, ending with what is still outstanding: the pending review, and items 8–9.
+
+DoD items 8 (Notion) and 9 (Slack) are **not** done here — the `pr-merged-close-loop` cowork routine fires them on merge, so a branch that never merges never announces itself. The Linear → Done transition on merge rides the `Closes YEA-NN` line via the GitHub integration; the routine only verifies and repairs it. Item 10 (review feedback) is not done here either, for the plainer reason that the feedback does not exist yet — `/ship` opens the PR, and answering what comes back is a separate sitting.

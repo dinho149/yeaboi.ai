@@ -139,12 +139,34 @@ jobs:
                ticket text), secrets or tokens logged or committed, unsafe subprocess/network
                use, missing auth on new server endpoints.
 
+            Before judging anything, read the existing comments on this PR with
+            `gh pr view ${{ steps.pr.outputs.number }} --json comments`. **A finding
+            already answered in a reply there is not a finding** — do not re-report it.
+            Someone took the time to say why they are not changing it, and a reviewer
+            that keeps re-raising an answered point trains everyone to stop reading it.
+
             Post the result as a single PR review comment via
             `gh pr comment ${{ steps.pr.outputs.number }} --body "..."`:
             a short verdict line, then only findings that matter (file:line, what, why).
             If there are no significant findings, post one line saying the review passed.
             Do not comment on style that ruff already enforces. Do not request changes on
             nitpicks. This review is advisory — never attempt to approve, merge, or block.
+
+            **End the comment with this exact line, on its own:**
+
+                <!-- pr-feedback: claude-review open=N -->
+
+            where N is the number of findings you just reported that a reasonable
+            author must act on or answer — the `blocker` and `should-fix` ones, the
+            same bar `/ship` resolves against. Nits, praise, and observations count
+            zero. A clean review is `open=0`.
+
+            That line is not decoration: `scripts/pr_feedback.py` counts it, and the
+            `pr-feedback` commit status blocks the merge while it is above zero and
+            unanswered. Omitting it does not make the PR mergeable — it makes the gate
+            report that the review never ran. Getting N right is the review's most
+            load-bearing output, so if you are unsure whether something is a nit,
+            it is a nit.
 
             Budget your turns: posting the comment is the one non-negotiable step.
             On a large diff, skim breadth-first and go deep only on the riskiest

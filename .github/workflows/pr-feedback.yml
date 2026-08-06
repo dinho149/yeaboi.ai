@@ -1,0 +1,141 @@
+# The merge gate on unanswered review feedback.
+#
+# Five things comment on a PR in this repo — claude-review.yml, the cowork DoD
+# audit, auto-version, dependabot-auto, and claude.yml when someone types
+# @claude — plus human reviewers. Every one of them is deliberately advisory
+# ("never request changes, never block, never fail a check"), and nothing ever
+# read a word of it back. So findings landed on the timeline and PRs merged
+# straight past them. That is the whole reason this file exists.
+#
+# It posts a commit status called `pr-feedback`, which is the only artefact
+# GitHub will actually refuse a merge over. The reviewers stay advisory; this
+# counts what they said. scripts/pr_feedback.py owns every comparison — see its
+# module docstring for the three rules, and tests/unit/test_pr_feedback.py for
+# the states they produce.
+#
+# ONE MANUAL STEP, and nothing in this repo can do it: the `pr-feedback` status
+# context must be added to the `main-branch` ruleset's required checks. Until it
+# is, this workflow is advisory too — which is exactly the failure it was built
+# to end. `gh api repos/OWNER/REPO/rulesets` is where it lives.
+name: PR Feedback
+
+on:
+  # Every event that can change the answer. Missing one does not produce a wrong
+  # verdict, it produces a stale one — the status keeps whatever it last said
+  # while the PR moves underneath it, which is the failure mode this whole gate
+  # exists to stop.
+  # `pull_request_target`, not `pull_request`, and the distinction is load-bearing:
+  # this repo is public, and a `pull_request` run from a fork gets a read-only
+  # GITHUB_TOKEN no matter what the permissions block says. The status POST would
+  # 403, no status would exist, and a *required* check with no status blocks the
+  # merge forever — a fork PR that could never land, with nothing in the UI saying
+  # why. `pull_request_target` runs in the base repo's context with a write token.
+  #
+  # The usual danger of `pull_request_target` — running untrusted PR code with a
+  # privileged token — does not apply here: the checkout below takes its default
+  # ref (the base branch), the only thing executed is `scripts/pr_feedback.py` as
+  # it exists on `main`, and no dependency is installed from the PR. Nothing the
+  # PR author wrote is ever run. Keep it that way: never add `ref:` pointing at
+  # the head, and never `uv sync` in the gate job.
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  # Resolving a thread is the terminal step of the procedure this gate ships
+  # (/pr-feedback step 6: reply, then resolve). The reply fires the event above
+  # while the thread is still unresolved, so that run posts red; without this
+  # trigger the resolve itself fires nothing and the status stays red with no
+  # remaining action — a false red only an unrelated push could clear.
+  pull_request_review_thread:
+    types: [resolved, unresolved]
+  # Claude Review posts minutes after CI goes green, long after `pull_request`
+  # fired. Without this trigger the status would sit `pending` until the next
+  # push — i.e. the gate would be waiting for a comment that had already arrived.
+  workflow_run:
+    workflows: [Claude Review]
+    types: [completed]
+
+permissions:
+  contents: read
+  statuses: write # the `pr-feedback` commit status — the actual gate
+  pull-requests: write # the one sticky comment explaining a red one
+
+jobs:
+  # Two jobs for one reason: a workflow-level `concurrency` group is evaluated
+  # before any step runs, and the `workflow_run` event carries no PR number. The
+  # group would have to fall back to a branch name, putting the run that carries
+  # the fresh review verdict — the one that matters most — in a different group
+  # from every comment- and push-triggered run, unserialised against them, free
+  # to be overtaken and post last with a stale answer. A *job*-level group can
+  # read `needs`, so the number is resolved first and the gate is genuinely one
+  # at a time per PR.
+  resolve:
+    name: Resolve the PR
+    # Skip comments on plain issues: issue_comment fires for both, and only a PR
+    # has a head SHA to hang a status on.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+      skip: ${{ steps.pr.outputs.skip }}
+    steps:
+      - name: Resolve the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request_target|pull_request_review|pull_request_review_comment|pull_request_review_thread)
+              number="${{ github.event.pull_request.number || github.event.issue.number }}"
+              ;;
+            issue_comment)
+              number="${{ github.event.issue.number }}"
+              ;;
+            workflow_run)
+              # workflow_run loses PR context, so it is recovered from the head
+              # SHA the same way claude-review.yml and dependabot-auto.yml do.
+              # Merged PRs are included: a status posted after the merge is
+              # harmless, and excluding them would silently skip the last word.
+              number=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/pulls" \
+                --jq '[.[] | select(.state == "open" or .merged_at != null)][0].number // empty')
+              ;;
+          esac
+          if [ -z "${number:-}" ] || [ "$number" = "null" ]; then
+            echo "No PR for this event — nothing to gate."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "PR #$number"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Unanswered review feedback
+    needs: resolve
+    if: needs.resolve.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-feedback-${{ needs.resolve.outputs.number }}
+      cancel-in-progress: true
+    steps:
+      # Default ref — the base branch. Never point this at the head: with
+      # `pull_request_target`'s write token that would run PR-authored code.
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv python install 3.11
+
+      # No `uv sync`: the script imports the standard library only and shells out
+      # to `gh`. Installing the dev extra here would put a two-minute dependency
+      # resolve in front of a check that has to re-run on every comment.
+      - name: Compute and post the status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run --no-project --python 3.11 python scripts/pr_feedback.py \
+            --pr "${{ needs.resolve.outputs.number }}" \
+            --status \
+            --target-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
