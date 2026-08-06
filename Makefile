@@ -139,7 +139,7 @@ site-og: ## Re-render the 1200x630 Open Graph card (needs the charts extra for P
 
 site-serve: ## Serve docs/ on :8899 exactly as GitHub Pages would, to preview before merging
 	@echo "→ http://localhost:8899  (Ctrl-C to stop)"
-	$(UV) run python -m http.server 8899 -d docs
+	$(UV) run python scripts/serve_docs.py
 
 dev-board: ## Seeded retro board on :5173 for front-end development (prints the URL)
 	$(UV) run python scripts/dev_board.py

@@ -6,13 +6,25 @@
   /* overflow:clip, NOT hidden — hidden would make .hero the scrollport that
      position:sticky resolves against (it never scrolls, so the pinned
      terminal in .scrolly-sticky would never stick); clip just clips. */
-  .hero{padding:0 0 110px; position:relative; overflow:clip}
+  /* overflow-clip-margin: the terminal's shadow reaches ~100px past the frame
+     (0 40px 90px -30px), and a bare clip cut it off against the hero's own box
+     — a straight edge through a soft shadow, which reads as a rendering fault.
+     The margin lets the paint bleed that far before the clip applies. */
+  .hero{padding:0 0 110px; position:relative; overflow:clip; overflow-clip-margin:140px}
   .hero > .wrap{
-    width:100%; max-width:1120px;
+    /* ONE source for the hero's width: the pull-back clamp below has to use the
+       same number as max-width. They were separate literals, so widening the
+       hero left the clamp on the old value — it over-pulled and shoved the
+       terminal off the left edge of the window. */
+    --hero-max:1320px;
+    width:100%; max-width:var(--hero-max);
+    /* tighter than the site-wide .wrap gutter — this row is a terminal and a
+       narrow caption column, and 40px a side was 80px of terminal */
+    padding-left:24px; padding-right:24px;
     /* body is inset by the fixed rail, so "centered" lands right of the true
        viewport centre — pull back by up to rail/2, clamped so the content
        never slides under the rail on narrower windows */
-    transform:translateX(calc(-1 * min(var(--rail) / 2, max(0px, (100vw - var(--rail) - 1120px) / 2))));
+    transform:translateX(calc(-1 * min(var(--rail) / 2, max(0px, (100vw - var(--rail) - var(--hero-max)) / 2))));
   }
   .hero-copy{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -61,20 +73,35 @@
      arrow-key auto-cycle used. Pure CSS sticky + IntersectionObserver,
      no scroll library. ---- */
   .scrolly{
-    display:grid; grid-template-columns:minmax(0,1fr) 320px;
-    gap:56px; align-items:start;
+    /* Every pixel not spent on the rail or the gutters is terminal. At a 1440
+       viewport the hero column is only 1176 (the nav rail owns the rest), so
+       the frame's width is whatever this row does not take: a narrower step
+       column and tighter gutters are the only places to find it. */
+    display:grid; grid-template-columns:minmax(0,1fr) 232px;
+    gap:36px; align-items:start;
   }
   .scrolly-sticky{
     position:sticky; top:max(28px, calc(50vh - 340px));
     z-index:1;
   }
   .scrolly-sticky::before{
-    /* the frame's glow, moved here so it travels with the pinned terminal */
-    content:""; position:absolute; inset:-12% -10%; z-index:0; pointer-events:none;
+    /* the frame's glow, moved here so it travels with the pinned terminal.
+       No filter:blur() — a radial gradient is already a smooth falloff, and
+       blurring one on a near-black page buys nothing while costing an
+       offscreen layer and quantising the low-alpha tail into visible blotches
+       with the blur box's own edges showing through them. The falloff does the
+       softening instead: both stops now reach full transparency well inside
+       the element, so nothing is clipped at its bounds. */
+    content:""; position:absolute; inset:-16% -12%; z-index:0; pointer-events:none;
+    /* Centred on the frame, not high on it. The frame is opaque and sits on top,
+       so the only part of this that is ever seen is what escapes around the
+       edges: put the bright core anywhere other than the middle and it stops
+       being a halo and becomes a lit band with the frame's own straight edge
+       cutting it off. Centred, and weak, it reads as the glow it is. */
     background:
-      radial-gradient(50% 60% at 50% 22%, var(--accent-glow), transparent 72%),
-      radial-gradient(38% 42% at 22% 70%, rgba(80,150,210,.16), transparent 74%);
-    filter:blur(36px); opacity:.62;
+      radial-gradient(62% 58% at 50% 50%, var(--accent-glow), transparent 72%),
+      radial-gradient(42% 38% at 26% 74%, rgba(80,150,210,.10), transparent 70%);
+    opacity:.45;
   }
   .scrolly-steps{display:flex; flex-direction:column; padding:4vh 0 8vh}
   .scrolly-step{
@@ -82,6 +109,19 @@
     gap:14px; opacity:.25; transition:opacity .45s ease;
   }
   .scrolly-step.is-active{opacity:1}
+  /* Scroll-driven fade (site.js adds .is-driven once it is actually running, so
+     the rules above stay the no-JS and reduced-motion baseline). A step's
+     opacity comes from how near its middle is to the viewport's: full through
+     the centre band, gone by a third of a viewport out. The point is that a step
+     never reaches the top or bottom edge — it has finished arriving, and starts
+     leaving, well inside the page. */
+  .scrolly-steps.is-driven .scrolly-step{
+    opacity:var(--step-o,0); transition:none;
+    transform:translateY(var(--step-y,0));
+  }
+  /* while a line is still churning through glyphs it wears the step's own
+     accent, then eases back to its resting colour as the text resolves */
+  .scrolly-step .decoding{color:var(--sh)}
   .step-k{
     margin:0; font-family:var(--mono); font-size:.78rem; font-weight:600;
     letter-spacing:.14em; text-transform:uppercase; color:var(--sh);
@@ -89,6 +129,7 @@
   .scrolly-step h3{
     margin:0; font-family:var(--display); font-weight:620; font-size:1.35rem;
     letter-spacing:-.02em; line-height:1.25; color:var(--text);
+    transition:color .5s ease;
   }
   .scrolly-step > p:not(.step-k){
     margin:0; color:var(--text-muted); font-size:.98rem; line-height:1.65;
@@ -103,18 +144,20 @@
     .scrolly-steps{display:none}
   }
   .app-frame{
-    /* A real terminal WINDOW, not a floating panel: chrome bar, solid deep
-       ground, heavy soft shadow. The one place on the page allowed to be
-       fully opaque — it's the product. Sized for the app's real 80-column
-       frame at a 14px cell. */
-    position:relative; z-index:1; width:100%; max-width:780px; margin:0 auto;
-    background:#0a0b0d; border:1px solid var(--border-strong);
+    /* A real terminal WINDOW, not a floating panel: chrome bar, light border,
+       heavy soft shadow. No ground of its own — the page shows through, and
+       what reads as the terminal is the border and the chrome. Sized for the
+       app's real 80-column frame at a 14px cell. */
+    position:relative; z-index:1; width:100%; max-width:940px; margin:0 auto;
+    background:transparent; border:1px solid var(--border-strong);
     border-radius:var(--radius-lg); overflow:hidden;
     box-shadow:var(--shadow-term), 0 0 0 1px rgba(0,0,0,.4);
   }
   .tui-bar{
     display:flex; align-items:center; gap:7px; padding:12px 16px;
-    background:linear-gradient(180deg,#15171b,#0f1114);
+    /* a tint rather than a fill, so the bar still separates from the screen
+       below it without putting the ground back */
+    background:rgba(255,255,255,.03);
     border-bottom:1px solid var(--border);
   }
   .tui-bar .dot{width:11px; height:11px; border-radius:50%}
@@ -135,29 +178,63 @@
     --t-text:#e4e6e8;          /* rich "white" */
     --t-muted:#787890;         /* theme.muted rgb(120,120,140) */
     --t-dim:#62676f;           /* theme.dim */
-    color:var(--t-text); font-family:var(--mono);
-    font-size:13.5px; line-height:1.5; padding:12px 14px 16px;
-    /* faint phosphor scanlines — the texture that says "terminal", too
-       subtle to read as an effect, just enough to not read as a flat div */
-    background-image:repeating-linear-gradient(0deg,
-      rgba(255,255,255,.012) 0px, rgba(255,255,255,.012) 1px,
-      transparent 1px, transparent 3px);
+    color:var(--t-text); font-family:var(--tui-mono);
+    /* integer font-size: at 13.5px the cell width lands on a fraction and the
+       block glyphs get sub-pixel gaps between columns. No ligatures, and no
+       kerning pass, so a row of ▀▄█ tiles exactly like a terminal grid. */
+    font-size:14px; line-height:1.5; padding:12px 14px 16px;
+    font-variant-ligatures:none; font-kerning:none; text-rendering:optimizeSpeed;
   }
+  /* <pre> carries its own UA font-family, which beats inheritance — so the
+     splash wordmark kept falling back to the webfont, which has no box-drawing
+     coverage, even after .tui switched stacks. (The mode titles and the duck no
+     longer go through a font at all; see .tui-mode-title and .tui-duck.) */
+  .tui pre{font-family:inherit; font-size:inherit}
   /* the app's Panel(box=ROUNDED, border_style="white", padding=(1,2)) */
   .tui-panel{
-    position:relative; border:1px solid rgba(228,230,232,.45);
-    border-radius:10px; padding:20px 24px 14px;
+    position:relative;
+    /* The border is transparent HERE and redrawn on ::before, which is the only
+       way to interrupt it under the music alcove now that the frame has no
+       ground of its own. It used to be masked by painting the pocket a solid
+       #0a0b0d; with the page showing through, that solid is a dark rectangle
+       against the glow — measured 10-20 units of blue off its surroundings.
+       The width stays for layout, so nothing shifts. */
+    border:1px solid transparent;
+    border-radius:10px;
+    /* the app's padding=(1,2) — two CELLS, not a round pixel count, or every
+       row inside sits a third of a character further in than the app's does */
+    padding:20px 2ch 14px;
+  }
+  .tui-panel::before{
+    content:""; position:absolute; inset:-1px; pointer-events:none;
+    border:1px solid rgba(228,230,232,.45); border-radius:10px;
+    /* Two mask layers, unioned: everything above the bottom band, plus the
+       bottom band minus the alcove's span. --gap-l/--gap-r are set by site.js
+       from the pocket's measured box (its width is text-driven, so CSS cannot
+       know it). The band is 14px, short enough that the bottom corners — which
+       live in the last 10px at either end — are outside the gap and survive. */
+    -webkit-mask-image:linear-gradient(#000,#000),
+      linear-gradient(90deg,#000 0 var(--gap-l,100%),transparent var(--gap-l,100%) var(--gap-r,100%),#000 var(--gap-r,100%));
+            mask-image:linear-gradient(#000,#000),
+      linear-gradient(90deg,#000 0 var(--gap-l,100%),transparent var(--gap-l,100%) var(--gap-r,100%),#000 var(--gap-r,100%));
+    -webkit-mask-size:100% calc(100% - 14px),100% 14px;
+            mask-size:100% calc(100% - 14px),100% 14px;
+    -webkit-mask-position:top left,bottom left;
+            mask-position:top left,bottom left;
+    -webkit-mask-repeat:no-repeat;
+            mask-repeat:no-repeat;
   }
 
   .tui-splash{
-    /* min-height = the drawn menu's exact height (590px panel − 34px panel
-       padding − 2px border) so the Panel doesn't resize by a single pixel
-       when the splash hands over to the mode screen */
-    display:flex; align-items:center; justify-content:center; min-height:554px;
+    /* min-height = the drawn menu's exact height, measured, so the Panel does
+       not resize by a single pixel when the splash hands over to the mode
+       screen. Re-measure it after anything that changes a row's height (the
+       menu gap, the reserved description block). */
+    display:flex; align-items:center; justify-content:center; min-height:663px;
     animation:tui-splash-fade 2.4s ease forwards;
   }
   .tui-splash-word{
-    margin:0; font-size:13px; line-height:1.2; letter-spacing:0; text-align:center;
+    margin:0; font-size:13px; line-height:1; letter-spacing:0; text-align:center;
     color:#4664b4; text-shadow:0 0 16px var(--accent-glow);
   }
   @keyframes tui-splash-fade{
@@ -167,7 +244,21 @@
     .tui-splash{animation:none; opacity:0}
   }
 
-  .tui-menu{display:flex; flex-direction:column; gap:20px; animation:tui-fade .5s ease both}
+  /* gap:13 — tighter than it was, because the selected card now opens a
+     description block underneath itself the way the real list does, and the
+     frame has a fixed height to live inside. The app's own rows sit closer
+     together than 20px anyway; the breathing room came from the description
+     being missing.
+
+     min-height holds the frame at the size the splash was drawn to, and the two
+     auto margins (below, and on .tui-foot) split whatever is left over equally
+     — so the list sits centred in the space above the foot instead of hugging
+     the top of the panel. */
+  .tui-menu{
+    display:flex; flex-direction:column; gap:13px; min-height:663px;
+    animation:tui-fade .5s ease both;
+  }
+  .tui-menu > .tui-mode:first-of-type{margin-top:auto}
   /* the hidden attribute must actually hide: this class's display:flex is an
      author rule, so it silently overrides the UA's [hidden]{display:none} —
      without this, the "hidden" menu renders UNDER the splash during startup,
@@ -179,38 +270,47 @@
   .tui-mode{
     -webkit-appearance:none; appearance:none; background:none; border:none; padding:0;
     display:block; width:100%; text-align:left; cursor:pointer;
-    padding-left:4ch; /* the app's PAD = "    " before every title/desc row */
+    padding-left:2ch; /* pulled back in off the panel's left edge */
     font-size:inherit; font-family:inherit;
   }
+  /* The titles are the app's own two-row block typeface (_ascii_font.py), but
+     they are NOT set in a font here — they are a mask.
+
+     A browser draws U+2580–259F (▀▄█░) with whatever the font supplies, and no
+     monospace font fills the cell the way a terminal does: the ▀ row and the ▄
+     row miss each other by a sub-pixel, the columns antialias apart, and ░ is a
+     real 25% stipple rather than the negative space this font intends it as. The
+     result is mottled letterforms. iTerm2, Kitty and Alacritty all sidestep this
+     the same way — they ignore the font for that range and fill the cell
+     geometrically. So do we: each glyph becomes rects in an SVG mask (--mask,
+     generated from render_ascii_text), one cell = 1 unit wide × 2 tall, and ░
+     contributes nothing. The paint is then just a background, which is why the
+     shimmer below still works. */
   .tui-mode-title{
-    /* zero letter-spacing, tight line-height — these ▀▄█░ block glyphs are
-       designed to tile edge-to-edge with no gap, exactly like a real
-       terminal's character grid; any spacing breaks them into a dotted
-       mess instead of solid letterforms. Same cell size as every other row —
-       a terminal has exactly one grid. */
-    margin:0; font-size:inherit; line-height:1.1; letter-spacing:0;
+    display:inline-block; vertical-align:middle;
+    width:calc(var(--cols) * 1ch); height:4ch;   /* a cell is one advance wide, two tall */
+    -webkit-mask:var(--mask) no-repeat center/100% 100%;
+            mask:var(--mask) no-repeat center/100% 100%;
     /* unselected: the app's exact dim — each channel halved, floored at 40
        (see _build_mode_row's _unsel_style), baked into --mcd per mode */
-    color:rgb(var(--mcd)); transition:color .35s;
+    background-color:rgb(var(--mcd)); transition:background-color .35s;
   }
   .tui-mode.is-active .tui-mode-title{
     /* selected: full accent with the app's traveling white shimmer hotspot
        (shimmer_style: 0.6 sweeps/sec) — a narrow white band crossing the
-       block letters, painted via background-clip:text */
-    color:transparent;
+       block letters. The mask clips it to the letterforms. */
+    background-color:transparent;
     background-image:linear-gradient(90deg,
       rgb(var(--mc)) 0%, rgb(var(--mc)) 42%,
       rgb(255,255,255) 50%,
       rgb(var(--mc)) 58%, rgb(var(--mc)) 100%);
     background-size:300% 100%;
-    -webkit-background-clip:text; background-clip:text;
     animation:tui-shimmer 1.67s linear infinite;
   }
   @keyframes tui-shimmer{from{background-position:100% 0} to{background-position:0% 0}}
   @media (prefers-reduced-motion:reduce){
     .tui-mode.is-active .tui-mode-title{
-      color:rgb(var(--mc)); background-image:none; animation:none;
-      -webkit-background-clip:border-box; background-clip:border-box;
+      background-color:rgb(var(--mc)); background-image:none; animation:none;
     }
   }
   .tui-mode-desc{
@@ -221,35 +321,125 @@
        and the Panel is terminal-fixed) so the frame never wobbles as
        different-length descriptions cycle. */
     margin:0; height:0; overflow:hidden; line-height:1.5; color:var(--t-text);
-    opacity:0; transition:opacity .2s, height .25s ease, margin .25s ease;
+    max-width:60ch; opacity:0;
+    transition:opacity .2s, height .25s ease, margin .25s ease;
   }
-  .tui-mode.is-active .tui-mode-desc{opacity:1; height:42px; margin:14px 0 0}
+  .tui-mode.is-active .tui-mode-desc{
+    /* one blank row, then two reserved rows — exactly what _build_mode_row lays
+       out. Reserved rather than fitted: the height is the same for a one-line
+       and a two-line description, so arrowing down the list never moves the
+       rows below it. Exactly one card is active at any time, so the menu's
+       total height is constant too. */
+    height:3em; margin-top:1.5em; opacity:1;
+  }
   @media (hover:hover){
     .tui-mode:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px; border-radius:2px}
   }
 
   /* bottom furniture — the app's tip block + version row (_build_tip_rows /
      _build_version_row), pinned under the centred mode list */
-  .tui-foot{margin-top:26px; display:flex; flex-direction:column; gap:4px}
-  .tui-tip{
-    margin:0; text-align:center; color:rgb(198,198,208);
-    transition:opacity .9s ease; /* cross-fade stand-in for tip_brightness lerp */
+  /* The foot is now two lanes: the version row holds the left, the companion
+     (tip bubble → tail → duck) stacks up the right, exactly as
+     _build_companion lays it out. */
+  .tui-foot{
+    /* The two lanes do NOT share a flex row: the duck is wide and the version
+       row is long, so side by side they overflowed the panel. In the app they
+       never compete — the companion sits on the right where the left is empty,
+       and only the narrow duck is ever level with the version text. Absolute
+       placement inside a sized foot reproduces that.
+
+       margin-top:auto pins the foot to the bottom; the matching auto above the
+       first mode row splits the slack evenly, centring the list. */
+    position:relative; margin-top:auto; padding-top:22px; min-height:130px;
   }
-  .tui-tip.fading{opacity:0}
-  .tui-tip-dots{margin:0; text-align:center; color:rgb(70,70,82)}
-  .tui-tip-dots .on{color:rgb(226,186,96)}
-  .tui-tip-hint{margin-left:2.5em}
-  .tui-tip-hint b{font-weight:700; color:rgb(210,210,220)}
-  .tui-version{margin:6px 0 0; color:rgb(70,70,82)}
+  .tui-companion{
+    /* bottom:30px — down on the alcove's roof, clearing it by a few pixels
+       rather than a whole row. The sprite carries _SHADES_TOP_PAD's two blank
+       cell rows on top so the box never resizes mid-gag, and that padding grows
+       upward, so this anchor is what sets where his feet land. */
+    position:absolute; right:0; bottom:30px;
+    display:flex; flex-direction:column; align-items:center; gap:0;
+  }
+  /* (The amber update box that used to sit above the bubble is gone: it is a
+     state the app is only sometimes in, and a screenshot of the product should
+     not be advertising a release that is newer than the one on the page.) */
+  /* BETA chip beside the Performance title, as the real list shows it */
+  .tui-beta{
+    display:inline-block; vertical-align:middle; margin-left:10px;
+    font-size:.78em; letter-spacing:.06em; color:rgb(226,186,96);
+    border:1px solid rgb(120,95,45); border-radius:4px; padding:0 5px;
+  }
+  /* (No tip bubble. The mode's own description now carries the copy, under the
+     title where the list puts it, so a second block of prose in the corner was
+     saying nothing the screen did not already say. The duck stays.) */
+  /* mirrored: the app's companion faces LEFT, toward the menu it sits beside
+     (see _build_companion) — the source sprite faces right */
+  /* No glyphs here either, and for a second reason on top of the mask story
+     above: _pack_cells packs TWO source pixels into one cell — a ▀ carries the
+     top colour as foreground and the bottom colour as background. Markup that
+     keeps only `color` throws half the sprite away, which is why the duck came
+     out as disconnected specks. Each cell is a box instead, and a two-colour
+     cell is a hard-stop gradient at 50%. Nothing is measured against a font, so
+     the rows meet exactly and the aspect is the terminal's own 1:2. */
+  .tui-duck{margin:0; line-height:0; font-size:inherit; cursor:pointer}
+  .tui-duck:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px}
+  .tui-duck .r{display:block; height:2ch}
+  .tui-duck i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
+  /* left:4ch, not 0 — _build_version_row leads with _PAD precisely so its left
+     edge lines up with the mode titles above rather than sitting flush to the
+     panel padding, and staggering the two is what made the titles read as
+     over-indented */
+  /* bottom:-6px drops it into the panel's bottom padding on purpose. The music
+     pocket's TEXT row is the last interior row of the screen, and
+     _build_version_row is that same row — "bottom-left, opposite the music bar".
+     They belong on one line; the foot's own box bottom is two rows higher than
+     that, so the row has to reach past it. */
+  .tui-version{position:absolute; left:2ch; bottom:-6px; margin:0; color:rgb(70,70,82); white-space:nowrap}
   .tui-version .v{color:rgb(120,120,140)}
   .tui-version b{font-weight:700; color:rgb(210,210,220)}
   .tui-version .sep,.tui-version .lbl{color:rgb(70,70,82)}
-  /* music status stamped on the Panel's bottom BORDER, right-aligned
-     (MusicLive sets Panel.subtitle) — masks the border behind it */
+  /* The music status is a BOXED pocket now, not a flat subtitle: draw_music_pocket
+     gives it its own rounded frame and the page Panel's bottom border curves up
+     around it. The opaque background masks the border where it passes behind. */
   .tui-music{
-    position:absolute; right:22px; bottom:0; transform:translateY(50%);
-    background:#0a0b0d; padding:0 8px; white-space:pre;
+    position:absolute; right:24px; bottom:-1px;
+    /* two rows tall, because that is what the alcove is: draw_music_pocket
+       spends one row on the roof (╭──╮) and the next on the music itself,
+       before the panel's border row underneath. A single-row box was the roof
+       sitting straight on the text. */
+    background:transparent; padding:11px 10px 10px; white-space:pre;
     font-size:.92em; color:var(--t-muted);
+    /* no bottom border, and bottom:-1px so the element covers the panel's own
+       bottom border across its width — the alcove is open underneath, exactly
+       as the app draws it (╰──╯ … gap … ╰──╯) */
+    border:1px solid rgba(228,230,232,.45); border-bottom:none;
+    border-radius:8px 8px 0 0;
+  }
+  /* The wall does not meet the border at a right angle: draw_music_pocket's
+     border row is ╰───╯ · gap · ╰───╯, so the panel's bottom border RISES into
+     each alcove wall through a rounded join. Two 8px quarter-arcs sit just
+     outside the pocket, ╯ on the left and ╰ on the right.
+
+     The arc is a radial-gradient RING rather than a rounded border, because the
+     8px it spans is 8px of the panel's own bottom border that has to be covered
+     — and a border-radius would clip exactly the corner where the cover is
+     needed. A gradient is not clipped, so the box can be opaque underneath and
+     still draw the curve on top. (An earlier pass masked with two offset copies
+     of the pocket's silhouette instead; those ran the full height of the bar and
+     showed as vertical seams either side of it.) */
+  .tui-music::before,.tui-music::after{
+    content:""; position:absolute; bottom:0; width:8px; height:8px;
+    background-repeat:no-repeat;
+  }
+  .tui-music::before{
+    right:100%;
+    background-image:radial-gradient(circle 8px at 0 0,
+      transparent 0 7px, rgba(228,230,232,.45) 7px 8px, transparent 8px);
+  }
+  .tui-music::after{
+    left:100%;
+    background-image:radial-gradient(circle 8px at 100% 0,
+      transparent 0 7px, rgba(228,230,232,.45) 7px 8px, transparent 8px);
   }
   .tui-music .hint{color:var(--t-dim)}
 
@@ -305,6 +495,19 @@
        down for its opacity to have built up. */
     isolation:isolate;
   }
+  /* An odd card count leaves the last row short: 7 modes in a 3-wide grid put
+     Reporting alone beside two empty cells. The final card spans the row — but
+     spanning alone just trades two empty cells for one empty card, so it also
+     switches to a horizontal layout: heading, copy and tag sit side by side and
+     fill the width with content. Reverts to the normal stacked card at the
+     single-column breakpoint, where nothing is spanning. */
+  .modes > .mode-card:last-child:nth-child(3n + 1){
+    grid-column:1 / -1; min-height:0;
+    flex-direction:row; align-items:center; gap:32px;
+  }
+  .modes > .mode-card:last-child:nth-child(3n + 1) .mode-head{flex:0 0 auto; min-width:180px}
+  .modes > .mode-card:last-child:nth-child(3n + 1) > p{max-width:60ch}
+  .modes > .mode-card:last-child:nth-child(3n + 1) .mode-tag{flex:0 0 auto; margin-left:auto}
   .mode-card{
     position:relative; min-height:225px;
     background:rgba(255,255,255,.022); isolation:isolate;
@@ -612,6 +815,10 @@
     .hero-demo{margin-top:20px; padding-bottom:0}
     .modes{grid-template-columns:1fr}
     .mode-card{min-height:0; padding:22px 20px 20px}
+    /* nothing spans at one column, so the last card goes back to the stacked
+       layout every other card uses */
+    .modes > .mode-card:last-child:nth-child(3n + 1){flex-direction:column; align-items:stretch; gap:12px}
+    .modes > .mode-card:last-child:nth-child(3n + 1) .mode-tag{margin-left:0}
     /* pipeline: a horizontal snap carousel instead of five stacked cards —
        one swipe-height instead of ~5 screens; the 76% column leaves the next
        stage peeking in as the scroll affordance */
