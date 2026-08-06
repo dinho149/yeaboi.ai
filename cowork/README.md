@@ -26,7 +26,8 @@ scout routine (per workstream, own cron)
         Linear ticket → build → code-reviewer → PR ───▶
                                                        │
                     pr-merged-close-loop ──────────────┘
-                    scribe: Linear → Done, Slack ship note, Notion page
+                    merge closes Linear via `Closes YEA-NN`;
+                    scribe: verify Done, Slack ship note, Notion page
 ```
 
 A proposal is a question, so it costs one GitHub issue and nothing else. The Linear ticket opens when
@@ -114,9 +115,9 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
-| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_0111WtcVcpYDKaL6Jw9ZaPjD |
+| `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
-| `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | |
+| `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |
 | `events/release-published-announce.md` | Release published | — | `standard` | |
@@ -151,8 +152,12 @@ account-scoped and has no CLI behind it.
 
 **What neither can do**, and both report: connecting Linear/Slack/Notion at
 [claude.ai/customize/connectors](https://claude.ai/customize/connectors), installing the Claude GitHub
-App, setting the `AUTO_VERSION_PAT` secret, and the three **event** routines — the routines API takes
-a cron expression only, so those are added by hand.
+App, setting the `AUTO_VERSION_PAT` secret, the three **event** routines — the routines API takes
+a cron expression only, so those are added by hand — and the **Linear GitHub integration** on this
+repo (with issue-status automation on), which is what turns a PR body's `Closes YEA-NN` into the
+attach and the Done-on-merge transition. If that integration is off, every ticket silently stalls at
+In Review, and the only thing that would notice is `pr-merged-close-loop` — one of the hand-added
+event routines above.
 
 ## Running it afterwards
 

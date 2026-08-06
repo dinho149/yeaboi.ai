@@ -35,6 +35,9 @@ workstream and any per-run focus; everything else is here.
    - resolve every `blocker` and `should-fix` finding, then have the builder open the PR labelled
      `cowork` + `workstream:<name>` + the find's `type:<type>` — the merge ship note reads the type
      off the PR, so a PR without one ships untagged
+   - once the PR exists, spawn `cowork-scribe` (`standard`) again to attach it to the Linear ticket
+     and move the ticket to **In Review** — the `Closes YEA-NN` line in the PR body then carries it
+     to Done on merge
 
 6. **Propose lane** — hand every remaining `propose` find to `cowork-scribe` (`standard`), which
    files one GitHub issue each (`cowork:proposal` + `workstream:<name>` + `type:<type>`). **No

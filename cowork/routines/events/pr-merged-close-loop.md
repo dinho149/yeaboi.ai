@@ -4,16 +4,19 @@
 **Filters** — `is_merged` true only. A closed-unmerged PR does nothing here.
 **Model** — `fast` ([models.md](../../models.md)) — every step reads a field and writes a field
 
-This is where DoD items 1 (final state), 8, and 9 are satisfied. Everything below runs through
-`cowork-scribe`.
+This is where DoD items 8 and 9 are satisfied, and item 1's final state is verified (and repaired
+when the `Closes YEA-NN` magic word missed). Everything below runs through `cowork-scribe`.
 
 ## Run
 
 1. `gh pr view <n> --json title,body,labels,mergedAt,author,files` and `gh pr diff <n>`.
 
-2. **Linear** — find the ticket from the PR body link, or by searching team `Yeaboi` for the branch
-   name. Move it to Done and comment with the merge commit. If no ticket exists (a human shipped
-   without one), create it in Done rather than skipping — the record matters more than the order.
+2. **Linear** — verify and repair, not blind-write. Find the ticket from the `Closes YEA-NN` line
+   in the PR body, the PR attachment, or by searching team `Yeaboi` for the branch name. The magic
+   word normally already moved it: the GitHub integration closes a `Closes`-linked ticket on merge.
+   If it is already Done, just comment with the merge commit. If it is not (the line was missing or
+   typo'd), move it to Done and comment. If no ticket exists (a human shipped without one), create
+   it in Done rather than skipping — the record matters more than the order.
 
 3. **Notion** — only for user-facing change. Decide from the diff: does anything change what a user
    sees, types, or receives? If yes, create or update the page under 🤙 yeaboi

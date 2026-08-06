@@ -32,8 +32,16 @@ Targets (from `cowork/definition-of-done.md`): Linear team `Yeaboi`
 
 **Linear ticket** — title is imperative and specific ("stop practice signals firing on service-hook
 comments", not "standup improvements"). Body: what, why it matters, the paths involved, and the
-acceptance condition. Label `workstream:<name>`. Attach the PR with `create_attachment` when one
-exists.
+acceptance condition. Label `workstream:<name>`. Attach the PR when one exists by passing
+`links: [{url, title}]` to `save_issue` — the connector's `create_attachment` takes file uploads
+only, not URLs, so it cannot attach a PR.
+
+State tracks reality, always: open in **In Progress** — never leave a just-opened work ticket in
+Backlog, and move a found ticket out of Backlog/Todo when work on it starts. Move to **In Review**
+when attaching a PR. **Done is not yours to set** in the normal path — the `Closes YEA-NN` line in
+the PR body closes the ticket on merge via the Linear GitHub integration; you set Done only when
+repairing (the merge routine finds a ticket the magic word missed) or back-filling a human ship
+that never had one.
 
 Open one only for work that is **approved and starting** — an auto-lane item, or an issue that has
 just received `claude-implement`. Never for a proposal. Linear carries work; GitHub issues carry

@@ -5,7 +5,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 
 | # | Item | How it is checked |
 |---|---|---|
-| 1 | **Linear ticket** exists on team `Yeaboi`, labelled `workstream:<name>`, with the PR attached | scribe: `save_issue` + `create_attachment` |
+| 1 | **Linear ticket** exists on team `Yeaboi`, labelled `workstream:<name>`, with the PR attached, `Closes YEA-NN` in the PR body, and a state that tracks reality — In Progress while building, In Review from PR open, Done on merge | scribe: `save_issue` (state + `links`); attach + merge close via the Linear GitHub integration reading `Closes YEA-NN` |
 | 2 | **Tests** — a unit test per new function (happy + error), render tests for every `_build_*_screen`, mock tests for LLM-dependent code (success / error fallback / code fences), round-trip tests for new state fields | `make test` |
 | 3 | **Lint** | `make lint` |
 | 4 | **Security** — ruff SAST + `pip-audit` clean, CodeQL not regressed | `make security` |
@@ -27,6 +27,11 @@ Nothing is "done" because the code works — it is done when the loop is closed.
   ticket behind each of the ~70% that age out unapproved. GitHub issues are the queue — Linear
   carries work, not candidates.
 - **Items 8 and 9 happen on merge**, not on PR open — driven by the `pr-merged-close-loop` routine.
+- **The ticket's state is part of item 1**, not an optional courtesy: the scribe opens it In
+  Progress and moves it to In Review when the PR is attached; the merge → Done transition belongs
+  to the Linear GitHub integration, fired by the `Closes YEA-NN` line every PR body must carry.
+  `pr-merged-close-loop` verifies that transition and repairs it when the magic word missed — a
+  ticket lingering in In Review after its PR merged is a bug in the loop, not a cosmetic detail.
 - Items 2–7 are the *gate*: they block the PR. A PR that cannot pass them is not opened; the finding
   is filed as a proposal instead.
 - **Exemptions are recorded, not assumed.** If an item genuinely does not apply (e.g. item 7 on a

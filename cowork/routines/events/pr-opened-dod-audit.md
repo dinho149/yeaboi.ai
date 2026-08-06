@@ -20,7 +20,10 @@ exactly the PRs nobody watched being written. `claude-review.yml` carries the sa
 1. `gh pr view <n> --json title,body,files,labels,author` and `gh pr diff <n>`.
 2. Walk the DoD. For each item, decide **met / unmet / not applicable**, using evidence from the diff
    and not from the PR description's claims:
-   - **1 Linear** — a Linear link in the body or an attachment on the ticket
+   - **1 Linear** — a `Closes YEA-NN` line in the body: the magic word is what makes the Linear
+     GitHub integration attach the PR and close the ticket on merge; a bare Linear URL does neither.
+     Judge from the body only — the ticket's own state is not checked here (the scribe moves it to
+     In Review just after the PR opens, so reading it on the `opened` event would race the writer)
    - **2 Tests** — new/changed functions in the diff that have no corresponding test change
    - **3–4 Lint + security** — the CI `lint` and `security` job conclusions
    - **5 Surface parity** — a new capability with no `CAPABILITIES` row, or a card/tool/flag added
