@@ -95,6 +95,10 @@ dev = [
     "matplotlib>=3.8",
     # so CI exercises the MCP server tests
     "mcp>=1.9,<2",
+    # tests/unit/test_workflow_concurrency.py and tests/contract/ parse YAML.
+    # It arrives transitively via langchain anyway; naming it here keeps a
+    # dependency reshuffle from breaking unit-test *collection*.
+    "pyyaml",
 ]
 
 [project.urls]

@@ -3348,7 +3348,7 @@ wheels = [
 
 [[package]]
 name = "yeaboi"
-version = "2.55.1"
+version = "2.55.2"
 source = { editable = "." }
 dependencies = [
     { name = "atlassian-python-api" },
@@ -3389,6 +3389,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-recording" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 docs = [
@@ -3456,6 +3457,7 @@ requires-dist = [
     { name = "python-docx", marker = "extra == 'docs'" },
     { name = "python-dotenv" },
     { name = "python-pptx", marker = "extra == 'docs'" },
+    { name = "pyyaml", marker = "extra == 'dev'" },
     { name = "rich" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "segno" },
