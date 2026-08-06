@@ -46,6 +46,7 @@ runs.
 | [models.md](models.md) | The tier table. **The only file in `cowork/` that names a model.** |
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
+| [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
 | `workstreams/*.md` | Fifteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
@@ -93,7 +94,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 |---|---|---|---|---|
 | `cron/security-sweep.md` | `0 6 * * 1,4` Mon + Thu | security | `deep` | https://claude.ai/code/routines/trig_015JVLHWzF8urG7nDq9J4wsN |
 | `cron/planning-sweep.md` | `0 7 * * 1` Mon | planning | `standard` | https://claude.ai/code/routines/trig_01UR5H8AL5CzSydGMHCzD4aw |
-| `cron/integrations-sweep.md` | `30 6 * * 2` Tue | integrations | `standard` | https://claude.ai/code/routines/trig_01YKiiD5aUn4AtoCyUjZaFLR |
+| `cron/integrations-sweep.md` | `30 6 * * 2` Tue | integrations | `deep` | https://claude.ai/code/routines/trig_01YKiiD5aUn4AtoCyUjZaFLR |
 | `cron/standup-sweep.md` | `30 6 * * 3` Wed | standup | `standard` | https://claude.ai/code/routines/trig_01BcyJ4pNnPVPcDok47L2f9N |
 | `cron/tui-ux-sweep.md` | `0 7 * * 3` Wed | tui-ux | `standard` | https://claude.ai/code/routines/trig_01AxZUGZPkv86sbdxCuX2tep |
 | `cron/analysis-sweep.md` | `30 6 * * 4` Thu | analysis | `standard` | https://claude.ai/code/routines/trig_01YPy18KkR5qApYcGBSzr2ZA |

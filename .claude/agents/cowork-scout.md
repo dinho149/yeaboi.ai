@@ -20,6 +20,12 @@ Procedure:
    Read the `.claude/skills/*/SKILL.md` files the charter names. Read `CLAUDE.md`.
 2. Survey **only the paths the charter declares**. Something valuable outside them is still a find —
    record it with the owning workstream's name so it can be routed, and do not investigate further.
+
+   If the charter declares a `**Reads**` paragraph alongside `**Owns**`, those paths are in scope
+   for *finding* and never for editing. Read them to answer the charter's questions, and classify
+   anything you find there `lane: propose` with `owner:` set to the workstream that owns the file —
+   never `auto`, whatever category it falls in, because no builder for this workstream may touch it.
+   `**Owns**` is where a builder may edit; `**Reads**` is only where you may look.
 3. Prefer evidence over impression. A find is worth reporting when you can point at a file, a
    command's output, or a specific contradiction. "Could be cleaner" is not a find.
 4. **Hunt opportunities.** After the defect pass, make one deliberate pass over the same surface for

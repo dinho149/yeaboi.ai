@@ -13,7 +13,7 @@ repository variable — see [Workflows](#workflows)).
 |---|---|---|---|
 | `heavy` | Fable 5 | `claude-fable-5` | Long-running unattended implementation. **Never security** — see below. |
 | `deep` | Opus 5 | `claude-opus-5` | Work the repo lives with: building, reviewing, diagnosing, marketing prose, scouting security |
-| `standard` | Sonnet 5 | `claude-sonnet-5` | Bounded judgement over a known input: the other 13 scouts, the scribe, digest ranking, the DoD audit, release notes |
+| `standard` | Sonnet 5 | `claude-sonnet-5` | Bounded judgement over a known input: the other 12 scouts, the scribe, digest ranking, the DoD audit, release notes |
 | `fast` | Haiku 4.5 | `claude-haiku-4-5` | Mechanical: read a field, write a field |
 | `inherit` | — | — | Take the caller's model. The default for every agent. |
 
@@ -42,13 +42,17 @@ workstream.
 
 ### Routines
 
-The 14 sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which resolves it here.
-The rest do model-worthy work in their own session and carry a `**Model**` line.
+The 14 sweeps take their tier from [sweep-procedure.md](sweep-procedure.md), which resolves it
+here. Two of them — `security` and `integrations` — scout at `deep` instead of the shared
+`standard`; both exceptions are named in that file, and neither carries a `**Model**` line,
+because a sweep's tier belongs in one place. The rest do model-worthy work in their own
+session and carry a `**Model**` line.
 
 | Routine | Tier | Why |
 |---|---|---|
 | `cron/security-sweep.md` | `deep` | A missed guardrail gap is the one finding nobody else catches |
-| the other 13 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
+| `cron/integrations-sweep.md` | `deep` | Its reach axis traces one provider through six modes' code in a single run — synthesis across paths it may read and never edit, not a survey of one directory |
+| the other 12 `cron/*-sweep.md` | `standard` | Bounded survey of declared paths against a written charter |
 | `cron/marketing-weekly.md` | `deep` | Drafts prose inline rather than delegating; the prose is the output |
 | `cron/digest.md` | `standard` | Ranks ~20 issue titles and writes one message |
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
@@ -62,7 +66,7 @@ Every agent stays `model: inherit`. These are the tiers the **caller** passes on
 
 | Agent | Tier | Why |
 |---|---|---|
-| `cowork-scout` | `standard`, `deep` for security | Highest-frequency step in the system; a weak scout poisons the proposal queue |
+| `cowork-scout` | `standard`, `deep` for security and integrations | Highest-frequency step in the system; a weak scout poisons the proposal queue |
 | `cowork-builder` | `deep` | Writes code that becomes a PR |
 | `cowork-scribe` | `standard` | Formulaic, but it drives connector tools where a mistake files the wrong thing in a real tracker |
 | `code-reviewer` | `deep` | The only thing standing between the builder and a merge |

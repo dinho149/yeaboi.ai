@@ -17,8 +17,11 @@ Procedure:
 1. Read `CLAUDE.md`, `cowork/house-rules.md`, `cowork/definition-of-done.md`, and
    `cowork/workstreams/<name>.md`. Read the `.claude/skills/*/SKILL.md` for every area you will
    touch — the skills index table in `CLAUDE.md` maps areas to skills.
-2. Confirm the work is inside the charter's declared paths. **If it is not, stop and report** —
-   crossing into another workstream's files is what the path boundaries exist to prevent.
+2. Confirm the work is inside the charter's **`Owns`** paths. **If it is not, stop and report** —
+   crossing into another workstream's files is what the path boundaries exist to prevent. A
+   charter may also declare a **`Reads`** paragraph: those paths are readable for context and are
+   **never yours to edit**, whatever the item says. An item whose fix lands in a `Reads` path was
+   mis-classified — stop and report it rather than editing there.
 3. Branch off `main`: `cowork/<workstream>-<short-slug>`.
 4. Implement. Follow the repo's conventions rather than your own: the three observability pillars,
    frozen-dataclass defaults, parse → fallback → format, prompts in `prompts/`, TUI shared
