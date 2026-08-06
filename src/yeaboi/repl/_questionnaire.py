@@ -136,7 +136,7 @@ def _render_choice_options(console: Console, q_num: int, *, option_labels: tuple
     console.print("\n".join(parts))
 
 
-def _resolve_choice_input(user_input: str, q_num: int) -> str:
+def _resolve_choice_input(user_input: str, q_num: int, *, option_labels: tuple[str, ...] | None = None) -> str:
     """Resolve numeric input to the corresponding option text for choice questions.
 
     If the input is a valid number for a choice question, returns the option text.
@@ -145,6 +145,14 @@ def _resolve_choice_input(user_input: str, q_num: int) -> str:
     Args:
         user_input: The raw user input (stripped).
         q_num: The current question number.
+        option_labels: Optional override — the labels actually displayed. When
+            a surface hides rows (chat mode-aware filtering), typed digits must
+            resolve against what the user saw, not the canonical meta.options.
+            Every label must still BE a canonical option — this is the opposite
+            contract from _render_choice_options's option_labels, which takes
+            decorated display strings and resolves against meta.options.
+            Non-canonical labels are ignored (canonical resolution applies), so
+            a decorated label can never be stored as an answer.
 
     Returns:
         The resolved option text, or the original input if not a choice number.
@@ -159,9 +167,18 @@ def _resolve_choice_input(user_input: str, q_num: int) -> str:
         logger.debug("_resolve_choice_input: free-text for Q%d", q_num)
         return user_input
 
-    if 1 <= idx <= len(meta.options):
-        resolved = meta.options[idx - 1]
-        logger.debug("_resolve_choice_input: Q%d idx=%d -> %s", q_num, idx, resolved)
+    labels = meta.options
+    if option_labels is not None and set(option_labels) <= set(meta.options):
+        labels = option_labels
+    if 1 <= idx <= len(labels):
+        resolved = labels[idx - 1]
+        logger.debug(
+            "_resolve_choice_input: Q%d idx=%d -> %s%s",
+            q_num,
+            idx,
+            resolved,
+            " (displayed labels)" if labels is not meta.options else "",
+        )
         return resolved
     return user_input
 

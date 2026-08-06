@@ -650,7 +650,28 @@ CHAT_QUESTION_PREAMBLES: dict[int, str] = {
 }
 
 
-def decorate_question_for_chat(q_num: int, text: str) -> str:
+# Mode-aware overrides: the chat preamble already settled small-vs-large
+# before the graph ran, so Q8/Q10 must read as follow-ups to that answer,
+# not as asking "how big is this?" a second time. Keyed (q_num, intake_mode);
+# falls back to CHAT_QUESTION_PREAMBLES. Wording is mode-anchored, never
+# memory-anchored ("Since we're going Large", not "You mentioned") — the mode
+# can arrive via CLI preset or /large where the size question was never asked.
+CHAT_QUESTION_PREAMBLES_BY_MODE: dict[tuple[int, str], str] = {
+    (10, "smart"): "Since we're going Large here — delivery-wise:",
+    (8, "small_project"): "Since this is a quick one —",
+}
+
+# Chat-only: choice rows hidden from the inline list per intake mode.
+# "1–2 sprints" re-litigates small-vs-large after the user already chose
+# Large. Canonical QUESTION_METADATA options must NOT change — they are
+# served to the MCP intake_questions tool and the REPL/form, and typed-digit
+# resolution against the displayed rows is handled at the chat call sites.
+CHAT_MODE_HIDDEN_CHOICES: dict[tuple[int, str], frozenset[str]] = {
+    (10, "smart"): frozenset({"1–2 sprints"}),
+}
+
+
+def decorate_question_for_chat(q_num: int, text: str, intake_mode: str | None = None) -> str:
     """Prepend a conversational lead-in to a question for the chat surface.
 
     Presentation-only: the question text (including any numbered [1]/[2]
@@ -658,7 +679,11 @@ def decorate_question_for_chat(q_num: int, text: str) -> str:
     is never altered — unknown question numbers return the text unchanged.
     Only the TUI chat calls this; REPL and headless render the raw text.
     """
-    preamble = CHAT_QUESTION_PREAMBLES.get(q_num)
+    preamble = None
+    if intake_mode:
+        preamble = CHAT_QUESTION_PREAMBLES_BY_MODE.get((q_num, intake_mode))
+    if preamble is None:
+        preamble = CHAT_QUESTION_PREAMBLES.get(q_num)
     if not preamble:
         return text
     return f"{preamble}\n\n{text}"

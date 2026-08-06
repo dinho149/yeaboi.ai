@@ -147,6 +147,84 @@ class TestSizeSwitch:
         assert any("Already" in m.text for m in driver.transcript.messages)
 
 
+class TestModeAwareIntakePresentation:
+    """Q10/Q8 must read as follow-ups to the greeting's size answer, not a re-ask."""
+
+    def _intake_state(self, q_num: int, mode: str) -> dict:
+        from yeaboi.prompts.intake import INTAKE_QUESTIONS
+
+        qs = QuestionnaireState()
+        qs.current_question = q_num
+        qs.intake_mode = mode
+        return {
+            "messages": [AIMessage(content=INTAKE_QUESTIONS[q_num])],
+            "questionnaire": qs,
+            "_chat_greeting_done": True,
+            "_intake_mode": mode,
+        }
+
+    def test_q10_smart_reply_acknowledges_size(self):
+        from yeaboi.prompts.intake import CHAT_QUESTION_PREAMBLES, CHAT_QUESTION_PREAMBLES_BY_MODE
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(10, "smart"))
+        driver._append_reply(streamed="")
+        bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
+        assert bubble.text.startswith(CHAT_QUESTION_PREAMBLES_BY_MODE[(10, "smart")])
+        assert not bubble.text.startswith(CHAT_QUESTION_PREAMBLES[10])
+
+    def test_q8_small_reply_acknowledges_size(self):
+        from yeaboi.prompts.intake import CHAT_QUESTION_PREAMBLES_BY_MODE
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(8, "small_project"))
+        driver._append_reply(streamed="")
+        bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
+        assert bubble.text.startswith(CHAT_QUESTION_PREAMBLES_BY_MODE[(8, "small_project")])
+
+    def test_typed_digit_resolves_against_displayed_rows(self):
+        # Smart mode hides "1–2 sprints", so a typed "1" must select the
+        # first row the user actually saw, not canonical meta.options[0].
+        from yeaboi.ui.session.chat._screen import ChoiceRows
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(10, "smart"))
+        driver.choices = ChoiceRows(
+            options=[("3–5 sprints", False), ("6–10 sprints", False), ("10+ sprints", False)],
+            multi=False,
+        )
+        assert driver._resolve_choice("1", 10) == "3–5 sprints"
+
+    def test_out_of_range_digit_falls_through_as_free_text(self):
+        # Canonical Q10 has 5 options but smart-mode chat shows 4. A typed
+        # "5" must NOT reach through to the hidden canonical fifth option —
+        # it falls through as free text, which Q10's parser reads as a sprint
+        # count (typing 5 at "how many sprints?" plausibly means 5 sprints).
+        from yeaboi.prompts.intake import QUESTION_METADATA
+        from yeaboi.ui.session.chat._screen import ChoiceRows
+
+        rows = [opt for opt in QUESTION_METADATA[10].options if opt != "1–2 sprints"]
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(10, "smart"))
+        driver.choices = ChoiceRows(options=[(o, False) for o in rows], multi=False)
+        assert driver._resolve_choice("4", 10) == rows[3]
+        assert driver._resolve_choice("5", 10) == "5"
+
+    def test_decorated_labels_never_resolve(self):
+        # option_labels must be canonical options — decorated display strings
+        # (the REPL's "(~2 weeks)" hints) are ignored so they can never be
+        # stored as an answer. Resolution falls back to meta.options.
+        from yeaboi.prompts.intake import QUESTION_METADATA
+        from yeaboi.ui.session.chat._screen import ChoiceRows
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(10, "smart"))
+        driver.choices = ChoiceRows(options=[("3–5 sprints (~1 quarter)", False)], multi=False)
+        assert driver._resolve_choice("1", 10) == QUESTION_METADATA[10].options[0]
+
+    def test_typed_digit_falls_back_to_canonical_without_rows(self):
+        from yeaboi.prompts.intake import QUESTION_METADATA
+
+        driver = _driver(FakeGraph([]), _keys([]), self._intake_state(10, "smart"))
+        driver.choices = None
+        assert driver._resolve_choice("1", 10) == QUESTION_METADATA[10].options[0]
+
+
 class TestPipelineProgress:
     def _mid_build_state(self) -> dict:
         qs = QuestionnaireState(completed=True)

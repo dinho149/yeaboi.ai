@@ -603,7 +603,8 @@ class _ChatDriver:
             return
 
         if qs is not None and not qs.completed:
-            reply = decorate_question_for_chat(qs.current_question, reply)
+            mode = qs.intake_mode or self.state.get("_intake_mode") or None
+            reply = decorate_question_for_chat(qs.current_question, reply, intake_mode=mode)
         self._say(reply)
 
     def _drain_consents(self) -> None:
@@ -1553,4 +1554,10 @@ class _ChatDriver:
     def _resolve_choice(self, answer: str, q_num: int) -> str:
         from yeaboi.repl._questionnaire import _resolve_choice_input
 
-        return _resolve_choice_input(answer, q_num)
+        # Typed digits must map to the rows the user saw — the chat may hide
+        # mode-redundant rows (CHAT_MODE_HIDDEN_CHOICES), so canonical
+        # meta.options and the display can disagree.
+        labels = None
+        if self.choices is not None and not self.choices.multi and self.choices.options:
+            labels = tuple(label for label, _sel in self.choices.options)
+        return _resolve_choice_input(answer, q_num, option_labels=labels)
