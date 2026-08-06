@@ -15,9 +15,10 @@ workstream and any per-run focus; everything else is here.
    workstream plus a weekly cadence means an unmerged PR stops this workstream indefinitely, and
    without that comment the digest would report the silence as if the scout had found nothing.
 
-3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` uses `deep`) with your
-   charter's paths. It returns ranked finds, each
-   classified `auto` or `propose` against the allowlist in house-rules. The finds include up to 3
+3. **Scout** — spawn `cowork-scout` at the `standard` tier (`security` and `integrations` use
+   `deep`) with your charter's paths. If your charter declares a `**Reads**` paragraph, pass
+   those paths too — the scout may look there, and no builder may ever edit there. It returns
+   ranked finds, each classified `auto` or `propose` against the allowlist in house-rules. The finds include up to 3
    user-facing opportunities (`type: feature|improvement`) alongside defects — see the opportunity
    pass in `.claude/agents/cowork-scout.md`; they ride the same ranking and the same propose lane.
    Nothing found is a normal outcome: exit silently.

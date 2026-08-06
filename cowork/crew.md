@@ -4,7 +4,7 @@ Three sub-agents, defined in `.claude/agents/`, available in every routine run.
 
 | Agent | Tier | Does | Never does |
 |---|---|---|---|
-| `cowork-scout` | `standard` (`deep` for security) | Surveys one workstream's paths, ranks finds by impact / effort / risk, classifies each `auto` or `propose` | Edits files. Posts anywhere. |
+| `cowork-scout` | `standard` (`deep` for security and integrations) | Surveys one workstream's paths, ranks finds by impact / effort / risk, classifies each `auto` or `propose` | Edits files. Posts anywhere. |
 | `cowork-scribe` | `standard` | Every *authored* outbound write: Linear tickets + comments, GitHub issues + comments, Slack posts, Notion pages | Touches source code. Applies `claude-implement`. |
 | `cowork-builder` | `deep` | Implements one item inside its workstream's paths, runs the DoD gate, opens the PR | Posts to Linear/Slack/Notion. Leaves its paths. |
 
