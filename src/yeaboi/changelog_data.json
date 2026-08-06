@@ -2,6 +2,25 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.55.1",
+      "date": "2026-08-06",
+      "summary": "Fixed planning mode's live chat asking about project size twice. The greeting's small-vs-large answer now properly flows through the chat, with mode-aware lead-ins for follow-up questions that acknowledge the earlier choice. Smart mode chat also hides the redundant sprint-count row that only appears for large projects.",
+      "highlights": [
+        {
+          "text": "Fixed chat asking project size twice: mode-aware lead-ins now acknowledge the greeting answer",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Redundant option filtering: smart mode hides the 1–2 sprints row that only applies to large projects",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.55.0",
       "date": "2026-08-05",
       "summary": "The idle screensaver expanded from a single duck to a yard of them — ten-odd heads adrift in zero gravity, spinning and ricocheting off each other and an anchored duck in the middle. The screensaver activates with Ctrl+Y as before, and still reads as a single resting duck on terminals smaller than 60x24, so the existing single-duck graphics cover those smaller screens.",
