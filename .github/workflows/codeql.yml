@@ -19,8 +19,33 @@ on:
     # (":00" is the most contended slot and queues these ~3h late).
     - cron: "29 7 * * 2" # Tuesdays 07:29 UTC
 
+# Keyed on the COMMIT, not the ref — deliberately not the starter template's
+# `github.ref`. auto-version.yml pushes its `chore: bump version` commit to the PR
+# branch about a minute after the human's push, well inside the python leg's ~2.5
+# min runtime. Under a ref-keyed group both pushes share `codeql-refs/pull/N/merge`,
+# so the bump cancelled the first run *after* its `actions` leg had already uploaded
+# SARIF but before `python` did; GitHub Advanced Security saw 1 of the 2
+# configurations it expects from main and posted the results check as `neutral`,
+# which the UI draws with the same grey icon as "Skipped". Per-commit means every
+# SHA gets a complete two-language analysis, and cancellation now only de-dupes
+# runs on the identical commit. Two such runs can still collide — two open PRs
+# sharing a head commit, or a PR run and the push-to-main run of the same SHA — so
+# the failure mode is narrowed, not abolished. Costs ~3 extra runner-minutes per
+# superseded commit (free while the repo is public), and holds 2 job slots per
+# in-flight commit against the account-wide concurrent-job limit shared with ci.yml.
+#
+# `github.event.pull_request.head.sha` rather than `github.sha` for PRs: on a
+# `pull_request` event github.sha is the ephemeral *merge* commit, which is
+# recomputed as main moves, so a re-run — or any later event on the same head after
+# the base advanced — lands in a different group than the original run for reasons
+# that have nothing to do with the PR's own commits. The fallback covers `push` and
+# `schedule`, where no pull_request payload exists.
+#
+# ci.yml keys on `github.ref` on purpose and must stay that way: a superseded
+# commit's CI really is irrelevant, and the bump commit re-runs the required checks.
+# The asymmetry is the point — pinned by tests/unit/test_workflow_concurrency.py.
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 
 permissions:
