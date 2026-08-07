@@ -2,6 +2,49 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.56.0",
+      "date": "2026-08-07",
+      "summary": "Voice input now lets you pick which microphone to use, making it work on hardware that wasn't detected before. Most USB and Bluetooth mics refuse to open at Whisper's default 16 kHz mono format — voice input now negotiates whatever format your mic actually supports, records natively, and converts afterward, so audio gets captured even on finicky hardware. A new Settings page lets you test each microphone, and Tab during recording switches between them on the fly. The feature is now discoverable in the TUI with an input-level meter and \"no sound detected\" warning, plus a new `--list-audio-devices` CLI diagnostic.",
+      "highlights": [
+        {
+          "text": "VOICE_DEVICE config option: pick a microphone by PortAudio index or name substring",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Settings → Voice Input → Input Device: new picker with live microphone test",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Tab to switch microphones mid-recording, with device name and input-level meter",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Format negotiation: records at the microphone's native sample rate and channels, then resamples to Whisper format",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "`--list-audio-devices` CLI subcommand to discover available microphones and test the audio input",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "\"No sound reaching the mic\" warning and better affordance positioning for voice hints",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.55.2",
       "date": "2026-08-06",
       "summary": "Fixed standup mode's Generate command failing with \"no such column: origin\" error. The issue was caused by a schema version collision in the session database — a migration that added edit-provenance tracking (`origin` column) was skipped due to version numbering conflicts, but code continued to query for those columns. The fix re-applies the missing migration idempotently, hardens the schema version tracking to prevent duplicates, and adds self-healing to all standalone mode stores so they can repair their own tables on opening.",

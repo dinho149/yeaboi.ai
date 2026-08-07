@@ -394,6 +394,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--list-audio-devices",
+        action="store_true",
+        default=False,
+        help="List the microphones yeaboi can record from, then exit. "
+        "Set the one you want with VOICE_DEVICE (or Settings → Voice Input).",
+    )
+
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
@@ -1191,6 +1199,48 @@ def _confirm_sudo_overwrite(dest: Path) -> bool:
         print()
         return False
     return answer in ("y", "yes")
+
+
+def _list_audio_devices() -> None:
+    """Print the available microphones — the diagnostic for "it can\'t hear me".
+
+    Rescans first: PortAudio caches its device list at init, so a mic plugged in
+    after this process started would otherwise be missing from the very listing
+    the user ran to check whether it was detected.
+    """
+    from yeaboi import voice
+
+    log = logging.getLogger(__name__)
+    log.info("Listing audio input devices")
+    available, reason = voice.is_voice_available()
+    if not available:
+        log.info("Audio device listing skipped: voice unavailable — %s", reason)
+        print(f"Voice input unavailable — {reason}")
+        return
+
+    voice.refresh_devices()
+    devices = voice.list_input_devices()
+    if not devices:
+        log.warning("Audio device listing found no input devices")
+        print("No microphones found.")
+        return
+
+    configured = voice.get_voice_device()
+    selected = voice.resolve_device(configured)
+    print("Input devices:")
+    for device in devices:
+        tags = []
+        if device["is_default"]:
+            tags.append("system default")
+        if selected is not None and device["index"] == selected:
+            tags.append(f"selected via VOICE_DEVICE={configured}")
+        suffix = f"  ({', '.join(tags)})" if tags else ""
+        print(
+            f"  {device['index']:>2}  {device['name']:<34} {device['channels']} ch  {device['samplerate']} Hz{suffix}"
+        )
+    if selected is None:
+        print("\nUsing the system default. Choose another with VOICE_DEVICE=<name or index>.")
+    log.info("Listed %d audio input device(s); VOICE_DEVICE=%r resolved to %s", len(devices), configured, selected)
 
 
 def _install_skill(target_arg: str) -> None:
@@ -2200,6 +2250,13 @@ def main(argv: list[str] | None = None) -> None:
     # Load ~/.yeaboi/.env before any credential reads.
     # override=False means shell env vars and project .env always take precedence.
     load_user_config()
+
+    # ── --list-audio-devices: print the mic table and exit ───────────────────
+    # After load_user_config() so the currently-configured VOICE_DEVICE can be
+    # marked, and before anything interactive so it never triggers the wizard.
+    if args.list_audio_devices:
+        _list_audio_devices()
+        return
 
     # ── Filesystem sandbox: session-scoped --allow-path grants ───────────────
     # Applied before any flow that might touch user-supplied paths, so every

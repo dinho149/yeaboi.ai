@@ -76,7 +76,7 @@ def _phase_description_input(
     live.update(_build_description_screen(input_lines, cursor_row, cursor_col, width=w, height=h))
 
     # Voice input: double-tap Space to dictate (see DoubleTapSpace for why).
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     _dts = DoubleTapSpace()
 
@@ -91,9 +91,9 @@ def _phase_description_input(
         nonlocal paste_notice
         paste_notice = msg
 
-    def _voice_render(status, tick):
+    def _voice_render(_border, _line):
+        # record_voice_input hands us a finished (border, status line) pair.
         _bw, _bh = console.size
-        _border, _line = voice_indicator(status, tick)
         return _build_description_screen(
             input_lines,
             cursor_row,
@@ -609,13 +609,12 @@ def _question_input_loop(
     live.update(_render())
 
     # Voice input: double-tap Space to dictate (free-text questions only).
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     _dts = DoubleTapSpace()
 
-    def _voice_render(status, tick):
+    def _voice_render(_border, _line):
         _bw, _bh = console.size
-        _border, _line = voice_indicator(status, tick)
         if use_accordion:
             return _build_accordion_question_screen(
                 question_text,

@@ -549,9 +549,12 @@ class TestDuelEndpoints:
             _admin_post(srv, "/api/admin/duel/open", {"seconds": 60})
         assert exc.value.code == 400
 
-    def test_open_shape_and_missing_mic_notice(self, running_server):
-        # The test env has no voice extra — the host mic is a notice, never an error.
+    def test_open_shape_and_missing_mic_notice(self, running_server, monkeypatch):
+        # A missing host mic is a notice, never an error. Pinned rather than left
+        # to the environment: this used to rely on the voice extra being absent,
+        # so the suite went red on any machine that had actually installed it.
         srv, _ = running_server
+        monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (False, "voice extra not installed"))
         _split_reveal(srv)
         resp = _admin_post(srv, "/api/admin/duel/open", {"seconds": 60})
         assert resp["ok"]

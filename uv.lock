@@ -3385,6 +3385,7 @@ charts = [
 dev = [
     { name = "matplotlib" },
     { name = "mcp" },
+    { name = "numpy" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -3447,6 +3448,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'dev'", specifier = ">=1.9,<2" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.9,<2" },
     { name = "notion-client" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.24,<3" },
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "prompt-toolkit" },
     { name = "pygithub" },

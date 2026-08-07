@@ -16,6 +16,7 @@ from rich.text import Text
 
 from yeaboi.ui.session._utils import _pad_left, _wrap_text
 from yeaboi.ui.shared._components import PAD, PLANNING_THEME, build_page_panel, planning_title
+from yeaboi.ui.shared._voice_input import input_box_title
 
 _PAD = PAD
 
@@ -24,13 +25,15 @@ _INPUT_BOX_W_MAX = 74
 
 
 def _voice_hint() -> str:
-    """Return a discoverability suffix for voice input on text-entry screens.
+    """Return the *install* hint for voice input on text-entry screens.
 
-    Advertises the feature so users know it exists. When the voice extra is
-    installed it prompts to speak; otherwise it shows how to enable it — hiding
-    it entirely meant the feature was invisible to anyone who hadn't set it up.
-    Returns "" when tips are switched off, so disabling tips hides this inline
-    hint too (the double-tap Space shortcut still works regardless).
+    When voice is installed this is empty: the input box's title chip (see
+    :func:`~yeaboi.ui.shared._voice_input.input_box_title`) advertises the
+    gesture now, and it does so where nothing can crop it — this hint sat at the
+    tail of a no_wrap/ellipsis line and was the first thing cut on an 80-column
+    terminal. What the chip cannot carry is the install-method-aware command, so
+    that case still renders here. Returns "" when tips are switched off (the
+    double-tap Space shortcut still works regardless).
     """
     from yeaboi.config import is_tips_enabled
     from yeaboi.voice import is_voice_available, voice_install_command
@@ -40,7 +43,7 @@ def _voice_hint() -> str:
 
     available, _reason = is_voice_available()
     if available:
-        return " · \U0001f3a4 double-tap Space to speak"
+        return ""
     return f" · \U0001f3a4 dictate: {voice_install_command()}"
 
 
@@ -157,7 +160,7 @@ def _build_description_screen(
 
     input_box = Panel(
         text_content,
-        title=" Project Description ",
+        title=input_box_title("Project Description", box_w),
         title_align="left",
         border_style=border_override or "white",
         box=rich.box.ROUNDED,
@@ -166,7 +169,9 @@ def _build_description_screen(
     )
 
     if status_line:
-        submit_hint = Text(_PAD + status_line, style="bold white", justify="left")
+        # no_wrap: the voice status line is long, and the height maths below
+        # counts it as exactly one row.
+        submit_hint = Text(_PAD + status_line, style="bold white", justify="left", no_wrap=True, overflow="ellipsis")
     else:
         submit_hint = Text(
             _PAD + "Enter submit \u00b7 \u2303N new line \u00b7 Esc go back" + _voice_hint() + _image_hint(),
@@ -340,7 +345,7 @@ def _build_question_screen(
 
     # Inline voice-recording indicator replaces the hint so the user stays here.
     if status_line:
-        hint = Text(_PAD + status_line, style="bold white", justify="left")
+        hint = Text(_PAD + status_line, style="bold white", justify="left", no_wrap=True, overflow="ellipsis")
 
     if input_value:
         display = input_value + "\u2588"
@@ -363,7 +368,7 @@ def _build_question_screen(
 
     input_box = Panel(
         input_content,
-        title=" Answer ",
+        title=input_box_title("Answer", box_w),
         title_align="left",
         border_style=border_override or "white",
         box=rich.box.ROUNDED,

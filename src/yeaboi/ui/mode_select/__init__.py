@@ -1439,6 +1439,7 @@ def _collect_settings_data() -> dict:
         # default that lets CLI/MCP/headless runs scan GitHub without --github-owner.
         "TEAM_ANALYSIS_GITHUB_OWNERS",
         "VOICE_MODEL",
+        "VOICE_DEVICE",
         "AWS_REGION",
         "AWS_PROFILE",
         "LOG_LEVEL",
@@ -1633,7 +1634,7 @@ def _feedback_compose_key(
         from yeaboi.ui.shared._voice_input import record_voice_input
 
         spoken = record_voice_input(
-            live, console, read_key, lambda status, tick: _compose_voice_frame(compose, status, tick, render)
+            live, console, read_key, lambda border, line: _compose_voice_frame(compose, line, render)
         )
         compose["status"] = ""
         if spoken:
@@ -1645,15 +1646,13 @@ def _feedback_compose_key(
     return compose
 
 
-def _compose_voice_frame(compose: dict, status: str, tick: float, render):
+def _compose_voice_frame(compose: dict, line: str, render):
     """Renderable for the recording/transcribing indicator, shown IN the bubble.
 
     record_voice_input owns the screen while it runs, so it paints through this —
-    keeping the duck and his bubble on screen instead of a centred popup.
+    keeping the duck and his bubble on screen instead of a centred popup. The
+    bubble has no border of its own to tint, so only the status line is used.
     """
-    from yeaboi.ui.shared._voice_input import voice_indicator
-
-    _border, line = voice_indicator(status, tick)
     compose["status"] = line.strip()
     return render(update=False)
 
@@ -1768,6 +1767,125 @@ def _confirm_move_data(console: Console, live, read_key, frame_time, supports_ti
             return sel == 0
         elif k in ("esc", "q"):
             return False
+
+
+def _test_microphone(console: Console, live, read_key, frame_time, supports_timeout, device: dict, render) -> str:
+    """Open the highlighted mic and animate its level until a key is pressed.
+
+    This is the answer to "is this the input that actually hears me?" — the one
+    question a device *name* cannot settle, since a laptop lid, a muted USB
+    interface and a disconnected Bluetooth headset all still enumerate.
+    Returns a notice for the picker ("" when the test ran fine).
+    """
+    from yeaboi import music, voice
+
+    music.pause_for_voice()
+    try:
+        # monitor=True: this runs for as long as the user leaves the page open,
+        # and a retained take grows ~11 MB a minute at 48 kHz stereo for a WAV
+        # that is discarded the moment the test ends. Only level() is wanted.
+        recorder = voice.Recorder(device=device["index"], monitor=True)
+    except Exception as exc:  # noqa: BLE001 - shown to the user, not raised
+        logger.warning("Settings: mic test failed for %s", device["name"], exc_info=True)
+        music.resume_after_voice()
+        return f"{device['name']} would not open — {exc}"
+    logger.info("Settings: testing microphone %s (index %s)", device["name"], device["index"])
+    try:
+        while True:
+            live.update(render(testing=True, level=recorder.level()))
+            try:
+                k = read_key(timeout=frame_time) if supports_timeout else read_key()
+            except TypeError:
+                k = read_key()
+            if not k:
+                continue
+            if parse_click(k) is not None:
+                continue  # a stray mouse event must not end the test
+            if k == "esc":
+                # Same reason as the picker's own cancel below: the Esc
+                # chokepoint armed the app-wide back tab's retract before we saw
+                # the key, and this Esc only ends the test.
+                from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+                cancel_back_retract()
+            logger.info("Settings: mic test finished for %s", device["name"])
+            return ""
+    finally:
+        recorder.stop()
+        music.resume_after_voice()
+
+
+def _pick_voice_device(console: Console, live, read_key, frame_time, supports_timeout) -> str | None:
+    """Microphone picker for Settings → Voice Input.
+
+    Returns the chosen device name, ``""`` for "use the system default", or None
+    when the user backs out. A modal sub-loop (like _confirm_move_data) rather
+    than another state in the settings loop: the settings loop already routes
+    arrows, scroll, Tab and Esc, and a picker layered into it would have to be
+    intercepted ahead of every one of them.
+    """
+    from yeaboi import voice
+    from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen, voice_picker_keypress
+
+    # Rescan first: PortAudio caches its device list at startup, so the mic the
+    # user just plugged in is exactly the one that would otherwise be missing.
+    voice.refresh_devices()
+    devices = voice.list_input_devices()
+    pref = voice.get_voice_device()
+    current = voice.device_name(voice.resolve_device(pref)) if pref else ""
+    state = {"devices": devices, "sel": 0}
+    for _i, _d in enumerate(devices):
+        if _d["name"] == current:
+            state["sel"] = _i
+    notice = ""
+    logger.info("Settings: microphone picker opened — %d input(s)", len(devices))
+
+    def _render(testing: bool = False, level: float = 0.0):
+        w, h = console.size
+        return _build_voice_device_screen(
+            devices,
+            state["sel"],
+            current=current,
+            width=w,
+            height=h,
+            testing=testing,
+            level=level,
+            notice=notice,
+        )
+
+    while True:
+        live.update(_render())
+        try:
+            k = read_key(timeout=frame_time) if supports_timeout else read_key()
+        except TypeError:
+            k = read_key()
+        if not k:  # idle tick
+            continue
+        if parse_click(k) is not None:
+            continue  # the picker is keyboard-driven; clicks would need regions
+        notice = ""
+        action = voice_picker_keypress(k, state)
+        if action == "cancel":
+            # The Esc chokepoint armed the app-wide back tab's retract before we
+            # saw the key; this Esc only closes the picker, so put it back.
+            from yeaboi.ui.shared._music_bar import cancel_back_retract
+
+            cancel_back_retract()
+            return None
+        if action == "system":
+            return ""
+        if action == "select":
+            if not devices:
+                # Nothing to choose. Returning "" here would quietly save
+                # "system default" from a page that just said there is no
+                # microphone at all — a confirmation for a choice never made.
+                notice = "No microphone to select. Esc goes back."
+                continue
+            return devices[state["sel"]]["name"]
+        if action == "test" and devices:
+            notice = _test_microphone(
+                console, live, read_key, frame_time, supports_timeout, devices[state["sel"]], _render
+            )
 
 
 def _confirm_stop_ollama(console: Console, live, read_key, frame_time, supports_timeout) -> bool:
@@ -2938,7 +3056,7 @@ def _standup_read_line(
 
     from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
     from yeaboi.ui.shared._attachments import handle_ctrl_v, unsupported_notice
-    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input, voice_indicator
+    from yeaboi.ui.shared._voice_input import DoubleTapSpace, record_voice_input
 
     value = initial
     notice = ""
@@ -2970,9 +3088,8 @@ def _standup_read_line(
     # Voice overlay re-renders THIS screen (not a popup) with the pulsing
     # indicator. record_voice_input() calls this and does the live.update itself,
     # so we only return the renderable.
-    def _render_status(status_name: str, tick: float):
+    def _render_status(border: str, line: str):
         w, h = console.size
-        border, line = voice_indicator(status_name, tick)
         return _build_standup_input_screen(
             prompt,
             value,
@@ -12982,7 +13099,23 @@ def select_mode(
                     included — its move-or-leave decision happens on save (see
                     _settings_save_data_dir), not on a screen of its own.
                     """
-                    nonlocal _s_edit
+                    nonlocal _s_edit, _settings_data
+                    if env == "VOICE_DEVICE":
+                        # A device list is a choice, not free text — you cannot type a
+                        # name you have not seen. Returns before set_text_entry(True),
+                        # so the picker keeps the app-wide bare-key bindings.
+                        _picked = _pick_voice_device(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _picked is None:
+                            return
+                        from yeaboi.config import apply_config_value
+
+                        apply_config_value(env, _picked)
+                        _settings_data = _collect_settings_data()
+                        _msg = f"Microphone set to {_picked}" if _picked else "Microphone: using the system default"
+                        _settings_data["_message"] = _msg
+                        _settings_voice().say(_msg)
+                        logger.info("Settings: VOICE_DEVICE set to %r", _picked)
+                        return
                     # Hidden fields start blank (type a new value); others start at the
                     # current value so you edit in place.
                     _start = "" if masked else (_settings_data.get(env, "") or "")

@@ -173,6 +173,7 @@ Key flags to know about when modifying the CLI:
 | `--setup` | Re-run first-time setup wizard |
 | `--allow-path PATH` | Session-only filesystem sandbox grant (repeatable); persistent allowances via `YEABOI_ALLOWED_PATHS` |
 | `--install-skill [DIR]` | Install bundled OpenClaw skill to `~/.openclaw/skills/` (or custom dir) |
+| `--list-audio-devices` | List the microphones dictation can record from, then exit (rescans first, so a mic plugged in after launch shows up); marks the `VOICE_DEVICE` pick |
 | `--standup-run` | Headless: run a daily standup and deliver it (what the OS scheduler invokes) |
 | `--standup-interactive` | With `--standup-run`: timed prompt for the user's update + confirm before generating (TTY-aware; headless fallback) |
 | `--standup-session ID` | Session to run the standup for (default: most recent) |
@@ -233,6 +234,8 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `BETA_NOTICES_ENABLED` — default on; `false` silences the one-line beta caveat the CLI prints to stderr before a beta subcommand runs (`yeaboi perf …`). Does **not** affect the TUI's one-time notice.
 - `BETA_NOTICES_ACK` — **state, not configuration.** Comma-separated `_MODE_CARDS` keys whose one-time TUI beta notice has been dismissed; written automatically to `~/.yeaboi/.env` on Continue. Not surfaced on the Settings page (it would invite hand-editing).
 - `YEABOI_FORCE_BETA_NOTICE` — re-show an already-acknowledged TUI beta notice. `1`/`true` for all modes, or a comma-separated list of mode keys. The only way to re-check a once-ever gate for demos, screenshots or review.
+- `VOICE_MODEL` — local Whisper size for dictation (`tiny`, `base` (default), `small`, `medium`, `large-v3`, plus the `.en` variants)
+- `VOICE_DEVICE` — microphone for dictation: a PortAudio index (`2`) or a case-insensitive name substring (`shure`). Empty = system default. Set it from Settings → Voice Input → Input Device (an arrow-selectable picker with a live level test), or discover names with `yeaboi --list-audio-devices`
 - `SESSION_PRUNE_DAYS` — auto-prune sessions older than N days (default: 30, 0 = disabled)
 - `LOG_LEVEL` — file logger level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
 - `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — optional, enables LangSmith tracing

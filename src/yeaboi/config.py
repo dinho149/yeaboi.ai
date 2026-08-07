@@ -894,6 +894,19 @@ def get_voice_model() -> str:
     return os.getenv("VOICE_MODEL") or "base"
 
 
+def get_voice_device() -> str:
+    """Return the configured microphone preference for voice input.
+
+    Reads ``VOICE_DEVICE``: either a PortAudio device index (``"2"``) or a
+    case-insensitive substring of the device name (``"shure"``). Empty means
+    "use the system default input", which is how voice behaved before the
+    setting existed. Resolution to an actual index happens in
+    :func:`yeaboi.voice.resolve_device` — this stays a plain string read so
+    config never imports the optional audio stack.
+    """
+    return (os.getenv("VOICE_DEVICE") or "").strip()
+
+
 def get_session_prune_days() -> int:
     """Return the number of days after which old sessions are pruned.
 

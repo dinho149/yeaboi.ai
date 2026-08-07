@@ -445,10 +445,11 @@ class _ChatDriver:
             self.notice = f"Screenshot attached as {chip}"
 
     def _voice(self) -> None:
-        from yeaboi.ui.shared._voice_input import record_voice_input, voice_indicator
+        from yeaboi.ui.shared._voice_input import record_voice_input
 
-        def render_status(status: str, tick: float):
-            border, line = voice_indicator(status, tick)
+        def render_status(border: str, line: str):
+            # record_voice_input owns the indicator state (level, elapsed time,
+            # which mic opened) and hands us the finished pair to render.
             w, h = self.console.size
             return build_chat_screen(
                 self.transcript,
