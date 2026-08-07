@@ -15,9 +15,11 @@ import types
 import wave
 
 import pytest
+from rich.console import Console
+from rich.text import Text
 
 from yeaboi import voice
-from yeaboi.config import get_voice_model
+from yeaboi.config import get_voice_device, get_voice_model
 
 # ---------------------------------------------------------------------------
 # Fakes for the optional dependencies
@@ -27,9 +29,10 @@ from yeaboi.config import get_voice_model
 class _FakeNdarray:
     """Minimal stand-in for a numpy array covering the ops voice.py uses."""
 
-    def __init__(self, data: bytes = b"", n: int = 0) -> None:
+    def __init__(self, data: bytes = b"", n: int = 0, peak: int = 0) -> None:
         self._data = data
         self._n = n
+        self._peak = peak
 
     def copy(self) -> _FakeNdarray:
         return self
@@ -45,6 +48,13 @@ class _FakeNdarray:
 
     def tobytes(self) -> bytes:
         return self._data
+
+    # Recorder._callback computes abs(block).max() for the level meter.
+    def __abs__(self) -> _FakeNdarray:
+        return self
+
+    def max(self):
+        return self._peak
 
 
 def _fake_numpy() -> types.ModuleType:
@@ -72,9 +82,64 @@ class _FakeInputStream:
         self.closed = True
 
 
-def _fake_sounddevice() -> types.ModuleType:
+# A plausible PortAudio device table: the built-in mic, a 2-channel USB
+# interface, and an output-only device that must be filtered out of the input
+# list. Real query_devices() dicts carry many more keys; these are the ones
+# voice.py reads.
+_FAKE_DEVICES = [
+    {
+        "name": "MacBook Pro Microphone",
+        "max_input_channels": 1,
+        "max_output_channels": 0,
+        "default_samplerate": 48000.0,
+    },
+    {"name": "Shure MV7 (USB)", "max_input_channels": 2, "max_output_channels": 0, "default_samplerate": 44100.0},
+    {
+        "name": "Studio Display Speakers",
+        "max_input_channels": 0,
+        "max_output_channels": 2,
+        "default_samplerate": 48000.0,
+    },
+]
+
+
+def _fake_sounddevice(*, devices=None, default_input: int = 0, reject=None) -> types.ModuleType:
+    """Fake sounddevice module.
+
+    ``reject`` is an optional ``(kwargs) -> bool`` predicate; when it returns
+    True the InputStream constructor raises PortAudioError. That stands in for
+    the real failure this feature exists to survive — a USB mic that refuses
+    16 kHz mono and only speaks its own default rate.
+    """
     mod = types.ModuleType("sounddevice")
-    mod.InputStream = _FakeInputStream
+    devs = list(_FAKE_DEVICES if devices is None else devices)
+
+    class PortAudioError(Exception):
+        pass
+
+    class _Stream(_FakeInputStream):
+        def __init__(self, **kwargs) -> None:
+            if reject is not None and reject(kwargs):
+                raise PortAudioError("Invalid sample rate [PaErrorCode -9997]")
+            super().__init__(**kwargs)
+
+    def query_devices(index=None, kind=None):
+        # Real sounddevice returns a DeviceList for the no-arg call, a single
+        # dict when given an index, and the *default* device for that kind when
+        # given only kind= — voice.py uses all three shapes.
+        if index is not None:
+            return devs[index]
+        if kind == "input":
+            return devs[default_input]
+        return list(devs)
+
+    mod.InputStream = _Stream
+    mod.PortAudioError = PortAudioError
+    mod.query_devices = query_devices
+    mod.default = types.SimpleNamespace(device=(default_input, 1))
+    mod.calls = []  # records _terminate/_initialize for the refresh test
+    mod._terminate = lambda: mod.calls.append("terminate")
+    mod._initialize = lambda: mod.calls.append("initialize")
     return mod
 
 
@@ -113,33 +178,79 @@ def _clear_model_cache():
     voice._MODEL_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_stream_count(monkeypatch):
+    """Start every test with the open-stream counter at zero.
+
+    ``voice._open_streams`` is process-global: it exists so refresh_devices()
+    can refuse to tear PortAudio down under a live recording. That makes it the
+    one piece of state in this module that outlives a test — anything that
+    constructs a Recorder and does not stop it (a poker duel left open, say)
+    leaves the count at 1, and every later ``refresh_devices()`` in the session
+    returns False. Several tests below assert on exactly that return value, so
+    pinning the baseline keeps them measuring the code rather than whatever ran
+    before them.
+    """
+    monkeypatch.setattr(voice, "_open_streams", 0)
+
+
 @pytest.fixture
 def _inject(monkeypatch):
     """Inject fake optional modules; returns a helper to toggle presence."""
 
-    def install(*, numpy=True, sounddevice=True, faster_whisper_captured=None, segments=("  hello ", "world  ")):
+    def install(
+        *,
+        numpy=True,
+        sounddevice=True,
+        faster_whisper_captured=None,
+        segments=("  hello ", "world  "),
+        devices=None,
+        default_input=0,
+        reject=None,
+    ):
+        """Install the fakes; returns the fake sounddevice module (or None).
+
+        Pass ``numpy=False`` to let the *real* numpy through — the hand-rolled
+        fake cannot stand in for np.interp, so the resampling tests need it.
+        """
         if numpy:
             monkeypatch.setitem(sys.modules, "numpy", _fake_numpy())
+        sd = None
         if sounddevice:
-            monkeypatch.setitem(sys.modules, "sounddevice", _with_spec(_fake_sounddevice()))
+            sd = _fake_sounddevice(devices=devices, default_input=default_input, reject=reject)
+            monkeypatch.setitem(sys.modules, "sounddevice", _with_spec(sd))
         else:
             monkeypatch.setitem(sys.modules, "sounddevice", None)
         if faster_whisper_captured is not None:
             monkeypatch.setitem(
                 sys.modules, "faster_whisper", _with_spec(_fake_faster_whisper(faster_whisper_captured, segments))
             )
+        return sd
 
     return install
 
 
-def _wav_bytes(pcm: bytes = b"\x01\x00\x02\x00") -> bytes:
+def _wav_bytes(pcm: bytes = b"\x01\x00\x02\x00", *, rate: int = 16000, channels: int = 1) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
-        w.setnchannels(1)
+        w.setnchannels(channels)
         w.setsampwidth(2)
-        w.setframerate(16000)
+        w.setframerate(rate)
         w.writeframes(pcm)
     return buf.getvalue()
+
+
+def _tone_wav(rate: int, channels: int, seconds: float = 0.05) -> bytes:
+    """A real int16 sine take, for the resampling tests (needs real numpy)."""
+    import math
+    import struct
+
+    n = int(rate * seconds)
+    samples = []
+    for i in range(n):
+        value = int(20000 * math.sin(2 * math.pi * 440 * i / rate))
+        samples.extend([value] * channels)
+    return _wav_bytes(struct.pack(f"<{len(samples)}h", *samples), rate=rate, channels=channels)
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +270,33 @@ class TestVoiceModel:
     def test_backend_label(self, monkeypatch):
         monkeypatch.setenv("VOICE_MODEL", "tiny")
         assert voice.backend_label() == "local Whisper (tiny)"
+
+
+class TestVoiceDeviceSetting:
+    """get_voice_device stays a plain string read — resolution to a PortAudio
+    index happens in voice.resolve_device, so config never imports the audio
+    stack."""
+
+    def test_unset_means_the_system_default(self, monkeypatch):
+        monkeypatch.delenv("VOICE_DEVICE", raising=False)
+        assert get_voice_device() == ""
+
+    def test_reads_a_name_substring(self, monkeypatch):
+        monkeypatch.setenv("VOICE_DEVICE", "shure")
+        assert get_voice_device() == "shure"
+
+    def test_reads_an_index(self, monkeypatch):
+        monkeypatch.setenv("VOICE_DEVICE", "2")
+        assert get_voice_device() == "2"
+
+    def test_surrounding_whitespace_is_stripped(self, monkeypatch):
+        """A value hand-edited into ~/.yeaboi/.env often carries a stray space."""
+        monkeypatch.setenv("VOICE_DEVICE", "  Shure MV7  ")
+        assert get_voice_device() == "Shure MV7"
+
+    def test_whitespace_only_is_the_system_default(self, monkeypatch):
+        monkeypatch.setenv("VOICE_DEVICE", "   ")
+        assert get_voice_device() == ""
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +368,146 @@ class TestIsVoiceAvailable:
 
 
 # ---------------------------------------------------------------------------
+# Input devices
+# ---------------------------------------------------------------------------
+
+
+class TestListInputDevices:
+    def test_filters_out_output_only_devices(self, _inject):
+        _inject()
+        names = [d["name"] for d in voice.list_input_devices()]
+        assert names == ["MacBook Pro Microphone", "Shure MV7 (USB)"]
+
+    def test_marks_the_system_default(self, _inject):
+        _inject(default_input=1)
+        defaults = [d["name"] for d in voice.list_input_devices() if d["is_default"]]
+        assert defaults == ["Shure MV7 (USB)"]
+
+    def test_reports_channels_and_rate(self, _inject):
+        _inject()
+        usb = voice.list_input_devices()[1]
+        assert usb["index"] == 1
+        assert usb["channels"] == 2
+        assert usb["samplerate"] == 44100
+
+    def test_missing_sounddevice_returns_empty(self, _inject):
+        _inject(sounddevice=False)
+        assert voice.list_input_devices() == []
+
+
+class TestResolveDevice:
+    def test_blank_preference_means_system_default(self, _inject):
+        _inject()
+        assert voice.resolve_device("") is None
+
+    def test_resolves_by_name_substring_case_insensitively(self, _inject):
+        _inject()
+        assert voice.resolve_device("shure") == 1
+
+    def test_resolves_by_index(self, _inject):
+        _inject()
+        assert voice.resolve_device("1") == 1
+
+    def test_unknown_name_falls_back_to_default(self, _inject):
+        _inject()
+        assert voice.resolve_device("Blue Yeti") is None
+
+    def test_out_of_range_index_falls_back_to_default(self, _inject):
+        _inject()
+        assert voice.resolve_device("9") is None
+
+    def test_output_only_device_is_not_selectable(self, _inject):
+        _inject()
+        assert voice.resolve_device("Studio Display") is None
+
+    def test_reads_the_env_var_when_no_preference_passed(self, monkeypatch, _inject):
+        _inject()
+        monkeypatch.setenv("VOICE_DEVICE", "MV7")
+        assert voice.resolve_device() == 1
+
+
+class TestDeviceName:
+    def test_names_an_index(self, _inject):
+        _inject()
+        assert voice.device_name(1) == "Shure MV7 (USB)"
+
+    def test_none_names_the_default(self, _inject):
+        _inject(default_input=1)
+        assert voice.device_name(None) == "Shure MV7 (USB)"
+
+    def test_unknown_index_is_described_generically(self, _inject):
+        _inject(sounddevice=False)
+        assert voice.device_name(3) == "system default"
+
+
+class TestListAudioDevicesCommand:
+    """`yeaboi --list-audio-devices` — the "why can\'t it hear my mic" diagnostic."""
+
+    def test_reports_when_voice_is_not_installed(self, monkeypatch, capsys):
+        from yeaboi import cli
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "Install voice extra: …"))
+        cli._list_audio_devices()
+        assert "unavailable" in capsys.readouterr().out
+
+    def test_lists_devices_and_marks_the_selection(self, monkeypatch, capsys, _inject):
+        from yeaboi import cli
+
+        _inject()
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setenv("VOICE_DEVICE", "MV7")
+        cli._list_audio_devices()
+        out = capsys.readouterr().out
+        assert "MacBook Pro Microphone" in out
+        assert "system default" in out
+        assert "selected via VOICE_DEVICE=MV7" in out
+        assert "Studio Display Speakers" not in out  # output-only
+
+    def test_rescans_before_listing(self, monkeypatch, _inject):
+        """A mic plugged in after launch is invisible without the rescan."""
+        from yeaboi import cli
+
+        sd = _inject()
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        cli._list_audio_devices()
+        assert sd.calls == ["terminate", "initialize"]
+
+    def test_says_so_when_there_are_no_microphones(self, monkeypatch, capsys, _inject):
+        from yeaboi import cli
+
+        _inject(devices=[])
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        cli._list_audio_devices()
+        assert "No microphones found" in capsys.readouterr().out
+
+
+class TestRefreshDevices:
+    def test_cycles_portaudio(self, _inject):
+        sd = _inject()
+        assert voice.refresh_devices() is True
+        assert sd.calls == ["terminate", "initialize"]
+
+    def test_refuses_while_a_stream_is_open(self, _inject):
+        sd = _inject()
+        rec = voice.Recorder()
+        try:
+            assert voice.refresh_devices() is False
+            assert sd.calls == []  # PortAudio left alone under a live recording
+        finally:
+            rec.stop()
+        assert voice.refresh_devices() is True
+
+    def test_survives_a_failing_rescan(self, _inject):
+        sd = _inject()
+
+        def _boom():
+            raise RuntimeError("PortAudio busy")
+
+        sd._terminate = _boom
+        assert voice.refresh_devices() is False
+
+
+# ---------------------------------------------------------------------------
 # Recorder
 # ---------------------------------------------------------------------------
 
@@ -251,6 +529,107 @@ class TestRecorder:
     def test_no_audio_returns_empty(self, _inject):
         _inject()
         assert voice.Recorder().stop() == b""
+
+    def test_opens_the_requested_device(self, _inject):
+        _inject()
+        rec = voice.Recorder(device=1)
+        assert rec._stream.kwargs["device"] == 1
+        assert rec.device_name == "Shure MV7 (USB)"
+        rec.stop()
+
+    def test_level_tracks_the_latest_block(self, _inject):
+        _inject()
+        rec = voice.Recorder()
+        assert rec.level() == 0.0
+        rec._callback(_FakeNdarray(b"\x01\x00", peak=16384), 1, None, None)
+        assert rec.level() == 0.5  # exact in binary; pytest.approx needs real numpy
+        rec._callback(_FakeNdarray(b"\x01\x00", peak=0), 1, None, None)
+        assert rec.level() == 0.0
+        rec.stop()
+
+
+class TestRecorderFormatNegotiation:
+    """A mic that refuses 16 kHz mono must still record, at its own format."""
+
+    def test_falls_back_to_the_device_default_format(self, _inject):
+        _inject(reject=lambda kw: kw.get("samplerate") == voice.SAMPLE_RATE)
+        rec = voice.Recorder(device=1)  # Shure: 44100 Hz, 2 ch
+        assert (rec.samplerate, rec.channels) == (44100, 2)
+        assert rec._stream.kwargs["samplerate"] == 44100
+        rec.stop()
+
+    def test_negotiated_format_is_written_into_the_wav(self, _inject):
+        _inject(reject=lambda kw: kw.get("samplerate") == voice.SAMPLE_RATE)
+        rec = voice.Recorder(device=1)
+        rec._callback(_FakeNdarray(b"\x01\x00\x02\x00"), 1, None, None)
+        with wave.open(io.BytesIO(rec.stop()), "rb") as wf:
+            assert wf.getframerate() == 44100
+            assert wf.getnchannels() == 2
+
+    def test_caps_the_fallback_at_two_channels(self, _inject):
+        _inject(
+            devices=[
+                {
+                    "name": "Big Interface",
+                    "max_input_channels": 18,
+                    "max_output_channels": 0,
+                    "default_samplerate": 48000.0,
+                }
+            ],
+            reject=lambda kw: kw.get("samplerate") == voice.SAMPLE_RATE,
+        )
+        rec = voice.Recorder(device=0)
+        assert rec.channels == 2  # 18-channel interfaces would waste 16 of them
+        rec.stop()
+
+    def test_reraises_when_there_is_nothing_else_to_try(self, _inject):
+        _inject(
+            devices=[{"name": "Broken", "max_input_channels": 0, "max_output_channels": 0, "default_samplerate": 0}],
+            reject=lambda kw: True,
+        )
+        with pytest.raises(Exception, match="Invalid sample rate"):
+            voice.Recorder(device=0)
+
+    def test_a_failed_open_does_not_leak_the_stream_count(self, _inject):
+        _inject(reject=lambda kw: True)
+        with pytest.raises(Exception, match="Invalid sample rate"):
+            voice.Recorder()
+        assert voice.refresh_devices() is True  # counter never incremented
+
+    def test_a_failed_start_does_not_leak_the_stream_count(self, monkeypatch, _inject):
+        """The count goes up *before* start() so a rescan cannot tear PortAudio
+        down under a stream that exists but has not started — which means a
+        start() that raises has to put it back, or every later rescan is blocked
+        for the life of the process."""
+        sd = _inject()
+
+        def _no_start(self):
+            raise OSError("could not start stream")
+
+        opened = []
+        real_init = sd.InputStream.__init__
+
+        def _track(self, **kwargs):
+            real_init(self, **kwargs)
+            opened.append(self)
+
+        monkeypatch.setattr(sd.InputStream, "__init__", _track)
+        monkeypatch.setattr(sd.InputStream, "start", _no_start)
+        with pytest.raises(OSError, match="could not start"):
+            voice.Recorder()
+        assert voice._open_streams == 0
+        assert voice.refresh_devices() is True
+        assert opened and all(s.closed for s in opened)  # and the stream is not leaked
+
+    def test_a_live_stream_still_blocks_a_rescan(self, _inject):
+        """The counter moved earlier in __init__; the guard must still hold."""
+        _inject()
+        recorder = voice.Recorder()
+        try:
+            assert voice.refresh_devices() is False
+        finally:
+            recorder.stop()
+        assert voice.refresh_devices() is True
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +661,55 @@ class TestTranscribe:
         first_model = voice._MODEL_CACHE["base"]
         voice.transcribe(_wav_bytes())
         assert voice._MODEL_CACHE["base"] is first_model  # not reloaded
+
+    def test_conforming_audio_skips_conversion(self, monkeypatch, _inject):
+        """16 kHz mono takes the identity path — no downmix, no resample."""
+        _inject(faster_whisper_captured={})
+        called = []
+        monkeypatch.setattr(voice, "_resample", lambda *a: called.append("resample"))
+        monkeypatch.setattr(voice, "_downmix", lambda *a: called.append("downmix"))
+        assert voice.transcribe(_wav_bytes()) == "hello world"
+        assert called == []
+
+
+class TestResampling:
+    """A mic that only speaks 48 kHz stereo must still transcribe.
+
+    These use the *real* numpy (``numpy=False`` skips the fake), because the
+    point is the arithmetic.
+    """
+
+    def test_48k_stereo_becomes_16k_mono(self, _inject):
+        captured: dict = {}
+        _inject(numpy=False, faster_whisper_captured=captured)
+        assert voice.transcribe(_tone_wav(48000, 2)) == "hello world"
+        # 0.05 s of audio at the model's rate, whatever it was recorded at.
+        assert captured["n_samples"] == pytest.approx(16000 * 0.05, abs=2)
+
+    def test_44k1_mono_becomes_16k(self, _inject):
+        captured: dict = {}
+        _inject(numpy=False, faster_whisper_captured=captured)
+        voice.transcribe(_tone_wav(44100, 1))
+        assert captured["n_samples"] == pytest.approx(16000 * 0.05, abs=2)
+
+    def test_upsamples_from_8k(self, _inject):
+        captured: dict = {}
+        _inject(numpy=False, faster_whisper_captured=captured)
+        voice.transcribe(_tone_wav(8000, 1))
+        assert captured["n_samples"] == pytest.approx(16000 * 0.05, abs=2)
+
+    def test_downmix_averages_channels(self, _inject):
+        _inject(numpy=False)
+        mono = voice._downmix([1.0, 3.0, 2.0, 4.0], 2)
+        assert list(mono) == [2.0, 3.0]
+
+    def test_downmix_drops_a_torn_trailing_frame(self, _inject):
+        _inject(numpy=False)
+        assert len(voice._downmix([1.0, 3.0, 2.0], 2)) == 1
+
+    def test_resample_of_too_short_audio_is_empty(self, _inject):
+        _inject(numpy=False)
+        assert len(voice._resample([1.0], 48000, 16000)) == 0
 
 
 class TestTranscribeMedia:
@@ -340,6 +768,20 @@ def _console():
     return Console(file=io.StringIO(), width=80)
 
 
+def _render(panel, width: int = 100) -> str:
+    """Render a Panel to plain text for screen assertions."""
+    from rich.console import Console
+
+    buf = io.StringIO()
+    Console(file=buf, width=width, force_terminal=False, color_system=None).print(panel)
+    return buf.getvalue()
+
+
+def _stub_render(**_kwargs):
+    """Stand-in for the picker's own _render, which the mic test paints through."""
+    return Text("")
+
+
 class _KeySequence:
     def __init__(self, keys):
         self._keys = list(keys)
@@ -389,6 +831,12 @@ class TestDoubleTapInDescriptionLoop:
         monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
 
         class _Rec:
+            def __init__(self, **kwargs):
+                self.device_name = "Fake Mic"
+
+            def level(self):
+                return 0.4
+
             def stop(self):
                 return b"AUDIO"
 
@@ -410,14 +858,488 @@ class TestDoubleTapInDescriptionLoop:
         assert desc.strip() == "Hi four developers"
 
 
+class TestInputBoxTitle:
+    """The mic chip in the input box title — the one place nothing crops."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_chip(self):
+        from yeaboi.ui.shared import _voice_input
+
+        _voice_input.reset_voice_chip()
+        yield
+        _voice_input.reset_voice_chip()
+
+    def test_advertises_the_gesture_when_installed(self, monkeypatch):
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        assert "Space Space" in input_box_title("Message", 60).plain
+
+    def test_says_off_when_not_installed(self, monkeypatch):
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "install it"))
+        title = input_box_title("Message", 60).plain
+        assert "off" in title
+        assert "Space Space" not in title
+
+    def test_ignores_the_tips_setting(self, monkeypatch):
+        """An affordance is UI, not a tip — tips-off users must still see it."""
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setenv("TIPS_ENABLED", "false")
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        assert "\U0001f3a4" in input_box_title("Message", 60).plain
+
+    def test_drops_the_chip_when_the_box_is_too_narrow(self, monkeypatch):
+        """Rich grows a Panel past its declared width for an oversized title."""
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        assert input_box_title("Project Description", 30).plain == " Project Description "
+        assert "Space Space" in input_box_title("Project Description", 74).plain
+
+    def test_unclamped_when_no_width_is_given(self, monkeypatch):
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        assert "Space Space" in input_box_title("Message").plain
+
+    def test_availability_is_probed_once(self, monkeypatch):
+        """Titles rebuild every frame; is_voice_available walks sys.path twice."""
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        calls = []
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (calls.append(1), (True, ""))[1])
+        for _ in range(5):
+            input_box_title("Message", 60)
+        assert len(calls) == 1
+
+    def test_the_chip_never_widens_the_panel(self, monkeypatch):
+        """The box is padded into a fixed column; an over-wide title would ragged it."""
+        import rich.box
+        from rich.cells import cell_len
+        from rich.panel import Panel
+        from rich.text import Text
+
+        from yeaboi.ui.shared._voice_input import input_box_title
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        for box_w in (40, 50, 60, 74, 90):
+            panel = Panel(
+                Text("x"),
+                title=input_box_title("Message", box_w),
+                title_align="left",
+                box=rich.box.ROUNDED,
+                width=box_w,
+                padding=(1, 2),
+            )
+            top = _render(panel, width=200).split("\n")[0]
+            assert cell_len(top) == box_w, f"panel overflowed at width {box_w}"
+
+
+class TestStandupBoxChip:
+    """The standup field is hand-drawn, so its chip rides the box border."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_chip(self):
+        from yeaboi.ui.shared import _voice_input
+
+        _voice_input.reset_voice_chip()
+        yield
+        _voice_input.reset_voice_chip()
+
+    def _screen(self, monkeypatch, *, width: int, box_rows: int = 1, available=True) -> str:
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_standup_input_screen
+
+        reason = "" if available else "not installed"
+        monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (available, reason))
+        return _render(
+            _build_standup_input_screen("What did you do yesterday?", "", box_rows=box_rows, width=width, height=30),
+            width=width,
+        )
+
+    def test_the_chip_rides_the_border_not_the_label(self, monkeypatch):
+        """On the label it would sit at the tail of a no_wrap/ellipsis line —
+        the exact position the chip was moved off in the first place."""
+        out = self._screen(monkeypatch, width=100)
+        chip_line = next(line for line in out.splitlines() if "Space Space" in line)
+        assert "╭" in chip_line  # it is the box's top border
+        assert "What did you do yesterday?" not in chip_line  # not the prompt label
+
+    def test_the_chip_survives_a_narrow_terminal(self, monkeypatch):
+        assert "Space Space" in self._screen(monkeypatch, width=72)
+
+    def test_large_box_gets_the_chip_too(self, monkeypatch):
+        out = self._screen(monkeypatch, width=100, box_rows=4)
+        chip_line = next(line for line in out.splitlines() if "Space Space" in line)
+        assert "╭" in chip_line
+
+    def test_says_off_when_voice_is_not_installed(self, monkeypatch):
+        out = self._screen(monkeypatch, width=100, available=False)
+        assert "🎤 off" in out
+
+    def test_the_inlaid_border_keeps_the_box_square(self, monkeypatch):
+        """The chip eats border dashes, so a mis-counted width (the emoji is two
+        cells) would leave the top edge longer or shorter than the bottom."""
+        from rich.cells import cell_len
+
+        out = self._screen(monkeypatch, width=100)
+        top = next(line for line in out.splitlines() if "Space Space" in line)
+        bottom = next(line for line in out.splitlines() if "╰" in line)
+        assert cell_len(top[top.index("╭") : top.index("╮") + 1]) == cell_len(
+            bottom[bottom.index("╰") : bottom.index("╯") + 1]
+        )
+
+
+class TestVoiceDevicePicker:
+    """Settings → Voice Input → Input Device."""
+
+    DEVICES = [
+        {"index": 0, "name": "MacBook Pro Microphone", "channels": 1, "samplerate": 48000, "is_default": True},
+        {"index": 1, "name": "Shure MV7 (USB)", "channels": 2, "samplerate": 44100, "is_default": False},
+    ]
+
+    def _state(self, sel: int = 0) -> dict:
+        return {"devices": self.DEVICES, "sel": sel}
+
+    def test_arrows_move_and_wrap(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import voice_picker_keypress
+
+        state = self._state()
+        assert voice_picker_keypress("down", state) == "none"
+        assert state["sel"] == 1
+        voice_picker_keypress("down", state)
+        assert state["sel"] == 0  # wraps
+        voice_picker_keypress("up", state)
+        assert state["sel"] == 1
+
+    def test_enter_selects_and_esc_cancels(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import voice_picker_keypress
+
+        assert voice_picker_keypress("enter", self._state()) == "select"
+        assert voice_picker_keypress(" ", self._state()) == "select"
+        assert voice_picker_keypress("esc", self._state()) == "cancel"
+
+    def test_t_tests_and_d_clears_to_the_system_default(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import voice_picker_keypress
+
+        assert voice_picker_keypress("t", self._state()) == "test"
+        assert voice_picker_keypress("d", self._state()) == "system"
+
+    def test_unknown_keys_do_nothing(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import voice_picker_keypress
+
+        state = self._state()
+        assert voice_picker_keypress("x", state) == "none"
+        assert state["sel"] == 0
+
+    def test_arrows_survive_an_empty_device_list(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import voice_picker_keypress
+
+        state = {"devices": [], "sel": 0}
+        assert voice_picker_keypress("down", state) == "none"
+        assert state["sel"] == 0
+
+    def test_screen_lists_devices_and_marks_the_selection(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        out = _render(_build_voice_device_screen(self.DEVICES, 1, current="Shure MV7 (USB)", width=100, height=26))
+        assert "MacBook Pro Microphone" in out
+        assert "Shure MV7" in out
+        assert "system default" in out
+        assert "selected" in out
+        assert "test mic" in out  # the hint row
+
+    def test_screen_shows_a_level_meter_while_testing(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        idle = _render(_build_voice_device_screen(self.DEVICES, 0, width=100, height=26))
+        testing = _render(_build_voice_device_screen(self.DEVICES, 0, width=100, height=26, testing=True, level=1.0))
+        assert "▇" not in idle
+        assert "▇" in testing
+        assert "Speak now" in testing
+
+    def test_screen_explains_an_empty_list(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        assert "No microphones detected" in _render(_build_voice_device_screen([], 0, width=100, height=26))
+
+    def test_modal_returns_the_chosen_device(self, _inject):
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        _inject()
+        keys = iter(["down", "enter"])
+        assert (
+            _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True)
+            == "Shure MV7 (USB)"
+        )
+
+    def test_modal_esc_changes_nothing(self, _inject):
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        _inject()
+        keys = iter(["esc"])
+        assert _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True) is None
+
+    def test_modal_d_clears_back_to_the_system_default(self, _inject):
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        _inject()
+        keys = iter(["d"])
+        assert _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True) == ""
+
+    def test_modal_rescans_before_listing(self, _inject):
+        """A mic plugged in mid-session is the whole reason this page exists."""
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        sd = _inject()
+        keys = iter(["esc"])
+        _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True)
+        assert sd.calls == ["terminate", "initialize"]
+
+    def test_modal_starts_on_the_configured_device(self, monkeypatch, _inject):
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        _inject()
+        monkeypatch.setenv("VOICE_DEVICE", "MV7")
+        keys = iter(["enter"])  # no movement — whatever is highlighted on open
+        assert (
+            _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True)
+            == "Shure MV7 (USB)"
+        )
+
+    def test_screen_shows_a_notice(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        out = _render(
+            _build_voice_device_screen(self.DEVICES, 0, width=100, height=26, notice="AirPods would not open")
+        )
+        assert "AirPods would not open" in out
+
+    def test_screen_scrolls_a_long_device_list(self):
+        """A host with a virtual audio driver can report a dozen inputs."""
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        many = [
+            {"index": i, "name": f"Interface {i}", "channels": 1, "samplerate": 48000, "is_default": i == 0}
+            for i in range(14)
+        ]
+        out = _render(_build_voice_device_screen(many, 13, width=100, height=26))
+        assert "Interface 13" in out  # the selection is windowed into view
+        assert "Interface 0" not in out  # …and the top has scrolled away
+        assert "\u2503" in out  # the scrollbar thumb says there is more
+
+    def test_screen_has_no_scrollbar_when_everything_fits(self):
+        from yeaboi.ui.mode_select.screens._screens_secondary import _build_voice_device_screen
+
+        assert "\u2503" not in _render(_build_voice_device_screen(self.DEVICES, 0, width=100, height=26))
+
+    def test_modal_enter_on_an_empty_list_does_not_save_anything(self, _inject):
+        """Returning "" would confirm a choice the page just said cannot be made."""
+        from yeaboi.ui.mode_select import _pick_voice_device
+
+        _inject(devices=[{"name": "Speakers", "max_input_channels": 0, "max_output_channels": 2}])
+        keys = iter(["enter", "esc"])
+        assert _pick_voice_device(_console(), _FakeLive(), lambda timeout=None: next(keys, "esc"), 0.05, True) is None
+
+
+class TestMicrophoneTest:
+    """Settings → Voice Input → Input Device → "t"."""
+
+    DEVICE = {"index": 1, "name": "Shure MV7 (USB)", "channels": 2, "samplerate": 44100, "is_default": False}
+
+    def test_runs_until_a_key_is_pressed_and_reports_no_problem(self, _inject):
+        from yeaboi.ui.mode_select import _test_microphone
+
+        _inject()
+        keys = iter(["", "", "enter"])
+        assert (
+            _test_microphone(
+                _console(), _FakeLive(), lambda timeout=None: next(keys, "enter"), 0.05, True, self.DEVICE, _stub_render
+            )
+            == ""
+        )
+
+    def test_does_not_buffer_audio(self, _inject):
+        """Monitor mode: the page can sit open for minutes and keeps no take."""
+        from yeaboi import voice
+
+        _inject()
+        recorder = voice.Recorder(device=1, monitor=True)
+        recorder._callback(_FakeNdarray(b"\x01\x00", 1, peak=9000), 1, None, None)
+        recorder._callback(_FakeNdarray(b"\x02\x00", 1, peak=9000), 1, None, None)
+        assert recorder.level() > 0  # the meter still moves…
+        assert recorder._frames == []  # …but nothing is retained
+        assert recorder.stop() == b""
+
+    def test_the_settings_test_uses_monitor_mode(self, monkeypatch, _inject):
+        from yeaboi import voice
+        from yeaboi.ui.mode_select import _test_microphone
+
+        _inject()
+        seen = {}
+        real = voice.Recorder
+
+        def _spy(**kwargs):
+            seen.update(kwargs)
+            return real(**kwargs)
+
+        monkeypatch.setattr(voice, "Recorder", _spy)
+        keys = iter(["enter"])
+        _test_microphone(
+            _console(), _FakeLive(), lambda timeout=None: next(keys, "enter"), 0.05, True, self.DEVICE, _stub_render
+        )
+        assert seen["monitor"] is True
+
+    def test_a_mic_that_will_not_open_returns_a_notice(self, monkeypatch, _inject):
+        from yeaboi import voice
+        from yeaboi.ui.mode_select import _test_microphone
+
+        _inject()
+
+        def _boom(**_kwargs):
+            raise OSError("Device unavailable")
+
+        monkeypatch.setattr(voice, "Recorder", _boom)
+        notice = _test_microphone(
+            _console(), _FakeLive(), lambda timeout=None: "enter", 0.05, True, self.DEVICE, _stub_render
+        )
+        assert "Shure MV7 (USB)" in notice
+        assert "Device unavailable" in notice
+
+    def test_a_mouse_event_does_not_end_the_test(self, _inject):
+        from yeaboi.ui.mode_select import _test_microphone
+
+        _inject()
+        keys = iter(["\x1b[<0;10;5M", "enter"])
+        assert (
+            _test_microphone(
+                _console(), _FakeLive(), lambda timeout=None: next(keys, "enter"), 0.05, True, self.DEVICE, _stub_render
+            )
+            == ""
+        )
+
+    def test_the_test_stops_the_recorder(self, monkeypatch, _inject):
+        """The stream must not outlive the page — it would block every rescan."""
+        from yeaboi import voice
+        from yeaboi.ui.mode_select import _test_microphone
+
+        _inject()
+        _test_microphone(_console(), _FakeLive(), lambda timeout=None: "enter", 0.05, True, self.DEVICE, _stub_render)
+        assert voice._open_streams == 0
+
+
+class TestNextDevice:
+    """Tab-to-switch, and the default-resolution it depends on."""
+
+    def test_unset_preference_skips_past_the_system_default(self, _inject):
+        """The bug this guards: VOICE_DEVICE unset means current is None, and a
+        plain "not found → start at the top" lands back on the default itself —
+        so the remedy the silence warning advertises would restart the take to
+        move to the microphone the user was already on."""
+        from yeaboi.ui.shared._voice_input import _next_device
+
+        _inject()  # device 0 is the system default
+        assert _next_device(None) == (1, "Shure MV7 (USB)")
+
+    def test_advances_from_an_explicit_index(self, _inject):
+        from yeaboi.ui.shared._voice_input import _next_device
+
+        _inject()
+        assert _next_device(1) == (0, "MacBook Pro Microphone")
+
+    def test_wraps_around(self, _inject):
+        from yeaboi.ui.shared._voice_input import _next_device
+
+        _inject()
+        assert _next_device(0) == (1, "Shure MV7 (USB)")
+
+    def test_none_when_there_is_nothing_to_switch_to(self, _inject):
+        from yeaboi.ui.shared._voice_input import _next_device
+
+        _inject(devices=[_FAKE_DEVICES[0]])
+        assert _next_device(None) is None
+
+    def test_falls_back_to_the_top_when_no_default_is_reported(self, _inject):
+        from yeaboi.ui.shared._voice_input import _next_device
+
+        _inject(devices=[dict(d) for d in _FAKE_DEVICES], default_input=99)
+        assert _next_device(None) == (0, "MacBook Pro Microphone")
+
+
 class TestVoiceIndicator:
-    def test_recording_has_red_border_and_stop_hint(self):
+    def test_recording_shows_rec_and_stop_hint(self):
         from yeaboi.ui.shared._voice_input import voice_indicator
 
-        border, line = voice_indicator("recording", 0.0)
+        border, line = voice_indicator("recording", 0.0, width=100)
         assert border.startswith("rgb(")
-        assert "Recording" in line
+        assert "REC" in line
         assert "any key to stop" in line
+
+    def test_recording_is_amber_not_the_error_red(self):
+        """Red is this TUI's error colour — a red composer read as a crash."""
+        from yeaboi.ui.shared._voice_input import _ERR_BORDER, voice_indicator
+
+        for tick in (0.0, 0.2, 0.5, 0.9):
+            border, _line = voice_indicator("recording", tick)
+            assert border != _ERR_BORDER
+            r, g, b = (int(v) for v in border.removeprefix("rgb(").removesuffix(")").split(","))
+            assert g > 120 and r > g > b  # amber: warm, but nothing like (220,80,80)
+
+    def test_recording_shows_elapsed_time_and_device(self):
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        _border, line = voice_indicator("recording", 0.0, elapsed=64.0, device="Shure MV7", width=120)
+        assert "1:04" in line
+        assert "Shure MV7" in line
+
+    def test_meter_follows_the_input_level(self):
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        _b, quiet = voice_indicator("recording", 0.0, level=0.0, width=120)
+        _b, loud = voice_indicator("recording", 0.0, level=1.0, width=120)
+        assert quiet.count("▇") == 0
+        assert loud.count("▇") == 8
+
+    def test_silence_names_the_device_and_the_remedy(self):
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        _b, line = voice_indicator("recording", 0.0, device="AirPods Pro", silent=True, width=120)
+        assert "no sound from AirPods Pro" in line
+        assert "Tab" in line
+
+    def test_the_silent_form_always_keeps_a_way_out(self):
+        """This is the branch a confused user lands on — it must never be the
+        one that drops the exit affordance."""
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        for width in (30, 45, 60, 80, 100, 140):
+            _b, line = voice_indicator("recording", 0.0, device="A Very Long Device Name", silent=True, width=width)
+            assert "Esc" in line, f"no way out at width {width}: {line!r}"
+
+    def test_narrow_terminals_get_a_short_form(self):
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        _b, narrow = voice_indicator("recording", 0.0, device="A Very Long Device Name", width=50)
+        _b, mid = voice_indicator("recording", 0.0, device="A Very Long Device Name", width=80)
+        _b, wide = voice_indicator("recording", 0.0, device="A Very Long Device Name", width=140)
+        assert "A Very Long Device Name" not in narrow  # dropped, not cropped
+        assert "A Very Long Device Name" in wide
+        assert "any key stops" in narrow  # how to get out always survives
+        assert len(narrow) < len(mid) < len(wide)
+
+    def test_every_form_fits_the_width_it_was_given(self):
+        from rich.cells import cell_len
+
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        for width in range(40, 160, 7):
+            for silent in (False, True):
+                _b, line = voice_indicator(
+                    "recording", 0.0, device="Scarlett 2i2 USB (2-in 2-out)", silent=silent, width=width
+                )
+                assert cell_len(line) <= width, f"{width}: {line!r}"
 
     def test_transcribing_has_spinner(self):
         from yeaboi.ui.shared._voice_input import voice_indicator
@@ -425,6 +1347,12 @@ class TestVoiceIndicator:
         border, line = voice_indicator("transcribing", 0.5)
         assert "Transcribing" in line
         assert border  # non-empty style
+
+    def test_first_run_says_the_model_is_downloading(self):
+        from yeaboi.ui.shared._voice_input import voice_indicator
+
+        _border, line = voice_indicator("transcribing", 0.5, preparing=True)
+        assert "downloads" in line
 
     def test_unknown_status_is_empty(self):
         from yeaboi.ui.shared._voice_input import voice_indicator
@@ -446,6 +1374,12 @@ class TestRecordVoiceInput:
         monkeypatch.setattr(voice, "is_voice_available", lambda: available)
 
         class _Rec:
+            def __init__(self, **kwargs):
+                self.device_name = "Fake Mic"
+
+            def level(self):
+                return 0.4
+
             def stop(self):
                 return b"AUDIO" if frames_have_audio else b""
 
@@ -486,6 +1420,155 @@ class TestRecordVoiceInput:
         mod = self._patch_voice(monkeypatch, transcript="hi")
         mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["", "enter"]))
         assert events == ["pause", "resume"]
+
+    def test_render_status_receives_a_finished_border_and_line(self, monkeypatch):
+        """Screens no longer compute the indicator — the loop hands them the pair."""
+        mod = self._patch_voice(monkeypatch, transcript="hi")
+        seen: list[tuple[str, str]] = []
+
+        def _render(border, line):
+            seen.append((border, line))
+            return "frame"
+
+        wide = Console(file=io.StringIO(), width=140)
+        mod.record_voice_input(_FakeLive(), wide, _KeySequence(["", "enter"]), render_status=_render)
+        assert seen
+        assert all(border.startswith("rgb(") for border, _ in seen)
+        assert any("REC" in line for _, line in seen)
+        assert any("Fake Mic" in line for _, line in seen)  # the mic that opened is named
+
+    def test_mic_failure_names_the_device_and_the_remedy(self, monkeypatch, _inject):
+        """ "Could not access microphone" was the same message for every cause."""
+        from yeaboi.ui.shared._voice_input import _mic_error
+
+        _inject()
+        monkeypatch.setenv("VOICE_DEVICE", "MV7")
+        message = _mic_error(RuntimeError("Invalid number of channels [PaErrorCode -9998]"))
+        assert "Shure MV7 (USB)" in message
+        assert "PaErrorCode" in message  # the real reason, not a generic one
+        assert "Settings" in message  # and where to fix it
+
+    def test_mic_failure_falls_back_to_the_exception_type(self, _inject):
+        from yeaboi.ui.shared._voice_input import _mic_error
+
+        _inject()
+        assert "OSError" in _mic_error(OSError())
+
+    def test_tab_switches_to_the_next_microphone(self, monkeypatch):
+        from yeaboi.ui.shared import _voice_input
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setattr(voice, "resolve_device", lambda *a: 0)
+        monkeypatch.setattr(
+            voice,
+            "list_input_devices",
+            lambda: [
+                {"index": 0, "name": "Built-in", "channels": 1, "samplerate": 48000, "is_default": True},
+                {"index": 1, "name": "Shure MV7", "channels": 2, "samplerate": 44100, "is_default": False},
+            ],
+        )
+        opened: list[int | None] = []
+
+        class _Rec:
+            def __init__(self, device=None, **kwargs):
+                opened.append(device)
+                self.device_name = f"device {device}"
+
+            def level(self):
+                return 0.4
+
+            def stop(self):
+                return b"AUDIO"
+
+        monkeypatch.setattr(voice, "Recorder", _Rec)
+        monkeypatch.setattr(voice, "transcribe", lambda wav: "after the switch")
+        result = _voice_input.record_voice_input(_FakeLive(), _console(), _KeySequence(["tab", "enter"]))
+        assert opened == [0, 1]  # restarted on the next device
+        assert result == "after the switch"
+
+    def test_a_dead_second_mic_falls_back_to_the_previous_one(self, monkeypatch):
+        """Tab onto a busy mic must not end the session — the take is already
+        gone, but the user keeps a working microphone and can carry on."""
+        from yeaboi.ui.shared import _voice_input
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setattr(voice, "resolve_device", lambda *a: 0)
+        monkeypatch.setattr(
+            voice,
+            "list_input_devices",
+            lambda: [
+                {"index": 0, "name": "Built-in", "channels": 1, "samplerate": 48000, "is_default": True},
+                {"index": 1, "name": "Busy USB", "channels": 2, "samplerate": 44100, "is_default": False},
+            ],
+        )
+        opened: list[int | None] = []
+
+        class _Rec:
+            def __init__(self, device=None, **kwargs):
+                opened.append(device)
+                if device == 1:
+                    raise OSError("Device busy")
+                self.device_name = f"device {device}"
+
+            def level(self):
+                return 0.4
+
+            def stop(self):
+                return b"AUDIO"
+
+        monkeypatch.setattr(voice, "Recorder", _Rec)
+        monkeypatch.setattr(voice, "transcribe", lambda wav: "kept going")
+        result = _voice_input.record_voice_input(_FakeLive(), _console(), _KeySequence(["tab", "enter"]))
+        assert opened == [0, 1, 0]  # tried the next mic, then reopened the previous
+        assert result == "kept going"  # …and the user was not dropped back to the screen
+
+    def test_both_mics_dead_gives_up_cleanly(self, monkeypatch):
+        from yeaboi import music
+        from yeaboi.ui.shared import _voice_input
+
+        events = []
+        monkeypatch.setattr(music, "pause_for_voice", lambda: events.append("pause"))
+        monkeypatch.setattr(music, "resume_after_voice", lambda: events.append("resume"))
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setattr(voice, "resolve_device", lambda *a: 0)
+        monkeypatch.setattr(
+            voice,
+            "list_input_devices",
+            lambda: [
+                {"index": 0, "name": "Built-in", "channels": 1, "samplerate": 48000, "is_default": True},
+                {"index": 1, "name": "Busy USB", "channels": 2, "samplerate": 44100, "is_default": False},
+            ],
+        )
+        calls = {"n": 0}
+
+        class _Rec:
+            def __init__(self, device=None, **kwargs):
+                calls["n"] += 1
+                if calls["n"] > 1:  # the switch and the fallback both fail
+                    raise OSError("Device busy")
+                self.device_name = f"device {device}"
+
+            def level(self):
+                return 0.4
+
+            def stop(self):
+                return b"AUDIO"
+
+        monkeypatch.setattr(voice, "Recorder", _Rec)
+        assert _voice_input.record_voice_input(_FakeLive(), _console(), _KeySequence(["tab", "x"])) is None
+        assert events == ["pause", "resume"]  # music restored even so
+
+    def test_tab_is_a_no_op_with_only_one_microphone(self, monkeypatch):
+        from yeaboi.ui.shared import _voice_input
+
+        mod = self._patch_voice(monkeypatch, transcript="unchanged")
+        monkeypatch.setattr(
+            voice,
+            "list_input_devices",
+            lambda: [{"index": 0, "name": "Built-in", "channels": 1, "samplerate": 48000, "is_default": True}],
+        )
+        assert mod is _voice_input
+        assert _voice_input.record_voice_input(_FakeLive(), _console(), _KeySequence(["tab", "enter"])) == "unchanged"
 
     def test_resumes_music_when_mic_fails(self, monkeypatch):
         from yeaboi import music

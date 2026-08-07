@@ -115,9 +115,11 @@ class _DuelCapture:
             logger.info("poker: duel host mic skipped — %s", reason)
             return reason
         try:
-            from yeaboi.voice import Recorder
+            from yeaboi.voice import Recorder, resolve_device
 
-            recorder = Recorder()
+            # Honour the configured VOICE_DEVICE here too — the host running the
+            # duel is the same person who picked a microphone in Settings.
+            recorder = Recorder(device=resolve_device())
         except Exception as exc:  # mic permission / device errors must never 500
             logger.warning("poker: duel host mic failed to start: %s", exc)
             return "microphone could not start (see logs)"

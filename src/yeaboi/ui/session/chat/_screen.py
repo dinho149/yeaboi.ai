@@ -41,6 +41,7 @@ from yeaboi.ui.shared._components import (
     build_scrollbar,
 )
 from yeaboi.ui.shared._scroll import publish_geometry
+from yeaboi.ui.shared._voice_input import input_box_title
 
 from ._commands import SlashCommand
 from ._composer import ChatComposer
@@ -319,7 +320,7 @@ def build_chat_screen(
 
     input_box = Panel(
         input_content,
-        title=" Message ",
+        title=input_box_title("Message", box_w),
         title_align="left",
         border_style=border_color,
         box=rich.box.ROUNDED,

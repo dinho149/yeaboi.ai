@@ -65,6 +65,11 @@ class TestParsing:
         assert args.standup_run is True
         assert args.standup_session == "abc"
 
+    def test_list_audio_devices_parses(self):
+        args = build_parser().parse_args(["--list-audio-devices"])
+        assert args.list_audio_devices is True
+        assert build_parser().parse_args([]).list_audio_devices is False
+
     def test_report_parses(self):
         args = build_parser().parse_args(["report", "--period", "quarter", "--format", "json"])
         assert args.command == "report"
