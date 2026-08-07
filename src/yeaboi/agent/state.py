@@ -1305,9 +1305,12 @@ class ScrumState(_RequiredState, total=False):
     # exchange for transcript rebuild/export: [{"role": "user"|"ai", "text": str}].
     _chat_greeting_done: bool
     _chat_preamble: list[dict]
-    # /finish fast mode: the chat driver auto-accepts every review gate while
-    # this is set. Persisted so a fast run resumed mid-pipeline keeps
-    # auto-running; the driver clears it when the plan completes.
+    # /finish fast mode. The chat owns intake only, so in production this now
+    # spans a single deterministic turn ("defaults all" → the summary) and the
+    # driver pops it at the hand-off to the card pipeline — whose review gates
+    # never read it, and which stops at every one of them. It stays a state
+    # field, not a driver attribute, because the end-to-end chat path
+    # (stop_after_intake=False) still auto-accepts reviews while it is set.
     _chat_fast_forward: bool
 
     # Project analysis — structured synthesis of intake answers.

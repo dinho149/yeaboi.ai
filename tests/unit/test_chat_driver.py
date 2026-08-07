@@ -1,5 +1,6 @@
 """Tests for the chat driver — greeting flow, review replies, guardrails."""
 
+import time
 from io import StringIO
 from unittest.mock import patch
 
@@ -27,6 +28,24 @@ class FakeGraph:
         return self.results.pop(0) if self.results else state
 
 
+class MergingFakeGraph(FakeGraph):
+    """FakeGraph with LangGraph's merge semantics for the keys that survive.
+
+    The plain fake returns its scripted dict verbatim, so a key the script
+    omits reads as "the node cleared it". A real graph does the opposite: the
+    state channels here are LastValue, so a key the node does not return keeps
+    its incoming value. That difference is load-bearing for exactly one
+    transition — accepting the intake summary, where project_intake returns no
+    `pending_review` — so the hand-off must be tested against a fake that
+    models it. Anything else would be asserting a property of the fixture.
+    """
+
+    def invoke(self, state: dict) -> dict:
+        self.invocations.append(state)
+        scripted = self.results.pop(0) if self.results else {}
+        return {**state, **scripted}
+
+
 def _keys(sequence: list[str]):
     remaining = list(sequence)
 
@@ -40,7 +59,24 @@ def _console(width: int = 100) -> Console:
     return Console(file=StringIO(), width=width, height=40, force_terminal=True, color_system="truecolor")
 
 
-def _driver(graph, keys, state=None, *, dry_run: bool = False, width: int = 100) -> _ChatDriver:
+def _driver(
+    graph,
+    keys,
+    state=None,
+    *,
+    dry_run: bool = False,
+    width: int = 100,
+    stop_after_intake: bool = True,
+) -> _ChatDriver:
+    """Build a driver in the production configuration.
+
+    stop_after_intake defaults to True because that is what run_chat_session
+    passes; a helper defaulting the other way would leave the branch's own risk
+    — a flag that changes the run loop's exit condition — as the one thing the
+    suite never exercises by default. The tests that cover the end-to-end chat
+    path (pipeline stages, review cards, the epic step, capacity) pass
+    stop_after_intake=False explicitly, which is the only caller of it now.
+    """
     return _ChatDriver(
         FakeLive(),
         _console(width),
@@ -51,6 +87,7 @@ def _driver(graph, keys, state=None, *, dry_run: bool = False, width: int = 100)
         bell=False,
         dry_run=dry_run,
         initial_description="",
+        stop_after_intake=stop_after_intake,
     )
 
 
@@ -384,7 +421,7 @@ class TestIntakeCoaching:
         driver._idle_since = time.monotonic() - 10.0
         driver._idle_tick()
         assert driver.duck._line is not None
-        assert driver.duck._line.text == "/finish builds the rest with defaults"
+        assert driver.duck._line.text == "/finish answers the rest with defaults"
         assert driver._hinted_q == 25
 
     def test_hint_fires_at_most_once_per_question(self):
@@ -876,7 +913,9 @@ class TestFastForward:
             "_chat_greeting_done": True,
         }
         graph = ExplodingGraph()
-        driver = _driver(graph, _keys(["esc", "esc"]), state)
+        # End-to-end chat path: the pipeline stage only runs in the chat when
+        # the driver is not handing off after intake.
+        driver = _driver(graph, _keys(["esc", "esc"]), state, stop_after_intake=False)
         driver.run()
         assert graph.calls == 1  # one attempt, then the pause — no hot loop
         assert any("send any message to retry" in m.text for m in driver.transcript.messages)
@@ -967,7 +1006,160 @@ class TestFastForward:
             "_chat_fast_forward": True,
             "_chat_greeting_done": True,
         }
-        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), state)
+        # The "fast mode done" note belongs to the end-to-end chat path — the
+        # one that auto-accepts reviews and reaches plan completion in chat.
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), state, stop_after_intake=False)
         driver.run()
         assert "_chat_fast_forward" not in driver.state
         assert any("Fast mode done" in m.text for m in driver.transcript.messages)
+
+
+def _bounded_keys(sequence: list[str], deadline_seconds: float = 5.0):
+    """_keys, but it raises if the driver is still asking long after the script.
+
+    The run loop polls for a key every frame and reads "" as "nothing
+    pressed", so a driver that fails to exit spins forever instead of failing
+    — which is exactly what a regression in the intake hand-off looks like.
+    Raising turns that hang into a normal test failure with a traceback.
+
+    The bound is wall-clock, not a poll count: the streamed accept turn
+    legitimately polls a couple of hundred times while the worker thread
+    runs, and how many depends on scheduling, so any count tight enough to
+    catch a spin is also tight enough to fail a healthy run on a loaded
+    machine. In wall-clock the two are nowhere near each other — a hand-off
+    run finishes in ~0.04s, a spin polls indefinitely.
+    """
+    remaining = list(sequence)
+    started = [0.0]
+
+    def _key(timeout: float = 0.0) -> str:
+        if remaining:
+            return remaining.pop(0)
+        now = time.monotonic()
+        if not started[0]:
+            started[0] = now
+        elif now - started[0] > deadline_seconds:
+            raise AssertionError("driver never exited — the intake hand-off did not fire")
+        return ""
+
+    return _key
+
+
+class TestIntakeHandoff:
+    """The production default: the chat ends when the summary is accepted and
+    the card pipeline takes over. Nothing past intake may run here."""
+
+    def _confirmation_state(self) -> dict:
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.awaiting_confirmation = True
+        qs.current_question = 31
+        return {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="Here is the summary.")],
+            "questionnaire": qs,
+            "pending_review": "project_intake",
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+
+    def _accepted_state(self) -> dict:
+        done = QuestionnaireState(intake_mode="small_project")
+        done.completed = True
+        done.current_question = 31
+        return {
+            "messages": [
+                HumanMessage(content="desc"),
+                AIMessage(content="Here is the summary."),
+                HumanMessage(content="accept"),
+                AIMessage(content="Building."),
+            ],
+            "questionnaire": done,
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+
+    def test_accepting_the_summary_hands_off_without_running_the_pipeline(self):
+        # MergingFakeGraph, not FakeGraph: project_intake's confirm branch
+        # returns no "pending_review", so on a real graph the gate closes only
+        # because the driver popped it before invoking. A verbatim fake would
+        # make this pass either way.
+        graph = MergingFakeGraph([self._accepted_state()])
+        keys = _bounded_keys([*"accept", "enter"])
+        driver = _driver(graph, keys, self._confirmation_state())
+
+        final = driver.run()
+
+        # Exactly one invoke — the accept. The pipeline stages that would
+        # follow belong to the card phases now.
+        assert len(graph.invocations) == 1
+        assert final["questionnaire"].completed is True
+        assert "pending_review" not in final
+        assert driver.quit is False
+
+    def test_the_accept_turn_clears_the_gate_before_invoking(self):
+        # The pop must happen on the way in, not be inferred from the result:
+        # pending_review is a LastValue channel, so a value still present in
+        # the invoke state comes straight back out and the gate never closes.
+        # Driven through _run_turn directly so a regression fails here on one
+        # assertion, before the run loop has a chance to spin on it.
+        graph = MergingFakeGraph([self._accepted_state()])
+        driver = _driver(graph, _keys([]), self._confirmation_state())
+
+        assert driver._run_turn("accept", echo_user=True) is True
+
+        assert "pending_review" not in graph.invocations[0]
+        assert "pending_review" not in driver.state
+        assert driver._stage() != "intake"
+
+    def test_handoff_clears_fast_forward(self):
+        state = self._confirmation_state()
+        state["_chat_fast_forward"] = True
+        graph = MergingFakeGraph([self._accepted_state()])
+        driver = _driver(graph, _bounded_keys([*"accept", "enter"]), state)
+
+        final = driver.run()
+
+        # The card pipeline stops at every review gate — a stale fast-forward
+        # flag must not ride along and imply otherwise.
+        assert "_chat_fast_forward" not in final
+
+    def test_quitting_at_the_summary_leaves_intake_incomplete(self):
+        # Esc Esc at the confirmation gate: the session must go back to the
+        # dashboard, not fall through into the pipeline.
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), self._confirmation_state())
+
+        final = driver.run()
+
+        assert final["questionnaire"].completed is False
+        assert final["pending_review"] == "project_intake"
+
+    def test_questions_still_run_in_chat(self):
+        # The questionnaire itself is untouched by the handoff — a mid-intake
+        # answer goes through the graph and the next question lands in chat.
+        # Driven a turn at a time rather than through run(), which would sit in
+        # the input loop waiting for the next answer.
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.current_question = 6
+        state = {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="Q6?")],
+            "questionnaire": qs,
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+        next_qs = QuestionnaireState(intake_mode="small_project")
+        next_qs.current_question = 7
+        after = {
+            "messages": [*state["messages"], HumanMessage(content="four"), AIMessage(content="Q7?")],
+            "questionnaire": next_qs,
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+        graph = FakeGraph([after])
+        driver = _driver(graph, _keys([]), state)
+
+        assert driver._stage() == "intake"
+        assert driver._run_turn("four", echo_user=True) is True
+
+        assert len(graph.invocations) == 1
+        assert any("Q7?" in m.text for m in driver.transcript.messages)
+        # Still intake — the handoff must not fire until the summary is accepted.
+        assert driver._stage() == "intake"

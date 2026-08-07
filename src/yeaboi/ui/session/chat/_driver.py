@@ -107,8 +107,16 @@ def run_chat_session(
     bell: bool = True,
     dry_run: bool = False,
     initial_description: str = "",
+    stop_after_intake: bool = True,
 ) -> dict | None:
-    """Run the whole planning conversation. Returns the final state (or None on quit pre-description)."""
+    """Run the intake conversation. Returns the final state (or None on quit pre-description).
+
+    stop_after_intake (the production default): the chat owns the greeting, the
+    size pick, the questions and the summary confirmation, then hands the state
+    back so the card pipeline can run the reviews. False keeps the original
+    end-to-end chat (the pipeline/review/epic/capacity path below) — used by the
+    tests that cover it.
+    """
     driver = _ChatDriver(
         live,
         console,
@@ -119,6 +127,7 @@ def run_chat_session(
         bell=bell,
         dry_run=dry_run,
         initial_description=initial_description,
+        stop_after_intake=stop_after_intake,
     )
     # The chat is one big typing surface — suppress bare-letter chrome
     # shortcuts ("c" controls etc.) for the whole session.
@@ -142,6 +151,7 @@ class _ChatDriver:
         bell: bool,
         dry_run: bool,
         initial_description: str,
+        stop_after_intake: bool = True,
     ) -> None:
         self.live = live
         self.console = console
@@ -152,6 +162,7 @@ class _ChatDriver:
         self.bell = bell
         self.dry_run = dry_run
         self.initial_description = initial_description
+        self.stop_after_intake = stop_after_intake
 
         self.transcript = ChatTranscript()
         self.composer = ChatComposer()
@@ -361,7 +372,13 @@ class _ChatDriver:
         logger.info("Chat: form takeover end (filled=%d)", filled)
 
     def _fast_forward(self) -> None:
-        """/finish — defaults for everything, then build the plan with no more stops."""
+        """/finish — default every remaining answer so the questions are done in one go.
+
+        It ends at the summary: the review gates after it belong to the card
+        pipeline, which stops at each one. _chat_fast_forward is still set
+        because the end-to-end chat path (stop_after_intake=False) reads it;
+        the handoff in run() pops it.
+        """
         if self.state.get("sprints"):
             self._note("The plan is already complete — /export saves it.")
             return
@@ -378,11 +395,11 @@ class _ChatDriver:
             # The intake node handles the literal — one deterministic turn
             # that defaults every remaining question and shows the summary.
             self._run_turn("defaults all", echo_user=True)
-            self._note("One **accept** on the summary builds the whole plan — no more stops.")
+            self._note("That's every question answered — **accept** the summary and I'll start building.")
         elif qs is not None and qs.awaiting_confirmation:
-            self._note("Fast mode on — accept the summary and the whole plan builds with no more stops.")
+            self._note("The questions are already done — **accept** the summary and I'll start building.")
         else:
-            self._note("Fast mode on — remaining reviews will be auto-accepted.")
+            self._note("Nothing left to fast-forward.")
         self._save()
 
     def _switch_size(self, target_mode: str) -> None:
@@ -495,6 +512,18 @@ class _ChatDriver:
         messages = list(self.state.get("messages", []))
         if text:
             messages.append(HumanMessage(content=text))
+        if intake_turn:
+            # The intake confirmation is the one turn the chat sends while a
+            # review gate is still open — project_intake consumes the reply
+            # itself rather than a review card doing it. Its confirm branch
+            # returns no "pending_review", and pending_review is a plain
+            # LastValue channel (agent/state.py), so whatever is in the input
+            # state survives the invoke: leave it set and the gate never
+            # closes, _stage() stays "intake" forever and the handoff below
+            # never fires. The card path pops it for exactly this reason
+            # (phases/_phases_review.py). Safe to drop unconditionally — the
+            # node re-sets it when the summary needs showing again ("edit").
+            self.state.pop("pending_review", None)
         invoke_state = {**self.state, "messages": messages}
         if images:
             if intake_turn:
@@ -1376,6 +1405,14 @@ class _ChatDriver:
 
         while not self.quit:
             stage = self._stage()
+            if self.stop_after_intake and stage != "intake":
+                # The questionnaire is accepted — the card pipeline owns
+                # everything from here (reviews, exports, tracker sync,
+                # capacity), so hand the state back before any of the branches
+                # below can fire.
+                self.state.pop("_chat_fast_forward", None)
+                logger.info("Chat handing off after intake (next stage=%s)", stage)
+                break
             if stage == "capacity":
                 self._capacity_popup()
                 continue
@@ -1481,7 +1518,7 @@ class _ChatDriver:
         from yeaboi.prompts.intake import QUESTION_DEFAULTS, is_choice_question
 
         if q > 20:
-            return "/finish builds the rest with defaults"
+            return "/finish answers the rest with defaults"
         if is_choice_question(q):
             return "Type the number — or ↑/↓ then Enter"
         if q in QUESTION_DEFAULTS:
