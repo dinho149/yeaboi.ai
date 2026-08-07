@@ -71,6 +71,8 @@ _TIPS_PAIRS = [
     ("alt+enter", "new line"),
     ("/finish", "answer the rest with defaults"),
     ("/export", "save plan + chat"),
+    ("/questions", "see what I'll ask"),
+    ("/summary", "your answers so far"),
 ]
 
 # Rendered once per column width — static copy, never per-frame work.

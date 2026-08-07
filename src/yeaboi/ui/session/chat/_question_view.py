@@ -24,7 +24,13 @@ from dataclasses import dataclass, field
 from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
-from yeaboi.prompts.intake import CHAT_MODE_HIDDEN_CHOICES, PHASE_LABELS, QUESTION_METADATA, is_choice_question
+from yeaboi.prompts.intake import (
+    CHAT_MODE_HIDDEN_CHOICES,
+    PHASE_LABELS,
+    QUESTION_METADATA,
+    AnswerSource,
+    is_choice_question,
+)
 from yeaboi.repl._io import _get_active_suggestion
 from yeaboi.repl._questionnaire import _split_intake_preamble
 
@@ -33,6 +39,51 @@ logger = logging.getLogger(__name__)
 # Q27 (sprint selection) is single-select among the dynamic follow-up menus;
 # Q6 member selection is multi-select. Same table as the phase loop used.
 _SINGLE_SELECT_DYNAMIC_QS = {27}
+
+# Answer sources that mean the user typed/picked it themselves — the questions
+# that were genuinely ASKED this run, as opposed to filled by extraction,
+# SCRUM.md, or defaults.
+_USER_ANSWERED_SOURCES = (AnswerSource.DIRECT, AnswerSource.PROBED)
+
+
+def planned_question_sets(qs: QuestionnaireState) -> tuple[list[int], set[int]] | None:
+    """(remaining gaps, user-answered) — the questions this run actually asks.
+
+    Extraction, SCRUM.md and defaults silently answer most of the 30-question
+    bank; only the essential gaps get asked. This reuses the same
+    _find_essential_gaps the node drives the flow with, so it always agrees
+    with its "(N remaining)" copy. None when the derivation fails (callers
+    keep a fallback).
+    """
+    try:
+        # Lazy: nodes is a heavy module and imports back into UI-adjacent
+        # territory — same precedent as the driver's apply_size_switch import.
+        from yeaboi.agent.nodes import _essentials_for_mode, _find_essential_gaps
+
+        remaining = _find_essential_gaps(qs, _essentials_for_mode(qs.intake_mode))
+    except Exception:  # pragma: no cover — a render must never die on this
+        logger.warning("planned_question_sets: gap derivation failed", exc_info=True)
+        return None
+    asked = {q for q, src in qs.answer_sources.items() if src in _USER_ANSWERED_SOURCES}
+    return remaining, asked
+
+
+def planned_question_progress(qs: QuestionnaireState) -> tuple[int, int] | None:
+    """(position, total) over the questions actually planned for this run.
+
+    "Q7 of 30" lies — see planned_question_sets. Recomputed every turn: a
+    CONDITIONAL_ESSENTIALS promotion growing the total mid-run is honesty,
+    not drift. None when the count can't be derived (caller keeps a fallback).
+    """
+    sets = planned_question_sets(qs)
+    if sets is None:
+        return None
+    remaining, asked = sets
+    planned = set(remaining) | asked
+    if not planned:
+        return None
+    done = len(planned) - len(remaining)
+    return min(done + 1, len(planned)), len(planned)
 
 
 @dataclass
@@ -44,7 +95,7 @@ class QuestionView:
     choices: list[tuple[str, bool]] | None = None  # (label, pre_selected)
     multi_select: bool = False
     suggestion: str | None = None  # free-text prefill (chip suggestions become prefill)
-    progress: str = ""  # "Q7 of 30" (chat shows it for every mode)
+    progress: str = ""  # "Question 2 of 6" over the planned set (chat shows it for every mode)
     phase_label: str = ""
     current_question: int = 0
 
@@ -72,7 +123,11 @@ def derive_question_view(graph_state: dict) -> QuestionView:
     view.current_question = cur_q
     view.phase_label = PHASE_LABELS.get(qs.current_phase, "")
     if 1 <= cur_q <= TOTAL_QUESTIONS:
-        view.progress = f"Q{cur_q} of {TOTAL_QUESTIONS}"
+        planned = planned_question_progress(qs)
+        if planned:
+            view.progress = f"Question {planned[0]} of {planned[1]}"
+        else:
+            view.progress = f"Q{cur_q} of {TOTAL_QUESTIONS}"
     view.suggestion = _get_active_suggestion(graph_state)
 
     # PTO sub-loop: current_question points at the leave section but the node

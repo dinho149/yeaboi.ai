@@ -315,6 +315,7 @@ class _ChatDriver:
             fast_forward=self._fast_forward,
             plan_complete=lambda: bool(self.state.get("sprints")),
             toggle_duck=self._toggle_duck,
+            show_questions=self._show_questions,
         )
 
     def _request_quit(self) -> None:
@@ -1578,6 +1579,48 @@ class _ChatDriver:
         else:
             self._note("Duck's bubble is back.")
             self._bubble("Quack!")
+
+    def _show_questions(self) -> None:
+        """/questions — the planned-question checklist for this run.
+
+        Lists only the questions this run actually asks (user-answered +
+        remaining essential gaps), not the 30-question bank — the same sets
+        the "Question X of Y" subtitle counts.
+        """
+        from yeaboi.prompts.intake import QUESTION_SHORT_LABELS
+        from yeaboi.ui.session.chat._question_view import planned_question_sets
+
+        qs = self._qs()
+        if qs is None:
+            return
+        sets = planned_question_sets(qs)
+        if sets is None:
+            self._note("Couldn't derive the question plan — /summary shows your answers so far.")
+            return
+        remaining, asked = sets
+        planned = sorted(set(remaining) | asked)
+        if not planned:
+            self._note("Nothing left to ask — /summary shows everything I've got.")
+            return
+        remaining_set = set(remaining)
+        lines = ["Planned questions for this run:"]
+        for q in planned:
+            label = QUESTION_SHORT_LABELS.get(q, f"Question {q}")
+            if q == qs.current_question and q in remaining_set:
+                lines.append(f"● Q{q} {label} — current")
+            elif q in remaining_set:
+                lines.append(f"○ Q{q} {label}")
+            else:
+                answer = str(qs.answers.get(q, "")).strip().replace("\n", " ")
+                if len(answer) > 40:
+                    answer = answer[:37] + "…"
+                lines.append(f"✓ Q{q} {label}" + (f" — {answer}" if answer else ""))
+        lines.append("")
+        lines.append(
+            "Everything else is filled from your description and defaults — /summary shows it, /edit N changes it."
+        )
+        logger.info("Chat: /questions (%d planned, %d remaining)", len(planned), len(remaining))
+        self._note("\n".join(lines))
 
     def _maybe_celebrate_completion(self) -> None:
         """One-time completion beat: recap card + duck celebration.

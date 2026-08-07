@@ -681,6 +681,36 @@ class TestInlineCommands:
         assert driver.composer.text() == "build an app /export "
 
 
+class TestShowQuestions:
+    def test_lists_planned_questions_with_markers(self):
+        """/questions shows only this run's planned set: answered ✓ with the
+        answer, current ●, still-to-ask ○ — never the whole 30-question bank."""
+        qs = QuestionnaireState()
+        qs.current_question = 6
+        qs.answers[3] = "scheduling chaos"
+        qs.answer_sources[3] = "direct"
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": [], "questionnaire": qs})
+        driver._show_questions()
+        note = driver.transcript.messages[-1].text
+        assert "✓ Q3" in note and "scheduling chaos" in note
+        assert "● Q6" in note and "current" in note
+        assert "○ Q11" in note
+        assert "Q1 " not in note  # non-essential bank questions stay out
+
+    def test_subtitle_uses_planned_count(self):
+        """The run-loop subtitle counts the planned set, not 'of 30'."""
+        qs = QuestionnaireState()
+        qs.current_question = 6
+        state = {
+            "messages": [AIMessage(content="What is your team size?")],
+            "questionnaire": qs,
+        }
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), state)
+        driver.run()
+        assert driver.subtitle.startswith("Question 1 of ")
+        assert "of 30" not in driver.subtitle
+
+
 class TestGreetingSizeChoices:
     def test_choices_offered_at_greeting(self):
         driver = _driver(FakeGraph([]), _keys(["esc", "esc"]))

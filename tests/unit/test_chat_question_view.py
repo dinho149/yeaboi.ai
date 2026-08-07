@@ -3,8 +3,8 @@
 from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import QuestionnaireState
-from yeaboi.prompts.intake import QUESTION_METADATA
-from yeaboi.ui.session.chat._question_view import derive_question_view
+from yeaboi.prompts.intake import QUESTION_METADATA, SMALL_PROJECT_ESSENTIALS, SMART_ESSENTIALS, AnswerSource
+from yeaboi.ui.session.chat._question_view import derive_question_view, planned_question_progress
 
 
 def _state(qs: QuestionnaireState, ai_text: str = "What is your team size?") -> dict:
@@ -24,10 +24,13 @@ class TestBasics:
         assert view.choices is None
 
     def test_progress_and_phase(self):
+        # Fresh questionnaire, standard/smart mode: nothing answered by the
+        # user yet, so the honest count is position 1 over the essential set —
+        # not "Q6 of 30", which counts the whole bank.
         qs = QuestionnaireState()
         qs.current_question = 6
         view = derive_question_view(_state(qs))
-        assert view.progress == "Q6 of 30"
+        assert view.progress == f"Question 1 of {len(SMART_ESSENTIALS)}"
         assert view.current_question == 6
 
 
@@ -156,3 +159,38 @@ class TestPtoSubLoop:
         qs._awaiting_leave_input = True
         view = derive_question_view(_state(qs, "Does anyone have planned leave?\n\n[1] Yes\n[2] No"))
         assert view.choices is None
+
+
+class TestPlannedProgress:
+    """planned_question_progress counts the questions actually planned for
+    THIS run (user-answered + essential gaps), not the 30-question bank —
+    the same gap function the node paces the flow with."""
+
+    def test_direct_answer_advances_position_and_holds_total(self):
+        # Q3 has no CONDITIONAL_ESSENTIALS dependent, so answering it moves
+        # the position without growing the plan.
+        qs = QuestionnaireState()
+        qs.answers[3] = "solve scheduling chaos"
+        qs.answer_sources[3] = AnswerSource.DIRECT
+        assert planned_question_progress(qs) == (2, len(SMART_ESSENTIALS))
+
+    def test_conditional_promotion_grows_the_total(self):
+        # A real (non-defaulted) Q6 answer promotes Q7 (team roles) into the
+        # plan: position advances AND the total grows by one — honesty over
+        # a frozen count.
+        qs = QuestionnaireState()
+        qs.answers[6] = "4 engineers"
+        qs.answer_sources[6] = AnswerSource.DIRECT
+        assert planned_question_progress(qs) == (2, len(SMART_ESSENTIALS) + 1)
+
+    def test_extracted_answers_do_not_count_as_asked(self):
+        # Extraction filling Q3 removes it from the gaps but it was never
+        # asked — position must stay 1 and the total shrink.
+        qs = QuestionnaireState()
+        qs.answers[3] = "from the description"
+        qs.answer_sources[3] = AnswerSource.EXTRACTED
+        assert planned_question_progress(qs) == (1, len(SMART_ESSENTIALS) - 1)
+
+    def test_small_mode_uses_its_leaner_essential_set(self):
+        qs = QuestionnaireState(intake_mode="small_project")
+        assert planned_question_progress(qs) == (1, len(SMALL_PROJECT_ESSENTIALS))
