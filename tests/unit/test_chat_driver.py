@@ -1029,6 +1029,17 @@ class TestFastForward:
         assert "_chat_fast_forward" not in driver.state
         assert driver.notice == "Fast mode stopped."
 
+    def test_esc_during_a_turn_cancels_a_deferred_finish(self):
+        # /finish typed pre-questionnaire lives in _finish_requested, not the
+        # state flag — Esc must cancel that form of fast mode too.
+        import threading
+
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._finish_requested = True
+        driver._processing_key("esc", threading.Event())
+        assert driver._finish_requested is False
+        assert driver.notice == "Fast-forward cancelled."
+
     def test_subtitle_carries_the_fast_mode_marker(self):
         qs = QuestionnaireState(intake_mode="smart")
         qs.current_question = 6
@@ -1272,6 +1283,23 @@ class TestConfirmationChoicePicks:
         assert graph.invocations == []
         notes = [m.text for m in driver.transcript.messages if m.role == "system"]
         assert any("tell me what's off" in n for n in notes)
+
+    def test_tell_me_pick_disarms_the_menu_for_the_reply(self):
+        # The free text just solicited must not be hijacked by a re-armed
+        # digit menu ("3 sprints is too many" would fire a row) — after the
+        # pick, the gate goes composer-only until the reply runs.
+        graph = MergingFakeGraph([])
+        driver = _driver(graph, _keys(["3", "esc", "esc"]), self._confirmation_state())
+        driver.run()
+        assert driver._confirm_free_text is True
+        assert driver.choices is None
+
+    def test_a_turn_re_arms_the_menu_after_tell_me(self):
+        graph = MergingFakeGraph([self._confirmation_state()])
+        driver = _driver(graph, _keys([]), self._confirmation_state())
+        driver._confirm_free_text = True
+        driver._run_turn("the deadline is wrong", echo_user=True)
+        assert driver._confirm_free_text is False
 
     def test_override_pick_maps_to_the_override_literal(self):
         # Tested through _confirm_pick directly: running the full loop would

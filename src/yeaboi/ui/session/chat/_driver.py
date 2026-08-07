@@ -192,6 +192,7 @@ class _ChatDriver:
         self._last_phase = ""  # intake phase last seen (quack on boundary)
         self._hinted_q = -1  # question already idle-hinted (one per question)
         self._work_quip_idx = -1  # last working-quip slot shown (reset per wait)
+        self._confirm_free_text = False  # Tell-me pick: next gate pass is composer-only
         self._idle_since = time.monotonic()  # last keypress — feeds hints + idle tips
 
     # ------------------------------------------------------------------ utils
@@ -517,6 +518,9 @@ class _ChatDriver:
         if echo_user:
             self.transcript.add_user(text)
             self._pin_bottom()
+        # Any turn ends the Tell-me composer-only window — the node re-shows
+        # the summary and the gate re-derives its menu fresh.
+        self._confirm_free_text = False
         logger.info("Chat turn start: len=%d images=%d synthetic=%s", len(text), len(images or []), synthetic)
 
         if self.graph is None:
@@ -611,6 +615,12 @@ class _ChatDriver:
             return
         if key == "esc":
             cancel.set()
+            if self._finish_requested:
+                # A deferred /finish is fast mode that hasn't armed yet — Esc
+                # must cancel it too, or the description turn it interrupts
+                # would still fast-forward on completion.
+                self._finish_requested = False
+                self.notice = "Fast-forward cancelled."
             if self.state.get("_chat_fast_forward"):
                 # Esc mid-turn also leaves fast mode: cancelling the stage but
                 # letting the next one auto-accept would look like Esc did
@@ -795,6 +805,9 @@ class _ChatDriver:
         Esc between accepts so the run stays stoppable."""
         # Drain any keys pressed since the last frame: Esc here means "stop
         # auto-accepting", and the review card then takes over normally.
+        # Other type-ahead is deliberately dropped — fast mode is not going
+        # to answer it, and replaying stale keys into the next input loop
+        # would act on a screen the user wasn't looking at.
         while key := self._key(0):
             if key == "esc":
                 self._stop_fast_mode("esc at review gate")
@@ -1496,6 +1509,10 @@ class _ChatDriver:
                 view = derive_question_view(self.state)
                 self.subtitle = self._fast_prefix() + " · ".join(s for s in (view.progress, view.phase_label) if s)
                 self._coach_phase()
+                if view.choices and self._confirm_free_text:
+                    # The Tell-me pick promised the composer the floor — no
+                    # menu (and no digit auto-submit) until that reply runs.
+                    view.choices = None
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
                     self.choices = ChoiceRows(
@@ -1588,6 +1605,10 @@ class _ChatDriver:
             logger.info("Chat: confirm pick -> edit prefill")
             return None
         if submit == CONFIRM_FREETEXT:
+            # Drop the menu until the reply is sent: re-arming auto-submit
+            # over the free text just solicited would hijack a reply that
+            # starts with a digit ("3 sprints is too many" -> "override").
+            self._confirm_free_text = True
             self._note("Go ahead — tell me what's off and I'll update the summary.")
             logger.info("Chat: confirm pick -> free text")
             return None
@@ -1612,7 +1633,7 @@ class _ChatDriver:
         self._work_quip_idx = idx
         quip = WORKING_QUIPS[idx % len(WORKING_QUIPS)]
         if self.duck.say(quip, priority=PRIORITY_COACH, hold=COACH_HOLD):
-            logger.info("Duck working quip: %s", quip)
+            logger.debug("Duck working quip: %s", quip)  # decor, not a user action
         if idx % 4 == 0:
             quack_duck()
         if idx == 5:
