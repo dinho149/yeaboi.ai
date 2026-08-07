@@ -628,8 +628,8 @@ class _ChatDriver:
         ):
             self.transcript.add_artifact("intake_summary")
             self._say(
-                "Here's everything I've got. Reply **accept** to build the plan, "
-                "**edit N** to change an answer, or just tell me what's off."
+                "Here's everything I've got. Pick an option below — or type "
+                "**accept**, **edit N**, or just tell me what's off."
             )
             return
 
@@ -1456,7 +1456,12 @@ class _ChatDriver:
                 self._coach_phase()
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
-                    self.choices = ChoiceRows(options=list(view.choices), highlight=highlight, multi=view.multi_select)
+                    self.choices = ChoiceRows(
+                        options=list(view.choices),
+                        highlight=highlight,
+                        multi=view.multi_select,
+                        auto_submit=view.auto_submit,
+                    )
                 else:
                     self.choices = None
                     if view.suggestion and self.composer.is_empty() and self._prefilled_q != view.current_question:
@@ -1494,7 +1499,12 @@ class _ChatDriver:
             if stage == "intake" and qs is not None and not qs.completed:
                 if qs.editing_question is not None:
                     answer = self._resolve_choice(answer, qs.editing_question)
-                elif not qs.awaiting_confirmation:
+                elif qs.awaiting_confirmation:
+                    mapped = self._confirm_pick(answer)
+                    if mapped is None:
+                        continue  # handled locally (Edit prefill / free-text nudge)
+                    answer = mapped
+                else:
                     dynamic = qs._follow_up_choices.get(qs.current_question)
                     if dynamic:
                         from yeaboi.repl._questionnaire import _resolve_dynamic_choice
@@ -1510,6 +1520,34 @@ class _ChatDriver:
         self._save()
         logger.info("Chat session ended: quit=%s messages=%d", self.quit, len(self.transcript.messages))
         return self.state
+
+    def _confirm_pick(self, submit: str) -> str | None:
+        """Map a confirmation-gate pick to what the node understands.
+
+        Returns the literal to send ("accept"/"override"), the typed text
+        unchanged, or None when the pick was handled locally and no graph
+        turn should run. The raw labels never reach the node: a bare digit
+        would read as an edit intent and the labels match no confirm keyword.
+        """
+        from ._question_view import CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT, CONFIRM_OVERRIDE_VELOCITY
+
+        if submit == CONFIRM_ACCEPT:
+            return "accept"
+        if submit == CONFIRM_OVERRIDE_VELOCITY:
+            return "override"
+        if submit == CONFIRM_EDIT:
+            self._show_questions()
+            self._note("Which answer? Finish the **edit N** in the composer — /summary shows everything else.")
+            self.composer.set_text("edit ")
+            self.composer.row = len(self.composer.lines) - 1
+            self.composer.col = len(self.composer.lines[-1])
+            logger.info("Chat: confirm pick -> edit prefill")
+            return None
+        if submit == CONFIRM_FREETEXT:
+            self._note("Go ahead — tell me what's off and I'll update the summary.")
+            logger.info("Chat: confirm pick -> free text")
+            return None
+        return submit
 
     def _coach_phase(self) -> None:
         """Quack + a short lead-in when the intake crosses a phase boundary."""

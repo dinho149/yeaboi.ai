@@ -45,6 +45,15 @@ _SINGLE_SELECT_DYNAMIC_QS = {27}
 # SCRUM.md, or defaults.
 _USER_ANSWERED_SOURCES = (AnswerSource.DIRECT, AnswerSource.PROBED)
 
+# Confirmation-gate choice labels. The driver maps a pick to the node literal
+# ("accept"/"override") or handles it locally — the raw label must NEVER reach
+# the graph: _parse_edit_intent reads a bare digit as "edit QN", and
+# _is_confirm_intent doesn't know these strings.
+CONFIRM_ACCEPT = "Accept — build the plan"
+CONFIRM_EDIT = "Edit an answer…"
+CONFIRM_OVERRIDE_VELOCITY = "Override the velocity…"
+CONFIRM_FREETEXT = "Tell me what's off…"
+
 
 def planned_question_sets(qs: QuestionnaireState) -> tuple[list[int], set[int]] | None:
     """(remaining gaps, user-answered) — the questions this run actually asks.
@@ -94,6 +103,7 @@ class QuestionView:
     preamble_lines: list[str] = field(default_factory=list)
     choices: list[tuple[str, bool]] | None = None  # (label, pre_selected)
     multi_select: bool = False
+    auto_submit: bool = False  # bare digit picks + submits (command menus only)
     suggestion: str | None = None  # free-text prefill (chip suggestions become prefill)
     progress: str = ""  # "Question 2 of 6" over the planned set (chat shows it for every mode)
     phase_label: str = ""
@@ -122,6 +132,27 @@ def derive_question_view(graph_state: dict) -> QuestionView:
     cur_q = qs.current_question
     view.current_question = cur_q
     view.phase_label = PHASE_LABELS.get(qs.current_phase, "")
+
+    # Confirmation gate: the summary card's verdict is a pick, not prose.
+    # Guard mirrors _append_reply's card condition exactly — the choices must
+    # appear iff the card+prompt did, and never during the PTO sub-loop,
+    # velocity number entry, or an edit re-ask.
+    if (
+        qs.awaiting_confirmation
+        and not qs._awaiting_leave_input
+        and not qs._awaiting_velocity_input
+        and qs.editing_question is None
+        and cur_q > TOTAL_QUESTIONS
+    ):
+        labels = [CONFIRM_ACCEPT, CONFIRM_EDIT]
+        if qs.intake_mode != "small_project":
+            # Small mode has no capacity/velocity machinery to override.
+            labels.append(CONFIRM_OVERRIDE_VELOCITY)
+        labels.append(CONFIRM_FREETEXT)
+        view.choices = [(label, i == 0) for i, label in enumerate(labels)]
+        view.multi_select = False
+        view.auto_submit = True
+        return view
     if 1 <= cur_q <= TOTAL_QUESTIONS:
         planned = planned_question_progress(qs)
         if planned:

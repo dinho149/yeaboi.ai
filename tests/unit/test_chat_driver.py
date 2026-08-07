@@ -1104,6 +1104,81 @@ def _bounded_keys(sequence: list[str], deadline_seconds: float = 5.0):
     return _key
 
 
+class TestConfirmationChoicePicks:
+    """The Accept/Edit/Override/Tell-me rows at the confirmation gate. The
+    raw labels must never reach the graph — Accept maps to the "accept"
+    literal, Override to "override", and Edit/Tell-me act locally."""
+
+    def _confirmation_state(self, intake_mode: str = "small_project") -> dict:
+        qs = QuestionnaireState(intake_mode=intake_mode)
+        qs.awaiting_confirmation = True
+        qs.current_question = 31
+        return {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="Here is the summary.")],
+            "questionnaire": qs,
+            "pending_review": "project_intake",
+            "_intake_mode": intake_mode,
+            "_chat_greeting_done": True,
+        }
+
+    def _accepted_state(self) -> dict:
+        done = QuestionnaireState(intake_mode="small_project")
+        done.completed = True
+        done.current_question = 31
+        return {
+            "messages": [
+                HumanMessage(content="desc"),
+                AIMessage(content="Here is the summary."),
+                HumanMessage(content="accept"),
+                AIMessage(content="Building."),
+            ],
+            "questionnaire": done,
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+
+    def test_digit_1_sends_the_accept_literal(self):
+        # One keystroke: auto_submit picks the Accept row and the driver maps
+        # the label to "accept" — a bare "1" would read as the velocity menu
+        # and the label itself matches no confirm keyword.
+        graph = MergingFakeGraph([self._accepted_state()])
+        driver = _driver(graph, _keys(["1"]), self._confirmation_state())
+        driver.run()
+        assert len(graph.invocations) == 1
+        assert graph.invocations[0]["messages"][-1].content == "accept"
+
+    def test_edit_pick_prefills_the_composer_without_a_turn(self):
+        graph = MergingFakeGraph([])
+        driver = _driver(graph, _keys(["2", "esc", "esc"]), self._confirmation_state())
+        driver.run()
+        assert graph.invocations == []
+        assert driver.composer.text() == "edit "
+
+    def test_tell_me_pick_nudges_without_a_turn(self):
+        # Small mode: row 3 is Tell-me (no velocity row).
+        graph = MergingFakeGraph([])
+        driver = _driver(graph, _keys(["3", "esc", "esc"]), self._confirmation_state())
+        driver.run()
+        assert graph.invocations == []
+        notes = [m.text for m in driver.transcript.messages if m.role == "system"]
+        assert any("tell me what's off" in n for n in notes)
+
+    def test_override_pick_maps_to_the_override_literal(self):
+        # Tested through _confirm_pick directly: running the full loop would
+        # need keys queued past the processing window, where _processing_key
+        # eats them (Esc would cancel the very turn under test).
+        from yeaboi.ui.session.chat._question_view import CONFIRM_OVERRIDE_VELOCITY
+
+        driver = _driver(MergingFakeGraph([]), _keys([]), self._confirmation_state("standard"))
+        assert driver._confirm_pick(CONFIRM_OVERRIDE_VELOCITY) == "override"
+
+    def test_typed_reply_passes_through_unchanged(self):
+        # Typing stays first-class: free text at the gate goes to the graph
+        # unchanged (the node shows edit help / updates the summary).
+        driver = _driver(MergingFakeGraph([]), _keys([]), self._confirmation_state())
+        assert driver._confirm_pick("the deadline is wrong") == "the deadline is wrong"
+
+
 class TestIntakeHandoff:
     """The production default: the chat ends when the summary is accepted and
     the card pipeline takes over. Nothing past intake may run here."""

@@ -4,7 +4,14 @@ from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import QuestionnaireState
 from yeaboi.prompts.intake import QUESTION_METADATA, SMALL_PROJECT_ESSENTIALS, SMART_ESSENTIALS, AnswerSource
-from yeaboi.ui.session.chat._question_view import derive_question_view, planned_question_progress
+from yeaboi.ui.session.chat._question_view import (
+    CONFIRM_ACCEPT,
+    CONFIRM_EDIT,
+    CONFIRM_FREETEXT,
+    CONFIRM_OVERRIDE_VELOCITY,
+    derive_question_view,
+    planned_question_progress,
+)
 
 
 def _state(qs: QuestionnaireState, ai_text: str = "What is your team size?") -> dict:
@@ -158,6 +165,49 @@ class TestPtoSubLoop:
         qs.current_question = 28
         qs._awaiting_leave_input = True
         view = derive_question_view(_state(qs, "Does anyone have planned leave?\n\n[1] Yes\n[2] No"))
+        assert view.choices is None
+
+
+class TestConfirmationChoices:
+    """The summary's verdict is a pick: Accept / Edit / (Override velocity) /
+    Tell-me rows appear exactly when _append_reply shows the card — and never
+    during the PTO sub-loop, velocity number entry, or an edit re-ask."""
+
+    def _confirm_qs(self, intake_mode: str = "standard") -> QuestionnaireState:
+        qs = QuestionnaireState(intake_mode=intake_mode)
+        qs.awaiting_confirmation = True
+        qs.current_question = 31
+        return qs
+
+    def test_confirmation_offers_the_verdict_rows(self):
+        view = derive_question_view(_state(self._confirm_qs(), "Here is the summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_OVERRIDE_VELOCITY, CONFIRM_FREETEXT]
+        assert view.choices[0][1] is True  # Accept pre-highlighted
+        assert view.auto_submit is True
+        assert view.multi_select is False
+
+    def test_small_mode_omits_the_velocity_row(self):
+        view = derive_question_view(_state(self._confirm_qs("small_project"), "Summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT]
+
+    def test_velocity_number_entry_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs._awaiting_velocity_input = True
+        view = derive_question_view(_state(qs, "Enter your velocity (pts/sprint):"))
+        assert view.choices is None
+
+    def test_edit_reask_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs.editing_question = 6
+        view = derive_question_view(_state(qs, "Enter your new answer:"))
+        assert view.choices is None
+
+    def test_pto_subloop_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs._awaiting_leave_input = True
+        view = derive_question_view(_state(qs, "Does anyone have planned leave?"))
         assert view.choices is None
 
 
