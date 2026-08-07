@@ -216,6 +216,28 @@ class TestLabels:
 
         assert {t.lower() for t in FEEDBACK_TYPES} <= set(setup.PROPOSAL_TYPES)
 
+    def test_the_digest_declares_a_section_for_every_scout_proposal_type(self):
+        # The digest lists proposals in one section per type, so a type missing
+        # from its section order is a kind of work that gets filed and then
+        # never surfaced to the human who approves it. Derived, not retyped: an
+        # eighth PROPOSAL_TYPES entry must fail here until the routine says
+        # where it goes. `other` is excluded on purpose — cowork_setup.py
+        # records that it is the feedback system's fallback and that no cowork
+        # scout emits it, and digest.md says the same in step 2.
+        #
+        # Asserted against the section-order line rather than the whole file:
+        # `feature` occurs eight times inside `feature-candidate` alone, so a
+        # substring search over the document would still pass with every
+        # section deleted.
+        digest = (setup.ROUTINES_DIR / "cron" / "digest.md").read_text(encoding="utf-8")
+        order = re.search(r"Section order is fixed: \*\*(.+?)\*\*", digest)
+        assert order, "digest.md no longer declares a fixed section order"
+        sections = {name.strip().lower() for name in order.group(1).split(",")}
+        for kind in setup.PROPOSAL_TYPES:
+            if kind == "other":
+                continue
+            assert {kind, f"{kind}s"} & sections, f"digest.md's section order omits type:{kind}"
+
     def test_there_are_fifteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
         # health check all say fifteen.

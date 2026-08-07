@@ -81,7 +81,9 @@ line carries both verbs because an issue that only says how to approve leaves re
 **Slack** — plain sentences, no preamble, no emoji headers. One message per event. Links are inline
 and named, never bare URLs. Lines that carry a proposal or a ship note lead with the same
 `[type][workstream]` tag as the issue title, then one short clause — a scannable line, never a
-run-on paragraph.
+run-on paragraph. The daily digest's headings — one per proposal type, plus the `feature-candidate`
+heading — are bold text (`*Bugs*`), never emoji: that is what "no emoji headers" rules out, not the
+headings themselves.
 
 The daily digest is the one event with a thread: after its single channel message, post one reply
 per listed item **into that message's thread**, shaped `#<issue-number> — <verbatim title> —
