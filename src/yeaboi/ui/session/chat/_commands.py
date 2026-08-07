@@ -169,7 +169,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "finish",
-        "answer the remaining questions with defaults",
+        "answer the remaining questions with defaults (/finish again stops)",
         _cmd_finish,
         # Available pre-questionnaire too (the greeting advertises it) — the
         # driver defers until the description exists, like /form.

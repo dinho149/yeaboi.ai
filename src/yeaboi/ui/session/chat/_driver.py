@@ -383,11 +383,21 @@ class _ChatDriver:
         if self.state.get("sprints"):
             self._note("The plan is already complete — /export saves it.")
             return
+        if self.state.get("_chat_fast_forward"):
+            # /finish is a toggle: the second call is the graceful exit.
+            self._stop_fast_mode("/finish toggle")
+            self._note("Fast mode off — I'll stop at each review again.")
+            self._save()
+            return
         if self._qs() is None:
             # Pre-graph (greeting): the intake needs a description before
             # there is anything to fast-forward — defer, like /form does.
+            if self._finish_requested:
+                self._finish_requested = False
+                self._note("Okay, no fast-forward — I'll ask the questions one by one.")
+                return
             self._finish_requested = True
-            self._note("I'll fast-forward right after you describe the project.")
+            self._note("I'll fast-forward right after you describe the project. /finish again cancels.")
             return
         self.state["_chat_fast_forward"] = True
         logger.info("Chat: fast-forward enabled (stage=%s)", self._stage())
@@ -597,6 +607,12 @@ class _ChatDriver:
             return
         if key == "esc":
             cancel.set()
+            if self.state.get("_chat_fast_forward"):
+                # Esc mid-turn also leaves fast mode: cancelling the stage but
+                # letting the next one auto-accept would look like Esc did
+                # nothing.
+                self._stop_fast_mode("esc during turn")
+                self.notice = "Fast mode stopped."
         elif key in ("scroll_up", "pageup", "home", "scroll_down", "pagedown", "end"):
             new = coalesce_scroll(self.scroll_offset, key, self.scroll_meta, self._key)
             if key in ("scroll_up", "pageup", "home"):
@@ -712,7 +728,7 @@ class _ChatDriver:
         """Run one pipeline stage. Returns False when the turn failed/was cancelled."""
         node = predict_next_node(self.state) if not self.dry_run else self._dry_next_node()
         label, progress = self._stage_meta(node)
-        self.subtitle = f"{label}… {progress}"
+        self.subtitle = self._fast_prefix() + f"{label}… {progress}"
         self._refresh_progress(node)
         self._built_this_session = True
         logger.info("Pipeline stage entry (chat): %s", node)
@@ -762,8 +778,24 @@ class _ChatDriver:
             self._say(" · ".join(prompts) + ".")
         self._prompted.add(pending)
 
+    def _fast_prefix(self) -> str:
+        """Subtitle marker while fast mode is on — the exit must be visible."""
+        return "Fast mode (Esc stops) · " if self.state.get("_chat_fast_forward") else ""
+
+    def _stop_fast_mode(self, where: str) -> None:
+        self.state.pop("_chat_fast_forward", None)
+        logger.info("Chat: fast mode stopped (%s)", where)
+
     def _auto_accept_review(self) -> None:
-        """Fast mode: show the artifact, accept it, move on — no input loop."""
+        """Fast mode: show the artifact, accept it, move on — checking for an
+        Esc between accepts so the run stays stoppable."""
+        # Drain any keys pressed since the last frame: Esc here means "stop
+        # auto-accepting", and the review card then takes over normally.
+        while key := self._key(0):
+            if key == "esc":
+                self._stop_fast_mode("esc at review gate")
+                self._note("Fast mode stopped — here's the review.")
+                return
         pending = self.state.get("pending_review", "")
         if pending not in self._prompted:
             # /finish typed at an already-shown review gate must not re-add the card.
@@ -1452,7 +1484,7 @@ class _ChatDriver:
 
             if stage == "intake":
                 view = derive_question_view(self.state)
-                self.subtitle = " · ".join(s for s in (view.progress, view.phase_label) if s)
+                self.subtitle = self._fast_prefix() + " · ".join(s for s in (view.progress, view.phase_label) if s)
                 self._coach_phase()
                 if view.choices:
                     highlight = next((i for i, (_o, sel) in enumerate(view.choices) if sel), 0)
@@ -1473,7 +1505,9 @@ class _ChatDriver:
                         self._prefilled_q = view.current_question
             else:
                 self.choices = None
-                self.subtitle = "" if stage != "chat" else "Plan complete — keep refining, or /export"
+                self.subtitle = self._fast_prefix() + (
+                    "" if stage != "chat" else "Plan complete — keep refining, or /export"
+                )
                 if stage == "chat":
                     self.progress = None  # the build is over — drop the checklist
                     self._maybe_celebrate_completion()

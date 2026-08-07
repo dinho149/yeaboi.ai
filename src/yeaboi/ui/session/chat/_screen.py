@@ -69,7 +69,7 @@ _TIPS_PAIRS = [
     ("␣␣", "double-tap Space to speak"),
     ("/form", "fill it out as a form"),
     ("alt+enter", "new line"),
-    ("/finish", "answer the rest with defaults"),
+    ("/finish", "answer the rest with defaults (Esc stops)"),
     ("/export", "save plan + chat"),
     ("/questions", "see what I'll ask"),
     ("/summary", "your answers so far"),

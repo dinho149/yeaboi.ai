@@ -979,6 +979,69 @@ class TestFastForward:
         assert graph.calls == 1  # one attempt, then the pause — no hot loop
         assert any("send any message to retry" in m.text for m in driver.transcript.messages)
 
+    def test_finish_again_turns_fast_mode_off(self):
+        # /finish is a toggle — the second call is the graceful exit.
+        qs = QuestionnaireState(intake_mode="smart")
+        qs.current_question = 6
+        state = {
+            "messages": [HumanMessage(content="desc")],
+            "questionnaire": qs,
+            "_chat_fast_forward": True,
+            "_chat_greeting_done": True,
+        }
+        graph = FakeGraph([])
+        driver = _driver(graph, _keys([]), state)
+        driver._fast_forward()
+        assert "_chat_fast_forward" not in driver.state
+        assert graph.invocations == []  # no "defaults all" turn on the way out
+        assert any("Fast mode off" in m.text for m in driver.transcript.messages)
+
+    def test_second_finish_pre_questionnaire_cancels_the_deferral(self):
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._fast_forward()
+        assert driver._finish_requested is True
+        driver._fast_forward()
+        assert driver._finish_requested is False
+
+    def test_esc_at_review_gate_stops_auto_accepting(self):
+        # Esc queued when the auto-accept fires must stop fast mode and leave
+        # the gate for the normal review card, not accept it.
+        state = {
+            "messages": [],
+            "pending_review": "story_writer",
+            "stories": ["s"],
+            "_chat_fast_forward": True,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys(["esc"]), state)
+        driver._auto_accept_review()
+        assert "_chat_fast_forward" not in driver.state
+        assert driver.state.get("pending_review") == "story_writer"  # gate untouched
+        assert not any("Auto-accepted" in m.text for m in driver.transcript.messages)
+        assert any("Fast mode stopped" in m.text for m in driver.transcript.messages)
+
+    def test_esc_during_a_turn_leaves_fast_mode(self):
+        import threading
+
+        state = {"messages": [], "_chat_fast_forward": True}
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._processing_key("esc", threading.Event())
+        assert "_chat_fast_forward" not in driver.state
+        assert driver.notice == "Fast mode stopped."
+
+    def test_subtitle_carries_the_fast_mode_marker(self):
+        qs = QuestionnaireState(intake_mode="smart")
+        qs.current_question = 6
+        state = {
+            "messages": [AIMessage(content="What is your team size?")],
+            "questionnaire": qs,
+            "_chat_fast_forward": True,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys(["esc", "esc"]), state)
+        driver.run()
+        assert driver.subtitle.startswith("Fast mode (Esc stops) · ")
+
     def test_auto_accept_review_pops_keys_without_prompt(self):
         state = {
             "messages": [],
