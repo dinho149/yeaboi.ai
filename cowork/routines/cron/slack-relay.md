@@ -47,6 +47,12 @@ announce who is unauthorized.
    idempotency (below) makes the overlap free, whereas a gap after a failed run would drop a
    human's approval on the floor.
 
+   **Follow `slack_read_thread`'s pagination to the end; never read the first page and stop.** Since
+   the digest gained a section per proposal type, one thread carries up to twenty-one item replies
+   plus this routine's own acks, and a 48-hour window spans two digests. A truncated read is a
+   dropped approval that step 5 then accounts for as nothing unprocessed — the one way this routine
+   fails without saying so.
+
 2. **Early exit** — if no message or reaction from an allowlisted human lacks the 🤖 marker, stop.
    Post nothing, touch nothing. This is the common case and the whole cost model: most hourly runs
    are a read and an exit.

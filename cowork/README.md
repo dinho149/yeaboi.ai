@@ -16,8 +16,8 @@ scout routine (per workstream, own cron)
                         `cowork:proposal` + `workstream:X`
                         (no Linear ticket yet)        │
                               │                       │
-        daily digest routine ranks ALL open proposals │
-        across workstreams → ONE Slack post           │
+        daily digest routine buckets open proposals   │
+        by type → top 3 each → ONE Slack post         │
                               │                       │
      YOU add `claude-implement` (on GitHub, or ✅ on the digest
      thread — `cron/slack-relay.md`), or close / ❌ to reject

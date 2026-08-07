@@ -20,21 +20,44 @@ The single decision point. It is the only routine that posts proposals to Slack.
    digest. `backlog-groomer.yml` used to nudge these on its own weekly clock; retiring it in favour
    of one queue only works if that queue actually carries them.
 
-2. **Rank across workstreams**, not within them. Impact over effort, with a deliberate thumb on the
-   scale for: anything security-labelled, anything that unblocks another workstream, and anything a
-   user would notice. Two items from the same workstream should not both be in the top three unless
-   they genuinely earn it — breadth beats depth in a digest. Rank `feature`/`improvement` proposals
-   together with everything else — no separate section, no discount for not being a bug. The `[type]`
-   tag in each line is what makes the mix visible; the thumbs on the scale above apply regardless of
-   type, and the `[security]` and `[feature]`/`[improvement]` tags make the first and third legible
-   at a glance.
+2. **Bucket by type, then rank inside each bucket.** Group every open proposal by its `type:<kind>`
+   label and rank within the group on impact over effort, with a deliberate thumb on the scale for
+   anything that unblocks another workstream and anything a user would notice. Two items from the
+   same workstream should not both make a bucket's top three unless they genuinely earn it — breadth
+   beats depth in a digest, and without that nudge the bug bucket becomes three `platform` lines.
+
+   The buckets are the point. A flat ranking over a queue that is half bugs lands on five bugs every
+   morning: on one shared scale concrete breakage always outranks speculative value, so a feature or
+   a chore never wins a slot it has to take from a production bug. A bucket does not ask it to. This
+   file used to try to fix that with an instruction — rank non-bugs together with everything else, no
+   discount for not being a bug — and an instruction cannot beat the scoring that causes the problem.
+
+   Section order is fixed: **Security, Bugs, Features, Improvements, Chores, Docs**. Fixed on
+   purpose — a reader scanning the same message every morning should not have to hunt for where the
+   chores went. Security leads because it used to be a thumb on a flat scale and is now a section.
+
+   **A type with no open proposals is omitted entirely**, heading and all. Six standing headings,
+   most of them empty on most days, is exactly the "nothing today" fatigue the stop conditions exist
+   to prevent. There is no `other` section: `scripts/cowork_setup.py` records that `type:other` is
+   the feedback system's fallback and is never emitted by a cowork scout, so an `other` or untyped
+   proposal falls into the remainder count below.
 
 3. **Post one Slack message** to `#yeaboi-claude` via `cowork-scribe`:
-   - top 5 proposals, one line each: `<issue title> — why-now clause (issue link)`. The title comes
-     from the issue verbatim and already leads with its `[type][workstream]` tag — never add a
-     second one; for an old issue whose title lacks the tag, prepend it from the issue's labels. The
-     why-now is one clause, not a sentence chain — if a line wraps twice it is too long
-   - the count of everything else, by workstream
+   - up to **3 proposals per type**, each type under a bold heading carrying its open count —
+     `*Bugs* (12 open — top 3)`, and drop the `— top 3` when the bucket is listed in full, because
+     `(2 open — top 3)` reads as a promise the section did not keep — and each proposal one line
+     underneath: `<issue title> — why-now
+     clause (issue link)`. The title comes from the issue verbatim and already leads with its
+     `[type][workstream]` tag — never add a second one, and never strip the tag because the heading
+     appears to make it redundant: the tag is what `cowork-scribe`'s title contract guarantees, and
+     it is what survives the line being quoted anywhere else. For an old issue whose title lacks the
+     tag, prepend it from the issue's labels. The why-now is one clause, not a sentence chain — if a
+     line wraps twice it is too long
+   - the count of everything else, **by workstream** — the other axis, on purpose. The headings above
+     already carry the per-type counts, so a per-type remainder would only restate them; the
+     per-workstream remainder is the one place a reader learns which surface the backlog is piling
+     up on. Omit the line entirely when the sections above listed everything — a remainder of zero
+     is not a fact anyone needs
    - the oldest 3 `feature-candidate` issues, under their own heading — these came from users, so
      they are listed separately rather than ranked against scout finds, and by age rather than by
      impact: a reported bug that has waited a month is the fact worth surfacing
@@ -44,10 +67,13 @@ The single decision point. It is the only routine that posts proposals to Slack.
      is ❌ or closing the issue — the digest still names the verbs, because a reader who has
      forgotten them has nowhere else to look
 
-   Then **one reply in that message's thread per listed item** — every top-5 proposal and every
+   Then **one reply in that message's thread per listed item** — every listed proposal and every
    `feature-candidate` line — formatted `#<issue-number> — <verbatim title> — <issue link>`, the
    number leading so `cron/slack-relay.md` can parse it. The thread replies are what make a single
-   reaction mean a single issue; without them ✅ on the digest would be ambiguous across five items.
+   reaction mean a single issue; without them ✅ on the digest would be ambiguous across every item
+   it lists. Per-type sections raise the ceiling to eighteen proposal replies plus three
+   `feature-candidate` replies — a longer thread, not a second message, and the reply shape is a
+   parsed contract that does not change with the volume.
 
    One **channel-level** message, never a second on the same day — the channel-noise rule holds;
    the per-item replies live inside its thread, not in the channel.
