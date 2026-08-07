@@ -741,6 +741,35 @@ class TestGreetingSizeChoices:
         driver.run()
         assert driver._form_requested is True
 
+    def test_bare_digit_picks_size_without_enter(self):
+        # auto_submit: the placeholder promises "Press 1 or 2 to size it" —
+        # a bare "2" must pick Large with no Enter.
+        driver = _driver(FakeGraph([]), _keys(["2", "esc", "esc"]))
+        driver.run()
+        preamble_texts = [e["text"] for e in driver.state.get("_chat_preamble", [])]
+        assert any(t.startswith("Large — ") for t in preamble_texts)
+
+    def test_bare_digit_3_picks_form_without_enter(self):
+        driver = _driver(FakeGraph([]), _keys(["3", "esc", "esc"]))
+        driver.run()
+        assert driver._form_requested is True
+
+    def test_digit_after_draft_stays_free_text(self):
+        # Auto-submit only fires on an empty composer: mid-description digits
+        # ("3 devs building…" typed out of order) must keep typing.
+        driver = _driver(FakeGraph([]), _keys(["b", "2", "esc", "esc"]))
+        driver.run()
+        assert driver._form_requested is False
+        preamble_texts = [e["text"] for e in driver.state.get("_chat_preamble", [])]
+        assert not any(t.startswith("Large — ") for t in preamble_texts)
+
+    def test_out_of_range_digit_falls_through_to_composer(self):
+        driver = _driver(FakeGraph([]), _keys(["9", "esc", "esc"]))
+        driver.run()
+        assert driver._form_requested is False
+        preamble_texts = [e["text"] for e in driver.state.get("_chat_preamble", [])]
+        assert not any(t.startswith(("Small — ", "Large — ")) for t in preamble_texts)
+
     def test_deferred_form_opens_once_questionnaire_exists(self):
         # A greeting-time form request (pick or /form) is deferred; run()
         # opens the takeover as soon as the first invoke created the

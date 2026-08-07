@@ -84,11 +84,17 @@ class ChoiceRows:
     options: (label, checked) — checked marks multi-select toggles and the
     single-select pre-selection. highlight is the ❯ row; the driver moves it
     only while the composer is empty (one unambiguous arrow-key rule).
+
+    auto_submit: a bare digit keypress picks and submits that row in one
+    stroke. Only for menus whose labels are commands (the size question, the
+    review verdict) — never for data-entry questions, where a typed "12"
+    must stay free text.
     """
 
     options: list[tuple[str, bool]] = field(default_factory=list)
     highlight: int = 0
     multi: bool = False
+    auto_submit: bool = False
 
 
 @dataclass

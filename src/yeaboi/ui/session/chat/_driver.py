@@ -1022,6 +1022,15 @@ class _ChatDriver:
 
             # Choice navigation only while the composer is empty (one rule).
             if self.choices is not None and self.choices.options and self.composer.is_empty():
+                if self.choices.auto_submit and not self.choices.multi and key.isdigit():
+                    # Command menus (size, review verdict): a bare digit picks
+                    # and submits in one stroke. Out-of-range digits fall
+                    # through to the composer like any other character.
+                    idx = int(key) - 1
+                    if 0 <= idx < len(self.choices.options):
+                        self.choices.highlight = idx
+                        logger.info("Chat choice auto-submit: %d", idx + 1)
+                        return self._choice_answer()
                 if key in ("up", "scroll_up"):
                     self.choices.highlight = (self.choices.highlight - 1) % len(self.choices.options)
                     continue
@@ -1267,7 +1276,9 @@ class _ChatDriver:
         ]
         if include_form:
             options.append((_FORM_CHOICE_LABEL, False))
-        return ChoiceRows(options=options, highlight=0, multi=False)
+        # auto_submit makes the placeholder's "Press 1 or 2 to size it"
+        # literally true — no Enter needed.
+        return ChoiceRows(options=options, highlight=0, multi=False, auto_submit=True)
 
     def _choice_mode(self, submit: str) -> str | None:
         lowered = submit.lower()
