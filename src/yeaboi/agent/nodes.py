@@ -76,7 +76,12 @@ from yeaboi.prompts.intake import (
     is_choice_question,
 )
 from yeaboi.prompts.sprint_planner import get_sprint_planner_prompt
-from yeaboi.prompts.story_writer import MAX_STORIES_PER_FEATURE, MIN_STORIES_PER_FEATURE, get_story_writer_prompt
+from yeaboi.prompts.story_writer import (
+    MAX_STORIES_PER_FEATURE,
+    MIN_STORIES_PER_FEATURE,
+    SMALL_PROJECT_MAX_STORIES,
+    get_story_writer_prompt,
+)
 from yeaboi.prompts.system import get_system_prompt  # noqa: E402 — direct submodule imports avoid circular import
 from yeaboi.prompts.task_decomposer import get_task_decomposer_prompt
 from yeaboi.tools import detect_platform
@@ -7463,6 +7468,10 @@ def story_writer(state: ScrumState) -> dict:
 
     _dod = resolve_dod_items(state)
 
+    # Same predicate as the analyzer coercion — the two must not disagree on
+    # what "small" means, or the sprint clamp and the story cap would drift.
+    small_mode = _is_small_project_mode(state.get("_intake_mode"))
+
     prompt = get_story_writer_prompt(
         project_name=analysis.project_name,
         project_description=analysis.project_description,
@@ -7480,6 +7489,7 @@ def story_writer(state: ScrumState) -> dict:
         review_feedback=review_feedback if review_mode else None,
         review_mode=review_mode,
         previous_output=previous_output,
+        max_total_stories=SMALL_PROJECT_MAX_STORIES if small_mode else None,
     )
 
     # Screenshots attached to review-edit feedback (Ctrl+V) — review passes only.
@@ -7501,6 +7511,22 @@ def story_writer(state: ScrumState) -> dict:
     # and collect warnings for the user. Deterministic post-processing, no LLM.
     # See docs: "Scrum Standards" — Story Checklist
     stories, warnings = _validate_stories(stories, features)
+
+    # Hard cap for small projects — the prompt asks, this enforces. Keep
+    # document order: the LLM lists stories by importance, so the first
+    # SMALL_PROJECT_MAX_STORIES are the ones to keep.
+    if small_mode and len(stories) > SMALL_PROJECT_MAX_STORIES:
+        dropped = stories[SMALL_PROJECT_MAX_STORIES:]
+        stories = stories[:SMALL_PROJECT_MAX_STORIES]
+        warnings.append(
+            f"Small project cap: kept the first {SMALL_PROJECT_MAX_STORIES} stories and dropped "
+            f"{len(dropped)}: " + "; ".join(f"{s.id} ({s.title or s.goal})" for s in dropped)
+        )
+        logger.info(
+            "story_writer: small-project cap trimmed %d -> %d stories",
+            SMALL_PROJECT_MAX_STORIES + len(dropped),
+            SMALL_PROJECT_MAX_STORIES,
+        )
 
     # Format the stories for display (with warnings if any)
     display = _format_stories(stories, features, analysis.project_name, warnings=warnings)

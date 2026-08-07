@@ -514,6 +514,56 @@ class TestStoryWriter:
         assert len(result["stories"]) == 6
         assert "messages" in result
 
+    def test_small_mode_hard_caps_stories_at_two(self, monkeypatch):
+        """Small projects keep only the first SMALL_PROJECT_MAX_STORIES stories
+        (document order = LLM importance order) and warn about the rest —
+        the ticket's hard limit, enforced regardless of what the LLM returns."""
+        fake_response = MagicMock()
+        fake_response.content = VALID_STORIES_JSON  # 3 stories
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = fake_response
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: mock_llm)
+
+        result = story_writer(self._make_state(_intake_mode="small_project"))
+        assert [s.id for s in result["stories"]] == ["US-F1-001", "US-F1-002"]
+        # The dropped story is named in the visible warning.
+        assert "US-F2-001" in result["messages"][0].content
+
+    def test_small_mode_prompt_carries_the_cap(self, monkeypatch):
+        """The prompt itself must instruct the ceiling, not just the trim."""
+        fake_response = MagicMock()
+        fake_response.content = VALID_STORIES_JSON
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = fake_response
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: mock_llm)
+
+        story_writer(self._make_state(_intake_mode="small_project"))
+        prompt_sent = str(mock_llm.invoke.call_args)
+        assert "HARD LIMIT: at most 2 stories in total" in prompt_sent
+
+    def test_non_small_mode_is_not_trimmed(self, monkeypatch):
+        """Large/standard projects keep every parsed story."""
+        fake_response = MagicMock()
+        fake_response.content = VALID_STORIES_JSON
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = fake_response
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: mock_llm)
+
+        result = story_writer(self._make_state(_intake_mode="smart"))
+        assert len(result["stories"]) == 3
+        prompt_sent = str(mock_llm.invoke.call_args)
+        assert "HARD LIMIT" not in prompt_sent
+
+    def test_small_mode_caps_the_fallback_path_too(self, monkeypatch):
+        """Even the deterministic fallback (2 per feature x 3 features = 6)
+        must come out at the cap in small mode."""
+        mock_llm = MagicMock()
+        mock_llm.invoke.side_effect = RuntimeError("API down")
+        monkeypatch.setattr("yeaboi.agent.nodes.get_llm", lambda **kw: mock_llm)
+
+        result = story_writer(self._make_state(_intake_mode="small_project"))
+        assert len(result["stories"]) == 2
+
     def test_calls_llm_with_temperature_zero(self, monkeypatch):
         """story_writer should use temperature=0.0 for deterministic output."""
         fake_response = MagicMock()
