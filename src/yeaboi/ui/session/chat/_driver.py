@@ -93,6 +93,7 @@ _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
 _IDLE_HINT_SECONDS = 8.0  # stuck on a question this long → the duck offers a hint
+_WORK_QUIP_SECONDS = 5.0  # a working wait this long → the duck starts entertaining
 _BUBBLE_MIN_COLS = 12  # narrower than this and a bubble is skipped, not squeezed
 
 
@@ -190,6 +191,7 @@ class _ChatDriver:
         self._built_this_session = False  # a pipeline stage ran here (gates the celebration)
         self._last_phase = ""  # intake phase last seen (quack on boundary)
         self._hinted_q = -1  # question already idle-hinted (one per question)
+        self._work_quip_idx = -1  # last working-quip slot shown (reset per wait)
         self._idle_since = time.monotonic()  # last keypress — feeds hints + idle tips
 
     # ------------------------------------------------------------------ utils
@@ -557,6 +559,7 @@ class _ChatDriver:
 
         start = time.monotonic()
         first_token_logged = False
+        self._work_quip_idx = -1
         set_duck_working(True)  # the corner duck bobs through every wait
         try:
             while thread.is_alive():
@@ -567,6 +570,7 @@ class _ChatDriver:
                     first_token_logged = True
                 key = self._key(FRAME_TIME_30FPS)
                 self._processing_key(key, cancel)
+                self._entertain_duck(tick)
                 self._render(processing=True, tick=tick, stream_text=stream_text or None)
         finally:
             set_duck_working(False)
@@ -835,11 +839,14 @@ class _ChatDriver:
         thread.start()
         start = time.monotonic()
         cancel = threading.Event()  # reformat isn't cancellable; keys still buffer
+        self._work_quip_idx = -1
         set_duck_working(True)
         try:
             while thread.is_alive():
+                tick = time.monotonic() - start
                 self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-                self._render(processing=True, tick=time.monotonic() - start)
+                self._entertain_duck(tick)
+                self._render(processing=True, tick=tick)
         finally:
             set_duck_working(False)
         thread.join()
@@ -1403,11 +1410,14 @@ class _ChatDriver:
 
         start = time.monotonic()
         cancel = threading.Event()  # nothing to cancel; keys buffer as type-ahead
+        self._work_quip_idx = -1
         set_duck_working(True)
         try:
             while time.monotonic() - start < _DRY_STAGE_SECONDS:
+                tick = time.monotonic() - start
                 self._processing_key(self._key(FRAME_TIME_30FPS), cancel)
-                self._render(processing=True, tick=time.monotonic() - start)
+                self._entertain_duck(tick)
+                self._render(processing=True, tick=tick)
         finally:
             set_duck_working(False)
         if self._dry_full_state is None:
@@ -1582,6 +1592,32 @@ class _ChatDriver:
             logger.info("Chat: confirm pick -> free text")
             return None
         return submit
+
+    def _entertain_duck(self, tick: float) -> None:
+        """Rotate working quips (plus the odd gag) through a long wait.
+
+        Clock-derived: the quip slot is tick // _WORK_QUIP_SECONDS, so per
+        frame this is one division and usually one compare — the say(), the
+        gags and the log fire only when the slot changes, never per frame.
+        Short turns (< one slot) stay silent. PRIORITY_COACH keeps real
+        events (stage completions) winning the bubble.
+        """
+        from ._duck import COACH_HOLD, PRIORITY_COACH, WORKING_QUIPS
+
+        if tick < _WORK_QUIP_SECONDS:
+            return
+        idx = int(tick // _WORK_QUIP_SECONDS)
+        if idx == self._work_quip_idx:
+            return
+        self._work_quip_idx = idx
+        quip = WORKING_QUIPS[idx % len(WORKING_QUIPS)]
+        if self.duck.say(quip, priority=PRIORITY_COACH, hold=COACH_HOLD):
+            logger.info("Duck working quip: %s", quip)
+        if idx % 4 == 0:
+            quack_duck()
+        if idx == 5:
+            # One shades-lift gag on a genuinely long wait (~25s in).
+            poke_duck()
 
     def _coach_phase(self) -> None:
         """Quack + a short lead-in when the intake crosses a phase boundary."""

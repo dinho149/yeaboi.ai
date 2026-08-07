@@ -1167,6 +1167,53 @@ def _bounded_keys(sequence: list[str], deadline_seconds: float = 5.0):
     return _key
 
 
+class TestEntertainDuck:
+    """The working-wait entertainer: clock-derived quip slots, gags on a
+    schedule, real EVENT bubbles always win."""
+
+    def test_short_waits_stay_silent(self):
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._entertain_duck(1.0)
+        assert driver.duck._line is None
+
+    def test_long_wait_rotates_quips_once_per_slot(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+        from yeaboi.ui.session.chat._duck import WORKING_QUIPS
+
+        monkeypatch.setattr(driver_mod, "quack_duck", lambda *a: None)
+        monkeypatch.setattr(driver_mod, "poke_duck", lambda *a: None)
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._entertain_duck(5.1)
+        assert driver.duck._line is not None
+        first = driver.duck._line.text
+        assert first == WORKING_QUIPS[1 % len(WORKING_QUIPS)]
+        seq = driver.duck._line.seq
+        driver._entertain_duck(5.2)  # same slot — no re-say
+        assert driver.duck._line.seq == seq
+        driver._entertain_duck(10.1)  # next slot — next quip
+        assert driver.duck._line.text != first
+
+    def test_gags_fire_on_their_slots(self, monkeypatch):
+        import yeaboi.ui.session.chat._driver as driver_mod
+
+        calls: list[str] = []
+        monkeypatch.setattr(driver_mod, "quack_duck", lambda *a: calls.append("quack"))
+        monkeypatch.setattr(driver_mod, "poke_duck", lambda *a: calls.append("poke"))
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._entertain_duck(5.1)  # idx 1 — no gag
+        driver._entertain_duck(20.1)  # idx 4 — quack (idx % 4 == 0)
+        driver._entertain_duck(25.1)  # idx 5 — the one shades gag
+        assert calls == ["quack", "poke"]
+
+    def test_event_bubble_is_not_displaced(self):
+        from yeaboi.ui.session.chat._duck import PRIORITY_EVENT
+
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver.duck.say("Stories done!", priority=PRIORITY_EVENT)
+        driver._entertain_duck(5.1)
+        assert driver.duck._line.text == "Stories done!"
+
+
 class TestConfirmationChoicePicks:
     """The Accept/Edit/Override/Tell-me rows at the confirmation gate. The
     raw labels must never reach the graph — Accept maps to the "accept"

@@ -73,6 +73,18 @@ class TestLifecycle:
         _, _, seq2 = duck.tick(now=later + 0.1)
         assert seq2 > seq1
 
+
+class TestQuipTables:
+    def test_quips_fit_the_bubble_budget(self):
+        # Same ≤40-char rule the shared DUCK_QUIPS table is held to — a longer
+        # line wraps out of the corner bubble.
+        from yeaboi.ui.session.chat._duck import PHASE_QUIPS, WORKING_QUIPS
+
+        for key, quip in PHASE_QUIPS.items():
+            assert 0 < len(quip) <= 40, key
+        for quip in WORKING_QUIPS:
+            assert 0 < len(quip) <= 40, quip
+
     def test_same_live_text_same_priority_does_not_restart(self):
         # Re-offering the line already showing lets it play out (no seq bump,
         # so the fade isn't restarted every frame by a repeating caller).
