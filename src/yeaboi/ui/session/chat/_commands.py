@@ -43,7 +43,7 @@ class ChatContext:
     intake_active: Callable[[], bool]  # questionnaire exists and not completed/confirmed
     questionnaire_exists: Callable[[], bool]
     enter_form: Callable[[], None]  # full-screen questionnaire takeover (/form)
-    fast_forward: Callable[[], None]  # defaults + auto-accept everything (/finish)
+    fast_forward: Callable[[], None]  # default every remaining answer (/finish)
     plan_complete: Callable[[], bool]  # sprints exist — nothing left to fast-forward
     toggle_duck: Callable[[], None]  # mute/unmute the companion duck's bubble (/duck)
 
@@ -91,8 +91,8 @@ def _cmd_form(ctx: ChatContext, args: str) -> None:
 
 
 def _cmd_finish(ctx: ChatContext, args: str) -> None:
-    # The driver sends the "defaults all" literal to the node and flags the
-    # session so every later review gate auto-accepts — see _fast_forward.
+    # The driver sends the "defaults all" literal to the node, which answers
+    # every remaining question and shows the summary — see _fast_forward.
     ctx.fast_forward()
 
 
@@ -164,7 +164,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "finish",
-        "use defaults for everything and build the full plan with no more stops",
+        "answer the remaining questions with defaults",
         _cmd_finish,
         # Available pre-questionnaire too (the greeting advertises it) — the
         # driver defers until the description exists, like /form.

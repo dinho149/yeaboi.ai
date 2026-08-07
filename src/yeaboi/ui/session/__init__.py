@@ -168,6 +168,18 @@ def run_session(
         remove_session_logger()
 
 
+def _intake_complete(graph_state: dict) -> bool:
+    """True once the questionnaire is answered AND its summary has been accepted.
+
+    The single predicate behind two decisions — whether to open the chat at all
+    (a resumed session past intake goes straight to the card pipeline) and
+    whether the chat handed off or the user walked away mid-questionnaire. One
+    definition so the two can never disagree.
+    """
+    qs = graph_state.get("questionnaire")
+    return isinstance(qs, QuestionnaireState) and qs.completed and graph_state.get("pending_review") != "project_intake"
+
+
 def _run_session_body(
     live,
     console,
@@ -226,19 +238,22 @@ def _run_session_body(
         questionnaire.intake_mode = intake_mode
         graph_state["questionnaire"] = questionnaire
 
-    # ── Live chat: the conversational front end over the same graph ────────
-    # Every interactive planning run — new ("chat" asks the size in
-    # conversation; a preset mode from the roadmap hand-off is announced) and
-    # resumed (the transcript is rebuilt from persisted messages) — goes
-    # through the chat driver. The legacy phase pipeline remains only for
-    # export_only (headless auto-answer) and questionnaire imports.
-    if not export_only and questionnaire is None:
+    # ── Live chat: the questionnaire, and only the questionnaire ───────────
+    # The conversational front end owns the greeting, the size pick ("chat"
+    # asks it in conversation; a preset mode from the roadmap hand-off is
+    # announced), the intake Q&A and the summary confirmation. The moment the
+    # summary is accepted it hands the state back and the phase loop below
+    # takes over unchanged — reviews, exports and tracker sync stay on the card
+    # pipeline. Skipped entirely for export_only (headless auto-answer),
+    # questionnaire imports, and any resume that is already past intake.
+    chat_ran = False
+    if not export_only and questionnaire is None and not _intake_complete(graph_state):
         if graph_state.get("_intake_mode") == "chat":
             graph_state["_intake_mode"] = ""  # "" = ask the size in chat
         from yeaboi.ui.session.chat import run_chat_session
 
-        logger.info("Phase transition: chat")
-        final_state = run_chat_session(
+        logger.info("Phase transition: chat_intake")
+        graph_state = run_chat_session(
             live,
             console,
             graph,
@@ -249,23 +264,25 @@ def _run_session_body(
             dry_run=dry_run,
             initial_description=initial_description,
         )
-        if final_state is None:
+        if graph_state is None:
             return
-        if project_id and final_state.get("sprints"):
-            from yeaboi.persistence import generate_scrum_md
+        chat_ran = True
+        # No save point here: the chat replaces Phases A–C, and the driver's
+        # own _save() already runs on every exit path before it returns the
+        # state — a second upsert would write the same rows again.
+        if not _intake_complete(graph_state):
+            # Left mid-questionnaire — back to the project dashboard.
+            logger.info("Chat exited before intake completed")
+            return
 
-            generate_scrum_md(project_id)
-            logger.info("SCRUM.md generated: project_id=%s", project_id)
-        logger.info("Session complete")
-        return
-
-    logger.info("Phase transition: description_input")
     # ── Phase A: Description Input ─────────────────────────────────────
     # Multi-line text input for the initial project description.
     # This is the first thing the user types — their project overview.
-    # Skipped when resuming a project that already has messages.
+    # Skipped when resuming a project that already has messages, and when the
+    # chat already collected the description (and, in dry-run, the state).
     # In dry-run mode, the input is pre-filled with an example description.
-    if questionnaire is None and resume_graph_state is None:
+    if questionnaire is None and resume_graph_state is None and not chat_ran:
+        logger.info("Phase transition: description_input")
         desc_result = _phase_description_input(
             live, console, _key, dry_run=dry_run, scope_id=project_id, initial_text=initial_description
         )
