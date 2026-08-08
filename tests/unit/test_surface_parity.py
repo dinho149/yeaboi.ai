@@ -254,11 +254,13 @@ CAPABILITIES: dict[str, dict] = {
     # surfaces land in its own phase commit and replace the Exempt in the same
     # commit that creates them.
     "agent-usage": {
-        "engines": Exempt("lands with the agentwatch engine in the Agent Usage phase of this PR"),
-        "mcp_tools": Exempt("lands with tools_agentwatch.py in the Agent Usage phase of this PR"),
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_usage")},
+        # agents_usage_history is a read-only store wrapper (no pipeline) —
+        # parity with reporting_history / retro_history.
+        "mcp_tools": {"agents_usage", "agents_usage_history"},
         "tui_mode": "agent-usage",
-        "cli": Exempt("lands with the `agents cost` subcommand in the Agent Usage phase of this PR"),
-        "skill": Exempt("lands with the agents-usage plugin skill in the Agent Usage phase of this PR"),
+        "cli": {"agents"},
+        "skill": "agents-usage",
     },
     "agent-standup": {
         "engines": Exempt("lands with run_agent_standup in the Agent Standup phase of this PR"),
@@ -296,6 +298,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf_six_month_review": ("yeaboi.performance.engine", "run_six_month_review"),
     "team_analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
+    "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -347,6 +350,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf complete": ("yeaboi.performance.engine", "complete_one_on_one"),
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
     "analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
+    "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -390,6 +394,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf prep": {"strict"},
     "perf complete": {"strict"},
     "perf review": {"strict"},
+    "agents cost": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {

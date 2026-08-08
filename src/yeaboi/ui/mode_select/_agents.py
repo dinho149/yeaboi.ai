@@ -111,16 +111,68 @@ def _run_placeholder_page(
 
 
 def _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Usage — replaced by the real dashboard in the Agent Usage phase."""
-    _run_placeholder_page(
-        console,
-        live,
-        read_key,
-        frame_time,
-        supports_timeout,
-        key="agent-usage",
-        body_lines=("The agent cost dashboard is being wired up.",),
-    )
+    """Agent Usage — run the engine on a worker thread, then show the dashboard.
+
+    The engine's LLM insight call can take seconds, so the page loop keeps
+    animating a spinner (fed by the engine's on_progress strings) while a
+    daemon thread runs the pipeline; the engine itself never raises (parse →
+    fallback → format), so the thread's result is always a report.
+    """
+    import queue
+    import threading
+
+    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen
+
+    logger.info("agent usage page opened")
+    while True:  # re-entered by the r (re-run) key
+        progress: queue.Queue[str] = queue.Queue()
+        result: queue.Queue = queue.Queue(maxsize=1)
+
+        def _work() -> None:
+            from yeaboi.agentwatch.engine import run_agent_usage
+
+            try:
+                result.put(run_agent_usage(on_progress=progress.put))
+            except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
+                logger.exception("agent usage engine failed")
+                from yeaboi.agent.state import AgentUsageReport
+
+                result.put(AgentUsageReport(warnings=(f"Agent usage failed: {exc}",)))
+
+        worker = threading.Thread(target=_work, daemon=True, name="agent-usage")
+        worker.start()
+
+        status = ""
+        start = time.monotonic()
+        report = None
+        while report is None:
+            try:
+                status = progress.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                report = result.get_nowait()
+            except queue.Empty:
+                pass
+            w, h = console.size
+            live.update(
+                _build_agent_usage_screen(None, width=w, height=h, shimmer_tick=time.monotonic() - start, status=status)
+            )
+            key = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if key in ("esc", "q"):
+                logger.info("agent usage page: backed out while running")
+                return  # the daemon thread finishes (and exports) in the background
+
+        logger.info("agent usage page: report ready (%d session(s))", report.session_count)
+        while True:
+            w, h = console.size
+            live.update(_build_agent_usage_screen(report, width=w, height=h, shimmer_tick=time.monotonic() - start))
+            key = read_key(timeout=frame_time) if supports_timeout else read_key()
+            if key in ("esc", "q"):
+                return
+            if key == "r":
+                logger.info("agent usage page: re-run requested")
+                break  # back to the outer loop → fresh engine run
 
 
 def _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout) -> None:

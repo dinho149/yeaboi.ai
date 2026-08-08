@@ -14,7 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi import __version__, fs_policy, paths
-from yeaboi.beta import BETA_TAG, PERFORMANCE_BETA_NOTICE
+from yeaboi.beta import AGENTWATCH_BETA_NOTICE, BETA_TAG, PERFORMANCE_BETA_NOTICE
 from yeaboi.config import (
     detect_proxy,
     disable_langsmith_tracing,
@@ -511,7 +511,7 @@ def build_parser() -> argparse.ArgumentParser:
     # See CLAUDE.md "REQUIRED: Surface Parity" — each mode needs a CLI path;
     # these run the same engines the TUI and the MCP server use.
     subparsers = parser.add_subparsers(
-        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze}"
+        dest="command", metavar="{report,standup,standup-review,perf,retro,poker,analyze,agents}"
     )
 
     report_p = subparsers.add_parser("report", help="Generate a stakeholder delivery report (Reporting mode)")
@@ -770,6 +770,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also export the latest poker session to Markdown + HTML",
     )
     poker_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+
+    agents_p = subparsers.add_parser(
+        "agents",
+        help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost}", required=True)
+    # Every child carries the same description — `yeaboi agents cost --help` is
+    # a perfectly normal place to arrive without ever seeing the parent's help.
+    cost_p = agents_sub.add_parser(
+        "cost",
+        help="What your agents cost: per-model/project/source breakdowns + daily trend",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    cost_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
+    cost_p.add_argument("--project", default="", metavar="NAME", help="Filter by project directory name (substring)")
+    cost_p.add_argument(
+        "--source", default="", choices=["", "claude_code", "openclaw"], help="Filter by telemetry source"
+    )
+    cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
 
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
@@ -1214,6 +1235,7 @@ def _run_subcommand(args: argparse.Namespace) -> int:
         "retro": _cmd_retro,
         "poker": _cmd_poker,
         "analyze": _cmd_analyze,
+        "agents": _cmd_agents,
     }
     try:
         return handlers[args.command](args, console)
@@ -1630,6 +1652,31 @@ def _cmd_perf(args: argparse.Namespace, console: "Console") -> int:
         store.add_note(args.engineer, args.text)
     console.print(f"[green]Note recorded for {args.engineer}[/green]")
     return 0
+
+
+def _cmd_agents(args: argparse.Namespace, console: "Console") -> int:
+    """The Agents family headless: same engines the TUI cards and MCP tools use
+    (CLAUDE.md "REQUIRED: Surface Parity")."""
+    logging.getLogger(__name__).info("agents %s (beta)", args.agents_command)
+    _print_beta_notice(AGENTWATCH_BETA_NOTICE)
+
+    if args.agents_command == "cost":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.engine import run_agent_usage
+        from yeaboi.agentwatch.render import format_usage_rich
+
+        report = run_agent_usage(window_days=args.window_days, project=args.project, source=args.source)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_usage_rich(report))
+        return _strict_exit(args.strict, report.warnings, empty=report.session_count == 0)
+
+    return 1
 
 
 def _cmd_retro(args: argparse.Namespace, console: "Console") -> int:
