@@ -21,9 +21,9 @@
 ---
 
 <div align="center">
-<img src="docs/demo.gif" alt="yeaboi.ai demo — from project description to sprint plan" width="800"/>
+<img src="docs/demo.gif" alt="yeaboi.ai demo — the mode-select menu: analysis, planning, standup, retro, poker, performance, and reporting in one terminal" width="800"/>
 
-*From project description to sprint plan in under a minute.*
+*Plans, standups, retros, poker, performance & reporting — one terminal, seven modes.*
 </div>
 
 ---

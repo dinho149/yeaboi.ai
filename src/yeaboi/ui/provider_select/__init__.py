@@ -238,7 +238,7 @@ def select_provider(
             # The curated presets above are the recommendations; we MERGE the two
             # (discovered first, then any recommended preset you don't have) so the
             # menu is consistent whether you have zero, some, or many models.
-            # Bedrock is excluded (auto-detects via OpenClaw).
+            # Bedrock is excluded (no per-key model listing; uses curated presets).
             if provider.get("provider_val") != "bedrock" and api_key_val:
                 # Run the (blocking, up-to-8s) HTTP discovery on a daemon thread while
                 # the Live loop keeps animating a "Discovering…" screen — otherwise the
@@ -265,16 +265,8 @@ def select_provider(
                 # whether you have zero, some, or many models installed/available.
                 presets, unpulled = _merge_model_presets(discovered, curated, cap=_MAX_LIVE_MODELS, is_ollama=is_ollama)
 
-            # A detected Bedrock model (from OpenClaw) or a previously-saved LLM_MODEL
-            # is offered at the top of the list and pre-selected, preserving zero-config.
-            detected = None
-            if provider.get("provider_val") == "bedrock":
-                try:
-                    from yeaboi.setup_wizard import _detect_openclaw_bedrock_model
-
-                    detected = _detect_openclaw_bedrock_model()
-                except Exception:
-                    detected = None
+            # A previously-saved LLM_MODEL is offered at the top of the list and
+            # pre-selected, preserving zero-config.
             existing_model = _existing_model_for(existing_config, provider.get("provider_val", ""))
 
             model_ids: list[str] = []  # actual model id per entry ("" marks Custom…)
@@ -294,14 +286,13 @@ def select_provider(
                         tag = f"{tag} {extra}".strip()
                     labels.append(f"{mid}  {tag}" if tag else mid)
 
-            _add(detected, "(detected)")
             _add(existing_model, "(current)")
             for m in presets:
                 _add(m, extra="· not pulled" if m in unpulled else "")
             model_ids.append("")  # Custom… sentinel
             labels.append("Custom…")
 
-            pre = detected or existing_model or default_model
+            pre = existing_model or default_model
             selected = model_ids.index(pre) if pre in model_ids else 0
 
             def _verify_pulsing(model_id: str, render) -> tuple[bool, str]:

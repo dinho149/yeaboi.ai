@@ -15,8 +15,9 @@ eggs/
 # deliberately committed (so `pip install yeaboi` needs no Node) — do not add it
 # here. Beware the unanchored `dist/` and `build/` globs above: hatchling reads
 # this file as build excludes, so a build dir with either name would vanish from
-# the wheel.
-frontend/node_modules/
+# the wheel. (`node_modules/` below is safe: nothing under src/yeaboi is ever
+# named node_modules, and the wheel only packages src/yeaboi.)
+node_modules/
 frontend/.vite/
 
 # Virtual environments

@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 # Bump when anything under docs/assets/ or docs/docs/assets/ changes. Rewritten
 # into every ?v= on every page, so this is the only place it is ever edited.
-ASSET_VERSION = 134
+ASSET_VERSION = 135
 
 # A GA4 measurement ID is a public identifier — it ships in the page source of
 # every GA site on the web — so it belongs in the repo, not in a secret. While
@@ -113,7 +113,6 @@ KINDS: dict[str, Kind] = {
     "docs/tools.html": Kind.ARTICLE,
     "docs/architecture.html": Kind.ARTICLE,
     "docs/scrum-standards.html": Kind.ARTICLE,
-    "docs/deployment.html": Kind.ARTICLE,
     "docs/development.html": Kind.ARTICLE,
     "docs/modes/planning.html": Kind.ARTICLE,
     "docs/modes/standup.html": Kind.ARTICLE,
@@ -660,10 +659,6 @@ def render_sitemap(paths: list[Path]) -> str:
 def render_robots() -> str:
     """robots.txt. No AI-crawler blocks: for an MIT dev tool, being quotable by
     assistants is distribution, not leakage — and that is a deliberate call.
-
-    lightsail-setup/ is deliberately NOT disallowed: those images are used in
-    deployment.html, and blocking in-content images loses image traffic and
-    fills Search Console with "indexed, though blocked" noise.
     """
     return (
         f"# {_GENERATED_NOTE}\n"

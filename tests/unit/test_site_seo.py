@@ -404,10 +404,6 @@ class TestRobotsAndSitemap:
         assert "User-agent: *" in text
         assert "Allow: /" in text
         assert "Disallow: /superpowers/" in text
-        # lightsail-setup images are used in deployment.html — blocking
-        # in-content images loses image traffic and fills Search Console with
-        # "indexed, though blocked by robots.txt" noise.
-        assert "lightsail-setup" not in text
 
     def test_sitemap_is_valid_xml(self) -> None:
         root = ET.fromstring(_read(DOCS / "sitemap.xml"))
@@ -428,10 +424,10 @@ class TestRobotsAndSitemap:
         assert not (DOCS / "superpowers").exists(), "internal design docs are back in the Pages root"
         assert not list(DOCS.glob("*.pdf")), "an orphan PDF is being served from the site root"
 
-    def test_no_page_embeds_the_26mb_demo_gif(self) -> None:
-        """Fine as a README asset; a Core Web Vitals disaster on a real page."""
+    def test_no_page_embeds_the_demo_gif(self) -> None:
+        """Fine as a README asset; a Core Web Vitals hit on a real page."""
         for path in PAGES:
-            assert "demo.gif" not in _read(path), f"{path.name} embeds the 26 MB demo GIF"
+            assert "demo.gif" not in _read(path), f"{path.name} embeds the multi-MB demo GIF"
 
 
 class TestUrlDerivation:

@@ -1,6 +1,6 @@
 ---
 name: project-map
-description: Full annotated module map of src/yeaboi/ (incl. the MCP server, roadmap, analysis, and agent/headless.py), app flow, the complete CLI flags + subcommands, all environment variables, the MCP server internals + Claude Code plugin, and the OpenClaw skill. Use when navigating unfamiliar modules, adding CLI flags/subcommands, changing env/config, or working on the MCP server, plugin, or OpenClaw skill.
+description: Full annotated module map of src/yeaboi/ (incl. the MCP server, roadmap, analysis, and agent/headless.py), app flow, the complete CLI flags + subcommands, all environment variables, and the MCP server internals + Claude Code plugin. Use when navigating unfamiliar modules, adding CLI flags/subcommands, changing env/config, or working on the MCP server or plugin.
 ---
 
 # Project Map
@@ -172,7 +172,6 @@ Key flags to know about when modifying the CLI:
 | `--dry-run` | TUI with mock data, no LLM calls |
 | `--setup` | Re-run first-time setup wizard |
 | `--allow-path PATH` | Session-only filesystem sandbox grant (repeatable); persistent allowances via `YEABOI_ALLOWED_PATHS` |
-| `--install-skill [DIR]` | Install bundled OpenClaw skill to `~/.openclaw/skills/` (or custom dir) |
 | `--list-audio-devices` | List the microphones dictation can record from, then exit (rescans first, so a mic plugged in after launch shows up); marks the `VOICE_DEVICE` pick |
 | `--install-voice` | Install the dictation packages + speech model into the running environment, then exit — the headless twin of the in-app offer (`voice_install.py`). No MCP tool by design |
 | `--standup-run` | Headless: run a daily standup and deliver it (what the OS scheduler invokes) |
@@ -205,7 +204,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `ANTHROPIC_API_KEY` — required when using Anthropic (default provider)
 - `OPENAI_API_KEY` — required when `LLM_PROVIDER=openai`
 - `GOOGLE_API_KEY` — required when `LLM_PROVIDER=google`
-- `AWS_REGION` — required when `LLM_PROVIDER=bedrock` (auto-detected from `~/.aws/config` on Lightsail)
+- `AWS_REGION` — required when `LLM_PROVIDER=bedrock` (auto-detected from `~/.aws/config` when a profile is present)
 - `AWS_PROFILE` — optional, auto-detected from `~/.aws/config` (looks for profiles with `credential_source` or `role_arn`)
 - `LLM_PROVIDER` — `anthropic` (default), `openai`, `google`, `bedrock`, `ollama`
 - `LLM_MODEL` — optional model override for the selected provider
@@ -218,7 +217,7 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `CONFLUENCE_BASE_URL` / `CONFLUENCE_EMAIL` / `CONFLUENCE_API_TOKEN` — optional standalone Atlassian login for Confluence. Confluence reuses the Jira creds by default; these let it be configured **without** Jira (they win over `JIRA_*` when set — see `config.get_confluence_base_url`). The Docs setup step collects them inline when Jira wasn't configured.
 - `NOTION_TOKEN` — optional, Notion integration token (independent doc tool; its own auth, not shared with Jira/Confluence). Enables the 5 `notion_*` tools + analysis/standup context.
 - `NOTION_ROOT_PAGE_ID` — optional, default parent for created Notion pages; also gates the Notion source in the Daily Standup activity feed (the Confluence-space-key analog)
-- `YEABOI_ALLOWED_PATHS` — optional, comma-separated filesystem whitelist for the sandbox (`fs_policy.py`). The app may only read/write inside `~/.yeaboi` (or `$YEABOI_HOME`), a small documented built-in allowlist (CWD `.env`/`SCRUM.md`/`scrum-docs`, `~/.openclaw`, `~/.aws/config` read-only, LaunchAgents + Application Support for standup scheduling, legacy `~/.scrum-agent`), and the paths listed here. Session-only grants: `--allow-path`. Editable in the TUI via Settings → Allowed Paths.
+- `YEABOI_ALLOWED_PATHS` — optional, comma-separated filesystem whitelist for the sandbox (`fs_policy.py`). The app may only read/write inside `~/.yeaboi` (or `$YEABOI_HOME`), a small documented built-in allowlist (CWD `.env`/`SCRUM.md`/`scrum-docs`, `~/.aws/config` read-only, LaunchAgents + Application Support for standup scheduling, legacy `~/.scrum-agent`), and the paths listed here. Session-only grants: `--allow-path`. Editable in the TUI via Settings → Allowed Paths.
 - `YEABOI_HOME` — optional, relocates the whole data tree (exports, logs, sessions DB, scrum-docs…; default `~/.yeaboi`). Resolved once at import time in `paths.py` (`_resolve_root()`); `.env` itself always stays at `~/.yeaboi/.env` (the bootstrap file that holds this var). Editable in the TUI via Settings → Data Dir, which offers to move the existing tree (`paths.move_data_tree`) and notes a restart is needed to fully apply.
 - `NOTION_EXPORT_PARENT_PAGE_ID` — optional, a dedicated Notion page the Export buttons publish under; **blank groups exports under an auto-created "yeaboi" page (🤙 icon) inside `NOTION_ROOT_PAGE_ID`**. With neither set, Notion export shows a warning pointing at Setup (the Notion API can't create top-level pages).
 - `CONFLUENCE_EXPORT_PARENT_PAGE_ID` — optional page Confluence exports nest under; blank groups them under an auto-created "🤙 yeaboi" page at the root of `CONFLUENCE_SPACE_KEY` (no space key → warning pointing at Setup).
@@ -244,25 +243,3 @@ The `src/yeaboi/mcp/` package exposes yeaboi to AI coding agents (Claude Code, C
 - `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — optional, enables LangSmith tracing
 - Copy `.env.example` to `.env` and fill in keys (`make env`)
 - Never commit `.env` or API keys
-
-## OpenClaw Skill
-
-The `src/yeaboi/skills/scrum-planner/` directory contains an OpenClaw skill that replicates the smart intake TUI experience conversationally. OpenClaw acts as the front-end (asks questions, handles follow-ups), then calls the **yeaboi MCP server's tools** as the back-end (the old SCRUM.md temp-file + `--non-interactive` shell-out + JSON-polling pattern was removed).
-
-**How it works:**
-1. OpenClaw asks ~7 essential questions (matching `SMART_ESSENTIALS` from `prompts/intake.py`)
-2. Answers map to `plan_generate` params: Q1 → `description`, Q6/Q8 → `team_size`/`sprint_length_weeks`, the rest → `answers` {number: answer}, extras → `project_context`
-3. Requires the `yeaboi-mcp` server registered in OpenClaw's MCP config (`uvx --from 'yeaboi[mcp]' yeaboi-mcp`)
-4. The returned envelope is presented phase-by-phase; `plan_export`/`plan_publish` handle output
-
-**Key files:**
-- `skills/scrum-planner/SKILL.md` — agent instructions (persona, conversation flow, MCP tool invocation, output formatting)
-- `skills/scrum-planner/README.md` — installation and usage docs
-- `skills/scrum-planner/scripts/` — helper scripts for the skill
-- `skills/scrum-planner/references/` — reference material
-
-**Installing the skill:**
-```bash
-yeaboi --install-skill          # installs to ~/.openclaw/skills/
-yeaboi --install-skill /path    # custom directory
-```

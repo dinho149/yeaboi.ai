@@ -69,43 +69,6 @@ _PROVIDERS: dict[str, dict[str, str]] = {
 }
 
 
-def _detect_openclaw_bedrock_model() -> str | None:
-    """Try to detect the Bedrock model ID from OpenClaw's models.json.
-
-    Returns the model ID string (e.g. 'global.anthropic.claude-sonnet-4-6')
-    or None if OpenClaw is not installed or no Bedrock model is configured.
-    """
-    import json
-
-    models_json = Path.home() / ".openclaw" / "agents" / "main" / "agent" / "models.json"
-    if not models_json.exists():
-        return None
-
-    try:
-        config = json.loads(models_json.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
-
-    providers = config.get("providers", {})
-    bedrock = providers.get("bedrock") or providers.get("amazon-bedrock") or {}
-    models = bedrock.get("models", [])
-
-    if models:
-        model_id = models[0].get("id", "")
-        if model_id:
-            return model_id
-
-    # Fallback: scan all providers for any model with "anthropic" or "claude"
-    for prov in providers.values():
-        if isinstance(prov, dict):
-            for m in prov.get("models", []):
-                mid = m.get("id", "")
-                if "anthropic" in mid or "claude" in mid:
-                    return mid
-
-    return None
-
-
 def is_first_run() -> bool:
     """Return True if ~/.yeaboi/.env is missing or has no key=value entries.
 
@@ -313,15 +276,6 @@ def run_setup_wizard(console: Console) -> bool:
     collected.update(notion)
     confluence = result.get("confluence", {})
     collected.update(confluence)
-
-    # ── Bedrock: auto-detect model from OpenClaw if available ───────────────
-    # OpenClaw's models.json has the exact Bedrock model ID (e.g.
-    # global.anthropic.claude-sonnet-4-6). Without this, yeaboi falls
-    # back to a hardcoded default that may not exist in the user's region.
-    if collected.get("LLM_PROVIDER") == "bedrock" and "LLM_MODEL" not in collected:
-        detected_model = _detect_openclaw_bedrock_model()
-        if detected_model:
-            collected["LLM_MODEL"] = detected_model
 
     # ── Merge with existing config and save ─────────────────────────────────
     # collected values win over existing so --setup re-runs update keys

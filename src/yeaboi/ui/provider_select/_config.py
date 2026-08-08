@@ -16,8 +16,6 @@ def _save_progress(data: dict[str, str]) -> None:
     """Incrementally save collected values to ~/.scrum-agent/.env.
 
     Merges with existing config so we never lose previously saved values.
-    When Bedrock is the provider, auto-detects the model ID from OpenClaw's
-    config so yeaboi uses the correct model (e.g. global.anthropic.claude-sonnet-4-6).
     """
     from yeaboi.config import get_config_file
 
@@ -42,14 +40,6 @@ def _save_progress(data: dict[str, str]) -> None:
         # (get_llm_model() reads os.environ directly).
         os.environ.pop("LLM_MODEL", None)
         logger.info("provider switched to %s — cleared stale LLM_MODEL", new_provider)
-
-    # Auto-detect Bedrock model from OpenClaw if not already set
-    if merged.get("LLM_PROVIDER") == "bedrock" and "LLM_MODEL" not in merged:
-        from yeaboi.setup_wizard import _detect_openclaw_bedrock_model
-
-        detected = _detect_openclaw_bedrock_model()
-        if detected:
-            merged["LLM_MODEL"] = detected
 
     lines = [f"{k}={v}\n" for k, v in merged.items() if v]
     config_file.write_text("".join(lines))
