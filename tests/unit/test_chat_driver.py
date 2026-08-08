@@ -953,6 +953,120 @@ class TestFormMode:
         assert not any(m.role == "assistant" for m in driver.transcript.messages)
 
 
+class TestEditAnswers:
+    """The review's Edit pick hands the screen to the legacy accordion — the
+    one view that shows every question next to its answer. The chat's job is
+    the round trip: rebind the state, refresh the card, say what moved."""
+
+    _BROWSE = "yeaboi.ui.session.phases._phases_review._edit_accordion_browse"
+
+    def _gate_state(self) -> dict:
+        qs = QuestionnaireState(intake_mode="small_project")
+        qs.awaiting_confirmation = True
+        qs.current_question = 31
+        qs.answers = {2: "Greenfield", 6: "1"}
+        return {
+            "messages": [HumanMessage(content="desc"), AIMessage(content="Here is the summary.")],
+            "questionnaire": qs,
+            "pending_review": "project_intake",
+            "_intake_mode": "small_project",
+            "_chat_greeting_done": True,
+        }
+
+    def test_no_questionnaire_is_a_notice(self):
+        driver = _driver(FakeGraph([]), _keys([]), {"messages": []})
+        driver._edit_answers()
+        assert any("Nothing to edit yet" in m.text for m in driver.transcript.messages)
+
+    def test_esc_is_not_a_session_cancel(self):
+        # The legacy function returns None to mean "quit planning"; in chat
+        # that must mean "back to the chat", which is what the flag buys.
+        state = self._gate_state()
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE, return_value=state) as browse:
+            driver._edit_answers()
+        assert browse.call_args.kwargs["return_state_on_esc"] is True
+        assert driver.state is state
+
+    def test_a_returned_state_is_rebound(self):
+        state = self._gate_state()
+        returned = self._gate_state()
+        returned["questionnaire"].answers[6] = "4 engineers"
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE, return_value=returned):
+            driver._edit_answers()
+        assert driver.state is returned
+
+    def test_a_none_return_leaves_the_state_alone(self):
+        state = self._gate_state()
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE, return_value=None):
+            driver._edit_answers()
+        assert driver.state is state
+
+    def test_an_answer_only_edit_reposts_the_card(self):
+        # The dry-run branch of the accordion mutates qs.answers in place and
+        # never touches messages — without this the chat would show a stale
+        # card and no prompt to act on it.
+        state = self._gate_state()
+        driver = _driver(None, _keys([]), state, dry_run=True)
+
+        def _browse(*_a, **_kw):
+            state["questionnaire"].answers[6] = "4 engineers"
+            return state
+
+        with patch(self._BROWSE, side_effect=_browse):
+            driver._edit_answers()
+        assert [m.artifact_kind for m in driver.transcript.messages].count("intake_summary") == 1
+        assert any("Pick an option below" in m.text for m in driver.transcript.messages)
+        assert any("Updated Q6" in m.text for m in driver.transcript.messages)
+
+    def test_a_graph_re_ask_re_anchors_through_append_reply(self):
+        state = self._gate_state()
+        returned = self._gate_state()
+        returned["questionnaire"].answers[6] = "4 engineers"
+        returned["messages"] = [*state["messages"], HumanMessage(content="Q6"), AIMessage(content="Updated. Summary.")]
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE, return_value=returned):
+            driver._edit_answers()
+        # Still at the gate → the card, not the node's markdown wall.
+        assert "intake_summary" in [m.artifact_kind for m in driver.transcript.messages]
+        assert not any("Updated. Summary." in m.text for m in driver.transcript.messages)
+
+    def test_no_changes_says_so_without_a_second_prompt(self):
+        state = self._gate_state()
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE, return_value=state):
+            driver._edit_answers()
+        assert any("No changes" in m.text for m in driver.transcript.messages)
+        assert not any("Pick an option below" in m.text for m in driver.transcript.messages)
+
+    def test_bare_slash_edit_at_the_gate_opens_it(self):
+        driver = _driver(FakeGraph([]), _keys([]), self._gate_state())
+        with patch(self._BROWSE, return_value=driver.state) as browse:
+            driver._edit_question(None)
+        assert browse.call_count == 1
+
+    def test_bare_slash_edit_at_a_pipeline_review_still_arms_edit_mode(self):
+        state = self._gate_state()
+        state["pending_review"] = "story_writer"
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        with patch(self._BROWSE) as browse:
+            driver._edit_question(None)
+        assert browse.call_count == 0
+        assert driver.edit_armed is True
+
+    def test_slash_edit_with_a_number_still_goes_through_the_node(self):
+        # "edit 6" is the node's own review-path literal — the browser must not
+        # swallow the path that already works.
+        graph = MergingFakeGraph([self._gate_state()])
+        driver = _driver(graph, _keys([]), self._gate_state())
+        with patch(self._BROWSE) as browse:
+            driver._edit_question(6)
+        assert browse.call_count == 0
+        assert graph.invocations[0]["messages"][-1].content == "edit 6"
+
+
 class TestFastForward:
     def test_finish_mid_intake_sends_defaults_all(self):
         qs = QuestionnaireState(intake_mode="smart")
@@ -1321,12 +1435,17 @@ class TestConfirmationChoicePicks:
         assert len(graph.invocations) == 1
         assert graph.invocations[0]["messages"][-1].content == "accept"
 
-    def test_edit_pick_prefills_the_composer_without_a_turn(self):
+    def test_edit_pick_opens_the_answer_browser_without_a_turn(self):
+        # The pick hands the screen to the accordion; nothing is typed and no
+        # graph turn runs (the label itself would read as free-text feedback).
         graph = MergingFakeGraph([])
-        driver = _driver(graph, _keys(["2", "esc", "esc"]), self._confirmation_state())
-        driver.run()
+        state = self._confirmation_state()
+        driver = _driver(graph, _keys(["2", "esc", "esc"]), state)
+        with patch("yeaboi.ui.session.phases._phases_review._edit_accordion_browse", return_value=state) as browse:
+            driver.run()
+        assert browse.call_count == 1
         assert graph.invocations == []
-        assert driver.composer.text() == "edit "
+        assert driver.composer.text() == ""
 
     def test_tell_me_pick_nudges_without_a_turn(self):
         # Small mode: row 3 is Tell-me (no velocity row).

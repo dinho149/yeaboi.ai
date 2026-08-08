@@ -182,7 +182,7 @@ COMMANDS: tuple[SlashCommand, ...] = (
         _cmd_questions,
         lambda ctx: ctx.questionnaire_exists(),
     ),
-    SlashCommand("edit", "re-answer a question (/edit 6) or refine the last artifact", _cmd_edit),
+    SlashCommand("edit", "browse your answers (/edit 6 re-asks one) or refine the last artifact", _cmd_edit),
     SlashCommand("image", "attach a screenshot from the clipboard (same as Ctrl+V)", _cmd_image),
     SlashCommand("voice", "dictate (same as double-tap Space)", _cmd_voice),
     SlashCommand("paste", "paste from clipboard keeping line breaks", _cmd_paste),

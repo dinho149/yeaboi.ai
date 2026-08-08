@@ -382,6 +382,65 @@ class _ChatDriver:
         self._drain_consents()
         logger.info("Chat: form takeover end (filled=%d)", filled)
 
+    def _edit_answers(self) -> None:
+        """Full-screen answer browser at the review gate — the pre-chat accordion.
+
+        Same modal pattern as _form_mode: the legacy phase owns the screen and
+        hands the state back. It is the accordion rather than a chat affordance
+        because the question that matters here — "what can I actually change?" —
+        is answered by seeing every question next to its answer, which a
+        transcript note listing this run's planned questions cannot do.
+        """
+        from yeaboi.ui.session.phases._phases_review import _edit_accordion_browse
+
+        qs = self._qs()
+        if qs is None:
+            self._note("Nothing to edit yet.")
+            return
+        # The dry-run branch of the accordion edits qs.answers in place without
+        # touching messages; the graph branch appends messages. Snapshot both,
+        # since which one moved decides how the chat re-anchors below.
+        before_answers = dict(qs.answers)
+        before_msgs = len(self.state.get("messages", []))
+        logger.info("Chat: answer browser start (%d answered)", len(before_answers))
+        result = _edit_accordion_browse(
+            self.live,
+            self.console,
+            self.graph,
+            self.state,
+            self._key,
+            False,
+            return_state_on_esc=True,
+            edit_hint="Enter to edit · ↑/↓ browse · Esc back to chat",
+        )
+        if result is not None:
+            self.state = result
+        # The "Your answers" card renders live from graph_state and caches its
+        # wrapped lines — without this it would redraw the pre-edit answers.
+        self.transcript.invalidate_artifacts()
+        qs = self._qs()
+        after_answers = dict(qs.answers) if qs else {}
+        changed = sorted(
+            q for q in set(before_answers) | set(after_answers) if before_answers.get(q) != after_answers.get(q)
+        )
+        replied = len(self.state.get("messages", [])) != before_msgs
+        if changed:
+            self._note("Updated " + ", ".join(f"Q{q}" for q in changed) + ".")
+        elif not replied:
+            self._note("No changes — back to the review.")
+        if replied:
+            # The node ran: its last reply is the summary (→ card + verdict) or
+            # whatever it asked next. _append_reply routes on the same gate
+            # predicate, so this is one call for both.
+            self._append_reply(streamed="")
+        elif changed and self._at_intake_summary():
+            # Dry-run edits move answers without messages — re-post the card.
+            self.transcript.add_artifact("intake_summary")
+            self._say(_CONFIRM_VERDICT_PROMPT)
+        self._save()
+        self._drain_consents()
+        logger.info("Chat: answer browser end (changed=%s)", changed)
+
     def _fast_forward(self) -> None:
         """/finish — default every remaining answer so the questions are done in one go.
 
@@ -462,7 +521,9 @@ class _ChatDriver:
             self.edit_armed = True
             self._note("Edit mode — describe what you'd like changed and press Enter.")
         else:
-            self._note("Use /edit N to re-answer question N (see /summary for numbers).")
+            # Bare /edit during intake means "which one?" — the browser answers
+            # that better than a note telling the user to go find a number.
+            self._edit_answers()
 
     # ------------------------------------------------------------- attachments
 
@@ -1640,12 +1701,12 @@ class _ChatDriver:
         if submit == CONFIRM_OVERRIDE_VELOCITY:
             return "override"
         if submit == CONFIRM_EDIT:
-            self._show_questions()
-            self._note("Which answer? Finish the **edit N** in the composer — /summary shows everything else.")
-            self.composer.set_text("edit ")
-            self.composer.row = len(self.composer.lines) - 1
-            self.composer.col = len(self.composer.lines[-1])
-            logger.info("Chat: confirm pick -> edit prefill")
+            # The full-screen browser, not a composer prefill: "edit N" only
+            # helps someone who already knows which N, and the chat's own list
+            # shows this run's planned questions rather than everything the
+            # summary is built from.
+            logger.info("Chat: confirm pick -> answer browser")
+            self._edit_answers()
             return None
         if submit == CONFIRM_FREETEXT:
             # Drop the menu until the reply is sent: re-arming auto-submit
