@@ -2338,7 +2338,14 @@ def main(argv: list[str] | None = None) -> None:
 
     # See docs: "Architecture" — splash replaces the static welcome panel.
     # The animated intro runs before any interactive UI (wizard / mode select).
-    show_splash(console)
+    # Skipped when this process was relaunched by the ctrl+U in-app update: the
+    # user just watched the upgrade land and doesn't need the ~2s intro again.
+    # select_mode's Live(screen=True) enters the alternate screen on its own, so
+    # the only thing lost is the animation.
+    from yeaboi import update_check
+
+    if not update_check.is_fresh_restart():
+        show_splash(console)
 
     # ── First-run setup wizard ────────────────────────────────────────────────
     # Triggers when ~/.scrum-agent/.env is absent (first run) or --setup is passed.
@@ -2560,6 +2567,15 @@ def main(argv: list[str] | None = None) -> None:
                         console.print(f"[dim]{_msg}[/dim]")
             except Exception:
                 pass
+        # The ctrl+U update flow asks for a relaunch onto the version it just
+        # installed. It has to happen HERE: os.execv replaces the process image
+        # without running atexit handlers, so it's only safe now that the finally
+        # above has taken the terminal out of raw mode, stopped mouse tracking and
+        # left the alternate screen. restart_in_place only returns on failure.
+        if update_check.restart_requested():
+            if not update_check.restart_in_place():
+                console.print("[dim]Update installed — restart yeaboi to use the new version.[/dim]")
+            return
         if mode_result is None:
             return
         # mode_result is non-None only for offline import (questionnaire path)

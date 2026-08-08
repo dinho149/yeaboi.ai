@@ -485,9 +485,10 @@ def _build_update_box(*, cols: int) -> Panel | None:
 
     Styled warmer and heavier than the tip bubble (amber border + keycap) so it
     reads as *more pressing* than an ambient tip: it tells the user a new version
-    is out and that ``ctrl+U`` installs it in place. Returns None when there's
-    nothing to advertise, so the companion lane just shows the tip + duck. Reads
-    the check state lazily like :func:`_build_version_row` (monkeypatchable seam).
+    is out and that ``ctrl+U`` installs it and relaunches onto it. Returns None when
+    there's nothing to advertise, so the companion lane just shows the tip + duck.
+    Reads the check state lazily like :func:`_build_version_row` (monkeypatchable
+    seam).
     """
     from yeaboi.update_check import get_update_status
 
@@ -524,8 +525,11 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
     :func:`_build_update_box` is carrying it instead (wide/companion layout). Reads
     the check state lazily (like ``_build_tip_rows`` reads tips config) so no call
     site changes and tests can monkeypatch ``yeaboi.update_check.get_update_status``.
+    When this process was relaunched by the ctrl+U update instead, there is nothing
+    to advertise, so the row carries a ✓ updated chip confirming the version that
+    actually took.
     """
-    from yeaboi.update_check import get_update_status
+    from yeaboi.update_check import get_update_status, is_fresh_restart
 
     status = get_update_status()
     dim = f"rgb({_TIP_DOT_DIM[0]},{_TIP_DOT_DIM[1]},{_TIP_DOT_DIM[2]})"
@@ -544,6 +548,14 @@ def _build_version_row(width: int, *, suppress_upgrade: bool = False) -> Text:
         if width >= 72:
             row.append("  ·  ", style=dim)
             row.append(status["upgrade_command"], style=accent)
+    elif not status["update_available"] and is_fresh_restart() and width >= 72:
+        # This process was relaunched by the ctrl+U update — confirm the version
+        # that actually took, so the restart visibly did something. Dropped first
+        # on narrow terminals, like the upgrade command above. A newer release
+        # discovered since the restart still wins the slot, in this layout via the
+        # explicit check (the branch above is off when _build_update_box has it).
+        row.append("  ·  ", style=dim)
+        row.append("✓ updated", style=accent)
     row.append("  ·  ", style=dim)
     row.append("c", style=key_style)
     row.append(" changelog", style=dim)
@@ -1219,14 +1231,20 @@ def _build_update_screen(
     done: bool = False,
     ok: bool = False,
     detail: str = "",
+    restart_in: int | None = None,
+    can_restart: bool = False,
 ) -> Panel:
     """Modal shown by the ctrl+U update flow: a spinner while ``uv/pipx upgrade``
     runs, then a success or failure result.
 
     While running (``done=False``) it shows ``spinner`` + "updating to vX". On
-    success it says the new version is installed and to restart; on failure it
-    shows the manual command so the user can run it themselves. Any key dismisses
-    the result (handled by the caller).
+    success the app relaunches itself onto the new version, so the screen counts
+    ``restart_in`` down and offers esc as the way out. ``can_restart`` defaults to
+    False — the honest screen, asking for a manual restart — so that only a caller
+    that has actually resolved a relaunch command (see
+    ``update_check.resolve_relaunch_command``) can promise one. On failure it shows the manual
+    upgrade command so the user can run it themselves. Any key dismisses the
+    result (handled by the caller).
     """
     amber = f"rgb({_TIP_DOT_ON[0]},{_TIP_DOT_ON[1]},{_TIP_DOT_ON[2]})"
     rows: list[RenderableType] = []
@@ -1239,8 +1257,12 @@ def _build_update_screen(
     elif ok:
         rows.append(Align.center(Text(f"✓  updated to v{latest}", style=f"bold {amber}")))
         rows.append(Text(""))
-        rows.append(Align.center(Text("restart yeaboi to use the new version", style="rgb(198,198,208)")))
-        rows.append(Align.center(Text("press any key", style="rgb(120,130,140)")))
+        if can_restart:
+            rows.append(Align.center(Text(f"restarting in {max(0, restart_in or 0)}…", style="rgb(198,198,208)")))
+            rows.append(Align.center(Text("esc to stay on this one", style="rgb(120,130,140)")))
+        else:
+            rows.append(Align.center(Text("restart yeaboi to use the new version", style="rgb(198,198,208)")))
+            rows.append(Align.center(Text("press any key", style="rgb(120,130,140)")))
         border = amber
     else:
         rows.append(Align.center(Text("update failed", style="bold rgb(226,110,90)")))
