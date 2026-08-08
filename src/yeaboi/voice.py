@@ -113,19 +113,169 @@ def _installed(module_name: str) -> bool:
         return False
 
 
-def is_voice_available() -> tuple[bool, str]:
-    """Return (available, reason) describing whether voice input can be used.
-
-    Voice needs the optional audio + transcription packages installed. No API
-    key is required — transcription is fully local. ``reason`` is empty when
-    available, otherwise a short human-readable explanation for the UI.
-    """
+def _module_check() -> tuple[bool, str]:
+    """Are both optional packages on the import path? Two find_spec calls, no more."""
     if not _installed("sounddevice"):
         # Linux wheels need the system PortAudio lib too.
         return False, f"Install voice extra: {voice_install_command()} (Linux also: apt install libportaudio2)"
     if not _installed("faster_whisper"):
         return False, f"Install voice extra: {voice_install_command()}"
     return True, ""
+
+
+def is_voice_available() -> tuple[bool, str]:
+    """Return (available, reason) describing whether voice input can be used.
+
+    Voice needs the optional audio + transcription packages installed. No API
+    key is required — transcription is fully local. ``reason`` is empty when
+    available, otherwise a short human-readable explanation for the UI.
+
+    Cheap by contract: this is called on every input-box render, so it only asks
+    the import system. It will *report* a strict failure that
+    :func:`probe_voice_backend` has already found (a present-but-unusable
+    PortAudio), but it never goes looking for one.
+    """
+    available, reason = _module_check()
+    if available and _backend_probe is not None and not _backend_probe[0]:
+        return _backend_probe
+    return available, reason
+
+
+# Result of the last strict backend probe, cached for the life of the process.
+# See probe_voice_backend for why this is separate from the cheap find_spec path.
+_backend_probe: tuple[bool, str] | None = None
+
+
+def reset_probe() -> None:
+    """Forget the cached strict probe result.
+
+    Called by :func:`yeaboi.voice_install.refresh_imports` after an in-app
+    install, and by tests that fake availability.
+    """
+    global _backend_probe
+    _backend_probe = None
+
+
+def _silence_stderr():  # noqa: ANN202 - contextmanager factory, typed by the decorator
+    """Redirect file descriptor 2 to /dev/null for the duration of the block.
+
+    PortAudio writes ALSA and JACK warnings straight to fd 2 from C, which
+    ``contextlib.redirect_stderr`` cannot catch (it only rebinds ``sys.stderr``).
+    Under a Rich ``Live`` those bytes land in the middle of a frame and corrupt
+    the screen, so initialising PortAudio has to happen with the descriptor
+    pointed elsewhere.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _ctx():  # noqa: ANN202
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            saved = os.dup(2)
+        except OSError:  # pragma: no cover - no fd 2 (rare, e.g. some daemons)
+            yield
+            return
+        try:
+            os.dup2(devnull, 2)
+            yield
+        finally:
+            os.dup2(saved, 2)
+            os.close(saved)
+            os.close(devnull)
+
+    return _ctx()
+
+
+def probe_voice_backend(*, force: bool = False) -> tuple[bool, str]:
+    """Strict availability check — actually opens PortAudio. Never per frame.
+
+    :func:`is_voice_available` only asks whether the modules are on the path,
+    which on Linux is not the same question: the ``sounddevice`` wheel is pure
+    Python and imports happily without the system PortAudio library, then fails
+    at the first recording. That made the app promise a feature it could not
+    deliver, with an error arriving only once the user had already tried to
+    speak.
+
+    This runs once per process, at the moment dictation is requested, where a
+    ~100 ms hitch is invisible and an honest error is worth having. The result
+    is cached and mirrored back into :func:`is_voice_available` so the render
+    path stays exactly as cheap as it was.
+    """
+    global _backend_probe
+    if _backend_probe is not None and not force:
+        return _backend_probe
+
+    available, reason = _module_check()
+    if not available:
+        _backend_probe = (available, reason)
+        return _backend_probe
+
+    try:
+        with _silence_stderr():
+            import sounddevice as sd
+
+            sd.query_devices()
+    except Exception as exc:  # noqa: BLE001 - a missing native lib surfaces as OSError here or at import
+        logger.warning("PortAudio unavailable: %s", exc)
+        hint = (
+            " — sudo apt install libportaudio2 (or your distro's equivalent)"
+            if sys.platform.startswith("linux")
+            else ""
+        )
+        _backend_probe = (False, f"Audio backend unavailable{hint}")
+        return _backend_probe
+
+    _backend_probe = (True, "")
+    return _backend_probe
+
+
+def voice_state() -> str:
+    """One vocabulary for every dictation surface: how to talk about voice here.
+
+    Returns ``"ready"``, ``"installable"``, ``"declined"`` or ``"unsupported"``.
+    The chip, the input hint, the welcome tip and the Settings row all render
+    from this rather than each deciding for itself, which is how they used to
+    end up saying different things about the same machine.
+    """
+    if is_voice_available()[0]:
+        return "ready"
+    if unsupported_blocker():
+        return "unsupported"
+
+    from yeaboi.config import is_voice_install_offer_enabled
+
+    return "installable" if is_voice_install_offer_enabled() else "declined"
+
+
+def unsupported_blocker() -> str:
+    """Why dictation cannot work here at all, or ``""`` if installing would help.
+
+    There are two ways to be beyond help, and every surface needs the same
+    sentence for both:
+
+    1. No wheel can exist for this platform, or a past install failed
+       permanently — :func:`yeaboi.voice_install.unsupported_reason`.
+    2. The packages are *already* installed and something else is broken. The
+       common one is a Linux host with no ``libportaudio2``: ``sounddevice`` is
+       a pure-Python wheel that imports happily without it, so the modules are
+       present and an install would exit 0 having changed nothing. Offering one
+       would talk the user through ~325 MB and two minutes to arrive back
+       exactly where they started — on the very platform the strict probe was
+       added for.
+
+    Cheap enough for the render path: a find_spec pair plus a memoised read. It
+    never *starts* a strict probe, it only reports one that already ran.
+    """
+    from yeaboi import voice_install
+
+    verdict = voice_install.unsupported_reason()
+    if verdict:
+        return verdict
+    if _module_check()[0]:
+        available, reason = is_voice_available()
+        if not available:
+            return reason
+    return ""
 
 
 def is_model_loaded() -> bool:
