@@ -55,8 +55,11 @@ test has ever seen.
    scratch file, then
    `uv run python scripts/cowork_setup.py --plan --strict --triggers <file>`.
    - Exit 2 means the plan refused itself — a suspicious snapshot, an unresolved `needs`, or more
-     updates than `MASS_UPDATE_LIMIT`. Report the stderr to Slack and stop. **Never** re-run it
-     without `--strict` to get past this; the flag exists because there is no human here to ask.
+     routines created and updated together than `MASS_CHANGE_LIMIT`. Report the stderr to Slack and
+     stop. **Never** re-run it without `--strict`, and never pass `--allow-mass-change`, to get past
+     this. Both exist because there is no human here to ask, and a create cannot be undone: this API
+     has no delete, so a plan built from a truncated snapshot would register a second copy of every
+     routine it could not see, and both copies would then fire.
    - Otherwise POST each `create` body verbatim (`action: "create"`), then each `update` body with
      its `trigger_id` (`action: "update"`). Leave `ok` alone. **Never delete, and never touch an
      orphan** — name them in the Slack post and stop there.

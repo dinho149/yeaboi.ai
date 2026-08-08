@@ -112,9 +112,25 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # API (RemoteTrigger) for pause/resume/run — which nothing else gets: a
     # sweep that can reach the routines API is a sweep that can un-pause the
     # fleet. Write/Edit/Task are deliberately absent: the relay's own file
-    # forbids editing anything, it spawns no crew, and it is the one routine
-    # that reads attacker-influenceable channel text every hour.
+    # forbids editing anything, and it spawns no crew.
     "slack-relay": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "TodoWrite"),
+    # The two PR routines read text nobody here wrote. `gh pr view` and `gh pr
+    # diff` return a title, a body and a diff authored by whoever opened the PR —
+    # on a public repo that is anyone with a fork — and both routines then hold
+    # the Linear, Slack and Notion connectors. They were never registered before,
+    # so the grant never mattered; registering them by API is what makes it real.
+    #
+    # Neither writes anything itself: every outbound word goes through
+    # `cowork-scribe` (Task), and every repo read is a query, not an edit. So
+    # Write and Edit are removed — not because the routine would misuse them, but
+    # because a prompt injected into a fork's PR body has to have somewhere to go,
+    # and this is the cheapest place to make sure it does not.
+    "pr-opened-dod-audit": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    "pr-merged-close-loop": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    # Not fork-controlled — a release is cut by a maintainer — but it writes
+    # nothing itself either, and a routine that announces should not be able to
+    # edit what it is announcing.
+    "release-published-announce": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
     # cd-deploy is the second and last holder of the routines API, and the only
     # routine that writes to it unprompted. Write/Edit are absent even though it
     # does change a file: the one file it touches is the README URL column, and
@@ -1777,7 +1793,6 @@ def webhook_plan(
     routines: Sequence[Routine],
     live: dict[str, dict],  # trigger_name -> the raw live entry
     observed: dict[str, dict],  # trigger_name -> observed_trigger()
-    creating: set[str],  # trigger_names this same plan will create
     created: frozenset[str],  # trigger_names the caller already created this run
     scope_id: str | None,
 ) -> list[WebhookAction]:
@@ -1913,12 +1928,21 @@ def webhook_plan(
 # something to guess at — so if any of them moved, the whole ccr block is resent.
 _JOB_FIELDS = ("model", "prompt", "allowed_tools", "repo_url")
 
-# How many routines a plan may update before it stops looking like a change and
+# How many routines a plan may touch before it stops looking like a change and
 # starts looking like a mistake. A legitimate connector or repo_url change really
 # does touch every routine at once, so this cannot be a hard ceiling — it is a
-# `--strict` stop that a human overrides with --allow-mass-update and an
-# unattended run never does.
-MASS_UPDATE_LIMIT = 6
+# `--strict` stop a human overrides with --allow-mass-change and an unattended run
+# never does.
+#
+# Counts creates *and* updates, and creates are the half that matters: an update
+# rewrites a value that was going to be rewritten, while a create is permanent —
+# this API has no delete, which is why teardown only disables. `suspicious` does
+# not cover it, because it needs a create *and* an orphan: a snapshot that loses
+# its trailing entries rather than mangling a name yields creates with no orphans
+# at all, and every surviving entry still supplies repo_url, environment_id and
+# connectors, so `needs` stays empty too. That plan looks entirely healthy and
+# would register a second copy of every routine it could not see.
+MASS_CHANGE_LIMIT = 6
 
 
 def compared_fields(routine: Routine, current: dict, repo_url: str | None) -> dict[str, tuple[object, object]]:
@@ -2076,7 +2100,6 @@ def trigger_plan(
         expected,
         by_name,
         observed,
-        creating={action.trigger_name for action in plan.create},
         created=frozenset(created),
         scope_id=scope_id,
     )
@@ -2348,9 +2371,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="fail instead of noting when a step degrades; for unattended runs",
     )
     parser.add_argument(
-        "--allow-mass-update",
+        "--allow-mass-change",
         action="store_true",
-        help="with --plan --strict, permit a plan that touches most of the fleet",
+        help="with --plan --strict, permit a plan that touches most of the fleet "
+        "(a first deploy legitimately creates every routine, and is interactive)",
     )
     args = parser.parse_args(argv)
     # Reset, not just set: `main()` is called more than once in a process by the
@@ -2421,9 +2445,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             if plan.needs:
                 fail(f"plan: {', '.join(plan.needs)} unresolved; a body carrying an empty one registers nothing useful")
                 return 2
-            if len(plan.update) > MASS_UPDATE_LIMIT and not args.allow_mass_update:
-                fail(f"plan: {len(plan.update)} updates — more than {MASS_UPDATE_LIMIT}; a human should look first")
-                fail("     re-run with --allow-mass-update if this is a deliberate fleet-wide change")
+            touched = len(plan.create) + len(plan.update)
+            if touched > MASS_CHANGE_LIMIT and not args.allow_mass_change:
+                fail(
+                    f"plan: {len(plan.create)} create(s) + {len(plan.update)} update(s) — "
+                    f"more than {MASS_CHANGE_LIMIT}; a human should look first"
+                )
+                fail("     re-run with --allow-mass-change if this is a deliberate fleet-wide change")
                 return 2
         return strict_exit()
 

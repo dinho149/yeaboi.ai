@@ -152,7 +152,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01DHtR33hCFgDhoz7yA5jXUi |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
-| `cron/cd-deploy.md` | `0 4 * * *` daily + push on `main` | — | `standard` | |
+| `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |
 | `events/release-published-announce.md` | Release published | — | `standard` | |

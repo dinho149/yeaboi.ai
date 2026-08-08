@@ -1322,6 +1322,25 @@ class TestToolOverrides:
                 f"{routine.path} holds the routines API and a write tool"
             )
 
+    def test_nothing_that_reads_a_fork_can_edit_a_file(self):
+        """The two PR routines read text nobody in this repo wrote.
+
+        `gh pr view` and `gh pr diff` return a title, a body and a diff authored by
+        whoever opened the PR — on a public repo, anyone with a fork — and both
+        routines hold the Linear, Slack and Notion connectors. Neither writes
+        anything itself; `cowork-scribe` does. This is the grant that says so.
+        """
+        for name in ("pr-opened-dod-audit", "pr-merged-close-loop"):
+            tools = set(setup.routine_tools(name))
+            assert not tools & {"Write", "Edit"}, f"{name} can edit a file while reading a fork's diff"
+            assert "Task" in tools, f"{name} spawns the scribe, which does its writing"
+
+    def test_no_event_routine_writes_for_itself(self):
+        """All three delegate every outbound word to the scribe. None needs an editor."""
+        for routine in ROUTINES:
+            if routine.kind == "event":
+                assert not set(setup.routine_tools(routine.name)) & {"Write", "Edit"}
+
     def test_no_grant_is_ever_empty(self):
         """An empty allowed_tools registers as the full default preset — see
         tests/fixtures/cowork_webhook_live.json. The narrowest-looking grant would
@@ -2041,11 +2060,49 @@ class TestStrict:
         assert result.returncode == 2
         assert "a human should look first" in result.stderr
 
-    def test_a_fleet_wide_update_is_allowed_when_asked_for(self, tmp_path: Path):
+    def test_a_fleet_wide_change_is_allowed_when_asked_for(self, tmp_path: Path):
         snapshot = _perfect_snapshot()
         for entry in snapshot:
             entry["mcp_connections"] = [*entry["mcp_connections"], {"name": "Gmail"}]
-        assert self._plan(tmp_path, snapshot, "--strict", "--allow-mass-update").returncode == 0
+        assert self._plan(tmp_path, snapshot, "--strict", "--allow-mass-change").returncode == 0
+
+    def test_a_truncated_snapshot_refuses_under_strict(self, tmp_path: Path):
+        """The create half of the cap, and the reason it counts creates at all.
+
+        `suspicious` needs a create *and* an orphan. A snapshot that loses its
+        trailing entries — the plausible failure, since it reaches this script by
+        way of a model writing a large API response to a file — produces creates
+        with no orphans, and every surviving entry still supplies repo_url,
+        environment_id and connectors, so `needs` is empty too. Nothing else in
+        the plan would object, and a create cannot be undone: this API has no
+        delete, so the fleet would end up with two of everything that got cut.
+        """
+        snapshot = _perfect_snapshot()[:4]
+        result = self._plan(tmp_path, snapshot, "--strict")
+        assert result.returncode == 2
+        assert "create(s)" in result.stderr and "a human should look first" in result.stderr
+
+        plan = json.loads(result.stdout)
+        assert plan["suspicious"] is False, "the point: nothing else in the plan objects"
+        assert plan["needs"] == []
+        assert plan["orphans"] == []
+
+    def test_the_cap_can_be_lifted_for_a_deliberate_fleet_wide_change(self, tmp_path: Path):
+        """A first-ever deploy legitimately creates every routine — and is interactive.
+
+        It still stops, but on `needs` rather than on the cap: an empty account has
+        no live routine to lift the connector objects off, and a body carrying an
+        empty `mcp_connections` attaches every connector on the account. Two
+        independent refusals, and the flag only clears one of them.
+        """
+        result = self._plan(tmp_path, [], "--strict", "--allow-mass-change", "--environment", ENVIRONMENT)
+        assert result.returncode == 2
+        assert "connectors unresolved" in result.stderr
+        assert "a human should look first" not in result.stderr
+
+    def test_an_ordinary_one_routine_change_passes(self, tmp_path: Path):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        assert self._plan(tmp_path, snapshot, "--strict").returncode == 0
 
     def test_a_created_name_the_snapshot_never_heard_of_is_refused(self, tmp_path: Path):
         """The create and the re-list disagree — the one state in which posting a
