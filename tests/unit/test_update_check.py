@@ -16,6 +16,10 @@ def _reset_state(monkeypatch):
     """Isolate the module-level check state between tests."""
     monkeypatch.setattr(update_check, "_state", {"latest": "", "checked": False})
     monkeypatch.setattr(update_check, "_started", False)
+    monkeypatch.setattr(update_check, "_restart_to", "")
+    # restarted_version() caches the marker on first read; without this the value
+    # one test popped out of its fake environ would answer every later test.
+    monkeypatch.setattr(update_check, "_restarted_from", None)
 
 
 class TestParseVersion:
@@ -243,3 +247,141 @@ class TestRunUpgrade:
         ok, msg = update_check.run_upgrade()
         assert ok is False
         assert "uv not found" in msg
+
+
+class TestRelaunchCommand:
+    """resolve_relaunch_command — how the app re-launches itself after an upgrade."""
+
+    def test_uses_argv0_when_it_is_a_real_file(self, monkeypatch, tmp_path):
+        script = tmp_path / "yeaboi"
+        script.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(update_check.os, "name", "posix")
+        monkeypatch.setattr(update_check.sys, "argv", [str(script), "--dry-run"])
+        assert update_check.resolve_relaunch_command() == [str(script.resolve()), "--dry-run"]
+
+    def test_falls_back_to_path_lookup_when_argv0_is_a_bare_name(self, monkeypatch):
+        monkeypatch.setattr(update_check.os, "name", "posix")
+        monkeypatch.setattr(update_check.sys, "argv", ["yeaboi", "--theme", "dark"])
+        monkeypatch.setattr(update_check.shutil, "which", lambda name: "/usr/local/bin/yeaboi")
+        assert update_check.resolve_relaunch_command() == ["/usr/local/bin/yeaboi", "--theme", "dark"]
+
+    def test_unresolvable_returns_none(self, monkeypatch):
+        monkeypatch.setattr(update_check.os, "name", "posix")
+        monkeypatch.setattr(update_check.sys, "argv", ["yeaboi"])
+        monkeypatch.setattr(update_check.shutil, "which", lambda name: None)
+        assert update_check.resolve_relaunch_command() is None
+
+    def test_non_posix_never_execs(self, monkeypatch):
+        # os.execv on Windows spawns instead of replacing — two apps, one terminal.
+        monkeypatch.setattr(update_check.os, "name", "nt")
+        monkeypatch.setattr(update_check.sys, "argv", ["yeaboi"])
+        monkeypatch.setattr(update_check.shutil, "which", lambda name: "C:\\yeaboi.exe")
+        assert update_check.resolve_relaunch_command() is None
+
+
+class TestRestartRequest:
+    """The flag the ctrl+U flow leaves for cli.main to act on."""
+
+    def test_none_pending_by_default(self):
+        assert update_check.restart_requested() == ""
+
+    def test_request_records_the_version(self):
+        update_check.request_restart("2.13.0")
+        assert update_check.restart_requested() == "2.13.0"
+
+    def test_versionless_request_still_reads_as_pending(self):
+        update_check.request_restart("")
+        assert update_check.restart_requested() == "1"
+
+
+@pytest.fixture
+def _fake_environ(monkeypatch):
+    """Give the module a throwaway environ.
+
+    ``restart_in_place`` sets the marker on the REAL ``os.environ`` (exec inherits
+    it, which is the whole point), so without this the marker leaks into every
+    later test in the session — and a leaked marker silently skips the splash.
+    """
+    env: dict[str, str] = {}
+    monkeypatch.setattr(update_check.os, "environ", env)
+    return env
+
+
+class TestRestartInPlace:
+    """restart_in_place — replaces the process, and only returns when it failed."""
+
+    def test_execs_the_relaunch_command_with_the_version_in_the_env(self, monkeypatch, _fake_environ):
+        update_check.request_restart("2.13.0")
+        monkeypatch.setattr(update_check, "resolve_relaunch_command", lambda: ["/bin/yeaboi", "--dry-run"])
+        seen: dict = {}
+
+        def _fake_execv(path, argv):
+            seen["path"] = path
+            seen["argv"] = argv
+            seen["env"] = update_check.os.environ.get(update_check._RESTART_ENV)
+
+        monkeypatch.setattr(update_check.os, "execv", _fake_execv)
+        update_check.restart_in_place()
+        assert seen["path"] == "/bin/yeaboi"
+        assert seen["argv"] == ["/bin/yeaboi", "--dry-run"]
+        assert seen["env"] == "2.13.0"
+
+    def test_no_relaunch_command_returns_false_without_exec(self, monkeypatch):
+        monkeypatch.setattr(update_check, "resolve_relaunch_command", lambda: None)
+
+        def _boom(*a, **k):
+            raise AssertionError("must not exec without a resolved command")
+
+        monkeypatch.setattr(update_check.os, "execv", _boom)
+        assert update_check.restart_in_place() is False
+
+    def test_exec_failure_reports_false_and_clears_the_marker(self, monkeypatch, _fake_environ):
+        update_check.request_restart("2.13.0")
+        monkeypatch.setattr(update_check, "resolve_relaunch_command", lambda: ["/bin/yeaboi"])
+
+        def _boom(path, argv):
+            raise OSError("exec format error")
+
+        monkeypatch.setattr(update_check.os, "execv", _boom)
+        assert update_check.restart_in_place() is False
+        # The marker must not linger — this process is carrying on as the old version.
+        assert update_check.os.environ.get(update_check._RESTART_ENV) is None
+
+
+class TestRestartedVersion:
+    """The marker the relaunched process reads back out of its environment."""
+
+    def test_empty_on_a_normal_launch(self, _fake_environ):
+        assert update_check.restarted_version() == ""
+
+    def test_reports_the_version_after_a_restart(self, _fake_environ):
+        _fake_environ[update_check._RESTART_ENV] = "2.13.0"
+        assert update_check.restarted_version() == "2.13.0"
+
+    def test_the_marker_is_taken_out_of_the_environment(self, _fake_environ):
+        # It describes THIS process. Left in place every child we spawn inherits it,
+        # and a nested yeaboi would come up believing it was the relaunch.
+        _fake_environ[update_check._RESTART_ENV] = "2.13.0"
+        assert update_check.restarted_version() == "2.13.0"
+        assert update_check._RESTART_ENV not in _fake_environ
+        # Still answers after the pop — the value is cached, not re-read.
+        assert update_check.restarted_version() == "2.13.0"
+
+
+class TestIsFreshRestart:
+    """The predicate the splash skip and the ✓ updated chip both gate on."""
+
+    def test_false_on_a_normal_launch(self, _fake_environ):
+        assert update_check.is_fresh_restart() is False
+
+    def test_true_when_the_marker_matches_the_running_version(self, monkeypatch, _fake_environ):
+        monkeypatch.setattr(update_check, "_current_version", lambda: "2.13.0")
+        _fake_environ[update_check._RESTART_ENV] = "2.13.0"
+        assert update_check.is_fresh_restart() is True
+
+    def test_false_when_the_marker_is_for_another_version(self, monkeypatch, _fake_environ):
+        # A stale/foreign marker, or an upgrade that didn't move the version, must
+        # fall back to a normal launch rather than suppress the splash forever.
+        monkeypatch.setattr(update_check, "_current_version", lambda: "2.12.0")
+        _fake_environ[update_check._RESTART_ENV] = "2.13.0"
+        assert update_check.is_fresh_restart() is False

@@ -1086,3 +1086,63 @@ class TestStandupCLI:
         assert calls["session_id"] == "s1"
         # "all" expands to every channel
         assert set(calls["channels"]) == {"terminal", "desktop", "slack", "email"}
+
+
+class TestUpdateRestartWiring:
+    """main()'s half of the ctrl+U relaunch: skip the splash, exec after cleanup.
+
+    The flow itself can't call ``os.execv`` — it runs deep inside select_mode's Live
+    context, where exec (which skips ``atexit``) would hand the new process a
+    terminal still in raw mode. It leaves a request on ``update_check``; these pin
+    that main acts on it, and only once the terminal has been restored.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_restart_by_default(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: False)
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "")
+
+    @patch("yeaboi.cli.select_mode", return_value=None)
+    @patch("yeaboi.cli.show_splash")
+    def test_splash_plays_on_a_normal_launch(self, mock_splash, mock_select):
+        main(argv=[])
+        mock_splash.assert_called_once()
+
+    @patch("yeaboi.cli.select_mode", return_value=None)
+    @patch("yeaboi.cli.show_splash")
+    def test_splash_skipped_when_this_process_is_the_relaunch(self, mock_splash, mock_select, monkeypatch):
+        # The user just watched the upgrade land; select_mode's Live(screen=True)
+        # enters the alt-screen itself, so only the animation is lost.
+        monkeypatch.setattr("yeaboi.update_check.is_fresh_restart", lambda: True)
+        main(argv=[])
+        mock_splash.assert_not_called()
+
+    @patch("yeaboi.cli.select_mode", return_value=None)
+    @patch("yeaboi.cli.show_splash")
+    def test_no_restart_requested_never_execs(self, mock_splash, mock_select, monkeypatch):
+        called = []
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: called.append(True) or False)
+        main(argv=[])
+        assert called == []
+
+    @patch("yeaboi.cli.select_mode", return_value=None)
+    @patch("yeaboi.cli.show_splash")
+    def test_restart_happens_only_after_the_terminal_is_restored(self, mock_splash, mock_select, monkeypatch):
+        order: list[str] = []
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "2.13.0")
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: order.append("exec") or True)
+        monkeypatch.setattr("yeaboi.ui.shared._input.exit_raw_mode", lambda: order.append("raw-off"))
+        monkeypatch.setattr("yeaboi.ui.shared._input.disable_mouse_tracking", lambda: order.append("mouse-off"))
+        main(argv=[])
+        assert "exec" in order
+        assert order.index("exec") > order.index("raw-off")
+        assert order.index("exec") > order.index("mouse-off")
+
+    @patch("yeaboi.cli.select_mode", return_value=None)
+    @patch("yeaboi.cli.show_splash")
+    def test_failed_exec_falls_back_to_telling_the_user(self, mock_splash, mock_select, monkeypatch, capsys):
+        # restart_in_place only returns when it could not replace the process.
+        monkeypatch.setattr("yeaboi.update_check.restart_requested", lambda: "2.13.0")
+        monkeypatch.setattr("yeaboi.update_check.restart_in_place", lambda: False)
+        main(argv=[])
+        assert "restart yeaboi" in capsys.readouterr().out.lower()
