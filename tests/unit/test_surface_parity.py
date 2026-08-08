@@ -248,6 +248,32 @@ CAPABILITIES: dict[str, dict] = {
         "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice"},
         "skill": Exempt("TUI utility page"),
     },
+    # ── The Agents family (agentwatch) — cards live on the Agents menu
+    # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
+    # The Exempt entries below are staged: each mode's engine/MCP/CLI/skill
+    # surfaces land in its own phase commit and replace the Exempt in the same
+    # commit that creates them.
+    "agent-usage": {
+        "engines": Exempt("lands with the agentwatch engine in the Agent Usage phase of this PR"),
+        "mcp_tools": Exempt("lands with tools_agentwatch.py in the Agent Usage phase of this PR"),
+        "tui_mode": "agent-usage",
+        "cli": Exempt("lands with the `agents cost` subcommand in the Agent Usage phase of this PR"),
+        "skill": Exempt("lands with the agents-usage plugin skill in the Agent Usage phase of this PR"),
+    },
+    "agent-standup": {
+        "engines": Exempt("lands with run_agent_standup in the Agent Standup phase of this PR"),
+        "mcp_tools": Exempt("lands with agents_standup_run in the Agent Standup phase of this PR"),
+        "tui_mode": "agent-standup",
+        "cli": Exempt("lands with the `agents standup` subcommand in the Agent Standup phase of this PR"),
+        "skill": Exempt("lands with the agents-standup plugin skill in the Agent Standup phase of this PR"),
+    },
+    "agent-security": {
+        "engines": Exempt("lands with run_agent_security in the Agent Security phase of this PR"),
+        "mcp_tools": Exempt("lands with agents_security_scan in the Agent Security phase of this PR"),
+        "tui_mode": "agent-security",
+        "cli": Exempt("lands with the `agents security` subcommand in the Agent Security phase of this PR"),
+        "skill": Exempt("lands with the agents-security plugin skill in the Agent Security phase of this PR"),
+    },
 }
 
 # Engine modules discovered by convention: every src/yeaboi/*/engine.py, plus
@@ -524,12 +550,14 @@ class TestMcpTools:
 
 class TestTuiModes:
     def test_mode_cards_registered(self):
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        # The union of both category menus — Humans (_MODE_CARDS) and Agents
+        # (_AGENT_CARDS) — must equal the registered tui_mode column.
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
 
-        actual = {card["key"] for card in _MODE_CARDS}
+        actual = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
         registered = set(_non_exempt("tui_mode").values())
         assert actual == registered, (
-            f"_MODE_CARDS keys vs CAPABILITIES differ.\n"
+            f"_MODE_CARDS/_AGENT_CARDS keys vs CAPABILITIES differ.\n"
             f"  new unregistered cards: {sorted(actual - registered)}\n"
             f"  registered but card removed: {sorted(registered - actual)}\n{_HOW_TO}"
         )
@@ -572,10 +600,11 @@ class TestTips:
     def test_carded_capabilities_have_jump_targets(self):
         # Every capability that owns a mode card must have a tip whose mode_key
         # points at that exact card, so the jump-into-feature key can't rot.
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        # Cards span both category menus (the `g` jump switches category).
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
         from yeaboi.ui.shared._tips import _FEATURE_TIPS
 
-        card_keys = {card["key"] for card in _MODE_CARDS}
+        card_keys = {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS)}
         by_key = {t.key: t for t in _FEATURE_TIPS}
         for cap, tui_mode in _non_exempt("tui_mode").items():
             tip = by_key.get(cap)

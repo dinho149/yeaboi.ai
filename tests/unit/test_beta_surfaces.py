@@ -112,9 +112,10 @@ class TestBetaMarkersAgree:
     """
 
     def _badged_card_keys(self) -> set[str]:
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        # Badged cards span both category menus (Humans + Agents).
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
 
-        return {card["key"] for card in _MODE_CARDS if card.get("badge") == BETA_LABEL}
+        return {card["key"] for card in (*_MODE_CARDS, *_AGENT_CARDS) if card.get("badge") == BETA_LABEL}
 
     def test_every_badged_card_has_an_entry_notice(self):
         from yeaboi.ui.shared._beta_notice import _BETA_MODES
@@ -136,9 +137,9 @@ class TestBetaMarkersAgree:
     def test_a_badged_card_stays_selectable(self):
         # Beta labels a mode; it does not take it away. `available` gates Enter,
         # the click handler and the welcome screen's `g` jump key.
-        from yeaboi.ui.mode_select.screens._screens import _MODE_CARDS
+        from yeaboi.ui.mode_select.screens._screens import _AGENT_CARDS, _MODE_CARDS
 
-        for card in _MODE_CARDS:
+        for card in (*_MODE_CARDS, *_AGENT_CARDS):
             if card.get("badge") == BETA_LABEL:
                 assert card["available"] is True, card["key"]
 

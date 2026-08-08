@@ -45,6 +45,7 @@ from yeaboi.ui.mode_select.screens._project_list_screen import (  # noqa: F401
 
 # Re-exports for backwards compatibility and test imports.
 from yeaboi.ui.mode_select.screens._screens import (  # noqa: F401
+    _AGENT_CARDS,
     _INTAKE_CARDS,
     _MIN_HEIGHT,
     _MIN_WIDTH,
@@ -11597,7 +11598,15 @@ def _run_poker_hub(console: Console, live, read_key, frame_time: float, supports
 
 
 def _sweep_menu_in(
-    console: Console, live, selected: int, n: int, *, sweep_skip: int | None = None, companion_from: float | None = None
+    console: Console,
+    live,
+    selected: int,
+    n: int,
+    *,
+    sweep_skip: int | None = None,
+    companion_from: float | None = None,
+    cards: list[dict] | None = None,
+    mascot: str = "duck",
 ) -> None:
     """Play the diagonal intro wipe that reveals the mode titles top-left →
     bottom-right, then land on the fully-revealed frame.
@@ -11606,10 +11615,11 @@ def _sweep_menu_in(
     leaves that one title fully shown throughout (used after the return slide, when
     the mode you came from is already home and only the rest scroll in). A no-op
     wipe (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
     _iw, _ih = console.size
     if _iw >= _MIN_WIDTH and _ih >= _MIN_HEIGHT:
-        _widths = mode_title_widths()
+        _widths = mode_title_widths(cards)
         # Front value at which the last-revealed cell of each title is covered;
         # the sweep runs until the largest of these.
         _front_max = 0.0
@@ -11639,6 +11649,8 @@ def _sweep_menu_in(
                     sweep_front=_front,
                     sweep_skip=sweep_skip,
                     companion_intro=_ci,
+                    cards=cards,
+                    mascot=mascot,
                 )
             )
             if _front >= _front_max:
@@ -11649,11 +11661,22 @@ def _sweep_menu_in(
     w, h = console.size
     _ci_final = 1.0 if companion_from is not None else 0.0
     live.update(
-        _build_mode_screen(selected, width=w, height=h, shimmer_tick=0.0, desc_reveal=0, companion_intro=_ci_final)
+        _build_mode_screen(
+            selected,
+            width=w,
+            height=h,
+            shimmer_tick=0.0,
+            desc_reveal=0,
+            companion_intro=_ci_final,
+            cards=cards,
+            mascot=mascot,
+        )
     )
 
 
-def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
+def _slide_menu_in(
+    console: Console, live, selected: int, n: int, *, cards: list[dict] | None = None, mascot: str = "duck"
+) -> None:
     """Return-to-menu transition: the mode you came from slides back FIRST, then the
     rest scroll in around it exactly like the fresh-load intro.
 
@@ -11662,14 +11685,16 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     Phase 2 hands off to the diagonal wipe (``_sweep_menu_in`` with ``sweep_skip``)
     so every OTHER title reveals top-left → bottom-right while the one you picked
     stays put. A no-op (straight to the final frame) when the terminal is too small.
+    ``cards``/``mascot`` pick the menu (Humans default, Agents when passed).
     """
+    _card_list = _MODE_CARDS if cards is None else cards
     w, h = console.size
     if w >= _MIN_WIDTH and h >= _MIN_HEIGHT:
-        chosen = _MODE_CARDS[selected]
+        chosen = _card_list[selected]
         base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
         base_style = f"bold rgb({base_r},{base_g},{base_b})"
         start_offset = 1  # the top row the select→page lift left the title on
-        target_offset = selected_title_offset(selected, width=w, height=h)
+        target_offset = selected_title_offset(selected, width=w, height=h, cards=cards)
         # Phase 1: the selected title slides home, on its own.
         slide_frames = 14
         for frame in range(slide_frames + 1):
@@ -11682,7 +11707,83 @@ def _slide_menu_in(console: Console, live, selected: int, n: int) -> None:
     # Phase 2: the rest scroll in with the same diagonal wipe as a fresh load, while
     # the selected title (already home) is held fully shown. The companion slides
     # back in during the wipe (from its sub-page corner) so it never clears.
-    _sweep_menu_in(console, live, selected, n, sweep_skip=selected, companion_from=_COMPANION_RETURN_START)
+    _sweep_menu_in(
+        console,
+        live,
+        selected,
+        n,
+        sweep_skip=selected,
+        companion_from=_COMPANION_RETURN_START,
+        cards=cards,
+        mascot=mascot,
+    )
+
+
+def _run_category_screen(
+    console: Console,
+    live,
+    read_key,
+    supports_timeout: bool,
+    *,
+    preselected: str = "humans",
+) -> str | None:
+    """Phase 0 — the Humans/Agents landing split. Returns a category key or
+    None to quit.
+
+    Always shown on a fresh load (the last-used category is *preselected*,
+    never auto-skipped — auto-skip would make the other family invisible).
+    Esc and q both quit here: there is nothing further back to go to.
+    """
+    from yeaboi.ui.mode_select.screens._screens_category import (
+        _CATEGORY_CARDS,
+        _build_category_screen,
+        category_at_pos,
+    )
+
+    selected = next((i for i, c in enumerate(_CATEGORY_CARDS) if c["key"] == preselected), 0)
+    start = time.monotonic()
+    logger.info("category screen shown (preselected: %s)", preselected)
+    while True:
+        w, h = console.size
+        if w < _MIN_WIDTH or h < _MIN_HEIGHT:
+            live.update(_build_too_small_screen(w, h))
+            k = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+            if k in ("q", "esc"):
+                return None
+            continue
+        elapsed = time.monotonic() - start
+        live.update(
+            _build_category_screen(
+                selected,
+                width=w,
+                height=h,
+                shimmer_tick=elapsed,
+                intro=min(1.0, elapsed / 0.4),
+            )
+        )
+        key = read_key(timeout=_FRAME_TIME) if supports_timeout else read_key()
+        if key in ("left", "right", "up", "down", "tab"):
+            selected = 1 - selected
+        elif key == "enter":
+            chosen = _CATEGORY_CARDS[selected]["key"]
+            logger.info("category chosen: %s", chosen)
+            return chosen
+        elif key in ("q", "esc"):
+            logger.info("quit from category screen")
+            return None
+        elif isinstance(key, str) and key.startswith("click:"):
+            try:
+                cx, cy = (int(p) for p in key.split(":")[1:3])
+            except ValueError:
+                continue
+            hit = category_at_pos(w, h, row=cy, col=cx)
+            if hit is None:
+                continue
+            if hit == selected:
+                chosen = _CATEGORY_CARDS[selected]["key"]
+                logger.info("category click-chosen: %s", chosen)
+                return chosen
+            selected = hit
 
 
 def select_mode(
@@ -11701,6 +11802,17 @@ def select_mode(
     read_key = _read_key_fn or _read_key
     selected = 0
     n = len(_MODE_CARDS)
+
+    # The landing split (Phase 0). `category` picks which card list Phase 1
+    # shows; the last choice is persisted and *preselected* on the next launch
+    # (never auto-skipped). Esc from a menu returns here; q quits.
+    from yeaboi.config import get_last_category, set_last_category
+
+    category = get_last_category()
+    cards: list[dict] = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+    mascot = "duck" if category == "humans" else "robo"
+    _category_pending = True  # show the split on the first pass through the loop
+    _back_to_category = False
 
     # The TUI is interactive — flip the filesystem sandbox (fs_policy) into
     # consent mode: denials still raise, but ALSO queue a ConsentRequest that
@@ -11773,17 +11885,38 @@ def select_mode(
             # slide-back-from-the-corner entrance); it no longer suppresses the sweep.
             _returning = _skip_fade_in
             _skip_fade_in = False
+
+            # ── Phase 0: the Humans/Agents landing split ─────────────────────
+            # Shown on a fresh load and whenever Esc backs out of a menu; a
+            # return from a sub-page keeps its category and skips straight to
+            # the menu transition below.
+            if _category_pending:
+                _category_pending = False
+                _pick = _run_category_screen(console, live, read_key, _supports_timeout, preselected=category)
+                if _pick is None:
+                    return None
+                if _pick != category:
+                    set_last_category(_pick)
+                category = _pick
+                cards = _MODE_CARDS if category == "humans" else _AGENT_CARDS
+                mascot = "duck" if category == "humans" else "robo"
+                n = len(cards)
+                selected = 0
+                # A category pick always sweeps its menu in fresh.
+                _returning = False
+                _reverse_animated = False
+
             if _reverse_animated:
                 # The reverse transition already revealed every item — don't re-run.
                 _reverse_animated = False
             elif _returning:
                 # Cold return from a sub-page: the mode you came from slides home,
                 # then the rest load in around it (the inverse of the select lift).
-                _slide_menu_in(console, live, selected, n)
+                _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             else:
                 # Fresh load: one diagonal wipe reveals every title top-left →
                 # bottom-right (the inverse of the splash crumble).
-                _sweep_menu_in(console, live, selected, n)
+                _sweep_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
             select_time = time.monotonic()
             # Companion entrance. Fresh load: full slide-in from off-screen right,
             # starting once the wipe has landed. On a RETURN the duck already slid
@@ -11824,6 +11957,8 @@ def select_mode(
                                 desc_reveal=999,
                                 tip_offset=tip_offset,
                                 compose=_compose,
+                                cards=cards,
+                                mascot=mascot,
                             )
                             if update:
                                 live.update(_panel)
@@ -11856,11 +11991,18 @@ def select_mode(
                     else:
                         continue  # net-zero burst — nothing moved, skip the repaint
                 elif key == "enter":
-                    mode = _MODE_CARDS[selected]
+                    mode = cards[selected]
                     if mode["available"]:
                         break
                     continue
-                elif key in ("q", "esc"):
+                elif key == "esc":
+                    # Esc backs out to the landing split (the screen this menu
+                    # came from). Quitting stays on q, mirroring every sub-page's
+                    # esc-goes-back convention.
+                    logger.info("esc from %s menu — back to category screen", category)
+                    _back_to_category = True
+                    break
+                elif key == "q":
                     # Courtesy on quit: offer to stop a running local Ollama
                     # server (gated on provider/localhost/reachable — cloud
                     # exits stay instant). Never let this block quitting.
@@ -11888,14 +12030,27 @@ def select_mode(
                     tip_offset += 1 if key == "]" else -1
                 elif key == "g":
                     # Jump into the feature the current tip describes (if it maps
-                    # to a selectable home card). Reuses the enter/activate path.
+                    # to a selectable card). Reuses the enter/activate path. Tips
+                    # rotate on both menus, so a tip may point at the OTHER
+                    # category's card — then the jump switches category too.
                     from yeaboi.ui.shared._tips import resolve_index, tip_at
 
                     _tip = tip_at(resolve_index(time.monotonic() - start_time, tip_offset))
                     if _tip.mode_key is not None:
-                        _j = next((i for i, m in enumerate(_MODE_CARDS) if m["key"] == _tip.mode_key), None)
-                        if _j is not None and _MODE_CARDS[_j]["available"]:
+                        _j = next((i for i, m in enumerate(cards) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and cards[_j]["available"]:
                             logger.info("tip jump to mode: %s", _tip.mode_key)
+                            selected = _j
+                            break
+                        _other = _AGENT_CARDS if cards is _MODE_CARDS else _MODE_CARDS
+                        _j = next((i for i, m in enumerate(_other) if m["key"] == _tip.mode_key), None)
+                        if _j is not None and _other[_j]["available"]:
+                            category = "agents" if _other is _AGENT_CARDS else "humans"
+                            logger.info("tip jump across categories to %s (%s)", _tip.mode_key, category)
+                            set_last_category(category)
+                            cards = _other
+                            mascot = "duck" if category == "humans" else "robo"
+                            n = len(cards)
                             selected = _j
                             break
                 elif key == "c":
@@ -11907,7 +12062,7 @@ def select_mode(
                     # gallery below keeps its entrance.
                     logger.info("changelog opened from mode select")
                     _run_changelog_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "f":
                     # Quick feedback comes out of the duck: his tip bubble becomes a
@@ -11920,7 +12075,7 @@ def select_mode(
                     if not welcome_shows_companion(_fw, _fh):
                         logger.info("feedback: terminal too small for the bubble, opening the form")
                         _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                        _slide_menu_in(console, live, selected, n)
+                        _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)
                         select_time = time.monotonic()
                         continue
                     logger.info("feedback bubble opened from mode select")
@@ -11946,7 +12101,7 @@ def select_mode(
                     # The full Feedback form, for anything the bubble is too small for.
                     logger.info("feedback opened from mode select")
                     _run_feedback_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "a":
                     # Open the All Tips gallery (bottom-left hint) — same inline
@@ -11954,7 +12109,7 @@ def select_mode(
                     # No wordmark intro here either (see the changelog above).
                     logger.info("all tips opened from mode select")
                     _run_all_tips_page(console, live, read_key, _FRAME_TIME, _supports_timeout)
-                    _slide_menu_in(console, live, selected, n)  # animate the menu back in
+                    _slide_menu_in(console, live, selected, n, cards=cards, mascot=mascot)  # animate the menu back in
                     select_time = time.monotonic()  # restart the description typewriter
                 elif key == "clear":
                     # Ctrl+U — the update shortcut advertised by the bottom-right
@@ -11982,8 +12137,9 @@ def select_mode(
                     except ValueError:
                         _cx = _cy = -1
                     _w, _h = console.size
-                    if duck_hit(_w, _h, row=_cy, col=_cx):
-                        # Click the duck → his shades lift to reveal a second pair.
+                    if mascot == "duck" and duck_hit(_w, _h, row=_cy, col=_cx):
+                        # Click the duck → his shades lift to reveal a second
+                        # pair. Duck-only: the robo companion wears a visor.
                         logger.info("duck clicked — double-shades gag")
                         _play_duck_shades(
                             console,
@@ -11994,14 +12150,14 @@ def select_mode(
                             select_time=select_time,
                         )
                         continue
-                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx)
+                    _hit = mode_at_row(selected, width=_w, height=_h, row=_cy, col=_cx, cards=cards)
                     if _hit is not None:
                         if _hit == selected:
-                            if _MODE_CARDS[selected]["available"]:
-                                logger.info("mode click-activate: %s", _MODE_CARDS[selected]["key"])
+                            if cards[selected]["available"]:
+                                logger.info("mode click-activate: %s", cards[selected]["key"])
                                 break
                         else:
-                            logger.info("mode click-select: %s", _MODE_CARDS[_hit]["key"])
+                            logger.info("mode click-select: %s", cards[_hit]["key"])
                             selected = _hit
                             select_time = time.monotonic()
 
@@ -12021,11 +12177,21 @@ def select_mode(
                         tip_offset=tip_offset,
                         companion_intro=companion_intro,
                         compose=_compose,
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
 
+            # Esc backed out of the menu — return to the landing split rather
+            # than running the select transition below.
+            if _back_to_category:
+                _back_to_category = False
+                _category_pending = True
+                _restart_mode_select = True
+                continue
+
             # ── Phase 2: Transition ───────────────────────────────────────────
-            chosen = _MODE_CARDS[selected]
+            chosen = cards[selected]
             all_indices = list(range(n))
             others = [i for i in all_indices if i != selected]
             base_r, base_g, base_b = COLOR_RGB.get(chosen["color"], (180, 180, 180))
@@ -12048,6 +12214,8 @@ def select_mode(
                         visible=all_indices,
                         fade_style=pulse_style,
                         fade_indices=[selected],
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -12068,6 +12236,8 @@ def select_mode(
                         fade_indices=others,
                         selected_style=base_style,
                         extras_reveal=1.0 - (_i / _nfade),
+                        cards=cards,
+                        mascot=mascot,
                     )
                 )
                 time.sleep(_FRAME_TIME)
@@ -12102,6 +12272,24 @@ def select_mode(
             from yeaboi.ui.shared._music_bar import start_duck_entrance
 
             start_duck_entrance(replay=True)
+
+            # ── Route: the Agents family → one prefix dispatch, not three more
+            # chain branches. route_agent_mode wraps each mode in mode_log() and
+            # its beta gate; returning lands back on the Agents menu.
+            if chosen["key"].startswith("agent-"):
+                from yeaboi.ui.mode_select._agents import route_agent_mode
+
+                route_agent_mode(
+                    chosen["key"],
+                    console=console,
+                    live=live,
+                    read_key=read_key,
+                    frame_time=_FRAME_TIME,
+                    supports_timeout=_supports_timeout,
+                )
+                _restart_mode_select = True
+                _skip_fade_in = True
+                continue
 
             # ── Route: Team Analysis mode → dedicated analysis flow ──────
             if chosen["key"] == "team-analysis":

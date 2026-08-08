@@ -36,6 +36,19 @@ MASCOT_PALETTE: dict[str, tuple[int, int, int]] = {
     "r": (228, 104, 22),
 }
 
+# Extra letters for the robotic duck (the Agents category mascot). A separate
+# dict — MASCOT_PALETTE is pinned byte-for-byte to the sprite generator's
+# PALETTE by tests, and the generator's nearest-colour tracer must never snap
+# duck pixels to robo steel. Letters must not collide with MASCOT_PALETTE.
+ROBO_PALETTE: dict[str, tuple[int, int, int]] = {
+    "C": (140, 160, 178),  # light steel plating
+    "c": (88, 104, 122),  # dark steel shading
+    "V": (90, 200, 230),  # cyan LED (visor eyes, antenna bulb)
+}
+
+# One lookup for _style: duck letters and robo letters share the glyph packer.
+_ALL_COLOURS: dict[str, tuple[int, int, int]] = {**MASCOT_PALETTE, **ROBO_PALETTE}
+
 # Hand-authored, hand-cleaned head companion (glints baked in as constant "W").
 DUCK_HEAD: tuple[str, ...] = (
     "......kkkk......",
@@ -105,6 +118,45 @@ DUCK_HEAD_QUACK: tuple[str, ...] = (
     *DUCK_HEAD[11:],
 )
 
+# The robotic duck head — same 16x14 footprint and silhouette as DUCK_HEAD so
+# every placement (companion lane, category screen) fits both without special
+# cases. Steel plating where the duck is green, a dark visor band with cyan LED
+# eyes where the duck wears shades, an antenna bulb for the crown tuft, and the
+# amber bill kept warm so he still reads as a duck. Hand-authored like
+# DUCK_HEAD; the offline sprite generator is duck-only.
+ROBO_HEAD: tuple[str, ...] = (
+    "......kkVk......",
+    ".....CCCCCC.....",
+    "....oCCCCCCC....",
+    "...oCCCCCCCCo...",
+    "...kkkkkVkkkVkk.",
+    "...ccckVkkkVkkk.",
+    "...cCCkkkkkkkkk.",
+    "...cCCCkkkbbkk..",
+    "...ccCCCCbbbbbkk",
+    "...kccCCrrrbbbbk",
+    "....kcccckkkkk..",
+    ".....ccccc......",
+    ".....CCCCCC.....",
+    "....ccCCCCC.....",
+)
+
+# Open-bill robo variant — the same rows 9–10 split as DUCK_HEAD_QUACK, so the
+# tip-arrival "beep" animation reuses the duck's quack mechanics unchanged.
+ROBO_HEAD_QUACK: tuple[str, ...] = (
+    *ROBO_HEAD[:9],
+    "...kccCCkkkkkkkk",
+    "....kcccbrrbbk..",
+    *ROBO_HEAD[11:],
+)
+
+# mascot key -> (resting head, open-beak head). The shades gag stays duck-only:
+# only DUCK_HEAD splits into FACE/GLASSES layers.
+_HEADS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_HEAD, DUCK_HEAD_QUACK),
+    "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
+}
+
 # Per-frame vertical offsets (pixels). Positive = lift the layer up.
 WING_OFF = (0, 1, 2, 2, 1, 0, 0, 0)  # gentle wing flap
 GLASS_OFF = (0, 0, 0, 1, 1, 1, 0, 0)  # slow glasses bob
@@ -116,7 +168,7 @@ MINI_WING_OFF = (0, 0, 1, 1, 1, 0, 0, 0)
 
 
 def _style(letter: str) -> str | None:
-    rgb = MASCOT_PALETTE.get(letter)
+    rgb = _ALL_COLOURS.get(letter)
     return None if rgb is None else f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
 
 
@@ -191,10 +243,11 @@ def _pack(rows: tuple[str, ...]) -> list[Text]:
     return out
 
 
-def head_cells(*, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+def head_cells(*, flip: bool = False, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:
     """The head sprite as a grid of (glyph, style) cells, for compositing the duck
-    over other content (e.g. running across the splash wordmark). Static frame 0."""
-    grid = DUCK_HEAD
+    over other content (e.g. running across the splash wordmark). Static frame 0.
+    ``mascot`` picks the sprite family: "duck" (default) or "robo" (Agents)."""
+    grid = _HEADS.get(mascot, _HEADS["duck"])[0]
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
@@ -319,7 +372,7 @@ def render_head_shades(lift: int, *, flip: bool = False) -> Group:
     return Group(*_pack(grid))
 
 
-def render_head_idle(frame: int, lift: int | None = None, *, flip: bool = False) -> Group:
+def render_head_idle(frame: int, lift: int | None = None, *, flip: bool = False, mascot: str = "duck") -> Group:
     """Resting head and shades gag at one common height.
 
     :func:`render_head_shades` pads :data:`_SHADES_TOP_PAD` rows above the crown
@@ -330,27 +383,32 @@ def render_head_idle(frame: int, lift: int | None = None, *, flip: bool = False)
     padded height too — that is all this is.
 
     ``lift=None`` rests, with the usual breathing bob; anything else plays the
-    gag at that lift.
+    gag at that lift. The gag is duck-only (only DUCK_HEAD has FACE/GLASSES
+    layers), so a non-duck ``mascot`` always rests — same padded height, so
+    swapping mascots never changes the sprite's geometry.
     """
-    if lift is not None:
+    if lift is not None and mascot == "duck":
         return render_head_shades(lift, flip=flip)
+    head = _HEADS.get(mascot, _HEADS["duck"])[0]
     pad = ("." * len(DUCK_HEAD_FACE[0]),) * _SHADES_TOP_PAD
-    grid = pad + _bob(DUCK_HEAD, HEAD_BOB[frame % FRAMES])
+    grid = pad + _bob(head, HEAD_BOB[frame % FRAMES])
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))
 
 
-def render_head(frame: int, *, flip: bool = False, beak_open: bool = False) -> Group:
+def render_head(frame: int, *, flip: bool = False, beak_open: bool = False, mascot: str = "duck") -> Group:
     """Small head companion: a gentle breathing bob (glints are baked in).
 
     ``flip=True`` mirrors the duck horizontally (reverse each pixel row) so he
     can face the other way — e.g. face left toward the menu when perched on the
     right-hand side of a screen. ``beak_open=True`` uses the open-mouth variant
-    (for a quack when a new tip appears).
+    (for a quack when a new tip appears — the robo's bill "beeps" the same way).
+    ``mascot`` picks the sprite family: "duck" (default) or "robo" (Agents).
     """
     f = frame % FRAMES
-    grid = _bob(DUCK_HEAD_QUACK if beak_open else DUCK_HEAD, HEAD_BOB[f])
+    resting, quacking = _HEADS.get(mascot, _HEADS["duck"])
+    grid = _bob(quacking if beak_open else resting, HEAD_BOB[f])
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))

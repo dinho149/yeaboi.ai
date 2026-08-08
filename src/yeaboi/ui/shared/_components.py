@@ -85,6 +85,12 @@ CHANGELOG_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,22
 # Same rationale as CHANGELOG_THEME: the feedback form's area chip carries the
 # selected mode's colour, so the page frame stays neutral silver.
 FEEDBACK_THEME = Theme(accent="rgb(160,160,180)", accent_bright="rgb(200,200,220)")
+# The Agents family — one coherent "machine" palette, distinct per mode like the
+# human modes: steel blue for the category chrome, cyan/mint/rose per card.
+AGENTS_THEME = Theme(accent="rgb(90,160,210)", accent_bright="rgb(130,200,255)")
+AGENT_USAGE_THEME = Theme(accent="rgb(70,190,230)", accent_bright="rgb(110,225,255)")
+AGENT_STANDUP_THEME = Theme(accent="rgb(120,210,170)", accent_bright="rgb(160,245,205)")
+AGENT_SECURITY_THEME = Theme(accent="rgb(230,90,120)", accent_bright="rgb(255,130,160)")
 
 # Button color scheme: (accent_border, accent_label, grey_border, grey_label)
 _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
@@ -365,6 +371,21 @@ def changelog_title(shimmer_tick: float | None = None, *, width: int | None = No
 def feedback_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
     """Return the Feedback ASCII title (silver accent). Optionally shimmering."""
     return build_ascii_title("Feedback", "rgb(160,160,180)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_usage_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Usage ASCII title (cyan accent). Optionally shimmering."""
+    return build_ascii_title("Usage", "rgb(70,190,230)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_standup_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Standup ASCII title (mint accent). Optionally shimmering."""
+    return build_ascii_title("Standup", "rgb(120,210,170)", shimmer_tick=shimmer_tick, width=width)
+
+
+def agent_security_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:
+    """Return the Agent Security ASCII title (rose accent). Optionally shimmering."""
+    return build_ascii_title("Security", "rgb(230,90,120)", shimmer_tick=shimmer_tick, width=width)
 
 
 def tips_title(shimmer_tick: float | None = None, *, width: int | None = None) -> Text:

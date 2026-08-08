@@ -168,6 +168,31 @@ def set_tips_enabled(enabled: bool) -> None:
     logger.info("Tips %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
+# The landing split's two categories. Persisted so the next launch preselects
+# (never auto-skips) the category the user worked in last.
+LAST_CATEGORY_KEY = "YEABOI_LAST_CATEGORY"
+_VALID_CATEGORIES = ("humans", "agents")
+
+
+def get_last_category() -> str:
+    """Return the last-chosen landing category ("humans"/"agents", default humans).
+
+    Preselection only — the category screen always shows. Unknown values fall
+    back to "humans" so a hand-edited .env can't wedge the landing screen.
+    """
+    value = os.getenv(LAST_CATEGORY_KEY, "humans").strip().lower()
+    return value if value in _VALID_CATEGORIES else "humans"
+
+
+def set_last_category(category: str) -> None:
+    """Persist the landing-category choice (mirrors :func:`set_tips_enabled`)."""
+    if category not in _VALID_CATEGORIES:
+        return
+    config_file = set_config_value(LAST_CATEGORY_KEY, category)
+    os.environ[LAST_CATEGORY_KEY] = category
+    logger.info("Landing category set to %s (persisted to %s)", category, config_file)
+
+
 def is_duck_enabled() -> bool:
     """Return True if the corner duck's speech bubble may show lines (default on).
 

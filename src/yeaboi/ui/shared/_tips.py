@@ -146,6 +146,26 @@ _FEATURE_TIPS: tuple[FeatureTip, ...] = (
         "✏️ Tip: teammates can correct a shared report in the browser — every change is attributed",
         is_new=True,
     ),
+    # The Agents family — cards live on the Agents menu (_AGENT_CARDS); the `g`
+    # jump switches category when the tip fires from the Humans menu.
+    FeatureTip(
+        "agent-usage",
+        "\U0001f916 Tip: Agents → Usage shows what your AI agents cost — per model, project and day",
+        mode_key="agent-usage",
+        is_beta=True,
+    ),
+    FeatureTip(
+        "agent-standup",
+        "\U0001f916 Tip: Agents → Standup digests what your AI agents did yesterday — sessions, commits, PRs",
+        mode_key="agent-standup",
+        is_beta=True,
+    ),
+    FeatureTip(
+        "agent-security",
+        "\U0001f916 Tip: Agents → Security audits agent permissions, MCP servers and secrets exposure",
+        mode_key="agent-security",
+        is_beta=True,
+    ),
 )
 
 # Ambient tips — not tied to a capability, so exempt from parity. The generic

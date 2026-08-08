@@ -106,6 +106,40 @@ _MODE_CARDS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Agents mode definitions — the second category on the landing split. Kept as a
+# SEPARATE list, never merged into _MODE_CARDS: the welcome tests pin exact
+# renders and hardcoded indices against _MODE_CARDS, and the two menus are
+# separate screens sharing one builder (_build_mode_screen(cards=...)).
+# ---------------------------------------------------------------------------
+
+_AGENT_CARDS: list[dict[str, Any]] = [
+    {
+        "key": "agent-usage",
+        "title": "Usage",
+        "description": "See what your AI agents cost: tokens, cache, per-model and per-project spend, daily trend.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(70,190,230)",
+    },
+    {
+        "key": "agent-standup",
+        "title": "Standup",
+        "description": "A daily digest of what your agents did: sessions worked, commits and PRs, open threads.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(120,210,170)",
+    },
+    {
+        "key": "agent-security",
+        "title": "Security",
+        "description": "Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands.",
+        "available": True,
+        "badge": BETA_LABEL,
+        "color": "rgb(230,90,120)",
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Intake mode definitions — shown when the user selects "+ New Project"
 # ---------------------------------------------------------------------------
 
@@ -199,13 +233,15 @@ _SWEEP_ROW_WEIGHT = 4.0
 _DISABLED_BADGE_RGB = (90, 90, 100)
 
 
-def mode_title_widths() -> list[int]:
-    """Block-font column width of every mode title, index-aligned to _MODE_CARDS.
+def mode_title_widths(cards: list[dict[str, Any]] | None = None) -> list[int]:
+    """Block-font column width of every mode title, index-aligned to ``cards``
+    (default ``_MODE_CARDS`` — pass ``_AGENT_CARDS`` for the Agents menu).
 
     The staggered intro reveal uses these to know when each title is fully wiped
     in (see the reveal loop in :mod:`yeaboi.ui.mode_select`).
     """
-    return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in _MODE_CARDS]
+    cards = _MODE_CARDS if cards is None else cards
+    return [max(len(line) for line in render_ascii_text(mode["title"])) for mode in cards]
 
 
 def _card_badge(mode: dict[str, Any]) -> str:
@@ -586,6 +622,8 @@ def _build_mode_screen(
     companion_intro: float = 1.0,
     extras_reveal: float | None = None,
     compose: dict | None = None,
+    cards: list[dict[str, Any]] | None = None,
+    mascot: str = "duck",
 ) -> Panel:
     """Build the full-screen mode selection layout.
 
@@ -594,8 +632,13 @@ def _build_mode_screen(
     a single coherent top-left → bottom-right sweep.
     sweep_skip: index of one title to leave fully shown while the sweep reveals the
     rest — used by the return transition (the mode you came from is already home).
+    cards / mascot: the card list this menu shows (default ``_MODE_CARDS``) and the
+    companion sprite beside it ("duck" for Humans, "robo" for Agents). Only the
+    *source* of the rows changes — every layout constant stays identical, and
+    ``mode_at_row``/``selected_title_offset`` must be passed the same ``cards``.
     """
-    show = visible if visible is not None else list(range(len(_MODE_CARDS)))
+    cards = _MODE_CARDS if cards is None else cards
+    show = visible if visible is not None else list(range(len(cards)))
     fading = fade_indices or []
 
     # Decide the companion up front so the mode description can be clipped to the
@@ -610,7 +653,7 @@ def _build_mode_screen(
     body: list = []
     body_h = 0
     row_base = 0  # absolute menu-row of the current item's title, for the sweep
-    for i, mode in enumerate(_MODE_CARDS):
+    for i, mode in enumerate(cards):
         if i not in show:
             continue
         is_sel = i == selected
@@ -701,6 +744,7 @@ def _build_mode_screen(
                 extras_reveal=extras_reveal,
                 compose=compose,
                 lane_h=grid_h,
+                mascot=mascot,
             ),
         )
         # Reserve _MUSIC_POCKET_ROWS blank rows at the foot; _WelcomeFrame draws the
@@ -736,7 +780,9 @@ def _build_mode_screen(
     return _WelcomeFrame(panel, compose=compose)
 
 
-def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -> int | None:
+def mode_at_row(
+    selected: int, *, width: int, height: int, row: int, col: int, cards: list[dict[str, Any]] | None = None
+) -> int | None:
     """Map a 1-based terminal (row, col) click to a mode-card index, or None.
 
     Reproduces the vertical layout maths of :func:`_build_mode_screen` so a click
@@ -745,8 +791,9 @@ def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -
     clicks inside the right-hand duck lane return None. Kept in lock-step with the
     builder: the layout constants (panel border + top padding, ``body_h``, the
     companion split, the 2 tip rows + 1 version row) must match exactly.
+    Pass the same ``cards`` the builder was given (default ``_MODE_CARDS``).
     """
-    n = len(_MODE_CARDS)
+    n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
     # Clicks in the duck's reserved right-hand lane aren't menu clicks.
     if show_companion and col > width - _COMPANION_COLS:
@@ -780,7 +827,7 @@ def mode_at_row(selected: int, *, width: int, height: int, row: int, col: int) -
     return None
 
 
-def selected_title_offset(selected: int, *, width: int, height: int) -> int:
+def selected_title_offset(selected: int, *, width: int, height: int, cards: list[dict[str, Any]] | None = None) -> int:
     """Return the ``top_offset`` (blank content rows above the title) at which the
     currently-selected mode's title sits in :func:`_build_mode_screen`.
 
@@ -789,9 +836,10 @@ def selected_title_offset(selected: int, *, width: int, height: int) -> int:
     lifts from where it is instead of jumping to the middle first. Mirrors the
     vertical maths of :func:`_build_mode_screen`/:func:`mode_at_row` exactly (same
     ``body_h``, companion split, and centring), so the first slide frame lands the
-    title on the same row it occupied a frame earlier.
+    title on the same row it occupied a frame earlier. Pass the same ``cards``
+    the builder was given (default ``_MODE_CARDS``).
     """
-    n = len(_MODE_CARDS)
+    n = len(_MODE_CARDS if cards is None else cards)
     show_companion = width >= _COMPANION_MIN_WIDTH and height >= _COMPANION_MIN_HEIGHT
 
     # body_h — total rows of the mode block (selected carries +3 for its blank+desc).
@@ -1120,6 +1168,7 @@ def _build_companion(
     extras_reveal: float | None = None,
     compose: dict | None = None,
     lane_h: int = 40,
+    mascot: str = "duck",
 ) -> RenderableType:
     """Bottom-right idle duck (facing left, toward the menu) with the current tip
     in a speech bubble above it — and, above that, an optional ``update_box``.
@@ -1145,10 +1194,11 @@ def _build_companion(
     # Duck faces left so he looks toward the mode list rather than the wall.
     # duck_lift not None → play the double-shades gag (sunglasses raised by that
     # many pixels, second pair revealed underneath); otherwise the resting head.
+    # The gag is duck-only (see _mascot.py), so the robo companion always rests.
     head = (
         render_head_shades(duck_lift, flip=True)
-        if duck_lift is not None
-        else render_head(0, flip=True, beak_open=beak_open)
+        if duck_lift is not None and mascot == "duck"
+        else render_head(0, flip=True, beak_open=beak_open, mascot=mascot)
     )
     # Entrance slide: left-pad the head so it glides from the right edge of the lane
     # into its centre (at intro 1.0 the pad equals the centred pad, so it matches the
