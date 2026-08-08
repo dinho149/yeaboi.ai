@@ -57,6 +57,7 @@ session and carry a `**Model**` line.
 | `cron/day-ahead.md` | `fast` | Runs one script and posts what it printed; every judgement in the message was made in Python |
 | `cron/digest.md` | `standard` | Buckets ~20 issue titles by type and ranks each bucket into one message |
 | `cron/slack-relay.md` | `fast` | Grammar-first matching against an allowlist, 17 times a day; it also answers free text, but its rule for anything unsure is ask-in-thread, never act — the judgement being relayed was the human's. Raise the tier if parses misfire |
+| `cron/cd-deploy.md` | `standard` | Applies a plan it did not compose, and judges only whether a refusal happened; the arithmetic is Python's, but it edits a table, opens a PR and writes the one message that says the fleet changed |
 | `events/pr-opened-dod-audit.md` | `standard` | A ten-item checklist against a diff |
 | `events/pr-merged-close-loop.md` | `fast` | verify Linear reached Done, one Slack line, a Notion page from a merged PR |
 | `events/release-published-announce.md` | `standard` | Writes notes from commits, which needs judgement about what mattered |

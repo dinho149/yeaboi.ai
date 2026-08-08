@@ -5,9 +5,20 @@
 **Filters** — skip drafts; skip authors `dependabot[bot]` and `github-actions[bot]` unless the PR is labelled `cowork`
 **Model** — `standard` ([models.md](../../models.md))
 
-Keep that filter on **one line**. `scripts/cowork_setup.py` parses it with a single-line regex, and
-it is the text a human copies into the web form for an event routine the API cannot register — a
+```json webhook
+{"source": "github", "events": ["pull_request"], "filter": {"actions": ["opened", "synchronize"]}}
+```
+
+Keep that filter on **one line**. `scripts/cowork_setup.py` parses it with a single-line regex, and a
 wrapped second line is silently dropped, taking the carve-out with it.
+
+The `**Filters**` line and the `webhook` block are not two spellings of the same thing, and neither
+one makes the other redundant. The block is the coarse gate the API applies before this routine wakes
+up; the line is the judgement this routine applies once it has — there is no filter DSL that expresses
+"unless the PR is labelled `cowork`", and a block that pretended to would silently drop the carve-out
+the same way a wrapped line does. So **the `**Filters**` line is enforced by step 1 and nowhere
+else** — the registered block gates on the action only, and the API never echoes a stored filter back,
+so nothing can confirm even that much.
 
 The carve-out exists because the `claude.yml` implement job opens PRs unattended from an issue a
 human approved. If the action pushes as a bot, the authorship filter would drop the process audit on
@@ -18,7 +29,13 @@ exactly the PRs nobody watched being written. `claude-review.yml` carries the sa
 
 ## Run
 
-1. `gh pr view <n> --json title,body,files,labels,author` and `gh pr diff <n>`.
+1. `gh pr view <n> --json title,body,files,labels,author,isDraft` and `gh pr diff <n>`.
+
+   **Apply the `**Filters**` line here, before anything else.** Exit silently — no comment, no
+   issue — when `isDraft` is true, or when the author is `dependabot[bot]` or `github-actions[bot]`
+   *and* the PR does not carry the `cowork` label. Nothing upstream does this: the webhook fires on
+   every `opened` and `synchronize`, and auditing a draft against the ten items is a review of work
+   somebody has explicitly said is not finished.
 2. Walk the DoD. For each item, decide **met / unmet / not applicable**, using evidence from the diff
    and not from the PR description's claims:
    - **1 Linear** — a `Closes YEA-NN` line in the body: the magic word is what makes the Linear
