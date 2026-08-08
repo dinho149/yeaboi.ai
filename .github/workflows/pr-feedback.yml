@@ -125,7 +125,7 @@ jobs:
       # Default ref — the base branch. Never point this at the head: with
       # `pull_request_target`'s write token that would run PR-authored code.
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv python install 3.11
 
       # No `uv sync`: the script imports the standard library only and shells out
