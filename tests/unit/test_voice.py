@@ -1409,6 +1409,21 @@ class TestVoiceIndicator:
 
 
 class TestRecordVoiceInput:
+    @pytest.fixture(autouse=True)
+    def _strict_probe_follows_the_cheap_one(self, monkeypatch):
+        """Keep the two availability probes telling the same story here.
+
+        ``record_voice_input`` gates on the *strict* ``probe_voice_backend``,
+        but most tests in this class only fake ``is_voice_available``. On a
+        machine that has the voice extra the real strict probe succeeds anyway
+        and the gap is invisible; on one that does not — every CI runner — the
+        test falls straight into the install offer, records nothing, and asserts
+        against an empty list. Delegating keeps them in step no matter which one
+        a given test patches, and a test that patches the strict probe itself
+        still wins by sharing this ``monkeypatch``.
+        """
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: voice.is_voice_available())
+
     def _patch_voice(self, monkeypatch, *, available=(True, ""), transcript="hello", frames_have_audio=True):
         from yeaboi.ui.shared import _voice_input
 
