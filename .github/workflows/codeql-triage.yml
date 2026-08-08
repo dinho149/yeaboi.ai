@@ -25,6 +25,14 @@
 # ran and every blocking finding was answered. A wrong fix does not merge; it
 # sits red until a human looks.
 #
+# That argument has a precondition, and the survey step checks it rather than
+# assuming it: `pr-feedback` must be a REQUIRED status check on the ruleset.
+# Adding it is a manual step (see cowork/README.md), so it can be missing — and
+# with it missing, `--auto` would merge as soon as the five CI contexts pass,
+# with no review involved. When the check is absent the job opens the PR and
+# leaves auto-merge disarmed, because a promise this job cannot keep is worse
+# than a PR somebody has to click.
+#
 # Loop-safe: the PR is github-actions[bot]-authored. claude-review.yml skips bot
 # authors *unless* the PR carries the `cowork` label — which this one does, on
 # purpose, because that review is load-bearing here rather than decorative.
@@ -151,6 +159,26 @@ jobs:
               print("::notice::No open code-scanning alerts. Nothing to triage.")
           PY
 
+          # `--auto` is only a gate if the ruleset actually requires the check we
+          # are leaning on. `pr-feedback` is the one carrying DoD item 10 — Claude
+          # Review ran and every blocking finding was answered — and adding it to
+          # the ruleset is a MANUAL setup step (cowork/README.md lists it among
+          # the things neither `make cowork-setup` nor `/cowork deploy` can do).
+          # So it can simply be absent, and when it is, GitHub merges the moment
+          # the five CI contexts go green with no review in the loop at all.
+          #
+          # Refuse to arm auto-merge in that state rather than quietly downgrade
+          # what this job promises. Checked here, deterministically, rather than
+          # left to the model to notice.
+          if gh api "repos/$REPO/rules/branches/main" \
+               --jq 'any(.[]; .type=="required_status_checks" and any(.parameters.required_status_checks[]; .context=="pr-feedback"))' \
+             | grep -qx true; then
+            echo "automerge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "automerge=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::pr-feedback is not a required status check on the main-branch ruleset, so --auto would merge without waiting for review. Opening the PR without auto-merge; a human must merge it."
+          fi
+
       - name: Fix and propose with Claude
         if: steps.detect.outputs.found == 'true'
         uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
@@ -210,9 +238,16 @@ jobs:
                  link — plus a section naming anything you moved to the propose
                  lane. The `cowork` label is required: claude-review.yml skips
                  bot-authored PRs without it, and that review is this job's gate.
-            8. `gh pr merge <number> --auto --squash`. NEVER merge directly, never
-               `--admin`. Auto-merge waits for the required checks, so CI and the
-               `pr-feedback` status decide, not you.
+            8. Auto-merge is armed for this run: **${{ steps.detect.outputs.automerge }}**.
+               - `true` → `gh pr merge <number> --auto --squash`. NEVER merge
+                 directly, never `--admin`. Auto-merge waits for the required
+                 checks, so CI and the `pr-feedback` status decide, not you.
+               - `false` → do NOT enable auto-merge. `pr-feedback` is not a
+                 required check on this repo right now, so `--auto` would merge
+                 the moment CI went green with no review in the loop — the one
+                 thing this job may not do. Leave the PR open and comment that it
+                 needs a human merge because auto-merge is disarmed, naming the
+                 missing required status check so it can be fixed once.
 
             ## The propose lane (for `codeql-propose.json`)
 

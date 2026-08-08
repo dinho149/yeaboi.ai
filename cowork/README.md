@@ -152,6 +152,12 @@ means Claude Review ran and every blocking finding was answered. It never dismis
 never applies `claude-implement`. The three guardrail exemptions it takes are written down in
 [house-rules.md](house-rules.md), not assumed.
 
+**The unattended merge needs one thing this repo does not have yet**: `pr-feedback` on the ruleset's
+required checks, the manual step listed under *What neither can do* below. Without it `--auto` would
+merge as soon as the five CI contexts went green, with no review in the loop — so the survey step
+checks for the context and leaves auto-merge **disarmed** when it is absent, warning in the run log.
+Add the context once and the loop closes; until then the PR opens green and waits for a click.
+
 ## Setting this up
 
 Two commands, in this order. Both are reconciles — safe to re-run after adding a routine, changing a

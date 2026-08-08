@@ -65,6 +65,12 @@ None of that removes a gate. The triage PR still opens only after `make test`, `
 main-branch ruleset — including the `pr-feedback` status — is what actually decides. A wrong fix
 does not merge; it sits red.
 
+That last sentence is only true while **`pr-feedback` is a required status check on the ruleset**,
+which is a manual setup step and is not one today. The workflow checks for it and refuses to arm
+auto-merge when it is missing, rather than merging on CI alone and calling it reviewed. Until it is
+added, the triage PR opens green and waits for a human click — the automation is real, the
+unattended *merge* is not.
+
 ## Guardrails
 
 - **One open PR per workstream.** Start every run with

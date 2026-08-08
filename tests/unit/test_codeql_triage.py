@@ -126,6 +126,24 @@ class TestTriageWorkflow:
             "standing between this job and an unreviewed merge"
         )
 
+    def test_automerge_is_gated_on_pr_feedback_being_required(self):
+        """`--auto` is only a review gate while `pr-feedback` is a required check.
+
+        Adding that context to the ruleset is a manual step (cowork/README.md
+        lists it among the things no script can do), so it can be absent — and
+        with it absent, auto-merge lands the PR the moment the five CI contexts
+        go green, with no review involved. The job must detect that and refuse
+        to arm auto-merge, rather than merge on CI alone and call it reviewed.
+        """
+        text = TRIAGE_WORKFLOW.read_text()
+        assert "rules/branches/main" in text and '.context=="pr-feedback"' in text, (
+            "the survey step must check whether pr-feedback is actually required"
+        )
+        assert "automerge=false" in text and "automerge=true" in text
+        assert "steps.detect.outputs.automerge" in text, (
+            "the prompt must branch on the check rather than always merging"
+        )
+
     def test_reads_alerts_and_can_open_a_pr(self):
         perms = _triage()["permissions"]
         assert perms["security-events"] == "read", "reading the alerts is the entire point"
