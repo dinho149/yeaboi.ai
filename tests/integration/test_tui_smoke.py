@@ -39,8 +39,7 @@ _MODE_SCREEN_MARKERS = ("changelog", "Tip:", "channel")
 
 # Chrome of the Humans/Agents landing split, which now renders BEFORE the mode
 # menu. Fragments of the heading/hints so a copy tweak can't break the test.
-# The heading is letter-spaced, so match its spaced form (or the hint row).
-_CATEGORY_SCREEN_MARKERS = ("w o r k i n g", "choose", "switch")
+_CATEGORY_SCREEN_MARKERS = ("working with", "choose", "switch")
 
 _ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[a-zA-Z]"  # CSI sequences (colours, cursor movement, modes)

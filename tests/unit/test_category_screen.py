@@ -3,13 +3,17 @@
 from rich.console import Console
 
 from yeaboi.ui.mode_select.screens._screens_category import (
+    _CARD_ROWS,
     _CATEGORY_CARDS,
     _build_category_screen,
+    _card_half,
     category_at_pos,
 )
 
 
-def _render(width=110, height=32, selected=0, **kwargs) -> str:
+# 40 rows is the app's own floor (_MIN_HEIGHT); below it the caller shows the
+# too-small guard screen instead, so the category screen never renders shorter.
+def _render(width=110, height=40, selected=0, **kwargs) -> str:
     console = Console(width=width, height=height, force_terminal=True)
     with console.capture() as cap:
         console.print(_build_category_screen(selected, width=width, height=height, **kwargs))
@@ -22,7 +26,7 @@ class TestCards:
 
     def test_core_keys_present(self):
         for card in _CATEGORY_CARDS:
-            assert {"key", "title", "description", "color", "mascot"} <= set(card)
+            assert {"key", "title", "verb", "capabilities", "color", "bright", "dim", "tint", "mascot"} <= set(card)
 
 
 class TestRender:
@@ -39,21 +43,59 @@ class TestRender:
         left = _render(selected=0)
         right = _render(selected=1)
         assert left != right
-        # The agents accent at full strength appears only when agents is selected.
+        # The agents accent border + card tint appear only when agents is selected.
         assert "90;160;210" in right
+        assert "15;24;32" in right  # agents card tint
+        assert "15;24;32" not in left
+        assert "17;28;20" in left  # humans card tint
+
+    def test_selected_card_is_alive_resting_card_is_still(self):
+        # The signature: the selected mascot's wing flaps on the clock; the
+        # resting card holds frame 0 regardless of the clock.
+        import re
+
+        early = _render(selected=1, shimmer_tick=0.0)
+        late = _render(selected=1, shimmer_tick=0.25)
+        assert early != late  # the robo flapped
+
+        def right_half(styled):
+            plain = re.sub(r"\x1b\[[0-9;]*m", "", styled)
+            return "\n".join(row[len(row) // 2 :] for row in plain.splitlines())
+
+        # Humans selected → the agents half must not move between frames.
+        a = _render(selected=0, shimmer_tick=0.0)
+        b = _render(selected=0, shimmer_tick=0.25)
+        assert right_half(a) == right_half(b)
+
+    def test_card_eyebrows_in_borders(self):
+        import re
+
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", _render())
+        assert " humans " in plain and " agents " in plain
 
     def test_headline_and_hints(self):
         out = _render()
-        # The heading is letter-spaced ("W h o   a r e …") between two accent
-        # rules — assert the spaced words and the flanking rule glyphs.
-        assert "w o r k i n g   w i t h" in out
-        assert "─────" in out
+        # The question rides the page frame's border title now.
+        assert "working with today?" in out
         assert "choose" in out and "switch" in out and "quit" in out
 
     def test_intro_hides_heads_early(self):
         early = _render(intro=0.0)
         assert "34;158;122" not in early  # no duck yet
-        assert "w o r k i n g   w i t h" in early  # copy is already there
+        assert "working with today?" in early  # the frame's question is already there
+        # The mascot rows are reserved, so the card height never jumps.
+        assert early.count("\n") == 40
+
+    def test_card_height_matches_the_layout_constant(self):
+        # The card is a plain inner Panel (no height= — that is what the
+        # full-screen-background guard flags), so its height comes from the
+        # body. _CARD_ROWS drives the page's vertical centring, and the two
+        # would drift silently if the mascot or the block font changed rows.
+        console = Console(width=52, height=60, force_terminal=False)
+        for card in _CATEGORY_CARDS:
+            with console.capture() as cap:
+                console.print(_card_half(card, selected=True, shimmer_tick=0.0, intro=1.0))
+            assert cap.get().count("\n") == _CARD_ROWS
 
     def test_small_terminal_still_renders(self):
         out = _render(width=84, height=24)
