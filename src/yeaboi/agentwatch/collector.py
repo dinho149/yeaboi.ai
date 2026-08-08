@@ -83,6 +83,7 @@ class IngestStats:
     files_seen: int = 0
     files_skipped: int = 0
     files_parsed: int = 0
+    files_pruned: int = 0
     sessions_upserted: int = 0
     findings_added: int = 0
     malformed_lines: int = 0
@@ -219,9 +220,16 @@ def _parse_file(
                 rollup.started_at = rollup.started_at or str(timestamp)
                 rollup.ended_at = str(timestamp)
             kind = record.get("type")
-            message = record.get("message") or {}
+            # isinstance rather than `or {}`: these fields are another tool's
+            # format, and a record carrying `"origin": "human"` (a string, not
+            # an object) would raise AttributeError on .get — which refresh()
+            # turns into "failed to ingest", dropping the WHOLE file's usage
+            # over one odd line.
+            message = record.get("message")
+            message = message if isinstance(message, dict) else {}
             if kind == "user":
-                origin = (record.get("origin") or {}).get("kind")
+                origin_obj = record.get("origin")
+                origin = origin_obj.get("kind") if isinstance(origin_obj, dict) else None
                 if origin == "human" or (origin is None and isinstance(message.get("content"), str)):
                     rollup.turns += 1
             elif kind == "assistant":
@@ -268,18 +276,23 @@ def refresh(
 ) -> IngestStats:
     """Ingest new/changed session transcripts into the store. Never raises.
 
-    The skip path never opens a file: (size, mtime) matching the stored cursor
-    means unchanged (transcripts are append-only, and the cursor keys on both
-    fields because coarse filesystem mtimes — FAT's 2s — can hide a same-size
-    touch but not a growth). Anything else is fully reparsed and its rollup
+    The skip path checks (size, mtime) first — transcripts are append-only, and
+    the cursor keys on both fields because coarse filesystem mtimes (FAT's 2s)
+    can hide a same-size touch but not a growth. When those match it then
+    compares the first line's hash, which is the only thing that catches a file
+    *replaced* at the same size with a preserved mtime (``cp -p`` of a backup,
+    a restore, a rewrite): cheap, since it reads one line and only for files we
+    were about to skip anyway. Anything else is fully reparsed and its rollup
     and findings replaced.
     """
     stats = IngestStats()
+    scan_failed = False
     for source, root in roots if roots is not None else _source_roots():
         try:
             files = list(_iter_session_files(root))
         except OSError as exc:
             stats.warnings.append(f"cannot scan {root}: {exc}")
+            scan_failed = True
             continue
         for path in files:
             stats.files_seen += 1
@@ -289,15 +302,27 @@ def refresh(
                 continue
             cursor = store.get_cursor(str(path))
             if cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
-                stats.files_skipped += 1
-                continue
+                # Same size AND same mtime — the only remaining way this file
+                # differs is a same-size replacement, which the head hash
+                # catches. An empty stored hash predates the check; treat it as
+                # a match rather than reparsing every file once.
+                stored_sha = cursor["first_line_sha"]
+                if not stored_sha or stored_sha == _first_line_sha(path):
+                    stats.files_skipped += 1
+                    continue
             if on_progress is not None:
                 on_progress(f"reading {path.name}")
             try:
                 _ingest_one(store, source, path, stats)
             except Exception as exc:  # one bad file must not sink the sweep
+                # The exception TEXT never reaches the warning: an exception
+                # raised while parsing an untrusted transcript can carry a
+                # fragment of that transcript in its message (int('<value>')),
+                # and warnings are persisted to SQLite, written to the export
+                # and rendered on screen. The class name says as much for
+                # triage; the detail goes to the log.
                 logger.warning("agentwatch ingest failed for %s: %s", path, exc)
-                stats.warnings.append(f"failed to ingest {path.name}: {exc}")
+                stats.warnings.append(f"failed to ingest {path.name} ({type(exc).__name__} — see logs)")
                 continue
             store.set_cursor(
                 str(path),
@@ -306,11 +331,26 @@ def refresh(
                 mtime=file_stat.st_mtime,
                 first_line_sha=_first_line_sha(path),
             )
+
+    # Drop state for transcripts that are gone from disk. Deleting the
+    # transcript is how a user remediates a leaked secret, and without this the
+    # finding (and the session's tokens) would outlive the file for ever.
+    # Skipped when a root failed to scan: an unreadable or unmounted root makes
+    # every file under it look deleted, and pruning on that reading would
+    # discard the whole cache over a transient mount.
+    if not scan_failed:
+        for known in store.known_source_paths():
+            if Path(known).exists():
+                continue
+            store.forget_source_path(known)
+            stats.files_pruned += 1
+
     logger.info(
-        "agentwatch refresh: %d seen, %d parsed, %d skipped, %d sessions, %d findings, %d malformed",
+        "agentwatch refresh: %d seen, %d parsed, %d skipped, %d pruned, %d sessions, %d findings, %d malformed",
         stats.files_seen,
         stats.files_parsed,
         stats.files_skipped,
+        stats.files_pruned,
         stats.sessions_upserted,
         stats.findings_added,
         stats.malformed_lines,

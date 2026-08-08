@@ -31,7 +31,7 @@ from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import NEUTRAL_BG, build_page_panel
+from yeaboi.ui.shared._components import AGENTS_THEME, HUMANS_THEME, NEUTRAL_BG, build_page_panel
 from yeaboi.ui.shared._mascot import FRAMES, render_full
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
@@ -40,9 +40,9 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "title": "Humans",
         "verb": "Run your team's scrum",
         "capabilities": ["planning", "standups", "retros", "poker", "reviews"],
-        "color": "rgb(100,180,100)",
-        "bright": "rgb(120,215,125)",
-        "dim": "rgb(55,95,58)",
+        "color": HUMANS_THEME.accent,
+        "bright": HUMANS_THEME.accent_bright,
+        "dim": "rgb(55,95,58)",  # the resting shade — no theme slot for it
         "tint": "rgb(17,28,20)",  # card-bg convention: a dark shade of the accent
         "mascot": "duck",
     },
@@ -51,8 +51,8 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
         "title": "Agents",
         "verb": "Watch your AI agents work",
         "capabilities": ["cost", "daily digests", "security posture"],
-        "color": "rgb(90,160,210)",
-        "bright": "rgb(125,195,245)",
+        "color": AGENTS_THEME.accent,
+        "bright": AGENTS_THEME.accent_bright,
         "dim": "rgb(50,88,115)",
         "tint": "rgb(15,24,32)",
         "mascot": "robo",
@@ -67,7 +67,6 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
 _MASCOT_ROWS = 18
 _CARD_ROWS = 28
 _HINT_ROWS = 2  # blank + the key-hint line pinned at the bottom
-_MIN_SPLIT_WIDTH = 62  # below this the two halves collide; callers keep the guard screen
 _GUTTER_COLS = 2  # breathing room between the two cards
 
 # The quiet layer around the living cards.

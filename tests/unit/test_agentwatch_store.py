@@ -42,11 +42,13 @@ class TestCursor:
 
 
 class TestSessions:
-    def _upsert(self, store, session_id="s1", ended_at="2026-08-07T10:00:00+00:00"):
+    def _upsert(self, store, session_id="s1", ended_at="2026-08-07T10:00:00+00:00", source_path=None):
+        # One rollup per transcript FILE, so the default path tracks the id —
+        # two sessions in one test are two files, as they are on disk.
         store.upsert_session(
             session_id,
             source="claude_code",
-            source_path="/a.jsonl",
+            source_path=source_path or f"/{session_id}.jsonl",
             project_path="/home/dev/proj",
             git_branch="main",
             cli_version="2.1.226",
@@ -70,6 +72,23 @@ class TestSessions:
         self._upsert(store)
         self._upsert(store)
         assert len(store.list_sessions()) == 1
+
+    def test_same_session_id_in_two_files_keeps_both_rollups(self, store):
+        # The bug this schema shape exists to prevent: a session resumed from a
+        # different cwd (or a copied transcript) carries ONE sessionId across
+        # TWO files. Keyed on session_id, the second upsert replaced the first
+        # and its tokens vanished from every cost total.
+        self._upsert(store, "dup", source_path="/one.jsonl")
+        self._upsert(store, "dup", source_path="/two.jsonl")
+        rows = store.list_sessions()
+        assert len(rows) == 2
+        assert {r["source_path"] for r in rows} == {"/one.jsonl", "/two.jsonl"}
+        assert {r["session_id"] for r in rows} == {"dup"}
+
+    def test_forget_source_path_drops_the_rollup(self, store):
+        self._upsert(store, "gone", source_path="/gone.jsonl")
+        store.forget_source_path("/gone.jsonl")
+        assert store.list_sessions() == []
 
     def test_window_filter(self, store):
         self._upsert(store, "old", ended_at="2026-08-01T10:00:00+00:00")

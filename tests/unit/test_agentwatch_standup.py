@@ -192,6 +192,14 @@ class TestProse:
         assert digest.sessions_worked == 0
         assert any("No agent activity" in w for w in digest.warnings)
 
+    def test_no_local_sessions_is_stated_as_a_coverage_note(self, db_path):
+        # A cloud/CI run sees no ~/.claude at all, so its digest is
+        # tracker-only. Without this note "the agents were idle" and "this
+        # environment can't see them" look identical — and the scheduled cowork
+        # routine runs in exactly that environment.
+        digest = engine.run_agent_standup(db_path=db_path, today=MONDAY)
+        assert any("tracker activity only" in note for note in digest.coverage_notes)
+
 
 class TestDelivery:
     def test_deliver_failure_becomes_a_warning(self, db_path, monkeypatch):

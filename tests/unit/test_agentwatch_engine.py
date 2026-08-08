@@ -166,6 +166,19 @@ class TestFallbackAndLlm:
         assert report.recommendations == ("use haiku for drafts",)
         assert not any("AI output unavailable" in w for w in report.warnings)
 
+    def test_partial_llm_reply_keeps_its_recommendations(self, seeded, monkeypatch):
+        # Insights empty but recommendations usable: the fallback supplies the
+        # insights and must NOT wipe the recommendations, which it always
+        # returns empty by design.
+        monkeypatch.setattr(
+            engine,
+            "_invoke_llm",
+            lambda prompt, *, what: ({"insights": [], "recommendations": ["switch drafts to haiku"]}, []),
+        )
+        report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY)
+        assert report.recommendations == ("switch drafts to haiku",)
+        assert report.insights  # deterministic fallback filled the empty half
+
     def test_dry_run_never_calls_the_llm(self, seeded, monkeypatch):
         def _boom(*a, **kw):
             raise AssertionError("dry_run must not invoke the LLM")

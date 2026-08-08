@@ -250,9 +250,9 @@ CAPABILITIES: dict[str, dict] = {
     },
     # ── The Agents family (agentwatch) — cards live on the Agents menu
     # (_AGENT_CARDS), a sibling list of _MODE_CARDS behind the landing split.
-    # The Exempt entries below are staged: each mode's engine/MCP/CLI/skill
-    # surfaces land in its own phase commit and replace the Exempt in the same
-    # commit that creates them.
+    # All three modes ship at full parity: no Exempt entries, because each
+    # mode's engine/MCP/CLI/skill surfaces landed in the same phase commit that
+    # created its card.
     "agent-usage": {
         "engines": {("yeaboi.agentwatch.engine", "run_agent_usage")},
         # agents_usage_history is a read-only store wrapper (no pipeline) —

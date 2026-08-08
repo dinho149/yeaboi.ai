@@ -229,6 +229,58 @@ class TestCursorBehaviour:
         assert stats.files_seen == 0
         assert stats.warnings == []  # missing dir is simply empty, not an error
 
+    def test_same_size_same_mtime_replacement_is_caught_by_the_head_hash(self, store, roots, tmp_path):
+        # A restore (`cp -p`) can reproduce both size and mtime, so the cursor's
+        # cheap (size, mtime) check says "unchanged" for a file that is not.
+        # Only the first line's hash catches it.
+        import os
+
+        collector.refresh(store, roots=roots)
+        path = tmp_path / "projects" / "-home-dev-proj" / "sess-1.jsonl"
+        before = path.stat()
+        original = path.read_text(encoding="utf-8")
+
+        # Rewrite with a DIFFERENT first line but the identical byte count,
+        # then restore the original mtime — the (size, mtime) pair is unchanged.
+        head, rest = original.split("\n", 1)
+        swapped = json.dumps(json.loads(head) | {"gitBranch": "feature/y"})
+        swapped = swapped[: len(head)].ljust(len(head))  # same width, different bytes
+        path.write_text(swapped + "\n" + rest, encoding="utf-8")
+        os.utime(path, (before.st_atime, before.st_mtime))
+        assert path.stat().st_size == before.st_size
+        assert path.stat().st_mtime == before.st_mtime
+
+        stats = collector.refresh(store, roots=roots)
+        assert stats.files_parsed == 1, "a same-size, same-mtime replacement must not be skipped"
+        assert stats.files_skipped == 0
+
+
+class TestPruning:
+    def test_deleted_transcript_drops_its_rollup_and_findings(self, store, roots, tmp_path):
+        collector.refresh(store, roots=roots)
+        assert store.list_sessions() and store.list_findings()
+
+        # Deleting the transcript is how a user remediates a leaked secret.
+        (tmp_path / "projects" / "-home-dev-proj" / "sess-1.jsonl").unlink()
+        stats = collector.refresh(store, roots=roots)
+
+        assert stats.files_pruned == 1
+        assert store.list_sessions() == []
+        assert store.list_findings() == []
+
+    def test_unreadable_root_does_not_prune_everything(self, store, roots, monkeypatch):
+        # A transiently unmounted root makes every file under it look deleted.
+        # Pruning on that reading would discard the whole cache.
+        collector.refresh(store, roots=roots)
+
+        def _boom(_root):
+            raise OSError("mount went away")
+
+        monkeypatch.setattr(collector, "_iter_session_files", _boom)
+        stats = collector.refresh(store, roots=roots)
+        assert stats.files_pruned == 0
+        assert store.list_sessions(), "a failed scan must not prune the cache"
+
 
 class TestNonSessionFiles:
     def test_alien_jsonl_is_ignored(self, store, tmp_path):

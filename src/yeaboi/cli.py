@@ -799,7 +799,7 @@ def build_parser() -> argparse.ArgumentParser:
     astandup_p.add_argument(
         "--days",
         type=int,
-        default=0,
+        default=None,
         metavar="N",
         help="Days to look back (default: since the previous working day)",
     )
@@ -1729,7 +1729,7 @@ def _cmd_agents(args: argparse.Namespace, console: "Console") -> int:
         from yeaboi.agentwatch.render import format_standup_rich
 
         digest = run_agent_standup(
-            days=args.days or None,
+            days=args.days,
             tracker_sources=args.tracker_sources,
             github_owners=args.github_owners,
             azdo_projects=args.azdo_projects,

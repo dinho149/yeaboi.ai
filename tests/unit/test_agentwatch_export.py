@@ -84,10 +84,20 @@ class TestScreen:
         )
         assert "Pricing 3 session(s)" in out
 
-    def test_report_state_shows_dashboard_and_hints(self):
+    def test_report_state_shows_dashboard_and_actions(self):
         out = _render(_build_agent_usage_screen(make_report(), width=100, height=40, shimmer_tick=None))
         assert "$31.10" in out
-        assert "re-run" in out and "back" in out
+        # Real action buttons (build_action_buttons), not an inlined key strip.
+        for action in ("Export", "Copy", "Re-run", "Back"):
+            assert action in out
+
+    def test_notice_line_reports_an_export(self):
+        out = _render(
+            _build_agent_usage_screen(
+                make_report(), width=100, height=40, shimmer_tick=None, notice="Exported to /tmp/usage.md"
+            )
+        )
+        assert "Exported to /tmp/usage.md" in out
 
     def test_row_caps_note_the_export(self):
         many = tuple(ModelUsageRow(model=f"model-{i}", input_tokens=1, cost_usd=float(10 - i)) for i in range(8))

@@ -134,6 +134,23 @@ class TestRanking:
         assert security_checks.compute_posture(findings) == "at-risk"
         assert security_checks.compute_posture(()) == "good"
 
+    def test_medium_findings_are_not_good(self):
+        # The posture line renders directly above the findings table, so "good"
+        # printed over two listed medium findings reads as a contradiction.
+        from yeaboi.agent.state import SecurityFinding
+
+        mediums = (
+            SecurityFinding(severity="medium", category="mcp", title="plain-http transport"),
+            SecurityFinding(severity="medium", category="settings", title="broad bash allow"),
+        )
+        assert security_checks.compute_posture(mediums) == "needs-attention"
+
+    def test_info_only_is_good(self):
+        from yeaboi.agent.state import SecurityFinding
+
+        infos = (SecurityFinding(severity="info", category="mcp", title="3 servers configured"),)
+        assert security_checks.compute_posture(infos) == "good"
+
 
 class TestEngine:
     def test_full_report(self, config_tree, db_path):

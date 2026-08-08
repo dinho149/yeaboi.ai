@@ -20,9 +20,16 @@ from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
     agent_usage_title,
+    build_action_buttons,
     build_page_panel,
     build_reveal_subtitle,
 )
+
+# The result-screen actions, shared by all three pages. Export writes the
+# Markdown artifact and Copy puts the same Markdown on the clipboard — there is
+# no destination picker because agentwatch has exactly one export format (HTML
+# is deliberately absent until an export component exists; see the beta notice).
+AGENT_RESULT_ACTIONS = ["Export", "Copy", "Re-run", "Back"]
 
 # Row caps so the dashboard fits the minimum supported terminal (40 rows)
 # without a scroll model. The markdown export carries the full tables; the
@@ -32,6 +39,21 @@ _MAX_BREAKDOWN_ROWS = 3
 _MAX_PROSE = 2
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+
+def _result_footer(action_sel: int, notice: str, theme) -> list:
+    """The shared footer under a finished report: notice line + action buttons.
+
+    One helper for all three pages, and it goes through ``build_action_buttons``
+    rather than painting its own key strip — tui-standards rule 1. The notice
+    row is always present so the page height does not jump when an export
+    reports back.
+    """
+    rows: list = [Text("")]
+    rows.append(Text(notice, style=theme.accent if notice else "", justify="center"))
+    rows.append(Text(""))
+    rows.extend(build_action_buttons(AGENT_RESULT_ACTIONS, action_sel))
+    return rows
 
 
 def _capped(report: AgentUsageReport) -> tuple[AgentUsageReport, list[str]]:
@@ -63,6 +85,8 @@ def _build_agent_usage_screen(
     height: int = 24,
     shimmer_tick: float | None = None,
     status: str = "",
+    action_sel: int = 0,
+    notice: str = "",
 ) -> Panel:
     """The Agent Usage dashboard page.
 
@@ -88,14 +112,7 @@ def _build_agent_usage_screen(
         parts.append(format_usage_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.append(Text(""))
-        hint = Text(justify="center")
-        for key, label in (("r", "re-run"), ("esc", "back")):
-            if hint.plain:
-                hint.append("   ")
-            hint.append(key, style="bold rgb(210,210,220)")
-            hint.append(f" {label}", style="rgb(70,70,82)")
-        parts.append(hint)
+        parts.extend(_result_footer(action_sel, notice, theme))
 
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
@@ -130,6 +147,8 @@ def _build_agent_standup_screen(
     height: int = 24,
     shimmer_tick: float | None = None,
     status: str = "",
+    action_sel: int = 0,
+    notice: str = "",
 ) -> Panel:
     """The Agent Standup page: spinner while running, capped digest when done."""
     from yeaboi.agentwatch.render import format_standup_rich
@@ -153,14 +172,7 @@ def _build_agent_standup_screen(
         parts.append(format_standup_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.append(Text(""))
-        hint = Text(justify="center")
-        for key, label in (("r", "re-run"), ("esc", "back")):
-            if hint.plain:
-                hint.append("   ")
-            hint.append(key, style="bold rgb(210,210,220)")
-            hint.append(f" {label}", style="rgb(70,70,82)")
-        parts.append(hint)
+        parts.extend(_result_footer(action_sel, notice, theme))
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
     # get the robo, not the duck (see MusicLive.get_renderable).
@@ -191,6 +203,8 @@ def _build_agent_security_screen(
     height: int = 24,
     shimmer_tick: float | None = None,
     status: str = "",
+    action_sel: int = 0,
+    notice: str = "",
 ) -> Panel:
     """The Agent Security page: spinner while scanning, capped report when done."""
     from yeaboi.agentwatch.render import format_security_rich
@@ -214,14 +228,7 @@ def _build_agent_security_screen(
         parts.append(format_security_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
-        parts.append(Text(""))
-        hint = Text(justify="center")
-        for key, label in (("r", "re-run"), ("esc", "back")):
-            if hint.plain:
-                hint.append("   ")
-            hint.append(key, style="bold rgb(210,210,220)")
-            hint.append(f" {label}", style="rgb(70,70,82)")
-        parts.append(hint)
+        parts.extend(_result_footer(action_sel, notice, theme))
     panel = build_page_panel(Group(*parts), theme=theme, height=height)
     # The chrome's corner companion and entrance read this stamp — Agents pages
     # get the robo, not the duck (see MusicLive.get_renderable).

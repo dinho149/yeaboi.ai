@@ -50,10 +50,16 @@ CREATE TABLE IF NOT EXISTS agent_ingest_files (
     first_line_sha   TEXT NOT NULL DEFAULT '',
     last_ingested_at TEXT NOT NULL DEFAULT ''
 );
+-- Keyed on source_path, NOT session_id: a rollup is computed per transcript
+-- file, and one sessionId can legitimately appear in two files (a session
+-- resumed from a different cwd, a moved repo, a copied backup). Keying on
+-- session_id made the second file REPLACE the first, so one file's tokens
+-- vanished from every cost total — and which file won depended on scan order
+-- and on which one had changed, so the reported spend oscillated between runs.
 CREATE TABLE IF NOT EXISTS agent_sessions (
-    session_id       TEXT PRIMARY KEY,
+    source_path      TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL DEFAULT '',  -- indexed, deliberately not unique
     source           TEXT NOT NULL DEFAULT '',
-    source_path      TEXT NOT NULL DEFAULT '',
     project_path     TEXT NOT NULL DEFAULT '',
     git_branch       TEXT NOT NULL DEFAULT '',
     cli_version      TEXT NOT NULL DEFAULT '',
@@ -66,6 +72,8 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     tool_counts_json TEXT NOT NULL DEFAULT '{}',
     updated_at       TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_session ON agent_sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_ended ON agent_sessions(ended_at);
 CREATE TABLE IF NOT EXISTS agent_security_findings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     category    TEXT NOT NULL DEFAULT '',
@@ -119,7 +127,39 @@ class AgentWatchStore:
         self._db_path = db_path
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.isolation_level = None  # autocommit
+        self._rebuild_sessions_if_keyed_on_session_id()
         self._conn.executescript(_AGENTWATCH_SCHEMA)
+
+    def _rebuild_sessions_if_keyed_on_session_id(self) -> None:
+        """Drop an ``agent_sessions`` table left over from the session_id key.
+
+        ``CREATE TABLE IF NOT EXISTS`` cannot change an existing table's primary
+        key, and the first cut of this schema keyed rollups on ``session_id``
+        (which silently dropped a duplicate-id file's tokens). The table is a
+        pure cache derived from the transcripts, so the repair is to drop it and
+        clear the ingest cursors — the next ``refresh()`` rebuilds both. Runs on
+        every open and costs one pragma query when the shape is already right.
+        """
+        try:
+            cols = self._conn.execute("PRAGMA table_info(agent_sessions)").fetchall()
+        except sqlite3.Error:  # pragma: no cover - table missing is the normal path
+            return
+        if not cols:
+            return
+        # PRAGMA table_info columns: (cid, name, type, notnull, dflt_value, pk)
+        pk_names = {row[1] for row in cols if row[5]}
+        if pk_names == {"source_path"}:
+            return
+        logger.info("agentwatch: rebuilding agent_sessions (was keyed on %s)", ", ".join(sorted(pk_names)) or "nothing")
+        self._conn.executescript(
+            "DROP TABLE IF EXISTS agent_sessions;\nDELETE FROM agent_ingest_files;"
+            if self._has_table("agent_ingest_files")
+            else "DROP TABLE IF EXISTS agent_sessions;"
+        )
+
+    def _has_table(self, name: str) -> bool:
+        row = self._conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone()
+        return row is not None
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -182,14 +222,20 @@ class AgentWatchStore:
         model_usage: dict,
         tool_counts: dict,
     ) -> None:
-        """Insert or replace one monitored session's rollup row."""
+        """Insert or replace one transcript file's rollup row.
+
+        The conflict target is ``source_path`` — one row per file, never per
+        ``session_id`` (see the schema comment): a rollup is derived from one
+        file, so replacing on session_id would drop a duplicate-id file's
+        tokens from every total.
+        """
         self._conn.execute(
             """INSERT INTO agent_sessions
                    (session_id, source, source_path, project_path, git_branch, cli_version,
                     started_at, ended_at, turns, model_usage_json, tool_counts_json, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(session_id) DO UPDATE SET
-                   source = excluded.source, source_path = excluded.source_path,
+               ON CONFLICT(source_path) DO UPDATE SET
+                   session_id = excluded.session_id, source = excluded.source,
                    project_path = excluded.project_path, git_branch = excluded.git_branch,
                    cli_version = excluded.cli_version, started_at = excluded.started_at,
                    ended_at = excluded.ended_at, turns = excluded.turns,
@@ -282,6 +328,27 @@ class AgentWatchStore:
     def reset_cursors(self) -> None:
         """Forget every ingest cursor so the next refresh reparses everything."""
         self._conn.execute("DELETE FROM agent_ingest_files")
+
+    def known_source_paths(self) -> list[str]:
+        """Every source path the store currently holds state for."""
+        rows = self._conn.execute(
+            "SELECT path FROM agent_ingest_files "
+            "UNION SELECT source_path FROM agent_sessions "
+            "UNION SELECT source_path FROM agent_security_findings"
+        ).fetchall()
+        return [str(row[0]) for row in rows if row[0]]
+
+    def forget_source_path(self, source_path: str) -> None:
+        """Drop every trace of one transcript: cursor, rollup and findings.
+
+        Used when a transcript has been deleted from disk. Without this a user
+        who remediates a leaked secret by deleting the transcript keeps seeing
+        the finding for ever — ``delete_findings_for_path`` only fires on a
+        reparse, which a vanished file never gets.
+        """
+        self._conn.execute("DELETE FROM agent_ingest_files WHERE path = ?", (source_path,))
+        self._conn.execute("DELETE FROM agent_sessions WHERE source_path = ?", (source_path,))
+        self._conn.execute("DELETE FROM agent_security_findings WHERE source_path = ?", (source_path,))
 
     # ── Report history (shared shape for the three kinds) ─────────────────
 

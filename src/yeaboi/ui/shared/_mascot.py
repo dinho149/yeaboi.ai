@@ -118,56 +118,23 @@ DUCK_HEAD_QUACK: tuple[str, ...] = (
     *DUCK_HEAD[11:],
 )
 
-# The robotic duck head — same 16x14 footprint and silhouette as DUCK_HEAD so
-# every placement (companion lane, category screen) fits both without special
-# cases. Steel plating where the duck is green, a dark visor band with cyan LED
-# eyes where the duck wears shades, an antenna bulb for the crown tuft, and the
-# amber bill kept warm so he still reads as a duck. Hand-authored like
-# DUCK_HEAD; the offline sprite generator is duck-only.
-ROBO_HEAD: tuple[str, ...] = (
-    "......kkVk......",
-    ".....CCCCCC.....",
-    "....oCCCCCCC....",
-    "...oCCCCCCCCo...",
-    "...kkkkkVkkkVkk.",
-    "...ccckVkkkVkkk.",
-    "...cCCkkkkkkkkk.",
-    "...cCCCkkkbbkk..",
-    "...ccCCCCbbbbbkk",
-    "...kccCCrrrbbbbk",
-    "....kcccckkkkk..",
-    ".....ccccc......",
-    ".....CCCCCC.....",
-    "....ccCCCCC.....",
-)
-
-# Open-bill robo variant — the same rows 9–10 split as DUCK_HEAD_QUACK, so the
-# tip-arrival "beep" animation reuses the duck's quack mechanics unchanged.
-ROBO_HEAD_QUACK: tuple[str, ...] = (
-    *ROBO_HEAD[:9],
-    "...kccCCkkkkkkkk",
-    "....kcccbrrbbk..",
-    *ROBO_HEAD[11:],
-)
-
-# mascot key -> (resting head, open-beak head). The shades gag stays duck-only:
-# only DUCK_HEAD splits into FACE/GLASSES layers.
-_HEADS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "duck": (DUCK_HEAD, DUCK_HEAD_QUACK),
-    "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
-}
-
 # ---------------------------------------------------------------------------
-# Robo full body — DERIVED from the traced duck grids, never re-drawn. A
-# per-layer letter recolor keeps the silhouette (and therefore every animation
-# offset, the walk-cycle foot columns, and the 18-terminal-row height) pixel-
-# identical to the duck, and stays in sync if the duck art is ever re-traced.
+# The robotic duck — DERIVED from the traced duck grids, never re-drawn, head
+# and body alike. A per-layer letter recolor keeps the silhouette (and
+# therefore every animation offset, the walk-cycle foot columns, the head's
+# 16x14 footprint and the body's 18-terminal-row height) pixel-identical to the
+# duck, so every placement fits both mascots with no special cases — and the
+# robo stays in sync if the duck art is ever re-traced. A hand-drawn copy is
+# exactly the drift this exists to prevent.
+#
 # The maps are deliberately separate: on BASE, `W` is the breast/tail chrome
-# shine and must stay white — only the GLASSES layer's `W` glints become cyan
-# LED eyes (this is exactly how ROBO_HEAD was authored).
+# shine and must stay white — only the GLASSES layer's `W` glints (and the
+# head's, which carries its own eye band) become cyan LED eyes. The amber bill
+# is left warm, so he still reads as a duck.
 # ---------------------------------------------------------------------------
 
 _ROBO_BASE_MAP = str.maketrans({"G": "C", "g": "c"})
+_ROBO_HEAD_MAP = str.maketrans({"G": "C", "g": "c", "W": "V"})
 _ROBO_GLASSES_MAP = str.maketrans({"W": "V", "g": "c"})
 # The mini glasses trace has no W glint (downscale artifact leaves {S, b, k});
 # S→c keeps the band steel without inventing a one-pixel LED the duck lacks.
@@ -182,8 +149,8 @@ def _robo_variant(grid: tuple[str, ...], table: dict[int, str]) -> tuple[str, ..
 def _with_antenna(grid: tuple[str, ...]) -> tuple[str, ...]:
     """Swap the middle pixel of row 0's crown outline for a cyan antenna bulb.
 
-    The same in-row trick ROBO_HEAD's first row uses — no added rows, so the
-    sprite's geometry (and every test pinning it) is untouched. The `k` run is
+    An in-row swap rather than an overlay — no added rows, so the sprite's
+    geometry (and every test pinning it) is untouched. The `k` run is
     located, not hardcoded, so a re-traced duck can't silently misplace the bulb.
     """
     row = grid[0]
@@ -196,6 +163,23 @@ def _with_antenna(grid: tuple[str, ...]) -> tuple[str, ...]:
     mid = (start + end) // 2
     return (row[:mid] + "V" + row[mid + 1 :], *grid[1:])
 
+
+def _robo_head(grid: tuple[str, ...]) -> tuple[str, ...]:
+    """Recolour one duck head grid into its robo counterpart, antenna included."""
+    return _with_antenna(_robo_variant(grid, _ROBO_HEAD_MAP))
+
+
+ROBO_HEAD = _robo_head(DUCK_HEAD)
+# Open-bill robo variant — the same rows 9–10 split as DUCK_HEAD_QUACK, so the
+# tip-arrival "beep" animation reuses the duck's quack mechanics unchanged.
+ROBO_HEAD_QUACK = _robo_head(DUCK_HEAD_QUACK)
+
+# mascot key -> (resting head, open-beak head). The shades gag stays duck-only:
+# only DUCK_HEAD splits into FACE/GLASSES layers.
+_HEADS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_HEAD, DUCK_HEAD_QUACK),
+    "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
+}
 
 ROBO_BASE = _with_antenna(_robo_variant(DUCK_BASE, _ROBO_BASE_MAP))
 ROBO_WING = DUCK_WING  # {L, W, k} — light plumage + white specular; already reads as metal

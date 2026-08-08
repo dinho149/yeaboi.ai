@@ -108,6 +108,17 @@ def _resolve_db_path(db_path):
     return get_db_path()
 
 
+def _distinct_session_count(sessions: list[dict]) -> int:
+    """Count logical sessions, not rollup rows.
+
+    Rollups are stored one per transcript file, so a session resumed from a
+    different cwd (or a copied transcript) is two rows with one ``session_id``.
+    Token totals want every row — they are disjoint — but a *count* shown to a
+    human means "how many sessions ran". A row with no id counts on its own.
+    """
+    return len({s["session_id"] or s["source_path"] for s in sessions})
+
+
 def _project_label(project_path: str) -> str:
     """A readable per-project key: the path's last component (repo/dir name)."""
     return Path(project_path).name or project_path or "(unknown)"
@@ -174,6 +185,13 @@ def run_agent_usage(
     project: substring filter on the session's project directory name.
     source:  exact filter on the telemetry source ("claude_code", "openclaw").
     dry_run: skip the LLM (deterministic artifact only, no warning).
+
+    Two deliberate approximations in the windowing, both erring toward showing
+    work rather than hiding it. A session is placed by its ``ended_at``, so one
+    that ran across the window boundary has its whole cost attributed to the
+    day it finished. And the window has no upper bound, so a session with a
+    clock-skewed future ``ended_at`` stays visible instead of disappearing into
+    a gap — a cost dashboard that silently omits spend is the worse failure.
     """
     resolved_today = today or datetime.now(UTC).date()
     window_days = max(1, int(window_days))
@@ -202,7 +220,7 @@ def run_agent_usage(
         sessions = [s for s in sessions if s["source"] == source]
 
     if on_progress is not None:
-        on_progress(f"Pricing {len(sessions)} session(s)")
+        on_progress(f"Pricing {len(sessions)} transcript(s)")
 
     model_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     project_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -211,15 +229,24 @@ def run_agent_usage(
     unknown_cost = 0.0
     total_cost = 0.0
 
+    # Costs sum over rollup ROWS (one per transcript file, disjoint), but the
+    # session *counts* beside them must be distinct logical sessions — a
+    # resumed session is two rows carrying one id. Sets, then len() at build.
+    bucket_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
+
     for session in sessions:
         s_cost, _known = _session_cost(session["model_usage"])
         p_label = _project_label(session["project_path"])
         day = (session["ended_at"] or "")[:10]
-        for bucket, key in ((project_totals, p_label), (source_totals, session["source"] or "(unknown)")):
-            bucket[key]["sessions"] += 1
+        s_key = session["session_id"] or session["source_path"]
+        for bucket, kind, key in (
+            (project_totals, "project", p_label),
+            (source_totals, "source", session["source"] or "(unknown)"),
+        ):
+            bucket_sessions[(kind, key)].add(s_key)
             bucket[key]["cost"] += s_cost
         if day:
-            daily_totals[day]["sessions"] += 1
+            bucket_sessions[("day", day)].add(s_key)
             daily_totals[day]["cost"] += s_cost
         total_cost += s_cost
         for model, u in session["model_usage"].items():
@@ -265,11 +292,11 @@ def run_agent_usage(
         for model, t in sorted(model_totals.items(), key=lambda kv: kv[1]["cost"], reverse=True)
     )
 
-    def _breakdown(bucket: dict[str, dict[str, float]]) -> tuple[AgentUsageBreakdownRow, ...]:
+    def _breakdown(bucket: dict[str, dict[str, float]], kind: str) -> tuple[AgentUsageBreakdownRow, ...]:
         return tuple(
             AgentUsageBreakdownRow(
                 key=key,
-                sessions=int(t["sessions"]),
+                sessions=len(bucket_sessions[(kind, key)]),
                 input_tokens=int(t["input"]),
                 output_tokens=int(t["output"]),
                 cost_usd=round(t["cost"], 4),
@@ -277,15 +304,15 @@ def run_agent_usage(
             for key, t in sorted(bucket.items(), key=lambda kv: kv[1]["cost"], reverse=True)
         )
 
-    by_project = _breakdown(project_totals)
-    by_source = _breakdown(source_totals)
+    by_project = _breakdown(project_totals, "project")
+    by_source = _breakdown(source_totals, "source")
     daily_trend = tuple(
         DailyUsagePoint(
             date=day,
             cost_usd=round(t["cost"], 4),
             input_tokens=int(t["input"]),
             output_tokens=int(t["output"]),
-            sessions=int(t["sessions"]),
+            sessions=len(bucket_sessions[("day", day)]),
         )
         for day, t in sorted(daily_totals.items())
     )
@@ -317,7 +344,10 @@ def run_agent_usage(
         insights = _str_list(parsed.get("insights"))[:5]
         recommendations = _str_list(parsed.get("recommendations"))[:5]
     if not insights:
-        insights, recommendations = _fallback_usage_insights(
+        # Per-field, not both-or-nothing: a model that returns usable
+        # recommendations but an empty insights list used to have them thrown
+        # away, because the fallback returns () for recommendations by design.
+        fallback_insights, fallback_recs = _fallback_usage_insights(
             {
                 "by_model": by_model,
                 "by_project": by_project,
@@ -325,11 +355,13 @@ def run_agent_usage(
                 "cache_write": sum(r.cache_write_tokens for r in by_model),
             }
         )
+        insights = fallback_insights
+        recommendations = recommendations or fallback_recs
 
     report = AgentUsageReport(
         period_start=period_start,
         period_end=period_end,
-        session_count=len(sessions),
+        session_count=_distinct_session_count(sessions),
         total_cost_usd=round(total_cost, 4),
         total_input_tokens=sum(r.input_tokens for r in by_model),
         total_output_tokens=sum(r.output_tokens for r in by_model),
@@ -431,7 +463,12 @@ def _collect_agent_repo_activity(
             scope["azdo"] = list(azdo_projects)
         items, _sources, coverage, _repos = collect_ai_activity(
             "",
-            "agent-standup",
+            # No project key: this scan is team-wide, not scoped to one board.
+            # "agent-standup" used to sit here as a label, which is inert only
+            # because ai_usage gates project_key on source == "azdevops" — a
+            # change to that gate would silently scope the AzDO scan to a
+            # project of that name.
+            "",
             list(tracker_sources) if tracker_sources else None,
             window_days=window_days,
             analysis_scope=scope or None,
@@ -535,13 +572,26 @@ def run_agent_standup(
     summaries = _summarise_sessions(sessions)
     total_cost = round(sum(s.cost_usd for s in summaries), 4)
 
-    repo_rows, coverage_notes = _collect_agent_repo_activity(
+    repo_rows, tracker_coverage = _collect_agent_repo_activity(
         window_days=window_days,
         tracker_sources=tracker_sources,
         github_owners=github_owners,
         azdo_projects=azdo_projects,
         on_progress=on_progress,
     )
+
+    # Say so when half the picture is missing. A cloud/CI environment has no
+    # ~/.claude at all, so its digest is tracker-only — without this note the
+    # reader cannot tell "the agents were idle" from "this machine can't see
+    # them", and the cowork routine's scheduled run is exactly that case.
+    coverage_notes = list(tracker_coverage)
+    if not sessions:
+        coverage_notes.insert(
+            0,
+            "No local agent sessions in the window — this environment has no agent session history, "
+            "so the digest covers tracker activity only.",
+        )
+    coverage_notes = tuple(coverage_notes)
 
     agents_seen = tuple(
         sorted({s.source for s in summaries} | {m for r in repo_rows for m in r.agent_marker.split(", ") if m})
@@ -751,7 +801,7 @@ def run_agent_security(
             on_progress("Scanning local agent sessions")
         stats = collector.refresh(store, on_progress=on_progress)
         warnings.extend(stats.warnings)
-        sessions_scanned = len(store.list_sessions())
+        sessions_scanned = _distinct_session_count(store.list_sessions())
         files_scanned = stats.files_seen
         findings = _stored_findings(store)
 

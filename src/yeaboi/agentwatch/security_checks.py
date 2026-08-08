@@ -4,9 +4,16 @@ Everything here is a pattern scan producing :class:`SecurityFinding` /
 :class:`McpServerRecord` rows — an *indicator*, not a security audit (the beta
 notice says so to the user). Two invariants:
 
-1. **Never store matched content.** A finding carries a pattern label, a file
-   path and (where meaningful) a line number — never the secret, the command,
-   or the config value that matched.
+1. **Never store matched content from a transcript.** A finding carries a
+   pattern label, a file path and (where meaningful) a line number — never the
+   secret it matched, the command it appeared in, or any prompt/code text from
+   an agent session. That is the privacy boundary, and it is test-enforced.
+
+   ``detail`` is the one field that may quote a *config* value — the permission
+   mode, the allow rule — because a finding that says "an allow rule
+   auto-approves bash" without naming the rule cannot be acted on, and the
+   user's own settings file is not session content. Never widen this to a
+   transcript-derived value.
 2. **Never raise.** Unreadable or malformed config contributes a note-level
    finding, not a crash — a security page that dies on a corrupt JSON file
    would hide every other finding.
@@ -264,10 +271,16 @@ def rank_findings(findings: list[SecurityFinding]) -> tuple[SecurityFinding, ...
 
 
 def compute_posture(findings: tuple[SecurityFinding, ...]) -> str:
-    """good / needs-attention / at-risk from the worst finding present."""
+    """good / needs-attention / at-risk from the worst finding present.
+
+    ``medium`` counts as needs-attention, not good: the posture line renders
+    directly above the table of findings, so reporting "good" while listing two
+    medium findings reads as a contradiction and quietly trains the reader to
+    ignore the word. Only ``info`` (and nothing at all) is good.
+    """
     severities = {f.severity for f in findings}
     if "critical" in severities:
         return "at-risk"
-    if "high" in severities:
+    if "high" in severities or "medium" in severities:
         return "needs-attention"
     return "good"

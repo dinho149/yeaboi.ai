@@ -224,7 +224,14 @@ def format_security_rich(report: AgentSecurityReport) -> RenderableType:
         table.add_column("where")
         for f in report.findings:
             where = f"{f.location}:{f.line_no}" if f.line_no else f.location
-            table.add_row(Text(f.severity, style=_SEVERITY_STYLE.get(f.severity, "")), f.title, where)
+            # The title is per-category, so every stored secret signal shares
+            # one. The pattern is the detector that actually fired and is the
+            # only part a reader can act on — show it, and it is a label, never
+            # the matched text.
+            what = Text(f.title)
+            if f.pattern:
+                what.append(f"  {f.pattern}", style=_MUTED)
+            table.add_row(Text(f.severity, style=_SEVERITY_STYLE.get(f.severity, "")), what, where)
         parts.append(table)
 
     if report.mcp_servers:
