@@ -78,18 +78,42 @@ Approve by adding the `claude-implement` label. Reject by closing this issue.
 Impact, effort and risk come from the scout's find — surface them, never re-score them. The closing
 line carries both verbs because an issue that only says how to approve leaves rejecting to silence.
 
-**Slack** — plain sentences, no preamble, no emoji headers. One message per event. Links are inline
-and named, never bare URLs. Lines that carry a proposal or a ship note lead with the same
-`[type][workstream]` tag as the issue title, then one short clause — a scannable line, never a
-run-on paragraph. The daily digest's headings — one per proposal type, plus the `feature-candidate`
-heading — are bold text (`*Bugs*`), never emoji: that is what "no emoji headers" rules out, not the
-headings themselves.
+**Slack** — plain sentences, no preamble. One message per event. Lines that carry a proposal or a
+ship note lead with the same `[type][workstream]` tag as the issue title, then one short clause — a
+scannable line, never a run-on paragraph.
+
+**The dialect is standard Markdown, not Slack mrkdwn.** The connector takes `**bold**`, `_italic_`,
+`` `code` ``, `1.` ordered lists and `[title](url)` links. Slack's own mrkdwn — `*bold*`,
+`<url|title>` — is *not* what it accepts, and the two disagree in the worst possible way: mrkdwn's
+`*bold*` is Markdown's *italic*. This file used to specify headings as `*Bugs*`, so the daily digest
+shipped italic headings and leaked stray `_` characters mid-line for weeks, with nothing in the
+system able to notice. Write the Markdown form.
+
+Links are **embedded in the text they name** — `[the issue title](url)` — never a bare URL and never
+a URL trailing in parentheses after the thing it belongs to, which is what pushes a digest line over
+two wraps. Escape any `[` or `]` *inside* link text as `\[` `\]`: issue titles routinely carry
+`claude[bot]`. Balanced brackets are legal in CommonMark link text, so that usually survives
+unescaped; what kills the link is an *unbalanced* bracket, or a bracketed run that matches a real
+reference definition. Escaping means never having to work out which case today's title is. The
+`[type][workstream]` tag sits *outside* the link for the same reason — outside, it is not link text
+at all and needs no escaping.
+
+Emoji are anchors, not decoration. The daily digest's section headings — one per proposal type, plus
+`feature-candidate`, marketing, the two health sections and the Monday calibration section — are
+**one fixed emoji plus bold text**
+(`🐛 **Bugs**`), the emoji constant per section so a returning reader finds a section by shape
+before they read a word; `cron/digest.md` owns the table. Everywhere else, and in prose anywhere,
+no emoji: a ship note is one line and a decorated one line is just a decorated one line. Never spend
+✅ or ❌ decoratively in any message — those two are the approval verbs, and a reader who sees them
+in a heading has to work out whether they mean something.
 
 The daily digest is the one event with a thread: after its single channel message, post one reply
 per listed item **into that message's thread**, shaped `#<issue-number> — <verbatim title> —
 <issue link>`, the number first. The shape is a contract, not a style — `cron/slack-relay.md`
 parses these replies to map a ✅/❌ reaction onto an issue, so a reply that drops the leading
-number is an approval that cannot land.
+number is an approval that cannot land. **The reply is exempt from every formatting rule above**:
+no list marker, no emoji, no embedded link, no bold. It is parsed before it is read, and prettifying
+it breaks approvals rather than the look of anything.
 
 **Notion** — search before creating; update an existing page rather than making a near-duplicate.
 Nest under 🤙 yeaboi. Title pages so they sort usefully (`Draft — <subject> — <YYYY-MM-DD>`).
