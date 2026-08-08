@@ -97,7 +97,11 @@ def _build_agent_usage_screen(
             hint.append(f" {label}", style="rgb(70,70,82)")
         parts.append(hint)
 
-    return build_page_panel(Group(*parts), theme=theme, height=height)
+    panel = build_page_panel(Group(*parts), theme=theme, height=height)
+    # The chrome's corner companion and entrance read this stamp — Agents pages
+    # get the robo, not the duck (see MusicLive.get_renderable).
+    panel._duck_mascot = "robo"
+    return panel
 
 
 def _capped_standup(digest: AgentStandupDigest) -> tuple[AgentStandupDigest, list[str]]:
@@ -157,7 +161,11 @@ def _build_agent_standup_screen(
             hint.append(key, style="bold rgb(210,210,220)")
             hint.append(f" {label}", style="rgb(70,70,82)")
         parts.append(hint)
-    return build_page_panel(Group(*parts), theme=theme, height=height)
+    panel = build_page_panel(Group(*parts), theme=theme, height=height)
+    # The chrome's corner companion and entrance read this stamp — Agents pages
+    # get the robo, not the duck (see MusicLive.get_renderable).
+    panel._duck_mascot = "robo"
+    return panel
 
 
 def _capped_security(report: AgentSecurityReport) -> tuple[AgentSecurityReport, list[str]]:
@@ -214,4 +222,8 @@ def _build_agent_security_screen(
             hint.append(key, style="bold rgb(210,210,220)")
             hint.append(f" {label}", style="rgb(70,70,82)")
         parts.append(hint)
-    return build_page_panel(Group(*parts), theme=theme, height=height)
+    panel = build_page_panel(Group(*parts), theme=theme, height=height)
+    # The chrome's corner companion and entrance read this stamp — Agents pages
+    # get the robo, not the duck (see MusicLive.get_renderable).
+    panel._duck_mascot = "robo"
+    return panel

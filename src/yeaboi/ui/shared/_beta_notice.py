@@ -167,7 +167,12 @@ def _build_beta_notice_screen(
     btn_top, btn_mid, btn_bot = build_action_buttons(_ACTIONS, action_sel)
     lines += [btn_top, btn_mid, btn_bot]
 
-    return build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
+    panel = build_page_panel(Group(*lines), theme=theme, border_style=theme.sep, height=height)
+    if mode_key.startswith("agent-"):
+        # The Agents modes' gate wears the robo chrome companion, like the
+        # pages behind it (see MusicLive.get_renderable's _duck_mascot stamp).
+        panel._duck_mascot = "robo"
+    return panel
 
 
 def show_beta_notice(

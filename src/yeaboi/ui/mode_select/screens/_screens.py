@@ -772,12 +772,18 @@ def _build_mode_screen(
     # build_page_panel (main #104) applies the neutral base tint so the main
     # menu never shows the terminal's own background.
     panel = build_page_panel(body_renderable, height=height, padding=(1, 2, 0, 2))
+    # The menu draws its own companion in-panel, but the stamp still matters:
+    # MusicLive reads it into the chrome-mascot global, which the screensaver
+    # uses — idling on the Agents menu must save with the robo, not the duck.
+    panel._duck_mascot = mascot
     if not is_welcome:
         panel._no_back_hint = True  # the main menu's Esc isn't "go back" → no back tab
         return panel
     # Draw the music pocket over the reserved bottom rows. Returning a frame (not a
     # bare Panel) also means MusicLive won't stamp the flat music subtitle.
-    return _WelcomeFrame(panel, compose=compose)
+    frame = _WelcomeFrame(panel, compose=compose)
+    frame._duck_mascot = mascot  # the frame isn't a Panel; the stamp rides on it too
+    return frame
 
 
 def mode_at_row(

@@ -157,6 +157,65 @@ _HEADS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
 }
 
+# ---------------------------------------------------------------------------
+# Robo full body — DERIVED from the traced duck grids, never re-drawn. A
+# per-layer letter recolor keeps the silhouette (and therefore every animation
+# offset, the walk-cycle foot columns, and the 18-terminal-row height) pixel-
+# identical to the duck, and stays in sync if the duck art is ever re-traced.
+# The maps are deliberately separate: on BASE, `W` is the breast/tail chrome
+# shine and must stay white — only the GLASSES layer's `W` glints become cyan
+# LED eyes (this is exactly how ROBO_HEAD was authored).
+# ---------------------------------------------------------------------------
+
+_ROBO_BASE_MAP = str.maketrans({"G": "C", "g": "c"})
+_ROBO_GLASSES_MAP = str.maketrans({"W": "V", "g": "c"})
+# The mini glasses trace has no W glint (downscale artifact leaves {S, b, k});
+# S→c keeps the band steel without inventing a one-pixel LED the duck lacks.
+_ROBO_MINI_GLASSES_MAP = str.maketrans({"S": "c"})
+
+
+def _robo_variant(grid: tuple[str, ...], table: dict[int, str]) -> tuple[str, ...]:
+    """Recolor one duck layer into its robo counterpart (same geometry)."""
+    return tuple(row.translate(table) for row in grid)
+
+
+def _with_antenna(grid: tuple[str, ...]) -> tuple[str, ...]:
+    """Swap the middle pixel of row 0's crown outline for a cyan antenna bulb.
+
+    The same in-row trick ROBO_HEAD's first row uses — no added rows, so the
+    sprite's geometry (and every test pinning it) is untouched. The `k` run is
+    located, not hardcoded, so a re-traced duck can't silently misplace the bulb.
+    """
+    row = grid[0]
+    start = row.find("k")
+    if start == -1:
+        return grid
+    end = start
+    while end < len(row) and row[end] == "k":
+        end += 1
+    mid = (start + end) // 2
+    return (row[:mid] + "V" + row[mid + 1 :], *grid[1:])
+
+
+ROBO_BASE = _with_antenna(_robo_variant(DUCK_BASE, _ROBO_BASE_MAP))
+ROBO_WING = DUCK_WING  # {L, W, k} — light plumage + white specular; already reads as metal
+ROBO_GLASSES = _robo_variant(DUCK_GLASSES, _ROBO_GLASSES_MAP)
+ROBO_MINI_BASE = _with_antenna(_robo_variant(DUCK_MINI_BASE, _ROBO_BASE_MAP))
+ROBO_MINI_WING = DUCK_MINI_WING
+ROBO_MINI_GLASSES = _robo_variant(DUCK_MINI_GLASSES, _ROBO_MINI_GLASSES_MAP)
+
+# mascot key -> (base, wing, glasses) per size. Distinct names from
+# tests/unit/test_mascot.py's _LAYERS/_MINI_LAYERS lists, which pin the
+# AUTO-GENERATED duck grids to the duck-only palette.
+_BODY_GRIDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_BASE, DUCK_WING, DUCK_GLASSES),
+    "robo": (ROBO_BASE, ROBO_WING, ROBO_GLASSES),
+}
+_MINI_GRIDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = {
+    "duck": (DUCK_MINI_BASE, DUCK_MINI_WING, DUCK_MINI_GLASSES),
+    "robo": (ROBO_MINI_BASE, ROBO_MINI_WING, ROBO_MINI_GLASSES),
+}
+
 # Per-frame vertical offsets (pixels). Positive = lift the layer up.
 WING_OFF = (0, 1, 2, 2, 1, 0, 0, 0)  # gentle wing flap
 GLASS_OFF = (0, 0, 0, 1, 1, 1, 0, 0)  # slow glasses bob
@@ -253,38 +312,46 @@ def head_cells(*, flip: bool = False, mascot: str = "duck") -> list[list[tuple[s
     return _pack_cells(grid)
 
 
-def mini_cells(frame: int = 0, *, flip: bool = False) -> list[list[tuple[str, str | None]]]:
+def mini_cells(frame: int = 0, *, flip: bool = False, mascot: str = "duck") -> list[list[tuple[str, str | None]]]:
     """The small full-body duck (legs and all) as (glyph, style) cells, for
     compositing him over other content — e.g. waddling across the splash wordmark.
 
     Unlike :func:`head_cells` this includes the body and feet, and takes a
     ``frame`` so his wing flaps as he moves (the glasses stay put — see MINI_WING_OFF
-    and render_mini). ``flip`` mirrors him to face the other way."""
+    and render_mini). ``flip`` mirrors him to face the other way. ``mascot`` picks
+    the sprite family ("duck" default, "robo" for the Agents side)."""
     f = frame % FRAMES
-    grid = _compose(DUCK_MINI_BASE, _shift(DUCK_MINI_WING, MINI_WING_OFF[f]), DUCK_MINI_GLASSES)
+    base, wing, glasses = _MINI_GRIDS.get(mascot, _MINI_GRIDS["duck"])
+    grid = _compose(base, _shift(wing, MINI_WING_OFF[f]), glasses)
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
 
 
-def render_full(frame: int) -> Group:
+def render_full(frame: int, *, mascot: str = "duck") -> Group:
     """Full-body idle duck: wing-flap + glasses-bob for the given frame."""
     f = frame % FRAMES
-    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[f]))
+    base, wing, glasses = _BODY_GRIDS.get(mascot, _BODY_GRIDS["duck"])
+    # The robo's visor is bolted on — no bob (the duck adjusts his sunglasses).
+    glass_off = GLASS_OFF[f] if mascot == "duck" else 0
+    grid = _compose(base, _shift(wing, WING_OFF[f]), _shift(glasses, glass_off))
     return Group(*_pack(grid))
 
 
 def full_cells(
-    frame: int, *, glasses_frame: int | None = None, flip: bool = False
+    frame: int, *, glasses_frame: int | None = None, flip: bool = False, mascot: str = "duck"
 ) -> list[list[tuple[str, str | None]]]:
     """The full-size idle duck (wing-flap + glasses-bob) as (glyph, style) cells, for
     compositing him over other content — e.g. walking along the saver floor.
 
     ``glasses_frame`` drives the glasses bob independently of the wing ``frame`` (so
-    the glasses can hold still while the wings flap); defaults to ``frame``."""
+    the glasses can hold still while the wings flap); defaults to ``frame``. The bob
+    is duck-only — a bolted visor doesn't wiggle, so the robo ignores it."""
     f = frame % FRAMES
     gf = (frame if glasses_frame is None else glasses_frame) % FRAMES
-    grid = _compose(DUCK_BASE, _shift(DUCK_WING, WING_OFF[f]), _shift(DUCK_GLASSES, GLASS_OFF[gf]))
+    base, wing, glasses = _BODY_GRIDS.get(mascot, _BODY_GRIDS["duck"])
+    glass_off = GLASS_OFF[gf] if mascot == "duck" else 0
+    grid = _compose(base, _shift(wing, WING_OFF[f]), _shift(glasses, glass_off))
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return _pack_cells(grid)
@@ -308,7 +375,7 @@ def _step_foot(cell: tuple[str, str | None]) -> tuple[str, str | None]:
 
 
 def walk_cells(
-    frame: int, *, foot: int | None = None, glasses_frame: int = 0, flip: bool = False
+    frame: int, *, foot: int | None = None, glasses_frame: int = 0, flip: bool = False, mascot: str = "duck"
 ) -> list[list[tuple[str, str | None]]]:
     """The full-size duck mid-walk: wing flap (from ``frame``) plus an alternating
     foot plant, as (glyph, style) cells for compositing him moving along a surface.
@@ -316,8 +383,10 @@ def walk_cells(
     ``foot`` (its own slow phase, so the steps aren't tied to the fast wing frame)
     plants the left/right foot in turn on even/odd — defaults to ``frame``. The
     glasses hold still by default (``glasses_frame=0``) — pass a live frame to bob
-    them (e.g. only while jumping). ``flip`` mirrors him to face his travel direction."""
-    grid = [list(row) for row in full_cells(frame, glasses_frame=glasses_frame, flip=False)]
+    them (e.g. only while jumping). ``flip`` mirrors him to face his travel direction.
+    The foot columns are valid for every mascot: robo grids are letter-recolors of
+    the duck trace, so the feet sit in the same columns by construction."""
+    grid = [list(row) for row in full_cells(frame, glasses_frame=glasses_frame, flip=False, mascot=mascot)]
     last = len(grid) - 1  # feet occupy the bottom row
     step = frame if foot is None else foot
     down = _FULL_LEFT_FOOT if step % 2 == 0 else _FULL_RIGHT_FOOT
@@ -329,7 +398,7 @@ def walk_cells(
     return grid
 
 
-def render_mini(frame: int, *, flip: bool = False) -> Group:
+def render_mini(frame: int, *, flip: bool = False, mascot: str = "duck") -> Group:
     """Smaller full-body idle duck — legs and all (~11 half-block terminal rows).
 
     Same three layers as :func:`render_full` at a smaller trace (see MINI_WIDTH in
@@ -338,7 +407,8 @@ def render_mini(frame: int, *, flip: bool = False) -> Group:
     ``flip=True`` mirrors him to face the other way, like :func:`render_head`.
     """
     f = frame % FRAMES
-    grid = _compose(DUCK_MINI_BASE, _shift(DUCK_MINI_WING, MINI_WING_OFF[f]), DUCK_MINI_GLASSES)
+    base, wing, glasses = _MINI_GRIDS.get(mascot, _MINI_GRIDS["duck"])
+    grid = _compose(base, _shift(wing, MINI_WING_OFF[f]), glasses)
     if flip:
         grid = tuple(row[::-1] for row in grid)
     return Group(*_pack(grid))

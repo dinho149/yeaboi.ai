@@ -765,3 +765,73 @@ def test_controls_tab_advertises_the_letter_and_the_drawer_lists_it():
     assert "close this" in opened  # 'c' closes it
     assert "quit" in opened  # ctrl+C still quits outright
     close_controls()
+
+
+# ── Chrome mascot (the robo on Agents pages) ─────────────────────────────────
+
+
+def _styled_frame_text(frame, width=120, height=24):
+    """ANSI-styled render of a pocket frame (rgb assertions, not glyphs)."""
+    console = Console(width=width, height=height, file=StringIO(), force_terminal=True)
+    with console.capture() as cap:
+        console.print(frame)
+    return cap.get()
+
+
+def test_robo_mascot_draws_steel_companion():
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    _music_bar._duck_slide_start = 0.0
+    panel = Panel(Text("body"), height=24, padding=(1, 2))
+    out = _styled_frame_text(_MusicPocketFrame(panel, duck_mascot="robo"))
+    assert "140;160;178" in out  # robo steel
+    assert "34;158;122" not in out  # no duck green anywhere on a robo page
+
+
+def test_duck_mascot_default_unchanged():
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame
+
+    panel = Panel(Text("body"), height=24, padding=(1, 2))
+    out = _styled_frame_text(_MusicPocketFrame(panel))
+    assert "34;158;122" in out
+
+
+def test_entrance_uses_the_robo_mini(monkeypatch):
+    from yeaboi.ui.shared._music_bar import _MusicPocketFrame, start_duck_entrance
+
+    start_duck_entrance()
+    monkeypatch.setattr(_music_bar.time, "monotonic", lambda: _music_bar._duck_entrance_start + 0.5)
+    panel = Panel(Text("body"), height=30, padding=(1, 2))
+    out = _styled_frame_text(_MusicPocketFrame(panel, duck_mascot="robo"), height=30)
+    assert "140;160;178" in out
+    assert "34;158;122" not in out
+
+
+def test_get_renderable_adopts_and_resets_the_stamp():
+    live = _music_bar.MusicLive(console=Console(width=120, height=40, file=StringIO()))
+    stamped = Panel(Text("body"), height=40)
+    stamped._duck_mascot = "robo"
+    live.update(stamped)
+    live.get_renderable()
+    assert _music_bar.current_chrome_mascot() == "robo"
+    live.update(Panel(Text("body"), height=40))
+    live.get_renderable()
+    assert _music_bar.current_chrome_mascot() == "duck"
+
+
+def test_reset_duck_state_restores_duck():
+    _music_bar._chrome_mascot = "robo"
+    _music_bar._reset_duck_state()
+    assert _music_bar.current_chrome_mascot() == "duck"
+
+
+def test_poke_duck_quacks_for_robo(monkeypatch):
+    _music_bar._chrome_mascot = "robo"
+    _music_bar.poke_duck()
+    assert _music_bar._duck_shades_start == 0.0  # no shades gag on a visor
+    assert _music_bar._duck_quack_start > 0.0  # he beeps instead
+
+
+def test_poke_duck_still_lifts_shades_for_duck():
+    _music_bar.poke_duck()
+    assert _music_bar._duck_shades_start > 0.0

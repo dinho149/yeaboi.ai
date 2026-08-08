@@ -83,7 +83,8 @@ def _run_threaded_engine_page(
     esc/q backs out (a mid-run back-out lets the daemon finish + export).
     """
     import queue
-    import threading
+
+    from yeaboi.ui.shared._music_bar import duck_working_thread
 
     logger.info("%s page opened", label)
     while True:  # re-entered by the r (re-run) key
@@ -97,7 +98,9 @@ def _run_threaded_engine_page(
                 logger.exception("%s engine failed", label)
                 result.put(make_failure_artifact(exc))
 
-        worker = threading.Thread(target=_work, daemon=True, name=label)
+        # duck_working_thread: the corner robo bobs for the engine's lifetime,
+        # same liveness cue the Humans pages give their worker runs.
+        worker = duck_working_thread(_work, name=label)
         worker.start()
 
         status = ""
