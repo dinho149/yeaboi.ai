@@ -2,8 +2,20 @@
 
 **Trigger** — GitHub event, pull request `closed`
 **Summary** — on merge: Linear to Done, the Slack ship note, the Notion page
-**Filters** — `is_merged` true only. A closed-unmerged PR does nothing here.
+**Filters** — `is_merged` true only. A closed-unmerged PR does nothing here — and **step 1 is the
+only thing that enforces it**, see below.
 **Model** — `fast` ([models.md](../../models.md)) — every step reads a field and writes a field
+
+```json webhook
+{"source": "github", "events": ["pull_request"], "filter": {"actions": ["closed"]}}
+```
+
+**The block cannot express "merged".** The registered filter is `closed`, which GitHub sends for a
+merged PR *and* for one somebody abandoned; `is_merged` is not a key this API's filter accepts, and
+it never echoes a stored filter back, so nothing downstream can confirm what was registered either.
+Every step below therefore runs on both, and step 1 is what tells them apart. Getting this wrong is
+not a wasted run: it moves a Linear ticket to Done, posts a ship note to `#yeaboi-claude` and writes
+a Notion page for work that was thrown away.
 
 This is where DoD items 8 and 9 are satisfied, and item 1's final state is verified (and repaired
 when the `Closes YEA-NN` magic word missed). Everything below runs through `cowork-scribe`.
@@ -11,6 +23,10 @@ when the `Closes YEA-NN` magic word missed). Everything below runs through `cowo
 ## Run
 
 1. `gh pr view <n> --json title,body,labels,mergedAt,author,files` and `gh pr diff <n>`.
+
+   **If `mergedAt` is null, stop here.** Nothing else in this routine runs, nothing is posted, and
+   nothing is written — the PR was closed without merging, and there is no loop to close. Exit
+   silently: a closed-unmerged PR is a normal event and not worth a message.
 
 2. **Linear** — verify and repair, not blind-write. Find the ticket from the `Closes YEA-NN` line
    in the PR body, the PR attachment, or by searching team `Yeaboi` for the branch name. The magic

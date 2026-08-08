@@ -164,19 +164,28 @@ def get_tips() -> tuple[FeatureTip, ...]:
     The first entry is the voice tip and the last is the music tip; both adapt to
     whether their optional dependency is installed (dictation extra / the ffplay
     binary), showing an install hint otherwise. Between them come the feature tips
-    (one per capability) and the generic meta tips. Memoised because availability
-    is fixed for the life of the process.
+    (one per capability) and the generic meta tips. Memoised because the tips are
+    rebuilt on every welcome-screen frame; the memo is dropped by
+    :func:`yeaboi.voice_install.refresh_imports` when an in-app install changes
+    the answer part-way through a run.
     """
     from yeaboi.music import is_music_available
-    from yeaboi.voice import is_voice_available, voice_install_command
+    from yeaboi.voice import unsupported_blocker, voice_install_command, voice_state
 
-    available, _reason = is_voice_available()
-    voice_tip = FeatureTip(
-        "voice",
-        "\U0001f3a4 Tip: double-tap Space in any text field to dictate"
-        if available
-        else f"\U0001f3a4 Tip: enable dictation with — {voice_install_command()}",
-    )
+    state = voice_state()
+    if state == "unsupported":
+        # The actual blocker, not a fixed platform sentence: on Linux this is
+        # usually a missing libportaudio2 and carries the command that fixes it,
+        # which is worth more than restating the wheel matrix.
+        voice_text = f"\U0001f3a4 Tip: dictation can't run here — {unsupported_blocker()}"
+    else:
+        voice_text = {
+            "ready": "\U0001f3a4 Tip: double-tap Space in any text field to dictate",
+            # The gesture is the install: naming a shell command here would send
+            # the user to a second terminal for something one keystroke does.
+            "installable": "\U0001f3a4 Tip: double-tap Space in any text field — one keystroke sets dictation up",
+        }.get(state, f"\U0001f3a4 Tip: enable dictation with — {voice_install_command()}")
+    voice_tip = FeatureTip("voice", voice_text)
     music_available, _music_reason = is_music_available()
     music_tip = FeatureTip(
         "music",

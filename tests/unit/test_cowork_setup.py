@@ -19,6 +19,7 @@ and ``--check --local`` skips the remote half by design.
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import importlib.util
 import json
 import re
@@ -119,6 +120,7 @@ class TestFilesAgreeWithTheTable:
             [
                 "cron/day-ahead.md",
                 "cron/digest.md",
+                "cron/cd-deploy.md",
                 "cron/marketing-weekly.md",
                 "cron/slack-relay.md",
                 "events/pr-merged-close-loop.md",
@@ -525,7 +527,7 @@ class TestPromptTemplate:
             elif lines:
                 break  # first contiguous run only — the Cron trap is a blockquote too
         quoted = " ".join(lines).strip()
-        template = setup.PROMPT_TEMPLATE.format(name="<name>", path="cron/<file>.md")
+        template = setup.PROMPT_TEMPLATE.format(name="<name>", path="<kind>/<file>.md")
         assert quoted == template, (
             f"README.md quotes:\n  {quoted}\nbut cowork_setup.py builds:\n  {template}\n"
             "These are the same sentence and must stay identical."
@@ -969,8 +971,12 @@ def _trigger_id(index: int) -> str:
 
 
 def _perfect_snapshot(routines=None) -> list[dict]:
-    """What a fleet that exactly matches the repo would look like on the wire."""
-    routines = [r for r in (routines or ROUTINES) if r.kind == "cron"]
+    """What a fleet that exactly matches the repo would look like on the wire.
+
+    Every routine, event ones included — they are registered by API now, so a
+    "perfect" fleet that omitted them would read as four permanent creates.
+    """
+    routines = list(routines or ROUTINES)
     snapshot = []
     for index, routine in enumerate(routines):
         body = setup.desired_trigger(routine, REPO_URL, ENVIRONMENT, CONNECTORS)
@@ -1068,12 +1074,12 @@ class TestTriggerPlan:
     def test_a_matching_fleet_needs_nothing(self):
         plan = setup.trigger_plan(_perfect_snapshot())
         assert plan.clean
-        assert sorted(plan.ok) == sorted(r.name for r in CRON_ROUTINES)
+        assert sorted(plan.ok) == sorted(r.name for r in ROUTINES)
         assert plan.create == [] and plan.update == [] and plan.orphans == []
 
     def test_every_registered_routine_yields_a_url(self):
         plan = setup.trigger_plan(_perfect_snapshot())
-        assert len(plan.urls) == len(CRON_ROUTINES)
+        assert len(plan.urls) == len(ROUTINES)
         assert plan.urls["cron/security-sweep.md"].startswith("https://claude.ai/code/routines/trig_")
 
     def test_a_missing_routine_becomes_a_create_with_a_full_body(self):
@@ -1125,7 +1131,7 @@ class TestTriggerPlan:
         for entry in snapshot:
             entry["mcp_connections"].append({"name": "Gmail", "connector_uuid": "uuid-gmail", "url": "x"})
         plan = setup.trigger_plan(snapshot)
-        assert len(plan.update) == len(CRON_ROUTINES)
+        assert len(plan.update) == len(ROUTINES)
         assert [c["name"] for c in plan.update[0].body["mcp_connections"]] == list(setup.CONNECTORS)
 
     def test_the_connector_order_is_ours_not_the_accounts(self):
@@ -1204,13 +1210,13 @@ class TestTriggerPlan:
 
     def test_an_empty_account_is_all_creates(self):
         plan = setup.trigger_plan([], repo_url=REPO_URL, environment_id=ENVIRONMENT, connectors=CONNECTORS)
-        assert len(plan.create) == len(CRON_ROUTINES)
+        assert len(plan.create) == len(ROUTINES)
         assert plan.ok == [] and plan.urls == {} and plan.needs == []
 
     def test_a_first_deploy_names_what_only_the_account_can_supply(self):
         """The API accepts an empty string, so nothing downstream would notice.
 
-        Eighteen routines register pointing at no repository, on no environment,
+        Twenty-two routines register pointing at no repository, on no environment,
         with every connector attached — and it looks like it worked until the
         first Monday.
         """
@@ -1225,10 +1231,36 @@ class TestTriggerPlan:
         with pytest.raises(ValueError, match="has_more"):
             setup.snapshot({"data": _perfect_snapshot()[:4], "has_more": True})
 
-    def test_the_event_routines_are_never_planned(self):
-        """RemoteTrigger takes a cron expression only — there is no event field."""
-        planned = {action.name for action in setup.trigger_plan([]).create}
-        assert not planned & {r.name for r in ROUTINES if r.kind == "event"}
+    def test_the_event_routines_are_planned_without_a_cron(self):
+        """They are registered by API now; a webhook trigger attaches the event.
+
+        They were unplannable while the routines API took a cron expression only
+        — that was this test's old assertion, and the reason cowork/README.md
+        told you to add three routines by hand in a web form. The API accepts a
+        cron-less create now, so the body they get is the one every other routine
+        gets, minus `cron_expression`; what fires them is a second POST, planned
+        under `webhooks`.
+        """
+        plan = setup.trigger_plan([], repo_url=REPO_URL, environment_id=ENVIRONMENT, connectors=CONNECTORS)
+        created = {action.name: action for action in plan.create}
+        events = [r for r in ROUTINES if r.kind == "event"]
+        assert events, "the fixture lost its event routines"
+        for routine in events:
+            assert routine.name in created, f"{routine.path} is registered now and must be planned"
+            assert "cron_expression" not in created[routine.name].body
+
+    def test_an_event_routine_that_grew_a_cron_is_drift(self):
+        """Comparing cron only when either side has one is not the same as not comparing it."""
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, "pr-merged-close-loop")["cron_expression"] = "0 6 * * *"
+        drifted = {action.name: action for action in setup.trigger_plan(snapshot).update}
+        assert "cron" in drifted["pr-merged-close-loop"].fields
+
+    def test_a_cron_routine_that_lost_its_cron_is_drift(self):
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, "digest")["cron_expression"] = ""
+        drifted = {action.name: action for action in setup.trigger_plan(snapshot).update}
+        assert "cron" in drifted["digest"].fields
 
     def test_the_plan_is_json_serialisable(self):
         snapshot = _perfect_snapshot()
@@ -1243,12 +1275,12 @@ class TestTriggerPlan:
 
 
 class TestToolOverrides:
-    """slack-relay is the one routine registered with RemoteTrigger.
+    """slack-relay and cd-deploy are the only routines registered with RemoteTrigger.
 
-    The relay drives pause/resume/run from inside its own session, which needs
-    the tool; a *sweep* that could reach the routines API would be a sweep that
-    can un-pause the fleet, so the override is per-routine and the plan treats
-    any deviation — in either direction — as drift.
+    The relay drives pause/resume/run from inside its own session and the deployer
+    reconciles the fleet, so both need the tool; a *sweep* that could reach the
+    routines API would be a sweep that can un-pause the fleet, so the override is
+    per-routine and the plan treats any deviation — in either direction — as drift.
     """
 
     def _tools_of(self, body: dict) -> list[str]:
@@ -1259,14 +1291,62 @@ class TestToolOverrides:
         body = setup.desired_trigger(relay, REPO_URL, ENVIRONMENT, CONNECTORS)
         assert "RemoteTrigger" in self._tools_of(body)
 
-    def test_no_other_routine_registers_with_remote_trigger(self):
-        for routine in CRON_ROUTINES:
-            if routine.name == "slack-relay":
+    def test_exactly_two_routines_reach_the_routines_api(self):
+        """The relay carries a human's pause/resume/run; the deployer reconciles the fleet.
+
+        Nothing else: a sweep that can reach the routines API is a sweep that can
+        un-pause the fleet. Asserted as an exact set rather than a loop with an
+        exception, so widening it is a reviewed edit here and not a quiet one in
+        TOOL_OVERRIDES.
+        """
+        holders = {r.name for r in ROUTINES if "RemoteTrigger" in setup.routine_tools(r.name)}
+        assert holders == {"slack-relay", "cd-deploy"}
+
+    def test_no_routine_registers_with_remote_trigger_it_should_not_have(self):
+        for routine in ROUTINES:
+            if routine.name in {"slack-relay", "cd-deploy"}:
                 continue
             body = setup.desired_trigger(routine, REPO_URL, ENVIRONMENT, CONNECTORS)
             assert "RemoteTrigger" not in self._tools_of(body), (
-                f"{routine.path} would register with RemoteTrigger — only the relay carries it"
+                f"{routine.path} would register with RemoteTrigger — only the relay and deployer carry it"
             )
+
+    def test_nothing_holds_the_routines_api_and_a_write_tool(self):
+        """RemoteTrigger plus Write/Edit is one routine that can rewrite the repo *and*
+        reprogram the fleet from what it wrote. Neither holder needs both: the relay
+        edits nothing, and the deployer's only file write is the README URL column,
+        done inside cowork_setup.py under Bash."""
+        for routine in ROUTINES:
+            tools = set(setup.routine_tools(routine.name))
+            assert not ("RemoteTrigger" in tools and tools & {"Write", "Edit"}), (
+                f"{routine.path} holds the routines API and a write tool"
+            )
+
+    def test_nothing_that_reads_a_fork_can_edit_a_file(self):
+        """The two PR routines read text nobody in this repo wrote.
+
+        `gh pr view` and `gh pr diff` return a title, a body and a diff authored by
+        whoever opened the PR — on a public repo, anyone with a fork — and both
+        routines hold the Linear, Slack and Notion connectors. Neither writes
+        anything itself; `cowork-scribe` does. This is the grant that says so.
+        """
+        for name in ("pr-opened-dod-audit", "pr-merged-close-loop"):
+            tools = set(setup.routine_tools(name))
+            assert not tools & {"Write", "Edit"}, f"{name} can edit a file while reading a fork's diff"
+            assert "Task" in tools, f"{name} spawns the scribe, which does its writing"
+
+    def test_no_event_routine_writes_for_itself(self):
+        """All three delegate every outbound word to the scribe. None needs an editor."""
+        for routine in ROUTINES:
+            if routine.kind == "event":
+                assert not set(setup.routine_tools(routine.name)) & {"Write", "Edit"}
+
+    def test_no_grant_is_ever_empty(self):
+        """An empty allowed_tools registers as the full default preset — see
+        tests/fixtures/cowork_webhook_live.json. The narrowest-looking grant would
+        be the widest routine in the fleet."""
+        for routine in ROUTINES:
+            assert setup.routine_tools(routine.name)
 
     def test_a_live_relay_missing_remote_trigger_is_drift(self):
         """The failure a stale deploy leaves behind: a relay that cannot pause anything."""
@@ -1333,7 +1413,7 @@ class TestUrlWriteback:
         return re.sub(r"(^\| `(?:cron|events)/[a-z0-9-]+\.md`(?:[^|\n]*\|){4})[^|\n]*\|", r"\1 |", text, flags=re.M)
 
     def test_the_fixture_really_is_blank(self, blank_readme: str):
-        assert len(setup.missing_urls(blank_readme)) == len(CRON_ROUTINES)
+        assert len(setup.missing_urls(blank_readme)) == len(ROUTINES)
 
     def test_every_cron_row_gets_its_url(self, blank_readme: str):
         plan = setup.trigger_plan(_perfect_snapshot())
@@ -1341,12 +1421,17 @@ class TestUrlWriteback:
         assert setup.missing_urls(filled) == []
         assert f"https://claude.ai/code/routines/{_trigger_id(0)} |" in filled
 
-    def test_the_event_rows_stay_blank(self, blank_readme: str):
-        """They cannot be registered, so a URL there would be a claim, not a record."""
+    def test_the_event_rows_get_their_url_too(self, blank_readme: str):
+        """They are registered routines now, so the table records them like any other.
+
+        This row used to be asserted blank, because an event routine could only be
+        made by hand in a web form and the table had no id to record.
+        """
         filled = setup.readme_with_urls(blank_readme, setup.trigger_plan(_perfect_snapshot()).urls)
-        for line in filled.splitlines():
-            if line.startswith("| `events/"):
-                assert line.rstrip().endswith("|  |") or line.rstrip().endswith("| |")
+        rows = [line for line in filled.splitlines() if line.startswith("| `events/")]
+        assert rows, "the fixture lost its event rows"
+        for line in rows:
+            assert "https://claude.ai/code/routines/" in line
 
     def test_it_is_idempotent(self, blank_readme: str):
         urls = setup.trigger_plan(_perfect_snapshot()).urls
@@ -1553,7 +1638,7 @@ class TestSnapshotFlags:
             check=False,
         )
         assert result.returncode == 0
-        assert len(json.loads(result.stdout)["ok"]) == len(CRON_ROUTINES)
+        assert len(json.loads(result.stdout)["ok"]) == len(ROUTINES)
 
     def test_check_says_so_when_the_account_half_was_not_checked(self):
         """Silence would read as "the routines are fine", which it cannot know."""
@@ -1565,3 +1650,508 @@ class TestSnapshotFlags:
         )
         assert result.returncode == 0
         assert "registered routines were not checked" in result.stdout
+
+
+WEBHOOK_FIXTURE = ROOT / "tests" / "fixtures" / "cowork_webhook_live.json"
+
+
+class TestWebhookDeclaration:
+    """The ```json webhook block: what a routine file may say about what fires it.
+
+    Every check here guards a failure the API will not. It accepts an unknown
+    event name with a 200, stores a filter it never reads back, does not dedup and
+    has no delete — so a block that is wrong produces a routine that looks
+    deployed, fires never or twice, and says nothing either way. This is the only
+    place that can catch it.
+    """
+
+    def test_every_event_routine_declares_one(self):
+        for routine in ROUTINES:
+            if routine.kind == "event":
+                assert routine.webhook, f"{routine.path} would register as a routine nothing ever fires"
+
+    def test_the_deployer_declares_one(self):
+        deployer = next(r for r in ROUTINES if r.name == setup.DEPLOY_ROUTINE)
+        assert deployer.webhook and deployer.webhook["events"] == ["push"]
+
+    def test_a_sweep_declares_none(self):
+        assert next(r for r in ROUTINES if r.name == "security-sweep").webhook is None
+
+    def test_every_declared_event_is_one_the_repo_knows(self):
+        for routine in ROUTINES:
+            for event in (routine.webhook or {}).get("events", []):
+                assert event in setup.WEBHOOK_EVENTS
+
+    @pytest.mark.parametrize(
+        "block, expected",
+        [
+            ('{"source": "github", "events": ["push"], "surprise": 1}', "unknown key"),
+            ('{"source": "github", "events": ["push"], "routine_trigger_id": "trig_x"}', "declares"),
+            ('{"source": "github", "events": ["push"], "scope_id": "github.com/a/b"}', "declares"),
+            ('{"source": "gitlab", "events": ["push"]}', "webhook source"),
+            ('{"source": "github", "events": []}', "no `events` list"),
+            ('{"source": "github", "events": "push"}', "no `events` list"),
+            ('{"source": "github", "events": ["nope"]}', "unknown event"),
+            ('{"source": "github", "events": ["push"], "filter": "x"}', "not an object"),
+        ],
+    )
+    def test_a_bad_block_is_refused(self, block: str, expected: str):
+        routine = _routine_with_webhook(block)
+        problems = " ".join(problem for problem, _ in setup.webhook_problems(routine))
+        assert expected in problems, problems
+
+    def test_an_oversized_filter_is_refused(self):
+        big = json.dumps({"actions": ["x" * setup.WEBHOOK_FILTER_LIMIT]})
+        routine = _routine_with_webhook(f'{{"source": "github", "events": ["push"], "filter": {big}}}')
+        assert any("filter is over" in problem for problem, _ in setup.webhook_problems(routine))
+
+    def test_events_must_agree_with_the_trigger_prose(self):
+        routine = _routine_with_webhook('{"source": "github", "events": ["release"]}', trigger="cron `0 4 * * *`")
+        assert any("**Trigger** line does not mention" in problem for problem, _ in setup.webhook_problems(routine))
+
+    def test_a_malformed_block_is_a_finding_not_an_exception(self):
+        """parse_routines() runs at import time all over this suite. A bad block has
+        to arrive as a doctor finding naming the file, not a collection error."""
+        webhook, error = setup.parse_webhook("```json webhook\n{not json}\n```\n")
+        assert webhook is None and "not valid JSON" in error
+
+    def test_two_blocks_are_refused(self):
+        block = '```json webhook\n{"source": "github", "events": ["push"]}\n```\n'
+        webhook, error = setup.parse_webhook(block * 2)
+        assert webhook is None and "one event source" in error
+
+    def test_no_block_is_not_an_error(self):
+        assert setup.parse_webhook("# a sweep\n\nnothing to see\n") == (None, None)
+
+
+def _routine_with_webhook(block: str, trigger: str = "GitHub event, push and pull request and release"):
+    """One synthetic routine carrying a given webhook block, for the parser tests."""
+    webhook, error = setup.parse_webhook(f"```json webhook\n{block}\n```\n")
+    base = next(r for r in ROUTINES if r.kind == "event")
+    return dataclasses.replace(base, trigger=trigger, webhook=webhook, webhook_error=error)
+
+
+class TestWebhookDoctor:
+    """The same checks, reached the way a contributor reaches them: `make cowork-check`."""
+
+    def _run(self, cwd: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(cwd / "scripts" / "cowork_setup.py"), "--check", "--local"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @pytest.fixture
+    def repo_copy(self, tmp_path: Path) -> Path:
+        copy = tmp_path / "repo"
+        (copy / "scripts").mkdir(parents=True)
+        shutil.copy(_MODULE_PATH, copy / "scripts" / "cowork_setup.py")
+        shutil.copytree(ROOT / "cowork", copy / "cowork")
+        return copy
+
+    def test_an_event_routine_with_no_block_fails(self, repo_copy: Path):
+        path = repo_copy / "cowork" / "routines" / "events" / "release-published-announce.md"
+        body = path.read_text()
+        start = body.index("```json webhook")
+        end = body.index("```", start + 3) + 4
+        path.write_text(body[:start] + body[end:])
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "declares no ```json webhook block" in result.stderr
+
+    def test_a_misspelled_event_fails(self, repo_copy: Path):
+        path = repo_copy / "cowork" / "routines" / "events" / "release-published-announce.md"
+        path.write_text(path.read_text().replace('"events": ["release"]', '"events": ["releases"]'))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "unknown event" in result.stderr
+
+    def test_a_deployer_that_stopped_firing_on_push_fails(self, repo_copy: Path):
+        path = repo_copy / "cowork" / "routines" / "cron" / "cd-deploy.md"
+        path.write_text(path.read_text().replace('"events": ["push"]', '"events": ["release"]'))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "not `push`" in result.stderr
+
+    def test_a_routine_holding_the_api_and_a_write_tool_fails(self, repo_copy: Path):
+        script = repo_copy / "scripts" / "cowork_setup.py"
+        script.write_text(
+            script.read_text().replace(
+                '"cd-deploy": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "Task", "TodoWrite"),',
+                '"cd-deploy": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "Task", "TodoWrite", "Write"),',
+            )
+        )
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "holds RemoteTrigger and Write" in result.stderr
+
+
+class TestWebhookPlan:
+    """Whether a webhook is safe to POST — the one question with no way to ask the API.
+
+    Nothing reports the webhooks attached to a routine, an identical POST is not
+    deduped, and there is no delete. So a duplicate is permanent and doubles every
+    firing, and the only defensible rule is to post exactly once, at the moment a
+    routine is created and provably holds none.
+    """
+
+    def _plan(self, snapshot, created=()):
+        return setup.trigger_plan(snapshot, created=created)
+
+    def test_a_routine_being_created_now_is_deferred(self):
+        """There is no id to fire yet — re-plan after the creates."""
+        plan = setup.trigger_plan([], repo_url=REPO_URL, environment_id=ENVIRONMENT, connectors=CONNECTORS)
+        deferred = {a.name: a for a in plan.webhooks}
+        assert deferred["pr-opened-dod-audit"].action == "deferred"
+        assert deferred["pr-opened-dod-audit"].body == {}
+        assert plan.postable_webhooks == []
+
+    def test_a_snapshot_that_cannot_answer_blocks_the_post(self):
+        """The central case, and today's steady state: an absent key is not zero."""
+        plan = self._plan(_perfect_snapshot())
+        unknown = {a.name: a for a in plan.webhooks if a.action == "unknown"}
+        assert "pr-merged-close-loop" in unknown
+        assert unknown["pr-merged-close-loop"].body == {}
+        assert "duplicate" in unknown["pr-merged-close-loop"].blocked
+        assert plan.postable_webhooks == []
+
+    def _just_created(self, snapshot, name: str):
+        """Stamp one entry the way the account stamps a routine made moments ago."""
+        _by_name(snapshot, name)["created_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return snapshot
+
+    def test_a_routine_created_this_run_is_postable(self):
+        snapshot = self._just_created(_perfect_snapshot(), "pr-merged-close-loop")
+        plan = self._plan(snapshot, created=["cowork: pr-merged-close-loop"])
+        postable = {a.name: a for a in plan.postable_webhooks}
+        assert set(postable) == {"pr-merged-close-loop"}
+        body = postable["pr-merged-close-loop"].body
+        assert body["routine_trigger_id"] == postable["pr-merged-close-loop"].trigger_id
+        assert body["hook_type"] == setup.WEBHOOK_HOOK_TYPE
+        assert body["scope_id"] == setup.slug_from_url(REPO_URL)
+        assert body["events"] == ["pull_request"]
+
+    def test_an_explicit_empty_array_is_postable(self):
+        """The path that lights up if the API ever starts reporting attachments."""
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, "release-published-announce")["webhook_triggers"] = []
+        postable = {a.name for a in self._plan(snapshot).postable_webhooks}
+        # No --created and no timestamp: the empty array alone is the proof.
+        assert postable == {"release-published-announce"}
+
+    def test_an_attached_webhook_is_left_alone(self):
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, "release-published-announce")["webhook_triggers"] = [{"trigger_id": "hook-1"}]
+        action = next(a for a in self._plan(snapshot).webhooks if a.name == "release-published-announce")
+        assert action.action == "ok" and action.body == {} and action.webhook_id == "hook-1"
+
+    def test_a_routine_with_no_block_produces_no_action(self):
+        planned = {a.name for a in self._plan(_perfect_snapshot()).webhooks}
+        assert "security-sweep" not in planned
+
+    def test_a_created_claim_the_account_contradicts_is_refused(self):
+        """--created is a caller's claim; created_at is the server's answer.
+
+        The dangerous mistake the flag could carry is naming a routine that already
+        existed — which attaches a second webhook to one that already fires, with
+        no way to delete it. So the claim is checked, not trusted.
+        """
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, "pr-merged-close-loop")["created_at"] = "2020-01-01T00:00:00Z"
+        plan = self._plan(snapshot, created=["cowork: pr-merged-close-loop"])
+        assert plan.postable_webhooks == []
+        blocked = next(a for a in plan.webhooks if a.name == "pr-merged-close-loop")
+        assert "not within the last" in blocked.blocked
+
+    def test_a_created_claim_with_no_timestamp_is_refused(self):
+        plan = self._plan(_perfect_snapshot(), created=["cowork: pr-merged-close-loop"])
+        assert plan.postable_webhooks == []
+
+    def test_an_invalid_block_never_reaches_a_body(self):
+        """The function that builds the irreversible POST is the one that refuses it.
+
+        The API accepts a misspelled event with a 200 and has no delete, so a bad
+        block posted once is a webhook that never fires and cannot be removed.
+        """
+        snapshot = self._just_created(_perfect_snapshot(), "release-published-announce")
+        broken = dataclasses.replace(
+            next(r for r in ROUTINES if r.name == "release-published-announce"),
+            webhook={"source": "github", "events": ["not_an_event"]},
+        )
+        routines = [r for r in ROUTINES if r.name != "release-published-announce"] + [broken]
+        plan = setup.trigger_plan(snapshot, routines=routines, created=["cowork: release-published-announce"])
+        action = next(a for a in plan.webhooks if a.name == "release-published-announce")
+        assert action.body == {} and "not valid" in action.blocked
+        assert plan.postable_webhooks == []
+
+    def test_a_postable_body_carries_nothing_the_file_wrote(self):
+        snapshot = self._just_created(_perfect_snapshot(), "pr-opened-dod-audit")
+        plan = self._plan(snapshot, created=["cowork: pr-opened-dod-audit"])
+        body = plan.postable_webhooks[0].body
+        assert set(body) == {"source", "hook_type", "scope_id", "events", "filter", "routine_trigger_id"}
+
+    def test_the_webhook_plan_is_json_serialisable(self):
+        payload = json.loads(json.dumps(self._plan(_perfect_snapshot()).as_dict()))
+        assert payload["webhooks_blocked"]
+        assert all(entry["body"] == {} for entry in payload["webhooks"])
+
+    def test_a_blocked_plan_is_still_clean(self):
+        """`webhooks_blocked` is the ordinary state, not a change waiting to be applied."""
+        assert self._plan(_perfect_snapshot()).clean
+
+    def test_self_update_names_the_deployer_and_nothing_else(self):
+        snapshot = _perfect_snapshot()
+        _by_name(snapshot, setup.DEPLOY_ROUTINE)["cron_expression"] = "0 5 * * *"
+        plan = self._plan(snapshot)
+        assert plan.self_update["name"] == setup.DEPLOY_ROUTINE
+        assert plan.self_update["fields"]["cron"]["live"] == "0 5 * * *"
+
+    def test_no_self_update_when_the_deployer_matches(self):
+        assert self._plan(_perfect_snapshot()).self_update is None
+
+    def test_no_create_reports_instead_of_registering(self):
+        """An unattended run applies updates and leaves creates to a human.
+
+        Two runs of a create race with no lock and no undo: both list a fleet
+        missing the same routine, both POST it, and both copies then fire. There
+        is no orphan, so `suspicious` stays false and nothing downstream objects.
+        An update is safe to race, because applying it twice writes the same value.
+        """
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        _by_name(snapshot, "retro-sweep")["cron_expression"] = "0 0 * * 0"
+        plan = setup.trigger_plan(snapshot, allow_create=False)
+
+        assert plan.creates_blocked == ["digest"]
+        assert plan.postable_creates == []
+        assert [a.body for a in plan.create] == [{}], "a blocked action must carry nothing to post"
+        assert "no delete" in plan.create[0].blocked
+        # The update is untouched: it is the half that is safe to apply unattended.
+        assert [a.name for a in plan.update] == ["retro-sweep"]
+        assert plan.update[0].body and plan.update[0].blocked is None
+
+    def test_allowing_creates_is_still_the_default(self):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        plan = setup.trigger_plan(snapshot)
+        assert plan.creates_blocked == []
+        assert plan.postable_creates and plan.create[0].body
+
+    def test_a_blocked_create_needs_nothing_from_the_account(self):
+        """`needs` names what a *postable* body would want. A blocked one wants nothing."""
+        plan = setup.trigger_plan([], routines=ROUTINES, allow_create=False)
+        assert plan.needs == []
+        assert plan.applied_nothing
+
+    def test_a_plan_that_only_blocks_is_not_silent(self):
+        """`clean` and `applied_nothing` differ, and the difference is whether anyone is told."""
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        plan = setup.trigger_plan(snapshot, allow_create=False)
+        assert plan.applied_nothing and not plan.clean
+
+    def test_no_planned_body_ever_carries_enabled(self):
+        """Structural, across every kind of drift: a deploy cannot un-pause the fleet.
+
+        `pause` is a supported verb, and a deploy that quietly re-enabled a routine
+        somebody switched off would undo that decision with nothing said.
+        """
+        snapshot = _perfect_snapshot()
+        for entry in snapshot:
+            entry["enabled"] = False
+            entry["cron_expression"] = "0 0 * * 0"
+        for action in setup.trigger_plan(snapshot).update:
+            assert "enabled" not in action.body
+
+
+class TestWebhookFixture:
+    """The create body, pinned against one real exchange.
+
+    The counterpart of TestObservedTrigger: every other webhook body in this suite
+    is generated by desired_webhook(), so a mistake mirrored in the test would
+    round-trip cleanly. This file is the one input neither side produced.
+    """
+
+    @pytest.fixture
+    def live(self) -> dict:
+        return json.loads(WEBHOOK_FIXTURE.read_text(encoding="utf-8"))
+
+    def test_the_body_we_send_matches_the_one_that_worked(self, live: dict):
+        routine = next(r for r in ROUTINES if r.name == setup.DEPLOY_ROUTINE)
+        body = setup.desired_webhook(routine, live["request"]["routine_trigger_id"], live["request"]["scope_id"])
+        assert set(body) == set(live["request"])
+        assert body["hook_type"] == live["request"]["hook_type"]
+        assert body["source"] == live["request"]["source"]
+
+    def test_the_response_carries_no_filter(self, live: dict):
+        """Recorded because it is why nothing can verify a stored filter — including us."""
+        assert "filter" not in live["response"]["trigger"]
+
+    def test_a_routine_get_reports_no_webhooks(self, live: dict):
+        """The fact the whole `created` gate rests on."""
+        assert not set(live["routine_get_keys"]) & set(setup.WEBHOOK_KEYS)
+
+    def test_the_fixture_names_no_model(self, live: dict):
+        assert "claude-" not in WEBHOOK_FIXTURE.read_text(encoding="utf-8")
+
+    def test_observed_webhooks_reads_the_response_shape(self):
+        assert setup.observed_webhooks({}) is None
+        assert setup.observed_webhooks({"webhook_triggers": []}) == ()
+        assert setup.observed_webhooks({"webhook_triggers": [{"trigger_id": "x"}]}) == ({"trigger_id": "x"},)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://github.com/example/yeaboi.ai",
+            "https://github.com/example/yeaboi.ai.git",
+            "git@github.com:example/yeaboi.ai.git",
+            "ssh://git@github.com/example/yeaboi.ai",
+        ],
+    )
+    def test_every_remote_form_resolves_to_one_scope_id(self, url: str):
+        assert setup.slug_from_url(url) == "github.com/example/yeaboi.ai"
+
+    def test_an_unresolvable_remote_is_none_rather_than_a_guess(self):
+        assert setup.slug_from_url("") is None
+        assert setup.slug_from_url("https://gitlab.com/example/thing") is None
+
+
+class TestStrict:
+    """`--strict` — the difference between a laptop and an unattended deploy.
+
+    Without it, a `gh` call rejected for lack of repo-admin prints a note and
+    exits 0, which is right when a human is reading stdout and is a silent green
+    when nothing is.
+    """
+
+    @pytest.fixture
+    def gh(self, monkeypatch):
+        calls: list[tuple[str, ...]] = []
+        replies: dict[tuple[str, ...], tuple[int, str]] = {}
+
+        def fake(*args: str):
+            calls.append(args)
+            code, out = replies.get(args[:2], (0, ""))
+            return subprocess.CompletedProcess(args, code, out, "boom" if code else "")
+
+        monkeypatch.setattr(setup, "_gh", fake)
+        monkeypatch.setattr(setup, "gh_ready", lambda: True)
+        monkeypatch.setattr(setup, "repo_slug", lambda: "example/yeaboi.ai")
+        return type("Gh", (), {"calls": calls, "replies": replies})()
+
+    @pytest.fixture(autouse=True)
+    def reset_strict(self):
+        """main() resets its own state; this only stops one test leaking into the next."""
+        yield
+        setup.STRICT.strict = False
+        setup.STRICT.degraded.clear()
+
+    def test_two_runs_in_one_process_do_not_accumulate(self, gh):
+        """A degradation from an earlier call must not fail a later clean one."""
+        gh.replies[("variable", "set")] = (1, "")
+        assert setup.main(["--strict"]) == 1
+        gh.replies.clear()
+        assert setup.main(["--strict"]) == 0
+
+    def test_a_rejected_variable_write_fails_under_strict(self, gh, capsys):
+        gh.replies[("variable", "set")] = (1, "")
+        assert setup.main(["--strict"]) == 1
+        assert "strict:" in capsys.readouterr().err
+
+    def test_the_same_run_exits_zero_without_strict(self, gh, capsys):
+        gh.replies[("variable", "set")] = (1, "")
+        assert setup.main([]) == 0
+
+    def test_a_clean_run_exits_zero_under_strict(self, gh):
+        assert setup.main(["--strict"]) == 0
+
+    def test_an_informational_note_does_not_fail(self, capsys):
+        """`--local` skipping the GitHub half is a remark, not a step that failed."""
+        assert setup.main(["--check", "--local", "--strict"]) == 0
+
+    def _plan(self, tmp_path: Path, snapshot, *extra) -> subprocess.CompletedProcess[str]:
+        path = tmp_path / "live.json"
+        path.write_text(json.dumps({"data": snapshot}))
+        return subprocess.run(
+            [sys.executable, str(_MODULE_PATH), "--plan", "--triggers", str(path), *extra],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_a_suspicious_plan_refuses_under_strict(self, tmp_path: Path):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        snapshot[0]["name"] = "cowork: something-nobody-wrote"
+        result = self._plan(tmp_path, snapshot, "--strict")
+        assert result.returncode == 2
+        assert "suspicious" in result.stderr
+        assert json.loads(result.stdout)["suspicious"] is True, "the plan is still printed before refusing"
+
+    def test_the_same_plan_is_advisory_without_strict(self, tmp_path: Path):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        snapshot[0]["name"] = "cowork: something-nobody-wrote"
+        assert self._plan(tmp_path, snapshot).returncode == 0
+
+    def test_a_fleet_wide_update_refuses_under_strict(self, tmp_path: Path):
+        snapshot = _perfect_snapshot()
+        for entry in snapshot:
+            entry["mcp_connections"] = [*entry["mcp_connections"], {"name": "Gmail"}]
+        result = self._plan(tmp_path, snapshot, "--strict")
+        assert result.returncode == 2
+        assert "a human should look first" in result.stderr
+
+    def test_a_fleet_wide_change_is_allowed_when_asked_for(self, tmp_path: Path):
+        snapshot = _perfect_snapshot()
+        for entry in snapshot:
+            entry["mcp_connections"] = [*entry["mcp_connections"], {"name": "Gmail"}]
+        assert self._plan(tmp_path, snapshot, "--strict", "--allow-mass-change").returncode == 0
+
+    def test_no_create_bounds_the_cap_to_what_would_be_applied(self, tmp_path: Path):
+        """A truncated snapshot is harmless once creates are blocked — nothing is posted."""
+        result = self._plan(tmp_path, _perfect_snapshot()[:4], "--strict", "--no-create")
+        assert result.returncode == 0
+        assert "need registering and were not" in result.stderr
+        assert all(entry["body"] == {} for entry in json.loads(result.stdout)["create"])
+
+    def test_a_truncated_snapshot_refuses_under_strict(self, tmp_path: Path):
+        """The create half of the cap, and the reason it counts creates at all.
+
+        `suspicious` needs a create *and* an orphan. A snapshot that loses its
+        trailing entries — the plausible failure, since it reaches this script by
+        way of a model writing a large API response to a file — produces creates
+        with no orphans, and every surviving entry still supplies repo_url,
+        environment_id and connectors, so `needs` is empty too. Nothing else in
+        the plan would object, and a create cannot be undone: this API has no
+        delete, so the fleet would end up with two of everything that got cut.
+        """
+        snapshot = _perfect_snapshot()[:4]
+        result = self._plan(tmp_path, snapshot, "--strict")
+        assert result.returncode == 2
+        assert "create(s)" in result.stderr and "a human should look first" in result.stderr
+
+        plan = json.loads(result.stdout)
+        assert plan["suspicious"] is False, "the point: nothing else in the plan objects"
+        assert plan["needs"] == []
+        assert plan["orphans"] == []
+
+    def test_the_cap_can_be_lifted_for_a_deliberate_fleet_wide_change(self, tmp_path: Path):
+        """A first-ever deploy legitimately creates every routine — and is interactive.
+
+        It still stops, but on `needs` rather than on the cap: an empty account has
+        no live routine to lift the connector objects off, and a body carrying an
+        empty `mcp_connections` attaches every connector on the account. Two
+        independent refusals, and the flag only clears one of them.
+        """
+        result = self._plan(tmp_path, [], "--strict", "--allow-mass-change", "--environment", ENVIRONMENT)
+        assert result.returncode == 2
+        assert "connectors unresolved" in result.stderr
+        assert "a human should look first" not in result.stderr
+
+    def test_an_ordinary_one_routine_change_passes(self, tmp_path: Path):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        assert self._plan(tmp_path, snapshot, "--strict").returncode == 0
+
+    def test_a_created_name_the_snapshot_never_heard_of_is_refused(self, tmp_path: Path):
+        """The create and the re-list disagree — the one state in which posting a
+        webhook could attach it to the wrong routine, or to none."""
+        result = self._plan(tmp_path, _perfect_snapshot(), "--created", "cowork: not-a-routine")
+        assert result.returncode == 2
+        assert "does not contain" in result.stderr

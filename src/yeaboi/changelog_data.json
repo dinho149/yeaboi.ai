@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.59.0",
+      "date": "2026-08-08",
+      "summary": "Double-tapping Space now installs dictation automatically if the voice packages are missing — no need to reinstall yeaboi with the `voice` extra or restart. The in-app offer lets you Enter to install and download the Whisper model with a real progress bar, Esc to skip for this session, or `n` to never ask again. The install happens instantly in the running app, ready to record right away. A headless `--install-voice` command brings the same feature to CI containers and headless terminals with plain output that survives piping. Every surface now renders voice readiness from one shared vocabulary — `ready`, `installable`, `declined`, or `unsupported` — so the input chip, welcome tip, settings row, and setup wizard always agree about the same machine.",
+      "highlights": [
+        {
+          "text": "In-app voice installation: double-tap Space opens an offer to install and download Whisper model with progress bar",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Choose Enter to install, Esc to skip this session, or n to never ask again — sticky per-machine verdicts",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Installs directly into the running interpreter, downloads the Whisper model with real byte-percentage progress, ready to record",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "`yeaboi --install-voice` headless command for CI, containers, and terminals where full-screen UI can't run",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "One shared voice_state() vocabulary: ready/installable/declined/unsupported renders consistently across all surfaces",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.58.0",
       "date": "2026-08-08",
       "summary": "The in-app `ctrl+U` upgrade now seamlessly restarts the app onto the newly installed version, preserving CLI flags like `--dry-run` and `--theme` so you stay where you were. The upgrade screen counts down 3 seconds and relaunches automatically, or press Esc/Q to decline and stay on the current version. The restarted app skips the splash animation and shows a `✓ updated` confirmation on the version row. Honest fallbacks appear if the upgrade fails, the restart can't be resolved, or you're on a non-POSIX system.",

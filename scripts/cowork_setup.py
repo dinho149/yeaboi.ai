@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, twenty-one routines, a
+``cowork/`` is a complete specification — fifteen charters, twenty-two routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 21 web
+registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 22 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -57,6 +57,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import TextIO
 from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -111,19 +112,62 @@ TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
     # API (RemoteTrigger) for pause/resume/run — which nothing else gets: a
     # sweep that can reach the routines API is a sweep that can un-pause the
     # fleet. Write/Edit/Task are deliberately absent: the relay's own file
-    # forbids editing anything, it spawns no crew, and it is the one routine
-    # that reads attacker-influenceable channel text every hour.
+    # forbids editing anything, and it spawns no crew.
     "slack-relay": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "TodoWrite"),
+    # The two PR routines read text nobody here wrote. `gh pr view` and `gh pr
+    # diff` return a title, a body and a diff authored by whoever opened the PR —
+    # on a public repo that is anyone with a fork — and both routines then hold
+    # the Linear, Slack and Notion connectors. They were never registered before,
+    # so the grant never mattered; registering them by API is what makes it real.
+    #
+    # Neither writes anything itself: every outbound word goes through
+    # `cowork-scribe` (Task), and every repo read is a query, not an edit. So
+    # Write and Edit are removed — not because the routine would misuse them, but
+    # because a prompt injected into a fork's PR body has to have somewhere to go,
+    # and this is the cheapest place to make sure it does not.
+    "pr-opened-dod-audit": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    "pr-merged-close-loop": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    # Not fork-controlled — a release is cut by a maintainer — but it writes
+    # nothing itself either, and a routine that announces should not be able to
+    # edit what it is announcing.
+    "release-published-announce": ("Bash", "Glob", "Grep", "Read", "Task", "TodoWrite"),
+    # cd-deploy is the second and last holder of the routines API, and the only
+    # routine that writes to it unprompted. Write/Edit are absent even though it
+    # does change a file: the one file it touches is the README URL column, and
+    # that edit is made by `--urls` inside this script, which is reviewed code.
+    #
+    # This narrows the blast radius; it does not close it. The routine holds Bash,
+    # and Bash can write any file — what the missing Write/Edit buys is that every
+    # repo change it makes goes through a reviewed script or through git, where it
+    # lands in a PR a human reads, rather than through a free-hand edit mid-run.
+    # `check_grants` enforces the tool half; the rest is the PR gate on `main`.
+    "cd-deploy": ("Bash", "Glob", "Grep", "Read", "RemoteTrigger", "Task", "TodoWrite"),
 }
 
 
 def routine_tools(name: str) -> tuple[str, ...]:
-    """The tool set one routine is registered with."""
-    return TOOL_OVERRIDES.get(name, ALLOWED_TOOLS)
+    """The tool set one routine is registered with.
+
+    Never empty. The API reads an empty ``allowed_tools`` as "default" and hands
+    back the full preset — Bash, Write, WebFetch and the rest — so an override
+    narrowed all the way to ``()`` would register the *widest* routine in the
+    fleet while reading, here, as the narrowest. Refused rather than defaulted:
+    a grant nobody meant is not a grant to guess at.
+    """
+    tools = TOOL_OVERRIDES.get(name, ALLOWED_TOOLS)
+    if not tools:
+        raise ValueError(f"TOOL_OVERRIDES[{name!r}] is empty — an empty grant registers as every tool")
+    return tools
 
 
 # Where a registered routine lives, for the README's URL column.
 ROUTINE_URL = "https://claude.ai/code/routines/{id}"
+
+# The routine that deploys the fleet. Named here because it is the only routine
+# whose own drift is reported separately (`Plan.self_update`) and the only one a
+# mistake in cannot be repaired by the fleet, since it is the thing that would do
+# the repairing.
+DEPLOY_ROUTINE = "cd-deploy"
 
 # The one label teardown never deletes. It predates cowork — it is the human
 # approval gate `.github/workflows/claude.yml` watches for — so removing it with
@@ -180,6 +224,8 @@ class Routine:
     summary: str  # the routine file's **Summary** line — one human line, for the agenda
     prompt: str
     trigger_name: str
+    webhook: dict | None = None  # the parsed ```json webhook block, for what fires it
+    webhook_error: str | None = None  # why that block did not parse, for check_repo to report
 
 
 @dataclass(frozen=True)
@@ -216,14 +262,61 @@ def say(message: str) -> None:
     print(f"[cowork] {message}")
 
 
-def note(message: str, remedy: str = "") -> None:
-    print(f"[cowork] note: {message}")
+def note(message: str, remedy: str = "", stream: TextIO | None = None) -> None:
+    """A remark, with its remedy indented under it.
+
+    ``stream`` exists for `--plan`, whose stdout is a JSON document a caller
+    pipes: a note printed there turns the plan into something `json.loads`
+    refuses, and the caller sees a parse error instead of a fleet.
+    """
+    print(f"[cowork] note: {message}", file=stream)
     if remedy:
-        print(f"     {remedy}")
+        print(f"     {remedy}", file=stream)
 
 
 def fail(message: str) -> None:
     print(f"[cowork] {message}", file=sys.stderr)
+
+
+@dataclass
+class Strictness:
+    """Whether a step that did not happen is a remark or a failure.
+
+    Off by default, so `make cowork-setup` on a laptop behaves exactly as it
+    always has: a `gh` call without repo-admin scope prints its remedy, the rest
+    of the run continues, and a human reads the note. ``--strict`` is for the one
+    caller with no human reading stdout — an unattended deploy where "created no
+    labels, set no variables, exited 0" is indistinguishable from success and is
+    the only failure this pipeline can have that nobody would ever notice.
+
+    Only degradations go through here. An informational note — `--local` skipping
+    the GitHub half, a plan reporting what it needs — stays a plain ``note()``,
+    because a strict mode that fires on remarks is a strict mode nobody turns on.
+    """
+
+    strict: bool = False
+    degraded: list[str] = field(default_factory=list)
+
+    def note(self, message: str, remedy: str = "") -> None:
+        note(message, remedy)
+        self.degraded.append(message)
+
+    @property
+    def failed(self) -> bool:
+        return self.strict and bool(self.degraded)
+
+
+STRICT = Strictness()
+
+
+def strict_exit() -> int:
+    """0, unless --strict and something degraded. Called at the end of a run."""
+    if not STRICT.failed:
+        return 0
+    fail(f"strict: {len(STRICT.degraded)} step(s) degraded and were reported as notes")
+    for message in STRICT.degraded:
+        fail(f"  ✗ {message}")
+    return 1
 
 
 # --- parsing -----------------------------------------------------------------
@@ -365,6 +458,8 @@ def parse_routines(readme_text: str | None = None) -> list[Routine]:
         cron_match = _CRON_IN_TRIGGER.match(trigger)
         cron = cron_match.group(1) if cron_match else None
 
+        webhook, webhook_error = parse_webhook(body)
+
         filters_match = _FILTERS_LINE.search(body)
         summary_match = _SUMMARY_LINE.search(body)
         tier = _unwrap(tier_cell) or ""
@@ -388,9 +483,177 @@ def parse_routines(readme_text: str | None = None) -> list[Routine]:
                 summary=summary_match.group(1).strip() if summary_match else "",
                 prompt=PROMPT_TEMPLATE.format(name=name, path=path),
                 trigger_name=TRIGGER_NAME.format(name=stem),
+                webhook=webhook,
+                webhook_error=webhook_error,
             )
         )
     return routines
+
+
+# --- webhook triggers --------------------------------------------------------
+# What fires an event routine. A routine is *what* runs; a webhook trigger is
+# *when*, for everything that is not a clock. The body is an account-side contract
+# this script does not model — it is pinned by tests/fixtures/cowork_webhook_live.json,
+# captured from a real call, the same way desired_trigger is pinned by
+# cowork_trigger_live.json.
+#
+# Four things this endpoint does not do, all recorded in that fixture, and all of
+# which the code below has to work around rather than around which it can hope:
+# it does not echo the filter back, a routine `get` does not report its attached
+# webhooks, it does not dedup an identical POST, and there is no delete. So a
+# webhook posted twice fires twice, forever, and nothing can read the state or
+# undo it. That is why webhook_plan refuses to act on anything but certainty.
+
+# The event sources cowork will register. An allowlist, not a default: a webhook
+# from a source nobody reviewed is a routine fired by a stranger.
+WEBHOOK_SOURCES = ("github",)
+
+# The GitHub events a routine file may name. The API validates none of this —
+# `zzz_not_an_event` was accepted with a 200 — so a typo would register a webhook
+# that silently never fires and nothing would ever say so. This list is the only
+# thing standing between a misspelling and a routine that looks deployed and is
+# not. Widen it when a routine genuinely needs another event.
+WEBHOOK_EVENTS = ("push", "pull_request", "pull_request_review", "release", "issues", "issue_comment")
+
+# What a routine file may declare.
+WEBHOOK_FIELDS = frozenset({"source", "events", "filter"})
+
+# What only this script sets. `routine_trigger_id` is unknowable until the routine
+# exists, and the scope is the repository this checkout *is*, not one a markdown
+# block may name. A file declaring either is refused rather than overridden —
+# overriding it would leave the file stating something untrue about what it does.
+WEBHOOK_OWNED = frozenset({"routine_trigger_id", "scope_id", "scope", "hook_type", "repository", "repo"})
+
+# The only hook_type cowork uses: the GitHub App's events, not a bare URL nobody
+# authenticates.
+WEBHOOK_HOOK_TYPE = "app"
+
+# A filter a human will read in review. Larger than this is a program, and a
+# program belongs in the routine file where the model applies it with judgement.
+WEBHOOK_FILTER_LIMIT = 2000
+
+_WEBHOOK_BLOCK = re.compile(r"^```json webhook\n(.*?)^```", re.M | re.S)
+
+
+def parse_webhook(body: str) -> tuple[dict | None, str | None]:
+    """One routine file's ```json webhook block, and why it was rejected.
+
+    ``(None, None)`` when the file declares none — the ordinary case for a cron
+    routine. Never raises: ``parse_routines()`` runs at import time all over the
+    test suite, so a malformed block has to arrive as a doctor finding naming the
+    file, not as a collection error naming a line number in this script.
+    """
+    blocks = _WEBHOOK_BLOCK.findall(body)
+    if not blocks:
+        return None, None
+    if len(blocks) > 1:
+        return None, f"{len(blocks)} ```json webhook blocks — a routine fires from one event source"
+    try:
+        parsed = json.loads(blocks[0])
+    except json.JSONDecodeError as exc:
+        return None, f"the ```json webhook block is not valid JSON ({exc.msg} at line {exc.lineno})"
+    if not isinstance(parsed, dict):
+        return None, "the ```json webhook block must be an object"
+    return parsed, None
+
+
+def webhook_problems(routine: Routine) -> list[tuple[str, str]]:
+    """``(problem, remedy)`` pairs for one routine's webhook declaration.
+
+    Empty means clean. Every check here guards a failure the API will not: it
+    accepts an unknown event name, stores a filter it never reads back, and has
+    no way to undo either.
+    """
+    problems: list[tuple[str, str]] = []
+
+    if routine.webhook_error:
+        return [(f"{routine.path}: {routine.webhook_error}", "fix the block, or remove it")]
+
+    if routine.webhook is None:
+        if routine.kind == "event":
+            problems.append(
+                (
+                    f"{routine.path} declares no ```json webhook block",
+                    "an event routine with no webhook registers as a routine nothing ever fires",
+                )
+            )
+        return problems
+
+    declared = set(routine.webhook)
+    if owned := declared & WEBHOOK_OWNED:
+        problems.append(
+            (
+                f"{routine.path} declares {', '.join(sorted(owned))} in its webhook block",
+                "this script sets those from the live routine and the repo — remove them",
+            )
+        )
+    if unknown := declared - WEBHOOK_FIELDS - WEBHOOK_OWNED:
+        problems.append(
+            (
+                f"{routine.path} webhook block has unknown key(s): {', '.join(sorted(unknown))}",
+                f"a webhook block declares only: {', '.join(sorted(WEBHOOK_FIELDS))}",
+            )
+        )
+
+    source = routine.webhook.get("source")
+    if source not in WEBHOOK_SOURCES:
+        problems.append(
+            (
+                f"{routine.path} webhook source is {source!r}",
+                f"use one of: {', '.join(WEBHOOK_SOURCES)}",
+            )
+        )
+
+    events = routine.webhook.get("events")
+    if not isinstance(events, list) or not events or not all(isinstance(e, str) for e in events):
+        problems.append(
+            (
+                f"{routine.path} webhook block has no `events` list",
+                "name at least one event, as a list of strings",
+            )
+        )
+    else:
+        if unknown_events := [e for e in events if e not in WEBHOOK_EVENTS]:
+            problems.append(
+                (
+                    f"{routine.path} names unknown event(s): {', '.join(unknown_events)}",
+                    f"the API accepts any string and fires on none of them — use: {', '.join(WEBHOOK_EVENTS)}",
+                )
+            )
+        if missing := webhook_events_disagree(routine.trigger, events):
+            problems.append(
+                (
+                    f"{routine.path} webhook fires on {', '.join(missing)}, "
+                    "which its **Trigger** line does not mention",
+                    "the prose is what a human reads and the JSON is what gets POSTed — make them agree",
+                )
+            )
+
+    webhook_filter = routine.webhook.get("filter", {})
+    if not isinstance(webhook_filter, dict):
+        problems.append((f"{routine.path} webhook `filter` is not an object", "use an object, or leave it out"))
+    elif len(json.dumps(webhook_filter)) > WEBHOOK_FILTER_LIMIT:
+        problems.append(
+            (
+                f"{routine.path} webhook filter is over {WEBHOOK_FILTER_LIMIT} characters",
+                "keep the filter reviewable — put the judgement in the routine's own steps",
+            )
+        )
+
+    return problems
+
+
+def webhook_events_disagree(trigger: str, events: Sequence[str]) -> list[str]:
+    """Events whose name appears nowhere in the routine's ``**Trigger**`` line.
+
+    The same cross-check as cron-versus-README-table, for the same reason: the
+    prose is what a human reads and what the agenda prints, the JSON is what gets
+    POSTed, and two copies that can disagree is one copy that is wrong. Matched on
+    the event's words so `pull_request` is satisfied by "PR opened" only if the
+    line says so — write the event name in the line.
+    """
+    spelling = trigger.lower().replace("_", " ")
+    return [event for event in events if event.lower().replace("_", " ") not in spelling]
 
 
 def readme_cron(trigger_cell: str) -> str | None:
@@ -416,11 +679,11 @@ def restricts_both_day_fields(cron: str) -> bool:
 
 # --- the agenda: what the fleet runs on one day -------------------------------
 #
-# The schedule above is eighteen cron expressions on five cadences, and a cron
+# The schedule above is nineteen cron expressions on five cadences, and a cron
 # expression is not a thing anybody reads at six in the morning: `30 7 11,25 * *`
 # is written for a scheduler. Everything below turns the same table into "what
 # runs today, and when" — including the finished Slack lines, so
-# `cron/day-ahead.md` posts what this computed instead of interpreting eighteen
+# `cron/day-ahead.md` posts what this computed instead of interpreting nineteen
 # expressions itself. A model that reads a cron field correctly most of the time
 # is a model that tells you the wrong morning, once.
 
@@ -753,7 +1016,8 @@ def check_repo(report: Report) -> None:
             "rename the key to the routine's current stem or remove the entry",
         )
 
-    for routine in parse_routines():
+    routines = parse_routines()
+    for routine in routines:
         # A row whose file is missing was already reported above; the checks below
         # all read that file, so there is nothing left to say about it.
         if not (ROUTINES_DIR / routine.path).exists():
@@ -764,7 +1028,7 @@ def check_repo(report: Report) -> None:
                 f"{routine.path} is tiered `{routine.tier}`, which models.md does not define",
                 f"use one of: {', '.join(sorted(tiers))}",
             )
-        elif routine.kind == "cron" and not routine.model_id:
+        elif not routine.model_id:
             report.fail(
                 f"{routine.path} resolves to a tier with no model id",
                 "give it a tier from the models.md table that names an id",
@@ -828,7 +1092,59 @@ def check_repo(report: Report) -> None:
                 "make the routine file and the README table agree",
             )
 
+    check_webhooks(report, routines)
+    check_grants(report, routines)
     check_charter_coverage(report)
+
+
+def check_webhooks(report: Report, routines: Sequence[Routine]) -> None:
+    """Every routine's webhook declaration, and the one that fires the deployer."""
+    for routine in routines:
+        for problem, remedy in webhook_problems(routine):
+            report.fail(problem, remedy)
+
+    deployer = next((r for r in routines if r.name == DEPLOY_ROUTINE), None)
+    if deployer and not deployer.webhook:
+        # Removing the block leaves CD running daily and looking deployed. It is a
+        # cron routine, so the "an event routine declares none" branch above does
+        # not cover it, and nothing else would ever mention it again.
+        report.fail(
+            f"{deployer.path} declares no ```json webhook block",
+            "without it the deploy only ever runs on its cron — a merge would wait until 04:00",
+        )
+    elif deployer:
+        # The deployer applies whatever branch fired it. Pinned as a named check
+        # rather than left to the block, because the block is a file the deployer
+        # itself can come to be standing on.
+        events = deployer.webhook.get("events") or []
+        if events != ["push"]:
+            report.fail(
+                f"{deployer.path} fires on {events or 'nothing'}, not `push`",
+                "the deployer ships what merged — it fires on push and nothing else",
+            )
+
+
+def check_grants(report: Report, routines: Sequence[Routine]) -> None:
+    """No routine may hold the routines API together with a free-hand file editor.
+
+    ``RemoteTrigger`` plus ``Write``/``Edit`` is one routine that can rewrite a
+    routine file and reprogram the fleet from what it wrote, inside a single run
+    and without either half being reviewed. Neither holder needs it: the relay
+    edits nothing, and the deployer's only file write is the README URL column,
+    made by ``--urls`` inside this script.
+
+    It does not make a holder harmless — both hold ``Bash``, which can write
+    anything. What it removes is the unreviewed path: a change made through this
+    script or through git ends up in a PR, and this check is what keeps the grant
+    from quietly growing a shortcut around that.
+    """
+    for routine in routines:
+        tools = set(routine_tools(routine.name))
+        if "RemoteTrigger" in tools and (writers := tools & {"Write", "Edit"}):
+            report.fail(
+                f"{routine.path} holds RemoteTrigger and {', '.join(sorted(writers))}",
+                "a routine that can edit the repo must not also reprogram the fleet — drop one",
+            )
 
 
 # --- charter coverage --------------------------------------------------------
@@ -905,13 +1221,13 @@ def _gh(*args: str) -> subprocess.CompletedProcess[str]:
 def gh_ready() -> bool:
     """Whether `gh` is installed and authenticated, with the remedy printed if not."""
     if shutil.which("gh") is None:
-        note(
+        STRICT.note(
             "`gh` is not on PATH — skipping every GitHub check",
             "install it: brew install gh",
         )
         return False
     if _gh("auth", "status").returncode != 0:
-        note(
+        STRICT.note(
             "`gh` is not authenticated — skipping every GitHub check",
             "run: gh auth login",
         )
@@ -930,7 +1246,7 @@ def existing_labels() -> set[str] | None:
     """
     result = _gh("label", "list", "--limit", "200", "--json", "name")
     if result.returncode != 0:
-        note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
+        STRICT.note("could not list the repo's labels", result.stderr.strip() or "unknown gh error")
         return None
     return {item["name"] for item in json.loads(result.stdout or "[]")}
 
@@ -938,7 +1254,7 @@ def existing_labels() -> set[str] | None:
 def existing_variables() -> dict[str, str] | None:
     result = _gh("variable", "list", "--json", "name,value")
     if result.returncode != 0:
-        note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
+        STRICT.note("could not list the repo's variables", result.stderr.strip() or "unknown gh error")
         return None
     return {item["name"]: item.get("value", "") for item in json.loads(result.stdout or "[]")}
 
@@ -986,7 +1302,7 @@ def apply_labels() -> None:
         if result.returncode == 0:
             say(f"labels: created {label.name}")
         else:
-            note(f"labels: could not create {label.name}", result.stderr.strip() or "unknown gh error")
+            STRICT.note(f"labels: could not create {label.name}", result.stderr.strip() or "unknown gh error")
     say(f"labels: {len(present)} already present, {len(missing)} attempted")
 
 
@@ -1008,7 +1324,12 @@ def apply_variables() -> None:
         if result.returncode == 0:
             say(f"variables: set {name}")
         else:
-            note(f"variables: could not set {name}", result.stderr.strip() or "unknown gh error")
+            STRICT.note(
+                f"variables: could not set {name}",
+                result.stderr.strip()
+                or "repository variables need admin on the repo — "
+                "`gh auth refresh -h github.com -s repo` (a 403 here is the silent-green case)",
+            )
 
 
 def report_manual_remainder(routines: Sequence[Routine]) -> None:
@@ -1022,13 +1343,16 @@ def report_manual_remainder(routines: Sequence[Routine]) -> None:
     crons = [r for r in routines if r.kind == "cron"]
     print()
     say("what a shell cannot do — run /cowork deploy in a Claude session for the first two:")
-    print(f"     · register the {len(crons)} cron routines (account-scoped; RemoteTrigger, no CLI)")
+    print(f"     · register the {len(crons) + len(events)} routines (account-scoped; RemoteTrigger, no CLI)")
+    webhooks = [r for r in routines if r.webhook]
+    print(f"     · attach the {len(webhooks)} webhook triggers that fire them: {', '.join(r.name for r in webhooks)}")
     print(f"     · mirror the {len(parse_workstreams())} workstream labels onto the Linear team")
     print("     · attach the Linear, Slack and Notion connectors, and remove the rest:")
     print("       https://claude.ai/customize/connectors")
     print("     · install the Claude GitHub App on this repo, if it is not already")
     print("     · set the AUTO_VERSION_PAT secret, or Claude Review never sees workflow_run events")
-    print(f"     · register the {len(events)} event routines by hand — RemoteTrigger takes cron only:")
+    print("     · confirm what fires each event routine — the API stores a webhook filter and")
+    print("       never reads one back, so nothing but the routine's own first step verifies it:")
     for routine in events:
         print(f"       - {routine.name}: {routine.trigger}")
         if routine.filters:
@@ -1079,7 +1403,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across eighteen routines is exactly
+# split is the point: comparing seven fields across twenty-two routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -1091,7 +1415,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering eighteen routines that already exist.
+    propose registering twenty-two routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -1122,7 +1446,7 @@ def desired_trigger(
     environment_id: str,
     connectors: Sequence[dict],
 ) -> dict:
-    """The exact ``RemoteTrigger`` create body for one cron routine.
+    """The exact ``RemoteTrigger`` create body for one routine.
 
     The shape is not from memory — it is the shape a live ``RemoteTrigger list``
     returns, which is the same one ``create`` takes. If the API moves, re-derive
@@ -1132,10 +1456,17 @@ def desired_trigger(
     ``url`` are account-specific values this script cannot know, so ``/cowork``
     lifts them off an existing routine (or resolves them once) and they ride
     through unchanged.
+
+    Never pass an empty ``connectors`` or an empty tool grant. The API reads an
+    empty list as "default", and the default is *everything*: a probe registering
+    ``mcp_connections: []`` came back with every connector on the account, and one
+    registering ``allowed_tools: []`` came back holding Bash, Write and WebFetch.
+    So the emptiest body here is the most powerful routine in the fleet — see
+    ``tests/fixtures/cowork_webhook_live.json`` for the exchange, and
+    ``routine_tools`` for the guard.
     """
-    return {
+    body = {
         "name": routine.trigger_name,
-        "cron_expression": routine.cron,
         "enabled": True,
         "job_config": {
             "ccr": {
@@ -1157,6 +1488,13 @@ def desired_trigger(
         },
         "mcp_connections": [dict(connector) for connector in connectors],
     }
+    # An event routine carries no schedule — a `create_webhook_trigger` POST is
+    # what fires it. The key is left out rather than set to null: the API accepts
+    # a cron-less create and reports it back as an empty string, and an absent key
+    # is the one form a partial update cannot misread.
+    if routine.cron:
+        body["cron_expression"] = routine.cron
+    return body
 
 
 def observed_trigger(live: dict) -> dict:
@@ -1225,7 +1563,13 @@ def repo_url_of(live: Sequence[dict]) -> str | None:
 
 @dataclass(frozen=True)
 class TriggerAction:
-    """One create or update ``/cowork deploy`` should apply."""
+    """One create or update ``/cowork deploy`` should apply.
+
+    ``blocked`` carries the same meaning it does on ``WebhookAction``, so one rule
+    covers every action a plan emits: **post the body of everything whose
+    ``blocked`` is null, and nothing else.** A blocked action carries an empty
+    body, so a caller following that rule mechanically cannot post by accident.
+    """
 
     action: str  # "create" | "update"
     name: str  # routine stem
@@ -1233,6 +1577,7 @@ class TriggerAction:
     trigger_id: str | None
     fields: dict[str, tuple[object, object]]  # field -> (live, wanted); empty on create
     body: dict  # POST verbatim — the full body on create, the patch on update
+    blocked: str | None = None  # why this must not be posted; None means postable
 
     def as_dict(self) -> dict:
         return {
@@ -1241,6 +1586,38 @@ class TriggerAction:
             "trigger_name": self.trigger_name,
             "trigger_id": self.trigger_id,
             "fields": {key: {"live": live, "wanted": wanted} for key, (live, wanted) in self.fields.items()},
+            "blocked": self.blocked,
+            "body": self.body,
+        }
+
+
+@dataclass(frozen=True)
+class WebhookAction:
+    """One ``create_webhook_trigger`` POST, or the reason there is not one.
+
+    ``blocked`` is the whole safety of this type. The endpoint cannot be read
+    back, does not dedup and cannot be undone, so anything short of certainty
+    carries a reason and an **empty body** — following the caller's rule
+    mechanically ("post every body whose ``blocked`` is null") is then also the
+    safe behaviour, with nothing to post by accident.
+    """
+
+    action: str  # "create" | "ok" | "deferred" | "unknown"
+    name: str  # routine stem
+    trigger_name: str
+    trigger_id: str | None  # the routine this fires; None until it exists
+    webhook_id: str | None  # the live webhook's id, when the account reports one
+    blocked: str | None  # why this must not be posted; None means postable verbatim
+    body: dict  # POST verbatim. Empty for everything but "create".
+
+    def as_dict(self) -> dict:
+        return {
+            "action": self.action,
+            "name": self.name,
+            "trigger_name": self.trigger_name,
+            "trigger_id": self.trigger_id,
+            "webhook_id": self.webhook_id,
+            "blocked": self.blocked,
             "body": self.body,
         }
 
@@ -1255,13 +1632,61 @@ class Plan:
     disabled: list[str] = field(default_factory=list)
     orphans: list[dict] = field(default_factory=list)
     urls: dict[str, str] = field(default_factory=dict)  # routine path -> claude.ai URL
+    webhooks: list[WebhookAction] = field(default_factory=list)
     # Fields a create body needs that nothing available could supply. Only ever
     # populated when there is something to create — see `needs` below.
     needs: list[str] = field(default_factory=list)
 
     @property
+    def postable_creates(self) -> list[TriggerAction]:
+        """The creates that may actually be POSTed."""
+        return [action for action in self.create if action.blocked is None]
+
+    @property
+    def creates_blocked(self) -> list[str]:
+        """Routine stems that need registering but that this run may not register."""
+        return [action.name for action in self.create if action.blocked]
+
+    @property
+    def postable_webhooks(self) -> list[WebhookAction]:
+        """The webhook POSTs that are safe to make. Everything else is a report.
+
+        Both conditions, not either: `ok` carries no reason to be blocked and no
+        body, and a rule reading only one of the two fields would post it.
+        """
+        return [action for action in self.webhooks if action.action == "create" and action.blocked is None]
+
+    @property
+    def webhooks_blocked(self) -> list[str]:
+        """Routine stems whose webhook could not be planned. Reported, never posted."""
+        return [action.name for action in self.webhooks if action.blocked]
+
+    @property
+    def self_update(self) -> dict | None:
+        """The update this plan would apply to the deployer itself, if any.
+
+        Its own key so an unattended deploy cannot miss it while scanning
+        twenty-two entries: this is the one change that alters the thing applying
+        the change, and ``cd-deploy.md`` requires it be named in the Slack post
+        with both values rather than applied quietly.
+        """
+        for action in self.update:
+            if action.name == DEPLOY_ROUTINE:
+                return action.as_dict()
+        return None
+
+    @property
     def clean(self) -> bool:
-        return not (self.create or self.update or self.orphans)
+        return not (self.create or self.update or self.orphans or self.postable_webhooks)
+
+    @property
+    def applied_nothing(self) -> bool:
+        """Whether a run of this plan would change nothing at all.
+
+        Distinct from ``clean``: a plan holding only blocked creates has something
+        to say and nothing to do, and the difference is whether anyone is told.
+        """
+        return not (self.postable_creates or self.update or self.postable_webhooks)
 
     @property
     def suspicious(self) -> bool:
@@ -1287,15 +1712,287 @@ class Plan:
             "disabled": self.disabled,
             "orphans": self.orphans,
             "urls": self.urls,
+            "creates_blocked": self.creates_blocked,
+            "webhooks": [action.as_dict() for action in self.webhooks],
+            "webhooks_blocked": self.webhooks_blocked,
+            "self_update": self.self_update,
             "suspicious": self.suspicious,
             "needs": self.needs,
         }
+
+
+# Where a live routine might carry its attached webhook triggers. Tolerant on
+# purpose: no response observed so far reports them at all, and reading the wrong
+# key as "none attached" is exactly how a second webhook lands on a routine that
+# already fires. When the API starts reporting them, delete the guesses and keep
+# the real one.
+WEBHOOK_KEYS = ("webhook_triggers", "webhooks", "event_triggers")
+
+
+def observed_webhooks(live: dict) -> tuple[dict, ...] | None:
+    """The webhook triggers attached to a live routine, or ``None`` when it does not say.
+
+    ``None`` is not "there are none". ``RemoteTrigger`` has no list action for
+    webhook triggers and a routine ``get`` carries no webhook field at all, so an
+    absent key means "this response cannot answer the question". Only an explicit
+    empty array reads as "none attached".
+
+    That distinction is the whole idempotency design. Every duplicate this code
+    could create would come from reading silence as zero — and a duplicate is
+    permanent, because the API has no delete and the routine then fires twice for
+    every event, forever.
+    """
+    for key in WEBHOOK_KEYS:
+        found = live.get(key)
+        if isinstance(found, list):
+            return tuple(found)
+    return None
+
+
+def slug_from_url(url: str | None) -> str | None:
+    """``github.com/owner/repo`` out of a clone URL — the API's ``scope_id`` form.
+
+    Pure: nothing in this half shells out. The server normalises to this shape
+    anyway, so sending it is what keeps a re-read comparable to what was sent.
+    """
+    if not url:
+        return None
+    trimmed = url.strip().removesuffix(".git")
+    for prefix in ("https://", "http://", "ssh://git@", "git@"):
+        trimmed = trimmed.removeprefix(prefix)
+    # `github.com:owner/repo` from an SSH remote — the colon is a separator there.
+    host, sep, rest = trimmed.partition(":")
+    if sep and "/" not in host:
+        trimmed = f"{host}/{rest}"
+    parts = [part for part in trimmed.split("/") if part]
+    if len(parts) < 3 or parts[0] != "github.com":
+        return None
+    return "/".join(parts[:3])
+
+
+def desired_webhook(routine: Routine, trigger_id: str, scope_id: str) -> dict:
+    """The exact ``create_webhook_trigger`` body for one routine.
+
+    What the routine file declared rides through verbatim; the three script-owned
+    keys are set here and refused in the file. The shape is an account-side
+    contract this script does not model — it is pinned by
+    ``tests/fixtures/cowork_webhook_live.json``, captured from a real call, the
+    same way ``desired_trigger`` is pinned by ``cowork_trigger_live.json``.
+    """
+    declared = dict(routine.webhook or {})
+    return {
+        "source": declared.get("source"),
+        "hook_type": WEBHOOK_HOOK_TYPE,
+        "scope_id": scope_id,
+        "events": list(declared.get("events") or ()),
+        "filter": dict(declared.get("filter") or {}),
+        "routine_trigger_id": trigger_id,
+    }
+
+
+# How recently a routine must have been created for `--created` to be believed.
+# The flag is a caller's claim, and the dangerous mistake it could carry is naming
+# a *pre-existing* routine — which would attach a second webhook to one that
+# already fires. The snapshot carries the server's own answer in `created_at`, so
+# the claim is checked against it rather than trusted. Generous, because a deploy
+# that posts twenty-two bodies before re-listing can take a while.
+CREATED_WINDOW = timedelta(minutes=30)
+
+
+def created_recently(live: dict, now: datetime | None = None) -> bool:
+    """Whether the account says this routine was created within `CREATED_WINDOW`.
+
+    False when the timestamp is missing or unparseable: an unverifiable claim is
+    not a proof, and the cost of being wrong here is a duplicate nobody can delete.
+    """
+    stamp = live.get("created_at")
+    if not isinstance(stamp, str) or not stamp:
+        return False
+    try:
+        created = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    return (now or datetime.now(UTC)) - created <= CREATED_WINDOW
+
+
+def webhook_plan(
+    routines: Sequence[Routine],
+    live: dict[str, dict],  # trigger_name -> the raw live entry
+    observed: dict[str, dict],  # trigger_name -> observed_trigger()
+    created: frozenset[str],  # trigger_names the caller already created this run
+    scope_id: str | None,
+) -> list[WebhookAction]:
+    """One action per routine that declares a webhook. Four outcomes, one postable.
+
+    ``create``   — the routine provably holds no webhook, so the body is complete
+                   and postable verbatim.
+    ``ok``       — the account reports one already attached. Nothing to do.
+    ``deferred`` — the routine is being created in this same plan, so there is no
+                   id to fire yet. Re-plan after the creates, passing ``--created``.
+    ``unknown``  — nothing can say whether one is attached. Posting would
+                   duplicate, permanently. Reported, never acted on.
+
+    A webhook is posted on one of exactly two proofs: the account said, in so many
+    words, that none is attached; or the caller created the routine seconds ago in
+    this run and got an id back for it. A routine that did not exist a moment ago
+    trivially holds no webhook, and that is the only evidence available today.
+    """
+    actions: list[WebhookAction] = []
+
+    for routine in routines:
+        if not routine.webhook:
+            continue
+
+        # Validated here and not only in `--check`, because this is the function
+        # that produces the body. The API accepts a misspelled event with a 200,
+        # never dedups and has no delete, so a bad block posted once is a dead
+        # webhook forever — and relying on the caller having run the doctor first
+        # is relying on the one thing an unattended deploy cannot be asked about.
+        if problems := webhook_problems(routine):
+            actions.append(
+                WebhookAction(
+                    action="unknown",
+                    name=routine.name,
+                    trigger_name=routine.trigger_name,
+                    trigger_id=(observed.get(routine.trigger_name) or {}).get("id"),
+                    webhook_id=None,
+                    blocked=f"the webhook block is not valid: {problems[0][0]}",
+                    body={},
+                )
+            )
+            continue
+
+        current = observed.get(routine.trigger_name)
+        if current is None:
+            actions.append(
+                WebhookAction(
+                    action="deferred",
+                    name=routine.name,
+                    trigger_name=routine.trigger_name,
+                    trigger_id=None,
+                    webhook_id=None,
+                    blocked="the routine has no id yet — it is being created by this same plan. "
+                    "Re-plan after the creates, passing --created.",
+                    body={},
+                )
+            )
+            continue
+
+        entry = live.get(routine.trigger_name) or {}
+        attached = observed_webhooks(entry)
+        just_created = routine.trigger_name in created and created_recently(entry)
+
+        if attached:
+            actions.append(
+                WebhookAction(
+                    action="ok",
+                    name=routine.name,
+                    trigger_name=routine.trigger_name,
+                    trigger_id=current["id"],
+                    webhook_id=(attached[0].get("trigger_id") if isinstance(attached[0], dict) else None),
+                    blocked=None,
+                    body={},
+                )
+            )
+            continue
+
+        if attached is None and not just_created:
+            stale = routine.trigger_name in created
+            actions.append(
+                WebhookAction(
+                    action="unknown",
+                    name=routine.name,
+                    trigger_name=routine.trigger_name,
+                    trigger_id=current["id"],
+                    webhook_id=None,
+                    blocked=(
+                        f"--created names this routine, but the account says it was created at "
+                        f"{entry.get('created_at')!r} — not within the last "
+                        f"{int(CREATED_WINDOW.total_seconds() // 60)} minutes, so it is not a routine "
+                        "this run made and may already be wired"
+                        if stale
+                        else "the snapshot does not report attached webhook triggers, so an already-wired "
+                        "routine cannot be told from an unwired one — posting would duplicate it, and "
+                        "the API has no delete. Wire it once from an interactive session."
+                    ),
+                    body={},
+                )
+            )
+            continue
+
+        if not scope_id:
+            actions.append(
+                WebhookAction(
+                    action="unknown",
+                    name=routine.name,
+                    trigger_name=routine.trigger_name,
+                    trigger_id=current["id"],
+                    webhook_id=None,
+                    blocked="no scope_id — the repository this fires for could not be resolved",
+                    body={},
+                )
+            )
+            continue
+
+        actions.append(
+            WebhookAction(
+                action="create",
+                name=routine.name,
+                trigger_name=routine.trigger_name,
+                trigger_id=current["id"],
+                webhook_id=None,
+                blocked=None,
+                body=desired_webhook(routine, current["id"], scope_id),
+            )
+        )
+
+    return actions
 
 
 # Which drifted fields go where in an update body. `cron_expression` is top-level;
 # everything else lives under job_config, and a partial nested merge is not
 # something to guess at — so if any of them moved, the whole ccr block is resent.
 _JOB_FIELDS = ("model", "prompt", "allowed_tools", "repo_url")
+
+# How many routines a plan may touch before it stops looking like a change and
+# starts looking like a mistake. A legitimate connector or repo_url change really
+# does touch every routine at once, so this cannot be a hard ceiling — it is a
+# `--strict` stop a human overrides with --allow-mass-change and an unattended run
+# never does.
+#
+# Counts creates *and* updates, and creates are the half that matters: an update
+# rewrites a value that was going to be rewritten, while a create is permanent —
+# this API has no delete, which is why teardown only disables. `suspicious` does
+# not cover it, because it needs a create *and* an orphan: a snapshot that loses
+# its trailing entries rather than mangling a name yields creates with no orphans
+# at all, and every surviving entry still supplies repo_url, environment_id and
+# connectors, so `needs` stays empty too. That plan looks entirely healthy and
+# would register a second copy of every routine it could not see.
+MASS_CHANGE_LIMIT = 6
+
+
+def compared_fields(routine: Routine, current: dict, repo_url: str | None) -> dict[str, tuple[object, object]]:
+    """The fields one routine is diffed on, as ``{name: (live, wanted)}`` for those that differ.
+
+    Cron is compared only when either side has one. That is not a loosening: an
+    event routine that somehow grew a schedule, and a cron routine whose schedule
+    went missing, both still read as drift, and both have a test. What it stops is
+    the event routines being flagged forever over a field neither side ever sets —
+    the API stores a cron-less routine with ``cron_expression: ""`` while the repo
+    holds ``None``, and those two mean the same thing.
+    """
+    comparisons: dict[str, tuple[object, object]] = {
+        "model": (current["model"], routine.model_id),
+        "prompt": (current["prompt"], routine.prompt),
+        "allowed_tools": (current["allowed_tools"], tuple(sorted(routine_tools(routine.name)))),
+        "repo_url": (current["repo_url"], repo_url),
+        "connectors": (current["connectors"], tuple(sorted(CONNECTORS))),
+    }
+    if routine.cron or current["cron"]:
+        comparisons["cron"] = (current["cron"], routine.cron)
+    return {name: pair for name, pair in comparisons.items() if pair[0] != pair[1]}
 
 
 def trigger_plan(
@@ -1304,8 +2001,23 @@ def trigger_plan(
     repo_url: str | None = None,
     environment_id: str | None = None,
     connectors: Sequence[dict] | None = None,
+    scope_id: str | None = None,
+    created: Sequence[str] = (),
+    allow_create: bool = True,
 ) -> Plan:
     """Compare every live ``cowork:`` routine against the repo.
+
+    ``created`` names trigger_names the caller created moments ago in this same
+    deploy run and holds an id for. It is the only evidence that a routine holds
+    no webhook yet — see ``webhook_plan``.
+
+    ``allow_create=False`` reports the creates and empties their bodies. Two runs
+    of a create race each other with no lock and no undo: both list a fleet
+    missing the same routine, both POST it, and the account keeps whichever
+    duplicates it accepts — each firing on its own schedule, with no orphan to
+    make the plan suspicious. An update has neither problem, because applying it
+    twice writes the same value. So an unattended deploy takes the updates and
+    leaves the creates to a session with a human in it.
 
     Two fields are read and reported but never reconciled:
 
@@ -1323,10 +2035,17 @@ def trigger_plan(
     environment_id = environment_id or environment_of(live)
     connectors = list(connectors if connectors is not None else connectors_of(live))
 
+    scope_id = scope_id or slug_from_url(repo_url)
+
     observed = {trigger["trigger_name"]: trigger for trigger in map(observed_trigger, live)}
+    by_name = {entry.get("name", ""): entry for entry in live}
     plan = Plan()
 
-    expected = [routine for routine in routines if routine.kind == "cron"]
+    # Every routine, event ones included. They were unplannable while the routines
+    # API took a cron expression only — which is why cowork/README.md used to tell
+    # you to add three of them by hand. It now accepts a cron-less create, and
+    # `create_webhook_trigger` attaches the event that fires them.
+    expected = list(routines)
     for routine in expected:
         wanted = desired_trigger(routine, repo_url or "", environment_id or "", connectors)
         current = observed.get(routine.trigger_name)
@@ -1339,7 +2058,12 @@ def trigger_plan(
                     trigger_name=routine.trigger_name,
                     trigger_id=None,
                     fields={},
-                    body=wanted,
+                    body=wanted if allow_create else {},
+                    blocked=None
+                    if allow_create
+                    else "registering a routine is not safe to do unattended — two runs would "
+                    "each create it, the API has no delete, and both copies would then fire. "
+                    "Run /cowork deploy from a session with a human in it.",
                 )
             )
             continue
@@ -1349,18 +2073,7 @@ def trigger_plan(
         if not current["enabled"]:
             plan.disabled.append(routine.name)
 
-        drift: dict[str, tuple[object, object]] = {}
-        comparisons = {
-            "cron": (current["cron"], routine.cron),
-            "model": (current["model"], routine.model_id),
-            "prompt": (current["prompt"], routine.prompt),
-            "allowed_tools": (current["allowed_tools"], tuple(sorted(routine_tools(routine.name)))),
-            "repo_url": (current["repo_url"], repo_url),
-            "connectors": (current["connectors"], tuple(sorted(CONNECTORS))),
-        }
-        for name, (found, want) in comparisons.items():
-            if found != want:
-                drift[name] = (found, want)
+        drift = compared_fields(routine, current, repo_url)
 
         if not drift:
             plan.ok.append(routine.name)
@@ -1368,10 +2081,18 @@ def trigger_plan(
 
         patch: dict = {}
         if "cron" in drift:
-            patch["cron_expression"] = routine.cron
+            # "" and not None, for the same reason desired_trigger leaves the key
+            # out entirely: a null in a field the API validates is a guess, and ""
+            # is the value the API itself reports for a routine with no schedule.
+            patch["cron_expression"] = routine.cron or ""
         if any(name in drift for name in _JOB_FIELDS):
             patch["job_config"] = wanted["job_config"]
-        if "connectors" in drift:
+        if "connectors" in drift and connectors:
+            # Only when we hold the real connector objects. An empty list is not
+            # "no connectors" to this API — it is "the default", and the default
+            # is every connector on the account. So a patch built without them
+            # would attach mail to every routine in the fleet while reading, here,
+            # as a tightening. `needs` names it instead; the drift stays reported.
             patch["mcp_connections"] = wanted["mcp_connections"]
 
         plan.update.append(
@@ -1388,15 +2109,18 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers eighteen routines pointing at no repository — which looks like it
+    # registers twenty-two routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
-    if plan.create:
+    if plan.postable_creates:
         if not repo_url:
             plan.needs.append("repo_url")
         if not environment_id:
             plan.needs.append("environment_id")
-        if not connectors:
-            plan.needs.append("connectors")
+    # Connectors are needed by every body, not only a create: an update that
+    # carries `mcp_connections: []` attaches every connector on the account. So
+    # this one is named whenever there is anything at all to apply.
+    if (plan.postable_creates or plan.update) and not connectors:
+        plan.needs.append("connectors")
 
     wanted_names = {routine.trigger_name for routine in expected}
     prefix = TRIGGER_NAME.format(name="")
@@ -1414,6 +2138,14 @@ def trigger_plan(
                 }
             )
 
+    plan.webhooks = webhook_plan(
+        expected,
+        by_name,
+        observed,
+        created=frozenset(created),
+        scope_id=scope_id,
+    )
+
     return plan
 
 
@@ -1423,12 +2155,13 @@ def trigger_plan(
 def readme_with_urls(text: str, urls: dict[str, str]) -> str:
     """Fill the registered-routines URL column from a plan's ``urls``.
 
-    Done here, on whole rows, rather than asked of the command as eighteen edits.
+    Done here, on whole rows, rather than asked of the command as twenty-two edits.
     The first version of this asked for the edits and got none of them, which is
     how a table that claims to record what is running came to record nothing.
 
-    Rows with no URL — the three event routines, which cannot be registered — are
-    left exactly as they are.
+    A row the plan has no URL for is left exactly as it is — a routine added to
+    the table but not yet deployed, which `missing_urls` reports and the next
+    deploy fills.
     """
     lines = text.splitlines(keepends=True)
     for index, line in enumerate(lines):
@@ -1449,12 +2182,18 @@ def readme_with_urls(text: str, urls: dict[str, str]) -> str:
 
 
 def missing_urls(text: str | None = None) -> list[str]:
-    """Cron routines whose README URL cell is still blank."""
+    """Routines whose README URL cell is still blank.
+
+    Event rows count now. They were skipped while they could only be created by
+    hand in a web form, so the table had no id to record; they are registered like
+    anything else since, and a blank cell means the same thing it means for a
+    cron routine — this row is written down but not running.
+    """
     text = README.read_text(encoding="utf-8") if text is None else text
     blank = []
     for line in text.splitlines():
         match = _ROUTINE_ROW.match(line)
-        if not match or match.group(1) != "cron":
+        if not match:
             continue
         cells = line.split("|")
         if len(cells) == 7 and not cells[5].strip():
@@ -1660,7 +2399,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--labels", action="store_true", help="with --teardown, delete the GitHub labels")
     parser.add_argument("--variables", action="store_true", help="with --teardown, unset the model variables")
     parser.add_argument("--yes", action="store_true", help="with --teardown, skip the confirmation")
+    parser.add_argument(
+        "--created",
+        action="append",
+        metavar="TRIGGER_NAME",
+        default=[],
+        help="with --plan, a trigger_name this deploy just created (repeatable) — "
+        "the only evidence a routine holds no webhook yet",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="fail instead of noting when a step degrades; for unattended runs",
+    )
+    parser.add_argument(
+        "--no-create",
+        action="store_true",
+        help="with --plan, report routines that need registering instead of emitting a body for them "
+        "(for unattended runs: a create races and cannot be undone)",
+    )
+    parser.add_argument(
+        "--allow-mass-change",
+        action="store_true",
+        help="with --plan --strict, permit a plan that touches most of the fleet "
+        "(a first deploy legitimately creates every routine, and is interactive)",
+    )
     args = parser.parse_args(argv)
+    # Reset, not just set: `main()` is called more than once in a process by the
+    # test suite, and a degradation carried over from a previous call would fail a
+    # run that did nothing wrong.
+    STRICT.strict = args.strict
+    STRICT.degraded.clear()
 
     if (args.plan or args.urls) and not args.triggers:
         fail("--plan and --urls need a snapshot: --triggers <file> (see /cowork)")
@@ -1691,17 +2460,59 @@ def main(argv: Sequence[str] | None = None) -> int:
             live,
             repo_url=repo_url_of(live) or repo_url(),
             environment_id=environment_of(live) or args.environment,
+            created=args.created,
+            allow_create=not args.no_create,
         )
         print(json.dumps(plan.as_dict(), indent=2))
         if plan.needs:
             note(
                 f"plan: {len(plan.create)} create(s) are missing {', '.join(plan.needs)}",
                 "/cowork resolves these before posting — never POST a body with an empty one",
+                stream=sys.stderr,
             )
-        return 0
+        if plan.creates_blocked:
+            note(
+                f"plan: {len(plan.creates_blocked)} routine(s) need registering and were not: "
+                f"{', '.join(plan.creates_blocked)}",
+                "run /cowork deploy from an interactive session — a create races and has no undo",
+                stream=sys.stderr,
+            )
+        if plan.webhooks_blocked:
+            note(
+                f"plan: {len(plan.webhooks_blocked)} webhook(s) not planned: {', '.join(plan.webhooks_blocked)}",
+                "reported, never posted — the API cannot say whether one is already attached, "
+                "and a duplicate fires twice with no way to delete it",
+                stream=sys.stderr,
+            )
+
+        # A --created name the snapshot has never heard of means the create and
+        # the re-list disagree — which is exactly the state in which posting a
+        # webhook would attach it to the wrong routine, or to none.
+        known = {entry.get("name", "") for entry in live}
+        if unknown := [name for name in args.created if name not in known]:
+            fail(f"--created names {', '.join(unknown)}, which the snapshot does not contain")
+            fail("     re-list after the creates and pass the fresh snapshot")
+            return 2
+
+        if args.strict:
+            if plan.suspicious:
+                fail("plan: suspicious — a routine is missing and another is unrecognised; refusing")
+                return 2
+            if plan.needs:
+                fail(f"plan: {', '.join(plan.needs)} unresolved; a body carrying an empty one registers nothing useful")
+                return 2
+            touched = len(plan.postable_creates) + len(plan.update)
+            if touched > MASS_CHANGE_LIMIT and not args.allow_mass_change:
+                fail(
+                    f"plan: {len(plan.postable_creates)} create(s) + {len(plan.update)} update(s) — "
+                    f"more than {MASS_CHANGE_LIMIT}; a human should look first"
+                )
+                fail("     re-run with --allow-mass-change if this is a deliberate fleet-wide change")
+                return 2
+        return strict_exit()
 
     if args.urls:
-        return apply_urls(args.triggers)
+        return apply_urls(args.triggers) or strict_exit()
 
     if args.teardown:
         if not args.yes:
@@ -1710,7 +2521,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return apply_teardown(labels=args.labels, variables=args.variables)
 
     if args.check:
-        return run_check(local_only=args.local, triggers=args.triggers)
+        return run_check(local_only=args.local, triggers=args.triggers) or strict_exit()
 
     report = Report()
     check_repo(report)
@@ -1725,10 +2536,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         apply_labels()
         apply_variables()
     else:
-        note("nothing was applied to GitHub", "authenticate with `gh auth login`, then re-run")
+        STRICT.note("nothing was applied to GitHub", "authenticate with `gh auth login`, then re-run")
 
     report_manual_remainder(routines)
-    return 0
+    return strict_exit()
 
 
 if __name__ == "__main__":

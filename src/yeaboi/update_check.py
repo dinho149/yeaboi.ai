@@ -76,6 +76,13 @@ def detect_upgrade_command() -> str:
 
     uv tool venvs live under ``~/.local/share/uv/tools/``; pipx venvs under
     ``~/.local/pipx/venvs/``. Falls back to the documented uv install method.
+
+    One asymmetry, and it is deliberate: dictation installed from inside the app
+    goes in with ``uv pip install``, which uv's *tool receipt* does not record —
+    so a plain ``uv tool upgrade`` rebuilds the venv and silently drops it. When
+    voice is live on a uv-tool install we upgrade through
+    ``uv tool install --force`` instead, which does carry the extra across. pipx
+    needs no equivalent: ``pipx inject`` is recorded, and survives.
     """
     try:
         exe = Path(sys.executable).resolve().as_posix()
@@ -83,7 +90,19 @@ def detect_upgrade_command() -> str:
         exe = sys.executable or ""
     if "/pipx/venvs/" in exe:
         return "pipx upgrade yeaboi"
+    if "/uv/tools/" in exe and _voice_is_live():
+        return "uv tool install --force 'yeaboi[voice]'"
     return "uv tool upgrade yeaboi"
+
+
+def _voice_is_live() -> bool:
+    """Whether dictation currently works here. Never raises."""
+    try:
+        from yeaboi.voice import is_voice_available
+
+        return is_voice_available()[0]
+    except Exception:  # noqa: BLE001 - an upgrade hint must never be the thing that breaks
+        return False
 
 
 def run_upgrade(*, timeout: float = 300.0) -> tuple[bool, str]:

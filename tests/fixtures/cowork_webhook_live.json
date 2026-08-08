@@ -1,0 +1,90 @@
+{
+  "_comment": [
+    "A real `create_webhook_trigger` exchange, with the account, routine and webhook ids",
+    "replaced by synthetic ones. Nothing else is edited.",
+    "",
+    "Its job is to pin desired_webhook() against the shape the API actually takes, the same",
+    "way cowork_trigger_live.json pins observed_trigger(). The body below is not derivable",
+    "from the tool schema \u2014 it names four nouns and one key \u2014 so it was derived by probing a",
+    "throwaway routine until the server stopped rejecting it, and it is re-derived the same",
+    "way rather than edited by feel.",
+    "",
+    "Four properties of this endpoint are recorded here because nothing else in the repo",
+    "would tell you, and each one shapes the code that calls it:",
+    "",
+    "  1. The response does NOT echo `filter` back. What was stored cannot be read.",
+    "  2. A routine `get` does NOT report its attached webhooks (see `routine_get_keys`).",
+    "     So there is no way to ask the account whether a webhook is already wired.",
+    "  3. The server does NOT dedup: posting an identical body twice returns two distinct",
+    "     `trigger_id`s, and the routine then fires twice per event.",
+    "  4. `events` is NOT validated \u2014 `zzz_not_an_event` was accepted with a 200. A typo",
+    "     creates a webhook that silently never fires, which is why check_webhooks() has to",
+    "     validate the vocabulary that the server will not.",
+    "",
+    "  5. An empty list is not an empty list. Posting `allowed_tools: []` came back with the",
+    "     full default toolset (Bash, Write, WebFetch, \u2026), and `mcp_connections: []` came back",
+    "     with every connector on the account. Empty means 'default', i.e. everything \u2014 so a",
+    "     routine registered with an empty grant is the most capable routine in the fleet.",
+    "     routine_tools() must never return an empty tuple, and a test pins that.",
+    "",
+    "1 + 2 + 3, with no delete action on the API, is the whole argument for the `created`",
+    "gate in webhook_plan(): a webhook may be posted only for a routine this run just",
+    "created, because that is the only routine provably holding none."
+  ],
+  "request": {
+    "routine_trigger_id": "trig_000000000000000000000001",
+    "source": "github",
+    "hook_type": "app",
+    "scope_id": "github.com/example-owner/example-repo",
+    "events": [
+      "push"
+    ],
+    "filter": {}
+  },
+  "response": {
+    "trigger": {
+      "created_at": "2026-08-08T17:14:54.455242Z",
+      "events": [
+        "push"
+      ],
+      "extra_env": {},
+      "hook_type": "app",
+      "plugin_id": "",
+      "routine_trigger_id": "trig_000000000000000000000001",
+      "scope_id": "github.com/example-owner/example-repo",
+      "source": "github",
+      "trigger_id": "00000000-0000-4000-8000-000000000002",
+      "updated_at": "2026-08-08T17:14:54.455242Z"
+    },
+    "warnings": []
+  },
+  "rejections": {
+    "filter.ref": "filter.ref: Extra inputs are not permitted",
+    "filter.branches": "filter.branches: Extra inputs are not permitted",
+    "scope": "scope: Extra inputs are not permitted",
+    "missing hook_type": "hook_type: must be in list [app, url]",
+    "missing scope_id": "scope_id is required for hook_type=app"
+  },
+  "accepted_filter_keys": [
+    "actions"
+  ],
+  "routine_get_keys": [
+    "api_token_hint",
+    "created_at",
+    "created_via",
+    "creator",
+    "cron_expression",
+    "enabled",
+    "enabled_plugins",
+    "ended_reason",
+    "extra_marketplaces",
+    "id",
+    "job_config",
+    "mcp_connections",
+    "name",
+    "next_run_at",
+    "persist_session",
+    "suspension_reason",
+    "updated_at"
+  ]
+}

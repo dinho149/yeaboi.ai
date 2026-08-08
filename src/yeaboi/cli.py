@@ -402,6 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--install-voice",
+        action="store_true",
+        default=False,
+        help="Install the dictation packages and speech model into this environment, then exit. "
+        "The same thing double-tapping Space offers inside the app — this is the non-TUI path "
+        "for CI, dev containers and terminals the full-screen UI cannot drive.",
+    )
+
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
@@ -1199,6 +1208,85 @@ def _confirm_sudo_overwrite(dest: Path) -> bool:
         print()
         return False
     return answer in ("y", "yes")
+
+
+def _install_voice() -> int:
+    """Install dictation from the command line, printing plain progress.
+
+    Deliberately not a Rich ``Live``: this runs where the TUI cannot, so the
+    output has to survive a pipe, a CI log and a terminal with no cursor
+    control. Returns a process exit code.
+
+    There is no MCP tool for this on purpose — installing arbitrary packages
+    into the host environment on an LLM's say-so is not a capability worth
+    shipping. Both entry points are human-initiated.
+    """
+    from yeaboi import voice, voice_install
+
+    log = logging.getLogger(__name__)
+    log.info("Installing voice input from the CLI")
+
+    if voice.is_voice_available()[0]:
+        print("Dictation is already installed.")
+    else:
+        # ignore_verdict: typing this command *is* the retry. A stored failure
+        # from a month ago (a wheel that had not landed yet, a mirror that had
+        # not synced) must not be the reason the explicit escape hatch refuses.
+        plan = voice_install.install_plan(ignore_verdict=True)
+        if plan.blocked:
+            print(f"Cannot install dictation here — {plan.blocked}")
+            return 1
+        print(f"Installing dictation: {plan.display_command}")
+        echoed: list[str] = []
+        ok, message = voice_install.install_packages(lambda phrase: _echo_once(echoed, phrase))
+        if not ok:
+            print(message)
+            return 1
+        from yeaboi.config import mark_voice_extra_installed
+
+        mark_voice_extra_installed()
+        print("Packages installed.")
+        if plan.follow_up:
+            print(f"To keep dictation across upgrades: {plan.follow_up}")
+
+    from yeaboi.config import get_voice_model
+
+    size = get_voice_model()
+    if voice_install.model_is_cached(size):
+        print(f"Speech model '{size}' is already downloaded.")
+    else:
+        print(f"Downloading the '{size}' speech model to {voice_install.model_cache_dir()}…")
+        ok, message = voice_install.download_model(size, _echo_progress)
+        if not ok:
+            # A missing model is a warning, not a failure: it downloads lazily on
+            # the first dictation exactly as it always did. Fall through to the
+            # probe rather than returning — the exit code still has to report
+            # whether dictation can actually run here.
+            print(message)
+        else:
+            print("\nSpeech model downloaded.")
+
+    ready, reason = voice.probe_voice_backend(force=True)
+    print("Dictation is ready — double-tap Space in any text field." if ready else f"Not ready — {reason}")
+    return 0 if ready else 1
+
+
+def _echo_once(echoed: list[str], phrase: str) -> None:
+    """Print an installer phrase, skipping consecutive repeats.
+
+    narrate() keeps emitting the same phrase for every line of a package's
+    download, which on a terminal reads as a stutter rather than progress.
+    """
+    if phrase and (not echoed or echoed[-1] != phrase):
+        echoed.append(phrase)
+        print(f"  {phrase}")
+
+
+def _echo_progress(status: str, fraction: float | None) -> None:
+    """One-line download progress that degrades to nothing on a dumb pipe."""
+    if fraction is None:
+        return
+    print(f"\r  {int(fraction * 100):3d}%  {status}", end="", flush=True)
 
 
 def _list_audio_devices() -> None:
@@ -2257,6 +2345,17 @@ def main(argv: list[str] | None = None) -> None:
     if args.list_audio_devices:
         _list_audio_devices()
         return
+
+    # ── --install-voice: set dictation up headlessly and exit ────────────────
+    # Logging is configured first, unlike the exits above it: this is the CI and
+    # dev-container surface, where the log file is the only diagnostic and the
+    # installer's raw child output (logged at DEBUG) is the whole point of it.
+    # Without this the records go to a handler-less root logger and vanish.
+    if args.install_voice:
+        from yeaboi.logging_setup import configure_logging
+
+        configure_logging()
+        raise SystemExit(_install_voice())
 
     # ── Filesystem sandbox: session-scoped --allow-path grants ───────────────
     # Applied before any flow that might touch user-supplied paths, so every

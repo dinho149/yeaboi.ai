@@ -67,6 +67,25 @@ class TestIsNewer:
 class TestDetectUpgradeCommand:
     def test_uv_tool_install(self, monkeypatch):
         monkeypatch.setattr(update_check.sys, "executable", "/Users/x/.local/share/uv/tools/yeaboi/bin/python")
+        monkeypatch.setattr(update_check, "_voice_is_live", lambda: False)
+        assert update_check.detect_upgrade_command() == "uv tool upgrade yeaboi"
+
+    def test_uv_tool_install_carries_dictation_across_the_upgrade(self, monkeypatch):
+        """An in-app `uv pip install` is not in uv's tool receipt, so a plain
+        `uv tool upgrade` rebuilds the venv and silently drops dictation."""
+        monkeypatch.setattr(update_check.sys, "executable", "/Users/x/.local/share/uv/tools/yeaboi/bin/python")
+        monkeypatch.setattr(update_check, "_voice_is_live", lambda: True)
+        assert update_check.detect_upgrade_command() == "uv tool install --force 'yeaboi[voice]'"
+
+    def test_pipx_needs_no_such_workaround(self, monkeypatch):
+        """`pipx inject` is recorded in pipx metadata and survives a reinstall."""
+        monkeypatch.setattr(update_check.sys, "executable", "/Users/x/.local/pipx/venvs/yeaboi/bin/python")
+        monkeypatch.setattr(update_check, "_voice_is_live", lambda: True)
+        assert update_check.detect_upgrade_command() == "pipx upgrade yeaboi"
+
+    def test_a_broken_voice_probe_never_breaks_the_upgrade_hint(self, monkeypatch):
+        monkeypatch.setattr(update_check.sys, "executable", "/Users/x/.local/share/uv/tools/yeaboi/bin/python")
+        monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
         assert update_check.detect_upgrade_command() == "uv tool upgrade yeaboi"
 
     def test_pipx_install(self, monkeypatch):
@@ -75,6 +94,7 @@ class TestDetectUpgradeCommand:
 
     def test_unknown_falls_back_to_uv(self, monkeypatch):
         monkeypatch.setattr(update_check.sys, "executable", "/usr/bin/python3")
+        monkeypatch.setattr(update_check, "_voice_is_live", lambda: False)
         assert update_check.detect_upgrade_command() == "uv tool upgrade yeaboi"
 
 

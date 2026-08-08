@@ -103,6 +103,12 @@ _TOKEN_PATTERNS: tuple[str, ...] = (
     r"secret_[A-Za-z0-9]{30,}",
     r"hooks\.slack\.com/services/[\w/]+",
     r"(?i:bearer|basic)\s+[A-Za-z0-9._~+/=-]{16,}",
+    # user:password inside a URL. Lookarounds so the scheme and host survive and
+    # only the credentials go: the voice installer logs the package-index URL,
+    # and a corporate mirror routinely carries a token there
+    # (https://svc:AKCp8…@nexus.corp/simple). Also covers Jira, SMTP and webhook
+    # URLs pasted anywhere else.
+    r"(?<=://)[^/\s:@]+:[^/\s@]{4,}(?=@)",
 )
 
 # Compiled-regex cache: (env value snapshot) -> compiled alternation.

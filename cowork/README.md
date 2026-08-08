@@ -60,22 +60,59 @@ repo, connectors, and triggers in the account. Repo-committed `CLAUDE.md`, `.cla
 
 So the registered prompt is deliberately thin, and this folder is the real source of truth:
 
-> You are the `<name>` workstream for yeaboi. Read `cowork/routines/cron/<file>.md` in this repo and
+> You are the `<name>` workstream for yeaboi. Read `cowork/routines/<kind>/<file>.md` in this repo and
 > follow it exactly.
 
 Behaviour is changed by editing this folder in a PR — never by re-typing a prompt in a web form.
+
+**What fires a routine** is a second, separate thing. A routine may carry a cron expression, or a
+webhook trigger, or both. A webhook trigger is its own object (`create_webhook_trigger`), attached to
+a routine and naming a source, an event list and a filter; the three `events/` routines and
+`cron/cd-deploy.md` declare theirs in a ```json webhook block in their own file. Four properties of
+that endpoint shape everything built on it, and none of them are guesses — see
+`tests/fixtures/cowork_webhook_live.json`, captured from a real call:
+
+- it **never reads back** — no response reports the webhooks attached to a routine, and a stored
+  filter is not echoed even by the call that created it;
+- it **does not dedup** — an identical POST creates a second webhook, and the routine then fires
+  twice for every event;
+- there is **no delete**;
+- it **does not validate the event name** — `zzz_not_an_event` was accepted with a 200, so a typo
+  registers a webhook that silently never fires. `WEBHOOK_EVENTS` in `scripts/cowork_setup.py` is the
+  only thing that catches it, and `make cowork-check` is where you find out.
+
+Together those mean a webhook can only be posted at the one moment its routine provably has none:
+immediately after that routine was created. Everything else is reported as blocked and left alone,
+which is the normal steady state and not a fault.
+
+**And a merge to `main` deploys itself.** `cron/cd-deploy.md` is fired by a push webhook (with a daily
+cron as the safety net) and runs the same reconcile `/cowork deploy` does, from `origin/main`. So
+*editing* a routine is the whole workflow: merge it, and the fleet catches up within a minute.
+
+*Adding* one still needs the slash command. `cd-deploy` runs with `--no-create`, because two runs
+fired seconds apart would both see the same routine missing and both register it — there is no lock,
+there is no delete, and both copies would then fire. It reports them instead. The slash command is
+also the only place a webhook can be wired, for the same reason: the one moment a routine provably
+holds none is just after it was created.
 
 ## Adding a routine
 
 1. Write `routines/cron/<name>.md` (or `routines/events/<name>.md`) — schedule, workstream, focus,
    stop conditions. Everything shared belongs in `sweep-procedure.md`, not here.
+
+   An `events/` routine must also carry a ```json webhook``` block naming what fires it — without one
+   it registers as a routine nothing ever wakes, and `make cowork-check` fails. Its `events` must be
+   names from `WEBHOOK_EVENTS` in `scripts/cowork_setup.py`: the API accepts any string and fires on
+   none of the ones it does not know, so a typo is only ever caught here.
 2. Add or extend a charter in `workstreams/`.
 3. Give it a tier in [models.md](models.md) — sweeps inherit theirs from `sweep-procedure.md`;
    anything that does its own model-worthy work needs a row.
 4. Add the row to the table below — cron, workstream and tier. This is what gets registered; a
    routine file that is not in the table fails `make cowork-check`.
-5. Run `/cowork deploy`. It registers the new routine from that row and leaves the others alone. (By
-   hand it would be: claude.ai/code/routines, the thin prompt above, the Model dropdown set to the
+5. Merge it, then run `/cowork deploy`. Registering a *new* routine is the one step `cd-deploy` does
+   not do unattended (see above) — it will report the routine as needing you. The command registers
+   it from that row, wires its webhook if it declared one, and leaves the others alone. Editing an
+   existing routine later needs none of this: merging is enough. (By hand it would be: claude.ai/code/routines, the thin prompt above, the Model dropdown set to the
    label `models.md` gives for that tier, and every connector removed except **Linear, Slack,
    Notion** — all connectors are attached by default.)
 6. `/cowork run <name>` fires it once, so you find out whether it works now rather than on Thursday.
@@ -117,9 +154,10 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
 | `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
-| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | |
+| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01DHtR33hCFgDhoz7yA5jXUi |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
+| `cron/cd-deploy.md` | `0 4 * * *` daily + push (any branch) | — | `standard` | |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
 | `events/pr-merged-close-loop.md` | PR closed (merged) | — | `fast` | |
 | `events/release-published-announce.md` | Release published | — | `standard` | |
@@ -165,7 +203,7 @@ tier, or when someone new joins.
 
 ```bash
 make cowork-setup   # GitHub labels + model repository variables
-/cowork deploy      # in a Claude session: the cron routines + the Linear labels
+/cowork deploy      # in a Claude session: the routines, their webhooks + the Linear labels
 ```
 
 Nothing is retyped. `scripts/cowork_setup.py` derives the labels from `workstreams/`, the variables
@@ -177,21 +215,19 @@ same drift in `make test-fast`.
 `cowork:proposal`, `claude-implement`, `feedback-override`, `workstream:<name>` for each of the
 fifteen, and the seven `type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does the eighteen cron routines and mirrors the
-workstream labels onto the Linear `Yeaboi` team; both need a Claude session, since a routine is
-account-scoped and has no CLI behind it.
+file cannot read a markdown table. `/cowork deploy` does all twenty-two routines, the webhook triggers
+that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
+need a Claude session, since a routine is account-scoped and has no CLI behind it.
 
 **What neither can do**, and both report: connecting Linear/Slack/Notion at
 [claude.ai/customize/connectors](https://claude.ai/customize/connectors), installing the Claude GitHub
-App, setting the `AUTO_VERSION_PAT` secret, the three **event** routines — the routines API takes
-a cron expression only, so those are added by hand — the **`pr-feedback` status context** on the
+App, setting the `AUTO_VERSION_PAT` secret, the **`pr-feedback` status context** on the
 `main-branch` ruleset's required checks (DoD item 10; without it `.github/workflows/pr-feedback.yml`
 still computes and posts a red status, and GitHub simply lets the PR merge anyway — see
 `.claude/skills/ci-and-release/SKILL.md` for the `gh api` that verifies it) — and the **Linear GitHub
 integration** on this repo (with issue-status automation on), which is what turns a PR body's
 `Closes YEA-NN` into the attach and the Done-on-merge transition. If that integration is off, every ticket silently stalls at
-In Review, and the only thing that would notice is `pr-merged-close-loop` — one of the hand-added
-event routines above.
+In Review, and the only thing that would notice is `pr-merged-close-loop`.
 
 ## Running it afterwards
 
@@ -201,7 +237,7 @@ rest of the verbs on it:
 | | |
 |---|---|
 | `/cowork status` | what is running, against what this folder says — drift, orphans, paused routines. Read-only. |
-| `/cowork deploy` | register what is missing, update what has drifted, fill the URL column. |
+| `/cowork deploy` | register what is missing, update what has drifted, wire webhooks for what it created, fill the URL column. |
 | `/cowork run <name>` | fire one routine now, instead of waiting for its cron. Not a dry run — it files issues and posts to Slack. |
 | `/cowork pause` / `resume` | stop and restart the fleet without removing anything. |
 | `/cowork teardown` | take it down (see below). |

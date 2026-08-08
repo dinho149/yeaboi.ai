@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.machinery
 import io
 import sys
+import time
 import types
 import wave
 
@@ -829,6 +830,11 @@ class TestDoubleTapInDescriptionLoop:
         from yeaboi.ui.session.phases import _phases_intake
 
         monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        # The strict probe too, not just the cheap one: record_voice_input gates
+        # on probe_voice_backend, so on a machine without the voice extra — every
+        # CI runner — this test would otherwise fall into the install offer and
+        # its leftover "enter" would accept a real 325 MB install.
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (True, ""))
 
         class _Rec:
             def __init__(self, **kwargs):
@@ -872,16 +878,39 @@ class TestInputBoxTitle:
     def test_advertises_the_gesture_when_installed(self, monkeypatch):
         from yeaboi.ui.shared._voice_input import input_box_title
 
-        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setattr(voice, "voice_state", lambda: "ready")
         assert "Space Space" in input_box_title("Message", 60).plain
 
-    def test_says_off_when_not_installed(self, monkeypatch):
+    def test_keeps_the_gesture_when_voice_is_merely_installable(self, monkeypatch):
+        """The chip must not deny a feature that is one keystroke away: the
+        double-tap works, it just opens the install offer first."""
+        from yeaboi.ui.shared._voice_input import input_box_title, voice_chip
+
+        monkeypatch.setattr(voice, "voice_state", lambda: "installable")
+        assert "Space Space" in input_box_title("Message", 60).plain
+        assert voice_chip()[1] == "rgb(80,80,92)"  # dimmed: live, not yet set up
+
+    @pytest.mark.parametrize("state", ["declined", "unsupported"])
+    def test_says_off_only_when_dictation_really_is_off(self, monkeypatch, state):
         from yeaboi.ui.shared._voice_input import input_box_title
 
-        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "install it"))
+        monkeypatch.setattr(voice, "voice_state", lambda: state)
         title = input_box_title("Message", 60).plain
         assert "off" in title
         assert "Space Space" not in title
+
+    def test_the_two_live_states_are_the_same_width(self, monkeypatch):
+        """input_box_title and the standup box-top both measure this chip; a
+        width change between the states would move a border."""
+        from rich.cells import cell_len
+
+        from yeaboi.ui.shared._voice_input import reset_voice_chip, voice_chip
+
+        monkeypatch.setattr(voice, "voice_state", lambda: "ready")
+        ready = cell_len(voice_chip()[0])
+        reset_voice_chip()
+        monkeypatch.setattr(voice, "voice_state", lambda: "installable")
+        assert cell_len(voice_chip()[0]) == ready
 
     def test_ignores_the_tips_setting(self, monkeypatch):
         """An affordance is UI, not a tip — tips-off users must still see it."""
@@ -954,6 +983,15 @@ class TestStandupBoxChip:
 
         reason = "" if available else "not installed"
         monkeypatch.setattr("yeaboi.voice.is_voice_available", lambda: (available, reason))
+        # The module check has to agree with is_voice_available, or the fake is
+        # incoherent: "modules present but unavailable" is how a dead PortAudio
+        # presents, and unsupported_blocker() reads it as beyond help rather
+        # than as installable.
+        monkeypatch.setattr("yeaboi.voice._module_check", lambda: (available, reason))
+        # Pin the offer setting too: voice_state() reads it, and the chip must
+        # not depend on whatever the ambient config happens to say.
+        monkeypatch.setattr("yeaboi.config.is_voice_install_offer_enabled", lambda: True)
+        monkeypatch.setattr("yeaboi.voice_install.unsupported_reason", lambda: "")
         return _render(
             _build_standup_input_screen("What did you do yesterday?", "", box_rows=box_rows, width=width, height=30),
             width=width,
@@ -975,9 +1013,12 @@ class TestStandupBoxChip:
         chip_line = next(line for line in out.splitlines() if "Space Space" in line)
         assert "╭" in chip_line
 
-    def test_says_off_when_voice_is_not_installed(self, monkeypatch):
-        out = self._screen(monkeypatch, width=100, available=False)
-        assert "🎤 off" in out
+    def test_keeps_the_gesture_when_voice_is_installable(self, monkeypatch):
+        assert "Space Space" in self._screen(monkeypatch, width=100, available=False)
+
+    def test_says_off_once_dictation_is_really_unavailable(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.voice.voice_state", lambda: "unsupported")
+        assert "🎤 off" in self._screen(monkeypatch, width=100, available=False)
 
     def test_the_inlaid_border_keeps_the_box_square(self, monkeypatch):
         """The chip eats border dashes, so a mis-counted width (the emoji is two
@@ -1368,10 +1409,27 @@ class TestVoiceIndicator:
 
 
 class TestRecordVoiceInput:
+    @pytest.fixture(autouse=True)
+    def _strict_probe_follows_the_cheap_one(self, monkeypatch):
+        """Keep the two availability probes telling the same story here.
+
+        ``record_voice_input`` gates on the *strict* ``probe_voice_backend``,
+        but most tests in this class only fake ``is_voice_available``. On a
+        machine that has the voice extra the real strict probe succeeds anyway
+        and the gap is invisible; on one that does not — every CI runner — the
+        test falls straight into the install offer, records nothing, and asserts
+        against an empty list. Delegating keeps them in step no matter which one
+        a given test patches, and a test that patches the strict probe itself
+        still wins by sharing this ``monkeypatch``.
+        """
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: voice.is_voice_available())
+
     def _patch_voice(self, monkeypatch, *, available=(True, ""), transcript="hello", frames_have_audio=True):
         from yeaboi.ui.shared import _voice_input
 
         monkeypatch.setattr(voice, "is_voice_available", lambda: available)
+        # record_voice_input asks the strict probe, not the per-frame one.
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: available)
 
         class _Rec:
             def __init__(self, **kwargs):
@@ -1398,9 +1456,10 @@ class TestRecordVoiceInput:
         mod = self._patch_voice(monkeypatch, transcript="ignored")
         assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["esc"])) is None
 
-    def test_unavailable_returns_none(self, monkeypatch):
+    def test_unavailable_offers_to_install_and_returns_none_on_decline(self, monkeypatch):
         mod = self._patch_voice(monkeypatch, available=(False, "Install voice extra: uv sync --extra voice"))
-        assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["x"])) is None
+        mod.reset_voice_chip()  # also clears the session decline
+        assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["esc"])) is None
 
     def test_no_audio_returns_none(self, monkeypatch):
         mod = self._patch_voice(monkeypatch, frames_have_audio=False)
@@ -1585,3 +1644,699 @@ class TestRecordVoiceInput:
         monkeypatch.setattr(voice, "Recorder", _boom)
         _voice_input.record_voice_input(_FakeLive(), _console(), _KeySequence(["x"]))
         assert events == ["pause", "resume"]  # music restored even on mic failure
+
+
+class TestProbeVoiceBackend:
+    """The cheap probe answers "are the modules there?"; the strict one answers
+    "will recording actually work?" — which on Linux is a different question."""
+
+    def setup_method(self):
+        voice.reset_probe()
+
+    def teardown_method(self):
+        voice.reset_probe()
+
+    def test_a_present_but_unusable_portaudio_is_caught(self, monkeypatch, _inject):
+        sd = _inject(faster_whisper_captured={})
+
+        def boom():
+            raise OSError("PortAudio library not found")
+
+        monkeypatch.setattr(sd, "query_devices", boom)
+        assert voice.probe_voice_backend()[0] is False
+
+    def test_the_cheap_probe_stays_cheap_and_never_opens_portaudio(self, monkeypatch, _inject):
+        sd = _inject(faster_whisper_captured={})
+        calls = []
+        monkeypatch.setattr(sd, "query_devices", lambda *a, **k: calls.append(1) or [])
+        assert voice.is_voice_available() == (True, "")
+        assert calls == []
+
+    def test_the_cheap_probe_reports_a_strict_failure_once_it_is_known(self, monkeypatch, _inject):
+        sd = _inject(faster_whisper_captured={})
+        monkeypatch.setattr(sd, "query_devices", lambda *a, **k: (_ for _ in ()).throw(OSError("no lib")))
+        assert voice.is_voice_available()[0] is True  # modules are on the path
+        voice.probe_voice_backend()
+        assert voice.is_voice_available()[0] is False  # ...but the backend is dead
+
+    def test_the_strict_probe_runs_once_per_process(self, monkeypatch, _inject):
+        sd = _inject(faster_whisper_captured={})
+        calls = []
+        monkeypatch.setattr(sd, "query_devices", lambda *a, **k: calls.append(1) or [])
+        voice.probe_voice_backend()
+        voice.probe_voice_backend()
+        assert len(calls) == 1
+        voice.probe_voice_backend(force=True)
+        assert len(calls) == 2
+
+    def test_reset_probe_clears_the_cache(self, monkeypatch, _inject):
+        sd = _inject(faster_whisper_captured={})
+        calls = []
+        monkeypatch.setattr(sd, "query_devices", lambda *a, **k: calls.append(1) or [])
+        voice.probe_voice_backend()
+        voice.reset_probe()
+        voice.probe_voice_backend()
+        assert len(calls) == 2
+
+    def test_missing_modules_short_circuit_before_any_import(self, _inject):
+        _inject(sounddevice=False)
+        assert voice.probe_voice_backend()[0] is False
+
+    def test_render_paths_never_call_the_strict_probe(self, monkeypatch):
+        """A regression guard: this probe costs ~100 ms and opens PortAudio, and
+        the chip and tips are rebuilt on every frame."""
+        from yeaboi.ui.shared import _tips, _voice_input
+
+        def forbidden(**_kw):
+            raise AssertionError("probe_voice_backend must never run on a render path")
+
+        monkeypatch.setattr(voice, "probe_voice_backend", forbidden)
+        _voice_input.reset_voice_chip()
+        _tips.get_tips.cache_clear()
+        _voice_input.voice_chip()
+        _tips.get_tips()
+        _tips.get_tips.cache_clear()
+
+
+class TestVoiceState:
+    def _state(self, monkeypatch, *, available, unsupported="", offer=True):
+        from yeaboi import voice_install
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (available, ""))
+        monkeypatch.setattr(voice_install, "unsupported_reason", lambda: unsupported)
+        monkeypatch.setattr("yeaboi.config.is_voice_install_offer_enabled", lambda: offer)
+        return voice.voice_state()
+
+    def test_ready(self, monkeypatch):
+        assert self._state(monkeypatch, available=True) == "ready"
+
+    def test_installable(self, monkeypatch):
+        assert self._state(monkeypatch, available=False) == "installable"
+
+    def test_declined(self, monkeypatch):
+        assert self._state(monkeypatch, available=False, offer=False) == "declined"
+
+    def test_unsupported_beats_declined(self, monkeypatch):
+        assert self._state(monkeypatch, available=False, unsupported="musl libc", offer=False) == "unsupported"
+
+    def test_an_installed_machine_is_ready_even_if_the_offer_is_off(self, monkeypatch):
+        assert self._state(monkeypatch, available=True, offer=False) == "ready"
+
+
+class TestInstallStatusLine:
+    """Render tests for the setup frames. No new _build_*_screen is introduced —
+    these lines travel through the callers' existing status row, so what has to
+    be proven is that they survive _fit at every width the app supports."""
+
+    from yeaboi.ui.shared import _voice_input as _mod
+
+    STAGES = (
+        ("install", {"detail": "downloading ctranslate2 (37 MB)", "elapsed": 7.0}),
+        ("download", {"fraction": 0.52, "size": "76/145 MB"}),
+        ("download", {"fraction": None}),
+        ("load", {}),
+        ("ready", {}),
+    )
+
+    def test_every_stage_returns_a_colour_and_a_line(self):
+        from yeaboi.ui.shared._voice_input import install_status_line
+
+        for stage, kwargs in self.STAGES:
+            border, line = install_status_line(stage, tick=1.0, width=100, **kwargs)
+            assert border.startswith("rgb("), stage
+            assert line.strip(), stage
+
+    @pytest.mark.parametrize("width", [100, 68, 40, 28, 20])
+    def test_lines_fit_the_width_they_are_given(self, width):
+        from rich.cells import cell_len
+
+        from yeaboi.ui.shared._voice_input import install_offer_line, install_status_line
+
+        assert cell_len(install_offer_line(size_mb=325, width=width)) <= width
+        for stage, kwargs in self.STAGES:
+            _border, line = install_status_line(stage, tick=1.0, width=width, **kwargs)
+            assert cell_len(line) <= width, (stage, width, line)
+
+    @pytest.mark.parametrize("width", [100, 68, 40, 28, 20])
+    def test_the_offer_never_loses_its_two_answers(self, width):
+        """Whatever else drops, the accept key and the way out survive."""
+        from yeaboi.ui.shared._voice_input import install_offer_line
+
+        line = install_offer_line(size_mb=325, width=width)
+        assert "Enter" in line and "Esc" in line
+
+    @pytest.mark.parametrize("width", [100, 68, 40])
+    def test_cancellable_stages_keep_saying_so(self, width):
+        from yeaboi.ui.shared._voice_input import install_status_line
+
+        for stage, kwargs in self.STAGES:
+            if stage == "ready":
+                continue
+            _border, line = install_status_line(stage, tick=1.0, width=width, can_cancel=True, **kwargs)
+            assert "Esc" in line, (stage, width)
+
+    def test_a_blocking_key_reader_never_promises_an_esc(self):
+        """Advertising a key that physically cannot fire is worse than silence."""
+        from yeaboi.ui.shared._voice_input import install_status_line
+
+        for stage, kwargs in self.STAGES:
+            _border, line = install_status_line(stage, tick=1.0, width=200, can_cancel=False, **kwargs)
+            assert "Esc" not in line, stage
+
+    def test_the_offer_size_is_computed_not_hardcoded(self):
+        from yeaboi.ui.shared._voice_input import install_offer_line
+
+        assert "~3280 MB" in install_offer_line(size_mb=3280, width=200)
+
+    def test_the_reinstall_wording_explains_the_regression(self):
+        from yeaboi.ui.shared._voice_input import install_offer_line
+
+        assert "upgrade removed" in install_offer_line(size_mb=180, reinstall=True, width=200)
+
+    @pytest.mark.parametrize(
+        ("fraction", "expected"),
+        [(0.0, "▱" * 10), (0.52, "▰" * 5 + "▱" * 5), (1.0, "▰" * 10), (-1.0, "▱" * 10), (2.0, "▰" * 10)],
+    )
+    def test_bar_clamps(self, fraction, expected):
+        from yeaboi.ui.shared._voice_input import _bar
+
+        assert _bar(fraction) == expected
+
+    def test_the_popup_fallback_does_not_wrap_at_eighty_columns(self):
+        """_center's vertical centring assumes a five-row popup; a wrapped line
+        breaks it."""
+        from yeaboi.ui.shared._voice_input import _REC_BORDER, _center, install_offer_line
+
+        console = Console(file=io.StringIO(), width=80)
+        line = install_offer_line(size_mb=325, width=_status_width_for(console))
+        rendered = _render(_center(console, line, _REC_BORDER), width=80)
+        body = [row for row in rendered.splitlines() if "Set up dictation" in row]
+        assert len(body) == 1  # one row, not a wrapped two
+        assert "n never" in body[0]  # ...and not truncated either
+
+
+def _status_width_for(console):
+    from yeaboi.ui.shared._voice_input import _status_width
+
+    return _status_width(console)
+
+
+class TestVoiceInstallOffer:
+    """The double-tap-Space path when the packages are missing."""
+
+    def _setup(self, monkeypatch, *, state="installable", plan_blocked="", install=(True, ""), model=(True, "")):
+        from yeaboi import voice_install
+        from yeaboi.ui.shared import _voice_input
+
+        _voice_input.reset_voice_chip()  # clears the session decline too
+        monkeypatch.setattr(voice, "voice_state", lambda: state)
+        monkeypatch.setattr(voice_install, "unsupported_reason", lambda: "musl libc" if state == "unsupported" else "")
+        monkeypatch.setattr(voice_install, "size_estimate_mb", lambda: 325)
+        monkeypatch.setattr(
+            voice_install,
+            "install_plan",
+            lambda: voice_install.InstallPlan("pip", ("x",), "pip install x", True, plan_blocked, ""),
+        )
+        monkeypatch.setattr(voice_install, "install_packages", lambda *a, **k: install)
+        monkeypatch.setattr(voice_install, "download_model", lambda *a, **k: model)
+        monkeypatch.setattr(voice_install, "warm_model", lambda _s: (True, ""))
+        monkeypatch.setattr("yeaboi.config.mark_voice_extra_installed", lambda: None)
+        monkeypatch.setattr("yeaboi.config.voice_extra_was_installed", lambda: False)
+        return _voice_input
+
+    def _run(self, mod, keys, *, available_after=True, transcript="hello"):
+        """Drive record_voice_input from unavailable through the offer."""
+        states = iter([(False, "Install voice extra: pip install x")])
+
+        def _probe(**_kw):
+            return next(states, (available_after, "" if available_after else "still missing"))
+
+        return _probe, mod.record_voice_input(_FakeLive(), _console(), _KeySequence(keys))
+
+    def test_the_offer_is_shown_when_installable(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        seen: list[str] = []
+        mod.record_voice_input(
+            _FakeLive(),
+            Console(file=io.StringIO(), width=140),
+            _KeySequence(["esc"]),
+            render_status=lambda _b, line: seen.append(line) or "frame",
+        )
+        assert any("Set up dictation" in line and "Enter installs" in line for line in seen)
+
+    def test_enter_installs_and_falls_through_to_recording(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        probes = iter([(False, "nope")])
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: next(probes, (True, "")))
+
+        class _Rec:
+            device_name = "Fake Mic"
+
+            def __init__(self, **_kw):
+                pass
+
+            def level(self):
+                return 0.4
+
+            def stop(self):
+                return b"AUDIO"
+
+        monkeypatch.setattr(voice, "Recorder", _Rec)
+        monkeypatch.setattr(voice, "transcribe", lambda _wav: "spoken words")
+        seen: list[str] = []
+        result = mod.record_voice_input(
+            _FakeLive(),
+            Console(file=io.StringIO(), width=140),
+            _KeySequence(["enter", "", "enter"]),
+            render_status=lambda _b, line: seen.append(line) or "frame",
+        )
+        assert result == "spoken words"
+        assert any("Dictation is ready" in line for line in seen)
+        assert any("REC" in line for line in seen)
+
+    def test_esc_declines_for_this_session_only(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        written: list[tuple] = []
+        monkeypatch.setattr("yeaboi.config.set_config_value", lambda k, v: written.append((k, v)))
+
+        first: list[str] = []
+        mod.record_voice_input(
+            _FakeLive(), _console(), _KeySequence(["esc"]), render_status=lambda _b, li: first.append(li) or "f"
+        )
+        second: list[str] = []
+        mod.record_voice_input(
+            _FakeLive(), _console(), _KeySequence(["x"]), render_status=lambda _b, li: second.append(li) or "f"
+        )
+        assert any("Set up dictation" in line for line in first)
+        assert not any("Set up dictation" in line for line in second)
+        assert written == []  # a session decline is never persisted
+
+    def test_n_declines_permanently(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        recorded: list[bool] = []
+        monkeypatch.setattr("yeaboi.config.set_voice_install_offer", lambda enabled: recorded.append(enabled))
+        assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["n"])) is None
+        assert recorded == [False]
+
+    def test_space_tab_and_clicks_do_not_authorise_an_install(self, monkeypatch):
+        """Key repeat on the double-tap must not agree to a 300 MB download."""
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        from yeaboi import voice_install
+
+        started: list[int] = []
+        monkeypatch.setattr(voice_install, "install_packages", lambda *a, **k: started.append(1) or (True, ""))
+        assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence([" ", "tab", "click:4:9", "esc"])) is None
+        assert started == []
+
+    def test_an_unknown_key_keeps_the_offer_up(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        from yeaboi import voice_install
+
+        started: list[int] = []
+        monkeypatch.setattr(voice_install, "install_packages", lambda *a, **k: started.append(1) or (True, ""))
+        seen: list[str] = []
+        mod.record_voice_input(
+            _FakeLive(),
+            Console(file=io.StringIO(), width=140),
+            _KeySequence(["q", "enter"]),
+            render_status=lambda _b, li: seen.append(li) or "f",
+        )
+        assert started == [1]  # the typo did not dismiss the offer
+
+    def test_install_failure_shows_the_manual_command(self, monkeypatch):
+        mod = self._setup(monkeypatch, install=(False, "Install failed — run pip install x yourself"))
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["enter", "x"])) is None
+        assert any("pip install x" in _render(frame) for frame in live.frames)
+
+    def test_an_unsupported_platform_is_never_offered_an_install(self, monkeypatch):
+        mod = self._setup(monkeypatch, state="unsupported")
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["x"])) is None
+        rendered = " ".join(_render(frame) for frame in live.frames)
+        assert "musl libc" in rendered
+        assert "Set up dictation" not in rendered
+
+    def test_a_blocked_plan_says_why_instead_of_offering(self, monkeypatch):
+        mod = self._setup(monkeypatch, plan_blocked="`uv` is not on PATH")
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["x"])) is None
+        assert "not on PATH" in " ".join(_render(frame) for frame in live.frames)
+
+    def test_a_permanent_decline_still_shows_the_manual_command(self, monkeypatch):
+        mod = self._setup(monkeypatch, state="declined")
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "run: pip install yeaboi[voice]"))
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["x"])) is None
+        assert "pip install" in " ".join(_render(frame) for frame in live.frames)
+
+    def test_a_failed_model_download_still_leaves_dictation_working(self, monkeypatch):
+        """The packages are in; the model just downloads lazily as it always did."""
+        mod = self._setup(monkeypatch, model=(False, "Can't reach huggingface.co"))
+        probes = iter([(False, "nope")])
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: next(probes, (True, "")))
+
+        class _Rec:
+            device_name = "Fake Mic"
+
+            def __init__(self, **_kw):
+                pass
+
+            def level(self):
+                return 0.4
+
+            def stop(self):
+                return b"AUDIO"
+
+        monkeypatch.setattr(voice, "Recorder", _Rec)
+        monkeypatch.setattr(voice, "transcribe", lambda _wav: "still works")
+        assert mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["enter", "", "enter"])) == "still works"
+
+    def test_installed_but_still_invisible_asks_for_a_restart(self, monkeypatch):
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "Audio backend unavailable"))
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["enter", "x"])) is None
+        assert "Audio backend unavailable" in " ".join(_render(frame) for frame in live.frames)
+
+    def test_setting_up_dictation_never_touches_the_music(self, monkeypatch):
+        """No microphone is open yet, and suspending someone's focus music for a
+        multi-minute wait is backwards."""
+        from yeaboi import music
+
+        events: list[str] = []
+        monkeypatch.setattr(music, "pause_for_voice", lambda: events.append("pause"))
+        monkeypatch.setattr(music, "resume_after_voice", lambda: events.append("resume"))
+        mod = self._setup(monkeypatch, install=(False, "nope"))
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        for keys in (["esc"], ["n"], ["enter", "x"]):
+            mod.reset_voice_chip()
+            mod.record_voice_input(_FakeLive(), _console(), _KeySequence(keys))
+        assert events == []
+
+    def test_the_frame_loop_is_throttled_even_by_a_non_blocking_reader(self, monkeypatch):
+        """A reader that returns early must not spin the loop flat out for the
+        whole install — measured at 2.1M frames in 44s before the floor."""
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        from yeaboi import voice_install
+
+        def _slow_install(_on_line, _cancel=None, **_kw):
+            time.sleep(0.35)
+            return True, ""
+
+        monkeypatch.setattr(voice_install, "install_packages", _slow_install)
+        painted: list[str] = []
+
+        class _EagerKey:
+            """Accepts a timeout and ignores it — the failure mode being guarded.
+
+            Answers the offer at once, then returns "no key" instantly forever,
+            which is what the install loop has to survive.
+            """
+
+            def __init__(self):
+                self._first = True
+
+            def __call__(self, timeout=None):
+                if self._first:
+                    self._first = False
+                    return "enter"
+                return ""
+
+        mod.record_voice_input(
+            _FakeLive(),
+            _console(),
+            _EagerKey(),
+            render_status=lambda _b, line: painted.append(line) or "f",
+        )
+        # ~0.35s at 30fps is a handful of frames, not thousands.
+        assert len(painted) < 100, len(painted)
+
+    def test_the_offer_stays_above_the_music_pause(self):
+        """The music invariant is structural: every early return from the offer
+        sits above pause_for_voice, so there is nothing to resume."""
+        from pathlib import Path
+
+        source = Path(mod_source()).read_text(encoding="utf-8")
+        assert source.index("_offer_install(live, console") < source.index("music.pause_for_voice()")
+
+    def test_the_poker_duel_never_reaches_the_installer(self):
+        """It runs headless on a server thread, with no screen to offer on."""
+        from pathlib import Path
+
+        import yeaboi.poker.server as poker_server
+
+        assert "voice_install" not in Path(poker_server.__file__).read_text(encoding="utf-8")
+
+
+def mod_source() -> str:
+    from yeaboi.ui.shared import _voice_input
+
+    return _voice_input.__file__
+
+
+class TestInstallVoiceCommand:
+    """`yeaboi --install-voice` — the headless twin of the in-app offer.
+
+    This is the surface CI, dev containers and dumb terminals get, so its exit
+    code is the whole contract: 0 means dictation actually runs here.
+    """
+
+    @pytest.fixture
+    def _plan(self):
+        from yeaboi import voice_install
+
+        return voice_install.InstallPlan(
+            method="pip",
+            argv=("python", "-m", "pip", "install", "sounddevice"),
+            display_command="python -m pip install sounddevice",
+            durable=True,
+            blocked="",
+            follow_up="",
+        )
+
+    def test_reports_and_exits_1_when_the_platform_is_blocked(self, monkeypatch, capsys):
+        from yeaboi import cli, voice_install
+
+        blocked = voice_install.InstallPlan("blocked", (), "", False, "musl libc", "")
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice_install, "install_plan", lambda **_kw: blocked)
+        assert cli._install_voice() == 1
+        assert "musl libc" in capsys.readouterr().out
+
+    def test_ignores_a_stored_verdict(self, monkeypatch):
+        """Typing the command *is* the retry. A month-old cached failure — a
+        wheel that had not landed, a mirror that had not synced — must not be
+        the reason the explicit escape hatch refuses."""
+        from yeaboi import cli, voice_install
+
+        seen: dict = {}
+
+        def _plan_spy(**kwargs):
+            seen.update(kwargs)
+            return voice_install.InstallPlan("blocked", (), "", False, "nope", "")
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice_install, "install_plan", _plan_spy)
+        cli._install_voice()
+        assert seen == {"ignore_verdict": True}
+
+    def test_exits_1_when_the_install_fails(self, monkeypatch, capsys, _plan):
+        from yeaboi import cli, voice_install
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice_install, "install_plan", lambda **_kw: _plan)
+        monkeypatch.setattr(voice_install, "install_packages", lambda *_a, **_k: (False, "no wheel"))
+        assert cli._install_voice() == 1
+        assert "no wheel" in capsys.readouterr().out
+
+    def test_happy_path_exits_0(self, monkeypatch, capsys, _plan):
+        from yeaboi import cli, voice_install
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice_install, "install_plan", lambda **_kw: _plan)
+        monkeypatch.setattr(voice_install, "install_packages", lambda *_a, **_k: (True, ""))
+        monkeypatch.setattr("yeaboi.config.mark_voice_extra_installed", lambda: None)
+        monkeypatch.setattr(voice_install, "model_is_cached", lambda _s: False)
+        monkeypatch.setattr(voice_install, "download_model", lambda *_a, **_k: (True, ""))
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_k: (True, ""))
+        assert cli._install_voice() == 0
+        out = capsys.readouterr().out
+        assert "Packages installed." in out
+        assert "ready" in out
+
+    def test_a_failed_model_download_still_probes(self, monkeypatch, capsys, _plan):
+        """A missing model is a warning — it downloads lazily on first use. But
+        returning 0 without probing would report success on a host where the
+        packages landed and PortAudio is missing."""
+        from yeaboi import cli, voice_install
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice_install, "install_plan", lambda **_kw: _plan)
+        monkeypatch.setattr(voice_install, "install_packages", lambda *_a, **_k: (True, ""))
+        monkeypatch.setattr("yeaboi.config.mark_voice_extra_installed", lambda: None)
+        monkeypatch.setattr(voice_install, "model_is_cached", lambda _s: False)
+        monkeypatch.setattr(voice_install, "download_model", lambda *_a, **_k: (False, "offline"))
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_k: (False, "Audio backend unavailable"))
+        assert cli._install_voice() == 1
+        out = capsys.readouterr().out
+        assert "offline" in out
+        assert "Audio backend unavailable" in out
+
+    def test_skips_the_install_when_already_present(self, monkeypatch, capsys):
+        from yeaboi import cli, voice_install
+
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        monkeypatch.setattr(voice_install, "install_plan", _fail_if_called)
+        monkeypatch.setattr(voice_install, "model_is_cached", lambda _s: True)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_k: (True, ""))
+        assert cli._install_voice() == 0
+        assert "already installed" in capsys.readouterr().out
+
+
+def _fail_if_called(*_args, **_kwargs):
+    raise AssertionError("install_plan must not be consulted when voice is already available")
+
+
+class TestInstallVoiceEcho:
+    """The two plain-print helpers. No Rich here by design: the output has to
+    survive a pipe, a CI log and a terminal with no cursor control."""
+
+    def test_echo_once_drops_consecutive_repeats(self, capsys):
+        from yeaboi import cli
+
+        echoed: list[str] = []
+        for phrase in ("Resolving", "Resolving", "Downloading", "Downloading", "Resolving"):
+            cli._echo_once(echoed, phrase)
+        assert capsys.readouterr().out.count("Resolving") == 2  # repeat collapsed, later recurrence kept
+        assert echoed == ["Resolving", "Downloading", "Resolving"]
+
+    def test_echo_once_ignores_the_empty_phrase(self, capsys):
+        from yeaboi import cli
+
+        echoed: list[str] = []
+        cli._echo_once(echoed, "")
+        assert capsys.readouterr().out == ""
+        assert echoed == []
+
+    def test_echo_progress_prints_a_percentage(self, capsys):
+        from yeaboi import cli
+
+        cli._echo_progress("120 MB / 145 MB", 0.83)
+        assert "83%" in capsys.readouterr().out
+
+    def test_echo_progress_stays_silent_without_a_fraction(self, capsys):
+        """An unknown total is common early in a download; a bar with no number
+        in it is worse than no line at all on a non-cursor terminal."""
+        from yeaboi import cli
+
+        cli._echo_progress("starting", None)
+        assert capsys.readouterr().out == ""
+
+
+class TestUnsupportedBlocker:
+    """ "Installable" must mean an install would actually help.
+
+    ``sounddevice`` is a pure-Python wheel that imports happily without the
+    system PortAudio library, so on a Linux host missing ``libportaudio2`` the
+    modules are present and an install exits 0 having changed nothing. Offering
+    one would walk the user through ~325 MB and two minutes to arrive back
+    exactly where they started — on the very platform the strict probe exists
+    for.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_stored_verdict(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.voice_install.unsupported_reason", lambda: "")
+
+    def test_missing_modules_stay_installable(self, monkeypatch):
+        monkeypatch.setattr(voice, "_module_check", lambda: (False, "not installed"))
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (False, "not installed"))
+        monkeypatch.setattr("yeaboi.config.is_voice_install_offer_enabled", lambda: True)
+        assert voice.unsupported_blocker() == ""
+        assert voice.voice_state() == "installable"
+
+    def test_a_dead_backend_is_unsupported_not_installable(self, monkeypatch):
+        monkeypatch.setattr(voice, "_module_check", lambda: (True, ""))
+        monkeypatch.setattr(
+            voice,
+            "is_voice_available",
+            lambda: (False, "Audio backend unavailable — sudo apt install libportaudio2"),
+        )
+        monkeypatch.setattr("yeaboi.config.is_voice_install_offer_enabled", lambda: True)
+        assert "libportaudio2" in voice.unsupported_blocker()
+        assert voice.voice_state() == "unsupported"
+
+    def test_a_stored_verdict_wins(self, monkeypatch):
+        monkeypatch.setattr("yeaboi.voice_install.unsupported_reason", lambda: "musl libc")
+        monkeypatch.setattr(voice, "_module_check", lambda: (False, "not installed"))
+        assert voice.unsupported_blocker() == "musl libc"
+
+    def test_a_working_setup_has_no_blocker(self, monkeypatch):
+        monkeypatch.setattr(voice, "_module_check", lambda: (True, ""))
+        monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        assert voice.unsupported_blocker() == ""
+        assert voice.voice_state() == "ready"
+
+
+class TestVoiceInstallModelStage:
+    """What happens after the packages land — the half that runs in-process.
+
+    Reuses the offer harness without inheriting its tests.
+    """
+
+    _setup = TestVoiceInstallOffer._setup
+
+    def test_a_failed_download_never_warms_the_model(self, monkeypatch):
+        """warm_model loads in-process, and WhisperModel downloads the weights
+        itself when they are missing — with no progress, no byte count and no
+        cancel. It would also defeat the reason the fetch runs in a child at
+        all: on an AVX-less host that child dies of SIGILL, and importing
+        ctranslate2 here would take the TUI down with the same instruction."""
+        from yeaboi import voice_install
+
+        mod = self._setup(monkeypatch, model=(False, "offline"))
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        monkeypatch.setattr(
+            voice_install,
+            "warm_model",
+            lambda _s: pytest.fail("warm_model would download the weights in-process"),
+        )
+        mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["enter", "x"]))
+
+    def test_a_successful_download_does_warm_the_model(self, monkeypatch):
+        """The whole point of the extra stage: first dictation is instant."""
+        from yeaboi import voice_install
+
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+        warmed: list[str] = []
+        monkeypatch.setattr(voice_install, "warm_model", lambda s: warmed.append(s) or (True, ""))
+        mod.record_voice_input(_FakeLive(), _console(), _KeySequence(["enter", "x"]))
+        assert len(warmed) == 1
+
+    def test_an_unexpected_worker_error_is_caught_and_named(self, monkeypatch):
+        """duck_working_thread does not catch, so without a guard the traceback
+        prints straight through the Rich Live and the outcome stays at its
+        default — "see the log", with nothing in the log."""
+        from yeaboi import voice_install
+
+        mod = self._setup(monkeypatch)
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (False, "nope"))
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(voice_install, "install_packages", _boom)
+        live = _FakeLive()
+        assert mod.record_voice_input(live, _console(), _KeySequence(["enter", "x"])) is None
+        assert any("unexpected error" in _render(frame) for frame in live.frames)
