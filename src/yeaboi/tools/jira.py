@@ -25,6 +25,7 @@ from jira import JIRA, JIRAError
 from langchain_core.tools import tool
 
 from yeaboi.config import get_jira_base_url, get_jira_email, get_jira_project_key, get_jira_token
+from yeaboi.redaction import log_safe
 from yeaboi.ticket_text import jira_wiki_to_text, ticket_text
 
 logger = logging.getLogger(__name__)
@@ -1571,11 +1572,11 @@ def jira_update_issue_fields(
     """
     global _story_points_field_cache
     logger.info(
-        "jira_update_issue_fields: key=%r summary=%s description=%s points=%r",
-        key,
+        "jira_update_issue_fields: key=%s summary=%s description=%s points=%s",
+        log_safe(repr(key)),
         summary is not None,
         description is not None,
-        story_points,
+        log_safe(repr(story_points)),
     )
     jira = _make_jira_client()
     if jira is None:

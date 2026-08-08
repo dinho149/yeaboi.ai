@@ -55,7 +55,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv python install 3.11
       - run: uv sync --extra dev
 
@@ -121,7 +121,7 @@ jobs:
 
       - name: File / update flaky-test issues with Claude
         if: steps.detect.outputs.found == 'true'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@6b082c41935b4c8a3b8b0ef85ba4ba4d9eeb8975 # v1.0.189
         env:
           GH_TOKEN: ${{ github.token }}
         with:

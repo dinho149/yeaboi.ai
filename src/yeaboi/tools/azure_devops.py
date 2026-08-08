@@ -31,6 +31,7 @@ from yeaboi.config import (
     get_azure_devops_team,
     get_azure_devops_token,
 )
+from yeaboi.redaction import log_safe
 from yeaboi.ticket_text import strip_html, ticket_text
 
 logger = logging.getLogger(__name__)
@@ -2711,11 +2712,11 @@ def azdevops_update_work_item_fields(
     """
     project = project or get_azure_devops_project() or ""
     logger.info(
-        "azdevops_update_work_item_fields: id=%r summary=%s description=%s points=%r",
-        work_item_id,
+        "azdevops_update_work_item_fields: id=%s summary=%s description=%s points=%s",
+        log_safe(repr(work_item_id)),
         summary is not None,
         description is not None,
-        story_points,
+        log_safe(repr(story_points)),
     )
     try:
         from azure.devops.v7_1.work_item_tracking.models import JsonPatchOperation
