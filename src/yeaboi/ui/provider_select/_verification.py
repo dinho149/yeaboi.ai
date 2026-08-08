@@ -274,8 +274,8 @@ def _verify_model(provider: dict[str, Any], api_key: str, model: str) -> tuple[b
 
         elif provider_val == "bedrock":
             # api_key is the AWS region. Inference-profile ids (leading us./eu./
-            # global.) — which is what OpenClaw auto-detects — are NOT returned by
-            # list_foundation_models, so soft-accept those once the region resolves.
+            # global.) are NOT returned by list_foundation_models, so soft-accept
+            # those once the region resolves.
             if model.split(".", 1)[0] in ("us", "eu", "global", "apac"):
                 return True, "Inference profile accepted (region verified)"
 
@@ -373,7 +373,7 @@ def fetch_available_models(provider: dict[str, Any], api_key: str) -> list[str]:
     a snapshot that goes stale when the provider retires a model. Returns [] on
     any failure (offline, timeout, unexpected shape, non-200) so callers fall
     back to the seed presets. Never raises. Bedrock is intentionally excluded —
-    it resolves its model via OpenClaw auto-detection, not an API key.
+    it authenticates with IAM credentials, not an API key.
     """
     provider_val = provider.get("provider_val")
     try:

@@ -1,6 +1,6 @@
 ---
 name: ci-and-release
-description: CI/CD workflow internals, version management and auto-bump mechanics, PyPI publish flow, Dependabot auth quirks, and AWS Lightsail deployment. Use when modifying .github/workflows, releasing, versioning, or debugging CI/publish/Dependabot behaviour.
+description: CI/CD workflow internals, version management and auto-bump mechanics, PyPI publish flow, and Dependabot auth quirks. Use when modifying .github/workflows, releasing, versioning, or debugging CI/publish/Dependabot behaviour.
 ---
 
 # CI, Versioning & Release
@@ -72,12 +72,3 @@ Dependabot notes: updates arrive **grouped** (one weekly PR per ecosystem; secur
 - **Release trigger.** A merge performed by the default `GITHUB_TOKEN` does not trigger `publish.yml` (same recursion suppression as the version bump), so an auto-merged pip bump's release simply defers to the next human push to `main` (an optional `AUTO_MERGE_TOKEN` PAT in the Actions store would make it publish immediately).
 
 There is no Homebrew tap auto-update: the `omardin14/homebrew-tap` formula is disabled (see Version Management) and `publish.yml` no longer dispatches to it.
-
-## Deployment (AWS Lightsail)
-
-yeaboi is deployed on AWS Lightsail via the OpenClaw blueprint:
-- OpenClaw comes pre-installed on the Lightsail instance
-- Uses Amazon Bedrock (Claude Sonnet 4.6) via IAM instance role — no API key needed
-- Bedrock IAM setup script: `curl -s https://d25b4yjpexuuj4.cloudfront.net/scripts/lightsail/setup-lightsail-openclaw-bedrock-role.sh | bash -s -- <instance-name> <region>`
-- The setup wizard auto-detects the AWS region from `~/.aws/config` and the Bedrock model from OpenClaw's `models.json`
-- See README section "Deploy on AWS Lightsail (OpenClaw)" for full guide

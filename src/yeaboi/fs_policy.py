@@ -98,7 +98,6 @@ BUILTIN_ALLOWED: tuple[BuiltinRule, ...] = (
     BuiltinRule(lambda: Path.cwd() / ".env", _RO, "project-local .env override (config.load_dotenv)"),
     BuiltinRule(lambda: Path.cwd() / "SCRUM.md", _RO, "planning context default (load_project_context)"),
     BuiltinRule(lambda: Path.cwd() / "scrum-docs", _RO, "planning docs default (load_project_context)"),
-    BuiltinRule(lambda: Path.home() / ".openclaw", _RW, "OpenClaw setup wizard + skill install"),
     BuiltinRule(lambda: Path.home() / ".aws" / "config", _RO, "Bedrock profile auto-detect"),
     BuiltinRule(lambda: Path.home() / "Library" / "LaunchAgents", _RW, "standup schedule launchd plists"),
     BuiltinRule(

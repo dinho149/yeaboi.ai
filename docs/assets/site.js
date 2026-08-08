@@ -427,7 +427,7 @@ function _smallTalk(query) {
     return { text: "🦆 I'm the yeaboi docs duck — a little helper that reads the whole documentation and answers your questions in plain English, with links to the exact page.", cards: [] };
   }
   if (has(/what can you (do|help)|help me|what do you know|how (can|do) you (help|work)/)) {
-    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the seven modes (planning, standup, retro, poker, performance, reporting, analysis), integrations & exports, tools, session management, architecture, and deployment. What are you trying to do?", cards: [] };
+    return { text: "🦆 I can explain anything covered in the docs: installation & setup, the seven modes (planning, standup, retro, poker, performance, reporting, analysis), integrations & exports, tools, session management, and architecture. What are you trying to do?", cards: [] };
   }
   if (has(/^\s*(what is|what's|whats) yeaboi/)) {
     return null; // real question — let the composer answer it from the docs
@@ -515,7 +515,7 @@ function _docsDuckReply(query) {
   if (small) return small;
   var hits = _searchDocs(query);
   if (!hits.length) {
-    return { text: "🦆 Hmm, I couldn't find that in the docs. Try rephrasing — I know about installation & setup, the seven modes, integrations & exports, tools, session management, architecture, and deployment.", cards: [] };
+    return { text: "🦆 Hmm, I couldn't find that in the docs. Try rephrasing — I know about installation & setup, the seven modes, integrations & exports, tools, session management, and architecture.", cards: [] };
   }
   return _composeAnswer(query, hits);
 }
@@ -1503,7 +1503,6 @@ var NAV_GROUPS = [
   { label: "Reference", entries: [
     { title: "Architecture & Concepts", path: "/docs/architecture.html" },
     { title: "Scrum Standards", path: "/docs/scrum-standards.html" },
-    { title: "Deployment", path: "/docs/deployment.html" },
     { title: "Development", path: "/docs/development.html" },
   ] },
 ];

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Terminal-based AI Scrum Master agent built with LangGraph, LangChain, and Anthropic Claude (with OpenAI, Google, AWS Bedrock, and local Ollama as alternative providers). Decomposes projects into epics, user stories, tasks, and sprint plans. Deployed on AWS Lightsail via OpenClaw with Bedrock.
+Terminal-based AI Scrum Master agent built with LangGraph, LangChain, and Anthropic Claude (with OpenAI, Google, AWS Bedrock, and local Ollama as alternative providers). Decomposes projects into epics, user stories, tasks, and sprint plans.
 
 ## Commands
 
@@ -193,7 +193,7 @@ Every new feature MUST include all three pillars before it can be considered com
 
 ## REQUIRED: Surface Parity
 
-yeaboi ships on **six surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the OpenClaw skill. Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, and plugin skills.
+yeaboi ships on **five surfaces**: the TUI, CLI flags/subcommands, the Python engines, the MCP server, and the Claude Code plugin skills. Features MUST NOT land TUI-only. This is machine-enforced by `tests/unit/test_surface_parity.py` — a declarative capability registry plus discovery checks over engines, MCP tools, `_MODE_CARDS`, `build_parser()`, and plugin skills.
 
 The contract:
 
@@ -246,9 +246,7 @@ Deep reference lives in `.claude/skills/` and loads on demand in interactive ses
 | `mode-blueprints` | `standup/`, `retro/`, `performance/`, `reporting/`, `roadmap/`, or adding a new mode |
 | `logging` | logging calls, log files, `logging_setup.py` |
 | `ci-and-release` | `.github/workflows`, versioning, releasing, Dependabot, deployment |
-| `project-map` | full module map, CLI flags/subcommands, env vars, app flow, the MCP server + plugin, OpenClaw product skill |
-
-Note: `.claude/skills/` holds **dev-workflow** conventions; `src/yeaboi/skills/` (symlinked as `skills/`) is the **shipped OpenClaw product skill** — don't confuse them.
+| `project-map` | full module map, CLI flags/subcommands, env vars, app flow, the MCP server + plugin |
 
 ## Git Conventions
 

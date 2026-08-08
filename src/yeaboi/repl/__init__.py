@@ -480,7 +480,7 @@ def run_repl(
         if export_only:
             qs = graph_state.get("questionnaire")
             # Auto-accept capacity override warnings — pick "1" (recommended sprints).
-            # Print the warning so it's visible in stderr (e.g. OpenClaw's exec logs).
+            # Print the warning so it's visible in stderr (e.g. headless exec logs).
             _cap_sel = graph_state.get("capacity_override_target", 0)
             if _cap_sel < -1:
                 _recommended = abs(_cap_sel)
