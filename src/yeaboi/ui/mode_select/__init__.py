@@ -10830,14 +10830,28 @@ def _play_duck_shades(console, live, selected, *, tip_offset, start_time, select
         time.sleep(_FRAME_TIME * 3)  # ~20fps — a readable lift/drop over ~0.5s
 
 
-def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> None:
+# How long the success screen counts down before relaunching. Long enough to read
+# "updated to vX" and hit esc, short enough that the restart still feels automatic.
+_UPDATE_RESTART_SECONDS = 3.0
+
+# Upper bound on the keystrokes drained after the upgrade finishes. Bounded so a
+# held-down key (auto-repeat keeps refilling the buffer) can't spin here forever;
+# 64 is far more than an impatient user types during a 30s upgrade.
+_UPDATE_DRAIN_LIMIT = 64
+
+
+def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> bool:
     """Run the in-app upgrade (the ctrl+U shortcut): show a spinner while the
-    detected ``uv/pipx upgrade`` command runs on a worker thread, then a success or
-    failure result the user dismisses with any key.
+    detected ``uv/pipx upgrade`` command runs on a worker thread, then the result.
 
     Only invoked when an update is available (the caller gates on it). The upgrade
-    runs in a subprocess; the freshly-installed code takes effect on the next
-    launch, so the success screen tells the user to restart.
+    runs in a subprocess, so the freshly-installed code only takes effect in a NEW
+    process: on success this counts down :data:`_UPDATE_RESTART_SECONDS` and then
+    returns True, meaning "unwind the TUI so cli.main can relaunch us". Esc (or q)
+    during the countdown declines, and a failure — or an install we can't work out
+    how to relaunch — falls back to the old dismiss-with-any-key result.
+
+    Returns True when the caller should unwind for a restart, False to stay put.
     """
 
     from yeaboi import update_check
@@ -10870,12 +10884,52 @@ def _run_update_flow(console, live, read_key, frame_time, supports_timeout) -> N
     ok = bool(result.get("ok"))
     detail = result.get("detail", "") or ""
     logger.info("update: upgrade %s", "succeeded" if ok else "failed")
+    # The spinner loop above never reads keys, so anything typed during the (often
+    # 5-30s) upgrade is still queued on the tty. Left there, the first read below
+    # would return a stale keystroke and fire the restart instantly — the user would
+    # never see which version landed, nor get the esc window this screen is for.
+    if supports_timeout:
+        for _ in range(_UPDATE_DRAIN_LIMIT):
+            if not read_key(timeout=0):
+                break
+    # Only offer the restart when we can actually perform one — an install whose
+    # console script we can't resolve gets the honest "restart it yourself" screen.
+    can_restart = ok and update_check.resolve_relaunch_command() is not None
+    deadline = time.monotonic() + _UPDATE_RESTART_SECONDS
     while True:
         w, h = console.size
-        live.update(_build_update_screen(w, h, latest=latest, command=command, done=True, ok=ok, detail=detail))
+        # Clamp to 1: the loop exits the moment the deadline passes, so a rendered
+        # "restarting in 0…" would only ever be a stray final frame.
+        remaining = max(1, math.ceil(deadline - time.monotonic())) if can_restart else None
+        live.update(
+            _build_update_screen(
+                w,
+                h,
+                latest=latest,
+                command=command,
+                done=True,
+                ok=ok,
+                detail=detail,
+                restart_in=remaining,
+                can_restart=can_restart,
+            )
+        )
         k = read_key(timeout=frame_time) if supports_timeout else read_key()
-        if k:
-            return
+        if not can_restart:
+            if k:
+                return False
+            continue
+        if k in ("esc", "q"):
+            logger.info("update: restart declined, staying on the running version")
+            return False
+        # Mouse traffic isn't an answer to this screen — a stray wheel nudge must
+        # not cut the window the user has to read the version and hit esc.
+        if k in ("scroll_up", "scroll_down") or (isinstance(k, str) and k.startswith("click:")):
+            k = ""
+        # Any other key restarts immediately — no need to sit through the countdown.
+        if k or time.monotonic() >= deadline:
+            update_check.request_restart(latest)
+            return True
 
 
 def _run_poker_setup(console: Console, live, read_key, frame_time: float, supports_timeout: bool) -> dict | None:
@@ -11906,7 +11960,14 @@ def select_mode(
                     from yeaboi.update_check import get_update_status
 
                     if get_update_status()["update_available"]:
-                        _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout)
+                        if _run_update_flow(console, live, read_key, _FRAME_TIME, _supports_timeout):
+                            # Unwind the whole TUI: cli.main relaunches us onto the
+                            # new version once its finally has restored the terminal
+                            # (os.execv skips atexit, so it can't be done from here).
+                            # Deliberately not the q/esc quit path — this isn't a
+                            # quit, so a local Ollama server should stay up for the
+                            # process that's about to take over.
+                            return None
                         select_time = time.monotonic()
                 elif isinstance(key, str) and key.startswith("click:"):
                     # Click-to-select: a click on a mode's block highlights it
