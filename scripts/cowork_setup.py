@@ -1016,7 +1016,8 @@ def check_repo(report: Report) -> None:
             "rename the key to the routine's current stem or remove the entry",
         )
 
-    for routine in parse_routines():
+    routines = parse_routines()
+    for routine in routines:
         # A row whose file is missing was already reported above; the checks below
         # all read that file, so there is nothing left to say about it.
         if not (ROUTINES_DIR / routine.path).exists():
@@ -1091,14 +1092,13 @@ def check_repo(report: Report) -> None:
                 "make the routine file and the README table agree",
             )
 
-    check_webhooks(report)
-    check_grants(report)
+    check_webhooks(report, routines)
+    check_grants(report, routines)
     check_charter_coverage(report)
 
 
-def check_webhooks(report: Report) -> None:
-    """Every routine's webhook declaration, and the one that must pin `main`."""
-    routines = parse_routines()
+def check_webhooks(report: Report, routines: Sequence[Routine]) -> None:
+    """Every routine's webhook declaration, and the one that fires the deployer."""
     for routine in routines:
         for problem, remedy in webhook_problems(routine):
             report.fail(problem, remedy)
@@ -1124,7 +1124,7 @@ def check_webhooks(report: Report) -> None:
             )
 
 
-def check_grants(report: Report) -> None:
+def check_grants(report: Report, routines: Sequence[Routine]) -> None:
     """No routine may hold the routines API together with a free-hand file editor.
 
     ``RemoteTrigger`` plus ``Write``/``Edit`` is one routine that can rewrite a
@@ -1138,7 +1138,7 @@ def check_grants(report: Report) -> None:
     script or through git ends up in a PR, and this check is what keeps the grant
     from quietly growing a shortcut around that.
     """
-    for routine in parse_routines():
+    for routine in routines:
         tools = set(routine_tools(routine.name))
         if "RemoteTrigger" in tools and (writers := tools & {"Write", "Edit"}):
             report.fail(
@@ -1563,7 +1563,13 @@ def repo_url_of(live: Sequence[dict]) -> str | None:
 
 @dataclass(frozen=True)
 class TriggerAction:
-    """One create or update ``/cowork deploy`` should apply."""
+    """One create or update ``/cowork deploy`` should apply.
+
+    ``blocked`` carries the same meaning it does on ``WebhookAction``, so one rule
+    covers every action a plan emits: **post the body of everything whose
+    ``blocked`` is null, and nothing else.** A blocked action carries an empty
+    body, so a caller following that rule mechanically cannot post by accident.
+    """
 
     action: str  # "create" | "update"
     name: str  # routine stem
@@ -1571,6 +1577,7 @@ class TriggerAction:
     trigger_id: str | None
     fields: dict[str, tuple[object, object]]  # field -> (live, wanted); empty on create
     body: dict  # POST verbatim — the full body on create, the patch on update
+    blocked: str | None = None  # why this must not be posted; None means postable
 
     def as_dict(self) -> dict:
         return {
@@ -1579,6 +1586,7 @@ class TriggerAction:
             "trigger_name": self.trigger_name,
             "trigger_id": self.trigger_id,
             "fields": {key: {"live": live, "wanted": wanted} for key, (live, wanted) in self.fields.items()},
+            "blocked": self.blocked,
             "body": self.body,
         }
 
@@ -1630,6 +1638,16 @@ class Plan:
     needs: list[str] = field(default_factory=list)
 
     @property
+    def postable_creates(self) -> list[TriggerAction]:
+        """The creates that may actually be POSTed."""
+        return [action for action in self.create if action.blocked is None]
+
+    @property
+    def creates_blocked(self) -> list[str]:
+        """Routine stems that need registering but that this run may not register."""
+        return [action.name for action in self.create if action.blocked]
+
+    @property
     def postable_webhooks(self) -> list[WebhookAction]:
         """The webhook POSTs that are safe to make. Everything else is a report.
 
@@ -1662,6 +1680,15 @@ class Plan:
         return not (self.create or self.update or self.orphans or self.postable_webhooks)
 
     @property
+    def applied_nothing(self) -> bool:
+        """Whether a run of this plan would change nothing at all.
+
+        Distinct from ``clean``: a plan holding only blocked creates has something
+        to say and nothing to do, and the difference is whether anyone is told.
+        """
+        return not (self.postable_creates or self.update or self.postable_webhooks)
+
+    @property
     def suspicious(self) -> bool:
         """Both a create and an orphan — the signature of a damaged snapshot.
 
@@ -1685,6 +1712,7 @@ class Plan:
             "disabled": self.disabled,
             "orphans": self.orphans,
             "urls": self.urls,
+            "creates_blocked": self.creates_blocked,
             "webhooks": [action.as_dict() for action in self.webhooks],
             "webhooks_blocked": self.webhooks_blocked,
             "self_update": self.self_update,
@@ -1975,12 +2003,21 @@ def trigger_plan(
     connectors: Sequence[dict] | None = None,
     scope_id: str | None = None,
     created: Sequence[str] = (),
+    allow_create: bool = True,
 ) -> Plan:
     """Compare every live ``cowork:`` routine against the repo.
 
     ``created`` names trigger_names the caller created moments ago in this same
     deploy run and holds an id for. It is the only evidence that a routine holds
     no webhook yet — see ``webhook_plan``.
+
+    ``allow_create=False`` reports the creates and empties their bodies. Two runs
+    of a create race each other with no lock and no undo: both list a fleet
+    missing the same routine, both POST it, and the account keeps whichever
+    duplicates it accepts — each firing on its own schedule, with no orphan to
+    make the plan suspicious. An update has neither problem, because applying it
+    twice writes the same value. So an unattended deploy takes the updates and
+    leaves the creates to a session with a human in it.
 
     Two fields are read and reported but never reconciled:
 
@@ -2021,7 +2058,12 @@ def trigger_plan(
                     trigger_name=routine.trigger_name,
                     trigger_id=None,
                     fields={},
-                    body=wanted,
+                    body=wanted if allow_create else {},
+                    blocked=None
+                    if allow_create
+                    else "registering a routine is not safe to do unattended — two runs would "
+                    "each create it, the API has no delete, and both copies would then fire. "
+                    "Run /cowork deploy from a session with a human in it.",
                 )
             )
             continue
@@ -2069,7 +2111,7 @@ def trigger_plan(
     # empty string is a value the API will accept, so a body carrying one
     # registers twenty-two routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
-    if plan.create:
+    if plan.postable_creates:
         if not repo_url:
             plan.needs.append("repo_url")
         if not environment_id:
@@ -2077,7 +2119,7 @@ def trigger_plan(
     # Connectors are needed by every body, not only a create: an update that
     # carries `mcp_connections: []` attaches every connector on the account. So
     # this one is named whenever there is anything at all to apply.
-    if (plan.create or plan.update) and not connectors:
+    if (plan.postable_creates or plan.update) and not connectors:
         plan.needs.append("connectors")
 
     wanted_names = {routine.trigger_name for routine in expected}
@@ -2371,6 +2413,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="fail instead of noting when a step degrades; for unattended runs",
     )
     parser.add_argument(
+        "--no-create",
+        action="store_true",
+        help="with --plan, report routines that need registering instead of emitting a body for them "
+        "(for unattended runs: a create races and cannot be undone)",
+    )
+    parser.add_argument(
         "--allow-mass-change",
         action="store_true",
         help="with --plan --strict, permit a plan that touches most of the fleet "
@@ -2413,12 +2461,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_url=repo_url_of(live) or repo_url(),
             environment_id=environment_of(live) or args.environment,
             created=args.created,
+            allow_create=not args.no_create,
         )
         print(json.dumps(plan.as_dict(), indent=2))
         if plan.needs:
             note(
                 f"plan: {len(plan.create)} create(s) are missing {', '.join(plan.needs)}",
                 "/cowork resolves these before posting — never POST a body with an empty one",
+                stream=sys.stderr,
+            )
+        if plan.creates_blocked:
+            note(
+                f"plan: {len(plan.creates_blocked)} routine(s) need registering and were not: "
+                f"{', '.join(plan.creates_blocked)}",
+                "run /cowork deploy from an interactive session — a create races and has no undo",
                 stream=sys.stderr,
             )
         if plan.webhooks_blocked:
@@ -2445,10 +2501,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if plan.needs:
                 fail(f"plan: {', '.join(plan.needs)} unresolved; a body carrying an empty one registers nothing useful")
                 return 2
-            touched = len(plan.create) + len(plan.update)
+            touched = len(plan.postable_creates) + len(plan.update)
             if touched > MASS_CHANGE_LIMIT and not args.allow_mass_change:
                 fail(
-                    f"plan: {len(plan.create)} create(s) + {len(plan.update)} update(s) — "
+                    f"plan: {len(plan.postable_creates)} create(s) + {len(plan.update)} update(s) — "
                     f"more than {MASS_CHANGE_LIMIT}; a human should look first"
                 )
                 fail("     re-run with --allow-mass-change if this is a deliberate fleet-wide change")

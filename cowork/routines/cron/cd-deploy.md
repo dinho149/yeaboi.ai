@@ -18,11 +18,23 @@ feel immediate.
 **The webhook is not scoped to `main`, and cannot be.** The routines API rejects every ref and branch
 key its filter might have taken (`filter.ref`, `filter.branches` — see
 `tests/fixtures/cowork_webhook_live.json`), so what is registered fires on a push to *any* branch in
-the repo, and this repo runs many parallel worktrees. Step 1 is therefore the whole filter, and it
-reads `origin/main` rather than whatever ref happened to fire. Most firings exit there having done
-one fetch and one `git log`. A firing that gets past it and finds nothing to change exits at step 4
-having posted nothing — the plan is a diff, so a second run over an already-deployed fleet is a
-no-op, not a repeat.
+the repo, and this repo runs many parallel worktrees.
+
+So this routine does not try to work out what fired it. **It always reconciles**, from `origin/main`,
+and the plan is what decides whether anything happens — a diff against a fleet that already matches
+is empty, and an empty plan exits silently. That costs a short session per push and buys the one
+property a safety net needs: it cannot be skipped. An earlier draft gated on "did the newest commit
+on `main` touch `cowork/`", which is wrong in a way that is invisible — a cowork change merged at
+10:00 and followed by any other merge is never deployed by the 04:00 cron, because by then the newest
+commit is somebody else's. Nothing would report it, and `make cowork-check` does not check the
+account half.
+
+**It does not register new routines.** A create races: two runs fired seconds apart both list a fleet
+missing the same routine and both POST it, there is no lock, and the API has no delete — so both
+copies survive and both fire, with no orphan to make the plan look suspicious. An update has neither
+problem, since applying it twice writes the same value. So this routine passes `--no-create`, which
+empties those bodies in Python rather than trusting this file, and reports them instead. Editing a
+routine deploys itself; *adding* one is a `/cowork deploy` away, and the Slack post says so.
 
 **It composes nothing.** `scripts/cowork_setup.py` owns every comparison, every request body and the
 README edit; this routine calls it, POSTs what it is handed, and reports. Where a step below says
@@ -31,15 +43,21 @@ test has ever seen.
 
 ## Run
 
-1. **Decide whether there is anything to do, from `origin/main` only.** `git fetch origin main`, then
-   `git log -1 --name-only --format= FETCH_HEAD`. If nothing under `cowork/` or
-   `scripts/cowork_setup.py` changed in that commit, **exit silently**.
+1. **Get onto `origin/main`, then re-read this file.** Before anything else:
+   `git fetch origin main && git reset --hard FETCH_HEAD`, then **read
+   `cowork/routines/cron/cd-deploy.md` again from the reset tree and follow that copy** — including
+   this step, which will already be done.
 
-   Deploy what is on `origin/main`, never what the checkout happens to hold: a push webhook fires for
-   every branch, so the ref you are standing on is not necessarily the one that changed, and a
-   feature branch's `cowork/` edits are not deployable — they have not been reviewed. If the checkout
-   is not already at `FETCH_HEAD`, reset it there before step 2. The daily cron lands in this same
-   step and exits the same way.
+   That re-read is the point of the step. A push webhook fires for every branch, so the checkout this
+   session starts in may be *any* branch somebody pushed, and the registered prompt says "read
+   `cowork/routines/cron/cd-deploy.md` in this repo and follow it exactly" — meaning the instructions
+   that got you this far came from that branch's copy of this file. A branch can be pushed here by an
+   unattended agent (`claude.yml`, `cowork-builder`, `/migrate`), with no PR review in between. So a
+   branch's copy of this file gets exactly one instruction honoured — "reset to `origin/main` and
+   read the real one" — and nothing after it.
+
+   Deploy what is on `origin/main` and nothing else: a feature branch's `cowork/` edits are not
+   deployable, because nobody has reviewed them.
 
 2. **`make cowork-check`** — abort on non-zero, reporting to Slack. This is not redundant with CI: it
    is what stops step 4 composing a prompt that points at a file which does not exist. A README row
@@ -53,33 +71,33 @@ test has ever seen.
 
 4. **Reconcile the routines.** `RemoteTrigger` `action: "list"`, save the response **verbatim** to a
    scratch file, then
-   `uv run python scripts/cowork_setup.py --plan --strict --triggers <file>`.
+   `uv run python scripts/cowork_setup.py --plan --strict --no-create --triggers <file>`.
+   - **If the plan is empty, exit silently.** This is the common outcome and the reason step 1 does
+     not try to guess: most firings reach here, find a fleet that already matches, and stop.
+   - Exit 1 means a step degraded — a `gh` call was rejected. Report it and stop; nothing was applied.
    - Exit 2 means the plan refused itself — a suspicious snapshot, an unresolved `needs`, or more
      routines created and updated together than `MASS_CHANGE_LIMIT`. Report the stderr to Slack and
      stop. **Never** re-run it without `--strict`, and never pass `--allow-mass-change`, to get past
      this. Both exist because there is no human here to ask, and a create cannot be undone: this API
      has no delete, so a plan built from a truncated snapshot would register a second copy of every
      routine it could not see, and both copies would then fire.
-   - Otherwise POST each `create` body verbatim (`action: "create"`), then each `update` body with
-     its `trigger_id` (`action: "update"`). Leave `ok` alone. **Never delete, and never touch an
-     orphan** — name them in the Slack post and stop there.
-   - Keep the `trigger_name` of every routine you created and got an id back for.
+   - Otherwise POST the `body` of every entry whose `blocked` is `null`, and nothing else: each
+     `update` with its `trigger_id` (`action: "update"`). A blocked entry carries an empty body, so
+     that rule is safe to follow without thinking about it. Leave `ok` alone. **Never delete, and
+     never touch an orphan** — name them in the Slack post and stop there.
+   - Under `--no-create` every create is blocked, so this run applies updates only. Anything in
+     `creates_blocked` goes in the Slack post as "needs `/cowork deploy`", named.
 
-5. **Wire the webhooks for what you just created.** Re-`list` (ids only exist after a create), save,
-   then `--plan --triggers <new file> --created "cowork: <name>"` once per name from step 4. For every
-   `webhooks[]` entry whose `blocked` is `null`, call the **`RemoteTrigger` tool** with
-   `action: "create_webhook_trigger"` and its `body` verbatim — the same tool as step 4, a different
-   action, never a `curl`. **Ignore every other entry** — a blocked one carries an empty body, so the
-   rule is safe to follow without thinking about it.
+5. **Webhooks: report, never post.** A webhook may only be attached to a routine that provably holds
+   none, and the only proof available is having created that routine seconds earlier — which this
+   run never does. So every `webhooks[]` entry arrives `blocked`, with an empty body, and there is
+   nothing here to POST. Name anything in `webhooks_blocked` in the Slack post and move on; it is the
+   normal steady state, not a problem to solve. Wiring one is `/cowork deploy`'s job.
 
-   **Never post a webhook for a routine you did not create in this run.** Nothing can read back
-   whether a routine already has one, the API does not dedup, and there is no delete — so a
-   second POST means that routine fires twice for every event, permanently. `webhooks_blocked`
-   naming a routine is the normal steady state, not a problem to solve.
-
-6. **Record the URLs.** `--urls --triggers <new file>` — the script edits `cowork/README.md` itself.
-   If the file changed, open a PR for it; **never push to `main`**. This only happens when a routine
-   was created, so most runs skip it. The house rules apply to this PR like any other:
+6. **Record the URLs.** `--urls --triggers <file>` — the script edits `cowork/README.md` itself.
+   If the file changed, open a PR for it; **never push to `main`**. This run creates nothing, so a
+   changed README here means an earlier `/cowork deploy` registered something without recording it —
+   uncommon, and worth the PR when it happens. The house rules apply to that PR like any other:
 
    - `gh pr list --label "workstream:platform" --state open` **first**. If one is already open,
      push the URL fix onto that branch instead of opening a second — one open PR per workstream.
@@ -93,15 +111,17 @@ test has ever seen.
      step 4. Converging on the second pass is expected, not a loop.
 
 7. **Report.** Spawn `cowork-scribe` for the Linear `workstream:*` label mirroring and one
-   `#yeaboi-claude` post: what was created, what was updated (field by field), any orphans, any
-   blocked webhooks, and the README PR link. **If `self_update` in the plan is not null, say so
+   `#yeaboi-claude` post: what was updated (field by field), anything in `creates_blocked` that needs
+   `/cowork deploy`, any orphans, any blocked webhooks, and the README PR link. **If `self_update` in the plan is not null, say so
    explicitly with both the live and the wanted value** — that is this routine changing itself, and
    it is the one change that must never land quietly.
 
 ## Stop conditions
 
-- **Nothing to do is the common outcome.** An empty plan posts nothing to Slack at all. A routine
-  that reports every morning is a routine nobody reads by Thursday.
+- **Nothing to do is the common outcome**, and by design it is *most* runs — the webhook fires on
+  every push to every branch, and all but a few of those reach step 4 and find a fleet that already
+  matches. An empty plan posts nothing to Slack at all. A routine that reports every morning is a
+  routine nobody reads by Thursday.
 - **Never compose a request body.** Only bodies that came out of `--plan` are ever POSTed. In
   particular never send `{"enabled": …}`: the plan never carries it, because `pause` is a supported
   verb and a deploy that silently un-paused the fleet would undo a human's decision with nothing

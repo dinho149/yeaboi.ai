@@ -85,11 +85,15 @@ Together those mean a webhook can only be posted at the one moment its routine p
 immediately after that routine was created. Everything else is reported as blocked and left alone,
 which is the normal steady state and not a fault.
 
-**And a merge to `main` deploys itself.** `cron/cd-deploy.md` is fired by a push webhook on `main`
-(with a daily cron as the safety net), and runs the same reconcile `/cowork deploy` does. So editing
-this folder in a PR is the whole workflow: merge it, and the fleet catches up within a minute. The
-slash command remains the escape hatch, and the only place a webhook for a pre-existing routine can
-be wired.
+**And a merge to `main` deploys itself.** `cron/cd-deploy.md` is fired by a push webhook (with a daily
+cron as the safety net) and runs the same reconcile `/cowork deploy` does, from `origin/main`. So
+*editing* a routine is the whole workflow: merge it, and the fleet catches up within a minute.
+
+*Adding* one still needs the slash command. `cd-deploy` runs with `--no-create`, because two runs
+fired seconds apart would both see the same routine missing and both register it — there is no lock,
+there is no delete, and both copies would then fire. It reports them instead. The slash command is
+also the only place a webhook can be wired, for the same reason: the one moment a routine provably
+holds none is just after it was created.
 
 ## Adding a routine
 
@@ -105,9 +109,10 @@ be wired.
    anything that does its own model-worthy work needs a row.
 4. Add the row to the table below — cron, workstream and tier. This is what gets registered; a
    routine file that is not in the table fails `make cowork-check`.
-5. Merge it. `cron/cd-deploy.md` deploys the new routine within a minute, and `/cowork deploy` does
-   the same thing on demand — it registers the new routine from that row, wires its webhook if it
-   declared one, and leaves the others alone. (By hand it would be: claude.ai/code/routines, the thin prompt above, the Model dropdown set to the
+5. Merge it, then run `/cowork deploy`. Registering a *new* routine is the one step `cd-deploy` does
+   not do unattended (see above) — it will report the routine as needing you. The command registers
+   it from that row, wires its webhook if it declared one, and leaves the others alone. Editing an
+   existing routine later needs none of this: merging is enough. (By hand it would be: claude.ai/code/routines, the thin prompt above, the Model dropdown set to the
    label `models.md` gives for that tier, and every connector removed except **Linear, Slack,
    Notion** — all connectors are attached by default.)
 6. `/cowork run <name>` fires it once, so you find out whether it works now rather than on Thursday.

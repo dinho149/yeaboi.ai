@@ -1910,6 +1910,44 @@ class TestWebhookPlan:
     def test_no_self_update_when_the_deployer_matches(self):
         assert self._plan(_perfect_snapshot()).self_update is None
 
+    def test_no_create_reports_instead_of_registering(self):
+        """An unattended run applies updates and leaves creates to a human.
+
+        Two runs of a create race with no lock and no undo: both list a fleet
+        missing the same routine, both POST it, and both copies then fire. There
+        is no orphan, so `suspicious` stays false and nothing downstream objects.
+        An update is safe to race, because applying it twice writes the same value.
+        """
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        _by_name(snapshot, "retro-sweep")["cron_expression"] = "0 0 * * 0"
+        plan = setup.trigger_plan(snapshot, allow_create=False)
+
+        assert plan.creates_blocked == ["digest"]
+        assert plan.postable_creates == []
+        assert [a.body for a in plan.create] == [{}], "a blocked action must carry nothing to post"
+        assert "no delete" in plan.create[0].blocked
+        # The update is untouched: it is the half that is safe to apply unattended.
+        assert [a.name for a in plan.update] == ["retro-sweep"]
+        assert plan.update[0].body and plan.update[0].blocked is None
+
+    def test_allowing_creates_is_still_the_default(self):
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        plan = setup.trigger_plan(snapshot)
+        assert plan.creates_blocked == []
+        assert plan.postable_creates and plan.create[0].body
+
+    def test_a_blocked_create_needs_nothing_from_the_account(self):
+        """`needs` names what a *postable* body would want. A blocked one wants nothing."""
+        plan = setup.trigger_plan([], routines=ROUTINES, allow_create=False)
+        assert plan.needs == []
+        assert plan.applied_nothing
+
+    def test_a_plan_that_only_blocks_is_not_silent(self):
+        """`clean` and `applied_nothing` differ, and the difference is whether anyone is told."""
+        snapshot = [e for e in _perfect_snapshot() if e["name"] != "cowork: digest"]
+        plan = setup.trigger_plan(snapshot, allow_create=False)
+        assert plan.applied_nothing and not plan.clean
+
     def test_no_planned_body_ever_carries_enabled(self):
         """Structural, across every kind of drift: a deploy cannot un-pause the fleet.
 
@@ -2065,6 +2103,13 @@ class TestStrict:
         for entry in snapshot:
             entry["mcp_connections"] = [*entry["mcp_connections"], {"name": "Gmail"}]
         assert self._plan(tmp_path, snapshot, "--strict", "--allow-mass-change").returncode == 0
+
+    def test_no_create_bounds_the_cap_to_what_would_be_applied(self, tmp_path: Path):
+        """A truncated snapshot is harmless once creates are blocked — nothing is posted."""
+        result = self._plan(tmp_path, _perfect_snapshot()[:4], "--strict", "--no-create")
+        assert result.returncode == 0
+        assert "need registering and were not" in result.stderr
+        assert all(entry["body"] == {} for entry in json.loads(result.stdout)["create"])
 
     def test_a_truncated_snapshot_refuses_under_strict(self, tmp_path: Path):
         """The create half of the cap, and the reason it counts creates at all.
