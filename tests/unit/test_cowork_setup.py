@@ -588,6 +588,80 @@ class TestLabels:
                 continue
             assert {kind, f"{kind}s"} & sections, f"digest.md's section order omits type:{kind}"
 
+    # Sections the digest heads that are not one of the PROPOSAL_TYPES: user
+    # feedback, the marketing draft, and the health/calibration reporting.
+    NON_TYPE_SECTIONS = ("Feature candidates", "Marketing", "Blocked", "Silent", "Calibration")
+
+    @staticmethod
+    def _emoji_table() -> dict[str, str]:
+        """The digest's ``| Section | Emoji |`` table, as ``{name: emoji}``."""
+        digest = (setup.ROUTINES_DIR / "cron" / "digest.md").read_text(encoding="utf-8")
+        # Deliberately permissive on the name (a section could gain a digit or a
+        # hyphen) and strict about there being exactly two cells, so a row that
+        # drifts out of the shape fails here rather than vanishing from the set.
+        pairs = re.findall(r"^\s*\|\s*([^|\-][^|]*?)\s*\|\s*([^|\s]+)\s*\|\s*$", digest, re.M)
+        rows = [(name, emoji) for name, emoji in pairs if name != "Section"]
+        names = [name for name, _ in rows]
+        assert len(names) == len(set(names)), f"digest.md's emoji table repeats a section: {names}"
+        return dict(rows)
+
+    def test_the_digest_declares_an_emoji_for_every_section(self):
+        # Each digest section is headed by one fixed emoji, so a returning
+        # reader finds a section by shape before reading a word. That only
+        # works if the emoji is constant, which means it has to be written
+        # down — and the table is the other half of the section order above:
+        # an eighth PROPOSAL_TYPES entry gets a section from that test and an
+        # anchor from this one.
+        rows = self._emoji_table()
+        assert rows, "digest.md no longer declares an emoji table"
+        for kind in setup.PROPOSAL_TYPES:
+            if kind == "other":
+                continue
+            assert {kind, f"{kind}s"} & {name.lower() for name in rows}, f"digest.md's emoji table omits type:{kind}"
+        # The type sections are only half the message; a dropped row here is a
+        # heading with nothing to anchor it and nothing to notice.
+        for section in self.NON_TYPE_SECTIONS:
+            assert section in rows, f"digest.md's emoji table omits the {section} section"
+        # Two sections sharing an emoji defeats the whole point of having one —
+        # you can no longer find a section by shape.
+        assert len(set(rows.values())) == len(rows), f"digest.md reuses a section emoji: {rows}"
+        # The approval verbs are never spent as decoration: a reader who meets
+        # one in a heading has to stop and work out whether it means something.
+        assert not {"\u2705", "\u274c"} & set(rows.values()), "digest.md uses an approval verb as a section emoji"
+
+    def test_every_digest_heading_uses_its_declared_emoji(self):
+        # The table above is only worth having if the headings obey it. Nothing
+        # at run time would notice a heading that quietly lost its emoji, or an
+        # example that drifted onto a different one from the table it sits next
+        # to — the digest is a prompt, so the worked example is what actually
+        # gets copied.
+        digest = (setup.ROUTINES_DIR / "cron" / "digest.md").read_text(encoding="utf-8")
+        rows = self._emoji_table()
+
+        fences = re.findall(r"^\s*```\n(.*?)^\s*```", digest, re.M | re.S)
+        assert fences, "digest.md no longer shows the message shape as a worked example"
+        example = "\n".join(fences)
+
+        # A heading in the example: "<emoji> **<Section>** (<n> open…)".
+        headings = re.findall(r"^\s*(\S+)\s+\*\*([^*]+)\*\*\s*\(", example, re.M)
+        assert len(headings) >= 2, "the worked example no longer shows more than one section"
+        for emoji, name in headings:
+            section = next((s for s in rows if name.startswith(s)), None)
+            assert section, f"the worked example heads a section the emoji table omits: {name!r}"
+            assert emoji == rows[section], (
+                f"the worked example heads {name!r} with {emoji!r}, table says {rows[section]!r}"
+            )
+        # …and the same line with the emoji stripped is the failure this catches.
+        bare = re.findall(r"^\s*\*\*([^*]+)\*\*\s*\(", example, re.M)
+        assert not bare, f"a worked-example heading lost its emoji anchor: {bare}"
+
+        # The sections that live in prose rather than in the example still have
+        # to pair with their emoji somewhere, or the anchor was never written.
+        for section in self.NON_TYPE_SECTIONS:
+            assert f"{rows[section]} **{section}" in digest, (
+                f"digest.md never heads the {section} section with {rows[section]!r}"
+            )
+
     def test_there_are_fifteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
         # health check all say fifteen.
