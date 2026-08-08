@@ -274,6 +274,63 @@ def mark_beta_notice_seen(mode_key: str) -> None:
     logger.info("Beta notice acknowledged for %s (persisted to %s)", mode_key, config_file)
 
 
+# The in-app dictation install offer. Two tiers of "no": Esc declines for the
+# session (in-memory, in the UI module), `n` declines for good — which is this.
+VOICE_OFFER_KEY = "VOICE_INSTALL_OFFER"
+FORCE_VOICE_OFFER_ENV = "YEABOI_FORCE_VOICE_OFFER"
+VOICE_INSTALLED_KEY = "VOICE_EXTRA_INSTALLED"
+
+
+def is_voice_install_offer_enabled() -> bool:
+    """True when double-tapping Space may offer to install dictation.
+
+    Defaults on. ``YEABOI_FORCE_VOICE_OFFER`` overrides a permanent decline, for
+    the same reason :func:`is_beta_notice_seen` has its override: a once-ever
+    gate is otherwise impossible to demo, screenshot or review after the first
+    dismissal.
+    """
+    if os.getenv(FORCE_VOICE_OFFER_ENV, "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    return os.getenv(VOICE_OFFER_KEY, "").strip().lower() not in {"0", "off", "false", "no"}
+
+
+def set_voice_install_offer(enabled: bool) -> None:
+    """Persist whether the dictation install offer may appear.
+
+    Same inverted ordering as :func:`mark_beta_notice_seen`: ``os.environ`` first,
+    disk second, because a user who just said "never" must not be asked again in
+    this session even if the config file cannot be written.
+    """
+    value = "on" if enabled else "off"
+    os.environ[VOICE_OFFER_KEY] = value
+    try:
+        config_file = set_config_value(VOICE_OFFER_KEY, value)
+    except OSError as exc:
+        logger.warning("Could not persist the voice install offer setting: %s", exc)
+        return
+    logger.info("Voice install offer set to %s (persisted to %s)", value, config_file)
+
+
+def voice_extra_was_installed() -> bool:
+    """True if yeaboi has installed the dictation packages here before.
+
+    An in-place ``uv pip install`` is not recorded in uv's tool receipt, so a
+    later ``uv tool upgrade`` rebuilds the venv and silently drops dictation.
+    This flag is what lets the offer say *"an upgrade removed dictation"* rather
+    than starting the conversation over as if nothing had happened.
+    """
+    return os.getenv(VOICE_INSTALLED_KEY, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def mark_voice_extra_installed() -> None:
+    """Record that the dictation packages were installed from inside the app."""
+    os.environ[VOICE_INSTALLED_KEY] = "1"
+    try:
+        set_config_value(VOICE_INSTALLED_KEY, "1")
+    except OSError as exc:
+        logger.warning("Could not persist the voice-installed marker: %s", exc)
+
+
 # Proxy environment variables to check (both uppercase and lowercase conventions).
 _PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 

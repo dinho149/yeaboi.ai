@@ -245,7 +245,7 @@ CAPABILITIES: dict[str, dict] = {
         "engines": Exempt("TUI utility page — writes ~/.yeaboi/.env via config"),
         "mcp_tools": Exempt("TUI utility page; MCP servers must not rewrite host credentials"),
         "tui_mode": "settings",
-        "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices"},
+        "cli": {"--setup", "--theme", "--allow-path", "--list-audio-devices", "--install-voice"},
         "skill": Exempt("TUI utility page"),
     },
 }

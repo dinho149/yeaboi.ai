@@ -97,3 +97,32 @@ class TestRedactingFormatter:
         record = self._record("token ghp_abcdefghijklmnopqrstuvwx")
         self._format(record)
         assert "ghp_" in record.getMessage()  # other handlers see the original
+
+
+class TestUrlCredentials:
+    """pip and uv echo the package-index URL, and a corporate mirror routinely
+    carries a token in it — which the voice installer then logs."""
+
+    def test_index_credentials_are_stripped_but_the_host_survives(self):
+        from yeaboi.redaction import redact
+
+        out = redact("Looking in indexes: https://svc:AKCp8xyzSECRETVALUE@nexus.corp/repository/pypi/simple")
+        assert "AKCp8xyzSECRETVALUE" not in out
+        assert "svc:" not in out
+        assert "nexus.corp/repository/pypi/simple" in out
+
+    def test_a_credential_free_url_is_untouched(self):
+        from yeaboi.redaction import redact
+
+        assert redact("https://pypi.org/simple") == "https://pypi.org/simple"
+
+    def test_a_bare_port_is_not_mistaken_for_a_password(self):
+        from yeaboi.redaction import redact
+
+        assert redact("connecting to https://nexus.corp:8443/simple") == "connecting to https://nexus.corp:8443/simple"
+
+    def test_it_is_idempotent(self):
+        from yeaboi.redaction import redact
+
+        once = redact("https://u:pa55word@host/x")
+        assert redact(once) == once

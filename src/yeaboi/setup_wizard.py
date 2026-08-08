@@ -212,6 +212,42 @@ def _collect_api_key(console: Console, provider: dict[str, str]) -> str | None:
         return key  # valid format, or user explicitly declined retry
 
 
+def _print_voice_tip(console: Console) -> None:
+    """Mention dictation once, after setup. Silent when tips are switched off.
+
+    Renders from :func:`~yeaboi.voice.voice_state`, the same four-word vocabulary
+    the chip, the welcome tip and the Settings row use. This surface is the one
+    a user meets first, so it is the worst place to promise something the others
+    have already worked out is impossible — on musl or 32-bit it must not print
+    an install command that cannot succeed.
+    """
+    from yeaboi.config import is_tips_enabled
+    from yeaboi.voice import unsupported_blocker, voice_install_command, voice_state
+
+    if not is_tips_enabled():
+        return
+    state = voice_state()
+    if state == "ready":
+        console.print("[dim]🎤 Voice input is ready — double-tap Space in any text field to dictate.[/dim]")
+        return
+    if state == "unsupported":
+        console.print(f"[dim]🎤 Dictation can't run on this machine — {unsupported_blocker()}.[/dim]")
+        return
+    if state == "installable":
+        # No command: the gesture is the install, and naming one here sends the
+        # user to a second terminal for something one keystroke already does.
+        console.print(
+            "[dim]🎤 Tip: dictate your answers — double-tap Space in any text field and yeaboi "
+            "offers to set it up (offline, any LLM provider).[/dim]"
+        )
+        return
+    cmd = voice_install_command()
+    console.print(
+        "[dim]🎤 Tip: dictate your answers — install with [/dim]"
+        f"[cyan]{cmd}[/cyan][dim] (offline, any LLM provider).[/dim]"
+    )
+
+
 def run_setup_wizard(console: Console) -> bool:
     """Interactive credential setup wizard.
 
@@ -311,18 +347,7 @@ def run_setup_wizard(console: Console) -> bool:
     # Onboarding tip: voice input is optional and off by default. Mention it so
     # new users discover they can dictate answers instead of typing. Skipped
     # entirely when the user has switched tips off.
-    from yeaboi.config import is_tips_enabled
-    from yeaboi.voice import is_voice_available, voice_install_command
-
-    if is_tips_enabled():
-        if is_voice_available():
-            console.print("[dim]🎤 Voice input is ready — double-tap Space in any text field to dictate.[/dim]")
-        else:
-            cmd = voice_install_command()
-            console.print(
-                "[dim]🎤 Tip: enable voice input to dictate answers — "
-                f"run [/dim][cyan]{cmd}[/cyan][dim] (works offline, any LLM provider).[/dim]"
-            )
+    _print_voice_tip(console)
 
     logger.info("Setup wizard completed successfully")
     return True
