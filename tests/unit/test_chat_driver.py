@@ -9,6 +9,7 @@ from rich.console import Console
 
 from yeaboi.agent.state import QuestionnaireState, ReviewDecision
 from yeaboi.ui.session.chat._driver import _ChatDriver
+from yeaboi.ui.session.chat._screen import ChoiceRows
 
 
 class FakeLive:
@@ -1435,3 +1436,53 @@ class TestIntakeHandoff:
         assert any("Q7?" in m.text for m in driver.transcript.messages)
         # Still intake — the handoff must not fire until the summary is accepted.
         assert driver._stage() == "intake"
+
+
+def _positional_keys(sequence: list[str]):
+    """Key reader that rejects a ``timeout=`` keyword.
+
+    coalesce_scroll drains a wheel burst by polling ``read_key_fn(timeout=0.0)``
+    and hands anything non-scroll to the module-global push-back queue — which
+    the fakes here never read, so the key would vanish (and leak into the next
+    test). Refusing the keyword takes coalesce_scroll's documented fallback:
+    one apply_scroll, no draining, queued keys intact.
+    """
+    remaining = list(sequence)
+
+    def _key(_timeout: float = 0.0) -> str:
+        return remaining.pop(0) if remaining else ""
+
+    return _key
+
+
+class TestScrollingWithAMenuUp:
+    """A menu answers a question about what is above it — that has to stay reachable."""
+
+    def _menu_driver(self, keys) -> _ChatDriver:
+        driver = _driver(FakeGraph([]), keys)
+        # Taller than any viewport, so there is genuinely something to scroll to.
+        driver.transcript.add_assistant("\n".join(f"summary row {i}" for i in range(120)))
+        driver.choices = ChoiceRows(
+            options=[("Accept — build the plan", False), ("Edit an answer…", False), ("Tell me what's off…", False)],
+            auto_submit=True,
+        )
+        return driver
+
+    def test_the_wheel_scrolls_the_transcript_instead_of_the_menu(self):
+        driver = self._menu_driver(_positional_keys(["scroll_up", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.choices.highlight == 0  # menu untouched
+        assert driver.follow is False
+        assert driver.scroll_offset < driver._bottom()
+
+    def test_pageup_scrolls_the_transcript_while_a_menu_is_up(self):
+        driver = self._menu_driver(_positional_keys(["pageup", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.choices.highlight == 0
+        assert driver.scroll_offset < driver._bottom()
+
+    def test_arrows_still_move_the_highlight(self):
+        driver = self._menu_driver(_positional_keys(["down", "esc", "esc"]))
+        driver._input_loop()
+        assert driver.choices.highlight == 1
+        assert driver.follow is True  # still pinned to the newest line

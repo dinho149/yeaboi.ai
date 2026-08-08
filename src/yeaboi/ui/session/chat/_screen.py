@@ -354,6 +354,10 @@ def build_chat_screen(
         pairs.append(("Tab", "complete"))
     if choices is not None and choices.options:
         pairs.append(("↑/↓", "choose"))
+        # Arrows belong to the menu while one is up, so name the keys that
+        # still reach the transcript — a menu usually sits under something
+        # the answer depends on (the intake summary is 30 rows of it).
+        pairs.append(("PgUp/PgDn", "scroll"))
         if choices.multi:
             pairs.append(("Space", "toggle"))
     pairs += [("Enter", "send"), ("Alt+Enter", "newline"), ("/", "commands")]

@@ -1084,10 +1084,15 @@ class _ChatDriver:
                         self.choices.highlight = idx
                         logger.info("Chat choice auto-submit: %d", idx + 1)
                         return self._choice_answer()
-                if key in ("up", "scroll_up"):
+                # Arrows move the highlight; the wheel deliberately does NOT.
+                # A menu sits under the thing it asks about — the review sits
+                # under a 30-row summary — so a wheel that only cycled three
+                # rows would trap the transcript off-screen. Wheel/PageUp fall
+                # through to the scroll handler below.
+                if key == "up":
                     self.choices.highlight = (self.choices.highlight - 1) % len(self.choices.options)
                     continue
-                if key in ("down", "scroll_down"):
+                if key == "down":
                     self.choices.highlight = (self.choices.highlight + 1) % len(self.choices.options)
                     continue
                 if key == " " and self.choices.multi:
