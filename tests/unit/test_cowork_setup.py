@@ -315,7 +315,7 @@ class TestAgenda:
 
     ZONE = setup.display_zone()[0]
 
-    def test_three_firings_is_an_appointment_and_four_is_background(self):
+    def test_three_firings_is_a_timed_run_and_four_is_background(self):
         """A threshold, not a name check — the next hourly routine needs no edit."""
         three = [_fake_routine("0 6,7,8 * * *")]
         four = [_fake_routine("0 6,7,8,9 * * *")]
@@ -324,10 +324,10 @@ class TestAgenda:
         assert setup.day_plan(four, date(2026, 8, 13), self.ZONE)[0] == []
         assert len(setup.day_plan(four, date(2026, 8, 13), self.ZONE)[1]) == 1
 
-    def test_appointments_are_ordered_by_the_time_they_fire(self):
+    def test_timed_are_ordered_by_the_time_they_fire(self):
         routines = [_fake_routine("0 9 * * *", "late"), _fake_routine("0 6 * * *", "early")]
-        appointments, _ = setup.day_plan(routines, date(2026, 8, 13), self.ZONE)
-        assert [entry["name"] for entry in appointments] == ["early", "late"]
+        timed, _ = setup.day_plan(routines, date(2026, 8, 13), self.ZONE)
+        assert [entry["name"] for entry in timed] == ["early", "late"]
 
     def test_a_routine_that_does_not_fire_is_absent(self):
         assert setup.day_plan([_fake_routine("0 6 * * 1")], date(2026, 8, 13), self.ZONE) == ([], [])
@@ -350,8 +350,8 @@ class TestAgenda:
         zone, note = setup.display_zone()
         if zone is None:
             pytest.skip(note)
-        appointments, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
-        assert appointments[0]["times_local"] == ["23:00 (-1d)"]
+        timed, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
+        assert timed[0]["times_local"] == ["23:00 (-1d)"]
 
     @pytest.mark.skipif(setup.display_zone()[0] is None, reason="no tz database")
     def test_a_window_ending_at_midnight_reads_as_2400(self):
@@ -366,8 +366,8 @@ class TestAgenda:
         zone, note = setup.display_zone()
         assert zone is None
         assert note and "UTC" in note
-        appointments, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
-        assert appointments[0]["times_local"] == ["06:00"]
+        timed, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
+        assert timed[0]["times_local"] == ["06:00"]
 
     def test_the_tail_covers_the_horizon_and_excludes_today(self):
         payload = setup.agenda(date(2026, 8, 13), horizon=7)
