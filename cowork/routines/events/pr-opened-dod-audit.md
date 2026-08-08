@@ -1,6 +1,7 @@
 # PR opened — DoD audit
 
 **Trigger** — GitHub event, pull request `opened` and `synchronized`
+**Summary** — audits an opened PR against the ten-item Definition of Done
 **Filters** — skip drafts; skip authors `dependabot[bot]` and `github-actions[bot]` unless the PR is labelled `cowork`
 **Model** — `standard` ([models.md](../../models.md))
 

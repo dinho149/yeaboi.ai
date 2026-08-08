@@ -3,6 +3,7 @@
 **Trigger** — cron `15 8 * * *` (daily 08:15 UTC). On Saturdays marketing starts 15 minutes earlier;
 that is rarely enough for a `deep` read of a whole mode, so treat the draft link as usually arriving
 in the *next* day's digest. On every other day there is no draft to carry at all.
+**Summary** — the open proposals, bucketed by type, waiting on your approval
 **Workstream** — none; this routine spans all fifteen.
 **Model** — `standard` ([models.md](../../models.md))
 
@@ -77,6 +78,17 @@ The single decision point. It is the only routine that posts proposals to Slack.
 
    One **channel-level** message, never a second on the same day — the channel-noise rule holds;
    the per-item replies live inside its thread, not in the channel.
+
+   That rule is about *this* routine. `cron/day-ahead.md` posts one other channel-level message
+   each morning, three hours earlier, and it is not a violation: it carries the day's schedule,
+   not findings. The two rules that look like they forbid it both survive. "Never a second on the
+   same day" keeps the digest from splitting itself across two messages, which is what makes ✅ on
+   a thread reply mean one issue — a different routine posting a different kind of thing does not
+   touch that. And "a digest that says nothing today every day trains everyone to ignore the
+   channel" is about *absence of findings*, which is why this routine stays silent on an empty
+   queue. A schedule is never absent: on a Sunday with no sweeps, "no sweeps today" is the fact
+   being asked for, and a reminder you cannot rely on arriving is not a reminder. Keep them
+   separate — never fold the schedule in here, and never let the day-ahead post carry a proposal.
 
 4. **Age out** — close any `cowork:proposal` issue open more than 14 days with the comment
    "closed unapproved after 14 days — re-file if still relevant". Never touch an issue that carries

@@ -1,6 +1,7 @@
 # roadmap sweep
 
 **Trigger** — cron `30 7 12 * *` (12th of the month, 07:30 UTC)
+**Summary** — roadmap intake and its four recorded surface-parity gaps
 **Workstream** — [`workstreams/roadmap.md`](../../workstreams/roadmap.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = roadmap`.

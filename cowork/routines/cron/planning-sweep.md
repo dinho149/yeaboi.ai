@@ -1,6 +1,7 @@
 # planning sweep
 
 **Trigger** — cron `0 7 * * 1` (Mon 07:00 UTC)
+**Summary** — ScrumState fields, prompt token budgets, and eval coverage
 **Workstream** — [`workstreams/planning.md`](../../workstreams/planning.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = planning`.

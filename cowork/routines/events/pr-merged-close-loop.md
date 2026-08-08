@@ -1,6 +1,7 @@
 # PR merged — close the loop
 
 **Trigger** — GitHub event, pull request `closed`
+**Summary** — on merge: Linear to Done, the Slack ship note, the Notion page
 **Filters** — `is_merged` true only. A closed-unmerged PR does nothing here.
 **Model** — `fast` ([models.md](../../models.md)) — every step reads a field and writes a field
 
