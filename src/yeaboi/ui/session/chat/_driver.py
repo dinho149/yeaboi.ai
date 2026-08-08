@@ -89,6 +89,13 @@ _PROGRESS_DONE_KEYS = {
     "task_decomposer": "tasks",
     "sprint_planner": "sprints",
 }
+# The line that stands in for the node's markdown summary once the card has
+# rendered it. A module constant because the resume replay writes it too, and
+# the two must not drift.
+_CONFIRM_VERDICT_PROMPT = (
+    "Here's everything I've got. Pick an option below — or type **accept**, **edit N**, or just tell me what's off."
+)
+
 _FORM_CHOICE_LABEL = "Fill it out as a form instead"
 _ESC_WINDOW_SECONDS = 2.0
 _DRY_STAGE_SECONDS = 1.5  # fake per-stage delay in --dry-run (patched to 0 in tests)
@@ -639,6 +646,27 @@ class _ChatDriver:
         else:
             self.composer.handle_key(key)
 
+    def _at_intake_summary(self) -> bool:
+        """True when the newest reply is the intake summary awaiting a verdict.
+
+        One predicate for both paths that render it: the live turn
+        (:meth:`_append_reply`) and the resume replay
+        (:meth:`_rebuild_transcript`). They must agree, or reopening a session
+        parked on the gate resurrects the markdown wall the card replaced.
+        The sub-states are excluded because each one re-asks something instead
+        of re-showing the summary — a PTO prompt, a velocity prompt, or the
+        re-ask of the answer being edited.
+        """
+        qs = self._qs()
+        return (
+            qs is not None
+            and qs.awaiting_confirmation
+            and not qs._awaiting_leave_input
+            and not qs._awaiting_velocity_input
+            and qs.editing_question is None
+            and qs.current_question > TOTAL_QUESTIONS
+        )
+
     def _append_reply(self, *, streamed: str) -> None:
         """Append the assistant's reply bubble (or a review card + prompt)."""
         messages = self.state.get("messages", [])
@@ -649,18 +677,9 @@ class _ChatDriver:
         qs = self._qs()
         # Intake confirmation summary → card + short bubble instead of the
         # node's markdown wall (the card is the same data, rendered properly).
-        if (
-            qs is not None
-            and qs.awaiting_confirmation
-            and not qs._awaiting_leave_input
-            and not qs._awaiting_velocity_input
-            and qs.current_question > TOTAL_QUESTIONS
-        ):
+        if self._at_intake_summary():
             self.transcript.add_artifact("intake_summary")
-            self._say(
-                "Here's everything I've got. Pick an option below — or type "
-                "**accept**, **edit N**, or just tell me what's off."
-            )
+            self._say(_CONFIRM_VERDICT_PROMPT)
             return
 
         if qs is not None and not qs.completed:
@@ -1354,11 +1373,30 @@ class _ChatDriver:
                 self.transcript.add_user(entry.get("text", ""))
             else:
                 self.transcript.add_assistant(entry.get("text", ""))
-        for message in self.state.get("messages", []):
+        messages = self.state.get("messages", [])
+        # The summary is a card in a live turn (_append_reply); replaying its
+        # markdown would hand a resumed session the wall of text the card
+        # exists to replace. It is the newest assistant reply whenever the
+        # questionnaire is parked on the verdict gate.
+        summary_at = -1
+        if self._at_intake_summary():
+            summary_at = max(
+                (
+                    i
+                    for i, m in enumerate(messages)
+                    if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content
+                ),
+                default=-1,
+            )
+        for i, message in enumerate(messages):
             if isinstance(message, HumanMessage) and isinstance(message.content, str):
                 self.transcript.add_user(message.content)
             elif isinstance(message, AIMessage) and isinstance(message.content, str) and message.content:
-                self.transcript.add_assistant(message.content)
+                if i == summary_at:
+                    self.transcript.add_artifact("intake_summary")
+                    self.transcript.add_assistant(_CONFIRM_VERDICT_PROMPT)
+                else:
+                    self.transcript.add_assistant(message.content)
         for kind, key in (
             ("analysis", "project_analysis"),
             ("features", "features"),

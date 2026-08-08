@@ -182,12 +182,30 @@ class TestConfirmationChoices:
     def test_confirmation_offers_the_verdict_rows(self):
         view = derive_question_view(_state(self._confirm_qs(), "Here is the summary."))
         labels = [label for label, _sel in view.choices]
-        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_OVERRIDE_VELOCITY, CONFIRM_FREETEXT]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT]
         assert view.choices[0][1] is True  # Accept pre-highlighted
         assert view.auto_submit is True
         assert view.multi_select is False
 
-    def test_small_mode_omits_the_velocity_row(self):
+    def test_the_velocity_row_appears_when_the_node_offered_one(self):
+        # The node appends its "[1] Accept N pts/sprint / [2] Override" block
+        # whenever Q6 yields a team size — so the row tracks that, not the mode.
+        qs = self._confirm_qs()
+        qs.answers[6] = "4 engineers"
+        view = derive_question_view(_state(qs, "Here is the summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_OVERRIDE_VELOCITY, CONFIRM_FREETEXT]
+
+    def test_small_mode_offers_the_velocity_row_too(self):
+        # Small mode skips the capacity deductions, not the velocity: its
+        # summary still ends in "[1] Accept 5 pts/sprint / [2] Override".
+        qs = self._confirm_qs("small_project")
+        qs.answers[6] = "1 engineer"
+        view = derive_question_view(_state(qs, "Summary."))
+        labels = [label for label, _sel in view.choices]
+        assert CONFIRM_OVERRIDE_VELOCITY in labels
+
+    def test_no_team_size_means_no_velocity_row(self):
         view = derive_question_view(_state(self._confirm_qs("small_project"), "Summary."))
         labels = [label for label, _sel in view.choices]
         assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT]

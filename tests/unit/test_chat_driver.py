@@ -7,7 +7,7 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage, HumanMessage
 from rich.console import Console
 
-from yeaboi.agent.state import QuestionnaireState, ReviewDecision
+from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState, ReviewDecision
 from yeaboi.ui.session.chat._driver import _ChatDriver
 from yeaboi.ui.session.chat._screen import ChoiceRows
 
@@ -642,6 +642,58 @@ class TestResume:
         texts = [m.text for m in driver.transcript.messages]
         assert "Hey" in texts
         assert "my description" in texts
+
+    def test_resume_at_the_verdict_gate_replays_the_card_not_the_markdown(self):
+        # The summary is a card in a live turn; a resumed session that replayed
+        # the node's markdown would show the wall of text the card replaces.
+        qs = QuestionnaireState(awaiting_confirmation=True)
+        qs.current_question = TOTAL_QUESTIONS + 1
+        state = {
+            "messages": [HumanMessage(content="my description"), AIMessage(content="## Phase 6\n\nQ30. ...")],
+            "_chat_greeting_done": True,
+            "questionnaire": qs,
+            "pending_review": "project_intake",
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._rebuild_transcript()
+        assert ("artifact", "intake_summary") in [(m.role, m.artifact_kind) for m in driver.transcript.messages]
+        texts = [m.text for m in driver.transcript.messages]
+        assert not any("Q30." in t for t in texts)
+        assert any("Pick an option below" in t for t in texts)
+
+    def test_a_live_edit_reask_is_not_swallowed_by_the_card(self):
+        # Same gate, live side: the node re-asks the edited question, and the
+        # card would replace it with a summary the user did not ask for.
+        qs = QuestionnaireState(awaiting_confirmation=True)
+        qs.current_question = TOTAL_QUESTIONS + 1
+        qs.editing_question = 6
+        state = {
+            "messages": [HumanMessage(content="edit 6"), AIMessage(content="**Q6.** Enter your new answer:")],
+            "questionnaire": qs,
+            "_chat_greeting_done": True,
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._append_reply(streamed="")
+        bubble = next(m for m in reversed(driver.transcript.messages) if m.role == "assistant")
+        assert "Enter your new answer" in bubble.text
+
+    def test_resume_mid_edit_keeps_the_re_ask(self):
+        # editing_question means the newest reply is the re-asked question, not
+        # the summary — swallowing it would leave the user with no prompt.
+        qs = QuestionnaireState(awaiting_confirmation=True)
+        qs.current_question = TOTAL_QUESTIONS + 1
+        qs.editing_question = 6
+        state = {
+            "messages": [HumanMessage(content="edit 6"), AIMessage(content="**Q6.** Enter your new answer:")],
+            "_chat_greeting_done": True,
+            "questionnaire": qs,
+            "pending_review": "project_intake",
+        }
+        driver = _driver(FakeGraph([]), _keys([]), state)
+        driver._rebuild_transcript()
+        texts = [m.text for m in driver.transcript.messages]
+        assert any("Enter your new answer" in t for t in texts)
+        assert ("artifact", "intake_summary") not in [(m.role, m.artifact_kind) for m in driver.transcript.messages]
 
 
 class TestInlineCommands:

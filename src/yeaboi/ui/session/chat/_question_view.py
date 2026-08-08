@@ -95,6 +95,25 @@ def planned_question_progress(qs: QuestionnaireState) -> tuple[int, int] | None:
     return min(done + 1, len(planned)), len(planned)
 
 
+def _offers_velocity_choice(qs: QuestionnaireState) -> bool:
+    """Whether the summary put a velocity verdict on the table.
+
+    The node appends its "[1] Accept N pts/sprint / [2] Override" block
+    whenever it can parse a team size out of Q6 — small-project mode included
+    (small skips the *capacity deductions*, not the velocity). Asking the same
+    question the node asks stops the menu from offering an override the node
+    would reject, or hiding one it is waiting for. False when the derivation
+    fails: a missing row is recoverable by typing "override".
+    """
+    try:
+        from yeaboi.agent.nodes import _extract_team_and_velocity
+
+        return bool(_extract_team_and_velocity(qs))
+    except Exception:  # pragma: no cover — a render must never die on this
+        logger.warning("_offers_velocity_choice: extraction failed", exc_info=True)
+        return False
+
+
 @dataclass
 class QuestionView:
     """Everything the chat needs to present the current intake prompt."""
@@ -145,8 +164,7 @@ def derive_question_view(graph_state: dict) -> QuestionView:
         and cur_q > TOTAL_QUESTIONS
     ):
         labels = [CONFIRM_ACCEPT, CONFIRM_EDIT]
-        if qs.intake_mode != "small_project":
-            # Small mode has no capacity/velocity machinery to override.
+        if _offers_velocity_choice(qs):
             labels.append(CONFIRM_OVERRIDE_VELOCITY)
         labels.append(CONFIRM_FREETEXT)
         view.choices = [(label, i == 0) for i, label in enumerate(labels)]
