@@ -19,6 +19,9 @@ A find may skip the proposal step and go straight to a PR only when **every** co
 3. dead code removal
 4. documentation drift (docs that contradict the code)
 5. lint / type-annotation cleanup
+6. a CodeQL alert whose rule id is on the `auto` list in
+   [`.github/codeql/triage-policy.yml`](../.github/codeql/triage-policy.yml) — belongs to
+   `codeql-triage.yml`, not to a routine; see the carve-out below
 
 **Everything else proposes.** If you are arguing with yourself about whether something qualifies,
 it does not. Marketing always proposes.
@@ -39,6 +42,28 @@ not an acceptable posture on a known exploitable version. It stays auto-lane, wi
 check `gh pr list --author "app/dependabot" --state open` first, and if a PR already bumps that
 dependency, **drive that PR instead of opening your own**. Two PRs raising the same pin is the exact
 collision the paragraph above exists to prevent, and a CVE is not a reason to cause it.
+
+**CodeQL alerts belong to a workflow, not a routine, and category 6 takes three exemptions from the
+guardrails below.** They are listed here rather than assumed, because each one is a rule this file
+otherwise enforces:
+
+- *One coherent change per run* — a batch of same-rule mechanical fixes **is** one coherent change.
+  Twenty-five `uses:` lines pinned to their current SHAs is one review, read once; splitting it
+  across twenty-five runs is twenty-five reviews of the same decision. The batch is capped
+  (`max_batch` in the policy file) and anything over the cap is reported by number, never dropped
+  silently.
+- *One open PR per workstream* — the triage PR does not count against `security`'s. It carries its
+  own single-PR guard: the survey step exits early when a `security/codeql-triage` branch already
+  has one open, so the mechanism is preserved, just not shared with the sweep's.
+- *Stay in your paths* — alerts land wherever the code is, so a per-charter boundary would leave
+  most of them unowned by anyone. What bounds the risk instead is the **rule id**: only rules whose
+  fix is mechanical, local and provably behaviour-preserving are on the `auto` list, and the policy
+  file records the prescribed fix for each.
+
+None of that removes a gate. The triage PR still opens only after `make test`, `make lint`,
+`make security` and a `code-reviewer` pass, and it merges via `gh pr merge --auto`, so the
+main-branch ruleset — including the `pr-feedback` status — is what actually decides. A wrong fix
+does not merge; it sits red.
 
 ## Guardrails
 

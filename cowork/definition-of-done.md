@@ -8,7 +8,7 @@ Nothing is "done" because the code works — it is done when the loop is closed.
 | 1 | **Linear ticket** exists on team `Yeaboi`, labelled `workstream:<name>`, with the PR attached, `Closes YEA-NN` in the PR body, and a state that tracks reality — In Progress while building, In Review from PR open, Done on merge | scribe: `save_issue` (state + `links`); attach + merge close via the Linear GitHub integration reading `Closes YEA-NN` |
 | 2 | **Tests** — a unit test per new function (happy + error), render tests for every `_build_*_screen`, mock tests for LLM-dependent code (success / error fallback / code fences), round-trip tests for new state fields | `make test` |
 | 3 | **Lint** | `make lint` |
-| 4 | **Security** — ruff SAST + `pip-audit` clean, CodeQL not regressed | `make security` |
+| 4 | **Security** — ruff SAST + `pip-audit` clean, and CodeQL not regressed | `make security` locally; the regression half is `codeql.yml` on the PR, swept weekly by `codeql-triage.yml` |
 | 5 | **Surface parity** — new capability registered in `CAPABILITIES` (+ `PARAM_PAIRS`) in `tests/unit/test_surface_parity.py`, plus a `FeatureTip` in `src/yeaboi/ui/shared/_tips.py`; or a recorded `Exempt("reason")` | `make test` fails without it |
 | 6 | **Observability** — the three pillars from `CLAUDE.md`: `logger.info()` on every user action, log paths from `paths.py`, tests | review |
 | 7 | **Web bundles** — anything under `frontend/` ⇒ `make web` and the rebuilt `src/yeaboi/web/static/` committed in the *same* commit | CI `web` job |

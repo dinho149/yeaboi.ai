@@ -1,0 +1,47 @@
+# Which CodeQL rules `codeql-triage.yml` may fix without a human, and which it
+# must always propose. This file is the machine-readable half of the auto-lane
+# allowlist in cowork/house-rules.md; tests/unit/test_codeql_triage.py fails if
+# the two disagree, because a rule that is auto here and unmentioned there is an
+# approval gate removed in a file nobody reads.
+#
+# The test for putting a rule under `auto` is not "is it low severity" — it is
+# **can a wrong fix be caught by CI**. A rule qualifies when its fix is
+# mechanical, local, and provably behaviour-preserving, so `make test` plus the
+# code-reviewer pass is a real gate rather than a formality. A rule where the
+# right fix depends on what the code is *for* belongs under `propose`, whatever
+# its severity: the expensive mistake is not a missed alert, it is a confident
+# wrong fix merged unattended.
+
+auto:
+  - id: actions/unpinned-tag
+    fix: >-
+      Pin the action to the commit SHA its current tag points at, with the
+      resolved version as a trailing `# vX.Y.Z` comment. Never bump the major
+      while pinning — resolve the SHA of the ref already in the file.
+  - id: py/log-injection
+    fix: >-
+      Wrap the tainted argument in `redaction.log_safe()`. Wrap the argument,
+      never the format string. If the site uses `%r` to show a value's type,
+      keep that by writing `log_safe(repr(value))` against a `%s` spec.
+  - id: py/incomplete-url-substring-sanitization
+    fix: >-
+      Replace the substring test with whole-host matching — parse the authority
+      out with `urlparse(...).hostname` and compare `host == known or
+      host.endswith("." + known)`. See `tools/local_git._known_git_host`.
+
+# Always proposed, with the reason recorded so nobody re-litigates it from
+# scratch each quarter. An entry here is a decision, not a backlog item.
+propose:
+  - id: actions/untrusted-checkout/medium
+    why: >-
+      auto-version.yml checks out the PR head on purpose, and the file already
+      carries the reasoning plus the fine-grained-PAT requirement that bounds
+      it. Removing the checkout breaks the workflow_run chain that Claude
+      Review and Dependabot verify both depend on. Any change here is a
+      redesign of the release path, not an alert fix.
+
+# Cap on how many alerts one run may fix. Past this the run fixes the first N,
+# reports the rest by number, and leaves them for the following week — a large
+# batch is where a mechanical fix stops being reviewable, which is the only
+# thing standing between this workflow and a bad merge.
+max_batch: 40

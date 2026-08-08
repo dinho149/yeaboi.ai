@@ -75,3 +75,12 @@ SCRUM.md
 # Stray log tree from a run whose home directory resolved relative — logs
 # belong under ~/.yeaboi/logs (paths.py owns every log path), never in the repo.
 /Documents/
+
+# Scratch written at the repo root by codeql-triage.yml's survey step, for the
+# Claude step in the same job to read. Ignored because that job — unlike the
+# flaky hunter, which also writes JSON here — goes on to COMMIT, and a stray
+# `git add` of a file listing every open security alert is not a mistake worth
+# leaving available.
+/alerts-raw.json
+/codeql-auto.json
+/codeql-propose.json
