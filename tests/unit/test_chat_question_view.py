@@ -3,8 +3,15 @@
 from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import QuestionnaireState
-from yeaboi.prompts.intake import QUESTION_METADATA
-from yeaboi.ui.session.chat._question_view import derive_question_view
+from yeaboi.prompts.intake import QUESTION_METADATA, SMALL_PROJECT_ESSENTIALS, SMART_ESSENTIALS, AnswerSource
+from yeaboi.ui.session.chat._question_view import (
+    CONFIRM_ACCEPT,
+    CONFIRM_EDIT,
+    CONFIRM_FREETEXT,
+    CONFIRM_OVERRIDE_VELOCITY,
+    derive_question_view,
+    planned_question_progress,
+)
 
 
 def _state(qs: QuestionnaireState, ai_text: str = "What is your team size?") -> dict:
@@ -24,10 +31,13 @@ class TestBasics:
         assert view.choices is None
 
     def test_progress_and_phase(self):
+        # Fresh questionnaire, standard/smart mode: nothing answered by the
+        # user yet, so the honest count is position 1 over the essential set —
+        # not "Q6 of 30", which counts the whole bank.
         qs = QuestionnaireState()
         qs.current_question = 6
         view = derive_question_view(_state(qs))
-        assert view.progress == "Q6 of 30"
+        assert view.progress == f"Question 1 of {len(SMART_ESSENTIALS)}"
         assert view.current_question == 6
 
 
@@ -156,3 +166,99 @@ class TestPtoSubLoop:
         qs._awaiting_leave_input = True
         view = derive_question_view(_state(qs, "Does anyone have planned leave?\n\n[1] Yes\n[2] No"))
         assert view.choices is None
+
+
+class TestConfirmationChoices:
+    """The summary's verdict is a pick: Accept / Edit / (Override velocity) /
+    Tell-me rows appear exactly when _append_reply shows the card — and never
+    during the PTO sub-loop, velocity number entry, or an edit re-ask."""
+
+    def _confirm_qs(self, intake_mode: str = "standard") -> QuestionnaireState:
+        qs = QuestionnaireState(intake_mode=intake_mode)
+        qs.awaiting_confirmation = True
+        qs.current_question = 31
+        return qs
+
+    def test_confirmation_offers_the_verdict_rows(self):
+        view = derive_question_view(_state(self._confirm_qs(), "Here is the summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT]
+        assert view.choices[0][1] is True  # Accept pre-highlighted
+        assert view.auto_submit is True
+        assert view.multi_select is False
+
+    def test_the_velocity_row_appears_when_the_node_offered_one(self):
+        # The node appends its "[1] Accept N pts/sprint / [2] Override" block
+        # whenever Q6 yields a team size — so the row tracks that, not the mode.
+        qs = self._confirm_qs()
+        qs.answers[6] = "4 engineers"
+        view = derive_question_view(_state(qs, "Here is the summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_OVERRIDE_VELOCITY, CONFIRM_FREETEXT]
+
+    def test_small_mode_offers_the_velocity_row_too(self):
+        # Small mode skips the capacity deductions, not the velocity: its
+        # summary still ends in "[1] Accept 5 pts/sprint / [2] Override".
+        qs = self._confirm_qs("small_project")
+        qs.answers[6] = "1 engineer"
+        view = derive_question_view(_state(qs, "Summary."))
+        labels = [label for label, _sel in view.choices]
+        assert CONFIRM_OVERRIDE_VELOCITY in labels
+
+    def test_no_team_size_means_no_velocity_row(self):
+        view = derive_question_view(_state(self._confirm_qs("small_project"), "Summary."))
+        labels = [label for label, _sel in view.choices]
+        assert labels == [CONFIRM_ACCEPT, CONFIRM_EDIT, CONFIRM_FREETEXT]
+
+    def test_velocity_number_entry_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs._awaiting_velocity_input = True
+        view = derive_question_view(_state(qs, "Enter your velocity (pts/sprint):"))
+        assert view.choices is None
+
+    def test_edit_reask_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs.editing_question = 6
+        view = derive_question_view(_state(qs, "Enter your new answer:"))
+        assert view.choices is None
+
+    def test_pto_subloop_suppresses_choices(self):
+        qs = self._confirm_qs()
+        qs._awaiting_leave_input = True
+        view = derive_question_view(_state(qs, "Does anyone have planned leave?"))
+        assert view.choices is None
+
+
+class TestPlannedProgress:
+    """planned_question_progress counts the questions actually planned for
+    THIS run (user-answered + essential gaps), not the 30-question bank —
+    the same gap function the node paces the flow with."""
+
+    def test_direct_answer_advances_position_and_holds_total(self):
+        # Q3 has no CONDITIONAL_ESSENTIALS dependent, so answering it moves
+        # the position without growing the plan.
+        qs = QuestionnaireState()
+        qs.answers[3] = "solve scheduling chaos"
+        qs.answer_sources[3] = AnswerSource.DIRECT
+        assert planned_question_progress(qs) == (2, len(SMART_ESSENTIALS))
+
+    def test_conditional_promotion_grows_the_total(self):
+        # A real (non-defaulted) Q6 answer promotes Q7 (team roles) into the
+        # plan: position advances AND the total grows by one — honesty over
+        # a frozen count.
+        qs = QuestionnaireState()
+        qs.answers[6] = "4 engineers"
+        qs.answer_sources[6] = AnswerSource.DIRECT
+        assert planned_question_progress(qs) == (2, len(SMART_ESSENTIALS) + 1)
+
+    def test_extracted_answers_do_not_count_as_asked(self):
+        # Extraction filling Q3 removes it from the gaps but it was never
+        # asked — position must stay 1 and the total shrink.
+        qs = QuestionnaireState()
+        qs.answers[3] = "from the description"
+        qs.answer_sources[3] = AnswerSource.EXTRACTED
+        assert planned_question_progress(qs) == (1, len(SMART_ESSENTIALS) - 1)
+
+    def test_small_mode_uses_its_leaner_essential_set(self):
+        qs = QuestionnaireState(intake_mode="small_project")
+        assert planned_question_progress(qs) == (1, len(SMALL_PROJECT_ESSENTIALS))

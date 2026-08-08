@@ -3348,7 +3348,7 @@ wheels = [
 
 [[package]]
 name = "yeaboi"
-version = "2.55.2"
+version = "2.57.0"
 source = { editable = "." }
 dependencies = [
     { name = "atlassian-python-api" },

@@ -24,7 +24,13 @@ from dataclasses import dataclass, field
 from langchain_core.messages import AIMessage
 
 from yeaboi.agent.state import TOTAL_QUESTIONS, QuestionnaireState
-from yeaboi.prompts.intake import CHAT_MODE_HIDDEN_CHOICES, PHASE_LABELS, QUESTION_METADATA, is_choice_question
+from yeaboi.prompts.intake import (
+    CHAT_MODE_HIDDEN_CHOICES,
+    PHASE_LABELS,
+    QUESTION_METADATA,
+    AnswerSource,
+    is_choice_question,
+)
 from yeaboi.repl._io import _get_active_suggestion
 from yeaboi.repl._questionnaire import _split_intake_preamble
 
@@ -33,6 +39,79 @@ logger = logging.getLogger(__name__)
 # Q27 (sprint selection) is single-select among the dynamic follow-up menus;
 # Q6 member selection is multi-select. Same table as the phase loop used.
 _SINGLE_SELECT_DYNAMIC_QS = {27}
+
+# Answer sources that mean the user typed/picked it themselves — the questions
+# that were genuinely ASKED this run, as opposed to filled by extraction,
+# SCRUM.md, or defaults.
+_USER_ANSWERED_SOURCES = (AnswerSource.DIRECT, AnswerSource.PROBED)
+
+# Confirmation-gate choice labels. The driver maps a pick to the node literal
+# ("accept"/"override") or handles it locally — the raw label must NEVER reach
+# the graph: _parse_edit_intent reads a bare digit as "edit QN", and
+# _is_confirm_intent doesn't know these strings.
+CONFIRM_ACCEPT = "Accept — build the plan"
+CONFIRM_EDIT = "Edit an answer…"
+CONFIRM_OVERRIDE_VELOCITY = "Override the velocity…"
+CONFIRM_FREETEXT = "Tell me what's off…"
+
+
+def planned_question_sets(qs: QuestionnaireState) -> tuple[list[int], set[int]] | None:
+    """(remaining gaps, user-answered) — the questions this run actually asks.
+
+    Extraction, SCRUM.md and defaults silently answer most of the 30-question
+    bank; only the essential gaps get asked. This reuses the same
+    _find_essential_gaps the node drives the flow with, so it always agrees
+    with its "(N remaining)" copy. None when the derivation fails (callers
+    keep a fallback).
+    """
+    try:
+        # Lazy: nodes is a heavy module and imports back into UI-adjacent
+        # territory — same precedent as the driver's apply_size_switch import.
+        from yeaboi.agent.nodes import _essentials_for_mode, _find_essential_gaps
+
+        remaining = _find_essential_gaps(qs, _essentials_for_mode(qs.intake_mode))
+    except Exception:  # pragma: no cover — a render must never die on this
+        logger.warning("planned_question_sets: gap derivation failed", exc_info=True)
+        return None
+    asked = {q for q, src in qs.answer_sources.items() if src in _USER_ANSWERED_SOURCES}
+    return remaining, asked
+
+
+def planned_question_progress(qs: QuestionnaireState) -> tuple[int, int] | None:
+    """(position, total) over the questions actually planned for this run.
+
+    "Q7 of 30" lies — see planned_question_sets. Recomputed every turn: a
+    CONDITIONAL_ESSENTIALS promotion growing the total mid-run is honesty,
+    not drift. None when the count can't be derived (caller keeps a fallback).
+    """
+    sets = planned_question_sets(qs)
+    if sets is None:
+        return None
+    remaining, asked = sets
+    planned = set(remaining) | asked
+    if not planned:
+        return None
+    done = len(planned) - len(remaining)
+    return min(done + 1, len(planned)), len(planned)
+
+
+def _offers_velocity_choice(qs: QuestionnaireState) -> bool:
+    """Whether the summary put a velocity verdict on the table.
+
+    The node appends its "[1] Accept N pts/sprint / [2] Override" block
+    whenever it can parse a team size out of Q6 — small-project mode included
+    (small skips the *capacity deductions*, not the velocity). Asking the same
+    question the node asks stops the menu from offering an override the node
+    would reject, or hiding one it is waiting for. False when the derivation
+    fails: a missing row is recoverable by typing "override".
+    """
+    try:
+        from yeaboi.agent.nodes import _extract_team_and_velocity
+
+        return bool(_extract_team_and_velocity(qs))
+    except Exception:  # pragma: no cover — a render must never die on this
+        logger.warning("_offers_velocity_choice: extraction failed", exc_info=True)
+        return False
 
 
 @dataclass
@@ -43,8 +122,9 @@ class QuestionView:
     preamble_lines: list[str] = field(default_factory=list)
     choices: list[tuple[str, bool]] | None = None  # (label, pre_selected)
     multi_select: bool = False
+    auto_submit: bool = False  # bare digit picks + submits (command menus only)
     suggestion: str | None = None  # free-text prefill (chip suggestions become prefill)
-    progress: str = ""  # "Q7 of 30" (chat shows it for every mode)
+    progress: str = ""  # "Question 2 of 6" over the planned set (chat shows it for every mode)
     phase_label: str = ""
     current_question: int = 0
 
@@ -71,8 +151,32 @@ def derive_question_view(graph_state: dict) -> QuestionView:
     cur_q = qs.current_question
     view.current_question = cur_q
     view.phase_label = PHASE_LABELS.get(qs.current_phase, "")
+
+    # Confirmation gate: the summary card's verdict is a pick, not prose.
+    # Guard mirrors _append_reply's card condition exactly — the choices must
+    # appear iff the card+prompt did, and never during the PTO sub-loop,
+    # velocity number entry, or an edit re-ask.
+    if (
+        qs.awaiting_confirmation
+        and not qs._awaiting_leave_input
+        and not qs._awaiting_velocity_input
+        and qs.editing_question is None
+        and cur_q > TOTAL_QUESTIONS
+    ):
+        labels = [CONFIRM_ACCEPT, CONFIRM_EDIT]
+        if _offers_velocity_choice(qs):
+            labels.append(CONFIRM_OVERRIDE_VELOCITY)
+        labels.append(CONFIRM_FREETEXT)
+        view.choices = [(label, i == 0) for i, label in enumerate(labels)]
+        view.multi_select = False
+        view.auto_submit = True
+        return view
     if 1 <= cur_q <= TOTAL_QUESTIONS:
-        view.progress = f"Q{cur_q} of {TOTAL_QUESTIONS}"
+        planned = planned_question_progress(qs)
+        if planned:
+            view.progress = f"Question {planned[0]} of {planned[1]}"
+        else:
+            view.progress = f"Q{cur_q} of {TOTAL_QUESTIONS}"
     view.suggestion = _get_active_suggestion(graph_state)
 
     # PTO sub-loop: current_question points at the leave section but the node

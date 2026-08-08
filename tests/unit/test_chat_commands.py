@@ -24,6 +24,7 @@ def _ctx(**overrides) -> ChatContext:
         fast_forward=MagicMock(),
         plan_complete=lambda: False,
         toggle_duck=MagicMock(),
+        show_questions=MagicMock(),
     )
     defaults.update(overrides)
     return ChatContext(**defaults)
@@ -186,6 +187,19 @@ class TestDuckCommand:
         assert any(c.name == "duck" for c in matching_commands(ctx, "/duck"))
         assert dispatch(ctx, "/duck") is True
         ctx.toggle_duck.assert_called_once()
+
+
+class TestQuestionsCommand:
+    def test_questions_dispatches_to_show_questions(self):
+        ctx = _ctx()
+        dispatch(ctx, "/questions")
+        ctx.show_questions.assert_called_once()
+
+    def test_questions_unavailable_pre_questionnaire(self):
+        ctx = _ctx(questionnaire_exists=lambda: False)
+        dispatch(ctx, "/questions")
+        ctx.show_questions.assert_not_called()
+        ctx.add_system.assert_called_once()  # "unknown command" notice
 
 
 class TestFinishCommand:

@@ -53,5 +53,12 @@ def _bypass_input_guardrails(monkeypatch):
     inside run_repl() sees the stub.  Patching the original module
     (``yeaboi.input_guardrails.validate_input``) would not affect the
     already-imported reference in the repl module.
+
+    Mostly redundant since the REPL stopped classifying answers
+    (``classify_topic=not _answering``) — the questionnaire is live for nearly
+    every input these tests send, so the classifier is already skipped. Kept
+    because the opening description still reaches layer 4, and that is exactly
+    the "hello world" case above. The stub takes ``**_kw`` so it accepts the
+    flag; a positional-only lambda would TypeError on every REPL turn.
     """
-    monkeypatch.setattr("yeaboi.repl.validate_input", lambda text: None)
+    monkeypatch.setattr("yeaboi.repl.validate_input", lambda text, **_kw: None)

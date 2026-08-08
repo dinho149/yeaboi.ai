@@ -69,8 +69,10 @@ _TIPS_PAIRS = [
     ("␣␣", "double-tap Space to speak"),
     ("/form", "fill it out as a form"),
     ("alt+enter", "new line"),
-    ("/finish", "answer the rest with defaults"),
+    ("/finish", "answer the rest with defaults (Esc stops)"),
     ("/export", "save plan + chat"),
+    ("/questions", "see what I'll ask"),
+    ("/summary", "your answers so far"),
 ]
 
 # Rendered once per column width — static copy, never per-frame work.
@@ -84,11 +86,17 @@ class ChoiceRows:
     options: (label, checked) — checked marks multi-select toggles and the
     single-select pre-selection. highlight is the ❯ row; the driver moves it
     only while the composer is empty (one unambiguous arrow-key rule).
+
+    auto_submit: a bare digit keypress picks and submits that row in one
+    stroke. Only for menus whose labels are commands (the size question, the
+    review verdict) — never for data-entry questions, where a typed "12"
+    must stay free text.
     """
 
     options: list[tuple[str, bool]] = field(default_factory=list)
     highlight: int = 0
     multi: bool = False
+    auto_submit: bool = False
 
 
 @dataclass
@@ -346,6 +354,10 @@ def build_chat_screen(
         pairs.append(("Tab", "complete"))
     if choices is not None and choices.options:
         pairs.append(("↑/↓", "choose"))
+        # Arrows belong to the menu while one is up, so name the keys that
+        # still reach the transcript — a menu usually sits under something
+        # the answer depends on (the intake summary is 30 rows of it).
+        pairs.append(("PgUp/PgDn", "scroll"))
         if choices.multi:
             pairs.append(("Space", "toggle"))
     pairs += [("Enter", "send"), ("Alt+Enter", "newline"), ("/", "commands")]

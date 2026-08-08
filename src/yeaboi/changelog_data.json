@@ -2,6 +2,61 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.57.0",
+      "date": "2026-08-07",
+      "summary": "Planning mode got eight quality-of-life improvements that speed up intake and make the chat feel more responsive. Type a digit (1/2/3) to instantly pick and submit on size and review choices, no Enter needed — the feature even works on multi-choice rows. The progress subtitle now reads \"Question X of Y\" over the set this run actually asks (not the full question bank), and a new `/questions` command lists planned topics with status markers. Large responses (intake summaries, review walls) skip the fake typewriter effect and land directly as artifact cards. The review verdict is now a selectable row — Accept / Edit an answer / Override velocity / Tell me what's off — mapped to node literals so digits and raw text never reach the graph. A clock-derived duck quip rotates every 5 seconds of a long wait, with a quack every fourth slot and one shades gag on really long ones. Small projects are hard-capped at 2 stories total and trimmed post-validate with a warning. Fast mode gained a visible subtitle and an `/finish` toggle to auto-accept remaining questions and exit the chat.",
+      "highlights": [
+        {
+          "text": "Bare digit auto-submit: 1/2/3 picks and submits on size/review rows, no Enter needed",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Honest question count: subtitle shows \"Question X of Y\" over only the questions this run asks",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "/questions command lists planned topics with ✓/●/○ markers",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "No wall-of-text streaming: large deterministic replies (intake summary, review walls) land directly as artifact cards",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Selectable review verdict: Accept / Edit an answer / Override velocity / Tell me what's off choice rows",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Duck entertainment: clock-derived quip rotator every 5s of a wait, with a quack every fourth slot and one shades gag on long waits",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Small projects hard-capped at 2 stories total, with post-validate trim and warning",
+          "areas": [
+            "planning"
+          ]
+        },
+        {
+          "text": "Fast mode visible exit: \"Fast mode (Esc stops)\" subtitle, /finish toggle to auto-accept and exit the chat",
+          "areas": [
+            "planning"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.56.0",
       "date": "2026-08-07",
       "summary": "Voice input now lets you pick which microphone to use, making it work on hardware that wasn't detected before. Most USB and Bluetooth mics refuse to open at Whisper's default 16 kHz mono format — voice input now negotiates whatever format your mic actually supports, records natively, and converts afterward, so audio gets captured even on finicky hardware. A new Settings page lets you test each microphone, and Tab during recording switches between them on the fly. The feature is now discoverable in the TUI with an input-level meter and \"no sound detected\" warning, plus a new `--list-audio-devices` CLI diagnostic.",

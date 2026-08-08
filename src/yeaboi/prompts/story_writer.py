@@ -21,6 +21,12 @@
 MIN_STORIES_PER_FEATURE = 1
 MAX_STORIES_PER_FEATURE = 5
 
+# Hard ceiling on TOTAL stories for a small project (one sentinel epic, a
+# quick sprint or two). Enforced twice: instructed in the prompt below, and
+# trimmed post-parse in the story_writer node so an over-generating LLM
+# cannot exceed it.
+SMALL_PROJECT_MAX_STORIES = 2
+
 # Maximum story points before a story should be split.
 MAX_STORY_POINTS = 8
 
@@ -153,6 +159,7 @@ def get_story_writer_prompt(
     review_feedback: str | None = None,
     review_mode: str | None = None,
     previous_output: str | None = None,
+    max_total_stories: int | None = None,
 ) -> str:
     """Build the story writer prompt with injected project analysis and feature fields.
 
@@ -180,6 +187,9 @@ def get_story_writer_prompt(
         review_feedback: User feedback from a previous review (reject/edit).
         review_mode: "reject" or "edit" — controls how feedback is framed.
         previous_output: Previous output text for edit mode reference.
+        max_total_stories: Hard ceiling on TOTAL stories across all features
+            (small projects). Overrides both the per-feature range and any
+            team-calibration average.
 
     Returns:
         The complete prompt string ready to send to the LLM.
@@ -191,7 +201,21 @@ def get_story_writer_prompt(
     from yeaboi.prompts.feature_generator import _build_review_section
 
     _avg_match = _re.search(r"avg\s+(\d+\.?\d*)\s+stories.epic", team_calibration, _re.IGNORECASE)
-    if _avg_match:
+    if max_total_stories is not None:
+        # Small-project ceiling — beats the team average: a quick one-sprint
+        # job must not inherit a large team's 4-stories-per-epic habit.
+        task_instruction = (
+            f"This is a SMALL project. Produce at MOST {max_total_stories} user stories "
+            f"TOTAL across all features — one meaty story is fine when the scope fits. "
+            f"Do NOT pad to reach the maximum. "
+            f"Return a JSON array matching this exact schema:\n\n"
+            f"```json\n{_build_json_schema(dod_items)}\n```\n\n"
+        )
+        count_rule = (
+            f"1. HARD LIMIT: at most {max_total_stories} stories in total, across all "
+            f"features combined. Fewer is better when the scope fits.\n"
+        )
+    elif _avg_match:
         _team_avg = round(float(_avg_match.group(1)))
         _team_min = max(1, _team_avg - 1)
         _team_max = max(_team_avg + 1, 3)
