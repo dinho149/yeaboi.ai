@@ -74,3 +74,12 @@ class TestHitTest:
     def test_border_and_hint_rows_are_dead(self):
         assert category_at_pos(100, 30, row=1, col=50) is None
         assert category_at_pos(100, 30, row=30, col=50) is None
+
+
+class TestChromeOptOuts:
+    def test_no_corner_companion_on_the_landing_split(self):
+        # The screen shows both mascots already; the chrome's corner duck would
+        # be a third. The stamp is read by MusicLive.get_renderable.
+        panel = _build_category_screen(0, width=110, height=32)
+        assert getattr(panel, "_no_companion_duck", False) is True
+        assert getattr(panel, "_no_back_hint", False) is True

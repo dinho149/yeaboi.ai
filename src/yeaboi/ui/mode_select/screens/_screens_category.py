@@ -190,6 +190,9 @@ def _build_category_screen(
     )
     panel = build_page_panel(content, height=height, padding=(1, 2, 0, 2))
     panel._no_back_hint = True  # the landing screen's Esc is quit, not "go back"
+    # The screen already features both mascots — a third duck in the chrome
+    # corner is a crowd, so opt out (same stamp the too-small guard uses).
+    panel._no_companion_duck = True
     return panel
 
 
