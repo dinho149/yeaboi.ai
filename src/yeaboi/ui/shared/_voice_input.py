@@ -49,6 +49,17 @@ _SILENCE_LEVEL = 0.02
 # the pause before someone starts talking.
 _SILENCE_SECONDS = 2.5
 
+# An unanswered offer is a decline. Without a ceiling the modal would hold the
+# caller's key loop for as long as the app is open — a user who double-tapped
+# Space by accident and walked away should get their text field back.
+_OFFER_TIMEOUT_SECONDS = 120.0
+_OFFER_POLL_SECONDS = 0.2
+
+# Esc during the offer declines for this process only. People hit Space Space
+# repeatedly while composing, and re-asking on every tap is nagging; re-asking
+# on the next launch is not.
+_offer_declined_session = False
+
 # Voice input is triggered by a quick double-tap of the space bar — chosen over a
 # Ctrl/Cmd chord because macOS terminals never receive Cmd (so Ctrl was the only
 # option and read as ambiguous), and terminals can't detect key-release, ruling
@@ -88,34 +99,48 @@ _CHIP_ON_STYLE = "rgb(110,110,125)"
 _CHIP_OFF_STYLE = "rgb(80,80,92)"
 
 # Memoised: titles are rebuilt every frame and is_voice_available() walks
-# sys.path twice. Tests that monkeypatch availability call reset_voice_chip().
+# sys.path twice. Dropped by reset_voice_chip() once an in-app install lands.
 _chip_cache: tuple[str, str] | None = None
 
 
 def reset_voice_chip() -> None:
     """Forget the cached availability chip.
 
-    Called by tests that monkeypatch availability. Nothing in production calls
-    it: the voice extra cannot appear part-way through a process, so the cache
-    is valid for the life of the run.
+    Called by :func:`yeaboi.voice_install.refresh_imports` after an in-app
+    install — the voice extra *can* now appear part-way through a process, which
+    is exactly what this cache was originally allowed to assume away — and by
+    tests that monkeypatch availability.
     """
-    global _chip_cache
+    global _chip_cache, _offer_declined_session
     _chip_cache = None
+    _offer_declined_session = False
 
 
 def voice_chip() -> tuple[str, str]:
     """Return ``(chip_text, style)`` advertising dictation on an input box.
 
     Shown whether or not the optional extra is installed — an affordance is UI,
-    not a tip, so unlike :func:`_voice_hint` it ignores TIPS_ENABLED. The "off"
-    form is what tells someone the feature exists at all.
+    not a tip, so unlike :func:`_voice_hint` it ignores TIPS_ENABLED. Three
+    states, not two: when voice is *installable* the gesture is live (it opens
+    the in-app install offer), so the chip keeps the shortcut and only dims. Only
+    a machine that cannot run dictation, or a user who declined for good, sees
+    "off" — otherwise the chip would deny a feature one keystroke away.
     """
     global _chip_cache
     if _chip_cache is None:
-        from yeaboi.voice import is_voice_available
+        from yeaboi.voice import voice_state
 
-        available, _reason = is_voice_available()
-        _chip_cache = (_CHIP_ON, _CHIP_ON_STYLE) if available else (_CHIP_OFF, _CHIP_OFF_STYLE)
+        state = voice_state()
+        if state == "ready":
+            _chip_cache = (_CHIP_ON, _CHIP_ON_STYLE)
+        elif state == "installable":
+            # The gesture works — it opens the install offer — so the chip must
+            # not say "off". Dimmer, because it is live but not yet set up. Same
+            # cell width as the ready form, so input_box_title's arithmetic and
+            # the Settings box-top measurement are both unaffected.
+            _chip_cache = (_CHIP_ON, _CHIP_OFF_STYLE)
+        else:
+            _chip_cache = (_CHIP_OFF, _CHIP_OFF_STYLE)
     return _chip_cache
 
 
@@ -241,6 +266,143 @@ def voice_indicator(
     return "", ""
 
 
+def _bar(fraction: float, cells: int = 10) -> str:
+    """A plain-text progress bar for the download line.
+
+    Not :func:`yeaboi.ui.shared._components.build_meter`: that returns a
+    two-colour ``Text``, and this line is a single-style plain string threaded
+    through every caller's ``render_status``, so the glyphs have to be inline.
+    Out-of-range fractions clamp rather than raise — the parent computes them
+    from bytes on disk, which can briefly exceed the announced total.
+    """
+    filled = int(round(min(1.0, max(0.0, fraction)) * cells))
+    return "▰" * filled + "▱" * (cells - filled)
+
+
+def install_offer_line(*, size_mb: int = 0, reinstall: bool = False, width: int = 0) -> str:
+    """The one-line "shall I set dictation up?" prompt.
+
+    The size is computed, not hardcoded: ``VOICE_MODEL=large-v3`` is a 3.3 GB
+    agreement and a fixed "~140 MB" would be a lie to exactly the user who most
+    needs the number. ``reinstall`` is for the case where a ``uv tool upgrade``
+    rebuilt the venv and dropped the packages — saying so turns a baffling
+    regression into an explained one.
+    """
+    size = f"~{size_mb} MB" if size_mb else ""
+    if reinstall:
+        head = "🎤 An upgrade removed dictation"
+        return _fit(
+            [
+                f"{head} — Enter reinstalls ({size})  ·  Esc not now  ·  n never",
+                f"{head} — Enter reinstalls  ·  Esc not now  ·  n never",
+                f"{head}  ·  Enter  ·  Esc  ·  n never",
+                "Dictation was removed  ·  Enter  ·  Esc",
+                "Dictation? Enter · Esc",
+                "Dictate? Enter · Esc",
+            ],
+            width,
+        )
+    return _fit(
+        [
+            f"🎤 Set up dictation now? {size}, about two minutes  ·  Enter installs  ·  Esc not now  ·  n never",
+            f"🎤 Set up dictation? {size} one-off  ·  Enter installs  ·  Esc not now  ·  n never",
+            "🎤 Set up dictation?  Enter installs  ·  Esc not now  ·  n never",
+            "🎤 Set up dictation?  Enter  ·  Esc  ·  n never",
+            "Set up dictation?  Enter  ·  Esc",
+            # A 20-column terminal still has to be able to say yes and no.
+            "Dictation? Enter · Esc",
+            "Dictate? Enter · Esc",
+        ],
+        width,
+    )
+
+
+def install_status_line(
+    stage: str,
+    *,
+    tick: float = 0.0,
+    fraction: float | None = None,
+    detail: str = "",
+    elapsed: float = 0.0,
+    size: str = "",
+    can_cancel: bool = True,
+    width: int = 0,
+) -> tuple[str, str]:
+    """Return ``(border_style, status_line)`` for one frame of the setup flow.
+
+    Sibling of :func:`voice_indicator`, and deliberately the same shape: the
+    install runs inside ``record_voice_input``'s own loop, so every frame has to
+    be expressible as the ``(border, line)`` pair each caller already knows how
+    to render. A multi-line installer pane would have meant a new callback
+    threaded through six screen builders.
+
+    ``can_cancel`` is False when the caller's key reader cannot poll with a
+    timeout — advertising an Esc that physically cannot fire is worse than
+    dropping it.
+    """
+    spin = _SPINNER[int(tick * 12) % len(_SPINNER)]
+    esc = "  ·  Esc cancels" if can_cancel else ""
+    short_esc = "  ·  Esc" if can_cancel else ""
+
+    if stage == "install":
+        head = f"{spin} Installing dictation {_clock(elapsed)}"
+        return _WORK_BORDER, _fit(
+            [
+                f"{head}  ·  {detail}{esc}" if detail else f"{head}{esc}",
+                f"{head}{esc}",
+                f"{spin} Installing dictation{short_esc}",
+                f"{spin} Installing dictation",
+                f"{spin} Installing…",
+            ],
+            width,
+        )
+    if stage == "download":
+        if fraction is None:
+            return _WORK_BORDER, _fit(
+                [
+                    f"⬇ Speech model — {detail or 'connecting'}…{esc}",
+                    f"⬇ Speech model…{short_esc}",
+                    "⬇ Speech model…",
+                ],
+                width,
+            )
+        pct = f"{int(fraction * 100)}%"
+        head = f"⬇ Speech model  {_bar(fraction)}  {pct}"
+        return _WORK_BORDER, _fit(
+            [
+                f"{head}  ·  {size}{esc}" if size else f"{head}{esc}",
+                f"{head}{esc}",
+                f"⬇ Speech model {pct}{short_esc}",
+                f"⬇ Speech model {pct}",
+            ],
+            width,
+        )
+    if stage == "load":
+        return _WORK_BORDER, _fit(
+            [
+                f"{spin} Loading the speech model…{esc}",
+                f"{spin} Loading the speech model…{short_esc}",
+                f"{spin} Loading the speech model…",
+                f"{spin} Loading the model…",
+                f"{spin} Loading…",
+            ],
+            width,
+        )
+    # "ready" — one beat of confirmation before the REC frame takes over.
+    return _REC_BORDER, _fit(["✓ Dictation is ready — start speaking", "✓ Dictation is ready"], width)
+
+
+def _status_width(console: Console) -> int:
+    """Room the status line actually gets, read fresh each frame.
+
+    Every screen indents the line and draws a page border around it, so the raw
+    console width overstates it. Recomputed per frame rather than snapshotted: a
+    terminal resized mid-take would otherwise keep fitting the line to a width
+    that no longer exists.
+    """
+    return max(20, console.size[0] - 12)
+
+
 def _center(console: Console, message: str, border_style: str) -> Group:
     """Fallback overlay: a popup centred over a full screen.
 
@@ -283,6 +445,244 @@ def _next_device(current: int | None) -> tuple[int | None, str] | None:
     return chosen["index"], chosen["name"]
 
 
+def _key_supports_timeout(_key) -> bool:
+    """Can this key reader poll without blocking?
+
+    Production always passes ``read_key``, which can. A test double or a legacy
+    caller may not, and a blocking reader would freeze the install animation for
+    minutes — so those runs animate on a plain sleep and stop advertising an Esc
+    that physically cannot fire.
+    """
+    import inspect
+
+    try:
+        return "timeout" in inspect.signature(_key).parameters
+    except (TypeError, ValueError):  # builtins and C callables have no signature
+        return False
+
+
+def _read(_key, timeout: float) -> str:
+    """Poll for a key, tolerating readers without timeout support."""
+    try:
+        return _key(timeout=timeout)
+    except TypeError:
+        return _key()
+
+
+def _run_install(live: Live, console: Console, _key, paint, plan) -> tuple[bool, str]:
+    """Install the packages, fetch the model, warm it — animating throughout.
+
+    Modelled on the Ollama model pull in ``ui/provider_select`` (worker thread,
+    single-key progress dict, ``Esc`` sets a cancel Event): the loop that draws
+    must never be the loop that waits on a subprocess. Returns ``(ok, message)``;
+    ``message`` is a warning when ``ok`` is True (the model download failed but
+    dictation still works, just cold on first use).
+    """
+    from yeaboi import voice_install
+    from yeaboi.config import get_voice_model, mark_voice_extra_installed
+    from yeaboi.ui.shared._animations import FRAME_TIME_30FPS
+    from yeaboi.ui.shared._music_bar import duck_working_thread
+    from yeaboi.ui.shared._screensaver import suppress_screensaver
+
+    size = get_voice_model()
+    cancel = threading.Event()
+    can_cancel = _key_supports_timeout(_key)
+    # Single-key dict writes are atomic under the GIL, so the worker and the
+    # render loop need no lock between them.
+    prog: dict = {"stage": "install", "detail": "", "fraction": None, "size": ""}
+    outcome: dict = {"ok": False, "message": ""}
+
+    def _worker() -> None:
+        # duck_working_thread does not catch, so without this an unexpected
+        # exception would print a traceback straight through the Rich Live and
+        # leave outcome at its default — the user gets "see the log" and the log
+        # has nothing in it.
+        try:
+            _install_and_fetch()
+        except Exception:  # noqa: BLE001 - a worker thread must not take the TUI with it
+            logger.exception("Voice install failed unexpectedly")
+            outcome.update(ok=False, message="Dictation setup hit an unexpected error — see the log")
+
+    def _install_and_fetch() -> None:
+        ok, message = voice_install.install_packages(
+            lambda phrase: prog.__setitem__("detail", phrase), cancel, plan=plan
+        )
+        if not ok:
+            outcome.update(ok=False, message=message)
+            return
+        mark_voice_extra_installed()
+
+        prog.update(stage="download", detail="", fraction=None, size="")
+
+        def _on_progress(status: str, fraction: float | None) -> None:
+            prog["fraction"] = fraction
+            prog["size"] = status
+
+        model_ok, model_message = voice_install.download_model(size, _on_progress, cancel)
+        if not model_ok and cancel.is_set():
+            outcome.update(ok=False, message=model_message)
+            return
+        if model_ok:
+            # Only warm a model that is already on disk. warm_model() loads it
+            # in-process, and WhisperModel downloads the weights itself when
+            # they are missing — with no progress, no byte count and no cancel,
+            # under a status line still offering Esc. It would also undo the
+            # whole point of running the fetch in a child: on an AVX-less host
+            # the child dies of SIGILL, and importing ctranslate2 here would
+            # then take the TUI down with the same instruction.
+            prog["stage"] = "load"
+            voice_install.warm_model(size)
+        # A failed model fetch is a warning, not a failure: the packages are in,
+        # so the model simply downloads lazily on the first dictation as before.
+        outcome.update(ok=True, message="" if model_ok else model_message)
+
+    started = time.monotonic()
+    tick = 0.0
+    with suppress_screensaver():
+        thread = duck_working_thread(_worker, name="voice-install")
+        thread.start()
+        while thread.is_alive():
+            # Nothing reads the cancel Event during "load" — it is an in-process
+            # model load, not a child — so the line must stop offering Esc there
+            # rather than ignoring it.
+            stage = prog["stage"]
+            stage_cancellable = can_cancel and stage != "load"
+            paint(
+                *install_status_line(
+                    stage,
+                    tick=tick,
+                    fraction=prog["fraction"],
+                    detail=prog["detail"],
+                    size=prog["size"],
+                    elapsed=time.monotonic() - started,
+                    can_cancel=stage_cancellable,
+                    width=_status_width(console),
+                )
+            )
+            tick += FRAME_TIME_30FPS
+            frame_started = time.monotonic()
+            if can_cancel:
+                try:
+                    if _read(_key, FRAME_TIME_30FPS) == "esc":
+                        cancel.set()
+                except KeyboardInterrupt:
+                    cancel.set()
+            # Floor the frame time rather than trusting the key reader to supply
+            # it. A reader that returns early — a non-blocking stub, a terminal
+            # replaying buffered input — would otherwise spin this loop flat out
+            # for the whole install, burning a core and calling live.update
+            # millions of times. Measured on a stub reader: 2.1M frames in 44s.
+            remaining = FRAME_TIME_30FPS - (time.monotonic() - frame_started)
+            if remaining > 0:
+                time.sleep(remaining)
+        thread.join(timeout=1.0)
+
+    return outcome["ok"], outcome["message"]
+
+
+def _offer_install(live: Live, console: Console, _key, paint, reason: str) -> bool:
+    """Offer to set dictation up here and now. True if it is ready afterwards.
+
+    This is what a double-tap of Space does when the optional packages are
+    missing. Previously the app printed a command for the user to run in another
+    terminal, which meant quitting mid-thought, reinstalling, and coming back —
+    so in practice dictation stayed off.
+
+    Key handling is deliberately narrow. ``Space`` is ignored: the user just
+    double-tapped it, and key repeat must not authorise a 300 MB install.
+    ``Tab`` means "next microphone" everywhere else and there is no microphone
+    yet. Clicks and unknown keys are no-ops, because a modal that vanishes on a
+    typo is worse than one that waits — and all three exits are named on screen.
+    """
+    global _offer_declined_session
+
+    from yeaboi import voice, voice_install
+    from yeaboi.config import set_voice_install_offer, voice_extra_was_installed
+    from yeaboi.ui.shared._click import parse_click
+
+    state = voice.voice_state()
+    if state == "unsupported":
+        # Covers both "no wheel for this machine" and "packages are in, the
+        # audio backend is dead" — the latter carries its own apt hint, and an
+        # install could not have helped with either.
+        _flash(live, console, _key, f"Dictation can't run here — {voice.unsupported_blocker()}", _ERR_BORDER)
+        return False
+    if state == "declined":
+        # They said "never". Honour it, and still show the manual command.
+        _flash(live, console, _key, reason, _ERR_BORDER)
+        return False
+    if _offer_declined_session:
+        _flash(
+            live,
+            console,
+            _key,
+            "Dictation isn't set up yet — Space Space, then Enter, installs it",
+            _WORK_BORDER,
+        )
+        return False
+
+    plan = voice_install.install_plan()
+    if plan.blocked:
+        logger.info("Voice install offer withheld: %s", plan.blocked)
+        _flash(live, console, _key, f"Dictation can't be installed here — {plan.blocked}", _ERR_BORDER)
+        return False
+
+    size_mb = voice_install.size_estimate_mb()
+    reinstall = voice_extra_was_installed()
+    deadline = time.monotonic() + _OFFER_TIMEOUT_SECONDS
+    accepted = False
+    while time.monotonic() < deadline:
+        paint(
+            _REC_BORDER,
+            install_offer_line(size_mb=size_mb, reinstall=reinstall, width=_status_width(console)),
+        )
+        polled_at = time.monotonic()
+        try:
+            key = _read(_key, _OFFER_POLL_SECONDS)
+        except KeyboardInterrupt:
+            key = "esc"
+        # Same floor as the install loop: a key reader that returns early must
+        # not turn a two-minute unanswered prompt into a two-minute busy-wait.
+        # Applied to every key that does not exit the loop, not just the empty
+        # one — bracketed paste hands over characters as fast as the reader pops
+        # them, so a pasted paragraph would otherwise be one full live.update
+        # per character with no ceiling. The three answering keys skip it, so
+        # Enter still feels instant.
+        idle = _OFFER_POLL_SECONDS - (time.monotonic() - polled_at)
+        if key not in {"enter", "\r", "\n", "esc", "n"} and idle > 0:
+            time.sleep(idle)
+        if key in {"enter", "\r", "\n"}:
+            accepted = True
+            break
+        if key == "esc":
+            break
+        if key == "n":
+            logger.info("Voice install offer declined permanently")
+            set_voice_install_offer(False)
+            return False
+        if parse_click(key) is not None or key in {"", " ", "tab"}:
+            continue
+        # Anything else: keep the offer up rather than dismissing on a typo.
+
+    if not accepted:
+        logger.info("Voice install offer declined for this session")
+        _offer_declined_session = True
+        return False
+
+    logger.info("Voice install accepted: %s", plan.display_command)
+    ok, message = _run_install(live, console, _key, paint, plan)
+    if not ok:
+        _flash(live, console, _key, message or "Dictation setup failed — see the log", _ERR_BORDER)
+        return False
+    if message:
+        logger.info("Voice install finished with a warning: %s", message)
+    paint(*install_status_line("ready", width=_status_width(console)))
+    # A self-dismissing beat, not _flash: _flash waits for a key, which would
+    # make the user press something before they could start speaking.
+    time.sleep(0.6)
+    return True
+
+
 def record_voice_input(live: Live, console: Console, _key, render_status=None) -> str | None:
     """Record from the mic and return the transcribed text, or None.
 
@@ -301,7 +701,7 @@ def record_voice_input(live: Live, console: Console, _key, render_status=None) -
     from yeaboi.voice import (
         Recorder,
         is_model_loaded,
-        is_voice_available,
+        probe_voice_backend,
         resolve_device,
         transcribe,
         voice_install_command,
@@ -313,11 +713,19 @@ def record_voice_input(live: Live, console: Console, _key, render_status=None) -
         else:
             live.update(_center(console, line, border))
 
-    available, reason = is_voice_available()
+    # The strict probe, not the per-frame one: this is the moment a ~100 ms
+    # PortAudio check is invisible and an honest error is worth having.
+    available, reason = probe_voice_backend()
     if not available:
         logger.info("Voice input unavailable: %s", reason)
-        _flash(live, console, _key, reason, _ERR_BORDER)
-        return None
+        if not _offer_install(live, console, _key, _paint, reason):
+            return None
+        available, reason = probe_voice_backend(force=True)
+        if not available:
+            # Installed, but this interpreter still cannot see or open it.
+            logger.warning("Voice still unavailable after an in-app install: %s", reason)
+            _flash(live, console, _key, reason, _ERR_BORDER)
+            return None
 
     # Silence any background music so it doesn't bleed into the recording. Resumed
     # the moment recording stops (below), including on the mic-failure path.
@@ -347,14 +755,8 @@ def record_voice_input(live: Live, console: Console, _key, render_status=None) -
     warned = False  # the silence warning is logged once, never per frame
 
     def _width() -> int:
-        """Room the status line actually gets, read fresh each frame.
-
-        Every screen indents the line and draws a page border around it, so the
-        raw console width overstates it. Recomputed per frame rather than
-        snapshotted: a terminal resized mid-take would otherwise keep fitting
-        the line to a width that no longer exists.
-        """
-        return max(20, console.size[0] - 12)
+        """Room this screen gives the status line — see :func:`_status_width`."""
+        return _status_width(console)
 
     def _frame() -> None:
         level = recorder.level()

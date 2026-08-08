@@ -31,19 +31,27 @@ def _voice_hint() -> str:
     :func:`~yeaboi.ui.shared._voice_input.input_box_title`) advertises the
     gesture now, and it does so where nothing can crop it — this hint sat at the
     tail of a no_wrap/ellipsis line and was the first thing cut on an 80-column
-    terminal. What the chip cannot carry is the install-method-aware command, so
-    that case still renders here. Returns "" when tips are switched off (the
-    double-tap Space shortcut still works regardless).
+    terminal. It is also empty when voice is merely *installable*, because the
+    double-tap now offers the install in place — there is nothing to copy. What
+    remains here are the two cases the chip cannot express: a user who declined
+    permanently (who still needs the command) and a machine that cannot run
+    dictation at all. Returns "" when tips are switched off (the double-tap
+    Space shortcut still works regardless).
     """
     from yeaboi.config import is_tips_enabled
-    from yeaboi.voice import is_voice_available, voice_install_command
+    from yeaboi.voice import voice_install_command, voice_state
 
     if not is_tips_enabled():
         return ""
 
-    available, _reason = is_voice_available()
-    if available:
+    state = voice_state()
+    if state in {"ready", "installable"}:
+        # "installable" is silent for the same reason "ready" is: the chip on the
+        # input box already carries the gesture, and double-tapping Space now
+        # offers the install itself. There is no command for the user to copy.
         return ""
+    if state == "unsupported":
+        return " · \U0001f3a4 dictation needs 64-bit macOS, Windows or glibc Linux"
     return f" · \U0001f3a4 dictate: {voice_install_command()}"
 
 
