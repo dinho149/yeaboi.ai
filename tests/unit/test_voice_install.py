@@ -388,7 +388,7 @@ def fake_popen(monkeypatch):
 
     def make(lines, exit_code=0, stay_alive=0):
         cls = type("_Scripted", (_FakePopen,), {"lines": lines, "exit_code": exit_code, "stay_alive": stay_alive})
-        monkeypatch.setattr(voice_install.subprocess, "Popen", cls)
+        monkeypatch.setattr(voice_install, "_popen", cls)
         return cls
 
     return make
@@ -453,7 +453,7 @@ class TestInstallPackages:
 
     def test_a_blocked_plan_never_spawns_anything(self, monkeypatch):
         sentinel = lambda *_a, **_k: pytest.fail("Popen must not be called for a blocked plan")  # noqa: E731
-        monkeypatch.setattr(voice_install.subprocess, "Popen", sentinel)
+        monkeypatch.setattr(voice_install, "_popen", sentinel)
         plan = voice_install.InstallPlan("blocked", (), "", False, "musl libc", "")
         ok, message = voice_install.install_packages(lambda _line: None, plan=plan)
         assert not ok
@@ -463,6 +463,17 @@ class TestInstallPackages:
 class TestInstallPackagesRealChild:
     """The one place a real process runs — a fake Popen cannot prove the reader
     thread, the merged stderr and the non-blocking wait work together."""
+
+    @pytest.fixture(autouse=True)
+    def _allow_real_spawn(self, monkeypatch):
+        """Opt out of the conftest spawn guard, deliberately and in one place.
+
+        Every argv used in this class is a ``sys.executable -c <literal>``, never
+        a package manager, so nothing here can install anything. Sharing the
+        ``monkeypatch`` instance means this setattr lands after the guard's and
+        wins.
+        """
+        monkeypatch.setattr(voice_install, "_popen", subprocess.Popen)
 
     def test_streams_both_stdout_and_stderr_from_a_live_process(self, monkeypatch):
         program = (
@@ -608,15 +619,17 @@ class TestModelPaths:
 def child_program(monkeypatch):
     """Run a stand-in child instead of the real download, keeping a real Popen.
 
-    Patching ``voice_install.subprocess.Popen`` patches the shared module, so the
-    replacement has to close over the original or it calls itself.
+    Closes over ``subprocess.Popen`` rather than reading ``voice_install._popen``:
+    that name is the conftest guard by the time this runs, so calling it would
+    raise instead of spawning. Patching the module's own seam (not the shared
+    ``subprocess`` module) keeps the replacement scoped to this module.
     """
     real_popen = subprocess.Popen
 
     def substitute(program: str):
         monkeypatch.setattr(
-            voice_install.subprocess,
-            "Popen",
+            voice_install,
+            "_popen",
             lambda _argv, **kw: real_popen([sys.executable, "-c", program], **kw),
         )
 
@@ -626,7 +639,7 @@ def child_program(monkeypatch):
 class TestDownloadModel:
     def test_an_unknown_size_never_reaches_a_subprocess(self, monkeypatch):
         monkeypatch.setattr(
-            voice_install.subprocess, "Popen", lambda *_a, **_k: pytest.fail("must not spawn for an unknown size")
+            voice_install, "_popen", lambda *_a, **_k: pytest.fail("must not spawn for an unknown size")
         )
         ok, message = voice_install.download_model("'; rm -rf /", lambda *_a: None)
         assert not ok
@@ -635,7 +648,7 @@ class TestDownloadModel:
     def test_an_already_cached_model_is_a_no_op(self, monkeypatch):
         monkeypatch.setattr(voice_install, "model_is_cached", lambda _s: True)
         monkeypatch.setattr(
-            voice_install.subprocess, "Popen", lambda *_a, **_k: pytest.fail("must not re-download a cached model")
+            voice_install, "_popen", lambda *_a, **_k: pytest.fail("must not re-download a cached model")
         )
         assert voice_install.download_model("base", lambda *_a: None) == (True, "")
 
@@ -703,7 +716,7 @@ class TestModelChildEnv:
             seen.update(kw.get("env") or {})
             return real_popen([sys.executable, "-c", "pass"], **kw)
 
-        monkeypatch.setattr(voice_install.subprocess, "Popen", capture)
+        monkeypatch.setattr(voice_install, "_popen", capture)
         voice_install.download_model("base", lambda *_a: None)
         assert seen["HF_HUB_DISABLE_XET"] == "1"
         assert seen["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"  # no tqdm into the Live
@@ -720,7 +733,7 @@ class TestModelChildEnv:
         monkeypatch.setattr(voice_install, "model_total_bytes", lambda _s, **_k: 0)
         monkeypatch.setattr(voice_install, "model_bytes_on_disk", lambda _s: 0)
         monkeypatch.setattr(voice_install, "_POLL_SECONDS", 0.01)
-        monkeypatch.setattr(voice_install.subprocess, "Popen", capture)
+        monkeypatch.setattr(voice_install, "_popen", capture)
         voice_install.download_model("large-v3", lambda *_a: None)
         assert "'large-v3'" in captured[0][2]
 
@@ -851,3 +864,23 @@ class TestRefreshImportsDropsTheVerdictMemo:
         monkeypatch.setattr(voice_install, "_unsupported_cache", "stale answer")
         voice_install.refresh_imports()
         assert voice_install.unsupported_reason() == ""
+
+
+class TestSpawnGuard:
+    """The conftest guard must actually be wired to this module's seam.
+
+    Without it, one test that forgets to patch the probe runs a real
+    ``uv pip install`` plus a 145 MB model fetch on a CI runner — which is
+    exactly how this guard came to exist. If the seam is ever renamed or the
+    call sites go back to ``subprocess.Popen`` directly, this fails loudly here
+    instead of silently on a runner eight minutes later.
+    """
+
+    def test_a_real_spawn_is_blocked(self):
+        with pytest.raises(BaseException, match="real installer"):
+            voice_install._popen([sys.executable, "-c", "pass"])
+
+    def test_both_call_sites_go_through_the_seam(self):
+        source = (REPO_ROOT / "src" / "yeaboi" / "voice_install.py").read_text(encoding="utf-8")
+        assert "proc = _popen(" in source
+        assert "proc = subprocess.Popen(" not in source

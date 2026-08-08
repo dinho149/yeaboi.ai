@@ -70,6 +70,14 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# The single spawn seam for this module. Both children — the package manager and
+# the model fetcher — go through this name and nothing else does, which is what
+# lets `tests/conftest.py` block *this* module's spawns without touching the
+# shared ``subprocess`` module every other test relies on. It is the only thing
+# standing between a test that forgets a patch and a real 325 MB install: one
+# did, and it ran `uv pip install` on a CI runner until the runner was killed.
+_popen = subprocess.Popen
+
 # The `voice` extra's contents. Asserted equal to pyproject.toml's extra by
 # tests/unit/test_voice_install.py, so the two cannot drift.
 VOICE_PACKAGES: tuple[str, ...] = ("sounddevice", "faster-whisper")
@@ -660,7 +668,7 @@ def _run_installer(
     from yeaboi.paths import get_bin_dir
 
     try:
-        proc = subprocess.Popen(  # noqa: S603 - argv is built from module constants and sys.executable
+        proc = _popen(  # noqa: S603 - argv is built from module constants and sys.executable
             list(plan.argv),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -906,7 +914,7 @@ def download_model(
 
     logger.info("Speech model download starting: %s (%d bytes expected)", size, total)
     try:
-        proc = subprocess.Popen(  # noqa: S603 - size is whitelist-checked against MODEL_SIZES above
+        proc = _popen(  # noqa: S603 - size is whitelist-checked against MODEL_SIZES above
             [sys.executable, "-c", program],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

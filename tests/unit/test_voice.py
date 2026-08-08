@@ -830,6 +830,11 @@ class TestDoubleTapInDescriptionLoop:
         from yeaboi.ui.session.phases import _phases_intake
 
         monkeypatch.setattr(voice, "is_voice_available", lambda: (True, ""))
+        # The strict probe too, not just the cheap one: record_voice_input gates
+        # on probe_voice_backend, so on a machine without the voice extra — every
+        # CI runner — this test would otherwise fall into the install offer and
+        # its leftover "enter" would accept a real 325 MB install.
+        monkeypatch.setattr(voice, "probe_voice_backend", lambda **_kw: (True, ""))
 
         class _Rec:
             def __init__(self, **kwargs):
