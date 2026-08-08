@@ -15,6 +15,7 @@ lesson of ``mode_at_row``'s lock-step comment, applied from the start.
 
 from __future__ import annotations
 
+import textwrap
 from typing import Any
 
 from rich.align import Align
@@ -45,10 +46,24 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
     },
 ]
 
-# Rows the card stack occupies: head (7) + gap (1) + title (2) + gap (1) + desc (1).
-_CARD_ROWS = 12
+# Rows the card stack occupies: head (7) + gap (1) + title (2) + gap (1) + desc (2).
+_CARD_ROWS = 13
 _HINT_ROWS = 2  # blank + the key-hint line pinned at the bottom
 _MIN_SPLIT_WIDTH = 62  # below this the two halves collide; callers keep the guard screen
+
+# Heading typography. A terminal has no font sizes, so presence comes from
+# letter-spacing (one space in a word, three between words) plus flanking
+# rules that fade toward each side's accent — green toward Humans on the left,
+# steel toward Agents on the right — so the line reads as a title, not a note.
+_HEADING = "Who are we working with today?"
+_HEADING_STYLE = "bold rgb(222,226,234)"
+_RULE_LEFT_STYLE = "rgb(58,104,70)"  # dim humans green
+_RULE_RIGHT_STYLE = "rgb(52,92,120)"  # dim agents steel
+
+
+def _spaced(text: str) -> str:
+    """Letter-space a sentence: 'Who are' → 'W h o   a r e'."""
+    return "   ".join(" ".join(word) for word in text.split())
 
 
 def _category_columns(width: int) -> int:
@@ -67,8 +82,14 @@ def _card_half(
     selected: bool,
     shimmer_tick: float,
     intro: float,
+    half_width: int = 52,
 ) -> RenderableType:
-    """One category's stacked half: mascot head, title, description."""
+    """One category's stacked half: mascot head, title, description.
+
+    ``half_width`` is the column's width, so the description can wrap onto a
+    reserved second row instead of ellipsizing — at common widths the sentence
+    was getting cut mid-word, which read as a bug rather than a summary.
+    """
     color = card["color"]
     rgb = COLOR_RGB.get(color, (120, 120, 140))
 
@@ -87,9 +108,18 @@ def _card_half(
     title.no_wrap = True
     title.overflow = "crop"
 
-    desc = Text(card["description"], justify="center", style="white" if selected else "rgb(110,110,125)")
-    desc.no_wrap = True
-    desc.overflow = "ellipsis"
+    # Two reserved description rows, wrapped by hand (a Rich auto-wrap could
+    # take a third row on narrow halves and shift the whole stack). Selected
+    # reads near-white and bold; the resting side stays legible, not ghostly.
+    desc_style = "bold rgb(236,239,245)" if selected else "rgb(132,136,150)"
+    budget = max(16, half_width - 4)
+    wrapped = textwrap.wrap(card["description"], budget)[:2]
+    desc_rows = [Text(line, justify="center", style=desc_style) for line in wrapped]
+    while len(desc_rows) < 2:
+        desc_rows.append(Text(""))
+    for row in desc_rows:
+        row.no_wrap = True
+        row.overflow = "ellipsis"
 
     # The head fades in with the intro (drawn dim until the reveal reaches it) —
     # a cheap stand-in for the menu's diagonal sweep that keeps this screen's
@@ -101,7 +131,7 @@ def _card_half(
         Text(""),
         Align.center(title),
         Text(""),
-        Align.center(desc),
+        *[Align.center(row) for row in desc_rows],
     )
 
 
@@ -114,8 +144,9 @@ def _build_category_screen(
     intro: float = 1.0,
 ) -> Panel:
     """Build the full-screen Humans/Agents landing split."""
+    inner_w = width - 6  # borders (2) + horizontal padding (4)
     halves = [
-        _card_half(card, selected=i == selected, shimmer_tick=shimmer_tick, intro=intro)
+        _card_half(card, selected=i == selected, shimmer_tick=shimmer_tick, intro=intro, half_width=inner_w // 2)
         for i, card in enumerate(_CATEGORY_CARDS)
     ]
 
@@ -124,7 +155,16 @@ def _build_category_screen(
     grid.add_column(ratio=1)
     grid.add_row(*halves)
 
-    heading = Text("Who are we working with today?", justify="center", style="rgb(150,150,165)")
+    # The title line: letter-spaced words between two rules that fade toward
+    # each side's accent (see the typography note beside _HEADING).
+    spaced = _spaced(_HEADING)
+    heading = Text(justify="center")
+    rule_len = max(0, (inner_w - len(spaced) - 4) // 2)
+    heading.append("─" * rule_len, style=_RULE_LEFT_STYLE)
+    heading.append(f"  {spaced}  ", style=_HEADING_STYLE)
+    heading.append("─" * rule_len, style=_RULE_RIGHT_STYLE)
+    heading.no_wrap = True
+    heading.overflow = "crop"
 
     hint = Text(justify="center")
     for key, label in (("←/→", "switch"), ("enter", "choose"), ("q", "quit")):

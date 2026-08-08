@@ -44,13 +44,16 @@ class TestRender:
 
     def test_headline_and_hints(self):
         out = _render()
-        assert "Who are we working with today?" in out
+        # The heading is letter-spaced ("W h o   a r e …") between two accent
+        # rules — assert the spaced words and the flanking rule glyphs.
+        assert "w o r k i n g   w i t h" in out
+        assert "─────" in out
         assert "choose" in out and "switch" in out and "quit" in out
 
     def test_intro_hides_heads_early(self):
         early = _render(intro=0.0)
         assert "34;158;122" not in early  # no duck yet
-        assert "Who are we working with today?" in early  # copy is already there
+        assert "w o r k i n g   w i t h" in early  # copy is already there
 
     def test_small_terminal_still_renders(self):
         out = _render(width=84, height=24)
