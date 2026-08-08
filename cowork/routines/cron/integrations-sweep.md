@@ -1,6 +1,7 @@
 # integrations sweep
 
 **Trigger** — cron `30 6 * * 2` (Tue 06:30 UTC)
+**Summary** — one of the three provider-integration axes: edge, reach, or surface
 **Workstream** — [`workstreams/integrations.md`](../../workstreams/integrations.md)
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = integrations`. Like
 `security`, this sweep scouts at `deep` rather than the shared `standard` — the reach axis

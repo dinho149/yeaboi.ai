@@ -1,6 +1,7 @@
 # analysis sweep
 
 **Trigger** — cron `30 6 * * 4` (Thu 06:30 UTC)
+**Summary** — the team-analysis metrics, the AI-usage markers, and doc scoring
 **Workstream** — [`workstreams/analysis.md`](../../workstreams/analysis.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = analysis`.

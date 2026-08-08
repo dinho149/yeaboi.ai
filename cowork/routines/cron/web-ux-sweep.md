@@ -1,6 +1,7 @@
 # web-ux sweep
 
 **Trigger** — cron `0 7 * * 4` (Thu 07:00 UTC)
+**Summary** — bundle freshness, self-containment, and the two Python/TS wire guards
 **Workstream** — [`workstreams/web-ux.md`](../../workstreams/web-ux.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = web-ux`.

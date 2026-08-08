@@ -1,5 +1,5 @@
 ---
-description: Run the cowork fleet — status, deploy, run one now, pause, resume, teardown
+description: Run the cowork fleet — status, today's schedule, deploy, run one now, pause, resume, teardown
 ---
 
 Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMENTS — defaults to
@@ -9,6 +9,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 |---|---|
 | `status` | what is running, against what the repo says. Read-only. |
 | `deploy` | register what is missing, update what has drifted, fill the README URL column. |
+| `today` | what runs today and over the next week. Read-only, and the one verb needing no API call. |
 | `run <name>` | fire one routine immediately, instead of waiting for its cron. |
 | `pause [name…]` | stop routines firing without removing them. No names means all of them. |
 | `resume [name…]` | undo a pause. |
@@ -18,7 +19,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 the routine table, `cowork/models.md` the tier table, `cowork/workstreams/` the label list,
 `cowork/definition-of-done.md` the Linear/Slack/Notion target ids — and `scripts/cowork_setup.py` has
 already parsed all four. Read its output; do not read those tables yourself, and do not assemble a
-request body or diff two routines in your head. Seventeen routines × six fields is exactly the work
+request body or diff two routines in your head. Eighteen routines × six fields is exactly the work
 that goes right most of the time, and "most of the time" here is a sweep silently running last
 month's prompt.
 
@@ -85,7 +86,7 @@ a routine file, or when someone new joins.
      - `repo_url` — the script resolves this from `gh` on its own; if it still appears here, `gh` is
        not authenticated.
 
-     A body carrying an empty string for any of these is one the API will happily accept. Seventeen
+     A body carrying an empty string for any of these is one the API will happily accept. Eighteen
      routines then register pointing at no repository, and it looks like it worked until the first
      Monday.
 5. **URLs.** Re-`list` (ids only exist after a create), save it, then
@@ -97,6 +98,21 @@ a routine file, or when someone new joins.
    with their triggers and filters from the manifest, added by hand at
    <https://claude.ai/code/routines>.
 7. **Confirm.** Re-run `status` and give a one-line summary of what this run changed.
+
+## `today`
+
+```bash
+uv run python scripts/cowork_setup.py --agenda --text
+```
+
+Print exactly what it prints. This is the same text `cron/day-ahead.md` posts to Slack at 05:45
+UTC each morning, which is the point: the local answer and the posted one come from one renderer,
+so they cannot disagree.
+
+`--date YYYY-MM-DD` answers "what is on next Monday?". Nothing here touches the account — the
+schedule lives in `cowork/README.md`, not in the routines API, so this verb skips the
+`RemoteTrigger list` every other verb starts with. What it *cannot* tell you is whether the fleet
+is paused or drifted; that is `status`.
 
 ## `run <name>`
 

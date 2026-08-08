@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, twenty routines, a
+``cowork/`` is a complete specification — fifteen charters, twenty-one routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
-registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 20 web
+registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 21 web
 forms, which is long enough that nobody does it twice and silent when done wrong:
 an unset variable just reverts a workflow to its old model, and a cron that
 restricts day-of-month *and* day-of-week turns a fortnightly sweep into a daily
@@ -34,6 +34,7 @@ Usage::
     uv run python scripts/cowork_setup.py --check            # doctor; non-zero on drift
     uv run python scripts/cowork_setup.py --check --local    # repo consistency only, no gh
     uv run python scripts/cowork_setup.py --json             # manifest for /cowork
+    uv run python scripts/cowork_setup.py --agenda --text    # what runs today, and the week after
 
     # …the account half, fed a `RemoteTrigger list` response by /cowork:
     uv run python scripts/cowork_setup.py --plan  --triggers live.json   # what to create/update
@@ -54,7 +55,9 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COWORK = REPO_ROOT / "cowork"
@@ -98,6 +101,11 @@ ALLOWED_TOOLS = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoW
 
 # The per-routine exceptions to ALLOWED_TOOLS, keyed by routine stem.
 TOOL_OVERRIDES: dict[str, tuple[str, ...]] = {
+    # day-ahead runs one script and posts one message. It needs Bash for the
+    # agenda, Read for the repo, and Task for the scribe — and nothing else: a
+    # routine that only reports the schedule has no business editing a file or
+    # searching the tree, and narrowing it says so where the grant is reviewed.
+    "day-ahead": ("Bash", "Read", "Task", "TodoWrite"),
     # slack-relay relays a human's verbs and nothing else: gh and the manifest
     # (Bash), the repo and its own allowlist (Read/Glob/Grep), and the routines
     # API (RemoteTrigger) for pause/resume/run — which nothing else gets: a
@@ -169,6 +177,7 @@ class Routine:
     cron: str | None  # None for event routines
     trigger: str  # the routine file's own **Trigger** text
     filters: str | None  # the routine file's **Filters** line, events only
+    summary: str  # the routine file's **Summary** line — one human line, for the agenda
     prompt: str
     trigger_name: str
 
@@ -234,6 +243,12 @@ _TARGET_ROW = re.compile(r"^\|\s*(\w+)\s*\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|", re.M
 _TRIGGER_LINE = re.compile(r"^\*\*Trigger\*\*\s*—\s*(.+)$", re.M)
 _MODEL_LINE = re.compile(r"^\*\*Model\*\*\s*—\s*`(\w+)`", re.M)
 _FILTERS_LINE = re.compile(r"^\*\*Filters\*\*\s*—\s*(.+)$", re.M)
+_SUMMARY_LINE = re.compile(r"^\*\*Summary\*\*\s*—\s*(.+)$", re.M)
+
+# A **Summary** line becomes one line of a Slack message, so it is capped rather
+# than trusted. Without a limit the first person in a hurry writes a paragraph,
+# and the daily post is unreadable from then on.
+SUMMARY_LIMIT = 90
 _CRON_IN_TRIGGER = re.compile(r"^cron\s+`([^`]+)`")
 _BACKTICKED = re.compile(r"`([^`]+)`")
 
@@ -351,6 +366,7 @@ def parse_routines(readme_text: str | None = None) -> list[Routine]:
         cron = cron_match.group(1) if cron_match else None
 
         filters_match = _FILTERS_LINE.search(body)
+        summary_match = _SUMMARY_LINE.search(body)
         tier = _unwrap(tier_cell) or ""
         workstream = _unwrap(workstream_cell)
         # digest and the event routines span every workstream and name none, so
@@ -369,6 +385,7 @@ def parse_routines(readme_text: str | None = None) -> list[Routine]:
                 cron=cron,
                 trigger=trigger,
                 filters=filters_match.group(1).strip() if filters_match else None,
+                summary=summary_match.group(1).strip() if summary_match else "",
                 prompt=PROMPT_TEMPLATE.format(name=name, path=path),
                 trigger_name=TRIGGER_NAME.format(name=stem),
             )
@@ -395,6 +412,299 @@ def restricts_both_day_fields(cron: str) -> bool:
         return False
     _, _, dom, _, dow = fields
     return dom != "*" and dow != "*"
+
+
+# --- the agenda: what the fleet runs on one day -------------------------------
+#
+# The schedule above is eighteen cron expressions on five cadences, and a cron
+# expression is not a thing anybody reads at six in the morning: `30 7 11,25 * *`
+# is written for a scheduler. Everything below turns the same table into "what
+# runs today, and when" — including the finished Slack lines, so
+# `cron/day-ahead.md` posts what this computed instead of interpreting eighteen
+# expressions itself. A model that reads a cron field correctly most of the time
+# is a model that tells you the wrong morning, once.
+
+
+# The zone the agenda *renders* in. UTC stays the source of truth — every cron in
+# cowork/ is UTC and stays that way, and every local time is printed with its UTC
+# original in brackets. One string to change the zone, and daylight saving is
+# derived per date rather than baked into an offset.
+DISPLAY_TZ = "Europe/London"
+
+# Above this many firings in a day, a routine is background noise rather than an
+# appointment, and renders as a window instead of a list of times. Today that is
+# `slack-relay` alone, at seventeen. A threshold rather than a name check, so the
+# next hourly routine is handled without an edit here.
+BACKGROUND_AFTER = 3
+
+# The routine that posts the agenda. It is left out of the *rendered* message — a
+# line announcing the message you are holding is the one line in a four-line post
+# that tells the reader nothing, and "Every day: day-ahead" is stranger still. It
+# stays in the payload, because the payload is the fleet's schedule and this is
+# genuinely part of it; `/cowork status` is what audits whether it is registered.
+MESSENGER = "day-ahead"
+
+# How far the tail looks. A week is what makes the fortnightly and monthly sweeps
+# visible: `30 7 11,25 * *` is unreadable, "Tue 11  poker-sweep" is not.
+HORIZON_DAYS = 7
+
+# minute, hour, day-of-month, month, day-of-week. Day-of-week allows 7 as well as
+# 0 for Sunday, which is what every cron implementation accepts.
+_FIELD_BOUNDS = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
+
+
+def _cron_int(text: str, spec: str, low: int, high: int) -> int:
+    """One number out of a cron field, refusing anything this does not model."""
+    if not text.isdigit():
+        raise ValueError(
+            f"cron field `{spec}`: `{text}` is not a number — "
+            "name aliases (MON, JAN) are not supported; use the numeric form"
+        )
+    value = int(text)
+    if not low <= value <= high:
+        raise ValueError(f"cron field `{spec}`: `{value}` is outside {low}-{high}")
+    return value
+
+
+def _cron_field(spec: str, low: int, high: int) -> frozenset[int]:
+    """Every value one cron field matches.
+
+    Handles ``*``, ``5``, ``1,4``, ``7-23``, ``*/2`` and ``1-7/2``. An
+    out-of-range number and a name alias both **raise** rather than matching
+    nothing: a field that matches nothing is a routine that never fires, and an
+    agenda that is silently empty is worse than one that is wrong out loud.
+    """
+    values: set[int] = set()
+    for part in spec.split(","):
+        body, _, step_text = part.partition("/")
+        if step_text:
+            if not step_text.isdigit() or int(step_text) < 1:
+                raise ValueError(f"cron field `{spec}`: `{step_text}` is not a positive step")
+            step = int(step_text)
+        else:
+            step = 1
+        if body == "*":
+            start, stop = low, high
+        elif step_text and "-" not in body:
+            # Vixie cron reads `1/2` as `1-31/2`. Raising rather than modelling it
+            # keeps the rule this parser is built on whole: every form it does not
+            # implement is wrong out loud, never quietly narrower than the scheduler.
+            raise ValueError(f"cron field `{spec}`: `{part}` needs an explicit range, as `{body}-{high}/{step}`")
+        elif "-" in body:
+            start_text, _, stop_text = body.partition("-")
+            start = _cron_int(start_text, spec, low, high)
+            stop = _cron_int(stop_text, spec, low, high)
+            if stop < start:
+                raise ValueError(f"cron field `{spec}`: range `{body}` runs backwards")
+        else:
+            start = stop = _cron_int(body, spec, low, high)
+        values.update(range(start, stop + 1, step))
+    return frozenset(values)
+
+
+def cron_times(cron: str, day: date) -> tuple[time, ...]:
+    """Every UTC time a cron expression fires on one day, earliest first.
+
+    Empty when it does not fire that day at all.
+
+    Day-of-month and day-of-week are **OR**ed when both are restricted, because
+    that is what POSIX cron does and therefore what the account does.
+    ``restricts_both_day_fields()`` exists to stop any routine relying on it, but
+    this function has to model the scheduler rather than the house rule — an
+    agenda that implemented the rule would disagree with the fleet about exactly
+    the case the rule is there to catch.
+    """
+    fields = cron.split()
+    if len(fields) != 5:
+        raise ValueError(f"cron `{cron}` is not a 5-field expression")
+    minutes, hours, doms, months, dows = (
+        _cron_field(spec, low, high) for spec, (low, high) in zip(fields, _FIELD_BOUNDS, strict=True)
+    )
+    if day.month not in months:
+        return ()
+
+    # Python counts weekdays from Monday-0; cron counts from Sunday-0.
+    weekday = (day.weekday() + 1) % 7
+    dom_hit = day.day in doms
+    dow_hit = weekday in dows or (weekday == 0 and 7 in dows)
+    dom_restricted = fields[2] != "*"
+    dow_restricted = fields[4] != "*"
+    if dom_restricted and dow_restricted:
+        fires = dom_hit or dow_hit
+    elif dom_restricted:
+        fires = dom_hit
+    elif dow_restricted:
+        fires = dow_hit
+    else:
+        fires = True
+    if not fires:
+        return ()
+    return tuple(sorted(time(hour, minute) for hour in hours for minute in minutes))
+
+
+def display_zone() -> tuple[ZoneInfo | None, str | None]:
+    """The display timezone, or ``None`` plus a remedy when there is no tz database.
+
+    ``zoneinfo`` is stdlib but reads the system tz database, which a slim
+    container may not carry. Falling back to UTC-only costs a bracket; raising
+    would cost the whole morning post, which is the one thing this routine is for.
+    """
+    try:
+        return ZoneInfo(DISPLAY_TZ), None
+    except (KeyError, OSError, ValueError):
+        # ZoneInfoNotFoundError subclasses KeyError; a corrupt database raises OSError.
+        return None, f"times in UTC — no tz database for {DISPLAY_TZ} (`uv add --dev tzdata` fixes it)"
+
+
+def _local(day: date, moment: time, zone: ZoneInfo | None) -> str:
+    """A UTC time rendered in ``zone``, marked when it lands on another date.
+
+    The marker matters because ``DISPLAY_TZ`` is a one-line change somebody will
+    make: at 06:00 UTC London is the same day, and Los Angeles is the day before.
+    """
+    if zone is None:
+        return f"{moment:%H:%M}"
+    here = datetime.combine(day, moment, tzinfo=UTC).astimezone(zone)
+    shift = (here.date() - day).days
+    return f"{here:%H:%M}" + ("" if shift == 0 else f" ({shift:+d}d)")
+
+
+def _window(day: date, start: time, end: time, zone: ZoneInfo | None) -> str:
+    """A first-to-last span rendered locally, with midnight written as 24:00.
+
+    `_local` would mark the end of `0 7-23 * * *` as `00:00 (+1d)`, which is true
+    and reads as a bug. For a span, 24:00 is the ordinary way to write "the end of
+    this day", and it is the only place that convention applies — a single
+    appointment at midnight is genuinely on the next date and still says so.
+    """
+    first = _local(day, start, zone)
+    last = _local(day, end, zone)
+    if last.endswith(" (+1d)") and last.startswith("00:"):
+        last = f"24:{last[3:5]}"
+    return f"{first}-{last}"
+
+
+def day_plan(routines: Sequence[Routine], day: date, zone: ZoneInfo | None) -> tuple[list[dict], list[dict]]:
+    """One day's cron routines, split into appointments and background."""
+    appointments: list[dict] = []
+    background: list[dict] = []
+    for routine in routines:
+        if routine.kind != "cron" or not routine.cron:
+            continue
+        times = cron_times(routine.cron, day)
+        if not times:
+            continue
+        entry = {
+            "name": routine.name,
+            "workstream": routine.workstream,
+            "summary": routine.summary,
+        }
+        if len(times) > BACKGROUND_AFTER:
+            entry["firings"] = len(times)
+            entry["window_utc"] = f"{times[0]:%H:%M}-{times[-1]:%H:%M}"
+            entry["window_local"] = _window(day, times[0], times[-1], zone)
+            background.append(entry)
+        else:
+            entry["times_utc"] = [f"{moment:%H:%M}" for moment in times]
+            entry["times_local"] = [_local(day, moment, zone) for moment in times]
+            appointments.append(entry)
+    # Ordered by UTC, which is the order they actually fire — a single zone is a
+    # monotonic shift of it, so the rendered local times come out ordered too.
+    appointments.sort(key=lambda entry: (entry["times_utc"][0], entry["name"]))
+    background.sort(key=lambda entry: entry["name"])
+    return appointments, background
+
+
+def agenda(day: date, horizon: int = HORIZON_DAYS) -> dict:
+    """What the fleet does on ``day``, plus a name-only tail for the days after.
+
+    Includes the rendered ``lines`` — the finished Slack message — so the routine
+    that posts it never has to compose anything, and the format is covered by
+    unit tests rather than by hoping.
+    """
+    routines = parse_routines()
+    zone, degraded = display_zone()
+    appointments, background = day_plan(routines, day, zone)
+
+    ahead = []
+    for offset in range(1, horizon + 1):
+        future = day + timedelta(days=offset)
+        names = [entry["name"] for entry in day_plan(routines, future, zone)[0]]
+        ahead.append({"date": future.isoformat(), "weekday": f"{future:%a}", "names": names})
+
+    # A name on every single day of the tail is not news — it is the daily
+    # routines restated seven times. Lifted out and named once at the end instead.
+    daily = sorted(set.intersection(*(set(entry["names"]) for entry in ahead))) if ahead else []
+    for entry in ahead:
+        entry["names"] = [name for name in entry["names"] if name not in daily]
+
+    payload = {
+        "date": day.isoformat(),
+        "weekday": f"{day:%a}",
+        "display_timezone": None if zone is None else DISPLAY_TZ,
+        "note": degraded,
+        "today": appointments,
+        "background": background,
+        "daily": daily,
+        "events": [
+            {"name": routine.name, "trigger": routine.trigger, "summary": routine.summary}
+            for routine in routines
+            if routine.kind == "event"
+        ],
+        "ahead": ahead,
+    }
+    payload["lines"] = agenda_lines(payload)
+    return payload
+
+
+def agenda_lines(payload: dict) -> list[str]:
+    """The finished Slack message, one string per line.
+
+    Bold headings, no emoji, no bare URLs — ``.claude/agents/cowork-scribe.md``'s
+    format contract, met here so the routine has nothing left to compose and
+    nothing left to get wrong.
+    """
+    day = date.fromisoformat(payload["date"])
+    zone = payload["display_timezone"] or "UTC"
+    lines = [f"*Today* — {day:%a} {day.day} {day:%b} ({zone})"]
+    if payload["note"]:
+        lines.append(payload["note"])
+
+    listed = [entry for entry in payload["today"] if entry["name"] != MESSENGER]
+    if listed:
+        for entry in listed:
+            summary = f" — {entry['summary']}" if entry["summary"] else ""
+            local = ", ".join(entry["times_local"])
+            utc = ", ".join(entry["times_utc"])
+            # Half the year London *is* UTC, and a bracket repeating the time it
+            # sits beside is noise. The heading already names the zone, so the
+            # bracket only appears when it has something to say.
+            gloss = "" if local == utc else f" ({utc} UTC)"
+            lines.append(f"{local}  {entry['name']}{summary}{gloss}")
+    else:
+        lines.append("No routines fire today.")
+
+    for entry in payload["background"]:
+        gloss = "" if entry["window_local"] == entry["window_utc"] else f" ({entry['window_utc']} UTC)"
+        lines.append(f"Background: {entry['name']}, {entry['firings']} runs {entry['window_local']}{gloss}")
+    if payload["events"]:
+        lines.append("On GitHub events: " + ", ".join(entry["name"] for entry in payload["events"]))
+
+    lines.append("")
+    lines.append(f"*Next {len(payload['ahead'])} days*")
+    month = day.month
+    for entry in payload["ahead"]:
+        upcoming = [name for name in entry["names"] if name != MESSENGER]
+        names = ", ".join(upcoming) if upcoming else "nothing"
+        future = date.fromisoformat(entry["date"])
+        # Only when it changes: "Tue 1" a week out is ambiguous, "Tue 1 Sep" is not.
+        stamp = f"{entry['weekday']} {future.day}" + (f" {future:%b}" if future.month != month else "")
+        month = future.month
+        lines.append(f"{stamp}  {names}")
+    daily = [name for name in payload["daily"] if name != MESSENGER]
+    if daily:
+        lines.append("Every day: " + ", ".join(daily) + ".")
+    return lines
 
 
 # --- repo consistency --------------------------------------------------------
@@ -469,6 +779,37 @@ def check_repo(report: Report) -> None:
                     f"{routine.path} cron `{routine.cron}` restricts day-of-month AND day-of-week",
                     "cron ORs them — this fires far more often than intended; restrict one",
                 )
+            if routine.cron:
+                # Parse it, and prove it fires. `30 7 31 2 *` is five valid fields
+                # that never come round; `5 0 * * MON` is a form nothing here models.
+                # Both would register happily and simply never run, and the only
+                # thing that would notice is the digest reporting a silent scout.
+                try:
+                    fires = any(
+                        cron_times(routine.cron, date(2026, 1, 1) + timedelta(days=offset)) for offset in range(366)
+                    )
+                except ValueError as error:
+                    report.fail(f"{routine.path} cron `{routine.cron}` does not parse: {error}", "fix the expression")
+                else:
+                    if not fires:
+                        report.fail(
+                            f"{routine.path} cron `{routine.cron}` fires on no day of a whole year",
+                            "it would register and stay silent forever — check the day and month fields",
+                        )
+
+        # The agenda has nothing to say about a routine that will not say what it
+        # does, and `cron/day-ahead.md` posts these lines verbatim — so a missing
+        # one is a blank in tomorrow morning's message, not a cosmetic gap.
+        if not routine.summary:
+            report.fail(
+                f"{routine.path} has no `**Summary** — ...` line",
+                f"add one line under **Trigger** saying what it does, at most {SUMMARY_LIMIT} characters",
+            )
+        elif len(routine.summary) > SUMMARY_LIMIT:
+            report.fail(
+                f"{routine.path} has a {len(routine.summary)}-character **Summary** line",
+                f"shorten it to {SUMMARY_LIMIT} — it is rendered as one line of a Slack message",
+            )
 
         file_tier = _MODEL_LINE.search((ROUTINES_DIR / routine.path).read_text(encoding="utf-8"))
         if file_tier and file_tier.group(1) != _unwrap(table_tier):
@@ -712,6 +1053,7 @@ def manifest() -> dict:
                 "cron": routine.cron,
                 "trigger": routine.trigger,
                 "filters": routine.filters,
+                "summary": routine.summary,
                 "workstream": routine.workstream,
                 "tier": routine.tier,
                 "model": routine.model_id,
@@ -727,7 +1069,7 @@ def manifest() -> dict:
 #
 # Nothing below calls an API. `/cowork` fetches a `RemoteTrigger list` and hands
 # the response in as a snapshot; these functions decide what to do with it. That
-# split is the point: comparing seven fields across seventeen routines is exactly
+# split is the point: comparing seven fields across eighteen routines is exactly
 # the kind of work a model does correctly most of the time, and "most of the
 # time" here means a sweep silently running on last month's prompt.
 
@@ -739,7 +1081,7 @@ def snapshot(payload: object) -> list[dict]:
     ``{"data": [...]}``, ``get`` returns ``{"trigger": {...}}``, and a snapshot
     saved by hand is often the bare array. Guessing wrong on any of them reads as
     an empty account — which is the one wrong answer that would have this script
-    propose registering seventeen routines that already exist.
+    propose registering eighteen routines that already exist.
 
     A truncated page is the same failure wearing a different hat, and a quieter
     one: the routines beyond the page boundary simply are not there, so they read
@@ -1036,7 +1378,7 @@ def trigger_plan(
     # Three values a create body needs come from the account, not the repo, and
     # on the very first deploy there is no live routine to read them off. An
     # empty string is a value the API will accept, so a body carrying one
-    # registers seventeen routines pointing at no repository — which looks like it
+    # registers eighteen routines pointing at no repository — which looks like it
     # worked until the first Monday. Named here so the caller must fill them in.
     if plan.create:
         if not repo_url:
@@ -1071,7 +1413,7 @@ def trigger_plan(
 def readme_with_urls(text: str, urls: dict[str, str]) -> str:
     """Fill the registered-routines URL column from a plan's ``urls``.
 
-    Done here, on whole rows, rather than asked of the command as seventeen edits.
+    Done here, on whole rows, rather than asked of the command as eighteen edits.
     The first version of this asked for the edits and got none of them, which is
     how a table that claims to record what is running came to record nothing.
 
@@ -1289,6 +1631,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="verify only; exit non-zero on drift")
     parser.add_argument("--local", action="store_true", help="with --check, skip every gh call")
     parser.add_argument("--json", action="store_true", help="print the routine manifest for /cowork")
+    parser.add_argument("--agenda", action="store_true", help="print what the fleet runs today, and the week after")
+    parser.add_argument("--text", action="store_true", help="with --agenda, print the rendered message, not JSON")
+    parser.add_argument("--date", metavar="YYYY-MM-DD", help="with --agenda, the day to report on (default today)")
     parser.add_argument(
         "--triggers",
         metavar="FILE",
@@ -1313,6 +1658,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.json:
         print(json.dumps(manifest(), indent=2))
+        return 0
+
+    if args.agenda:
+        try:
+            # The UTC day, not the local one: every cron in cowork/ is UTC and
+            # `cron_times` matches against a UTC date. `date.today()` would hand a
+            # laptop in Sydney yesterday's schedule, already fully run.
+            day = date.fromisoformat(args.date) if args.date else datetime.now(UTC).date()
+        except ValueError:
+            fail(f"--date `{args.date}` is not a YYYY-MM-DD date")
+            return 2
+        payload = agenda(day)
+        print("\n".join(payload["lines"]) if args.text else json.dumps(payload, indent=2))
         return 0
 
     if args.plan:

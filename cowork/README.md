@@ -117,6 +117,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
 | `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
+| `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
 | `events/pr-opened-dod-audit.md` | PR opened / synchronized | — | `standard` | |
@@ -147,7 +148,7 @@ same drift in `make test-fast`.
 `cowork:proposal`, `claude-implement`, `feedback-override`, `workstream:<name>` for each of the
 fifteen, and the seven `type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does the seventeen cron routines and mirrors the
+file cannot read a markdown table. `/cowork deploy` does the eighteen cron routines and mirrors the
 workstream labels onto the Linear `Yeaboi` team; both need a Claude session, since a routine is
 account-scoped and has no CLI behind it.
 
@@ -175,6 +176,7 @@ rest of the verbs on it:
 | `/cowork run <name>` | fire one routine now, instead of waiting for its cron. Not a dry run — it files issues and posts to Slack. |
 | `/cowork pause` / `resume` | stop and restart the fleet without removing anything. |
 | `/cowork teardown` | take it down (see below). |
+| `/cowork today` | what runs today and over the next week, in one message shape. Read-only. |
 | `make cowork-check` | the repo half of `status`, with no session needed. |
 | `make cowork-teardown` | the GitHub half of teardown, prompting first. |
 

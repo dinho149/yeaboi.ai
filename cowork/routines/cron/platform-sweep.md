@@ -1,6 +1,7 @@
 # platform sweep
 
 **Trigger** — cron `0 7 * * 5` (Fri 07:00 UTC)
+**Summary** — surface parity and workflow health — the run that catches TUI-only features
 **Workstream** — [`workstreams/platform.md`](../../workstreams/platform.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = platform`.

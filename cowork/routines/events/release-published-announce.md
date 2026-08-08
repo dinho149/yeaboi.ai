@@ -1,6 +1,7 @@
 # Release published — announce
 
 **Trigger** — GitHub event, release `published`
+**Summary** — writes the notes and announces a published release
 **Model** — `standard` ([models.md](../../models.md)) — writing notes from commits needs judgement
 about what mattered
 

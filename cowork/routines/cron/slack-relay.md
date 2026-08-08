@@ -2,6 +2,7 @@
 
 **Trigger** — cron `0 7-23 * * *` (hourly, 07:00–23:00 UTC; the routines API rejects anything more
 frequent — `/cowork run slack-relay` is the "handle my reactions now" escape hatch)
+**Summary** — turns your reactions and short verbs in the channel into the actions they mean
 **Workstream** — none; this routine is the channel's inbound half.
 **Model** — `fast` ([models.md](../../models.md))
 
@@ -46,6 +47,12 @@ announce who is unauthorized.
    `slack_get_reactions` on each reply. 48 hours, not "since last run": runs overlap on purpose, and
    idempotency (below) makes the overlap free, whereas a gap after a failed run would drop a
    human's approval on the floor.
+
+   There is a **second** daily channel-level bot message now: `cron/day-ahead.md` posts the
+   schedule at 05:45 UTC. It has no thread and references no issue or PR, so it is not a digest and
+   must never be treated as one — a reaction on it resolves to nothing, which is the correct
+   outcome and not an error worth a reply. Identify a digest by its per-item thread replies, never
+   by "the bot posted at the top level".
 
    **Follow `slack_read_thread`'s pagination to the end; never read the first page and stop.** Since
    the digest gained a section per proposal type, one thread carries up to twenty-one item replies

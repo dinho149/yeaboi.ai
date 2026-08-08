@@ -1,6 +1,7 @@
 # security sweep
 
 **Trigger** — cron `0 6 * * 1,4` (Mon + Thu 06:00 UTC)
+**Summary** — Mon: dependency and SAST audit. Thu: a guardrail surface review
 **Workstream** — [`workstreams/security.md`](../../workstreams/security.md)
 
 Follow [sweep-procedure.md](../../sweep-procedure.md) with `workstream = security`.

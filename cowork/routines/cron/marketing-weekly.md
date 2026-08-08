@@ -1,6 +1,7 @@
 # marketing weekly
 
 **Trigger** — cron `0 8 * * 6` (Saturdays 08:00 UTC)
+**Summary** — drafts this week's marketing subject from the rotation, as a Notion page
 **Workstream** — [`workstreams/marketing.md`](../../workstreams/marketing.md)
 **Model** — `deep` ([models.md](../../models.md)) — this routine drafts inline instead of delegating,
 so the prose *is* the output

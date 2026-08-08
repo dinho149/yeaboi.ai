@@ -18,12 +18,14 @@ and ``--check --local`` skips the remote half by design.
 
 from __future__ import annotations
 
+import calendar
 import importlib.util
 import json
 import re
 import shutil
 import subprocess
 import sys
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -115,6 +117,7 @@ class TestFilesAgreeWithTheTable:
         ]
         assert sorted(declaring) == sorted(
             [
+                "cron/day-ahead.md",
                 "cron/digest.md",
                 "cron/marketing-weekly.md",
                 "cron/slack-relay.md",
@@ -154,6 +157,353 @@ class TestCronExpressions:
             assert "/" not in minute and "," not in minute, (
                 f"{routine.path} cron `{routine.cron}` fires more than once an hour, which the routines API rejects"
             )
+
+
+def _fake_routine(cron: str, name: str = "fake-sweep", summary: str = "a fake routine") -> object:
+    """A ``Routine`` with only the fields the agenda reads, for the boundary cases.
+
+    The real fleet cannot exercise every branch — nothing in it fires four times a
+    day and nothing crosses midnight in Europe/London — and inventing a cron here
+    is cheaper and clearer than inventing a routine file to hold one.
+    """
+    return setup.Routine(
+        name=name,
+        path=f"cron/{name}.md",
+        kind="cron",
+        tier="fast",
+        model_id="x",
+        workstream=None,
+        cron=cron,
+        trigger=f"cron `{cron}` (a fake cadence)",
+        filters=None,
+        summary=summary,
+        prompt="p",
+        trigger_name=f"cowork: {name}",
+    )
+
+
+class TestCronFields:
+    """The field parser. Everything the agenda knows about *when* starts here."""
+
+    def test_a_star_covers_the_whole_range(self):
+        assert setup._cron_field("*", 0, 59) == frozenset(range(60))
+
+    def test_a_single_value(self):
+        assert setup._cron_field("45", 0, 59) == frozenset({45})
+
+    def test_a_list(self):
+        assert setup._cron_field("1,4", 0, 7) == frozenset({1, 4})
+
+    def test_a_range(self):
+        assert setup._cron_field("7-23", 0, 23) == frozenset(range(7, 24))
+
+    def test_a_step_over_a_star(self):
+        assert setup._cron_field("*/15", 0, 59) == frozenset({0, 15, 30, 45})
+
+    def test_a_step_over_a_range(self):
+        assert setup._cron_field("1-7/2", 1, 31) == frozenset({1, 3, 5, 7})
+
+    def test_a_list_of_ranges(self):
+        assert setup._cron_field("1-3,20-21", 1, 31) == frozenset({1, 2, 3, 20, 21})
+
+    def test_an_out_of_range_value_raises(self):
+        """Not "matches nothing" — a field matching nothing is a routine that
+        never fires, and the agenda would report its absence as a quiet day."""
+        with pytest.raises(ValueError, match="outside"):
+            setup._cron_field("60", 0, 59)
+
+    def test_a_name_alias_raises_and_says_so(self):
+        with pytest.raises(ValueError, match="name aliases"):
+            setup._cron_field("MON", 0, 7)
+
+    def test_a_backwards_range_raises(self):
+        with pytest.raises(ValueError, match="backwards"):
+            setup._cron_field("20-3", 1, 31)
+
+    def test_a_bare_value_with_a_step_raises(self):
+        """Vixie cron reads `1/2` as `1-31/2`. Modelling it as {1} would be the one
+        form that disagrees with the scheduler quietly instead of loudly."""
+        with pytest.raises(ValueError, match="explicit range"):
+            setup._cron_field("1/2", 1, 31)
+
+    def test_a_zero_step_raises(self):
+        with pytest.raises(ValueError, match="positive step"):
+            setup._cron_field("*/0", 0, 59)
+
+
+class TestCronTimes:
+    """Whether a cron fires on a given day, against the cadences README claims.
+
+    The table says "Mon + Thu" and "3rd and 17th" in prose, and nothing has ever
+    checked that the expression beside it agrees. These do.
+    """
+
+    def _days(self, cron: str, year: int, month: int) -> list[int]:
+        last = calendar.monthrange(year, month)[1]
+        return [day for day in range(1, last + 1) if setup.cron_times(cron, date(year, month, day))]
+
+    def test_a_short_expression_raises(self):
+        with pytest.raises(ValueError, match="5-field"):
+            setup.cron_times("0 6 * *", date(2026, 8, 13))
+
+    def test_the_twice_weekly_security_cron_is_mondays_and_thursdays(self):
+        for day in range(1, 32):
+            when = date(2026, 8, 1) + timedelta(days=day - 1)
+            if when.month != 8:
+                break
+            fires = bool(setup.cron_times("0 6 * * 1,4", when))
+            assert fires == (when.weekday() in {0, 3}), when
+
+    def test_a_weekly_cron_fires_once_a_week(self):
+        assert self._days("0 7 * * 1", 2026, 8) == [3, 10, 17, 24, 31]
+
+    @pytest.mark.parametrize("month", range(1, 13))
+    def test_a_fortnightly_cron_fires_exactly_twice_every_month(self, month: int):
+        """The claim the README makes in a section heading and nowhere else."""
+        assert self._days("30 7 3,17 * *", 2026, month) == [3, 17]
+
+    def test_a_monthly_cron_fires_twelve_times_a_year(self):
+        hits = [month for month in range(1, 13) if setup.cron_times("30 7 12 * *", date(2026, month, 12))]
+        assert hits == list(range(1, 13))
+
+    def test_the_hourly_relay_fires_seventeen_times(self):
+        times = setup.cron_times("0 7-23 * * *", date(2026, 8, 13))
+        assert len(times) == 17
+        assert times[0] == time(7, 0) and times[-1] == time(23, 0)
+
+    def test_a_daily_cron_fires_once_on_every_day_of_a_month(self):
+        assert self._days("15 8 * * *", 2026, 2) == list(range(1, 29))
+
+    def test_day_of_week_seven_is_sunday(self):
+        """Every cron implementation accepts both 0 and 7; so does this one."""
+        sunday = date(2026, 8, 16)
+        assert sunday.weekday() == 6
+        assert setup.cron_times("0 6 * * 7", sunday)
+        assert setup.cron_times("0 6 * * 0", sunday)
+
+    def test_a_month_field_restricts_to_that_month(self):
+        assert setup.cron_times("0 7 * 2 *", date(2026, 2, 3))
+        assert not setup.cron_times("0 7 * 2 *", date(2026, 3, 3))
+
+    def test_both_day_fields_are_ored_not_anded(self):
+        """The trap `restricts_both_day_fields()` exists to stop.
+
+        Modelled rather than corrected: the agenda has to say what the scheduler
+        will do, or it would disagree with the fleet about exactly the case the
+        doctor is there to catch. `0 7 1 * 2` is the 1st *and* every Tuesday.
+        """
+        assert setup.cron_times("0 7 1 * 2", date(2026, 8, 1))  # a Saturday, by day-of-month
+        assert setup.cron_times("0 7 1 * 2", date(2026, 8, 4))  # a Tuesday, by day-of-week
+        assert not setup.cron_times("0 7 1 * 2", date(2026, 8, 5))
+        assert setup.restricts_both_day_fields("0 7 1 * 2"), "the doctor must still refuse it"
+
+    @pytest.mark.parametrize("routine", CRON_ROUTINES, ids=_routine_ids)
+    def test_every_registered_cron_fires_inside_six_weeks(self, routine):
+        """A typo like `30 7 31 2 *` parses, validates, and never fires.
+
+        Nothing else would notice: the routine sits registered and silent, and the
+        digest's 21-day health line reports it as a workstream that found nothing.
+        """
+        start = date(2026, 8, 1)
+        assert any(setup.cron_times(routine.cron, start + timedelta(days=offset)) for offset in range(42)), (
+            f"{routine.path} cron `{routine.cron}` fires on no day in six weeks"
+        )
+
+
+class TestAgenda:
+    """The payload and the rendered message the day-ahead routine posts."""
+
+    ZONE = setup.display_zone()[0]
+
+    def test_three_firings_is_an_appointment_and_four_is_background(self):
+        """A threshold, not a name check — the next hourly routine needs no edit."""
+        three = [_fake_routine("0 6,7,8 * * *")]
+        four = [_fake_routine("0 6,7,8,9 * * *")]
+        assert len(setup.day_plan(three, date(2026, 8, 13), self.ZONE)[0]) == 1
+        assert setup.day_plan(three, date(2026, 8, 13), self.ZONE)[1] == []
+        assert setup.day_plan(four, date(2026, 8, 13), self.ZONE)[0] == []
+        assert len(setup.day_plan(four, date(2026, 8, 13), self.ZONE)[1]) == 1
+
+    def test_appointments_are_ordered_by_the_time_they_fire(self):
+        routines = [_fake_routine("0 9 * * *", "late"), _fake_routine("0 6 * * *", "early")]
+        appointments, _ = setup.day_plan(routines, date(2026, 8, 13), self.ZONE)
+        assert [entry["name"] for entry in appointments] == ["early", "late"]
+
+    def test_a_routine_that_does_not_fire_is_absent(self):
+        assert setup.day_plan([_fake_routine("0 6 * * 1")], date(2026, 8, 13), self.ZONE) == ([], [])
+
+    @pytest.mark.skipif(setup.display_zone()[0] is None, reason="no tz database")
+    def test_the_same_cron_renders_bst_in_summer_and_gmt_in_winter(self):
+        """DST is derived per date. An offset baked in once is wrong half the year."""
+        routines = [_fake_routine("30 7 * * *")]
+        summer, _ = setup.day_plan(routines, date(2026, 8, 13), self.ZONE)
+        winter, _ = setup.day_plan(routines, date(2026, 1, 13), self.ZONE)
+        assert summer[0]["times_local"] == ["08:30"]
+        assert winter[0]["times_local"] == ["07:30"]
+        assert summer[0]["times_utc"] == winter[0]["times_utc"] == ["07:30"]
+
+    def test_a_local_time_on_another_date_is_marked(self, monkeypatch):
+        """DISPLAY_TZ is a one-line change somebody will make. At 06:00 UTC
+        London is the same day and Los Angeles is the day before, and a bare
+        23:00 next to "Today" would be a whole day wrong."""
+        monkeypatch.setattr(setup, "DISPLAY_TZ", "America/Los_Angeles")
+        zone, note = setup.display_zone()
+        if zone is None:
+            pytest.skip(note)
+        appointments, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
+        assert appointments[0]["times_local"] == ["23:00 (-1d)"]
+
+    @pytest.mark.skipif(setup.display_zone()[0] is None, reason="no tz database")
+    def test_a_window_ending_at_midnight_reads_as_2400(self):
+        """`00:00 (+1d)` at the end of a span is true and reads as a bug."""
+        _, background = setup.day_plan([_fake_routine("0 7-23 * * *")], date(2026, 8, 13), self.ZONE)
+        assert background[0]["window_local"] == "08:00-24:00"
+        assert background[0]["window_utc"] == "07:00-23:00"
+
+    def test_a_missing_tz_database_degrades_to_utc_rather_than_raising(self, monkeypatch):
+        """Losing a bracket is acceptable; losing the morning post is not."""
+        monkeypatch.setattr(setup, "DISPLAY_TZ", "Mars/Olympus_Mons")
+        zone, note = setup.display_zone()
+        assert zone is None
+        assert note and "UTC" in note
+        appointments, _ = setup.day_plan([_fake_routine("0 6 * * *")], date(2026, 8, 13), zone)
+        assert appointments[0]["times_local"] == ["06:00"]
+
+    def test_the_tail_covers_the_horizon_and_excludes_today(self):
+        payload = setup.agenda(date(2026, 8, 13), horizon=7)
+        assert len(payload["ahead"]) == 7
+        assert payload["date"] not in {entry["date"] for entry in payload["ahead"]}
+        assert payload["ahead"][0]["date"] == "2026-08-14"
+
+    def test_a_name_on_every_day_of_the_tail_is_lifted_out_of_it(self):
+        """Seven lines that all say `digest` are the daily routines restated, not news."""
+        payload = setup.agenda(date(2026, 8, 13))
+        assert "digest" in payload["daily"]
+        for entry in payload["ahead"]:
+            assert "digest" not in entry["names"]
+
+    def test_a_quiet_sunday_still_says_something(self):
+        """The reason this routine posts every day. Silence from a schedule is
+        ambiguous — nothing scheduled, or the routine broke?"""
+        payload = setup.agenda(date(2026, 8, 16))
+        names = {entry["name"] for entry in payload["today"]}
+        assert not {name for name in names if name.endswith("-sweep")}
+        assert "digest" in names
+        assert any("Next" in line for line in payload["lines"])
+
+    def test_the_fortnightly_sweeps_reach_the_tail_before_they_run(self):
+        """The whole point of a horizon: `30 7 11,25 * *` is unreadable, and a
+        fortnightly sweep arriving unannounced is what prompted this."""
+        payload = setup.agenda(date(2026, 8, 6))
+        upcoming = {name for entry in payload["ahead"] for name in entry["names"]}
+        assert {"performance-sweep", "artifacts-sharing-sweep", "roadmap-sweep"} <= upcoming
+
+    def test_the_posting_routine_is_in_the_payload_and_not_in_the_message(self):
+        """A line announcing the message you are holding is the one line in a
+        four-line post that says nothing. It stays in the payload, which is the
+        fleet's schedule and does include it."""
+        payload = setup.agenda(date(2026, 8, 16))
+        assert setup.MESSENGER in {entry["name"] for entry in payload["today"]}
+        assert setup.MESSENGER in payload["daily"]
+        blob = "\n".join(payload["lines"])
+        assert setup.MESSENGER not in blob
+
+    def test_the_payload_is_json_serialisable(self):
+        assert json.loads(json.dumps(setup.agenda(date(2026, 8, 13))))
+
+    def test_the_lines_meet_the_scribes_format_contract(self):
+        """`.claude/agents/cowork-scribe.md`: no emoji headers, no bare URLs."""
+        lines = setup.agenda(date(2026, 8, 13))["lines"]
+        blob = "\n".join(lines)
+        assert "http" not in blob, "the schedule links to nothing; a bare URL would be the scribe's rule broken"
+        assert not re.search(r"[\U0001F300-\U0001FAFF✀-➿☀-⛿]", blob), "no emoji"
+        assert lines[0].startswith("*Today* —"), lines[0]
+
+    def test_every_listed_routine_reaches_the_rendered_lines(self):
+        """A payload entry the renderer drops is a routine that runs unannounced."""
+        payload = setup.agenda(date(2026, 8, 13))
+        blob = "\n".join(payload["lines"])
+        for entry in payload["today"] + payload["background"]:
+            if entry["name"] == setup.MESSENGER:
+                continue  # the one documented omission — see the test above
+            assert entry["name"] in blob, entry["name"]
+
+    @pytest.mark.skipif(setup.display_zone()[0] is None, reason="no tz database")
+    def test_the_utc_bracket_appears_only_when_it_says_something(self):
+        """Half the year London *is* UTC, so the bracket would repeat the time it
+        sits beside on every line. The heading carries the zone instead, which is
+        what keeps a bare time unambiguous once the bracket is gone."""
+        winter = setup.agenda(date(2026, 1, 12))["lines"]
+        summer = setup.agenda(date(2026, 8, 13))["lines"]
+        assert "Europe/London" in winter[0] and "Europe/London" in summer[0]
+        assert not any("UTC)" in line for line in winter), "GMT == UTC; the bracket is noise"
+        assert any("UTC)" in line for line in summer), "BST != UTC; the bracket is the anchor"
+
+    def test_the_tail_names_the_month_again_when_it_changes(self):
+        lines = setup.agenda(date(2026, 8, 27))["lines"]
+        assert any(line.startswith("Tue 1 Sep") for line in lines), lines
+
+
+class TestAgendaCli:
+    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(_MODULE_PATH), "--agenda", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_it_prints_json_by_default(self):
+        result = self._run("--date", "2026-08-13")
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["lines"]
+
+    def test_text_prints_the_message_the_routine_posts(self):
+        result = self._run("--text", "--date", "2026-08-13")
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith("*Today* —")
+
+    def test_a_bad_date_is_refused_rather_than_guessed(self):
+        result = self._run("--date", "next tuesday")
+        assert result.returncode == 2
+        assert "YYYY-MM-DD" in result.stdout + result.stderr
+
+    def test_no_date_means_the_utc_day_not_the_local_one(self):
+        """Every cron in cowork/ is UTC, and `cron_times` matches a UTC date. A
+        local `date.today()` hands a laptop east of UTC yesterday's schedule —
+        already fully run — with today's heading on it.
+
+        Bracketed rather than compared to one clock reading, so a run that
+        straddles midnight cannot fail on a technicality.
+        """
+        before = datetime.now(UTC).date()
+        result = self._run()
+        after = datetime.now(UTC).date()
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["date"] in {before.isoformat(), after.isoformat()}
+
+
+class TestSummaries:
+    """Every routine says what it does, in one line short enough to post."""
+
+    @pytest.mark.parametrize("routine", ROUTINES, ids=_routine_ids)
+    def test_every_routine_has_a_summary_line(self, routine):
+        assert routine.summary, (
+            f"{routine.path} has no `**Summary** — ...` line, so the day-ahead post "
+            "would name it with nothing beside it"
+        )
+
+    @pytest.mark.parametrize("routine", ROUTINES, ids=_routine_ids)
+    def test_a_summary_stays_inside_the_cap(self, routine):
+        assert len(routine.summary) <= setup.SUMMARY_LIMIT, (
+            f"{routine.path} has a {len(routine.summary)}-character summary; it is rendered "
+            f"as one line of a Slack message, so the cap is {setup.SUMMARY_LIMIT}"
+        )
+
+    def test_the_manifest_carries_the_summaries(self, monkeypatch):
+        monkeypatch.setattr(setup.shutil, "which", lambda _: None)
+        for routine in setup.manifest()["routines"]:
+            assert routine["summary"]
 
 
 class TestPromptTemplate:
@@ -464,6 +814,45 @@ class TestCheckMode:
         assert result.returncode == 1
         assert "turbo" in result.stderr
 
+    def test_a_routine_with_no_summary_fails(self, repo_copy: Path):
+        """The doctor half of TestSummaries — deleting the branch must not leave
+        the suite green, and `make cowork-check` is what a contributor runs."""
+        path = repo_copy / "cowork" / "routines" / "cron" / "digest.md"
+        path.write_text("\n".join(line for line in path.read_text().splitlines() if not line.startswith("**Summary**")))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "digest.md has no `**Summary**" in result.stderr
+
+    def test_a_summary_longer_than_the_cap_fails(self, repo_copy: Path):
+        path = repo_copy / "cowork" / "routines" / "cron" / "digest.md"
+        path.write_text(path.read_text().replace("**Summary** — ", "**Summary** — " + "x" * setup.SUMMARY_LIMIT))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "character **Summary** line" in result.stderr
+
+    def test_a_cron_that_never_fires_fails(self, repo_copy: Path):
+        """Five valid fields that never come round. It would register and stay
+        silent forever, and the only thing that would notice is the digest
+        reporting a silent scout three weeks later."""
+        for path in (
+            repo_copy / "cowork" / "README.md",
+            repo_copy / "cowork" / "routines" / "cron" / "roadmap-sweep.md",
+        ):
+            path.write_text(path.read_text().replace("30 7 12 * *", "30 7 31 2 *"))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "fires on no day of a whole year" in result.stderr
+
+    def test_a_cron_the_parser_does_not_model_fails(self, repo_copy: Path):
+        for path in (
+            repo_copy / "cowork" / "README.md",
+            repo_copy / "cowork" / "routines" / "cron" / "roadmap-sweep.md",
+        ):
+            path.write_text(path.read_text().replace("30 7 12 * *", "30 7 * * MON"))
+        result = self._run(repo_copy)
+        assert result.returncode == 1
+        assert "does not parse" in result.stderr and "name aliases" in result.stderr
+
     def test_the_cron_trap_fails(self, repo_copy: Path):
         """A fortnightly slot that also restricts day-of-week runs near-daily."""
         for path in (
@@ -747,7 +1136,7 @@ class TestTriggerPlan:
     def test_a_first_deploy_names_what_only_the_account_can_supply(self):
         """The API accepts an empty string, so nothing downstream would notice.
 
-        Seventeen routines register pointing at no repository, on no environment,
+        Eighteen routines register pointing at no repository, on no environment,
         with every connector attached — and it looks like it worked until the
         first Monday.
         """
@@ -827,6 +1216,14 @@ class TestToolOverrides:
         Write/Edit, and spawns no crew."""
         tools = setup.routine_tools("slack-relay")
         assert not {"Write", "Edit", "Task"} & set(tools)
+
+    def test_the_day_ahead_routine_cannot_write(self):
+        """`cron/day-ahead.md` states this as a safety property — it runs one script
+        and posts one message — so it is pinned rather than left as prose. Task
+        stays: unlike the relay, it spawns the scribe."""
+        tools = setup.routine_tools("day-ahead")
+        assert not {"Write", "Edit"} & set(tools)
+        assert "Task" in tools and "Bash" in tools
 
     def test_every_override_names_a_real_routine(self):
         """A renamed relay would otherwise silently lose its extra tools."""
