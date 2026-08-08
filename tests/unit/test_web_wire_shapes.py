@@ -356,6 +356,7 @@ def _export_snapshots() -> dict[str, dict]:
                         url="https://example.invalid/browse/YB-1",
                         status="Done",
                         timestamp="2026-07-13T09:00:00",
+                        issue_type="Story",
                     ),
                     ActivityEvidence(
                         kind="wip",
@@ -363,6 +364,18 @@ def _export_snapshots() -> dict[str, dict]:
                         title="MFA enrolment",
                         url="https://example.invalid/browse/YB-2",
                         status="In Progress",
+                    ),
+                    # A subtask under YB-1, so the wire pins the hierarchy trio.
+                    ActivityEvidence(
+                        kind="issue",
+                        key="YB-3",
+                        title="SSO error states",
+                        url="https://example.invalid/browse/YB-3",
+                        status="In Progress",
+                        timestamp="2026-07-13T08:30:00",
+                        issue_type="Sub-task",
+                        parent_key="YB-1",
+                        subtask=True,
                     ),
                 ),
                 code_summary="Merged three pull requests.",
@@ -377,6 +390,9 @@ def _export_snapshots() -> dict[str, dict]:
                         repository="acme/web",
                         status="merged",
                         timestamp="2026-07-13T14:32:00",
+                        # Named ticket → the web page files this PR under YB-1;
+                        # the loose commit below stays in Code, pinning both paths.
+                        ticket_keys=("YB-1",),
                         children=(
                             ActivityEvidence(
                                 kind="commit",

@@ -797,6 +797,10 @@ class TestEvidence:
                 "status": "",
                 "time": "2026-07-30T09:15:00",
                 "children": [],
+                "type": "",
+                "parent": "",
+                "subtask": False,
+                "tickets": [],
             }
         ]
 
@@ -835,6 +839,22 @@ class TestEvidence:
             "timestamp": "",
         }
         assert export._evidence_payload([as_dict])[0]["repo"] == "yeaboi/web"
+
+    def test_hierarchy_facts_travel_on_the_wire(self):
+        # Dataclass-shaped: the trio + named keys, under the wire spellings.
+        row = export._evidence_payload(
+            [_evidence(kind="issue", key="PSOT-3", issue_type="Sub-task", parent_key="PSOT-1", subtask=True)]
+        )[0]
+        assert (row["type"], row["parent"], row["subtask"]) == ("Sub-task", "PSOT-1", True)
+        pr = export._evidence_payload([_evidence(kind="pr", key="#91", ticket_keys=("PSOT-1", "#77"))])[0]
+        assert pr["tickets"] == ["PSOT-1", "#77"]
+        # Dict-shaped (asdict/JSON round-trip) reads the same fields.
+        as_dict = {"kind": "issue", "key": "PSOT-3", "issue_type": "Sub-task", "parent_key": "PSOT-1", "subtask": True}
+        row = export._evidence_payload([as_dict])[0]
+        assert (row["type"], row["parent"], row["subtask"]) == ("Sub-task", "PSOT-1", True)
+        # Legacy rows without the fields default rather than fail.
+        legacy = export._evidence_payload([{"kind": "issue", "key": "PSOT-1"}])[0]
+        assert (legacy["type"], legacy["parent"], legacy["subtask"], legacy["tickets"]) == ("", "", False, [])
 
     def test_markdown_renders_nested_evidence_bullets_with_cap(self):
         rows = tuple(_evidence(key=f"#{i}", url=f"https://g/pr/{i}", title=f"Change {i}") for i in range(6))

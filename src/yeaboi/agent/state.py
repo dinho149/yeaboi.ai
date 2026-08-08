@@ -355,7 +355,18 @@ class ActivityEvidence:
     status: str = ""  # "merged", "In Progress", a review state, or ""
     timestamp: str = ""  # ISO-8601 or ""
     # Commits folded under their PR row (one level deep); () everywhere else.
+    # Story→subtask hierarchy deliberately does NOT reuse this — it rides the
+    # flat fields below so gap/transcript iteration never misses a row.
     children: tuple[ActivityEvidence, ...] = ()
+    issue_type: str = ""  # tracker's own word: "Story", "Sub-task", "Task", "Bug"; "" for code/docs
+    parent_key: str = ""  # parent issue in sibling-key spelling: "PROJ-12" (Jira), "#123" (AzDO)
+    # The tracker's authoritative child-of-a-story flag (Jira issuetype.subtask,
+    # AzDO WorkItemType == Task). The ONLY licence to nest under parent_key —
+    # a team-managed Jira Story also carries parent_key (its epic) with subtask False.
+    subtask: bool = False
+    # Code/doc rows only: exact tracker keys this change's own text or first-party
+    # links name ("PROJ-12", "#123"). Never fuzzy-matched (references.display_ticket_keys).
+    ticket_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -333,27 +333,103 @@ ul.memberSummary {
   font-size: var(--fs-xs);
 }
 
-/* `auto-fit`, so two active categories share the width instead of leaving a
-   third of the card empty to preserve a three-column shape. */
-.categories {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--s3);
+/* ── The Jira issue card ──────────────────────────────────────────────
+   One column of headed sections, like a tracker's issue view: key and
+   status lozenge up top, then Description / Code / Documentation /
+   Ticket status changes / Untracked work / What's next. */
+.issueHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line-soft);
+}
+/* The issue key is mono furniture, like Jira's breadcrumb key. */
+.issueKey {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: none;
+}
+a.issueKey:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+/* When there is no headline ticket the lozenge keeps to the right edge. */
+.issueHead > :last-child {
+  margin-left: auto;
+}
+/* Jira's flagged-issue banner: the impediment as a strip, not a footnote. */
+.impediment {
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--danger);
+  border-radius: var(--r-s);
+  background: var(--lozenge-blocked-bg);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* The glyph only — RichText wraps the blocker prose in a <span> too, and a
+   bare child selector would paint the whole sentence danger-red. */
+.impedimentFlag {
+  color: var(--danger);
+}
+/* Full-width headed section; the hairline top rule is the row divider a
+   tracker's issue view uses between field groups. */
+.issueSection {
   margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line-soft);
 }
-/* The border colour is set inline per category tone, so Tickets / Code / Docs
-   land in consistently colour-coded positions across every card. */
-.category {
-  border-left: 2px solid var(--line);
-  padding-left: var(--s2);
-}
-.category > * + * {
+.issueSection > * + * {
   margin-top: var(--s2);
 }
 .categoryHead {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
+}
+/* Story groups: one card per user story, its subtasks and linked work indented
+   behind a left rule — the tracker's own child-item silhouette. */
+.storyList {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
+.storyList[hidden] {
+  display: none;
+}
+.storyCard > * + * {
+  margin-top: var(--s1);
+}
+.storySubtasks {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+  list-style: none;
+}
+.storyLinkedWork {
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+}
+/* An orphan subtask's parent, named in words — the row is not on this card,
+   so there is nothing honest to link. */
+.storyParentNote {
+  margin: 0;
+  padding: 0 0 0 var(--s3);
+  color: var(--dim);
+  font-size: var(--fs-2xs);
 }
 
 .chipRow {
@@ -415,6 +491,16 @@ ul.memberSummary {
   column-gap: var(--s2);
   font-size: var(--fs-xs);
 }
+/* Feed rows: no kind chip, so the key starts the row and the meta column
+   (repo · lozenge) aligns under the title rather than under a chip. Must sit
+   BELOW .evidenceRow: same specificity, and the later template has to win —
+   jsdom cannot see the cascade, so no test guards this ordering. */
+.evidenceFeedRow {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.evidenceFeedRow > .evidenceMeta {
+  grid-column: 1 / -1;
+}
 .evidenceRef {
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -429,8 +515,8 @@ ul.memberSummary {
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
-/* Board status with its glyph — colour comes inline via toneVar; the word is
-   always beside it (never colour alone). */
+/* Board status as a Lozenge — the module classes own the colour, and the
+   status word always renders inside it (never colour alone). */
 .evidenceStatus {
   white-space: nowrap;
 }

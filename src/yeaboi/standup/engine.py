@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -421,6 +422,12 @@ def _projected_item(item: dict) -> dict:
         # whether that lookup actually ran (see azure_devops.py).
         "work_item_ids": tuple(item.get("work_item_ids") or ()),
         "work_items_known": item.get("work_items_known", True),
+        # Story/subtask facts from the tracker (jira._issue_hierarchy,
+        # azure_devops._work_item_hierarchy) — rendering-only, the web page
+        # nests subtasks under their story from these.
+        "issue_type": item.get("issue_type", ""),
+        "parent_key": item.get("parent_key", ""),
+        "subtask": bool(item.get("subtask", False)),
     }
 
 
@@ -610,7 +617,13 @@ def _nest_pr_commits(acts: list[dict]) -> list[dict]:
     return kept
 
 
-def _member_evidence(acts: list[dict], cap: int = 8) -> tuple[ActivityEvidence, ...]:
+def _member_evidence(
+    acts: list[dict],
+    cap: int = 8,
+    *,
+    prefixes: Collection[str] = frozenset(),
+    work_item_ids: Collection[str] = frozenset(),
+) -> tuple[ActivityEvidence, ...]:
     """Structured evidence rows from a member's grouped activity.
 
     Unlike ``_member_links`` this keeps the title, kind, repository, and status
@@ -620,6 +633,13 @@ def _member_evidence(acts: list[dict], cap: int = 8) -> tuple[ActivityEvidence, 
     carried WIP (which Jira stamps with an empty timestamp) folds. Deduped in
     that order — by URL when there is one, else by (kind, key, title) — so the
     latest event for a ticket is the one that survives.
+
+    ``prefixes``/``work_item_ids`` are the report-wide reference gates
+    (references.tracker_prefixes / tracker_work_item_ids): with them, each
+    code/doc row gets ``ticket_keys`` — the exact tracker keys its own
+    title/branch/body (or first-party AzDO links) name, which is what lets the
+    web page file a PR under its story. The defaults keep the gates closed, so
+    a caller that doesn't pass them gets no keys rather than ungated ones.
     """
     # Timestamps are ISO-8601 strings, so string comparison is chronological.
     # Descending puts the empty string — timestamp-less carried WIP — last, and
@@ -647,12 +667,56 @@ def _member_evidence(acts: list[dict], cap: int = 8) -> tuple[ActivityEvidence, 
                 # Commits folded under a PR (_nest_pr_commits) become one level
                 # of children — same ordering/dedupe rules, tighter cap. Child
                 # dicts never carry children themselves, so this terminates.
-                children=_member_evidence(a["children"], cap=6) if a.get("children") else (),
+                children=(
+                    _member_evidence(a["children"], cap=6, prefixes=prefixes, work_item_ids=work_item_ids)
+                    if a.get("children")
+                    else ()
+                ),
+                issue_type=str(a.get("issue_type") or "").strip(),
+                parent_key=str(a.get("parent_key") or "").strip(),
+                subtask=bool(a.get("subtask")),
+                # Tracker rows ARE tickets; naming keys is for the changes
+                # (commits, PRs, pages) that reference them.
+                ticket_keys=(
+                    references.display_ticket_keys(
+                        str(a.get("title") or ""),
+                        str(a.get("branch") or ""),
+                        str(a.get("body") or ""),
+                        prefixes=prefixes,
+                        work_item_ids=work_item_ids,
+                        linked_ids=a.get("work_item_ids") or (),
+                    )
+                    if not references.is_tracker_kind(str(a.get("kind") or ""))
+                    else ()
+                ),
             )
         )
         if len(rows) >= cap:
             break
     return tuple(rows)
+
+
+def _reference_gates(grouped: dict[str, list[dict]]) -> tuple[frozenset[str], frozenset[str]]:
+    """The report-wide ticket-reference gates, computed once per report.
+
+    Built from every member's activity, not one member's: the gate answers
+    "did the trackers produce this prefix/id today at all", and a PR may name a
+    ticket assigned to a teammate.
+
+    Deliberately NARROWER than habits.py's gate, which also folds in the open
+    reference tickets: a named key only matters here when its story row is on
+    the card, and a visible row's prefix/id is in ``grouped`` by definition —
+    widening the gate could only admit keys that attach to nothing.
+    """
+    gate_items = [a for acts in grouped.values() for a in acts]
+    prefixes = references.tracker_prefixes(gate_items)
+    work_item_ids = references.tracker_work_item_ids(gate_items)
+    logger.info(
+        "standup: evidence hierarchy gates — %d tracker prefix(es), %d work-item id(s)",
+        len(prefixes),
+        len(work_item_ids),
+    )
+    return prefixes, work_item_ids
 
 
 def _member_source(has_self_report: bool, has_activity: bool) -> str:
@@ -760,6 +824,7 @@ def _build_fallback_member_updates(
     blocker_signals = blocker_signals or {}
     yesterday = yesterday or {}
     practices = practices or {}
+    prefixes, work_item_ids = _reference_gates(grouped)
     for name, acts in grouped.items():
         split = categories.split_activity(acts)
         summary = _fallback_summary(acts)
@@ -795,9 +860,17 @@ def _build_fallback_member_updates(
                 ),
                 ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
                 ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
-                ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
-                code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
-                documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
+                ticketing_evidence=_member_evidence(
+                    split[categories.CATEGORY_TICKETING], prefixes=prefixes, work_item_ids=work_item_ids
+                ),
+                code_evidence=_member_evidence(
+                    _nest_pr_commits(split[categories.CATEGORY_CODE]),
+                    prefixes=prefixes,
+                    work_item_ids=work_item_ids,
+                ),
+                documentation_evidence=_member_evidence(
+                    split[categories.CATEGORY_DOCUMENTATION], prefixes=prefixes, work_item_ids=work_item_ids
+                ),
                 practices=practices.get(name, ()),
             )
         )
@@ -896,6 +969,11 @@ def _summarize_members(
             "changed_paths",
             "work_item_ids",
             "work_items_known",
+            # Story/subtask hierarchy is deterministic and drawn by the web
+            # page; the model restating it would be structure, not insight.
+            "issue_type",
+            "parent_key",
+            "subtask",
         )
         return [{k: v for k, v in a.items() if k not in rendering_only} for a in acts]
 
@@ -1003,6 +1081,7 @@ def _summarize_members(
     # alongside on self_report (shown as "their words" by the renderers).
     updates: list[MemberUpdate] = []
     llm_members = {m.get("name", ""): m for m in parsed.get("members", []) if isinstance(m, dict)}
+    prefixes, work_item_ids = _reference_gates(grouped)
     for name in members:
         m = llm_members.get(name, {})
         summary = (m.get("summary") or "").strip()
@@ -1052,9 +1131,17 @@ def _summarize_members(
                 ticketing_summary=ticketing_summary,
                 ticketing_links=_member_links(split[categories.CATEGORY_TICKETING]),
                 ticketing_activity_count=len(split[categories.CATEGORY_TICKETING]),
-                ticketing_evidence=_member_evidence(split[categories.CATEGORY_TICKETING]),
-                code_evidence=_member_evidence(_nest_pr_commits(split[categories.CATEGORY_CODE])),
-                documentation_evidence=_member_evidence(split[categories.CATEGORY_DOCUMENTATION]),
+                ticketing_evidence=_member_evidence(
+                    split[categories.CATEGORY_TICKETING], prefixes=prefixes, work_item_ids=work_item_ids
+                ),
+                code_evidence=_member_evidence(
+                    _nest_pr_commits(split[categories.CATEGORY_CODE]),
+                    prefixes=prefixes,
+                    work_item_ids=work_item_ids,
+                ),
+                documentation_evidence=_member_evidence(
+                    split[categories.CATEGORY_DOCUMENTATION], prefixes=prefixes, work_item_ids=work_item_ids
+                ),
                 practices=practices.get(name, ()),
             )
         )

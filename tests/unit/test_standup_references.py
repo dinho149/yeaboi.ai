@@ -74,6 +74,46 @@ class TestHasTrackerReference:
         assert not references.has_tracker_reference("", "", prefixes={"PSOT"})
 
 
+class TestIsTrackerKind:
+    def test_tracker_kinds_are_tickets(self):
+        for kind in ("issue", "wip", "work_item", "update", "comment", "ticket_context"):
+            assert references.is_tracker_kind(kind)
+
+    def test_changes_are_not_tickets(self):
+        for kind in ("commit", "pr", "review", "page", ""):
+            assert not references.is_tracker_kind(kind)
+
+
+class TestDisplayTicketKeys:
+    """The naming twin of has_tracker_reference: same gates, but returns the keys."""
+
+    def test_jira_keys_are_prefix_gated(self):
+        assert references.display_ticket_keys("PSOT-12 fix login", prefixes={"PSOT"}) == ("PSOT-12",)
+        # "UTF-8" is ticket-shaped; the gate is what keeps it from becoming a claim.
+        assert references.display_ticket_keys("Support UTF-8 PSOT-12", prefixes={"PSOT"}) == ("PSOT-12",)
+        assert references.display_ticket_keys("PSOT-12 fix login", prefixes={"ACME"}) == ()
+
+    def test_azdo_ab_syntax_is_ungated_and_spelled_like_evidence_keys(self):
+        assert references.display_ticket_keys("Fixes ab#123") == ("#123",)
+
+    def test_bare_hash_is_id_gated(self):
+        assert references.display_ticket_keys("Closes #91") == ()
+        assert references.display_ticket_keys("Closes #91", work_item_ids={"91"}) == ("#91",)
+
+    def test_first_party_linked_ids_are_appended(self):
+        assert references.display_ticket_keys("no refs here", linked_ids=("1234",)) == ("#1234",)
+
+    def test_ordered_dedupe_across_texts_and_links(self):
+        keys = references.display_ticket_keys(
+            "PSOT-12 then AB#77",
+            "feature/PSOT-12-retry",
+            prefixes={"PSOT"},
+            work_item_ids={"77"},
+            linked_ids=("77", "88"),
+        )
+        assert keys == ("PSOT-12", "#77", "#88")
+
+
 class TestPullRequestClaims:
     @pytest.mark.parametrize(
         ("subject", "expected"),

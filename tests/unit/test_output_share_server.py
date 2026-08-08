@@ -342,9 +342,11 @@ def test_a_thumbs_down_records_the_verdict_and_redraws_the_page(correctable_serv
         assert practice_feedback.load(store, "s1").is_excused("untracked-work", "url:https://x/pull/91")
 
     # The next reader must get the corrected report, not the snapshot the vote
-    # was cast against.
+    # was cast against. Assert on the signal's detail, not its title: the title
+    # is also the "Untracked work" card-section label, a literal in the inlined
+    # bundle, so it appears in every page whether or not the signal survived.
     with urllib.request.urlopen(f"{correctable_server.local_url}?token={token}", timeout=2) as response:  # noqa: S310
-        assert "Untracked work" not in response.read().decode()
+        assert "carries no ticket reference" not in response.read().decode()
 
 
 def test_a_thumbs_up_confirms_without_removing(correctable_server):

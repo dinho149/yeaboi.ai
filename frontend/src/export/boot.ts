@@ -182,6 +182,16 @@ export interface EvidenceItem {
   time: string;
   /** Commits folded under their PR row; `[]` everywhere else. */
   children: EvidenceItem[];
+  /** The tracker's own type word ("Story", "Sub-task", "Task"); "" when unknown. */
+  type: string;
+  /** Parent issue key ("PROJ-10", "#123"). A team-managed Jira Story carries its
+   * epic here too — `subtask` is what licenses nesting, never this alone. */
+  parent: string;
+  /** The tracker's child-of-a-story flag; the ONLY licence to nest under `parent`. */
+  subtask: boolean;
+  /** Code/doc rows: exact ticket keys this change's own text or first-party
+   * links name. Never fuzzy-matched — an empty list means "names none". */
+  tickets: string[];
 }
 
 /** One labelled list inside a member card: Ticketing, Code, or Documentation. */

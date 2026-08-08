@@ -196,6 +196,19 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   --line-strong: color-mix(in srgb, var(--text) 14%, var(--panel));
   --focus: var(--accent2);
 
+  /* ── Jira-style status lozenges ─────────────────────────────────────
+     fg is an audited tone from the palette; bg is the same tint-of-panel
+     formula Chip uses, one step gentler (14% vs 16%), so every theme and
+     the print block inherit a readable pair without per-theme tuning. */
+  --lozenge-todo-fg: var(--low);
+  --lozenge-todo-bg: color-mix(in srgb, var(--low) 14%, var(--panel));
+  --lozenge-progress-fg: var(--info);
+  --lozenge-progress-bg: color-mix(in srgb, var(--info) 14%, var(--panel));
+  --lozenge-done-fg: var(--ok);
+  --lozenge-done-bg: color-mix(in srgb, var(--ok) 14%, var(--panel));
+  --lozenge-blocked-fg: var(--danger);
+  --lozenge-blocked-bg: color-mix(in srgb, var(--danger) 14%, var(--panel));
+
   /* Themed confetti. This was a hardcoded array of six hex literals in *both*
      board files; expressing it as tokens means the celebration matches the
      palette the room is actually looking at, and costs nothing to maintain. */
@@ -370,7 +383,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Document grammar ─────────────────────────────────────────── */
 
-._h2_1u9h2_15 {
+._h2_1rb3n_15 {
   font-family: var(--font-mono);
   font-size: var(--fs-s);
   font-weight: 600;
@@ -382,21 +395,21 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   border-bottom: 1px solid var(--line);
 }
 
-._bullets_1u9h2_27 {
+._bullets_1rb3n_27 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--text);
   font-size: var(--fs-s);
   line-height: 1.65;
 }
-._bullets_1u9h2_27 li + li {
+._bullets_1rb3n_27 li + li {
   margin-top: var(--s1);
 }
-._bullets_1u9h2_27 li::marker {
+._bullets_1rb3n_27 li::marker {
   color: var(--accent);
 }
 
-._lede_1u9h2_41 {
+._lede_1rb3n_41 {
   margin: 0;
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -409,12 +422,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   line-height: 1.6;
 }
 
-._empty_1u9h2_54 {
+._empty_1rb3n_54 {
   color: var(--muted);
   font-style: italic;
 }
 
-._footnote_1u9h2_59 {
+._footnote_1rb3n_59 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -424,20 +437,20 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* A counted breakdown: bar directly over its key, as one block. Two separate
    margins let a legend drift toward the section under it and read as that
    section's caption instead of this one's. */
-._split_1u9h2_69 {
+._split_1rb3n_69 {
   margin: var(--s4) 0;
 }
-._split_1u9h2_69 > * + * {
+._split_1rb3n_69 > * + * {
   margin-top: var(--s2);
 }
 
-._trend_1u9h2_76 {
+._trend_1rb3n_76 {
   margin-bottom: var(--s4);
 }
 
 /* A row of people. `inline-flex` per name so an avatar never separates from the
    name it belongs to across a wrap. */
-._people_1u9h2_82 {
+._people_1rb3n_82 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -445,7 +458,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   margin: 0 0 var(--s4);
   font-size: var(--fs-s);
 }
-._person_1u9h2_90 {
+._person_1rb3n_90 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -454,7 +467,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Performance ──────────────────────────────────────────────── */
 
-._identity_1u9h2_99 {
+._identity_1rb3n_99 {
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -467,33 +480,33 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* Side by side where there is room. A breakdown of three projects does not
    need 1100px of track, and two of them stacked full-width dominate the
    section they are supposed to introduce. */
-._mixes_1u9h2_112 {
+._mixes_1rb3n_112 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--s4);
   margin-bottom: var(--s5);
 }
-._mix_1u9h2_112 > * + * {
+._mix_1rb3n_112 > * + * {
   margin-top: var(--s2);
 }
 
-._projects_1u9h2_122 {
+._projects_1rb3n_122 {
   display: grid;
   gap: var(--s3);
 }
 
-._project_1u9h2_122 {
+._project_1rb3n_122 {
   border-left: 2px solid var(--accent);
 }
 
-._projectIndex_1u9h2_131 {
+._projectIndex_1rb3n_131 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
   margin-right: var(--s2);
 }
 
-._chips_1u9h2_138 {
+._chips_1rb3n_138 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
@@ -504,13 +517,13 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
      and reflows "Billing revamp" onto two lines to make room for four chips —
      the title is the thing being read. `.cardHeader` wraps; this is what asks
      it to. */
-  ._chips_1u9h2_138 {
+  ._chips_1rb3n_138 {
     flex-basis: 100%;
     justify-content: flex-start;
   }
 }
 
-._why_1u9h2_155 {
+._why_1rb3n_155 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -522,12 +535,12 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* ── Poker ────────────────────────────────────────────────────── */
 
-._votes_1u9h2_167 {
+._votes_1rb3n_167 {
   display: inline-flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s3);
 }
-._vote_1u9h2_167 {
+._vote_1rb3n_167 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -538,18 +551,18 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* Skipped is muted, not struck through or red. The room decided not to estimate
    it; that is an outcome, and styling it as damage misreports the meeting. */
-._skipped_1u9h2_183 {
+._skipped_1rb3n_183 {
   color: var(--dim);
   font-style: italic;
 }
 
-._notes_1u9h2_188 {
+._notes_1rb3n_188 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
 
-._transcript_1u9h2_194 {
+._transcript_1rb3n_194 {
   font-size: var(--fs-s);
 }
 
@@ -558,7 +571,7 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 /* `auto-fit` rather than four fixed tracks: on a board where only two columns
    have cards, four tracks would leave half the page empty to preserve an
    arrangement that no longer describes anything. */
-._columns_1u9h2_203 {
+._columns_1rb3n_203 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s3);
@@ -567,14 +580,14 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
 
 /* `--col-tone` is set per column from `gridTone.ts`, the same typed map the live
    board reads — so a column is the same colour in the meeting and in the file. */
-._column_1u9h2_203 {
+._column_1rb3n_203 {
   padding: var(--s4);
   border: 1px solid var(--line);
   border-top: 2px solid var(--col-tone, var(--accent));
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._columnTitle_1u9h2_219 {
+._columnTitle_1rb3n_219 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -586,75 +599,75 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   letter-spacing: 0.14em;
   color: var(--col-tone, var(--text));
 }
-._count_1u9h2_231 {
+._count_1rb3n_231 {
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
-._column_1u9h2_203 ._bullets_1u9h2_27 li::marker {
+._column_1rb3n_203 ._bullets_1rb3n_27 li::marker {
   color: var(--col-tone, var(--accent));
 }
 
-._byline_1u9h2_239 {
+._byline_1rb3n_239 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._reactions_1u9h2_246 {
+._reactions_1rb3n_246 {
   margin-left: var(--s1);
 }
-._status_1u9h2_249 {
+._status_1rb3n_249 {
   font-family: var(--font-mono);
   color: var(--muted);
 }
 
 /* ── Standup ──────────────────────────────────────────────────── */
 
-._confidence_1u9h2_256 {
+._confidence_1rb3n_256 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s2);
   margin: var(--s3) 0;
 }
-._rationale_1u9h2_263 {
+._rationale_1rb3n_263 {
   color: var(--muted);
   font-size: var(--fs-s);
 }
 
 /* Per-member bars, scaled against the busiest member. The name column is a
    fixed share so the bars all start at the same x and can be compared. */
-._activity_1u9h2_270 {
+._activity_1rb3n_270 {
   margin: var(--s4) 0;
   padding: var(--s4);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   background: var(--panel);
 }
-._activity_1u9h2_270 > * + * {
+._activity_1rb3n_270 > * + * {
   margin-top: var(--s2);
 }
-._activityRow_1u9h2_280 {
+._activityRow_1rb3n_280 {
   display: grid;
   grid-template-columns: minmax(0, 8rem) 1fr auto;
   align-items: center;
   gap: var(--s3);
 }
-._activityName_1u9h2_286 {
+._activityName_1rb3n_286 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-xs);
 }
-._activityTotal_1u9h2_292 {
+._activityTotal_1rb3n_292 {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--fs-xs);
   color: var(--dim);
 }
 
-._member_1u9h2_299 {
+._member_1rb3n_299 {
   margin-bottom: var(--s3);
   padding: var(--s4);
   border: 1px solid var(--line);
@@ -663,10 +676,10 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   background: var(--panel);
 }
 /* A blocked member is the one thing on this page somebody has to act on. */
-._blocked_1u9h2_308 {
+._blocked_1rb3n_308 {
   border-left-color: var(--danger);
 }
-._memberHead_1u9h2_311 {
+._memberHead_1rb3n_311 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -674,60 +687,136 @@ code, .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberSummary_1u9h2_319 {
+._memberSummary_1rb3n_319 {
   margin: 0;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* The intro renders as terse clause bullets (a ul), one thought per line. */
-ul._memberSummary_1u9h2_319 {
+ul._memberSummary_1rb3n_319 {
   display: grid;
   gap: calc(var(--s1) / 2);
   padding-left: 1.1em;
 }
-._since_1u9h2_330 {
+._since_1rb3n_330 {
   margin: var(--s2) 0 0;
   color: var(--muted);
   font-size: var(--fs-xs);
 }
 
-/* `auto-fit`, so two active categories share the width instead of leaving a
-   third of the card empty to preserve a three-column shape. */
-._categories_1u9h2_338 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--s3);
+/* ── The Jira issue card ──────────────────────────────────────────────
+   One column of headed sections, like a tracker's issue view: key and
+   status lozenge up top, then Description / Code / Documentation /
+   Ticket status changes / Untracked work / What's next. */
+._issueHead_1rb3n_340 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line-soft);
+}
+/* The issue key is mono furniture, like Jira's breadcrumb key. */
+._issueKey_1rb3n_351 {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-decoration: none;
+}
+a._issueKey_1rb3n_351:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+/* When there is no headline ticket the lozenge keeps to the right edge. */
+._issueHead_1rb3n_340 > :last-child {
+  margin-left: auto;
+}
+/* Jira's flagged-issue banner: the impediment as a strip, not a footnote. */
+._impediment_1rb3n_368 {
+  margin: var(--s2) 0 0;
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--danger);
+  border-radius: var(--r-s);
+  background: var(--lozenge-blocked-bg);
+  font-size: var(--fs-s);
+  line-height: 1.6;
+}
+/* The glyph only — RichText wraps the blocker prose in a <span> too, and a
+   bare child selector would paint the whole sentence danger-red. */
+._impedimentFlag_1rb3n_379 {
+  color: var(--danger);
+}
+/* Full-width headed section; the hairline top rule is the row divider a
+   tracker's issue view uses between field groups. */
+._issueSection_1rb3n_384 {
   margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line-soft);
 }
-/* The border colour is set inline per category tone, so Tickets / Code / Docs
-   land in consistently colour-coded positions across every card. */
-._category_1u9h2_346 {
-  border-left: 2px solid var(--line);
-  padding-left: var(--s2);
-}
-._category_1u9h2_346 > * + * {
+._issueSection_1rb3n_384 > * + * {
   margin-top: var(--s2);
 }
-._categoryHead_1u9h2_353 {
+._categoryHead_1rb3n_392 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
 }
+/* Story groups: one card per user story, its subtasks and linked work indented
+   behind a left rule — the tracker's own child-item silhouette. */
+._storyList_1rb3n_399 {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
+._storyList_1rb3n_399[hidden] {
+  display: none;
+}
+._storyCard_1rb3n_410 > * + * {
+  margin-top: var(--s1);
+}
+._storySubtasks_1rb3n_413 {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+  list-style: none;
+}
+._storyLinkedWork_1rb3n_421 {
+  margin: var(--s1) 0 0;
+  padding: 0 0 0 var(--s3);
+  border-left: 1px solid var(--line);
+}
+/* An orphan subtask's parent, named in words — the row is not on this card,
+   so there is nothing honest to link. */
+._storyParentNote_1rb3n_428 {
+  margin: 0;
+  padding: 0 0 0 var(--s3);
+  color: var(--dim);
+  font-size: var(--fs-2xs);
+}
 
-._chipRow_1u9h2_359 {
+._chipRow_1rb3n_435 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1);
 }
 
 /* The jump strip above the member cards: who's here, who's blocked, one glance. */
-._memberStrip_1u9h2_366 {
+._memberStrip_1rb3n_442 {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
   margin-bottom: var(--s3);
 }
-._memberJump_1u9h2_372 {
+._memberJump_1rb3n_448 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -739,13 +828,13 @@ ul._memberSummary_1u9h2_319 {
   font-size: var(--fs-xs);
   text-decoration: none;
 }
-._memberJump_1u9h2_372:hover {
+._memberJump_1rb3n_448:hover {
   border-color: var(--line-strong);
 }
-._memberJumpBlocked_1u9h2_387 {
+._memberJumpBlocked_1rb3n_463 {
   border-color: var(--danger);
 }
-._memberJumpFlag_1u9h2_390 {
+._memberJumpFlag_1rb3n_466 {
   color: var(--danger);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -754,7 +843,7 @@ ul._memberSummary_1u9h2_319 {
 }
 
 /* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
-._evidence_1u9h2_399 {
+._evidence_1rb3n_406 {
   display: grid;
   gap: var(--s1);
   margin: var(--s2) 0 0;
@@ -763,37 +852,47 @@ ul._memberSummary_1u9h2_319 {
 }
 /* `display: grid` above would silently beat the UA's `[hidden]` rule, and the
    fold would render fully open with a lying "+ N more" button. */
-._evidence_1u9h2_399[hidden] {
+._evidence_1rb3n_406[hidden] {
   display: none;
 }
-._evidenceRow_1u9h2_411 {
+._evidenceRow_1rb3n_487 {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
   column-gap: var(--s2);
   font-size: var(--fs-xs);
 }
-._evidenceRef_1u9h2_418 {
+/* Feed rows: no kind chip, so the key starts the row and the meta column
+   (repo · lozenge) aligns under the title rather than under a chip. Must sit
+   BELOW .evidenceRow: same specificity, and the later template has to win —
+   jsdom cannot see the cascade, so no test guards this ordering. */
+._evidenceFeedRow_1rb3n_498 {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+._evidenceFeedRow_1rb3n_498 > ._evidenceMeta_1rb3n_501 {
+  grid-column: 1 / -1;
+}
+._evidenceRef_1rb3n_504 {
   font-family: var(--font-mono);
   white-space: nowrap;
 }
-._evidenceTitle_1u9h2_422 {
+._evidenceTitle_1rb3n_508 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._evidenceMeta_1u9h2_427 {
+._evidenceMeta_1rb3n_501 {
   grid-column: 2 / -1;
   color: var(--dim);
   font-size: var(--fs-2xs);
 }
-/* Board status with its glyph — colour comes inline via toneVar; the word is
-   always beside it (never colour alone). */
-._evidenceStatus_1u9h2_434 {
+/* Board status as a Lozenge — the module classes own the colour, and the
+   status word always renders inside it (never colour alone). */
+._evidenceStatus_1rb3n_520 {
   white-space: nowrap;
 }
 /* A PR's commit breakdown, folded behind the per-row "▸ N commits" toggle. */
-._commitToggle_1u9h2_438 {
+._commitToggle_1rb3n_524 {
   padding: 0;
   border: 0;
   background: none;
@@ -804,10 +903,10 @@ ul._memberSummary_1u9h2_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._commitToggle_1u9h2_438:hover {
+._commitToggle_1rb3n_524:hover {
   color: var(--text);
 }
-._evidenceChildren_1u9h2_452 {
+._evidenceChildren_1rb3n_538 {
   display: grid;
   grid-column: 1 / -1;
   gap: var(--s1);
@@ -817,10 +916,10 @@ ul._memberSummary_1u9h2_319 {
   list-style: none;
 }
 /* Same lesson as .evidence: author `display: grid` beats the UA hidden rule. */
-._evidenceChildren_1u9h2_452[hidden] {
+._evidenceChildren_1rb3n_538[hidden] {
   display: none;
 }
-._moreToggle_1u9h2_465 {
+._moreToggle_1rb3n_551 {
   margin-top: var(--s1);
   padding: 0;
   border: 0;
@@ -832,11 +931,11 @@ ul._memberSummary_1u9h2_319 {
   text-underline-offset: 3px;
   cursor: pointer;
 }
-._moreToggle_1u9h2_465:hover {
+._moreToggle_1rb3n_551:hover {
   color: var(--text);
 }
 
-._note_1u9h2_188 {
+._note_1rb3n_188 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -849,19 +948,19 @@ ul._memberSummary_1u9h2_319 {
 /* Practice signals: deliberately quieter than .note, and much quieter than the
    blocker. These are coaching nudges about how work landed, not something to
    stop the sprint for, and the person named is reading them. */
-._practices_1u9h2_494 {
+._practices_1rb3n_580 {
   margin-top: var(--s3);
   padding-top: var(--s2);
   border-top: 1px dashed var(--line);
 }
-._practiceList_1u9h2_499 {
+._practiceList_1rb3n_585 {
   display: grid;
   gap: var(--s2);
   margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
 }
-._practice_1u9h2_494 {
+._practice_1rb3n_580 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -872,14 +971,14 @@ ul._memberSummary_1u9h2_319 {
 }
 /* The repeat marker is a word, never colour alone — a second day running is a
    different fact from a one-off and has to survive greyscale. */
-._practiceRepeat_1u9h2_517 {
+._practiceRepeat_1rb3n_603 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._practiceRollup_1u9h2_524 {
+._practiceRollup_1rb3n_610 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -890,8 +989,8 @@ ul._memberSummary_1u9h2_319 {
 /* The two answers, on a correctable share only. Quieter than the signal they
    sit under: disputing a nudge should look as low-stakes as it is. They take
    the full row so a long signal sentence never wraps around them. */
-._practiceVotes_1u9h2_535,
-._practiceAsk_1u9h2_536 {
+._practiceVotes_1rb3n_621,
+._practiceAsk_1rb3n_622 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -899,24 +998,24 @@ ul._memberSummary_1u9h2_319 {
   width: 100%;
   margin: 0;
 }
-._practiceAsk_1u9h2_536 {
+._practiceAsk_1rb3n_622 {
   flex-direction: column;
   align-items: stretch;
   gap: var(--s1);
 }
-._practiceAskRow_1u9h2_549 {
+._practiceAskRow_1rb3n_635 {
   display: flex;
   gap: var(--s2);
 }
-._practiceAskLabel_1u9h2_553 {
+._practiceAskLabel_1rb3n_639 {
   color: var(--dim);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._practiceVote_1u9h2_535,
-._practiceSend_1u9h2_561 {
+._practiceVote_1rb3n_621,
+._practiceSend_1rb3n_647 {
   padding: 2px var(--s2);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -926,20 +1025,20 @@ ul._memberSummary_1u9h2_319 {
   font-size: var(--fs-2xs);
   cursor: pointer;
 }
-._practiceVote_1u9h2_535:hover:not(:disabled),
-._practiceSend_1u9h2_561:hover {
+._practiceVote_1rb3n_621:hover:not(:disabled),
+._practiceSend_1rb3n_647:hover {
   border-color: var(--accent);
   color: var(--text);
 }
-._practiceVote_1u9h2_535:disabled {
+._practiceVote_1rb3n_621:disabled {
   opacity: 0.5;
   cursor: default;
 }
-._practiceSend_1u9h2_561 {
+._practiceSend_1rb3n_647 {
   border-color: var(--accent);
   color: var(--text);
 }
-._practiceInput_1u9h2_584 {
+._practiceInput_1rb3n_670 {
   width: 100%;
   padding: var(--s1) var(--s2);
   border: 1px solid var(--line);
@@ -949,14 +1048,14 @@ ul._memberSummary_1u9h2_319 {
   font: inherit;
   font-size: var(--fs-xs);
 }
-._practiceInput_1u9h2_584:focus {
+._practiceInput_1rb3n_670:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 /* What replaces a signal the reader removed. Not an error, so not a warn tone —
    it is a receipt for something that worked. */
-._practiceResolved_1u9h2_600,
-._practiceOutcome_1u9h2_601 {
+._practiceResolved_1rb3n_686,
+._practiceOutcome_1rb3n_687 {
   width: 100%;
   margin: 0;
   color: var(--dim);
@@ -964,7 +1063,7 @@ ul._memberSummary_1u9h2_319 {
   font-style: italic;
 }
 
-._quote_1u9h2_609 {
+._quote_1rb3n_695 {
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
   border-left: 2px solid var(--accent);
@@ -977,7 +1076,7 @@ ul._memberSummary_1u9h2_319 {
   white-space: pre-wrap;
 }
 
-._screenshot_1u9h2_622 {
+._screenshot_1rb3n_708 {
   display: block;
   max-width: 100%;
   margin-bottom: var(--s3);
@@ -985,26 +1084,26 @@ ul._memberSummary_1u9h2_319 {
   border-radius: var(--r-m);
 }
 
-._details_1u9h2_630 {
+._details_1rb3n_716 {
   margin: 0;
   padding-left: 1.1rem;
   color: var(--muted);
   font-size: var(--fs-xs);
   line-height: 1.8;
 }
-._coverage_1u9h2_637 {
+._coverage_1rb3n_723 {
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
   margin-right: var(--s3);
   white-space: nowrap;
 }
-._dot_1u9h2_644 {
+._dot_1rb3n_730 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-._dim_1u9h2_649 {
+._dim_1rb3n_735 {
   color: var(--dim);
 }
 
@@ -1012,14 +1111,14 @@ ul._memberSummary_1u9h2_319 {
 
 /* The host's chosen decoration, held at the reader's text size rather than the
    heading's tracking — an emoji does not letter-space, it just drifts. */
-._headingEmoji_1u9h2_657 {
+._headingEmoji_1rb3n_743 {
   margin-right: var(--s2);
   letter-spacing: 0;
 }
 
 /* ── Plan ─────────────────────────────────────────────────────── */
 
-._cardId_1u9h2_664 {
+._cardId_1rb3n_750 {
   margin-right: var(--s2);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
@@ -1030,57 +1129,57 @@ ul._memberSummary_1u9h2_319 {
   white-space: nowrap;
 }
 
-._feature_1u9h2_675,
-._story_1u9h2_676,
-._sprint_1u9h2_677 {
+._feature_1rb3n_761,
+._story_1rb3n_399,
+._sprint_1rb3n_763 {
   margin-bottom: var(--s3);
 }
 /* The priority, in two pixels. Set per card from the typed map in Plan.tsx. */
-._story_1u9h2_676 {
+._story_1rb3n_399 {
   border-left: 2px solid var(--story-tone, var(--line-strong));
 }
-._storyText_1u9h2_684 {
+._storyText_1rb3n_770 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-s);
   font-style: italic;
   line-height: 1.6;
 }
-._storyGroup_1u9h2_691 {
+._storyGroup_1rb3n_777 {
   margin-bottom: var(--s5);
 }
-._storyGroup_1u9h2_691 > .eyebrow {
+._storyGroup_1rb3n_777 > .eyebrow {
   display: block;
   margin-bottom: var(--s2);
 }
 
 /* Given/When/Then, one criterion per row, the label in the mono voice so the
    three clauses stay readable as prose. */
-._criteria_1u9h2_701 {
+._criteria_1rb3n_787 {
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--fs-s);
   line-height: 1.6;
 }
-._criteria_1u9h2_701 li {
+._criteria_1rb3n_787 li {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--s2);
   align-items: baseline;
 }
-._criteria_1u9h2_701 li + li {
+._criteria_1rb3n_787 li + li {
   margin-top: var(--s1);
 }
-._criteria_1u9h2_701 b {
+._criteria_1rb3n_787 b {
   color: var(--accent);
   font-weight: 600;
 }
 
-._dod_1u9h2_722 {
+._dod_1rb3n_808 {
   margin-top: var(--s3);
 }
-._dod_1u9h2_722 ul {
+._dod_1rb3n_808 ul {
   margin: var(--s2) 0 0;
   padding-left: 1.1rem;
   font-size: var(--fs-xs);
@@ -1088,22 +1187,22 @@ ul._memberSummary_1u9h2_319 {
 }
 /* Struck through rather than dropped: which items a story is *exempt* from is
    a decision worth showing. */
-._exempt_1u9h2_733 {
+._exempt_1rb3n_819 {
   text-decoration: line-through;
   opacity: 0.5;
 }
 
-._fields_1u9h2_738 {
+._fields_1rb3n_824 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--s4);
   margin: var(--s4) 0;
 }
-._field_1u9h2_738 > * + * {
+._field_1rb3n_824 > * + * {
   margin-top: var(--s2);
 }
 
-._target_1u9h2_748 {
+._target_1rb3n_834 {
   display: flex;
   align-items: baseline;
   gap: var(--s2);
@@ -1112,36 +1211,36 @@ ul._memberSummary_1u9h2_319 {
   line-height: 1.6;
 }
 
-._capacity_1u9h2_757 {
+._capacity_1rb3n_843 {
   margin-top: var(--s4);
 }
-._capacity_1u9h2_757 > * + * {
+._capacity_1rb3n_843 > * + * {
   margin-top: var(--s3);
 }
 
-._sprintGoal_1u9h2_764 {
+._sprintGoal_1rb3n_850 {
   margin: 0 0 var(--s3);
   font-size: var(--fs-s);
   line-height: 1.6;
 }
 /* A sprint that lost capacity to leave or holidays says so on its edge. */
-._reduced_1u9h2_770 {
+._reduced_1rb3n_856 {
   border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
 }
-._reducedNote_1u9h2_773 {
+._reducedNote_1rb3n_859 {
   margin: var(--s2) 0 0;
   color: var(--warn);
   font-size: var(--fs-2xs);
 }
 
-._taskGroup_1u9h2_779 {
+._taskGroup_1rb3n_865 {
   margin-bottom: var(--s5);
 }
-._taskGroup_1u9h2_779 > .eyebrow {
+._taskGroup_1rb3n_865 > .eyebrow {
   display: block;
 }
 /* The story the tasks decompose, in its own case — see Plan.tsx. */
-._groupSubject_1u9h2_786 {
+._groupSubject_1rb3n_872 {
   margin: var(--s1) 0 var(--s2);
   color: var(--muted);
   font-size: var(--fs-s);
@@ -1149,7 +1248,7 @@ ul._memberSummary_1u9h2_319 {
 }
 /* Own line under the description — a test plan run inline turns every row into
    a paragraph and the table stops being scannable. */
-._taskNote_1u9h2_794 {
+._taskNote_1rb3n_880 {
   display: block;
   margin-top: var(--s1);
   color: var(--dim);
@@ -1159,44 +1258,44 @@ ul._memberSummary_1u9h2_319 {
 
 /* ── Anonymize: a re-published document ───────────────────────── */
 
-._document_1u9h2_804 {
+._document_1rb3n_890 {
   font-size: var(--fs-s);
   line-height: 1.7;
 }
-._document_1u9h2_804 > * + * {
+._document_1rb3n_890 > * + * {
   margin-top: var(--s3);
 }
 /* Mono and tracked, but **not** uppercased — unlike `.h2`, which labels a
    section we wrote. These headings are the original author's own words, and
    transforming them is both presumptuous and lossy: "iOS migration" comes back
    as "IOS MIGRATION". */
-._document_1u9h2_804 h2,
-._document_1u9h2_804 h3,
-._document_1u9h2_804 h4,
-._document_1u9h2_804 h5,
-._document_1u9h2_804 h6 {
+._document_1rb3n_890 h2,
+._document_1rb3n_890 h3,
+._document_1rb3n_890 h4,
+._document_1rb3n_890 h5,
+._document_1rb3n_890 h6 {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--accent);
   margin-top: var(--s5);
   margin-bottom: var(--s2);
 }
-._document_1u9h2_804 h2 { font-size: var(--fs-m); }
-._document_1u9h2_804 h3 { font-size: var(--fs-s); }
-._document_1u9h2_804 h4,
-._document_1u9h2_804 h5,
-._document_1u9h2_804 h6 { font-size: var(--fs-xs); color: var(--muted); }
-._document_1u9h2_804 ul,
-._document_1u9h2_804 ol {
+._document_1rb3n_890 h2 { font-size: var(--fs-m); }
+._document_1rb3n_890 h3 { font-size: var(--fs-s); }
+._document_1rb3n_890 h4,
+._document_1rb3n_890 h5,
+._document_1rb3n_890 h6 { font-size: var(--fs-xs); color: var(--muted); }
+._document_1rb3n_890 ul,
+._document_1rb3n_890 ol {
   padding-left: 1.2rem;
 }
-._document_1u9h2_804 li + li {
+._document_1rb3n_890 li + li {
   margin-top: var(--s1);
 }
-._document_1u9h2_804 li::marker {
+._document_1rb3n_890 li::marker {
   color: var(--accent);
 }
-._document_1u9h2_804 code {
+._document_1rb3n_890 code {
   font-family: var(--font-mono);
   font-size: 0.92em;
   padding: 1px 4px;
@@ -1204,18 +1303,18 @@ ul._memberSummary_1u9h2_319 {
   background: var(--card);
   color: var(--accent2);
 }
-._document_1u9h2_804 a {
+._document_1rb3n_890 a {
   color: var(--accent);
 }
 
-._quote_1u9h2_609 {
+._quote_1rb3n_695 {
   margin: 0;
   padding-left: var(--s3);
   border-left: 2px solid var(--line-strong);
   color: var(--muted);
 }
 
-._code_1u9h2_860 {
+._code_1rb3n_946 {
   margin: 0;
   padding: var(--s3);
   border: 1px solid var(--line);
@@ -1228,13 +1327,13 @@ ul._memberSummary_1u9h2_319 {
      the whole document scroll sideways on a phone. */
   overflow-x: auto;
 }
-._code_1u9h2_860 code {
+._code_1rb3n_946 code {
   background: none;
   padding: 0;
   color: inherit;
 }
 
-._rule_1u9h2_879 {
+._rule_1rb3n_965 {
   border: none;
   border-top: 1px solid var(--line);
   margin: var(--s5) 0;
@@ -1242,13 +1341,13 @@ ul._memberSummary_1u9h2_319 {
 
 /* ── Team profile: generated blocks ───────────────────────────── */
 
-._blocks_1u9h2_887 > * + * {
+._blocks_1rb3n_973 > * + * {
   margin-top: var(--s4);
 }
 
 /* A sub-heading inside a section. Mono like `.h2`, a tier down and without the
    accent — it groups within a section rather than announcing a new one. */
-._h3_1u9h2_893 {
+._h3_1rb3n_979 {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: 600;
@@ -1257,48 +1356,48 @@ ul._memberSummary_1u9h2_319 {
   color: var(--muted);
   margin: 0 0 var(--s2);
 }
-._kvWrap_1u9h2_902 > * + * {
+._kvWrap_1rb3n_988 > * + * {
   margin-top: var(--s2);
 }
 
 /* Label and value on one baseline. A `<dl>` rather than a table: these are
    facts about one thing, not rows that compare with each other. */
-._kv_1u9h2_902 {
+._kv_1rb3n_988 {
   display: grid;
   gap: 0;
   margin: 0;
   font-size: var(--fs-s);
 }
-._kv_1u9h2_902 > div {
+._kv_1rb3n_988 > div {
   display: grid;
   grid-template-columns: minmax(0, 14rem) 1fr;
   gap: var(--s3);
   padding: var(--s2) 0;
   border-bottom: 1px solid var(--line);
 }
-._kv_1u9h2_902 > div:last-child {
+._kv_1rb3n_988 > div:last-child {
   border-bottom: none;
 }
-._kv_1u9h2_902 dt {
+._kv_1rb3n_988 dt {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-._kv_1u9h2_902 dd {
+._kv_1rb3n_988 dd {
   margin: 0;
   line-height: 1.6;
   min-width: 0;
 }
 @media (max-width: 699px) {
-  ._kv_1u9h2_902 > div {
+  ._kv_1rb3n_988 > div {
     grid-template-columns: 1fr;
     gap: var(--s1);
   }
 }
 
-._cell_1u9h2_943 {
+._cell_1rb3n_1029 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
@@ -1307,32 +1406,32 @@ ul._memberSummary_1u9h2_319 {
 }
 /* Bounded rather than fluid: a proportion bar is only comparable down a column
    if every row draws the same track. */
-._cellBar_1u9h2_952 {
+._cellBar_1rb3n_1038 {
   width: 90px;
   flex: none;
 }
-._cellNote_1u9h2_956 {
+._cellNote_1rb3n_1042 {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-._cellPerson_1u9h2_960 {
+._cellPerson_1rb3n_1046 {
   display: inline-flex;
   align-items: center;
   gap: var(--s2);
 }
 
-._profileCards_1u9h2_966 {
+._profileCards_1rb3n_1052 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--s3);
 }
-._profileProse_1u9h2_971 {
+._profileProse_1rb3n_1057 {
   font-size: var(--fs-s);
 }
 
 /* A caveat reads as a qualification of the section, not as one of its
    findings. */
-._note_1u9h2_188 {
+._note_1rb3n_188 {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-xs);
@@ -1342,17 +1441,17 @@ ul._memberSummary_1u9h2_319 {
 
 /* A finding worth stopping on. The rule and the wash are both derived from the
    tone the payload sent, so a recommendation and a bottleneck read alike. */
-._callout_1u9h2_987 {
+._callout_1rb3n_1073 {
   border: 1px solid var(--line);
   border-left: 3px solid var(--warn);
   border-radius: var(--r-m);
   padding: var(--s3);
   font-size: var(--fs-s);
 }
-._callout_1u9h2_987 > * + * {
+._callout_1rb3n_1073 > * + * {
   margin-top: var(--s2);
 }
-._callout_1u9h2_987 p {
+._callout_1rb3n_1073 p {
   margin: 0;
   color: var(--muted);
   line-height: 1.6;
@@ -1363,16 +1462,16 @@ ul._memberSummary_1u9h2_319 {
 @media print {
   /* A card split across a page break loses its border on one side and reads as
      two half-finished things. */
-  ._project_1u9h2_122,
-  ._column_1u9h2_203,
-  ._lede_1u9h2_41,
-  ._callout_1u9h2_987 {
+  ._project_1rb3n_122,
+  ._column_1rb3n_203,
+  ._lede_1rb3n_41,
+  ._callout_1rb3n_1073 {
     break-inside: avoid;
   }
-  ._h3_1u9h2_893 {
+  ._h3_1rb3n_979 {
     break-after: avoid;
   }
-  ._h2_1u9h2_15 {
+  ._h2_1rb3n_15 {
     break-after: avoid;
   }
 }
@@ -1380,13 +1479,13 @@ ul._memberSummary_1u9h2_319 {
 /* Reader-added notes and fields. Drawn once by Report.tsx for every report, so
    the rules live with the other report sections rather than in a file of their
    own. Tokens only — no literal colours (test_web_frontend_guards). */
-._annotations_1u9h2_1025 {
+._annotations_1rb3n_1111 {
   margin-block-start: var(--s6);
   border-block-start: 1px solid var(--line);
   padding-block-start: var(--s5);
 }
 
-._annotationList_1u9h2_1031 {
+._annotationList_1rb3n_1117 {
   display: grid;
   gap: var(--s3);
   margin: 0;
@@ -1394,16 +1493,16 @@ ul._memberSummary_1u9h2_319 {
   list-style: none;
 }
 
-._annotation_1u9h2_1025 {
+._annotation_1rb3n_1111 {
   border-inline-start: 2px solid var(--line-strong);
   padding-inline-start: var(--s4);
 }
 
-._annotationBody_1u9h2_1044 {
+._annotationBody_1rb3n_1130 {
   margin: 0;
 }
 
-._annotationMeta_1u9h2_1048 {
+._annotationMeta_1rb3n_1134 {
   display: flex;
   gap: var(--s2);
   margin: var(--s1) 0 0;
@@ -1411,11 +1510,11 @@ ul._memberSummary_1u9h2_319 {
   font-size: var(--fs-s);
 }
 
-._annotationWhen_1u9h2_1056 {
+._annotationWhen_1rb3n_1142 {
   font-variant-numeric: tabular-nums;
 }
 
-._annotationWhere_1u9h2_1060 {
+._annotationWhere_1rb3n_1146 {
   font-style: italic;
 }
 /*
@@ -1430,7 +1529,7 @@ ul._memberSummary_1u9h2_319 {
  */
 
 /* ── Chip ─────────────────────────────────────────────────────── */
-._chip_lvkks_13 {
+._chip_1icrr_13 {
   display: inline-block;
   padding: 2px var(--s2);
   border-radius: var(--r-pill);
@@ -1446,22 +1545,22 @@ ul._memberSummary_1u9h2_319 {
 /* Tone-specific colours come from an inline style built by toneMix(), because
    the set of tones is a TypeScript union rather than a set of class names —
    one source of truth, and adding a tone needs no CSS change. */
-._chipLink_lvkks_29 { text-decoration: none; }
-._chipLink_lvkks_29:hover { border-color: var(--accent); color: var(--accent); }
+._chipLink_1icrr_29 { text-decoration: none; }
+._chipLink_1icrr_29:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Stat tile ────────────────────────────────────────────────── */
-._statGrid_lvkks_33 {
+._statGrid_1icrr_33 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--s3);
 }
-._stat_lvkks_33 {
+._stat_1icrr_33 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._statValue_lvkks_44 {
+._statValue_1icrr_44 {
   font-family: var(--font-mono);
   font-size: var(--fs-xl);
   font-weight: 700;
@@ -1471,25 +1570,25 @@ ul._memberSummary_1u9h2_319 {
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
-._statLabel_lvkks_54 {
+._statLabel_1icrr_54 {
   font-size: var(--fs-2xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 2px;
 }
-._statHint_lvkks_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
+._statHint_1icrr_61 { font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--s1); }
 
 /* ── Bars ─────────────────────────────────────────────────────── */
-._bar_lvkks_64 {
+._bar_1icrr_64 {
   height: 6px;
   background: var(--line);
   border-radius: var(--r-pill);
   overflow: hidden;
 }
-._barFill_lvkks_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
+._barFill_1icrr_70 { height: 100%; border-radius: var(--r-pill); max-width: 100%; }
 
-._segTrack_lvkks_72 {
+._segTrack_1icrr_72 {
   display: flex;
   gap: 2px;
   height: 10px;
@@ -1497,10 +1596,10 @@ ul._memberSummary_1u9h2_319 {
   overflow: hidden;
   min-width: 2px;
 }
-._segTrack_lvkks_72 > i { display: block; height: 100%; }
+._segTrack_1icrr_72 > i { display: block; height: 100%; }
 
 /* ── Legend ───────────────────────────────────────────────────── */
-._legend_lvkks_83 {
+._legend_1icrr_83 {
   display: flex;
   gap: var(--s4);
   flex-wrap: wrap;
@@ -1508,14 +1607,14 @@ ul._memberSummary_1u9h2_319 {
   color: var(--muted);
   margin-top: var(--s2);
 }
-._legend_lvkks_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
-._legendSwatch_lvkks_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
-._legendCount_lvkks_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._legend_1icrr_83 > span { display: inline-flex; align-items: center; gap: var(--s1); }
+._legendSwatch_1icrr_92 { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+._legendCount_1icrr_93 { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Sparkline ────────────────────────────────────────────────── */
-._sparkWrap_lvkks_96 { margin: var(--s1) 0 var(--s3); }
-._sparkWrap_lvkks_96 svg { display: block; width: 100%; height: 48px; }
-._sparkLabels_lvkks_98 {
+._sparkWrap_1icrr_96 { margin: var(--s1) 0 var(--s3); }
+._sparkWrap_1icrr_96 svg { display: block; width: 100%; height: 48px; }
+._sparkLabels_1icrr_98 {
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
@@ -1525,7 +1624,7 @@ ul._memberSummary_1u9h2_319 {
 }
 
 /* ── Avatar ───────────────────────────────────────────────────── */
-._avatar_lvkks_108 {
+._avatar_1icrr_108 {
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -1539,13 +1638,13 @@ ul._memberSummary_1u9h2_319 {
 }
 
 /* ── Notice ───────────────────────────────────────────────────── */
-._notice_lvkks_122 {
+._notice_1icrr_122 {
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
 }
-._noticeTitle_lvkks_128 {
+._noticeTitle_1icrr_128 {
   font-weight: 600;
   font-size: var(--fs-s);
   color: var(--warn);
@@ -1554,18 +1653,18 @@ ul._memberSummary_1u9h2_319 {
   align-items: center;
   gap: var(--s2);
 }
-._notice_lvkks_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
+._notice_1icrr_122 ul { margin: 0; padding-left: var(--s4); font-size: var(--fs-s); color: var(--muted); }
 
 /* ── Card / Section ───────────────────────────────────────────── */
-._card_lvkks_140 {
+._card_1icrr_140 {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-m);
   padding: var(--s3) var(--s4);
   transition: border-color var(--dur-fast) var(--ease);
 }
-._cardHover_lvkks_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-._cardHeader_lvkks_148 {
+._cardHover_1icrr_147:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+._cardHeader_1icrr_148 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1576,10 +1675,10 @@ ul._memberSummary_1u9h2_319 {
      to two lines to make room for them — the title is the thing being read. */
   flex-wrap: wrap;
 }
-._cardTitle_lvkks_159 { font-weight: 600; font-size: var(--fs-s); }
+._cardTitle_1icrr_159 { font-weight: 600; font-size: var(--fs-s); }
 
-._section_lvkks_161 { margin-bottom: var(--s6); }
-._sectionTitle_lvkks_162 {
+._section_1icrr_161 { margin-bottom: var(--s6); }
+._sectionTitle_1icrr_162 {
   font-size: var(--fs-l);
   color: var(--accent);
   letter-spacing: 0.02em;
@@ -1592,9 +1691,9 @@ ul._memberSummary_1u9h2_319 {
 /* The wrapper, not the table, scrolls. A table wide enough to overflow must
    never make the *page* scroll sideways — on a phone that breaks every
    vertical swipe on the board behind it. */
-._tableWrap_lvkks_175 { overflow-x: auto; }
-._table_lvkks_175 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
-._table_lvkks_175 th {
+._tableWrap_1icrr_175 { overflow-x: auto; }
+._table_1icrr_175 { width: 100%; border-collapse: collapse; font-size: var(--fs-s); }
+._table_1icrr_175 th {
   background: var(--card);
   text-align: left;
   padding: var(--s2) var(--s3);
@@ -1605,23 +1704,23 @@ ul._memberSummary_1u9h2_319 {
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-._table_lvkks_175 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
-._table_lvkks_175 tr:last-child td { border-bottom: none; }
-._numeric_lvkks_190 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+._table_1icrr_175 td { padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+._table_1icrr_175 tr:last-child td { border-bottom: none; }
+._numeric_1icrr_190 { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ── Prose ────────────────────────────────────────────────────── */
-._prose_lvkks_193 { font-size: var(--fs-s); line-height: 1.6; }
+._prose_1icrr_193 { font-size: var(--fs-s); line-height: 1.6; }
 /* pre-wrap, not a markdown renderer: ticket descriptions arrive as plain text
    (tickets.py already strips their HTML) and must never be re-parsed as
    markup. This is what makes dangerouslySetInnerHTML unnecessary here. */
-._proseText_lvkks_197 { white-space: pre-wrap; overflow-wrap: anywhere; }
-._proseList_lvkks_198 { list-style: none; padding-left: 0; margin: 0; }
-._proseList_lvkks_198 > li {
+._proseText_1icrr_197 { white-space: pre-wrap; overflow-wrap: anywhere; }
+._proseList_1icrr_198 { list-style: none; padding-left: 0; margin: 0; }
+._proseList_1icrr_198 > li {
   position: relative;
   padding: var(--s1) 0 var(--s1) var(--s4);
   line-height: 1.55;
 }
-._proseList_lvkks_198 > li::before {
+._proseList_1icrr_198 > li::before {
   content: "•";
   color: var(--accent);
   position: absolute;
@@ -1639,7 +1738,7 @@ ul._memberSummary_1u9h2_319 {
    `font-family` must resolve to a monospace with full block-drawing coverage
    (U+2580-U+259F). Every stack member in --font-mono has it; naming the token
    rather than a face keeps that true if the stack changes. */
-._wordmark_lvkks_222 {
+._wordmark_1icrr_222 {
   font-family: var(--font-mono);
   font-size: var(--fs-l);
   line-height: 1;
@@ -1657,7 +1756,7 @@ ul._memberSummary_1u9h2_319 {
   overflow-x: auto;
   scrollbar-width: none;
 }
-._wordmark_lvkks_222::-webkit-scrollbar { display: none; }
+._wordmark_1icrr_222::-webkit-scrollbar { display: none; }
 
 /* ── Wordmark, ANSI Shadow face ───────────────────────────────────
    The six-row face, for the two places the wordmark is the hero: the join gate
@@ -1668,7 +1767,7 @@ ul._memberSummary_1u9h2_319 {
    The wrapper exists only to be a query container. Wordmark.tsx sizes the type
    from `100cqi` and the word's cell count, which is the only way a fixed grid of
    60 cells fits a 345px phone; there is no CSS length that does that on its own. */
-._wordmarkFit_lvkks_251 {
+._wordmarkFit_1icrr_251 {
   display: block;
   container-type: inline-size;
   /* Without this the container has no definite inline size to report inside a
@@ -1677,7 +1776,7 @@ ul._memberSummary_1u9h2_319 {
   min-width: 0;
 }
 
-._wordmarkShadow_lvkks_260 {
+._wordmarkShadow_1icrr_260 {
   /* Inherits `line-height: 1` from .wordmark, and must. This face is drawn as a
      grid of cells whose box-drawing strokes join across rows: at 1.04 the extra
      4% opens a hairline through every horizontal join and the word stops reading
@@ -1691,14 +1790,14 @@ ul._memberSummary_1u9h2_319 {
 /* The drop shadow, held back from the letter bodies. Same hue, less of it — at
    full accent the strokes weigh as much as the blocks and the word reads as a
    wire outline instead of as letters standing off the page. */
-._wordmarkStroke_lvkks_274 {
+._wordmarkStroke_1icrr_274 {
   color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 /* ── Eyebrow ──────────────────────────────────────────────────────
    Mono, uppercase, widely tracked — the "this is furniture" signal in the
    mono-forward type system. Lifted from yeaboi.ai's `.eyebrow`. */
-._eyebrow_lvkks_280 {
+._eyebrow_1icrr_280 {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
@@ -1712,9 +1811,9 @@ ul._memberSummary_1u9h2_319 {
      whole label left of anything stacked under it. */
   margin-right: calc(var(--track-eyebrow) * -1);
 }
-._eyebrowAccent_lvkks_295 { color: var(--accent); }
-._eyebrowDot_lvkks_296 { color: var(--dim); letter-spacing: 0; }
-._eyebrowValue_lvkks_297 {
+._eyebrowAccent_1icrr_295 { color: var(--accent); }
+._eyebrowDot_1icrr_296 { color: var(--dim); letter-spacing: 0; }
+._eyebrowValue_1icrr_297 {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -1723,14 +1822,14 @@ ul._memberSummary_1u9h2_319 {
 /* ── TerminalFrame ────────────────────────────────────────────────
    The window chrome from yeaboi.ai's hero. Gate and export headers only —
    never a live board, where it would be a costume. */
-._frame_lvkks_306 {
+._frame_1icrr_306 {
   border: 1px solid var(--line);
   border-radius: var(--r-l);
   background: var(--panel);
   box-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, var(--shadow-2);
   overflow: hidden;
 }
-._frameBar_lvkks_313 {
+._frameBar_1icrr_313 {
   display: flex;
   align-items: center;
   gap: var(--s3);
@@ -1738,8 +1837,8 @@ ul._memberSummary_1u9h2_319 {
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-._frameLights_lvkks_321 { display: inline-flex; gap: 6px; flex: none; }
-._frameLights_lvkks_321 i {
+._frameLights_1icrr_321 { display: inline-flex; gap: 6px; flex: none; }
+._frameLights_1icrr_321 i {
   width: 10px;
   height: 10px;
   border-radius: var(--r-pill);
@@ -1747,10 +1846,10 @@ ul._memberSummary_1u9h2_319 {
 }
 /* Tinted from the palette rather than the usual literal red/amber/green, so
    the chrome belongs to whatever theme the visitor picked. */
-._frameLights_lvkks_321 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
-._frameLights_lvkks_321 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
-._frameLights_lvkks_321 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
-._frameTitle_lvkks_333 {
+._frameLights_1icrr_321 i:nth-child(1) { background: color-mix(in srgb, var(--danger) 70%, var(--panel-2)); }
+._frameLights_1icrr_321 i:nth-child(2) { background: color-mix(in srgb, var(--warn) 70%, var(--panel-2)); }
+._frameLights_1icrr_321 i:nth-child(3) { background: color-mix(in srgb, var(--ok) 70%, var(--panel-2)); }
+._frameTitle_1icrr_333 {
   flex: 1;
   text-align: center;
   font-family: var(--font-mono);
@@ -1763,7 +1862,31 @@ ul._memberSummary_1u9h2_319 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-._frameBody_lvkks_346 { padding: var(--s5); }
+._frameBody_1icrr_346 { padding: var(--s5); }
+
+/* ── Lozenge — Jira-style status tag ─────────────────────────────────
+   Category classes only set the two custom properties; the base rule owns
+   the shape. Colours come from the derived lozenge tokens in tokens.css,
+   never literals here (guard: test_component_styles_use_tokens_not_literal_colours). */
+._lozenge_1icrr_352 {
+  display: inline-block;
+  padding: 1px var(--s2);
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--lozenge-fg, var(--muted));
+  background: var(--lozenge-bg, var(--card));
+}
+._lozengeSmall_1icrr_366 { padding: 0 var(--s1); font-weight: 600; }
+._lozengeTodo_1icrr_367 { --lozenge-fg: var(--lozenge-todo-fg); --lozenge-bg: var(--lozenge-todo-bg); }
+._lozengeProgress_1icrr_368 { --lozenge-fg: var(--lozenge-progress-fg); --lozenge-bg: var(--lozenge-progress-bg); }
+._lozengeDone_1icrr_369 { --lozenge-fg: var(--lozenge-done-fg); --lozenge-bg: var(--lozenge-done-bg); }
+._lozengeBlocked_1icrr_370 { --lozenge-fg: var(--lozenge-blocked-fg); --lozenge-bg: var(--lozenge-blocked-bg); }
 /*
  * The duck rig.
  *
