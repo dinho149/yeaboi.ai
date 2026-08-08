@@ -18,9 +18,10 @@ logger = logging.getLogger(__name__)
 
 _DATA_FILENAME = "changelog_data.json"
 
-# Fixed area vocabulary — mirrors the mode cards. Anything else coerces to "general".
+# Fixed area vocabulary — mirrors the mode cards ("agents" covers the whole
+# Agents category). Anything else coerces to "general".
 VALID_AREAS = frozenset(
-    {"analysis", "planning", "standup", "retro", "performance", "reporting", "usage", "settings", "general"}
+    {"analysis", "planning", "standup", "retro", "performance", "reporting", "usage", "settings", "agents", "general"}
 )
 
 # One accent per area, matching each mode's colour in the mode-select grid so the
@@ -34,6 +35,7 @@ AREA_COLORS: dict[str, str] = {
     "reporting": "rgb(140,120,230)",
     "usage": "rgb(220,160,60)",
     "settings": "rgb(160,160,180)",
+    "agents": "rgb(90,160,210)",
     "general": "rgb(160,160,180)",
 }
 

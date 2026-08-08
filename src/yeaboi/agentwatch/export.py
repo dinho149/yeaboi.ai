@@ -14,7 +14,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,40 @@ def build_standup_plaintext(digest: AgentStandupDigest) -> str:
     return "\n".join(lines)
 
 
+def build_security_markdown(report: AgentSecurityReport) -> str:
+    """The agent security report as a shareable Markdown document."""
+    lines: list[str] = [
+        f"# Agent Security — {report.scan_date}",
+        "",
+        f"**Posture: {report.posture}** — {report.sessions_scanned} session(s) scanned, "
+        f"{len(report.mcp_servers)} MCP server(s), {report.secrets_found} secret signal(s).",
+        "",
+        "*Deterministic pattern scan — an indicator, not a security audit. Findings reference "
+        "file and line only; matched content is never stored.*",
+    ]
+    if report.summary:
+        lines += ["", report.summary]
+    if report.findings:
+        lines += ["", "## Findings", "", "| severity | finding | where | remediation |", "|---|---|---|---|"]
+        for f in report.findings:
+            where = f"{f.location}:{f.line_no}" if f.line_no else f.location
+            lines.append(f"| {f.severity} | {f.title} ({f.pattern}) | {where} | {f.remediation} |")
+    if report.mcp_servers:
+        lines += ["", "## MCP servers", "", "| name | scope | transport | flags |", "|---|---|---|---|"]
+        for record in report.mcp_servers:
+            lines.append(f"| {record.name} | {record.scope} | {record.transport} | {', '.join(record.flags) or '—'} |")
+    if report.recommendations:
+        lines += ["", "## Recommendations", ""] + [f"- {item}" for item in report.recommendations]
+    if report.warnings:
+        lines += ["", "## Warnings", ""] + [f"- ⚠ {w}" for w in report.warnings]
+    lines += _md_footer()
+    return "\n".join(lines)
+
+
 _BUILDERS = {
     "usage": build_usage_markdown,
     "standup": build_standup_markdown,
+    "security": build_security_markdown,
 }
 
 

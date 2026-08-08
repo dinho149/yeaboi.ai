@@ -664,10 +664,10 @@ class TestLabels:
                 f"digest.md never heads the {section} section with {rows[section]!r}"
             )
 
-    def test_there_are_fifteen_workstreams(self):
+    def test_there_are_sixteen_workstreams(self):
         # The count is load-bearing: CLAUDE.md, cowork/README.md and the digest's
-        # health check all say fifteen.
-        assert len(WORKSTREAMS) == 15
+        # health check all say sixteen (agents joined with the agentwatch family).
+        assert len(WORKSTREAMS) == 16
 
     def test_every_workstream_owns_at_least_one_routine(self):
         owned = {r.workstream for r in ROUTINES if r.workstream}

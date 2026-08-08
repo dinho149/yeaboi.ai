@@ -65,6 +65,7 @@ src/yeaboi/
     export.py           — RetroReport → Markdown + self-contained HTML (Export button)
     store.py            — RetroStore (retro_history table, schema v7)
   performance/          — Performance mode (per-engineer 1:1 prep/completion + 6-month review)
+  agentwatch/           — the Agents family (usage/standup/security engines over local Claude Code/OpenClaw session telemetry; collector + store + security_checks; pricing.py at top level is its rate table)
     __init__.py         — public API (run_one_on_one_prep, complete_one_on_one, run_six_month_review, PerformanceStore, fetch_roster)
     roster.py           — fetch_roster(): engineer list from Jira/AzDO assignees (graceful [])
     activity.py         — gather_engineer_activity(): current+prior-sprint tickets for one engineer

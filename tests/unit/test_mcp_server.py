@@ -65,6 +65,8 @@ EXPECTED_TOOLS = {
     "agents_usage_history",
     "agents_standup_run",
     "agents_standup_history",
+    "agents_security_scan",
+    "agents_security_history",
 }
 
 

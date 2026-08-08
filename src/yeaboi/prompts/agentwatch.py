@@ -108,3 +108,37 @@ def get_standup_digest_prompt(
         f"Agent-authored tracker activity:\n{repo_lines}"
     )
     return f"{ask}\n\n{requirements}\n\n{context}"
+
+
+def get_security_summary_prompt(
+    *,
+    scan_date: str,
+    posture: str,
+    findings: list[tuple[str, str, str, str]],
+    mcp_count: int,
+    sessions_scanned: int,
+) -> str:
+    """Build the security-summary prompt.
+
+    Args:
+        findings: (severity, category, title, pattern) rows, worst first.
+    """
+    finding_lines = (
+        "\n".join(f"- [{sev}/{cat}] {title} ({pattern})" for sev, cat, title, pattern in findings) or "(none)"
+    )
+
+    ask = (
+        f"You are summarising a local AI-agent security scan from {scan_date} for an engineering "
+        f"lead (computed posture: {posture}; {sessions_scanned} session(s) scanned, {mcp_count} MCP "
+        "server(s) configured). Write a short plain-language summary and prioritised recommendations."
+    )
+    requirements = (
+        "Requirements:\n"
+        "- Ground everything in the findings below — never invent findings or soften a critical one.\n"
+        "- summary: 2-3 sentences, leading with the worst class of finding (or the clean result).\n"
+        "- recommendations: max 5, ordered by risk reduction per effort, each one concrete action.\n"
+        "- These are deterministic pattern matches — call them indicators, not a security audit.\n"
+        'Return STRICT JSON: {"summary": "...", "recommendations": ["..."]}'
+    )
+    context = f"Findings (worst first):\n{finding_lines}"
+    return f"{ask}\n\n{requirements}\n\n{context}"

@@ -11,7 +11,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 
 _ACCENT = "rgb(70,190,230)"  # AGENT_USAGE_THEME.accent
 _MUTED = "rgb(120,120,140)"
@@ -174,6 +174,79 @@ def format_standup_rich(digest: AgentStandupDigest) -> RenderableType:
     for note in digest.coverage_notes:
         parts.append(Text(f"◦ {note}", style=_MUTED))
     for warning in digest.warnings:
+        parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
+
+    return Group(*parts)
+
+
+_SECURITY_ACCENT = "rgb(230,90,120)"  # AGENT_SECURITY_THEME.accent
+_SEVERITY_STYLE = {
+    "critical": "bold rgb(255,90,90)",
+    "high": "rgb(230,120,80)",
+    "medium": "rgb(220,180,60)",
+    "info": _MUTED,
+}
+_POSTURE_STYLE = {
+    "good": "bold rgb(80,220,120)",
+    "needs-attention": "bold rgb(220,180,60)",
+    "at-risk": "bold rgb(255,90,90)",
+}
+
+
+def format_security_rich(report: AgentSecurityReport) -> RenderableType:
+    """The agent security report as terminal output."""
+    parts: list[RenderableType] = []
+    header = Text()
+    header.append("Agent Security  ", style=f"bold {_SECURITY_ACCENT}")
+    header.append(f"scanned {report.scan_date}", style=_MUTED)
+    parts.append(header)
+
+    posture = Text()
+    posture.append("Posture: ")
+    posture.append(report.posture, style=_POSTURE_STYLE.get(report.posture, "bold white"))
+    posture.append(
+        f" — {report.sessions_scanned} session(s), {len(report.mcp_servers)} MCP server(s), "
+        f"{report.secrets_found} secret signal(s)",
+        style=_MUTED,
+    )
+    parts.append(posture)
+
+    if report.summary:
+        parts.append(Text(""))
+        parts.append(Text(report.summary, style="white"))
+
+    if report.findings:
+        table = Table(
+            title="Findings", title_style=f"bold {_SECURITY_ACCENT}", header_style=_MUTED, border_style="rgb(50,60,80)"
+        )
+        table.add_column("severity")
+        table.add_column("finding")
+        table.add_column("where")
+        for f in report.findings:
+            where = f"{f.location}:{f.line_no}" if f.line_no else f.location
+            table.add_row(Text(f.severity, style=_SEVERITY_STYLE.get(f.severity, "")), f.title, where)
+        parts.append(table)
+
+    if report.mcp_servers:
+        table = Table(
+            title="MCP servers",
+            title_style=f"bold {_SECURITY_ACCENT}",
+            header_style=_MUTED,
+            border_style="rgb(50,60,80)",
+        )
+        table.add_column("name")
+        table.add_column("scope")
+        table.add_column("transport")
+        table.add_column("flags")
+        for record in report.mcp_servers:
+            table.add_row(record.name, record.scope, record.transport, ", ".join(record.flags) or "—")
+        parts.append(table)
+
+    if report.recommendations:
+        parts.append(Text("Recommendations", style=f"bold {_SECURITY_ACCENT}"))
+        parts.extend(Text(f"  • {item}") for item in report.recommendations)
+
+    for warning in report.warnings:
         parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
 
     return Group(*parts)

@@ -270,11 +270,11 @@ CAPABILITIES: dict[str, dict] = {
         "skill": "agents-standup",
     },
     "agent-security": {
-        "engines": Exempt("lands with run_agent_security in the Agent Security phase of this PR"),
-        "mcp_tools": Exempt("lands with agents_security_scan in the Agent Security phase of this PR"),
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_security")},
+        "mcp_tools": {"agents_security_scan", "agents_security_history"},
         "tui_mode": "agent-security",
-        "cli": Exempt("lands with the `agents security` subcommand in the Agent Security phase of this PR"),
-        "skill": Exempt("lands with the agents-security plugin skill in the Agent Security phase of this PR"),
+        "cli": {"agents"},
+        "skill": "agents-security",
     },
 }
 
@@ -300,6 +300,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
     "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
     "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
+    "agents_security_scan": ("yeaboi.agentwatch.engine", "run_agent_security"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -353,6 +354,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
     "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
+    "agents security": ("yeaboi.agentwatch.engine", "run_agent_security"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -398,6 +400,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf review": {"strict"},
     "agents cost": {"format", "strict"},
     "agents standup": {"format", "strict"},
+    "agents security": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {

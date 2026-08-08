@@ -29,6 +29,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from yeaboi.agent.state import (
+    AgentSecurityReport,
     AgentStandupDigest,
     AgentUsageBreakdownRow,
     AgentUsageReport,
@@ -675,3 +676,162 @@ def _deliver_digest(digest) -> dict[str, bool]:
         logger.warning("agent standup delivery[desktop] failed: %s", exc)
         results["desktop"] = False
     return results
+
+
+# ---------------------------------------------------------------------------
+# Agent Security
+# ---------------------------------------------------------------------------
+
+_STORED_FINDING_TITLES = {
+    "secret": "Credential-shaped text in a session transcript",
+    "risky_tool": "Risky shell command run by an agent",
+}
+_STORED_FINDING_REMEDIATION = {
+    "secret": "Rotate the credential; avoid pasting secrets into agent sessions.",
+    "risky_tool": "Review the session; consider denying the pattern in your agent's permission rules.",
+}
+
+
+def _stored_findings(store: AgentWatchStore) -> list:
+    """Collector-persisted signals (secrets, risky commands) → SecurityFinding rows.
+
+    The rows reference (pattern, file, line) only — the collector never stored
+    the matched content, and neither does this report.
+    """
+    from yeaboi.agent.state import SecurityFinding
+
+    rows = []
+    for finding in store.list_findings():
+        category = finding["category"]
+        rows.append(
+            SecurityFinding(
+                severity=finding["severity"],
+                category=category,
+                title=_STORED_FINDING_TITLES.get(category, "Session security signal"),
+                location=finding["source_path"],
+                line_no=finding["line_no"],
+                pattern=finding["pattern"],
+                detail=f"session {finding['session_id']}" if finding["session_id"] else "",
+                remediation=_STORED_FINDING_REMEDIATION.get(category, ""),
+            )
+        )
+    return rows
+
+
+def run_agent_security(
+    *,
+    deep: bool = False,
+    db_path=None,
+    today: date | None = None,
+    on_progress=None,
+    dry_run: bool = False,
+) -> AgentSecurityReport:
+    """Audit the local agent setup: settings, MCP servers, secrets, risky tools.
+
+    Every check is a deterministic pattern scan (see security_checks.py) — an
+    indicator, not a security audit. The single LLM call writes the ``summary``
+    and prioritised ``recommendations`` prose over the finished findings.
+
+    deep=True forgets the ingest cursors first, so every transcript is
+    re-scanned rather than only new/changed files.
+    """
+    from yeaboi.agentwatch import security_checks
+
+    resolved_today = today or datetime.now(UTC).date()
+    scan_date = resolved_today.isoformat()
+    logger.info("agent security: scan %s (deep=%s dry_run=%s)", scan_date, deep, dry_run)
+
+    warnings: list[str] = []
+    with AgentWatchStore(_resolve_db_path(db_path)) as store:
+        if deep:
+            if on_progress is not None:
+                on_progress("Re-scanning every session transcript")
+            store.reset_cursors()
+        if on_progress is not None:
+            on_progress("Scanning local agent sessions")
+        stats = collector.refresh(store, on_progress=on_progress)
+        warnings.extend(stats.warnings)
+        sessions_scanned = len(store.list_sessions())
+        files_scanned = stats.files_seen
+        findings = _stored_findings(store)
+
+    if on_progress is not None:
+        on_progress("Auditing agent settings")
+    findings.extend(security_checks.audit_settings())
+    if on_progress is not None:
+        on_progress("Inventorying MCP servers")
+    mcp_servers, mcp_findings = security_checks.inventory_mcp()
+    findings.extend(mcp_findings)
+
+    ranked = security_checks.rank_findings(findings)
+    posture = security_checks.compute_posture(ranked)
+    secrets_found = sum(1 for f in ranked if f.category == "secret")
+    settings_flags = tuple(sorted({f.pattern for f in ranked if f.category == "settings" and f.severity != "info"}))
+
+    # ── The one LLM call: summary + prioritised advice over the findings ──
+    summary = ""
+    recommendations: tuple[str, ...] = ()
+    if ranked and not dry_run:
+        if on_progress is not None:
+            on_progress("Writing the summary")
+        from yeaboi.prompts.agentwatch import get_security_summary_prompt
+
+        prompt = get_security_summary_prompt(
+            scan_date=scan_date,
+            posture=posture,
+            findings=[(f.severity, f.category, f.title, f.pattern) for f in ranked[:25]],
+            mcp_count=len(mcp_servers),
+            sessions_scanned=sessions_scanned,
+        )
+        parsed, llm_warnings = _invoke_llm(prompt, what="security-summary")
+        warnings.extend(llm_warnings)
+        summary = str(parsed.get("summary") or "").strip()
+        recommendations = _str_list(parsed.get("recommendations"))[:5]
+    if not summary:
+        by_severity: dict[str, int] = {}
+        for f in ranked:
+            by_severity[f.severity] = by_severity.get(f.severity, 0) + 1
+        counts = ", ".join(f"{n} {sev}" for sev, n in sorted(by_severity.items(), key=lambda kv: kv[0]))
+        summary = (
+            f"{len(ranked)} finding(s) across {sessions_scanned} session(s) and the agent configs"
+            + (f" ({counts})" if counts else "")
+            + "."
+            if ranked
+            else "No known risk patterns matched — remember this is an indicator, not an audit."
+        )
+        recommendations = recommendations or tuple(f.remediation for f in ranked[:3] if f.remediation)
+
+    report = AgentSecurityReport(
+        scan_date=scan_date,
+        posture=posture,
+        sessions_scanned=sessions_scanned,
+        files_scanned=files_scanned,
+        secrets_found=secrets_found,
+        findings=ranked,
+        mcp_servers=tuple(mcp_servers),
+        settings_flags=settings_flags,
+        summary=summary,
+        recommendations=recommendations,
+        warnings=tuple(warnings),
+        generated_at=datetime.now(UTC).isoformat(),
+    )
+
+    try:
+        with AgentWatchStore(_resolve_db_path(db_path)) as store:
+            store.record_report("security", report, key_date=scan_date)
+    except Exception as exc:  # noqa: BLE001 — history is best-effort
+        logger.warning("agent security: could not record report history: %s", exc)
+    try:
+        from yeaboi.agentwatch.export import export_artifact
+
+        export_artifact(report, kind="security")
+    except Exception as exc:  # noqa: BLE001 — export must never sink the run
+        logger.warning("agent security: export failed: %s", exc)
+
+    logger.info(
+        "agent security: %s — %d finding(s), %d MCP server(s)",
+        report.posture,
+        len(report.findings),
+        len(report.mcp_servers),
+    )
+    return report

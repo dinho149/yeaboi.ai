@@ -4,7 +4,7 @@
 that is rarely enough for a `deep` read of a whole mode, so treat the draft link as usually arriving
 in the *next* day's digest. On every other day there is no draft to carry at all.
 **Summary** — the open proposals, bucketed by type, waiting on your approval
-**Workstream** — none; this routine spans all fifteen.
+**Workstream** — none; this routine spans all sixteen.
 **Model** — `standard` ([models.md](../../models.md))
 
 The single decision point. It is the only routine that posts proposals to Slack.

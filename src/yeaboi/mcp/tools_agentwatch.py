@@ -64,6 +64,22 @@ def _standup_history(limit: int):
         return {"digests": store.list_reports("standup", limit=limit)}
 
 
+def _security_scan(deep: bool):
+    from yeaboi.agentwatch.engine import run_agent_security
+
+    return run_agent_security(deep=deep)
+
+
+def _security_history(limit: int):
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+    from yeaboi.agentwatch.store import AgentWatchStore
+    from yeaboi.paths import get_db_path
+
+    with AgentWatchStore(get_db_path()) as store:
+        return {"reports": store.list_reports("security", limit=limit)}
+
+
 def _with_beta(payload: dict) -> dict:
     """Prepend the beta caveat to a success envelope's warnings.
 
@@ -137,3 +153,23 @@ def register(app) -> None:
         The Agents modes are in beta — detection is a lower bound; never present absence of
         evidence as agent idleness."""
         return _with_beta(await run_readonly(_standup_history, limit))
+
+    @app.tool()
+    async def agents_security_scan(ctx: Context, deep: bool = False) -> dict:
+        """BETA — Audit the local agent setup: permission-bypass settings, wildcard allow rules,
+        risky hooks, MCP server inventory (plain-http, unpinned packages, inlined credentials),
+        secret-shaped text and risky shell commands found in session transcripts. Findings carry
+        pattern + file + line only — matched content is never stored or returned. deep=true
+        re-scans every transcript instead of only new/changed ones.
+
+        The Agents modes are in beta — deterministic pattern matches are an indicator, not a
+        security audit; a clean report means no known pattern matched."""
+        return _with_beta(await run_engine(ctx, _security_scan, deep))
+
+    @app.tool()
+    async def agents_security_history(limit: int = 20) -> dict:
+        """BETA — List previously generated agent security reports (newest first).
+
+        The Agents modes are in beta — deterministic pattern matches are an indicator, not a
+        security audit."""
+        return _with_beta(await run_readonly(_security_history, limit))

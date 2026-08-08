@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stand up the cowork fleet from what ``cowork/`` already says.
 
-``cowork/`` is a complete specification — fifteen charters, twenty-two routines, a
+``cowork/`` is a complete specification — sixteen charters, twenty-two routines, a
 tier table, one Definition of Done — and none of it does anything until the
 GitHub labels exist, the model repository variables are set, and the routines are
 registered at claude.ai. Doing that by hand is 26 labels, 4 variables and 22 web
@@ -396,7 +396,7 @@ def parse_targets(text: str | None = None) -> dict[str, str]:
 
 
 def parse_workstreams() -> list[str]:
-    """The fifteen workstream names, from the charter filenames."""
+    """The sixteen workstream names, from the charter filenames."""
     return sorted(p.stem for p in WORKSTREAMS_DIR.glob("*.md"))
 
 
@@ -1153,7 +1153,6 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
 # empty if you can: an entry here is a file no scout will ever read.
 UNOWNED_MODULES: dict[str, str] = {
     "__init__.py": "package marker — no behaviour to scout",
-    "pricing.py": "agentwatch family module — claimed by the agents workstream charter shipping with that family",
 }
 
 
@@ -1191,7 +1190,7 @@ def owned_modules() -> set[str]:
 def check_charter_coverage(report: Report) -> None:
     """Every top-level module belongs to a charter, or says why it does not.
 
-    The label check below proves the fifteen charters agree with the fifteen
+    The label check below proves the sixteen charters agree with the sixteen
     labels; nothing proved they covered the repo. Fourteen modules were claimed by
     nobody when this was written — a scout reads only the paths its charter
     declares, so an unclaimed file is one no routine will ever look at, and the
@@ -1242,7 +1241,7 @@ def existing_labels() -> set[str] | None:
     None rather than an empty set, and the same for the variables below: they are
     different facts and the difference matters. ``gh_ready()`` passing does not
     mean the next call succeeds — a missing remote, the wrong repo, a rate limit —
-    and an empty set read as truth makes the doctor report all twenty-six labels
+    and an empty set read as truth makes the doctor report all twenty-seven labels
     missing and ``apply_labels`` try to create every one of them.
     """
     result = _gh("label", "list", "--limit", "200", "--json", "name")

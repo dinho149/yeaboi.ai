@@ -58,6 +58,7 @@ FEEDBACK_AREAS: tuple[str, ...] = (
     "reporting",
     "usage",
     "settings",
+    "agents",
 )
 
 # GitHub 414s around ~8 KB URLs and some OS browser-open handlers choke earlier;

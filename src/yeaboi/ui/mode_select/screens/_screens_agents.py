@@ -15,7 +15,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
+from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
@@ -147,6 +147,63 @@ def _build_agent_standup_screen(
     else:
         capped, notes = _capped_standup(digest)
         parts.append(format_standup_rich(capped))
+        for note in notes:
+            parts.append(Text(note, style="rgb(110,110,125)"))
+        parts.append(Text(""))
+        hint = Text(justify="center")
+        for key, label in (("r", "re-run"), ("esc", "back")):
+            if hint.plain:
+                hint.append("   ")
+            hint.append(key, style="bold rgb(210,210,220)")
+            hint.append(f" {label}", style="rgb(70,70,82)")
+        parts.append(hint)
+    return build_page_panel(Group(*parts), theme=theme, height=height)
+
+
+def _capped_security(report: AgentSecurityReport) -> tuple[AgentSecurityReport, list[str]]:
+    """Cap the security report's list fields for on-screen rendering."""
+    notes: list[str] = []
+    if len(report.findings) > _MAX_MODEL_ROWS:
+        notes.append(f"… and {len(report.findings) - _MAX_MODEL_ROWS} more finding(s) in the export")
+    if len(report.mcp_servers) > _MAX_BREAKDOWN_ROWS:
+        notes.append(f"… and {len(report.mcp_servers) - _MAX_BREAKDOWN_ROWS} more MCP server(s) in the export")
+    capped = replace(
+        report,
+        findings=report.findings[:_MAX_MODEL_ROWS],
+        mcp_servers=report.mcp_servers[:_MAX_BREAKDOWN_ROWS],
+        recommendations=report.recommendations[:_MAX_PROSE],
+    )
+    return capped, notes
+
+
+def _build_agent_security_screen(
+    report: AgentSecurityReport | None = None,
+    *,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    status: str = "",
+) -> Panel:
+    """The Agent Security page: spinner while scanning, capped report when done."""
+    from yeaboi.agentwatch.render import format_security_rich
+    from yeaboi.ui.shared._components import AGENT_SECURITY_THEME, agent_security_title
+
+    theme = AGENT_SECURITY_THEME
+    parts: list = [
+        Text(""),
+        agent_security_title(shimmer_tick, width=width),
+        build_reveal_subtitle("Your agent setup, audited", None, justify="center"),
+        Text(""),
+    ]
+    if report is None:
+        frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+        working = Text(justify="center")
+        working.append(f"{frame} ", style=theme.accent_bright)
+        working.append(status or "Scanning agent configuration…", style="rgb(160,160,175)")
+        parts += [Text(""), working]
+    else:
+        capped, notes = _capped_security(report)
+        parts.append(format_security_rich(capped))
         for note in notes:
             parts.append(Text(note, style="rgb(110,110,125)"))
         parts.append(Text(""))

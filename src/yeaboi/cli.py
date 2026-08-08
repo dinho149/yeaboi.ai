@@ -776,7 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Agents mode {BETA_TAG}: monitor your AI coding agents (cost, activity, security)",
         description=AGENTWATCH_BETA_NOTICE,
     )
-    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,standup}", required=True)
+    agents_sub = agents_p.add_subparsers(dest="agents_command", metavar="{cost,standup,security}", required=True)
     # Every child carries the same description — `yeaboi agents cost --help` is
     # a perfectly normal place to arrive without ever seeing the parent's help.
     cost_p = agents_sub.add_parser(
@@ -828,6 +828,14 @@ def build_parser() -> argparse.ArgumentParser:
     astandup_p.add_argument("--deliver", action="store_true", help="Post the digest to the configured Slack webhook")
     astandup_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     astandup_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
+    asec_p = agents_sub.add_parser(
+        "security",
+        help="Audit your agent setup: permissions, MCP servers, secrets exposure, risky commands",
+        description=AGENTWATCH_BETA_NOTICE,
+    )
+    asec_p.add_argument("--deep", action="store_true", help="Re-scan every transcript, not just new/changed ones")
+    asec_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
+    asec_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
 
     analyze_p = subparsers.add_parser("analyze", help="Analyse team board history into a calibration profile")
     analyze_p.add_argument(
@@ -1735,6 +1743,22 @@ def _cmd_agents(args: argparse.Namespace, console: "Console") -> int:
             console.print(format_standup_rich(digest))
         empty = digest.sessions_worked == 0 and not digest.repo_activity
         return _strict_exit(args.strict, digest.warnings, empty=empty)
+
+    if args.agents_command == "security":
+        import json
+        from dataclasses import asdict
+
+        from yeaboi.agentwatch.engine import run_agent_security
+        from yeaboi.agentwatch.render import format_security_rich
+
+        report = run_agent_security(deep=args.deep)
+        for warning in report.warnings:
+            print(f"⚠ {warning}", file=sys.stderr)
+        if args.format == "json":
+            print(json.dumps(asdict(report), indent=2))
+        else:
+            console.print(format_security_rich(report))
+        return _strict_exit(args.strict, report.warnings)
 
     return 1
 
