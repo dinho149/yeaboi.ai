@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "2.58.0",
+      "date": "2026-08-08",
+      "summary": "Voice input installation is no longer a separate manual setup step. Double-tapping Space in any text field now triggers an in-app install offer if the speech packages are missing — Accept installs the Whisper model with a real progress bar and drops straight into recording, all without restarting. Decline once for the session or Never to persist the choice. The new `yeaboi --install-voice` command provides the same flow for CI and non-interactive terminals. All surfaces now read from a single voice state API, ensuring the input-box chip, welcome tip, Settings row and setup wizard stay in sync about whether dictation is ready, installable, or unavailable.",
+      "highlights": [
+        {
+          "text": "Automatic voice installation: double-tap Space to install Whisper if missing, with a real progress bar",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "yeaboi --install-voice: non-TUI install flow for CI, dev containers, and piped terminals",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Single voice state API: all surfaces render from voice.voice_state() for consistency",
+          "areas": [
+            "settings"
+          ]
+        },
+        {
+          "text": "Verdict caching with expiry: voice state decisions expire after 30 days and retry on new OS versions",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Better unsupported detection: distinguishes between missing packages and broken PortAudio with apt hints",
+          "areas": [
+            "settings"
+          ]
+        }
+      ]
+    },
+    {
       "version": "2.57.0",
       "date": "2026-08-07",
       "summary": "Planning mode got eight quality-of-life improvements that speed up intake and make the chat feel more responsive. Type a digit (1/2/3) to instantly pick and submit on size and review choices, no Enter needed — the feature even works on multi-choice rows. The progress subtitle now reads \"Question X of Y\" over the set this run actually asks (not the full question bank), and a new `/questions` command lists planned topics with status markers. Large responses (intake summaries, review walls) skip the fake typewriter effect and land directly as artifact cards. The review verdict is now a selectable row — Accept / Edit an answer / Override velocity / Tell me what's off — mapped to node literals so digits and raw text never reach the graph. A clock-derived duck quip rotates every 5 seconds of a long wait, with a quack every fourth slot and one shades gag on really long ones. Small projects are hard-capped at 2 stories total and trimmed post-validate with a warning. Fast mode gained a visible subtitle and an `/finish` toggle to auto-accept remaining questions and exit the chat.",
