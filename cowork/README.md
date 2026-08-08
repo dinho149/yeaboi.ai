@@ -171,9 +171,10 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 
 Two things the fleet needs are invisible to it. A scout reads files; these read **state that only
 GitHub holds**, so they live in `.github/workflows/` and feed their output back into the same queue
-rather than starting a second one. They take no row in the table above, no tier in `models.md` (they
-read `vars.YEABOI_MODEL_*` directly, like every other workflow), and no `/cowork deploy` — a
-workflow is a repo file and deploys itself on merge.
+rather than starting a second one. They take no row in the table above and no tier in `models.md`
+(they read `vars.YEABOI_MODEL_*` directly, like every other workflow). Nor do they need
+`/cowork deploy` at any point — `cd-deploy` reconciles routines on merge but still cannot *create*
+one, whereas a workflow is only a repo file, so merging really is the whole deployment.
 
 | Workflow | Reads | Writes |
 |---|---|---|
