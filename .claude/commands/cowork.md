@@ -8,7 +8,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 | Verb | Does |
 |---|---|
 | `status` | what is running, against what the repo says. Read-only. |
-| `deploy` | register what is missing, update what has drifted, fill the README URL column. |
+| `deploy` | register what is missing, update what has drifted, wire webhooks for what it created, fill the README URL column. |
 | `today` | what runs today and over the next week. Read-only, and the one verb needing no API call. |
 | `run <name>` | fire one routine immediately, instead of waiting for its cron. |
 | `pause [name…]` | stop routines firing without removing them. No names means all of them. |
@@ -19,7 +19,7 @@ Drive the standing workstreams described in `cowork/`. Verb (optional): $ARGUMEN
 the routine table, `cowork/models.md` the tier table, `cowork/workstreams/` the label list,
 `cowork/definition-of-done.md` the Linear/Slack/Notion target ids — and `scripts/cowork_setup.py` has
 already parsed all four. Read its output; do not read those tables yourself, and do not assemble a
-request body or diff two routines in your head. Eighteen routines × six fields is exactly the work
+request body or diff two routines in your head. Twenty-two routines × six fields is exactly the work
 that goes right most of the time, and "most of the time" here is a sweep silently running last
 month's prompt.
 
@@ -86,18 +86,37 @@ a routine file, or when someone new joins.
      - `repo_url` — the script resolves this from `gh` on its own; if it still appears here, `gh` is
        not authenticated.
 
-     A body carrying an empty string for any of these is one the API will happily accept. Eighteen
+     A body carrying an empty string for any of these is one the API will happily accept. Twenty-two
      routines then register pointing at no repository, and it looks like it worked until the first
      Monday.
-5. **URLs.** Re-`list` (ids only exist after a create), save it, then
-   `uv run python scripts/cowork_setup.py --urls --triggers <file>`. This edits
-   `cowork/README.md` for you — do not edit the table by hand.
-6. **Remainder.** Report what no API reaches: the connectors at
-   <https://claude.ai/customize/connectors>, the Claude GitHub App, the `AUTO_VERSION_PAT` secret
-   (without it Claude Review never receives `workflow_run` events), and the three event routines,
-   with their triggers and filters from the manifest, added by hand at
-   <https://claude.ai/code/routines>.
-7. **Confirm.** Re-run `status` and give a one-line summary of what this run changed.
+   - **Keep the `trigger_name` of every routine you created** and got an id back for. Step 5 needs
+     them, and they are the only evidence that exists.
+5. **Webhooks.** What fires the event routines and `cd-deploy`. Re-`list` (ids only exist after a
+   create), save it, then
+   `uv run python scripts/cowork_setup.py --plan --triggers <file> --created "cowork: <name>" …`,
+   once per name from step 4. POST `create_webhook_trigger` with the `body` of every `webhooks[]`
+   entry whose `blocked` is **null**, and ignore every other entry — a blocked one carries an empty
+   body, so the rule is safe to apply mechanically.
+
+   **Never post a webhook for a routine this run did not create.** Four things are true of that
+   endpoint and each is recorded in `tests/fixtures/cowork_webhook_live.json`: nothing reports the
+   webhooks already attached to a routine, an identical POST is not deduped, there is no delete, and
+   an unknown event name is accepted with a 200. So a second POST makes the routine fire twice for
+   every event, permanently, and nothing will tell you. Entries under `webhooks_blocked` are the
+   normal steady state — report the count and move on.
+
+   A pre-existing routine that genuinely lost its webhook is repaired by hand at
+   <https://claude.ai/code/routines>, after checking there what is attached.
+6. **URLs.** `uv run python scripts/cowork_setup.py --urls --triggers <file>` on the same fresh
+   snapshot. This edits `cowork/README.md` for you — do not edit the table by hand.
+7. **Remainder.** Report what no API reaches: the connectors at
+   <https://claude.ai/customize/connectors>, the Claude GitHub App, and the `AUTO_VERSION_PAT` secret
+   (without it Claude Review never receives `workflow_run` events).
+8. **Confirm.** Re-run `status` and give a one-line summary of what this run changed.
+
+After the first deploy, most of this happens on its own: `cron/cd-deploy.md` is fired by a push
+webhook on `main` and runs steps 2–7 for every merge that touches `cowork/`. This command stays the
+escape hatch, and remains the only place a webhook for a pre-existing routine can be wired.
 
 ## `today`
 

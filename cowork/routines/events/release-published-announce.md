@@ -5,6 +5,10 @@
 **Model** — `standard` ([models.md](../../models.md)) — writing notes from commits needs judgement
 about what mattered
 
+```json webhook
+{"source": "github", "events": ["release"], "filter": {"actions": ["published"]}}
+```
+
 `publish.yml` cuts the tag and the GitHub Release after a version bump lands on `main`. This routine
 tells people about it. Everything runs through `cowork-scribe`.
 

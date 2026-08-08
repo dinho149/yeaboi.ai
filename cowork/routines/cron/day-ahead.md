@@ -2,13 +2,13 @@
 
 **Trigger** — cron `45 5 * * *` (daily 05:45 UTC, fifteen minutes before the earliest sweep)
 **Summary** — the day's schedule, posted before anything else runs
-**Workstream** — none; this routine reports on all eighteen.
+**Workstream** — none; this routine reports on the whole fleet.
 **Model** — `fast` ([models.md](../../models.md))
 
 The fleet's answer to "what is going to happen today". Everything else in cowork is
 retrospective or decision-seeking: the digest carries proposals three hours from now, the ship
 notes carry what already merged. Nobody was saying what was *about* to run, and the schedule
-itself only existed as eighteen cron expressions in a markdown table — `30 7 11,25 * *` is
+itself only existed as nineteen cron expressions in a markdown table — `30 7 11,25 * *` is
 written for a scheduler, not for somebody deciding whether to look at Slack this morning.
 
 It runs before the earliest sweep on purpose. At 06:00 the security sweep starts; by the
