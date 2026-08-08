@@ -1153,6 +1153,7 @@ def check_grants(report: Report, routines: Sequence[Routine]) -> None:
 # empty if you can: an entry here is a file no scout will ever read.
 UNOWNED_MODULES: dict[str, str] = {
     "__init__.py": "package marker — no behaviour to scout",
+    "pricing.py": "agentwatch family module — claimed by the agents workstream charter shipping with that family",
 }
 
 

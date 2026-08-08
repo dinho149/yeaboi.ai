@@ -1333,16 +1333,19 @@ def _collect_usage_data() -> dict:
     except Exception:
         data["profiles"] = []
 
-    # Token usage — session (in-memory) + lifetime (from DB)
-    def _cloud_cost(inp: int, out: int) -> float:
-        # Claude Sonnet 4: $3/MTok input, $15/MTok output
-        return (inp * 3.0 + out * 15.0) / 1_000_000
+    # Token usage — session (in-memory) + lifetime (from DB). All rates come
+    # from the shared pricing table; an unknown model prices at the Sonnet
+    # tier, which matches the old hardcoded $3/$15 estimate.
+    from yeaboi.pricing import estimate_cost
+
+    def _cloud_cost(inp: int, out: int, model_id: str = "") -> float:
+        return estimate_cost(model_id, inp, out).usd
 
     def _calc_cost(inp: int, out: int) -> float:
         # Ollama runs on the user's own hardware — there is no per-token bill.
         if provider == "ollama":
             return 0.0
-        return round(_cloud_cost(inp, out), 4)
+        return round(_cloud_cost(inp, out, model), 4)
 
     try:
         from yeaboi.agent.llm import get_usage_stats
