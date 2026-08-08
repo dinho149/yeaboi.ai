@@ -1,0 +1,19 @@
+# CodeQL analysis config. Referenced by `.github/workflows/codeql.yml`.
+#
+# `tests/` is excluded from analysis on purpose, and the reason is specific
+# rather than a blanket "tests don't count". `security-extended` reports
+# taint-style findings against assertions — `assert "dev.azure.com" in out`
+# reads to the URL-sanitization query exactly like an authorization check, and
+# twelve of those were the largest single class of open alerts on this repo.
+# None of them was a vulnerability: no test asserts its way into production.
+#
+# Test code keeps a SAST gate. `make security` runs `ruff check src/ tests/`
+# with the flake8-bandit `S` rules over both trees, and CI's `security` job
+# runs the same command plus gitleaks. What `tests/` loses here is interprocedural
+# dataflow analysis, which only has meaning for code that an attacker can reach.
+#
+# The `actions` language is unaffected — workflow files are not under `tests/`.
+name: yeaboi
+
+paths-ignore:
+  - tests/**

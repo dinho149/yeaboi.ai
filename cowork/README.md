@@ -167,6 +167,36 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 > day 1–7 *and* every Tuesday — a fortnightly routine silently running near-daily. Never restrict
 > both fields.
 
+## Detectors that are workflows, not routines
+
+Two things the fleet needs are invisible to it. A scout reads files; these read **state that only
+GitHub holds**, so they live in `.github/workflows/` and feed their output back into the same queue
+rather than starting a second one. They take no row in the table above and no tier in `models.md`
+(they read `vars.YEABOI_MODEL_*` directly, like every other workflow). Nor do they need
+`/cowork deploy` at any point — `cd-deploy` reconciles routines on merge but still cannot *create*
+one, whereas a workflow is only a repo file, so merging really is the whole deployment.
+
+| Workflow | Reads | Writes |
+|---|---|---|
+| [`flaky-test-hunter.yml`](../.github/workflows/flaky-test-hunter.yml) | CI run history + repeated suite execution | `cowork:proposal` issues |
+| [`codeql-triage.yml`](../.github/workflows/codeql-triage.yml) | the code-scanning alerts | **one PR** for allowlisted rules, proposal issues for the rest |
+
+`codeql-triage` is the only unattended job in the fleet that writes code, so it is worth knowing what
+holds it. It fixes only rule ids listed under `auto` in
+[`.github/codeql/triage-policy.yml`](../.github/codeql/triage-policy.yml) — the test being "can CI
+catch a wrong fix", not "is it low severity". It opens at most one PR at a time, gated on
+`make test` + `make lint` + `make security` and a `code-reviewer` pass, and merges via
+`gh pr merge --auto` so the main-branch ruleset decides — including the `pr-feedback` status, which
+means Claude Review ran and every blocking finding was answered. It never dismisses an alert, and it
+never applies `claude-implement`. The three guardrail exemptions it takes are written down in
+[house-rules.md](house-rules.md), not assumed.
+
+**The unattended merge needs one thing this repo does not have yet**: `pr-feedback` on the ruleset's
+required checks, the manual step listed under *What neither can do* below. Without it `--auto` would
+merge as soon as the five CI contexts went green, with no review in the loop — so the survey step
+checks for the context and leaves auto-merge **disarmed** when it is absent, warning in the run log.
+Add the context once and the loop closes; until then the PR opens green and waits for a click.
+
 ## Setting this up
 
 Two commands, in this order. Both are reconciles — safe to re-run after adding a routine, changing a

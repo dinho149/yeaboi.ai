@@ -38,6 +38,7 @@ import logging
 from collections.abc import Sequence
 
 from yeaboi.agent.state import MemberUpdate, PracticeSignal, StandupReport
+from yeaboi.redaction import log_safe
 from yeaboi.standup import habits
 
 logger = logging.getLogger(__name__)
@@ -215,13 +216,15 @@ def apply_verdict(
     if run_id is None:
         run_id = store.get_latest_run_id(session_id)
     if run_id is None:
-        logger.warning("standup: practice feedback for %s has no stored run to apply to", session_id)
+        logger.warning("standup: practice feedback for %s has no stored run to apply to", log_safe(session_id))
         return False
 
     report = store.get_run_by_id(run_id)
     signal = find_signal(report, member, rule)
     if report is None or signal is None:
-        logger.warning("standup: no %s signal for %s in run id=%s — verdict ignored", rule, member, run_id)
+        logger.warning(
+            "standup: no %s signal for %s in run id=%s — verdict ignored", log_safe(rule), log_safe(member), run_id
+        )
         return False
     if not signal.handles:
         # A signal from a report written before feedback existed. Hiding it now
@@ -230,7 +233,9 @@ def apply_verdict(
         # instead — ``votable`` keeps this off the TUI, but the MCP tool can
         # name any signal in any stored run.
         logger.warning(
-            "standup: %s signal for %s predates feedback — nothing to remember, verdict ignored", rule, member
+            "standup: %s signal for %s predates feedback — nothing to remember, verdict ignored",
+            log_safe(rule),
+            log_safe(member),
         )
         return False
 
@@ -248,11 +253,15 @@ def apply_verdict(
             subject=subject,
             standup_date=report.date,
         )
+    # Every interpolated value goes through log_safe, including `rule` and
+    # `verdict` which the guard clauses above already constrain to allowlists.
+    # Uniform beats selective: a reader should not have to re-derive which
+    # arguments were validated to know the line cannot be forged.
     logger.info(
         "standup: practice feedback %s on %s for %s — %d change(s) remembered",
-        verdict,
-        rule,
-        member,
+        log_safe(verdict),
+        log_safe(rule),
+        log_safe(member),
         len(signal.handles),
     )
 

@@ -48,12 +48,12 @@ else — type the value back, which is a new edit, attributed to whoever did it.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from yeaboi.artifacts.paths import PathError, parse_path, render_path, resolve
 from yeaboi.artifacts.registry import FIELD_ITEMS, ArtifactSpec
+from yeaboi.redaction import CONTROL_CHARS_RE
 
 logger = logging.getLogger(__name__)
 
@@ -91,11 +91,6 @@ MAX_ANNOTATIONS = 100
 """How many notes and fields one document may carry, in total. High enough that
 a real team never meets it, low enough that a joiner with the link cannot turn a
 standup into an unreadable wall."""
-
-# C0 controls minus \n and \t, plus DEL. A browser cannot type these; something
-# that sends them is either broken or probing what the log renderer does with
-# them.
-_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 class EditError(ValueError):
@@ -141,7 +136,7 @@ class EditResult:
 
 def _clean(text: str, limit: int) -> str:
     """Normalise one untrusted string, or raise :class:`EditError`."""
-    text = _CONTROL_RE.sub("", text).replace("\r\n", "\n").replace("\r", "\n")
+    text = CONTROL_CHARS_RE.sub("", text).replace("\r\n", "\n").replace("\r", "\n")
     if len(text) > limit:
         raise EditError(f"too long (max {limit} characters)")
     if text.count("\n") > MAX_NEWLINES:
@@ -173,7 +168,7 @@ def _clean_name(text: str) -> str:
     type; refusing the whole correction over it would throw away the work to
     protect a label. Same call the retro board makes about card authors.
     """
-    return _CONTROL_RE.sub("", text).replace("\n", " ").strip()[:MAX_AUTHOR]
+    return CONTROL_CHARS_RE.sub("", text).replace("\n", " ").strip()[:MAX_AUTHOR]
 
 
 def _mutable(value: Any) -> Any:
@@ -221,8 +216,8 @@ def validate(edit: Edit, spec: ArtifactSpec) -> Edit:
     # with whatever it was handed.
     edit = replace(
         edit,
-        edit_id=_CONTROL_RE.sub("", edit.edit_id)[:MAX_ID],
-        target=_CONTROL_RE.sub("", edit.target)[:MAX_ID],
+        edit_id=CONTROL_CHARS_RE.sub("", edit.edit_id)[:MAX_ID],
+        target=CONTROL_CHARS_RE.sub("", edit.target)[:MAX_ID],
         avatar=clean_avatar(edit.avatar),
     )
 

@@ -43,6 +43,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from yeaboi.redaction import log_safe
 from yeaboi.retro.board import RetroBoard
 from yeaboi.retro.page import build_board_html
 from yeaboi.sharing.access import JoinLimiter as _SharedJoinLimiter
@@ -83,10 +84,10 @@ class _RetroHandler(BaseHTTPRequestHandler):
     def log_request(self, code: object = "-", size: object = "-") -> None:  # noqa: N802 - stdlib signature
         # The default logs ``self.requestline`` (path WITH query) — that would leak
         # the token/admin secret into the log file at DEBUG. Log method + path only.
-        logger.debug("retro-http %s %s -> %s", self.command, urlparse(self.path).path, code)
+        logger.debug("retro-http %s %s -> %s", log_safe(self.command), log_safe(urlparse(self.path).path), code)
 
     def log_message(self, fmt: str, *args: object) -> None:  # noqa: A003 - stdlib signature
-        logger.debug("retro-http %s", fmt % args if args else fmt)
+        logger.debug("retro-http %s", log_safe(fmt % args if args else fmt))
 
     @property
     def _board(self) -> RetroBoard:
