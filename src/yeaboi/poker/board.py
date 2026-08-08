@@ -59,8 +59,11 @@ logger = logging.getLogger(__name__)
 
 # The estimation deck. Server-validated (LAN peers are untrusted): a vote is
 # rejected unless it is exactly one of these strings. "?" = no idea,
-# "☕" = need a break. page.py injects this tuple as __DECK__ so client and
-# server never drift.
+# "☕" = need a break. Emitted into types/enums.ts by scripts/gen_web_types.py
+# (with a --check in CI), so the browser's deck cannot drift from this one. It
+# is deliberately NOT also shipped in page.py's boot payload — see the docstring
+# on board_config(): that would give one tuple two sources of truth, and the
+# island wins at runtime, so a stale bundle would offer a card the board refuses.
 POKER_DECK: tuple[str, ...] = ("0", "1", "2", "3", "5", "8", "13", "21", "?", "☕")
 # The numeric subset (floats) — what medians/suggestions are computed from.
 NUMERIC_DECK: tuple[float, ...] = (0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0)
