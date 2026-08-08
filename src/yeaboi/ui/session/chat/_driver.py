@@ -577,7 +577,13 @@ class _ChatDriver:
         """One graph turn. Returns False when nothing ran (guardrail block, no graph)."""
         intake_turn = predict_next_node(self.state) == "project_intake"
         if echo_user and not synthetic:
-            block = validate_chat_input(text, intake=intake_turn)
+            # Regex layers only, on every turn. No topical classification here:
+            # every message that reaches _run_turn answers something the agent
+            # asked — an intake question, the review gate, a refinement request
+            # — and check_off_topic sees the reply without the question, so it
+            # scored "one", "any", "yeah" and "change q6" as off-topic and threw
+            # them away. The description is classified in _greeting_flow instead.
+            block = validate_chat_input(text)
             if block is not None:
                 logger.info("Chat input blocked: layer=%s len=%d", block.layer, len(text))
                 self._note(block.message)
@@ -1320,12 +1326,30 @@ class _ChatDriver:
             form_offered = self.choices is not None and any(
                 label == _FORM_CHOICE_LABEL for label, _sel in self.choices.options
             )
+            # Typed "1"/"2" work through parse_size_reply; "3" (and "form")
+            # need the same parity while the third row is on offer.
+            wants_form = (picked and submit == _FORM_CHOICE_LABEL) or (
+                form_offered and submit.strip().lower() in ("3", "form")
+            )
+            # The description is the one message in the whole session that
+            # answers no question, so it is the one input check_off_topic can
+            # judge — and until now the only one it never saw, because the
+            # greeting hands it to _run_turn as synthetic (unvalidated) text.
+            # Everything else on this turn answers the size question: a picked
+            # row, the form preference, or a bare size reply (parse_size_reply
+            # is deterministic and total, so this costs nothing). Guarding here
+            # rather than after the branch below also keeps a rejected input
+            # from burning the resolve_intake_mode call.
+            if not picked and not wants_form and not parse_size_reply(submit):
+                block = validate_chat_input(submit, classify_topic=True)
+                if block is not None:
+                    logger.info("Chat input blocked: layer=%s len=%d", block.layer, len(submit))
+                    self._note(block.message)
+                    continue
             self.transcript.add_user(submit)
             self.choices = None
 
-            # Typed "1"/"2" work through parse_size_reply; "3" (and "form")
-            # need the same parity while the third row is on offer.
-            if (picked and submit == _FORM_CHOICE_LABEL) or (form_offered and submit.strip().lower() in ("3", "form")):
+            if wants_form:
                 # A form preference, not a size answer — the questionnaire
                 # needs a description (messages[0]) first, so keep collecting
                 # in chat and open the form right after the first invoke.

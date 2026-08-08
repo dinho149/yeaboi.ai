@@ -226,6 +226,13 @@ gtag('config','G-K9HLPT5ZMP',{client_storage:'none',ads_data_redaction:true});
         </tbody>
       </table>
 
+      <p>The first three layers run on every input. The fourth runs on the opening project
+      description and nothing else: the classifier is handed the message alone, never the question
+      that prompted it, so it cannot judge an answer — <code>"one"</code> replying to
+      <em>"how many engineers?"</em> is indistinguishable from <code>"one"</code> shouted at a
+      planning tool. Once the questionnaire is live, staying on topic is the system prompt's job,
+      and it has the question in context.</p>
+
       <h3 id="output-guardrails">Output Guardrails (4 layers)</h3>
       <table>
         <thead><tr><th>Layer</th><th>Description</th></tr></thead>
