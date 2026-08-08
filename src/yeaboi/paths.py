@@ -87,6 +87,7 @@ STATES_DIR = DATA_DIR / "states"
 PROJECTS_FILE = DATA_DIR / "projects.json"
 REPORTING_THEMES_FILE = DATA_DIR / "reporting_themes.json"  # user-defined Reporting palettes
 REPORTING_PREFS_FILE = DATA_DIR / "reporting_prefs.json"  # persisted Reporting deck-style preferences
+VOICE_INSTALL_FILE = DATA_DIR / "voice_install.json"  # sticky "this machine cannot run dictation" verdicts
 
 # Legacy paths (for backward compatibility / migration)
 LEGACY_DB_PATH = ROOT_DIR / "sessions.db"
@@ -221,6 +222,17 @@ def get_reporting_prefs_path() -> Path:
     """Return the path of the persisted Reporting deck-style preferences (may not exist yet)."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     return REPORTING_PREFS_FILE
+
+
+def get_voice_install_path() -> Path:
+    """Return the path of the sticky voice-install verdict file (may not exist yet).
+
+    Only *permanent* failures are recorded here (no wheel for this platform, a
+    PEP 668 system Python) so the in-app install offer stops inviting a doomed
+    install. Retryable failures — offline, disk full — are never persisted.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return VOICE_INSTALL_FILE
 
 
 def _safe_key(key: str, fallback: str) -> str:

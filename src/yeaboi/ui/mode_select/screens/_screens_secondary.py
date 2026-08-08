@@ -6328,15 +6328,39 @@ def _build_settings_screen(
         # Local, offline dictation (double-tap Space in any text field) — works with every
         # LLM provider, no API key. See docs: "Voice Input".
         _heading("Voice Input")
-        from yeaboi.voice import backend_label, is_voice_available
+        from yeaboi.voice import backend_label, unsupported_blocker, voice_install_command, voice_state
 
-        _voice_ok, _voice_reason = is_voice_available()
-        # Read-only status; the unavailable text carries an install command, so it
-        # wraps onto continuation lines rather than cropping mid-command.
-        if _voice_ok:
+        # Read-only status, worded from the one shared vocabulary so this page
+        # cannot disagree with the chip and the tip about the same machine. Any
+        # text carrying an install command wraps rather than cropping mid-command.
+        _voice_state = voice_state()
+        if _voice_state == "ready":
             _row("Dictation", f"available — {backend_label()}", value_style=theme.good, wrap=True)
+        elif _voice_state == "installable":
+            _row(
+                "Dictation",
+                "not installed — double-tap Space in any text field, then Enter",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        elif _voice_state == "unsupported":
+            _row("Dictation", f"unavailable — {unsupported_blocker()}", value_style=theme.warn, wrap=True)
         else:
-            _row("Dictation", f"unavailable — {_voice_reason}", value_style=theme.warn, wrap=True)
+            _row(
+                "Dictation",
+                f"not installed — offer dismissed; {voice_install_command()}",
+                value_style=theme.warn,
+                wrap=True,
+            )
+        # Editable rather than a button: the user ruled out a Settings *action*,
+        # but a permanent "never" needs some way back that is not an env var.
+        _row(
+            "Install Offer",
+            "off"
+            if config_data.get("VOICE_INSTALL_OFFER", "").strip().lower() in {"off", "false", "0", "no"}
+            else "on",
+            env="VOICE_INSTALL_OFFER",
+        )
         # Enter on this row opens the device picker (see _pick_voice_device) rather
         # than the free-text editor every other row uses.
         _row(

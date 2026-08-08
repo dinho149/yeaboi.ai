@@ -3,7 +3,7 @@
 **Owns** — `src/yeaboi/ui/` **except `ui/session/`** (which is **planning**'s), `src/yeaboi/repl/`,
 `src/yeaboi/ui/shared/_tips.py`, `src/yeaboi/usage_export.py`, `formatters.py` (the REPL-side
 formatter layer), and the terminal-affordance helpers the TUI reaches out through — `clipboard.py`,
-`voice.py`, `music.py`, `os_open.py` — plus the matching render tests. Includes the two TUI utility
+`voice.py`, `voice_install.py`, `music.py`, `os_open.py` — plus the matching render tests. Includes the two TUI utility
 mode cards, **`usage` and `settings`**.
 
 **Skills** — `.claude/skills/tui-standards/SKILL.md` (mandatory — read it before any edit)

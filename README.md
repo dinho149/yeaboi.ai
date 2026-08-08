@@ -42,20 +42,32 @@ yeaboi                          # launch the interactive TUI
 
 > **Note on names:** the package was previously published as **`scrum-agent`**. It is now **`yeaboi`** on PyPI, matching the command. A final `scrum-agent` release remains as a thin redirect that installs `yeaboi`, and the legacy `scrum-agent` command still works as an alias for that release — but new installs should use `yeaboi`.
 
-Optional extras (voice input, extra LLM providers) can be requested at install time:
+**Voice input needs no separate install.** Double-tap Space in any text field and yeaboi
+offers to set dictation up in place — it installs the packages into the environment it is
+already running in, downloads the speech model with a progress bar, and drops straight
+into recording. No restart, no second terminal. (`yeaboi --install-voice` does the same
+thing headlessly, for CI and dev containers.)
+
+It is kept out of the base install rather than bundled because the speech engine
+(`ctranslate2`, `onnxruntime`) publishes wheels only for 64-bit macOS, glibc ≥ 2.28 Linux
+and Windows — making it a hard dependency would break `pip install yeaboi` outright on
+Alpine/musl, older glibc, 32-bit and armv7 hosts. On those platforms yeaboi says so
+instead of offering an install that cannot work.
+
+Optional extras can still be requested at install time if you prefer:
 
 ```bash
-uv tool install "yeaboi[voice]"                # 🎤 dictate answers (double-tap Space) — offline, works with any LLM
+uv tool install "yeaboi[voice]"                # 🎤 dictation, pre-installed rather than on demand
 uv tool install "yeaboi[all-providers]"        # OpenAI, Google, and Bedrock providers
 pipx install "yeaboi[voice]"                   # equivalent with pipx
 ```
 
 > **Voice input** transcribes on-device with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-> — **no API key**, works with every LLM provider (Anthropic, Bedrock, …). On **macOS/Windows** the
-> `[voice]` extra is fully self-contained (the `sounddevice` wheel bundles PortAudio). On **Linux**, also
-> install the system library: `sudo apt install libportaudio2`. A small Whisper model downloads on first
-> use (~140 MB for the default `base`; set `VOICE_MODEL` to `tiny`/`small`/`medium`/`large-v3` to trade
-> size for accuracy).
+> — **no API key**, works with every LLM provider (Anthropic, Bedrock, …). On **macOS/Windows** it is
+> fully self-contained (the `sounddevice` wheel bundles PortAudio). On **Linux**, also install the
+> system library: `sudo apt install libportaudio2` — yeaboi will not run `sudo` for you. A small
+> Whisper model downloads on first use (~140 MB for the default `base`; set `VOICE_MODEL` to
+> `tiny`/`small`/`medium`/`large-v3` to trade size for accuracy).
 
 > **Homebrew is not supported.** A required dependency (`sqlite-vec`) ships no
 > source distribution, which Homebrew's source-build model can't handle, so

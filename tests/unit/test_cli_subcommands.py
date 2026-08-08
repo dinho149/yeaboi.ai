@@ -70,6 +70,11 @@ class TestParsing:
         assert args.list_audio_devices is True
         assert build_parser().parse_args([]).list_audio_devices is False
 
+    def test_install_voice_parses(self):
+        args = build_parser().parse_args(["--install-voice"])
+        assert args.install_voice is True
+        assert build_parser().parse_args([]).install_voice is False
+
     def test_report_parses(self):
         args = build_parser().parse_args(["report", "--period", "quarter", "--format", "json"])
         assert args.command == "report"
