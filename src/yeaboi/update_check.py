@@ -287,6 +287,10 @@ def start_background_check() -> None:
     global _started
     if _started:
         return
+    if os.getenv("YEABOI_UPDATE_CHECK", "").strip().lower() in ("0", "false", "off", "no"):
+        logger.info("update check skipped: disabled via YEABOI_UPDATE_CHECK")
+        _started = True
+        return
     current = _current_version()
     if current == "0.0.0+dev":
         logger.info("update check skipped: running from source tree (dev version)")

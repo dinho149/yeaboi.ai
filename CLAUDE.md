@@ -29,6 +29,8 @@ make dev-board            # Seeded retro board on :5173 for front-end developmen
 make dev-poker            # Seeded planning-poker board on :5273
 make dev-deck             # Seeded reporting slide deck on :5373
 make graph                # Generate agent graph visualisation PNG
+make demo                 # Re-record docs/demo.cast.gz + docs/demo.gif (scripted, no interaction; needs agg)
+make demo-render          # Re-render the GIF from the committed cast (theme/size tweaks, no re-record)
 make build                # Build sdist + wheel into dist/
 make publish              # Publish to PyPI
 make record               # Re-record VCR cassettes against real APIs
@@ -38,7 +40,7 @@ make clean                # Remove build artifacts and caches
 Run a single test: `uv run pytest tests/unit/test_state.py -v`
 Run a single test class: `uv run pytest tests/unit/test_state.py::TestPriority -v`
 
-Terminal GIFs for the README: `asciinema rec docs/demo.cast -c "yeaboi --dry-run"` → `agg docs/demo.cast docs/demo.gif --theme github-dark` (install via `brew install asciinema agg`).
+Terminal GIFs for the README: `make demo` re-records `docs/demo.cast.gz` + `docs/demo.gif` from a scripted pty session — deterministic, no human interaction, verified for sanity before it exits (asciinema is not needed; install `agg` via `brew install agg`). `make demo-render` re-renders the GIF from the committed cast for theme/size tweaks without re-recording.
 
 ## Parallel Development (worktrees)
 
