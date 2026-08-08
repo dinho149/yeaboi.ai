@@ -14,7 +14,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from yeaboi.agent.state import AgentUsageReport
+from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,67 @@ def build_usage_markdown(report: AgentUsageReport) -> str:
     return "\n".join(lines)
 
 
+def build_standup_markdown(digest: AgentStandupDigest) -> str:
+    """The agent standup digest as a shareable Markdown document."""
+    lines: list[str] = [
+        f"# Agent Standup — {digest.digest_date}",
+        "",
+        f"Window {digest.window_start} → {digest.window_end}: "
+        f"**{digest.sessions_worked} session(s)**, ${digest.total_cost_usd:,.2f} estimated"
+        + (f", agents seen: {', '.join(digest.agents_seen)}" if digest.agents_seen else "")
+        + ".",
+    ]
+    if digest.narrative:
+        lines += ["", digest.narrative]
+    for title, items in (
+        ("Highlights", digest.highlights),
+        ("In flight", digest.in_flight),
+        ("Needs a human", digest.attention_items),
+    ):
+        if items:
+            lines += ["", f"## {title}", ""] + [f"- {item}" for item in items]
+    if digest.session_summaries:
+        lines += ["", "## Local sessions", "", "| project | source | models | turns | cost |", "|---|---|---|---|---|"]
+        for s in digest.session_summaries:
+            lines.append(
+                f"| {s.project} ({s.branch}) | {s.source} | {', '.join(s.models)} | {s.turns} | ${s.cost_usd:,.2f} |"
+            )
+    if digest.repo_activity:
+        lines += ["", "## Agent-authored tracker activity", ""]
+        for r in digest.repo_activity:
+            status = f" ({r.status})" if r.status else ""
+            link = f"[{r.title}]({r.url})" if r.url else r.title
+            lines.append(f"- **{r.kind}**{status} {link} — {r.repo}, by {r.agent_marker}")
+    for title, items in (("Coverage notes", digest.coverage_notes), ("Warnings", digest.warnings)):
+        if items:
+            lines += ["", f"## {title}", ""] + [f"- {'⚠ ' if title == 'Warnings' else ''}{item}" for item in items]
+    lines += _md_footer()
+    return "\n".join(lines)
+
+
+def build_standup_plaintext(digest: AgentStandupDigest) -> str:
+    """A compact plaintext digest for Slack delivery (no markdown tables)."""
+    lines = [
+        f"*Agent Standup — {digest.digest_date}*",
+        f"{digest.sessions_worked} session(s), ${digest.total_cost_usd:,.2f} estimated"
+        + (f" · {', '.join(digest.agents_seen)}" if digest.agents_seen else ""),
+    ]
+    if digest.narrative:
+        lines += ["", digest.narrative]
+    for title, items in (
+        ("Highlights", digest.highlights),
+        ("Needs a human", digest.attention_items),
+    ):
+        if items:
+            lines += ["", f"{title}:"] + [f"• {item}" for item in items[:5]]
+    if digest.coverage_notes:
+        lines += ["", *(f"_{note}_" for note in digest.coverage_notes[:2])]
+    return "\n".join(lines)
+
+
 _BUILDERS = {
     "usage": build_usage_markdown,
+    "standup": build_standup_markdown,
 }
 
 

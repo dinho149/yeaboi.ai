@@ -263,11 +263,11 @@ CAPABILITIES: dict[str, dict] = {
         "skill": "agents-usage",
     },
     "agent-standup": {
-        "engines": Exempt("lands with run_agent_standup in the Agent Standup phase of this PR"),
-        "mcp_tools": Exempt("lands with agents_standup_run in the Agent Standup phase of this PR"),
+        "engines": {("yeaboi.agentwatch.engine", "run_agent_standup")},
+        "mcp_tools": {"agents_standup_run", "agents_standup_history"},
         "tui_mode": "agent-standup",
-        "cli": Exempt("lands with the `agents standup` subcommand in the Agent Standup phase of this PR"),
-        "skill": Exempt("lands with the agents-standup plugin skill in the Agent Standup phase of this PR"),
+        "cli": {"agents"},
+        "skill": "agents-standup",
     },
     "agent-security": {
         "engines": Exempt("lands with run_agent_security in the Agent Security phase of this PR"),
@@ -299,6 +299,7 @@ PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "team_analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "anonymize_text": ("yeaboi.anonymize.engine", "run_anonymize"),
     "agents_usage": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents_standup_run": ("yeaboi.agentwatch.engine", "run_agent_standup"),
 }
 
 # Injection/test seams that are never exposed on any wire surface.
@@ -351,6 +352,7 @@ CLI_PARAM_PAIRS: dict[str, tuple[str, str]] = {
     "perf review": ("yeaboi.performance.engine", "run_six_month_review"),
     "analyze": ("yeaboi.analysis.engine", "run_team_analysis"),
     "agents cost": ("yeaboi.agentwatch.engine", "run_agent_usage"),
+    "agents standup": ("yeaboi.agentwatch.engine", "run_agent_standup"),
 }
 
 # CLI dest → engine param renames (the CLI keeps short ergonomic flag names).
@@ -395,6 +397,7 @@ CLI_ONLY_DESTS: dict[str, set[str]] = {
     "perf complete": {"strict"},
     "perf review": {"strict"},
     "agents cost": {"format", "strict"},
+    "agents standup": {"format", "strict"},
     # delivery/code/docs are assembled into the engine's `components` dict (component
     # → sub-source map); each flag names a component's sub-sources, not an engine param.
     "analyze": {

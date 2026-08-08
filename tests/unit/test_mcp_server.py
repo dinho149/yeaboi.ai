@@ -63,6 +63,8 @@ EXPECTED_TOOLS = {
     "anonymize_text",
     "agents_usage",
     "agents_usage_history",
+    "agents_standup_run",
+    "agents_standup_history",
 }
 
 

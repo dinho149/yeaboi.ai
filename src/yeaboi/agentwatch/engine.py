@@ -8,11 +8,13 @@ user-facing *warning* and a deterministic fallback artifact, so every surface
 always renders something useful.
 
 Pipelines:
-  run_agent_usage()  → ingest local agent sessions → price → LLM insights → AgentUsageReport
+  run_agent_usage()    → ingest local agent sessions → price → LLM insights → AgentUsageReport
+  run_agent_standup()  → local sessions + agent-authored tracker activity → LLM narrative
+                         → AgentStandupDigest
 
 Every number in an artifact is computed deterministically here; the LLM only
-writes prose (insights/recommendations) over the finished aggregates — a
-narrative can be wrong without corrupting a dashboard.
+writes prose (insights/narrative) over the finished aggregates — a narrative
+can be wrong without corrupting a dashboard.
 
 # See docs: "The ReAct Loop" — using the LLM outside the main graph
 # See docs: "Prompt Construction" — the agentwatch prompts
@@ -27,6 +29,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from yeaboi.agent.state import (
+    AgentStandupDigest,
     AgentUsageBreakdownRow,
     AgentUsageReport,
     DailyUsagePoint,
@@ -363,3 +366,312 @@ def run_agent_usage(
         len(report.by_model),
     )
     return report
+
+
+# ---------------------------------------------------------------------------
+# Agent Standup
+# ---------------------------------------------------------------------------
+
+
+def _summarise_sessions(sessions: list[dict]) -> tuple:
+    """Local session rollups → AgentSessionSummary rows, costliest first."""
+    from yeaboi.agent.state import AgentSessionSummary
+
+    summaries = []
+    for session in sessions:
+        cost, _known = _session_cost(session["model_usage"])
+        top_tools = sorted(session["tool_counts"].items(), key=lambda kv: kv[1], reverse=True)[:3]
+        summaries.append(
+            AgentSessionSummary(
+                session_id=session["session_id"],
+                source=session["source"],
+                project=_project_label(session["project_path"]),
+                branch=session["git_branch"],
+                models=tuple(sorted(session["model_usage"])),
+                turns=session["turns"],
+                cost_usd=round(cost, 4),
+                top_tools=tuple((name, str(count)) for name, count in top_tools),
+                started_at=session["started_at"],
+                ended_at=session["ended_at"],
+            )
+        )
+    return tuple(sorted(summaries, key=lambda s: s.cost_usd, reverse=True))
+
+
+def _collect_agent_repo_activity(
+    *,
+    window_days: int,
+    tracker_sources: list[str] | None,
+    github_owners: list[str] | None,
+    azdo_projects: list[str] | None,
+    on_progress=None,
+) -> tuple[tuple, tuple[str, ...]]:
+    """Agent-authored tracker items in the window → (rows, coverage notes).
+
+    Reuses the analysis mode's agent-identity detection (trailers, bot account
+    shapes, branch prefixes) and the standup automation filter, so a Wiz-style
+    service hook never shows up as "an agent shipped something". Best-effort:
+    missing credentials contribute a coverage note, never a failure.
+    """
+    from yeaboi.agent.state import AgentRepoActivityRow
+
+    if tracker_sources is not None and not tracker_sources:
+        return (), ("Tracker scan skipped (tracker_sources=[]) — local sessions only.",)
+
+    if on_progress is not None:
+        on_progress("Scanning trackers for agent-authored work")
+    try:
+        from yeaboi.analysis.ai_usage import _classify_ai_item, collect_ai_activity
+
+        scope: dict[str, list[str]] = {}
+        if github_owners:
+            scope["github"] = list(github_owners)
+        if azdo_projects:
+            scope["azdo"] = list(azdo_projects)
+        items, _sources, coverage, _repos = collect_ai_activity(
+            "",
+            "agent-standup",
+            list(tracker_sources) if tracker_sources else None,
+            window_days=window_days,
+            analysis_scope=scope or None,
+        )
+    except Exception as exc:  # noqa: BLE001 — trackers are optional context
+        logger.warning("agent standup: tracker scan failed: %s", exc)
+        return (), (f"Tracker scan unavailable: {exc}",)
+
+    # Drop non-agent automation (service hooks, scanners) before classifying —
+    # the standup filter only inspects review/comment kinds.
+    from yeaboi.standup.automation import partition_automated
+
+    kept, clusters = partition_automated(items)
+    if clusters:
+        logger.info("agent standup: %d automation cluster(s) excluded", len(clusters))
+
+    rows = []
+    for item in kept:
+        hits = _classify_ai_item(item)
+        if not hits:
+            continue
+        rows.append(
+            AgentRepoActivityRow(
+                source=str(item.get("source", "") or "github"),
+                repo=str(item.get("repository", "")).rsplit("/", 1)[-1],
+                kind=str(item.get("kind", "")),
+                title=str(item.get("title", ""))[:140],
+                url=str(item.get("url", "")),
+                author=str(item.get("author", "")),
+                status=str(item.get("status", "")),
+                agent_marker=", ".join(sorted(hits)),
+            )
+        )
+    order = {"pr": 0, "commit": 1, "review": 2, "comment": 3}
+    rows.sort(key=lambda r: (order.get(r.kind, 9), r.repo, r.title))
+    return tuple(rows), tuple(coverage)
+
+
+def _fallback_standup_prose(summaries: tuple, repo_rows: tuple) -> tuple[tuple[str, ...], tuple[str, ...], str]:
+    """Deterministic highlights / attention items / narrative — evidence, not analysis."""
+    highlights = []
+    for row in repo_rows:
+        if row.kind == "pr" and row.status == "merged":
+            highlights.append(f"Merged: {row.title} ({row.repo}, {row.agent_marker})")
+    for summary in summaries[:3]:
+        highlights.append(f"Session on {summary.project} ({summary.source}, ${summary.cost_usd:,.2f})")
+    attention = [
+        f"Open agent PR: {row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open"
+    ]
+    narrative = (
+        f"{len(summaries)} local agent session(s) and {len(repo_rows)} agent-authored tracker item(s) in the window."
+    )
+    return tuple(highlights[:6]), tuple(attention[:6]), narrative
+
+
+def run_agent_standup(
+    *,
+    days: int | None = None,
+    tracker_sources: list[str] | None = None,
+    github_owners: list[str] | None = None,
+    azdo_projects: list[str] | None = None,
+    deliver: bool = False,
+    db_path=None,
+    today: date | None = None,
+    on_progress=None,
+    dry_run: bool = False,
+) -> AgentStandupDigest:
+    """Build the daily "what did the agents do" digest.
+
+    Window: like the human standup, ``days=None`` reaches back to the start of
+    the previous working day (a Monday run covers Friday), so weekend gaps
+    never hide agent work; an explicit ``days`` looks back that many days.
+
+    Sources: local session rollups always; tracker scanning (GitHub/AzDO
+    agent-authored commits/PRs) is best-effort — pass ``tracker_sources=[]``
+    for a local-only digest, or a subset of {"github", "azdo"}.
+
+    deliver=True posts the digest to the configured Slack webhook and raises a
+    desktop notification (never raises; failures become warnings).
+    """
+    from yeaboi.standup.collector import previous_working_day_start
+
+    resolved_today = today or datetime.now(UTC).date()
+    if days is None:
+        window_start_dt = previous_working_day_start(resolved_today)
+        window_days = max(1, (resolved_today - window_start_dt.date()).days + 1)
+    else:
+        window_days = max(1, int(days))
+        window_start_dt = datetime.combine(resolved_today - timedelta(days=window_days - 1), datetime.min.time())
+    window_start = window_start_dt.date().isoformat()
+    digest_date = resolved_today.isoformat()
+    logger.info("agent standup: window %s..%s (deliver=%s dry_run=%s)", window_start, digest_date, deliver, dry_run)
+
+    warnings: list[str] = []
+    with AgentWatchStore(_resolve_db_path(db_path)) as store:
+        if on_progress is not None:
+            on_progress("Scanning local agent sessions")
+        stats = collector.refresh(store, on_progress=on_progress)
+        warnings.extend(stats.warnings)
+        sessions = store.list_sessions(since=window_start)
+    summaries = _summarise_sessions(sessions)
+    total_cost = round(sum(s.cost_usd for s in summaries), 4)
+
+    repo_rows, coverage_notes = _collect_agent_repo_activity(
+        window_days=window_days,
+        tracker_sources=tracker_sources,
+        github_owners=github_owners,
+        azdo_projects=azdo_projects,
+        on_progress=on_progress,
+    )
+
+    agents_seen = tuple(
+        sorted({s.source for s in summaries} | {m for r in repo_rows for m in r.agent_marker.split(", ") if m})
+    )
+    in_flight = tuple(f"{row.title} ({row.repo})" for row in repo_rows if row.kind == "pr" and row.status == "open")[:8]
+
+    if not summaries and not repo_rows:
+        warnings.append("No agent activity found in the window — nothing worked locally, nothing agent-marked landed.")
+
+    # ── The one LLM call: narrative prose over the deterministic rows ─────
+    highlights: tuple[str, ...] = ()
+    attention: tuple[str, ...] = ()
+    narrative = ""
+    if (summaries or repo_rows) and not dry_run:
+        if on_progress is not None:
+            on_progress("Writing the digest")
+        from yeaboi.prompts.agentwatch import get_standup_digest_prompt
+
+        prompt = get_standup_digest_prompt(
+            digest_date=digest_date,
+            window_start=window_start,
+            total_cost_usd=total_cost,
+            sessions=[(s.project, s.source, s.cost_usd, s.turns, list(s.models)) for s in summaries[:12]],
+            repo_items=[(r.kind, r.title, r.repo, r.status, r.agent_marker) for r in repo_rows[:20]],
+        )
+        parsed, llm_warnings = _invoke_llm(prompt, what="standup-digest")
+        warnings.extend(llm_warnings)
+        highlights = _str_list(parsed.get("highlights"))[:6]
+        attention = _str_list(parsed.get("attention_items"))[:6]
+        narrative = str(parsed.get("narrative") or "").strip()
+    if not narrative:
+        highlights, attention, narrative = _fallback_standup_prose(summaries, repo_rows)
+
+    digest = AgentStandupDigest(
+        digest_date=digest_date,
+        window_start=window_start,
+        window_end=digest_date,
+        sessions_worked=len(summaries),
+        total_cost_usd=total_cost,
+        agents_seen=agents_seen,
+        session_summaries=summaries,
+        repo_activity=repo_rows,
+        highlights=highlights,
+        in_flight=in_flight,
+        attention_items=attention,
+        narrative=narrative,
+        coverage_notes=coverage_notes,
+        warnings=tuple(warnings),
+        generated_at=datetime.now(UTC).isoformat(),
+    )
+
+    if deliver:
+        delivered = _deliver_digest(digest)
+        if not all(delivered.values()):
+            failed = ", ".join(channel for channel, ok in delivered.items() if not ok)
+            digest = AgentStandupDigest(
+                **{**_as_dict_shallow(digest), "warnings": (*digest.warnings, f"Delivery failed: {failed}.")}
+            )
+
+    try:
+        with AgentWatchStore(_resolve_db_path(db_path)) as store:
+            store.record_report("standup", digest, key_date=digest_date)
+    except Exception as exc:  # noqa: BLE001 — history is best-effort
+        logger.warning("agent standup: could not record digest history: %s", exc)
+    try:
+        from yeaboi.agentwatch.export import export_artifact
+
+        export_artifact(digest, kind="standup")
+    except Exception as exc:  # noqa: BLE001 — export must never sink the run
+        logger.warning("agent standup: export failed: %s", exc)
+
+    logger.info(
+        "agent standup: %d session(s), %d tracker item(s), $%.2f",
+        digest.sessions_worked,
+        len(digest.repo_activity),
+        digest.total_cost_usd,
+    )
+    return digest
+
+
+def _as_dict_shallow(artifact) -> dict:
+    """Field → value for rebuilding a frozen artifact with one field changed.
+
+    dataclasses.replace would also work; this keeps tuple fields as-is without
+    asdict's deep list conversion.
+    """
+    from dataclasses import fields
+
+    return {f.name: getattr(artifact, f.name) for f in fields(artifact)}
+
+
+def _deliver_digest(digest) -> dict[str, bool]:
+    """Post the digest to Slack (+ a desktop notification). Never raises.
+
+    The standup mode's ``deliver()`` is typed to StandupReport and formats via
+    its own plaintext renderer, so agentwatch posts through the same
+    configured webhook directly rather than duck-typing another mode's report.
+    """
+    from yeaboi.agentwatch.export import build_standup_plaintext
+
+    results: dict[str, bool] = {}
+    text = build_standup_plaintext(digest)
+    try:
+        from yeaboi import config
+
+        webhook = getattr(config, "get_slack_webhook_url", lambda: "")() or ""
+    except Exception:  # noqa: BLE001
+        webhook = ""
+    if not webhook:
+        logger.warning("agent standup delivery: no SLACK_WEBHOOK_URL configured")
+        results["slack"] = False
+    else:
+        import json as json_mod
+        import urllib.request
+
+        payload = json_mod.dumps({"text": text}).encode("utf-8")
+        req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})  # noqa: S310
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 — user-configured webhook
+                results["slack"] = 200 <= resp.status < 300
+        except Exception as exc:  # noqa: BLE001
+            logger.error("agent standup delivery[slack] failed: %s", exc)
+            results["slack"] = False
+    try:
+        from yeaboi.standup.delivery import notify_desktop
+
+        results["desktop"] = notify_desktop(
+            "Agent Standup",
+            f"{digest.sessions_worked} session(s), ${digest.total_cost_usd:,.2f} — {digest.narrative[:120]}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent standup delivery[desktop] failed: %s", exc)
+        results["desktop"] = False
+    return results

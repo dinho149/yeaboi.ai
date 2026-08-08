@@ -36,6 +36,34 @@ def _usage_history(limit: int):
         return {"reports": store.list_reports("usage", limit=limit)}
 
 
+def _standup_run(
+    days: int, tracker_sources: list | None, github_owners: list | None, azdo_projects: list | None, deliver: bool
+):
+    if days < 0 or days > 90:
+        raise ValueError("days must be between 0 (previous working day) and 90.")
+    if tracker_sources and (bad := set(tracker_sources) - {"github", "azdo"}):
+        raise ValueError(f"tracker_sources entries must be github/azdo, got: {', '.join(sorted(bad))}.")
+    from yeaboi.agentwatch.engine import run_agent_standup
+
+    return run_agent_standup(
+        days=days or None,
+        tracker_sources=tracker_sources,
+        github_owners=github_owners,
+        azdo_projects=azdo_projects,
+        deliver=deliver,
+    )
+
+
+def _standup_history(limit: int):
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100.")
+    from yeaboi.agentwatch.store import AgentWatchStore
+    from yeaboi.paths import get_db_path
+
+    with AgentWatchStore(get_db_path()) as store:
+        return {"digests": store.list_reports("standup", limit=limit)}
+
+
 def _with_beta(payload: dict) -> dict:
     """Prepend the beta caveat to a success envelope's warnings.
 
@@ -80,3 +108,32 @@ def register(app) -> None:
         The Agents modes are in beta — costs are estimates from local session logs and public
         rate tables, not the provider's bill."""
         return _with_beta(await run_readonly(_usage_history, limit))
+
+    @app.tool()
+    async def agents_standup_run(
+        ctx: Context,
+        days: int = 0,
+        tracker_sources: list[str] | None = None,
+        github_owners: list[str] | None = None,
+        azdo_projects: list[str] | None = None,
+        deliver: bool = False,
+    ) -> dict:
+        """BETA — Run the daily agent standup: what the user's AI coding agents did — local
+        sessions worked (with cost) plus agent-authored commits/PRs found in GitHub/Azure DevOps.
+        days=0 covers everything since the previous working day (a Monday run reaches Friday);
+        tracker_sources=[] skips trackers for a local-only digest. deliver=true posts to the
+        configured Slack webhook — ask the user before enabling.
+
+        The Agents modes are in beta — detection is a lower bound; never present absence of
+        evidence as agent idleness."""
+        return _with_beta(
+            await run_engine(ctx, _standup_run, days, tracker_sources, github_owners, azdo_projects, deliver)
+        )
+
+    @app.tool()
+    async def agents_standup_history(limit: int = 20) -> dict:
+        """BETA — List previously generated agent standup digests (newest first).
+
+        The Agents modes are in beta — detection is a lower bound; never present absence of
+        evidence as agent idleness."""
+        return _with_beta(await run_readonly(_standup_history, limit))

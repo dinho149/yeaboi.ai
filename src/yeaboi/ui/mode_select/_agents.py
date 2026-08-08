@@ -110,81 +110,126 @@ def _run_placeholder_page(
             return
 
 
-def _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Usage — run the engine on a worker thread, then show the dashboard.
+def _run_threaded_engine_page(
+    console,
+    live,
+    read_key,
+    frame_time: float,
+    supports_timeout: bool,
+    *,
+    label: str,
+    run_engine,
+    build_screen,
+    make_failure_artifact,
+) -> None:
+    """Shared page loop: engine on a worker thread, spinner, then the result.
 
-    The engine's LLM insight call can take seconds, so the page loop keeps
-    animating a spinner (fed by the engine's on_progress strings) while a
-    daemon thread runs the pipeline; the engine itself never raises (parse →
-    fallback → format), so the thread's result is always a report.
+    The engines' LLM calls can take seconds, so the page keeps animating a
+    spinner (fed by the engine's on_progress strings) while a daemon thread
+    runs the pipeline. The engines never raise (parse → fallback → format);
+    ``make_failure_artifact`` is belt-and-braces for a bug. `r` re-runs,
+    esc/q backs out (a mid-run back-out lets the daemon finish + export).
     """
     import queue
     import threading
 
-    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen
-
-    logger.info("agent usage page opened")
+    logger.info("%s page opened", label)
     while True:  # re-entered by the r (re-run) key
         progress: queue.Queue[str] = queue.Queue()
         result: queue.Queue = queue.Queue(maxsize=1)
 
         def _work() -> None:
-            from yeaboi.agentwatch.engine import run_agent_usage
-
             try:
-                result.put(run_agent_usage(on_progress=progress.put))
+                result.put(run_engine(progress.put))
             except Exception as exc:  # noqa: BLE001 — belt and braces; the engine shouldn't raise
-                logger.exception("agent usage engine failed")
-                from yeaboi.agent.state import AgentUsageReport
+                logger.exception("%s engine failed", label)
+                result.put(make_failure_artifact(exc))
 
-                result.put(AgentUsageReport(warnings=(f"Agent usage failed: {exc}",)))
-
-        worker = threading.Thread(target=_work, daemon=True, name="agent-usage")
+        worker = threading.Thread(target=_work, daemon=True, name=label)
         worker.start()
 
         status = ""
         start = time.monotonic()
-        report = None
-        while report is None:
+        artifact = None
+        while artifact is None:
             try:
                 status = progress.get_nowait()
             except queue.Empty:
                 pass
             try:
-                report = result.get_nowait()
+                artifact = result.get_nowait()
             except queue.Empty:
                 pass
             w, h = console.size
-            live.update(
-                _build_agent_usage_screen(None, width=w, height=h, shimmer_tick=time.monotonic() - start, status=status)
-            )
+            live.update(build_screen(None, width=w, height=h, shimmer_tick=time.monotonic() - start, status=status))
             key = read_key(timeout=frame_time) if supports_timeout else read_key()
             if key in ("esc", "q"):
-                logger.info("agent usage page: backed out while running")
-                return  # the daemon thread finishes (and exports) in the background
+                logger.info("%s page: backed out while running", label)
+                return
 
-        logger.info("agent usage page: report ready (%d session(s))", report.session_count)
+        logger.info("%s page: artifact ready", label)
         while True:
             w, h = console.size
-            live.update(_build_agent_usage_screen(report, width=w, height=h, shimmer_tick=time.monotonic() - start))
+            live.update(build_screen(artifact, width=w, height=h, shimmer_tick=time.monotonic() - start))
             key = read_key(timeout=frame_time) if supports_timeout else read_key()
             if key in ("esc", "q"):
                 return
             if key == "r":
-                logger.info("agent usage page: re-run requested")
+                logger.info("%s page: re-run requested", label)
                 break  # back to the outer loop → fresh engine run
 
 
-def _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout) -> None:
-    """Agent Standup — replaced by the real hub in the Agent Standup phase."""
-    _run_placeholder_page(
+def _run_agent_usage_page(console, live, read_key, frame_time, supports_timeout) -> None:
+    """Agent Usage — threaded engine run + capped dashboard."""
+    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_usage_screen
+
+    def _run(on_progress):
+        from yeaboi.agentwatch.engine import run_agent_usage
+
+        return run_agent_usage(on_progress=on_progress)
+
+    def _failure(exc):
+        from yeaboi.agent.state import AgentUsageReport
+
+        return AgentUsageReport(warnings=(f"Agent usage failed: {exc}",))
+
+    _run_threaded_engine_page(
         console,
         live,
         read_key,
         frame_time,
         supports_timeout,
-        key="agent-standup",
-        body_lines=("The agent standup digest is being wired up.",),
+        label="agent-usage",
+        run_engine=_run,
+        build_screen=_build_agent_usage_screen,
+        make_failure_artifact=_failure,
+    )
+
+
+def _run_agent_standup_page(console, live, read_key, frame_time, supports_timeout) -> None:
+    """Agent Standup — threaded engine run + capped digest."""
+    from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_standup_screen
+
+    def _run(on_progress):
+        from yeaboi.agentwatch.engine import run_agent_standup
+
+        return run_agent_standup(on_progress=on_progress)
+
+    def _failure(exc):
+        from yeaboi.agent.state import AgentStandupDigest
+
+        return AgentStandupDigest(warnings=(f"Agent standup failed: {exc}",))
+
+    _run_threaded_engine_page(
+        console,
+        live,
+        read_key,
+        frame_time,
+        supports_timeout,
+        label="agent-standup",
+        run_engine=_run,
+        build_screen=_build_agent_standup_screen,
+        make_failure_artifact=_failure,
     )
 
 

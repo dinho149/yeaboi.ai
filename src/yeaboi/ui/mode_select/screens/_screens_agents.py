@@ -15,7 +15,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from yeaboi.agent.state import AgentUsageReport
+from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
 from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
@@ -97,4 +97,64 @@ def _build_agent_usage_screen(
             hint.append(f" {label}", style="rgb(70,70,82)")
         parts.append(hint)
 
+    return build_page_panel(Group(*parts), theme=theme, height=height)
+
+
+def _capped_standup(digest: AgentStandupDigest) -> tuple[AgentStandupDigest, list[str]]:
+    """Cap the digest's list fields for on-screen rendering (export keeps all)."""
+    notes: list[str] = []
+    if len(digest.session_summaries) > _MAX_BREAKDOWN_ROWS:
+        notes.append(f"… and {len(digest.session_summaries) - _MAX_BREAKDOWN_ROWS} more session(s) in the export")
+    if len(digest.repo_activity) > _MAX_BREAKDOWN_ROWS:
+        notes.append(f"… and {len(digest.repo_activity) - _MAX_BREAKDOWN_ROWS} more tracker item(s) in the export")
+    capped = replace(
+        digest,
+        session_summaries=digest.session_summaries[:_MAX_BREAKDOWN_ROWS],
+        repo_activity=digest.repo_activity[:_MAX_BREAKDOWN_ROWS],
+        highlights=digest.highlights[:_MAX_PROSE],
+        in_flight=digest.in_flight[:_MAX_PROSE],
+        attention_items=digest.attention_items[:_MAX_PROSE],
+        coverage_notes=digest.coverage_notes[:1],
+    )
+    return capped, notes
+
+
+def _build_agent_standup_screen(
+    digest=None,
+    *,
+    width: int = 80,
+    height: int = 24,
+    shimmer_tick: float | None = None,
+    status: str = "",
+) -> Panel:
+    """The Agent Standup page: spinner while running, capped digest when done."""
+    from yeaboi.agentwatch.render import format_standup_rich
+    from yeaboi.ui.shared._components import AGENT_STANDUP_THEME, agent_standup_title
+
+    theme = AGENT_STANDUP_THEME
+    parts: list = [
+        Text(""),
+        agent_standup_title(shimmer_tick, width=width),
+        build_reveal_subtitle("What your agents did", None, justify="center"),
+        Text(""),
+    ]
+    if digest is None:
+        frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+        working = Text(justify="center")
+        working.append(f"{frame} ", style=theme.accent_bright)
+        working.append(status or "Collecting agent activity…", style="rgb(160,160,175)")
+        parts += [Text(""), working]
+    else:
+        capped, notes = _capped_standup(digest)
+        parts.append(format_standup_rich(capped))
+        for note in notes:
+            parts.append(Text(note, style="rgb(110,110,125)"))
+        parts.append(Text(""))
+        hint = Text(justify="center")
+        for key, label in (("r", "re-run"), ("esc", "back")):
+            if hint.plain:
+                hint.append("   ")
+            hint.append(key, style="bold rgb(210,210,220)")
+            hint.append(f" {label}", style="rgb(70,70,82)")
+        parts.append(hint)
     return build_page_panel(Group(*parts), theme=theme, height=height)

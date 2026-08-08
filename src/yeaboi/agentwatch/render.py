@@ -11,7 +11,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from yeaboi.agent.state import AgentUsageReport
+from yeaboi.agent.state import AgentStandupDigest, AgentUsageReport
 
 _ACCENT = "rgb(70,190,230)"  # AGENT_USAGE_THEME.accent
 _MUTED = "rgb(120,120,140)"
@@ -102,6 +102,78 @@ def format_usage_rich(report: AgentUsageReport) -> RenderableType:
         parts.extend(Text(f"  • {item}") for item in items)
 
     for warning in report.warnings:
+        parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
+
+    return Group(*parts)
+
+
+_STANDUP_ACCENT = "rgb(120,210,170)"  # AGENT_STANDUP_THEME.accent
+
+
+def format_standup_rich(digest: AgentStandupDigest) -> RenderableType:
+    """The agent standup digest as terminal output."""
+    parts: list[RenderableType] = []
+    header = Text()
+    header.append("Agent Standup  ", style=f"bold {_STANDUP_ACCENT}")
+    header.append(f"{digest.window_start} → {digest.window_end}", style=_MUTED)
+    parts.append(header)
+
+    totals = Text()
+    totals.append(f"{digest.sessions_worked} session(s)", style="bold white")
+    totals.append(f" — ${digest.total_cost_usd:,.2f} estimated", style=_MUTED)
+    if digest.agents_seen:
+        totals.append(f" · {', '.join(digest.agents_seen)}", style=_MUTED)
+    parts.append(totals)
+
+    if digest.narrative:
+        parts.append(Text(""))
+        parts.append(Text(digest.narrative, style="white"))
+
+    for title, items in (
+        ("Highlights", digest.highlights),
+        ("In flight", digest.in_flight),
+        ("Needs a human", digest.attention_items),
+    ):
+        if not items:
+            continue
+        parts.append(Text(title, style=f"bold {_STANDUP_ACCENT}"))
+        parts.extend(Text(f"  • {item}") for item in items)
+
+    if digest.session_summaries:
+        table = Table(
+            title="Local sessions",
+            title_style=f"bold {_STANDUP_ACCENT}",
+            header_style=_MUTED,
+            border_style="rgb(50,60,80)",
+        )
+        table.add_column("project")
+        table.add_column("source")
+        table.add_column("models")
+        table.add_column("turns", justify="right")
+        table.add_column("cost", justify="right")
+        for s in digest.session_summaries:
+            table.add_row(s.project, s.source, ", ".join(s.models), str(s.turns), f"${s.cost_usd:,.2f}")
+        parts.append(table)
+
+    if digest.repo_activity:
+        table = Table(
+            title="Agent-authored tracker activity",
+            title_style=f"bold {_STANDUP_ACCENT}",
+            header_style=_MUTED,
+            border_style="rgb(50,60,80)",
+        )
+        table.add_column("kind")
+        table.add_column("title")
+        table.add_column("repo")
+        table.add_column("agent")
+        for r in digest.repo_activity:
+            kind = f"{r.kind} ({r.status})" if r.status else r.kind
+            table.add_row(kind, r.title, r.repo, r.agent_marker)
+        parts.append(table)
+
+    for note in digest.coverage_notes:
+        parts.append(Text(f"◦ {note}", style=_MUTED))
+    for warning in digest.warnings:
         parts.append(Text(f"⚠ {warning}", style="rgb(220,180,60)"))
 
     return Group(*parts)
