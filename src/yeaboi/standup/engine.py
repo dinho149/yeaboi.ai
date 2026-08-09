@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Collection
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+from yeaboi import html_theme
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
@@ -925,6 +927,41 @@ def _build_fallback_team_summary(bundle: collector.ActivityBundle, progress: con
     return f"Sprint status: {progress.confidence_label}."
 
 
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _strip_rationale_echo(team_summary: str, rationale: str) -> str:
+    """Drop team-summary sentences that restate the confidence rationale.
+
+    The rationale renders beside the confidence chip, directly above the team
+    summary; an LLM told the sprint status as context tends to open by repeating
+    it ("Day 2 of 10: 0 of ~3 ideal points burned" → "The sprint is on day 2 of
+    10 with no points burned yet…"). The test is what fraction of the
+    *rationale's* words the sentence covers — the echo sentence pads itself with
+    prose, so measuring against the sentence would let every echo through. A
+    sentence goes only on ≥70% coverage of a rationale with enough words to make
+    that meaningful, so a first sentence that says something of its own always
+    survives.
+
+    Generation-time only, on the LLM's own words — deliberately NOT applied by
+    the exporters or renderers: ``team_summary`` is host-editable on a share,
+    and a fuzzy strip downstream could silently delete a sentence a human
+    wrote. Reports stored before this existed keep their echo; history is
+    history.
+    """
+    rationale_words = set(_WORD_RE.findall((rationale or "").lower()))
+    if len(rationale_words) < 4:
+        return team_summary
+    kept: list[str] = []
+    for sentence in html_theme.split_sentences(team_summary):
+        words = set(_WORD_RE.findall(sentence.lower()))
+        if len(rationale_words & words) / len(rationale_words) >= 0.7:
+            logger.info("standup: dropped a team-summary sentence that echoed the confidence rationale")
+            continue
+        kept.append(sentence)
+    return " ".join(kept)
+
+
 def _summarize_members(
     *,
     bundle: collector.ActivityBundle,
@@ -1166,11 +1203,7 @@ def _summarize_members(
             )
         )
 
-    # Lazy import, matching run_standup's export import below — export.py is
-    # where the strip lives so re-exports of stored reports get the same pass.
-    from yeaboi.standup.export import strip_rationale_echo
-
-    team_summary = strip_rationale_echo((parsed.get("team_summary") or "").strip(), progress.confidence_rationale)
+    team_summary = _strip_rationale_echo((parsed.get("team_summary") or "").strip(), progress.confidence_rationale)
     team_summary = team_summary or _build_fallback_team_summary(bundle, progress)
     return updates, team_summary, []
 

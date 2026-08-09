@@ -449,39 +449,6 @@ def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[s
     return out
 
 
-_WORD_RE = re.compile(r"[a-z0-9]+")
-
-
-def strip_rationale_echo(team_summary: str, rationale: str) -> str:
-    """Drop team-summary sentences that restate the confidence rationale.
-
-    The rationale renders beside the confidence chip, directly above the team
-    summary; an LLM told the sprint status as context tends to open by repeating
-    it ("Day 2 of 10: 0 of ~3 ideal points burned" → "The sprint is on day 2 of
-    10 with no points burned yet…"). The test is what fraction of the
-    *rationale's* words the sentence covers — the echo sentence pads itself with
-    prose, so measuring against the sentence would let every echo through. A
-    sentence goes only on ≥70% coverage of a rationale with enough words to make
-    that meaningful, so a first sentence that says something of its own always
-    survives.
-
-    Lives here rather than in ``engine`` because both ends need it: the engine
-    strips at generation time, and the exporters strip again so reports stored
-    before the engine did still render clean.
-    """
-    rationale_words = set(_WORD_RE.findall((rationale or "").lower()))
-    if len(rationale_words) < 4:
-        return team_summary
-    kept: list[str] = []
-    for sentence in _split_sentences(team_summary):
-        words = set(_WORD_RE.findall(sentence.lower()))
-        if len(rationale_words & words) / len(rationale_words) >= 0.7:
-            logger.info("standup: dropped a team-summary sentence that echoed the confidence rationale")
-            continue
-        kept.append(sentence)
-    return " ".join(kept)
-
-
 # ---------------------------------------------------------------------------
 # Team summary highlighting
 # ---------------------------------------------------------------------------
@@ -558,10 +525,12 @@ def build_standup_markdown(report: StandupReport) -> str:
         lines += ["", "## ⚠ Notices", ""]
         lines += [f"- {w}" for w in report.warnings]
 
-    team_summary = strip_rationale_echo(report.team_summary, report.confidence_rationale)
-    if team_summary:
+    # Rendered verbatim: the rationale-echo strip happens once, at generation
+    # time in the engine. A fuzzy strip here could silently delete a sentence a
+    # host hand-edited onto the share — a human's words outrank de-noising.
+    if report.team_summary:
         lines += ["", "## Team Summary", ""]
-        sentences = [_md_runs(runs) for runs in _team_summary_runs(team_summary, key_map, member_names)]
+        sentences = [_md_runs(runs) for runs in _team_summary_runs(report.team_summary, key_map, member_names)]
         # A single sentence is a paragraph; several are a scannable list.
         lines += sentences if len(sentences) == 1 else [f"- {s}" for s in sentences]
 
@@ -961,16 +930,8 @@ def standup_export_args(
     # files live under ~/.yeaboi and get pruned, so a path would go stale.
     images = [uri for p in report.images if (uri := image_data_uri(p))]
 
-    # New reports arrive already stripped by the engine; this pass is for
-    # stored reports that predate it. Not on an editable share — the editor
-    # opens on the raw artifact string, and hiding a sentence the host can see
-    # in the edit box would read as a failed edit.
-    team_summary = (
-        report.team_summary if editable else strip_rationale_echo(report.team_summary, report.confidence_rationale)
-    )
-
     nav: list[tuple[str, str]] = [("overview", "Overview")]
-    if team_summary:
+    if report.team_summary:
         nav.append(("summary", "Team Summary"))
     nav.append(("updates", "Updates"))
     if images:
@@ -1011,7 +972,9 @@ def standup_export_args(
                 "trendText": _trend_text(report),
                 "rationale": report.confidence_rationale,
             },
-            "summary": _team_summary_runs(team_summary, key_map, [m.name for m in report.member_updates]),
+            # Verbatim — the rationale-echo strip is generation-time only; a
+            # fuzzy strip here could delete a host-edited sentence.
+            "summary": _team_summary_runs(report.team_summary, key_map, [m.name for m in report.member_updates]),
             "members": members,
             "quietMembers": [m.name for m in quiet],
             "activityCounts": [[source, count] for source, count in report.activity_counts],

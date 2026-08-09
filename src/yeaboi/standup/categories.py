@@ -135,17 +135,22 @@ def empty_summary(category: str, coverage: str) -> str:
 
 
 def is_empty_state(text: str) -> bool:
-    """Whether ``text`` is one of the canonical empty-state sentences above.
+    """Whether ``text`` is one of the canonical *droppable* empty-state sentences.
 
     Exporters use this to drop per-member "No X activity detected…" footnotes:
     coverage is a report-wide fact the Details section already states once, and
     repeating it on every card buried the members who did something. Exact
     string match on purpose — bespoke prose ("Nothing merged, two reviews
     pending") must never be classified as sayable-by-a-machine and dropped.
+
+    The FAILED sentence is deliberately NOT droppable: "activity unavailable
+    because the selected sources failed" means *we could not look*, and a
+    member folded into a "No activity detected" strip on a day Jira 401'd
+    would be a positive claim about a named person that nobody verified.
     """
     stripped = (text or "").strip()
     return any(
         stripped == empty_summary(category, coverage)
         for category in CATEGORIES
-        for coverage in (COVERED, PARTIAL, FAILED, NOT_CONFIGURED)
+        for coverage in (COVERED, PARTIAL, NOT_CONFIGURED)
     )

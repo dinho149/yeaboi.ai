@@ -769,6 +769,20 @@ class TestCardReadability:
         assert [m["name"] for m in report["members"]] == ["Edited"]
         assert report["quietMembers"] == []
 
+    def test_member_behind_a_failed_source_keeps_the_card_and_its_caveat(self):
+        # On a day Jira 401s, "No activity detected: Bo" would be a positive
+        # claim nobody verified — the FAILED sentence is not a droppable empty
+        # state, so the member keeps a card and the caveat keeps its footnote.
+        from yeaboi.standup import categories as categories_mod
+
+        failed = categories_mod.empty_summary("ticketing", categories_mod.FAILED)
+        member = replace(self._quiet_member("Bo"), ticketing_summary=failed)
+        rep = _report(member_updates=(member,))
+        report = island(build_standup_html(rep))["report"]
+        assert [m["name"] for m in report["members"]] == ["Bo"]
+        assert report["quietMembers"] == []
+        assert any(failed in _md_runs(f["runs"]) for f in report["members"][0]["footnotes"])
+
     def test_member_with_a_practice_or_blocker_keeps_the_full_card(self):
         # A votable signal or a blocker must never disappear into the strip.
         from yeaboi.agent.state import PracticeSignal
@@ -1057,48 +1071,28 @@ class TestEvidenceChildren:
         assert "1892385692" not in md
 
 
-class TestStripRationaleEcho:
-    """Team-summary sentences that restate the confidence rationale are dropped."""
+class TestTeamSummaryRendersVerbatim:
+    """Exporters never run the fuzzy rationale-echo strip.
 
-    RATIONALE = "Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+    ``team_summary`` is host-editable on a share; a downstream 70%-overlap
+    strip could silently delete a sentence a human wrote about sprint status.
+    The strip is generation-time only (`engine._strip_rationale_echo`), so
+    whatever the stored report says — LLM output or a host's edit — is what
+    every surface renders.
+    """
 
-    def test_drops_the_restated_opener_only(self):
-        # Real-run shape: the LLM opens the team summary by rewording the
-        # confidence rationale shown two lines above it.
-        summary = (
-            "The sprint is on day 2 of 10 with no points burned yet, putting the team behind the "
-            "ideal burn curve. Nikolai delivered the most concrete output, merging a substantial "
-            "Jenkins governance branch."
-        )
-        assert export.strip_rationale_echo(summary, self.RATIONALE) == (
-            "Nikolai delivered the most concrete output, merging a substantial Jenkins governance branch."
-        )
-
-    def test_keeps_a_sentence_with_its_own_content(self):
-        summary = "Two of six members show no activity on day 2, which is a risk worth surfacing."
-        assert export.strip_rationale_echo(summary, self.RATIONALE) == summary
-
-    def test_ignores_a_rationale_too_short_to_match_on(self):
-        assert export.strip_rationale_echo("Behind pace.", "Behind.") == "Behind pace."
-
-    def test_stored_reports_render_stripped_on_reexport(self):
-        # The engine strips at generation time now; reports stored before it
-        # did get the same pass here — markdown and payload, but never the
-        # editable share, whose editor opens on the raw string.
+    def test_a_sentence_overlapping_the_rationale_survives_every_surface(self):
         rep = _report(
             team_summary=(
-                "The sprint is on day 2 of 10 with no points burned yet, putting the team behind "
-                "the ideal burn curve. Alice shipped the exporter."
+                "We are on day 2 of 10 with 0 of ~3 ideal points burned, which is why I am "
+                "flagging the API work. Alice shipped the exporter."
             ),
-            confidence_rationale=self.RATIONALE,
+            confidence_rationale="Day 2 of 10: 0 of ~3 ideal points burned (0%).",
         )
         md = build_standup_markdown(rep)
-        assert "ideal burn curve" not in md
-        assert "shipped the exporter." in md  # "Alice" renders bolded, so match past the name
+        assert "flagging the API work" in md
         payload = island(build_standup_html(rep))["report"]
-        assert len(payload["summary"]) == 1
-        editable = export.standup_export_args(rep, editable=True)["report"]
-        assert len(editable["summary"]) == 2
+        assert len(payload["summary"]) == 2
 
 
 class TestSummaryBullets:

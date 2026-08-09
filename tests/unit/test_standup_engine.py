@@ -885,6 +885,27 @@ class TestWipFlow:
         assert engine._fallback_summary(acts) == "change 0; change 1; and 3 more"
         assert engine._fallback_summary(acts[:2]) == "change 0; change 1"
 
+    def test_strip_rationale_echo_drops_the_restated_opener_only(self):
+        # Real-run shape: the LLM opens the team summary by rewording the
+        # confidence rationale shown two lines above it.
+        rationale = "Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        summary = (
+            "The sprint is on day 2 of 10 with no points burned yet, putting the team behind the "
+            "ideal burn curve. Nikolai delivered the most concrete output, merging a substantial "
+            "Jenkins governance branch."
+        )
+        assert engine._strip_rationale_echo(summary, rationale) == (
+            "Nikolai delivered the most concrete output, merging a substantial Jenkins governance branch."
+        )
+
+    def test_strip_rationale_echo_keeps_a_sentence_with_its_own_content(self):
+        rationale = "Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        summary = "Two of six members show no activity on day 2, which is a risk worth surfacing."
+        assert engine._strip_rationale_echo(summary, rationale) == summary
+
+    def test_strip_rationale_echo_ignores_a_rationale_too_short_to_match_on(self):
+        assert engine._strip_rationale_echo("Behind pace.", "Behind.") == "Behind pace."
+
     def test_fallback_team_summary_does_not_restate_chip_or_details(self):
         # The confidence chip carries the label+rationale and the Details footer
         # carries the per-source counts; the fallback must not render them twice.

@@ -59,6 +59,40 @@ def _practice_rollup_line(report: StandupReport) -> str:
     return " · ".join(parts)
 
 
+def _denoise(report: StandupReport):
+    """The shared de-noise pass for the plaintext and rich renderers.
+
+    Returns ``(quiet, active, overview_of, category_lines_of)`` — the member
+    partition plus two per-member helpers: the deduped one-line overview, and
+    the (label, text) category lines with canonical empty states dropped. The
+    FAILED sentence survives by design ("we could not look" is per-member
+    news); it is `categories.is_empty_state` that draws that line.
+    """
+    from yeaboi.standup import categories
+    from yeaboi.standup.export import _is_quiet, _member_summary_bullets, _ticket_key_map
+
+    quiet = [m for m in report.member_updates if _is_quiet(m)]
+    active = [m for m in report.member_updates if not _is_quiet(m)]
+    key_map = _ticket_key_map(report)
+
+    def overview_of(m) -> str:
+        return "; ".join(_member_summary_bullets(m.summary, key_map)) or "No activity detected."
+
+    def category_lines_of(m) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for label, summary in (
+            ("Ticketing", m.ticketing_summary),
+            ("Code", m.code_summary),
+            ("Documentation", m.documentation_summary),
+        ):
+            if summary and categories.is_empty_state(summary):
+                continue
+            out.append((label, summary or f"{label} summary unavailable."))
+        return out
+
+    return quiet, active, overview_of, category_lines_of
+
+
 def format_standup_lines(report: StandupReport) -> list[str]:
     """Return the standup as a list of plain-text lines (no ANSI)."""
     lines: list[str] = [
@@ -79,40 +113,28 @@ def format_standup_lines(report: StandupReport) -> list[str]:
     lines.append("")
 
     # The same de-noising the markdown/HTML exporters apply — export.py owns
-    # the helpers so the surfaces cannot drift: rationale echoes stripped from
-    # stored reports, summary bullets deduped per ticket, canonical empty-state
-    # category lines dropped (coverage is stated once in the footer), and
-    # zero-activity members compressed to one shared line.
-    from yeaboi.standup import categories
-    from yeaboi.standup.export import _is_quiet, _member_summary_bullets, _ticket_key_map, strip_rationale_echo
+    # the helpers so the surfaces cannot drift: summary bullets deduped per
+    # ticket, canonical empty-state category lines dropped (coverage is stated
+    # once in the footer), and zero-activity members compressed to one shared
+    # line. The team summary renders verbatim: the rationale-echo strip is
+    # generation-time only, so a host-edited sentence can never be deleted.
+    quiet, active, overview_of, category_lines_of = _denoise(report)
 
-    team_summary = strip_rationale_echo(report.team_summary, report.confidence_rationale)
-    if team_summary:
+    if report.team_summary:
         lines.append("Team summary:")
-        lines.append(f"  {team_summary}")
+        lines.append(f"  {report.team_summary}")
         lines.append("")
-
-    quiet = [m for m in report.member_updates if _is_quiet(m)]
-    active = [m for m in report.member_updates if not _is_quiet(m)]
-    key_map = _ticket_key_map(report)
 
     if active or quiet:
         lines.append("Updates:")
         for m in active:
             tag = "✍️" if m.self_report else "•"
             lines.append(f"  {tag} {m.name}")
-            overview = "; ".join(_member_summary_bullets(m.summary, key_map)) or "No activity detected."
-            lines.append(f"      General overview: {overview}")
+            lines.append(f"      General overview: {overview_of(m)}")
             if getattr(m, "progress_note", ""):
                 lines.append(f"      ↺ Since last standup: {m.progress_note}")
-            for label, summary in (
-                ("Ticketing", m.ticketing_summary),
-                ("Code", m.code_summary),
-                ("Documentation", m.documentation_summary),
-            ):
-                if summary and categories.is_empty_state(summary):
-                    continue
-                lines.append(f"      {label}: {summary or f'{label} summary unavailable.'}")
+            for label, summary in category_lines_of(m):
+                lines.append(f"      {label}: {summary}")
             if getattr(m, "outlook", ""):
                 lines.append(f"      → Outlook: {m.outlook}")
             # Their own typed words ride alongside the activity analysis, never replace it.
@@ -205,25 +227,24 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
         body.append(Text(f"  {report.team_summary}"))
         body.append(Text(""))
 
-    if report.member_updates:
+    # Same de-noise pass as the plaintext — the terminal an operator watches
+    # must not be noisier than the Slack post the same run just delivered.
+    quiet, active, overview_of, category_lines_of = _denoise(report)
+    category_styles = {"Ticketing": "", "Code": "rgb(120,190,220)", "Documentation": "rgb(170,160,220)"}
+
+    if active or quiet:
         body.append(Text("Updates", style=f"bold {accent}"))
-        for m in report.member_updates:
+        for m in active:
             row = Text()
             tag = "✍" if m.self_report else "•"
             row.append(f"  {tag} ", style="dim")
             row.append(m.name, style="bold")
             body.append(row)
-            body.append(Text(f"      General overview: {m.summary or 'No activity detected.'}"))
+            body.append(Text(f"      General overview: {overview_of(m)}"))
             if getattr(m, "progress_note", ""):
                 body.append(Text(f"      ↺ Since last standup: {m.progress_note}", style="italic"))
-            body.append(Text(f"      Ticketing: {m.ticketing_summary or 'Ticketing summary unavailable.'}"))
-            body.append(Text(f"      Code: {m.code_summary or 'Code summary unavailable.'}", style="rgb(120,190,220)"))
-            body.append(
-                Text(
-                    f"      Documentation: {m.documentation_summary or 'Documentation summary unavailable.'}",
-                    style="rgb(170,160,220)",
-                )
-            )
+            for label, summary in category_lines_of(m):
+                body.append(Text(f"      {label}: {summary}", style=category_styles.get(label, "")))
             if getattr(m, "outlook", ""):
                 body.append(Text(f"      → Outlook: {m.outlook}", style="italic dim"))
             # Their own typed words ride alongside the activity analysis, never replace it.
@@ -259,6 +280,8 @@ def format_standup_rich(report: StandupReport, *, accent: str = "rgb(200,100,180
                 link = Text("      ↗ Documentation ", style="dim")
                 link.append(label, style=f"underline {accent} link {url}")
                 body.append(link)
+        if quiet:
+            body.append(Text(f"  • No activity detected: {', '.join(m.name for m in quiet)}", style="dim"))
     else:
         body.append(Text("No individual updates.", style="dim"))
 
