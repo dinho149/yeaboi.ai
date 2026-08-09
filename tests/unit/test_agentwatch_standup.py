@@ -254,3 +254,57 @@ class TestBuilders:
         out = cap.get()
         assert "Agent Standup" in out
         assert "webapp" in out
+
+
+class TestProgressPhases:
+    def test_local_only_run_marks_trackers_skipped(self, db_path):
+        from yeaboi.analysis.progress import is_component_progress
+
+        events: list = []
+        engine.run_agent_standup(
+            days=3, tracker_sources=[], db_path=db_path, today=MONDAY, dry_run=True, on_progress=events.append
+        )
+        assert all(is_component_progress(e) for e in events)
+        seq = [(e["component_id"], e["status"]) for e in events]
+        assert ("scan", "running") in seq
+        assert ("scan", "completed") in seq
+        assert ("trackers", "no_data") in seq
+        assert ("digest", "no_data") in seq  # dry_run: the LLM step is skipped
+
+
+class TestProgressScreen:
+    def test_checklist_and_refresh_banner(self, db_path):
+        from rich.console import Console
+
+        from yeaboi.analysis.progress import append_component_progress
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_standup_screen
+
+        events: list = []
+        append_component_progress(
+            events,
+            component_id="scan",
+            label="Scanning agent sessions",
+            status="running",
+            current=1,
+            total=4,
+            unit="files",
+        )
+
+        def render(panel):
+            console = Console(width=100, force_terminal=False)
+            with console.capture() as cap:
+                console.print(panel)
+            return cap.get()
+
+        out = render(_build_agent_standup_screen(None, width=100, height=40, shimmer_tick=0.2, progress=events))
+        assert "1/4 files" in out
+        assert "Scan trackers" in out
+        assert "Write the digest" in out
+
+        digest = engine.run_agent_standup(days=3, tracker_sources=[], db_path=db_path, today=MONDAY, dry_run=True)
+        out = render(
+            _build_agent_standup_screen(
+                digest, width=100, height=40, shimmer_tick=0.2, refreshing=True, as_of="2020-01-01T00:00:00+00:00"
+            )
+        )
+        assert "Refreshing…" in out

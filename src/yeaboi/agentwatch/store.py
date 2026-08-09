@@ -385,6 +385,15 @@ class AgentWatchStore:
             for row in rows
         ]
 
+    def latest_report(self, kind: str) -> dict | None:
+        """The newest saved report row of one kind, or None when history is empty.
+
+        Newest regardless of ``origin`` — an edited report is still the last
+        saved state the user expects to see when a page opens instantly.
+        """
+        rows = self.list_reports(kind, limit=1)
+        return rows[0] if rows else None
+
 
 _REPORT_TABLES: dict[str, tuple[str, str]] = {
     "usage": ("agent_usage_reports", "period_start"),
@@ -399,3 +408,225 @@ def _loads(raw: str, default: dict) -> dict:
     except (TypeError, ValueError):
         return default
     return parsed if isinstance(parsed, dict) else default
+
+
+# ---------------------------------------------------------------------------
+# Report rehydration — stored JSON payload → the frozen artifact dataclass
+# ---------------------------------------------------------------------------
+#
+# record_report stores asdict() JSON, so nested dataclasses come back as dicts
+# and tuples as lists. The TUI's instant-open path (and the capped renderers,
+# which go through dataclasses.replace) need the real dataclass back. Same
+# convention as standup/store.py's _dict_to_standup_report: every field via
+# .get() with the dataclass default, so a payload written by an older version
+# still loads. Deliberately NOT registered in artifacts/registry — rehydration
+# for display, not for the editable-artifact surface.
+
+
+def _str_tuple(value) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(v) for v in value)
+
+
+def _pair_tuple(value) -> tuple[tuple[str, str], ...]:
+    """Rebuild (a, b) string pairs that JSON flattened into 2-item lists."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple((str(p[0]), str(p[1])) for p in value if isinstance(p, (list, tuple)) and len(p) == 2)
+
+
+def _dict_to_usage_report(d: dict):
+    from yeaboi.agent.state import (
+        AgentUsageBreakdownRow,
+        AgentUsageReport,
+        DailyUsagePoint,
+        ModelUsageRow,
+        annotations_from,
+    )
+
+    def _breakdown(rows) -> tuple[AgentUsageBreakdownRow, ...]:
+        return tuple(
+            AgentUsageBreakdownRow(
+                key=str(r.get("key", "")),
+                sessions=int(r.get("sessions", 0)),
+                input_tokens=int(r.get("input_tokens", 0)),
+                output_tokens=int(r.get("output_tokens", 0)),
+                cost_usd=float(r.get("cost_usd", 0.0)),
+            )
+            for r in rows or ()
+            if isinstance(r, dict)
+        )
+
+    return AgentUsageReport(
+        period_start=str(d.get("period_start", "")),
+        period_end=str(d.get("period_end", "")),
+        session_count=int(d.get("session_count", 0)),
+        total_cost_usd=float(d.get("total_cost_usd", 0.0)),
+        total_input_tokens=int(d.get("total_input_tokens", 0)),
+        total_output_tokens=int(d.get("total_output_tokens", 0)),
+        total_cache_write_tokens=int(d.get("total_cache_write_tokens", 0)),
+        total_cache_read_tokens=int(d.get("total_cache_read_tokens", 0)),
+        unknown_model_cost_share=float(d.get("unknown_model_cost_share", 0.0)),
+        pricing_as_of=str(d.get("pricing_as_of", "")),
+        by_model=tuple(
+            ModelUsageRow(
+                model=str(r.get("model", "")),
+                input_tokens=int(r.get("input_tokens", 0)),
+                output_tokens=int(r.get("output_tokens", 0)),
+                cache_write_tokens=int(r.get("cache_write_tokens", 0)),
+                cache_read_tokens=int(r.get("cache_read_tokens", 0)),
+                calls=int(r.get("calls", 0)),
+                cost_usd=float(r.get("cost_usd", 0.0)),
+                known_pricing=bool(r.get("known_pricing", True)),
+            )
+            for r in d.get("by_model") or ()
+            if isinstance(r, dict)
+        ),
+        by_project=_breakdown(d.get("by_project")),
+        by_source=_breakdown(d.get("by_source")),
+        daily_trend=tuple(
+            DailyUsagePoint(
+                date=str(r.get("date", "")),
+                cost_usd=float(r.get("cost_usd", 0.0)),
+                input_tokens=int(r.get("input_tokens", 0)),
+                output_tokens=int(r.get("output_tokens", 0)),
+                sessions=int(r.get("sessions", 0)),
+            )
+            for r in d.get("daily_trend") or ()
+            if isinstance(r, dict)
+        ),
+        insights=_str_tuple(d.get("insights")),
+        recommendations=_str_tuple(d.get("recommendations")),
+        warnings=_str_tuple(d.get("warnings")),
+        generated_at=str(d.get("generated_at", "")),
+        annotations=annotations_from(d.get("annotations")),
+    )
+
+
+def _dict_to_standup_digest(d: dict):
+    from yeaboi.agent.state import (
+        AgentRepoActivityRow,
+        AgentSessionSummary,
+        AgentStandupDigest,
+        annotations_from,
+    )
+
+    return AgentStandupDigest(
+        digest_date=str(d.get("digest_date", "")),
+        window_start=str(d.get("window_start", "")),
+        window_end=str(d.get("window_end", "")),
+        sessions_worked=int(d.get("sessions_worked", 0)),
+        total_cost_usd=float(d.get("total_cost_usd", 0.0)),
+        agents_seen=_str_tuple(d.get("agents_seen")),
+        session_summaries=tuple(
+            AgentSessionSummary(
+                session_id=str(s.get("session_id", "")),
+                source=str(s.get("source", "")),
+                project=str(s.get("project", "")),
+                branch=str(s.get("branch", "")),
+                models=_str_tuple(s.get("models")),
+                turns=int(s.get("turns", 0)),
+                cost_usd=float(s.get("cost_usd", 0.0)),
+                top_tools=_pair_tuple(s.get("top_tools")),
+                started_at=str(s.get("started_at", "")),
+                ended_at=str(s.get("ended_at", "")),
+            )
+            for s in d.get("session_summaries") or ()
+            if isinstance(s, dict)
+        ),
+        repo_activity=tuple(
+            AgentRepoActivityRow(
+                source=str(r.get("source", "")),
+                repo=str(r.get("repo", "")),
+                kind=str(r.get("kind", "")),
+                title=str(r.get("title", "")),
+                url=str(r.get("url", "")),
+                author=str(r.get("author", "")),
+                status=str(r.get("status", "")),
+                agent_marker=str(r.get("agent_marker", "")),
+            )
+            for r in d.get("repo_activity") or ()
+            if isinstance(r, dict)
+        ),
+        highlights=_str_tuple(d.get("highlights")),
+        in_flight=_str_tuple(d.get("in_flight")),
+        attention_items=_str_tuple(d.get("attention_items")),
+        narrative=str(d.get("narrative", "")),
+        coverage_notes=_str_tuple(d.get("coverage_notes")),
+        warnings=_str_tuple(d.get("warnings")),
+        generated_at=str(d.get("generated_at", "")),
+        annotations=annotations_from(d.get("annotations")),
+    )
+
+
+def _dict_to_security_report(d: dict):
+    from yeaboi.agent.state import (
+        AgentSecurityReport,
+        McpServerRecord,
+        SecurityFinding,
+        annotations_from,
+    )
+
+    return AgentSecurityReport(
+        scan_date=str(d.get("scan_date", "")),
+        posture=str(d.get("posture", "")),
+        sessions_scanned=int(d.get("sessions_scanned", 0)),
+        files_scanned=int(d.get("files_scanned", 0)),
+        secrets_found=int(d.get("secrets_found", 0)),
+        findings=tuple(
+            SecurityFinding(
+                severity=str(f.get("severity", "info")),
+                category=str(f.get("category", "")),
+                title=str(f.get("title", "")),
+                location=str(f.get("location", "")),
+                line_no=int(f.get("line_no", 0)),
+                pattern=str(f.get("pattern", "")),
+                detail=str(f.get("detail", "")),
+                remediation=str(f.get("remediation", "")),
+            )
+            for f in d.get("findings") or ()
+            if isinstance(f, dict)
+        ),
+        mcp_servers=tuple(
+            McpServerRecord(
+                name=str(m.get("name", "")),
+                scope=str(m.get("scope", "")),
+                transport=str(m.get("transport", "")),
+                target=str(m.get("target", "")),
+                flags=_str_tuple(m.get("flags")),
+            )
+            for m in d.get("mcp_servers") or ()
+            if isinstance(m, dict)
+        ),
+        settings_flags=_str_tuple(d.get("settings_flags")),
+        summary=str(d.get("summary", "")),
+        recommendations=_str_tuple(d.get("recommendations")),
+        warnings=_str_tuple(d.get("warnings")),
+        generated_at=str(d.get("generated_at", "")),
+        annotations=annotations_from(d.get("annotations")),
+    )
+
+
+_REHYDRATORS = {
+    "usage": _dict_to_usage_report,
+    "standup": _dict_to_standup_digest,
+    "security": _dict_to_security_report,
+}
+
+
+def report_from_payload(kind: str, payload: object):
+    """Rebuild a stored report payload into its artifact dataclass, or None.
+
+    None (rather than a half-built artifact) for an unknown kind, a corrupt
+    payload, or the empty dict ``_loads`` yields for bad JSON — the caller's
+    cold-start path is the right fallback for all three.
+    """
+    rehydrate = _REHYDRATORS.get(kind)
+    if rehydrate is None or not isinstance(payload, dict) or not payload:
+        return None
+    try:
+        return rehydrate(payload)
+    except Exception as exc:  # noqa: BLE001 — a bad row must not break the page
+        logger.warning("agentwatch: could not rehydrate stored %s report: %s", kind, exc)
+        return None

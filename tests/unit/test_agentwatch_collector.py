@@ -291,3 +291,52 @@ class TestNonSessionFiles:
         assert stats.files_parsed == 1
         assert stats.sessions_upserted == 0
         assert store.list_sessions() == []
+
+
+class TestProgressEvents:
+    """refresh() emits aggregate lifecycle events — never per-file names."""
+
+    @staticmethod
+    def _multi_roots(tmp_path, n=5):
+        root = tmp_path / "projects" / "-home-dev-proj"
+        root.mkdir(parents=True)
+        for i in range(n):
+            write_fixture(root / f"sess-{i}.jsonl")
+        return (("claude_code", tmp_path / "projects"),)
+
+    def test_cold_run_events_are_valid_and_monotonic(self, store, tmp_path):
+        from yeaboi.analysis.progress import is_component_progress
+
+        roots = self._multi_roots(tmp_path)
+        events: list = []
+        collector.refresh(store, roots=roots, on_progress=events.append)
+        assert events, "a cold run over files must emit progress"
+        assert all(is_component_progress(e) for e in events)
+        assert all(e["component_id"] == "scan" for e in events)
+        assert events[0]["current"] == 0
+        assert events[0]["total"] == 5
+        currents = [e["current"] for e in events]
+        assert currents == sorted(currents)
+        assert events[-1]["current"] == events[-1]["total"] == 5
+        assert all("jsonl" not in str(e) for e in events), "filenames must never reach the progress stream"
+
+    def test_warm_run_emits_few_events(self, store, tmp_path):
+        roots = self._multi_roots(tmp_path)
+        collector.refresh(store, roots=roots)
+        events: list = []
+        collector.refresh(store, roots=roots, on_progress=events.append)
+        # Everything cursor-skipped: only the opening 0/N, percent changes and
+        # the closing N/N fire — bounded regardless of transcript count.
+        assert 0 < len(events) <= 7
+        assert events[-1]["current"] == events[-1]["total"] == 5
+
+    def test_parsed_count_rides_along(self, store, tmp_path):
+        roots = self._multi_roots(tmp_path, n=2)
+        events: list = []
+        collector.refresh(store, roots=roots, on_progress=events.append)
+        assert events[-1]["secondary_count"] == 2
+
+    def test_no_callback_is_fine(self, store, tmp_path):
+        roots = self._multi_roots(tmp_path, n=1)
+        stats = collector.refresh(store, roots=roots, on_progress=None)
+        assert stats.files_parsed == 1
