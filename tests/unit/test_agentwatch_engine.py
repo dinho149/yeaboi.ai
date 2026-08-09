@@ -245,3 +245,94 @@ class TestProgressPhases:
         seq = [(e["component_id"], e["status"]) for e in events]
         assert ("insights", "running") in seq
         assert ("insights", "fallback") in seq
+
+
+class TestGoDispatch:
+    """The YEABOI_GO pilot seam: Go results hydrate; any failure → Python."""
+
+    def test_go_refresh_hydrates_stats(self, monkeypatch, db_path):
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                assert method == "agentwatch.refresh"
+                assert params["reset_cursors"] is True
+                return {
+                    "contract_version": 1,
+                    "stats": {"files_seen": 3, "files_parsed": 2, "files_skipped": 1, "warnings": ["w"]},
+                }
+
+        monkeypatch.setattr(engine, "_go_client", lambda: FakeClient())
+        stats = engine._go_refresh(db_path, reset_cursors=True)
+        assert stats.files_seen == 3
+        assert stats.files_parsed == 2
+        assert stats.warnings == ["w"]
+
+    def test_go_refresh_error_returns_none_for_fallback(self, monkeypatch, db_path):
+        from yeaboi.gocore import CoreError
+
+        class BrokenClient:
+            def request(self, *args, **kwargs):
+                raise CoreError("sidecar exploded")
+
+        monkeypatch.setattr(engine, "_go_client", lambda: BrokenClient())
+        assert engine._go_refresh(db_path) is None
+
+    def test_no_client_means_python_path(self, monkeypatch, db_path):
+        monkeypatch.setattr(engine, "_go_client", lambda: None)
+        assert engine._go_refresh(db_path) is None
+        assert (
+            engine._go_usage_report(
+                window_days=1, project="", source="", db_path=db_path, today=TODAY, on_progress=None
+            )
+            is None
+        )
+
+    def test_run_agent_usage_builds_on_the_go_artifact(self, monkeypatch, seeded):
+        canned_artifact = {
+            "period_start": "2026-07-11",
+            "period_end": "2026-08-09",
+            "session_count": 2,
+            "total_cost_usd": 1.23,
+            "by_model": [
+                {
+                    "model": "claude-opus-5",
+                    "input_tokens": 10,
+                    "output_tokens": 20,
+                    "cache_write_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "calls": 1,
+                    "cost_usd": 1.23,
+                    "known_pricing": True,
+                }
+            ],
+            "by_project": [],
+            "by_source": [],
+            "daily_trend": [],
+            "insights": [],
+            "recommendations": [],
+            "warnings": ["scan warning from go"],
+            "generated_at": "",
+        }
+
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                assert method == "agentwatch.usage"
+                assert params["window_days"] == 30
+                return {"contract_version": 1, "stats": {}, "artifact": canned_artifact}
+
+        monkeypatch.setattr(engine, "_go_client", lambda: FakeClient())
+        report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY, dry_run=True)
+        assert report.total_cost_usd == 1.23  # Go's numbers, untouched
+        assert report.session_count == 2
+        assert "scan warning from go" in report.warnings
+        assert report.generated_at  # Python stamps time
+        assert report.insights  # Python fills prose (fallback under dry_run)
+
+    def test_malformed_go_artifact_falls_back_to_python(self, monkeypatch, seeded):
+        class FakeClient:
+            def request(self, method, params, on_progress=None, timeout=None):
+                return {"contract_version": 1, "stats": {}, "artifact": "not a dict"}
+
+        monkeypatch.setattr(engine, "_go_client", lambda: FakeClient())
+        report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY, dry_run=True)
+        # The seeded fixture has real sessions — the Python path priced them.
+        assert report.session_count == 2

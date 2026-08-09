@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yeaboi-core/v1/progress.json",
+  "title": "analysis_component lifecycle event",
+  "description": "Mirror of src/yeaboi/analysis/progress.py append_component_progress. Optional keys are OMITTED when unset, never null — consumers feature-detect by key presence.",
+  "type": "object",
+  "required": ["kind", "component_id", "label", "status", "detail"],
+  "properties": {
+    "kind": { "const": "analysis_component" },
+    "component_id": { "type": "string" },
+    "label": { "type": "string" },
+    "status": {
+      "enum": ["running", "completed", "partial", "failed", "no_data", "fallback"]
+    },
+    "detail": { "type": "string" },
+    "phase": { "type": "string" },
+    "current": { "type": "integer", "minimum": 0 },
+    "total": { "type": "integer", "minimum": 0 },
+    "unit": { "type": "string" },
+    "secondary_count": { "type": "integer", "minimum": 0 },
+    "secondary_unit": { "type": "string" },
+    "read_only": { "const": true }
+  },
+  "additionalProperties": false
+}
