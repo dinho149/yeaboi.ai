@@ -2,6 +2,44 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.4.0",
+      "date": "2026-08-09",
+      "summary": "The Agents family (Usage, Standup, Security) now ships with full website and documentation coverage. All three agent modes appear in the new docs structure with pages explaining what each tracks and how to use them. The demo now tours the split landing screen, both the Humans and Agents menus, and the complete agent mode interface — deterministic, fully verified, and working. Across the entire project, the tagline evolved from \"A team lead's best friend\" to \"Best friend to engineers and agents,\" appearing consistently in the README, CLI banner, package metadata, MCP instructions, website, all 23 documentation pages, and the plugin marketplace manifest, while keeping \"AI Scrum Master\" as the core SEO term in the title and badge.",
+      "highlights": [
+        {
+          "text": "Complete Agents family documentation: three new pages (index, usage, standup, security) in the docs site",
+          "areas": [
+            "agents",
+            "general"
+          ]
+        },
+        {
+          "text": "Demo fixed and rebuilt: tours Humans/Agents split, both mode menus, and the complete agent interface in 19 seconds, synced on screen markers",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Tagline updated across all surfaces: README, CLI, package metadata, website, MCP, docs, and plugin marketplace manifest",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Website hero rebuilt with all three landing screens (split, Humans menu, Agents menu) and scrolly-rail navigation",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Fixed latent race in screen marker detection and mobile split sizing with button font inheritance",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.3.2",
       "date": "2026-08-09",
       "summary": "Standup output is now significantly cleaner across all surfaces — web page, markdown exports, Slack, and email. Facts are shown once instead of being repeated 3–4 times, quiet team members collapse into a single summary line, and vanity stats are removed from view. The engine dedupes by category and by ticket key, while presentation layers strip redundant explanations. Sync commits and PR merge pairs are consolidated into single evidence rows. Automation notices are now grouped compactly instead of scattered. On average, a 6-member standup report shrinks from 99 dense lines to 75 clean ones.",
