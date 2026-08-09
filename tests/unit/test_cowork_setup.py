@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
@@ -414,12 +415,53 @@ class TestAgenda:
         assert json.loads(json.dumps(setup.agenda(date(2026, 8, 13))))
 
     def test_the_lines_meet_the_scribes_format_contract(self):
-        """`.claude/agents/cowork-scribe.md`: no emoji headers, no bare URLs."""
+        """`.claude/agents/cowork-scribe.md`: standard Markdown, fixed section
+        anchors, no bare URLs."""
         lines = setup.agenda(date(2026, 8, 13))["lines"]
         blob = "\n".join(lines)
         assert "http" not in blob, "the schedule links to nothing; a bare URL would be the scribe's rule broken"
-        assert not re.search(r"[\U0001F300-\U0001FAFF✀-➿☀-⛿]", blob), "no emoji"
-        assert lines[0].startswith("*Today* —"), lines[0]
+        assert lines[0].startswith(f"{setup.SECTION_EMOJI['today']} **Today** —"), lines[0]
+
+    def test_no_line_carries_slack_mrkdwn_emphasis(self):
+        """The bug this format replaced, written down as a check.
+
+        The connector reads standard Markdown, where `*x*` is *italic* and bold
+        is `**x**`. Slack's own mrkdwn has it the other way, so a heading in the
+        wrong dialect does not fail — it renders the wrong weight, in a message
+        nobody diffs. `.claude/agents/cowork-scribe.md` had recorded that for
+        weeks and the digest had been fixed; this renderer had not, because the
+        only test looking at it asserted `*Today*` as though that were correct.
+        """
+        for line in setup.agenda(date(2026, 8, 13))["lines"]:
+            assert not re.search(r"(?<!\*)\*(?!\*)", line), line
+
+    def test_the_only_emoji_are_the_section_anchors_at_a_line_start(self):
+        """An allowlist rather than a codepoint range.
+
+        The range this replaced — `\U0001f300-\U0001faff`, `✀-➿`, `☀-⛿` — has a
+        hole over U+2300-U+23FF, so ⏱ and ⏳ would have walked through the guard
+        that existed to stop exactly them.
+        """
+        anchors = set(setup.SECTION_EMOJI.values())
+        for line in setup.agenda(date(2026, 8, 13))["lines"]:
+            symbols = [char for char in line if unicodedata.category(char) == "So"]
+            assert set(symbols) <= anchors, line
+            if symbols:
+                assert symbols == [line[0]], f"an anchor belongs at the start of its heading, once: {line}"
+
+    def test_the_approval_verbs_are_never_spent_decoratively(self):
+        """`cron/slack-relay.md` maps a ✅/❌ reaction onto an issue, so a reader
+        who meets either in a heading has to work out whether it meant something."""
+        blob = "\n".join(setup.agenda(date(2026, 8, 13))["lines"])
+        assert "✅" not in blob and "❌" not in blob
+
+    def test_the_sections_are_separated_by_blank_lines(self):
+        """One undifferentiated paragraph of thirteen lines is what this replaced."""
+        lines = setup.agenda(date(2026, 8, 13))["lines"]
+        ahead = next(i for i, line in enumerate(lines) if line.startswith(setup.SECTION_EMOJI["ahead"]))
+        assert lines[1] == "", "today's heading stands apart from the times under it"
+        assert lines[ahead - 1] == "", "the tail does not run on from today's block"
+        assert lines[ahead + 1] == "", "the tail's heading stands apart from its days"
 
     def test_every_listed_routine_reaches_the_rendered_lines(self):
         """A payload entry the renderer drops is a routine that runs unannounced."""
@@ -443,7 +485,184 @@ class TestAgenda:
 
     def test_the_tail_names_the_month_again_when_it_changes(self):
         lines = setup.agenda(date(2026, 8, 27))["lines"]
-        assert any(line.startswith("Tue 1 Sep") for line in lines), lines
+        assert any(line.startswith("**Tue 1 Sep** —") for line in lines), lines
+
+    def test_a_quiet_day_folds_into_the_closing_sentence(self):
+        """A day with nothing on it, written as its own line, reads as a routine
+        called "nothing" — and spends a line of the post saying so."""
+        payload = setup.agenda(date(2026, 8, 16))
+        quiet = [
+            entry for entry in payload["ahead"] if not [name for name in entry["names"] if name != setup.MESSENGER]
+        ]
+        assert quiet, "16 Aug 2026 is chosen for having a quiet day in its tail"
+        for entry in quiet:
+            future = date.fromisoformat(entry["date"])
+            stamp = f"{entry['weekday']} {future.day}"
+            assert not any(line.startswith(f"**{stamp}**") for line in payload["lines"]), stamp
+            assert any(stamp in line and "clear" in line for line in payload["lines"]), stamp
+
+    def test_a_quiet_day_does_not_spend_the_month_marker(self):
+        """The marker belongs to the day that shows it, not to the day that has it.
+
+        1 Nov 2026 is a Sunday and the fleet is quiet on Sundays, so the day that
+        changes month is the one folded away — and advancing on every day walked
+        rather than on every day rendered leaves `**Sat 31**` followed by a bare
+        `**Mon 2**`, with November announced only in an aside below it. That is
+        the ambiguity the marker exists to prevent, and it recurs every month
+        whose 1st falls on a Sunday.
+        """
+        lines = setup.agenda(date(2026, 10, 26))["lines"]
+        assert any(line.startswith("**Mon 2 Nov** —") for line in lines), lines
+        assert not any(line.startswith("**Sun 1") for line in lines), lines
+        assert any("Sun 1 Nov is clear" in line for line in lines), lines
+
+    def test_a_collapsed_quiet_day_does_not_take_a_rendered_month_with_it(self):
+        """The other half: Sun 30 Aug is folded away and Tue 1 Sep still says Sep."""
+        lines = setup.agenda(date(2026, 8, 29))["lines"]
+        assert any(line.startswith("**Tue 1 Sep** —") for line in lines), lines
+        assert not any(line.startswith("**Sun 30**") for line in lines), lines
+
+    def test_every_anchor_is_a_single_codepoint(self):
+        """No variation sequences. A trailing U+FE0F that one client needs and
+        another drops is a heading that renders two ways, and U+FE0F is category
+        `Mn` — the allowlist test above would not see it."""
+        for section, emoji in setup.SECTION_EMOJI.items():
+            assert len(emoji) == 1, f"{section}: {emoji!r}"
+
+
+def _message_payload(**overrides) -> dict:
+    """An empty agenda payload, for rendering one section at a time.
+
+    Built by hand rather than taken from ``agenda()`` because several of the
+    renderer's branches do not occur in any one week of the real schedule — the
+    fleet is quiet on Sundays and never quiet for seven days running, and it has
+    exactly one background routine — so they would go unexercised until the day
+    they were wrong.
+    """
+    base = {
+        "date": "2026-08-13",
+        "weekday": "Thu",
+        "display_timezone": "Europe/London",
+        "note": None,
+        "today": [],
+        "background": [],
+        "events": [],
+        "daily": [],
+        "ahead": [],
+    }
+    return base | overrides
+
+
+def _tail_payload(ahead: list[tuple[str, list[str]]], daily: list[str], day: str = "2026-08-13") -> dict:
+    """``_message_payload`` with just the seven-day tail filled in."""
+    return _message_payload(
+        date=day,
+        daily=daily,
+        ahead=[{"date": iso, "weekday": f"{date.fromisoformat(iso):%a}", "names": names} for iso, names in ahead],
+    )
+
+
+def _background(name: str, firings: int, window: str) -> dict:
+    """One ``day_plan`` background entry, with local and UTC windows agreeing."""
+    return {
+        "name": name,
+        "workstream": None,
+        "summary": "",
+        "firings": firings,
+        "window_utc": window,
+        "window_local": window,
+    }
+
+
+class TestStandingSections:
+    """Background and event routines — true all day rather than at a time."""
+
+    def test_one_background_routine_stays_on_the_heading_line(self):
+        lines = setup.agenda_lines(_message_payload(background=[_background("slack-relay", 17, "07:00-23:00")]))
+        assert f"{setup.SECTION_EMOJI['background']} **Background** — slack-relay, 17 runs `07:00-23:00`" in lines
+
+    def test_a_second_background_routine_does_not_get_a_second_anchor(self):
+        """An emoji repeating down a column has stopped being a heading.
+
+        `BACKGROUND_AFTER` is a threshold rather than a name check so that the
+        next hourly routine needs no edit here — which means the plural case is
+        reachable without one, and has to already be right.
+        """
+        lines = setup.agenda_lines(
+            _message_payload(
+                background=[_background("slack-relay", 17, "07:00-23:00"), _background("watcher", 5, "09:00-13:00")]
+            )
+        )
+        anchored = [line for line in lines if line.startswith(setup.SECTION_EMOJI["background"])]
+        assert anchored == [f"{setup.SECTION_EMOJI['background']} **Background**"]
+        assert "**slack-relay** — 17 runs `07:00-23:00`" in lines
+        assert "**watcher** — 5 runs `09:00-13:00`" in lines
+
+    def test_the_degraded_timezone_note_sits_with_the_heading_and_unemphasised(self):
+        """It qualifies the heading above it, not the first entry below it — and it
+        goes out verbatim, because a zone name carries underscores and `_…_` around
+        one leaks a stray delimiter mid-line."""
+        note = "times in UTC — no tz database for America/Los_Angeles (`uv add --dev tzdata` fixes it)"
+        lines = setup.agenda_lines(_message_payload(note=note, display_timezone=None))
+        assert lines[1] == note
+        assert lines[2] == ""
+
+    def test_the_month_marker_is_not_spent_on_a_collapsed_day(self):
+        """The synthetic twin of the live-schedule test, immune to a cadence change."""
+        lines = setup.agenda_lines(
+            _tail_payload(
+                [("2026-10-31", ["marketing-weekly"]), ("2026-11-01", []), ("2026-11-02", ["security-sweep"])],
+                [],
+                day="2026-10-30",
+            )
+        )
+        assert "**Mon 2 Nov** — security-sweep" in lines
+        assert "_Sun 1 Nov is clear._" in lines
+
+
+class TestClosingSentence:
+    """The one line carrying both of the tail's asides — quiet days and dailies."""
+
+    BUSY = ("2026-08-14", ["platform-sweep"])
+    QUIET = ("2026-08-15", [])
+    ALSO_QUIET = ("2026-08-16", [])
+    THIRD_QUIET = ("2026-08-17", [])
+
+    def _closing(self, ahead, daily) -> str | None:
+        lines = setup.agenda_lines(_tail_payload(ahead, daily))
+        return lines[-1] if lines[-1].startswith("_") else None
+
+    def test_it_carries_both_clauses_when_there_are_both(self):
+        assert self._closing([self.BUSY, self.QUIET], ["digest"]) == "_Sat 15 is clear. Every day: digest._"
+
+    def test_a_week_with_no_quiet_day_says_nothing_about_one(self):
+        assert self._closing([self.BUSY], ["digest"]) == "_Every day: digest._"
+
+    def test_no_daily_routine_drops_that_clause(self):
+        assert self._closing([self.BUSY, self.QUIET], []) == "_Sat 15 is clear._"
+
+    def test_neither_means_no_closing_line_at_all(self):
+        """And no stray blank line left behind where it would have been."""
+        lines = setup.agenda_lines(_tail_payload([self.BUSY], []))
+        assert self._closing([self.BUSY], []) is None
+        assert lines[-1] != "", lines
+
+    def test_quiet_days_are_counted_before_they_are_conjugated(self):
+        """`Sat 15 and Sun 16 is clear` is the kind of thing nobody reports."""
+        two = self._closing([self.BUSY, self.QUIET, self.ALSO_QUIET], [])
+        assert two == "_Sat 15 and Sun 16 are clear._"
+
+    def test_three_or_more_quiet_days_take_a_comma_and_a_final_and(self):
+        three = self._closing([self.BUSY, self.QUIET, self.ALSO_QUIET, self.THIRD_QUIET], [])
+        assert three == "_Sat 15, Sun 16 and Mon 17 are clear._"
+
+    def test_an_entirely_quiet_week_still_renders_its_heading(self):
+        """A tail with no rendered day must not leave the heading over a blank."""
+        lines = setup.agenda_lines(_tail_payload([self.QUIET, self.ALSO_QUIET], ["digest"]))
+        heading = lines.index(f"{setup.SECTION_EMOJI['ahead']} **Next 2 days**")
+        assert lines[heading + 1] == ""
+        assert lines[heading + 2] == "_Sat 15 and Sun 16 are clear. Every day: digest._"
+        assert lines[-1] == lines[heading + 2], "nothing trails the closing sentence"
 
 
 class TestAgendaCli:
@@ -463,7 +682,7 @@ class TestAgendaCli:
     def test_text_prints_the_message_the_routine_posts(self):
         result = self._run("--text", "--date", "2026-08-13")
         assert result.returncode == 0, result.stderr
-        assert result.stdout.startswith("*Today* —")
+        assert result.stdout.startswith(f"{setup.SECTION_EMOJI['today']} **Today** —")
 
     def test_a_bad_date_is_refused_rather_than_guessed(self):
         result = self._run("--date", "next tuesday")
