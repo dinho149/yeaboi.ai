@@ -256,16 +256,20 @@
      the top of the panel. */
   .tui-menu{
     display:flex; flex-direction:column; gap:13px; min-height:663px;
-    animation:tui-fade .5s ease both;
   }
+  /* The terminal's three screens (split, Humans menu, Agents menu) deliberately
+     have NO entry animation. There used to be an `animation:tui-fade` here, from
+     when the menu appeared exactly once after the splash. Once the screens
+     started swapping as the rail scrolls, that animation stopped advancing —
+     the element sat pinned a frame in at ~2% opacity, which rendered as an
+     empty terminal. The splash carries the only reveal that needs animating,
+     and it does its own fade. */
   .tui-menu > .tui-mode:first-of-type{margin-top:auto}
   /* the hidden attribute must actually hide: this class's display:flex is an
      author rule, so it silently overrides the UA's [hidden]{display:none} —
      without this, the "hidden" menu renders UNDER the splash during startup,
      stacking the two and inflating the terminal until the splash is removed */
   .tui-menu[hidden]{display:none}
-  @keyframes tui-fade{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
-  @media (prefers-reduced-motion:reduce){.tui-menu{animation:none}}
 
   .tui-mode{
     -webkit-appearance:none; appearance:none; background:none; border:none; padding:0;
@@ -385,6 +389,82 @@
   .tui-duck:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px}
   .tui-duck .r{display:block; height:2ch}
   .tui-duck i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
+  /* the robo companion on the Agents menu has no shades gag to click */
+  .tui-duck-robo{cursor:default}
+
+  /* ---- the Humans/Agents landing split (_screens_category.py) --------------
+     The app's Phase 0: two rounded world-cards side by side, the question on
+     the OUTER frame's border title rather than floating above them, and the key
+     hints pinned at the bottom. Selection is carried by the card itself — accent
+     border, tinted interior, bright title, and the mascot flapping — because
+     that is all the real screen has: no cursor, no radio, no extra chrome. */
+  .tui-split{
+    display:flex; flex-direction:column; min-height:663px;
+    /* the cards' own border titles sit at -8px, so without a band of clear air
+       under the frame's title the two rows of eyebrows collide */
+    padding-top:14px;
+  }
+  .tui-split[hidden]{display:none}
+  /* The question rides the panel's top border, the way a Rich border title
+     does: lifted onto the rule, with an opaque cut-out behind it to break the
+     line. The panel has no ground of its own (the page glow shows through), so
+     that cut-out paints --bg — the same colour the music alcove uses for the
+     same job. `top` is measured from the padding box's outer edge, so the
+     panel's own padding does not enter into it: the rule ::before draws sits
+     2px above that edge (1px transparent border + the 1px outset), and a 14px
+     label centres on it at -9px. */
+  .tui-split-q{
+    position:absolute; top:-9px; left:50%; transform:translateX(-50%);
+    height:14px; line-height:14px;
+    margin:0; padding:0 10px; background:var(--bg);
+    color:rgb(150,150,168); font-size:12px; letter-spacing:.02em; white-space:nowrap;
+  }
+  .tui-worlds{display:grid; grid-template-columns:1fr 1fr; gap:2ch; flex:1; margin:auto 0}
+  .tui-world{
+    /* font:inherit is load-bearing, not tidiness. This is a <button>, and a
+       button does NOT inherit the font — the UA gives it 13.33px Arial. Both
+       children are sized in ch (the sprite's cells are width:1ch, the block
+       title is calc(--cols * 1ch)), so without this the mascot is measured in
+       Arial's ch instead of the terminal's, and the mobile font-size that
+       shrinks the two worlds to fit a phone column never reaches them. */
+    font:inherit;
+    -webkit-appearance:none; appearance:none; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0;
+    padding:18px 12px 20px; text-align:center;
+    background:transparent; border:1px solid rgb(52,54,62); border-radius:10px;
+    position:relative; transition:border-color .18s ease, background-color .18s ease;
+  }
+  /* the card's border title — the lowercase category eyebrow, on the rule */
+  /* the card draws its own 1px border rather than an outset ::before, so its
+     rule is 1px above the padding box and a 14px label centres at -8px */
+  .tui-world-eyebrow{
+    position:absolute; top:-8px; left:14px; padding:0 6px;
+    height:14px; line-height:14px; background:var(--bg);
+    font-size:11px; letter-spacing:.08em; color:rgb(90,90,104);
+  }
+  .tui-world.is-active{border-color:rgb(var(--wc)); background:rgb(var(--wct))}
+  .tui-world.is-active .tui-world-eyebrow{color:rgb(var(--wc))}
+  .tui-world:focus-visible{outline:1px solid var(--accent-dim); outline-offset:4px}
+
+  /* the 18-row full-body mascot, painted by site.js (WORLD_SPRITES) */
+  .tui-sprite{display:block; line-height:0; margin:6px 0 14px; min-height:36ch}
+  .tui-sprite .r{display:block; height:2ch}
+  .tui-sprite i{display:inline-block; vertical-align:top; width:1ch; height:2ch}
+
+  /* the block title reuses the mode-title mask machinery, in the card's accent */
+  .tui-world-title{background-color:rgb(var(--wcd))}
+  .tui-world.is-active .tui-world-title{background-color:rgb(var(--wc))}
+  .tui-world-verb{
+    display:block; margin-top:12px; font-size:13px; font-weight:700;
+    color:rgb(var(--wcd));
+  }
+  .tui-world.is-active .tui-world-verb{color:rgb(210,214,220)}
+  .tui-world-caps{display:block; margin-top:6px; font-size:12px; color:rgb(88,90,102)}
+  .tui-world.is-active .tui-world-caps{color:rgb(140,144,156)}
+  .tui-world-hint{
+    margin:14px 0 0; text-align:center; font-size:12px; color:rgb(70,70,82);
+  }
+  .tui-world-hint b{font-weight:700; color:rgb(210,210,220)}
   /* left:4ch, not 0 — _build_version_row leads with _PAD precisely so its left
      edge lines up with the mode titles above rather than sitting flush to the
      panel padding, and staggering the two is what made the titles read as
@@ -479,6 +559,23 @@
   @media (max-width:600px){
     .stack-group{grid-template-columns:1fr; gap:10px}
   }
+
+  /* The two worlds' headers in the modes section — the same lowercase eyebrow
+     the landing split stamps on each card's border, so the page and the app
+     name the two families the same way. */
+  .world-label{
+    display:flex; align-items:center; gap:12px;
+    margin:0 0 18px; font-family:var(--mono); font-size:.85rem; color:var(--text-dim);
+  }
+  .world-label span{
+    font-weight:700; letter-spacing:.08em; text-transform:lowercase;
+    color:var(--m-analysis);
+  }
+  .world-label::after{content:""; flex:1; height:1px; background:var(--border)}
+  .world-label-agents{margin-top:56px}
+  .world-label-agents span{color:var(--m-agent-usage)}
+  /* the agents world runs one row of three, and its lede sits under the label */
+  .world-label-agents + .section-lede{margin-bottom:18px}
 
   /* ---------- modes — one connected panel, hairline-divided, each cell
      carrying its own TUI accent (--mh, set inline in the HTML from the
@@ -810,6 +907,27 @@
     .tui-mode-desc{max-width:36ch; text-align:left}
     .tui-mode.is-active .tui-mode-desc{height:54px; margin:14px 0 0}
     .tui-foot,.tui-music{display:none}
+    /* The split is the one screen that must stay two-up on a phone — stacked,
+       the two worlds stop reading as a choice between them.
+
+       Both the mascot (34 cells at width:1ch) and the block title
+       (width:calc(--cols * 1ch), 25ch) are sized in ch, and a phone column is
+       ~150px. So the lever is font-size, NOT transform: a transform scales the
+       painted result and leaves the layout box at full width, which wraps the
+       sprite's inline-block cells and scrambles the mascot. Shrinking the ch
+       unit shrinks the boxes themselves, and both children follow it. */
+    .tui-split{min-height:0; font-size:6px}
+    .tui-worlds{gap:1ch}
+    .tui-world{padding:14px 6px 16px}
+    .tui-sprite{margin-bottom:0}
+    /* belt and braces: a sprite row must never wrap, whatever the column does */
+    .tui-sprite .r{white-space:nowrap}
+    /* these are px-sized, so they do not ride the ch shrink above */
+    .tui-world-eyebrow{font-size:9px}
+    .tui-world-verb{font-size:11px; margin-top:6px}
+    .tui-world-caps{font-size:9px}
+    .tui-split-q{font-size:10px}
+    .tui-world-hint{display:none}
     /* the compact frame doesn't need the desktop demo's breathing room */
     .hero{padding-bottom:36px}
     .hero-demo{margin-top:20px; padding-bottom:0}

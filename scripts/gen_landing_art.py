@@ -23,14 +23,18 @@ from yeaboi.ui.shared._mascot import (
     _SHADES_TOP_PAD,
     DUCK_HEAD_FACE,
     DUCK_HEAD_GLASSES,
+    FRAMES,
     MASCOT_PALETTE,
     SHADES_LIFT_SEQUENCE,
     _compose,
     _pack_cells,
     _shift,
+    full_cells,
+    head_cells,
 )
 
 TITLES = [
+    # The Humans menu, in _MODE_CARDS order.
     "Analysis",
     "Planning",
     "Standup",
@@ -40,6 +44,11 @@ TITLES = [
     "Reporting",
     "Usage",
     "Settings",
+    # The landing split's two world-cards.
+    "Humans",
+    "Agents",
+    # The Agents menu (_AGENT_CARDS); Usage and Standup reuse the masks above.
+    "Security",
 ]
 
 # A terminal cell is one advance wide and two half-rows tall.
@@ -100,21 +109,50 @@ def _halves(glyph: str, style: str | None) -> tuple[str | None, str | None]:
     return None, style
 
 
-def duck_html(lift: int = 0) -> str:
+def cells_html(cells: list[list[tuple[str, str | None]]]) -> str:
+    """A packed cell grid as the landing page's `<span class="r"><i>` markup.
+
+    Shared by the corner duck and by the landing split's two full-body mascots —
+    the encoding is the same, only the source grid differs.
+    """
     out = []
-    for row in shade_cells(lift):
-        cells = []
+    for row in cells:
+        rendered = []
         for glyph, style in row:
             top, bot = _halves(glyph, style)
             if top is None and bot is None:
-                cells.append("<i></i>")
+                rendered.append("<i></i>")
             elif top == bot:
-                cells.append(f'<i style="background:{top}"></i>')
+                rendered.append(f'<i style="background:{top}"></i>')
             else:
                 a, b = top or "transparent", bot or "transparent"
-                cells.append(f'<i style="background:linear-gradient(to bottom,{a} 50%,{b} 50%)"></i>')
-        out.append('<span class="r">' + "".join(cells) + "</span>")
+                rendered.append(f'<i style="background:linear-gradient(to bottom,{a} 50%,{b} 50%)"></i>')
+        out.append('<span class="r">' + "".join(rendered) + "</span>")
     return "\n".join(out)
+
+
+def duck_html(lift: int = 0) -> str:
+    return cells_html(shade_cells(lift))
+
+
+def head_html(mascot: str = "duck") -> str:
+    """The corner companion's head, as the foot of a mode menu shows it.
+
+    render_head(flip=True) — he faces the list. The duck's copy is the shades
+    gag's starting frame and gets repainted by site.js; the robo's is static
+    (his visor is bolted on, so there is no gag to drive).
+    """
+    return cells_html(head_cells(flip=True, mascot=mascot))
+
+
+def full_html(mascot: str = "duck", frame: int = 0) -> str:
+    """The 18-row full-body mascot the landing split shows in each world-card.
+
+    Straight out of full_cells(), the same function the real screen calls
+    (_screens_category.py), so the page shows the app's own pixels rather than
+    an approximation of them. Frame 0 is the resting wing position.
+    """
+    return cells_html(full_cells(frame, mascot=mascot))
 
 
 def frames_js() -> str:
@@ -137,6 +175,67 @@ def frames_js() -> str:
     return f"var DUCK_PALETTE = [{pal}];\nvar DUCK_FRAMES = {{{body}}};\nvar DUCK_LIFTS = [{seq}];"
 
 
+# One char per palette index, so a cell stays exactly two chars however many
+# colours the two mascots need between them (the duck gag's single-digit scheme
+# tops out at ten, and duck + robo together exceed that).
+_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
+def world_frames_js() -> str:
+    """Palette + the full-body flap cycle for both mascots, for site.js to paint.
+
+    Same reasoning as :func:`frames_js`, and much more sharply: one full-body
+    sprite is ~430 cells, so emitting the cycle as markup would add ~57KB to the
+    landing page. Encoded, the whole thing is a few KB.
+
+    Frames are deduplicated by content — WING_OFF only has three distinct
+    offsets and the robo's visor never bobs, so the eight-frame cycle is really
+    six sprites for the duck and three for the robo. ``WORLD_CYCLE`` maps frame
+    number to the sprite that frame shows.
+    """
+    palette: list[str] = []
+    index: dict[str, int] = {}
+    sprites: list[str] = []
+    seen: dict[str, int] = {}
+    cycles: dict[str, list[int]] = {}
+
+    for mascot in ("duck", "robo"):
+        cycle = []
+        for f in range(FRAMES):
+            rows = []
+            for row in full_cells(f, mascot=mascot):
+                chars = []
+                for glyph, style in row:
+                    for half in _halves(glyph, style):
+                        if half is None:
+                            chars.append(".")
+                            continue
+                        if half not in index:
+                            index[half] = len(palette)
+                            palette.append(half)
+                        chars.append(_ALPHABET[index[half]])
+                rows.append("".join(chars))
+            encoded = "|".join(rows)
+            if encoded not in seen:
+                seen[encoded] = len(sprites)
+                sprites.append(encoded)
+            cycle.append(seen[encoded])
+        cycles[mascot] = cycle
+
+    if len(palette) > len(_ALPHABET):
+        raise ValueError(f"palette of {len(palette)} exceeds the {len(_ALPHABET)}-char alphabet")
+
+    pal = ",".join(f"'{c}'" for c in palette)
+    body = ",".join(f"'{s}'" for s in sprites)
+    cyc = ",".join(f"{m}:[{','.join(str(n) for n in c)}]" for m, c in cycles.items())
+    return (
+        f"var WORLD_ALPHABET = '{_ALPHABET}';\n"
+        f"var WORLD_PALETTE = [{pal}];\n"
+        f"var WORLD_SPRITES = [{body}];\n"
+        f"var WORLD_CYCLE = {{{cyc}}};"
+    )
+
+
 if __name__ == "__main__":
     for t in TITLES:
         url, cols = mask_for(t)
@@ -146,3 +245,5 @@ if __name__ == "__main__":
     print(duck_html(0))
     print("=== FRAMES")
     print(frames_js())
+    print("=== WORLD FRAMES (the landing split's two full-body mascots)")
+    print(world_frames_js())

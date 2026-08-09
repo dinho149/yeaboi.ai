@@ -276,7 +276,7 @@ class TestWelcomePanel:
         panel = _build_welcome_panel()
         plain = panel.renderable.plain
         assert "yeaboi.ai" in plain
-        assert "A team lead's best friend" in plain
+        assert "Best friend to engineers and agents" in plain
 
     def test_panel_contains_quick_start_hint(self):
         panel = _build_welcome_panel()

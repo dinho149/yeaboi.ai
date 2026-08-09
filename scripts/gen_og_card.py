@@ -113,8 +113,8 @@ def build():
     x = 84
 
     draw.text((x, 150), "yeaboi", font=_font("DejaVuSans-Bold.ttf", 104), fill=TEXT)
-    draw.text((x, 276), "an AI Scrum Master", font=_font("DejaVuSans.ttf", 44), fill=MUTED)
-    draw.text((x, 330), "for your terminal", font=_font("DejaVuSans.ttf", 44), fill=MUTED)
+    draw.text((x, 276), "best friend to engineers", font=_font("DejaVuSans.ttf", 44), fill=MUTED)
+    draw.text((x, 330), "and agents", font=_font("DejaVuSans.ttf", 44), fill=MUTED)
 
     # The install command: the single most useful string on the card, and the
     # one that is currently wrong everywhere search engines quote it from.
@@ -127,7 +127,7 @@ def build():
     draw.text((x + pad, 430 + pad - 2), cmd, font=mono, fill=ACCENT)
 
     small = _font("DejaVuSans.ttf", 22)
-    draw.text((x, 528), "planning · standups · retros · poker · 1:1s · reports", font=small, fill=DIM)
+    draw.text((x, 528), "planning · standups · retros · poker · reports · agents", font=small, fill=DIM)
     draw.text((x, 562), "MIT · Python 3.11+ · yeaboi.ai", font=small, fill=DIM)
     return card
 

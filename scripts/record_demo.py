@@ -66,6 +66,16 @@ COLS, ROWS = 140, 40
 # Same markers and ANSI regex as tests/integration/test_tui_smoke.py — screen
 # chrome that appears once mode-select has rendered, matched after stripping.
 MODE_SCREEN_MARKERS = ("changelog", "Tip:", "channel")
+
+# Chrome of the Humans/Agents landing split (Phase 0), which renders BEFORE any
+# mode menu. Deliberately ONE fragment, from the heading, and not the key hints
+# the smoke test also matches on: the two sets must be disjoint on the *rendered
+# screens*, not merely as literals. The mode menu's rotating tip bar carries
+# tips containing "switch" and "choose", so matching those would let the
+# post-Esc `await` resolve against the menu it is leaving and race the
+# transition — and would hide a swallowed Esc instead of failing loudly.
+# test_record_demo.py renders both screens and asserts the disjointness.
+CATEGORY_SCREEN_MARKERS = ("working with",)
 _ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[a-zA-Z]"
     r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
@@ -77,23 +87,53 @@ _ALT_SCREEN = b"\x1b[?1049h"
 _ALT_SCREEN_EXIT = "\x1b[?1049l"
 
 KEY_UP, KEY_DOWN, KEY_RIGHT, KEY_LEFT = b"\x1b[A", b"\x1b[B", b"\x1b[C", b"\x1b[D"
+KEY_ENTER, KEY_ESC = b"\r", b"\x1b"
 
-# The demo choreography. Only key kinds proven safe by the smoke test (arrows
-# navigate the card grid, "q" quits cleanly); every pause is a drained pty read,
-# never a sleep, or the 60fps child blocks on a full pty buffer within a second.
+# The demo choreography — the whole product in one take: the landing split, the
+# Humans menu, back out, then the Agents family.
+#
+# Two rules hold this together, both load-bearing:
+#
+# 1. Every screen change is an `await` on that screen's markers, never a
+#    `pause`. A pause long enough to cover a slow machine's menu build would
+#    also be a pause the fast path sits through; markers make the recording
+#    both quick and machine-independent.
+# 2. A key step is NEVER placed immediately after KEY_ESC. read_key treats a
+#    lone \x1b as Escape only when no second byte arrives within 100ms
+#    (src/yeaboi/ui/shared/_input.py:158-165) — a key written straight after it
+#    would be swallowed as an escape sequence. Every step following KEY_ESC
+#    here is an `await`, i.e. a drained read far longer than 100ms.
+#    tests/unit/test_record_demo.py pins this.
 DEMO_SCRIPT: list[tuple] = [
-    ("await", MODE_SCREEN_MARKERS, 30.0),  # splash plays through; sync on menu chrome
-    ("pause", 2.5),  # card sweep-in + first dwell
-    ("key", KEY_DOWN),
-    ("pause", 1.0),
-    ("key", KEY_DOWN),
-    ("pause", 1.0),
+    ("await", CATEGORY_SCREEN_MARKERS, 30.0),  # splash plays through; sync on the split
+    ("pause", 2.5),  # both world-cards settle: duck left, robo-duck right
     ("key", KEY_RIGHT),
-    ("pause", 1.0),
-    ("key", KEY_RIGHT),
+    ("pause", 1.2),  # Agents wakes — accent border, tinted interior, wing flap
+    ("key", KEY_LEFT),
+    ("pause", 1.0),  # back on Humans
+    ("key", KEY_ENTER),
+    ("await", MODE_SCREEN_MARKERS, 15.0),  # the nine Humans cards sweep in
     ("pause", 1.2),
+    ("key", KEY_DOWN),
+    ("pause", 0.8),
+    ("key", KEY_DOWN),
+    ("pause", 0.8),
+    ("key", KEY_RIGHT),
+    ("pause", 0.8),
     ("key", KEY_UP),
-    ("pause", 1.8),  # settle on a card, let the description reveal finish
+    ("pause", 1.2),  # settle on a card, let the description reveal finish
+    ("key", KEY_ESC),  # esc from a menu returns to the split (q would quit)
+    ("await", CATEGORY_SCREEN_MARKERS, 15.0),
+    ("pause", 0.8),
+    ("key", KEY_RIGHT),
+    ("pause", 0.6),
+    ("key", KEY_ENTER),
+    ("await", MODE_SCREEN_MARKERS, 15.0),  # Agents: same builder, three cards
+    ("pause", 1.2),
+    ("key", KEY_DOWN),
+    ("pause", 1.0),
+    ("key", KEY_DOWN),
+    ("pause", 1.5),  # rest on Security so the last frame is a real screen
     ("key", b"q"),
 ]
 

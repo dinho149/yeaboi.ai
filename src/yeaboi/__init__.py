@@ -1,4 +1,4 @@
-"""yeaboi.ai — a team lead's best friend for project planning and delivery."""
+"""yeaboi.ai — best friend to engineers and agents: team delivery, and agent oversight."""
 
 import logging
 import warnings

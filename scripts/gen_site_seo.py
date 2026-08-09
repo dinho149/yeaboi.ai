@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 # Bump when anything under docs/assets/ or docs/docs/assets/ changes. Rewritten
 # into every ?v= on every page, so this is the only place it is ever edited.
-ASSET_VERSION = 135
+ASSET_VERSION = 136
 
 # A GA4 measurement ID is a public identifier — it ships in the page source of
 # every GA site on the web — so it belongs in the repo, not in a secret. While
@@ -77,7 +77,7 @@ GA_MEASUREMENT_ID = "G-K9HLPT5ZMP"
 GSC_VERIFICATION = "ttjn2iHRRMXJajyb-4HgKW_9it0K0XLCnDvgxf5DQQY"
 
 OG_CARD = "/assets/og-card.png"
-OG_CARD_ALT = "yeaboi — a team lead's best friend"
+OG_CARD_ALT = "yeaboi — best friend to engineers and agents"
 OG_CARD_W, OG_CARD_H = 1200, 630
 
 HEAD_BEGIN = "<!-- SEO:BEGIN -->"
@@ -106,6 +106,7 @@ KINDS: dict[str, Kind] = {
     "404.html": Kind.ERROR,
     "docs/index.html": Kind.HUB,
     "docs/modes/index.html": Kind.HUB,
+    "docs/agents/index.html": Kind.HUB,
     "docs/getting-started.html": Kind.ARTICLE,
     "docs/cli-reference.html": Kind.ARTICLE,
     "docs/integrations-exports.html": Kind.ARTICLE,
@@ -121,6 +122,9 @@ KINDS: dict[str, Kind] = {
     "docs/modes/performance.html": Kind.ARTICLE,
     "docs/modes/reporting.html": Kind.ARTICLE,
     "docs/modes/team-analysis.html": Kind.ARTICLE,
+    "docs/agents/usage.html": Kind.ARTICLE,
+    "docs/agents/standup.html": Kind.ARTICLE,
+    "docs/agents/security.html": Kind.ARTICLE,
 }
 
 
@@ -344,6 +348,9 @@ def _software_full(description: str) -> dict:
             "Performance — 1:1 prep, write-ups and six-month reviews from real delivery history",
             "Reporting — stakeholder summaries and a slide deck from delivered work",
             "Team Analysis — a reusable delivery profile that calibrates planning to real velocity",
+            "Agent Usage — what your AI coding agents cost: tokens, cache, per-model and per-project spend",
+            "Agent Standup — a daily digest of what your agents did: sessions, commits, PRs, open threads",
+            "Agent Security — audit agent permissions, MCP servers, secrets exposure and risky commands",
         ],
         "softwareHelp": {"@type": "CreativeWork", "url": f"{SITE}/docs/index.html"},
         "image": f"{SITE}{OG_CARD}",
@@ -574,7 +581,7 @@ def footer_block(url: str, groups: list[dict]) -> str:
     out += [
         "  </nav>",
         '  <div class="docs-foot-meta">',
-        '    <span><a href="/">yeaboi</a> — a team lead\'s best friend</span>',
+        '    <span><a href="/">yeaboi</a> — best friend to engineers and agents</span>',
         "    <span>MIT licensed</span>",
         f'    <a href="{REPO_URL}" rel="noopener">GitHub ↗</a>',
         f'    <a href="{PYPI_URL}" rel="noopener">PyPI ↗</a>',
