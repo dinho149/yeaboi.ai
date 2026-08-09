@@ -486,6 +486,13 @@ export type ExportReport = (
       /** The team summary, one run-list per sentence. */
       summary: Run[][];
       members: StandupMember[];
+      /**
+       * Zero-activity members, compressed into one strip below the cards
+       * instead of a card each. Required — the exporter always emits it, and
+       * a bundle only ever meets its own exporter's payload, so optionality
+       * would just hide the field from the wire-fixture guard.
+       */
+      quietMembers: string[];
       activityCounts: Array<[string, number]>;
       activityWindow: string;
       /** `[category, status]` — how completely each source could be read. */

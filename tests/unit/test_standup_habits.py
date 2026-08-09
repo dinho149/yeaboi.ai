@@ -147,6 +147,11 @@ class TestUntrackedWork:
         grouped = {"Alice": [_commit(title="Merge pull request #91 from acme/feature")]}
         assert habits.RULE_UNTRACKED_WORK not in _rules(detect_practices(grouped, category_coverage=_covered()))
 
+    def test_branch_sync_merge_never_fires(self):
+        # git wrote this subject — it is plumbing, not untracked personal work.
+        grouped = {"Alice": [_commit(title="Merge remote-tracking branch 'origin/master' into psot/jenkins (repo)")]}
+        assert habits.RULE_UNTRACKED_WORK not in _rules(detect_practices(grouped, category_coverage=_covered()))
+
     def test_squash_merge_subject_never_fires_even_with_no_pr_in_window(self):
         grouped = {"Alice": [_commit(title="fix the login redirect (#91)")]}
         assert habits.RULE_UNTRACKED_WORK not in _rules(detect_practices(grouped, category_coverage=_covered()))
@@ -373,6 +378,16 @@ class TestCommitMessages:
     def test_collector_tails_do_not_rescue_a_thin_subject(self):
         grouped = self._thin("wip (PR #4)", "fix (acme-web)", "update (acme-web)")
         assert habits.RULE_COMMIT_MESSAGES in _rules(detect_practices(grouped, category_coverage=_covered()))
+
+    def test_branch_sync_merges_are_not_judged_as_the_authors_words(self):
+        # git wrote "Merge remote-tracking branch …", not the author — plumbing
+        # subjects must not count toward the thin-message threshold.
+        grouped = self._thin(
+            "Merge remote-tracking branch 'origin/master' into psot/jenkins",
+            "Merge branch 'main' into feature-x",
+            "wip",
+        )
+        assert habits.RULE_COMMIT_MESSAGES not in _rules(detect_practices(grouped, category_coverage=_covered()))
 
     def test_a_bare_ticket_key_says_nothing_about_what_changed(self):
         grouped = self._thin("PSOT-1", "PSOT-2", "PSOT-3")

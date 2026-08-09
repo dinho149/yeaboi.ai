@@ -78,22 +78,41 @@ def format_standup_lines(report: StandupReport) -> list[str]:
             lines.append(f"  - {w}")
     lines.append("")
 
-    if report.team_summary:
+    # The same de-noising the markdown/HTML exporters apply — export.py owns
+    # the helpers so the surfaces cannot drift: rationale echoes stripped from
+    # stored reports, summary bullets deduped per ticket, canonical empty-state
+    # category lines dropped (coverage is stated once in the footer), and
+    # zero-activity members compressed to one shared line.
+    from yeaboi.standup import categories
+    from yeaboi.standup.export import _is_quiet, _member_summary_bullets, _ticket_key_map, strip_rationale_echo
+
+    team_summary = strip_rationale_echo(report.team_summary, report.confidence_rationale)
+    if team_summary:
         lines.append("Team summary:")
-        lines.append(f"  {report.team_summary}")
+        lines.append(f"  {team_summary}")
         lines.append("")
 
-    if report.member_updates:
+    quiet = [m for m in report.member_updates if _is_quiet(m)]
+    active = [m for m in report.member_updates if not _is_quiet(m)]
+    key_map = _ticket_key_map(report)
+
+    if active or quiet:
         lines.append("Updates:")
-        for m in report.member_updates:
+        for m in active:
             tag = "✍️" if m.self_report else "•"
             lines.append(f"  {tag} {m.name}")
-            lines.append(f"      General overview: {m.summary or 'No activity detected.'}")
+            overview = "; ".join(_member_summary_bullets(m.summary, key_map)) or "No activity detected."
+            lines.append(f"      General overview: {overview}")
             if getattr(m, "progress_note", ""):
                 lines.append(f"      ↺ Since last standup: {m.progress_note}")
-            lines.append(f"      Ticketing: {m.ticketing_summary or 'Ticketing summary unavailable.'}")
-            lines.append(f"      Code: {m.code_summary or 'Code summary unavailable.'}")
-            lines.append(f"      Documentation: {m.documentation_summary or 'Documentation summary unavailable.'}")
+            for label, summary in (
+                ("Ticketing", m.ticketing_summary),
+                ("Code", m.code_summary),
+                ("Documentation", m.documentation_summary),
+            ):
+                if summary and categories.is_empty_state(summary):
+                    continue
+                lines.append(f"      {label}: {summary or f'{label} summary unavailable.'}")
             if getattr(m, "outlook", ""):
                 lines.append(f"      → Outlook: {m.outlook}")
             # Their own typed words ride alongside the activity analysis, never replace it.
@@ -122,6 +141,8 @@ def format_standup_lines(report: StandupReport) -> list[str]:
                 lines.append(f"      🔗 Code {label}: {url}")
             for label, url in getattr(m, "documentation_links", ()):
                 lines.append(f"      🔗 Documentation {label}: {url}")
+        if quiet:
+            lines.append(f"  • No activity detected: {', '.join(m.name for m in quiet)}")
     else:
         lines.append("No individual updates.")
 

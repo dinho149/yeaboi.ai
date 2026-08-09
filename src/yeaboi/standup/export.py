@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +29,7 @@ from yeaboi.artifacts.render import annotations_markdown, edit_map, row_anchor, 
 from yeaboi.html_theme import prose_bullets as _summary_bullets
 from yeaboi.html_theme import safe_url
 from yeaboi.html_theme import split_sentences as _split_sentences
-from yeaboi.standup import references
+from yeaboi.standup import categories, references
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +292,17 @@ _DOC_KINDS = frozenset({"page", "page-created"})
 def _md_evidence_lines(evidence: Sequence[object]) -> list[str]:
     """Evidence as nested Markdown sub-bullets: linked key, title, repo, status."""
     lines: list[str] = []
+    # Same historical-report dedupe as _evidence_payload: one PR merge, one row.
+    seen_merges: set[str] = set()
+    deduped = []
+    for e in evidence:
+        merge_key = _pr_merge_dedupe_key(e)
+        if merge_key:
+            if merge_key in seen_merges:
+                continue
+            seen_merges.add(merge_key)
+        deduped.append(e)
+    evidence = deduped
     for e in evidence[:_MD_EVIDENCE_CAP]:
         key = _ev_field(e, "key")
         title = _ev_field(e, "title")
@@ -372,6 +383,23 @@ def _ev_seq(evidence: object, field: str) -> tuple[str, ...]:
     return tuple(str(v).strip() for v in values if str(v).strip())
 
 
+def _pr_merge_dedupe_key(e: object) -> str:
+    """The ``pr-merge:{repo}:{number}`` identity of a merge-commit row, or "".
+
+    The engine dedupes these at collection time now, but reports stored before
+    it did carry the branch-side and target-side merge commits as two rows —
+    same subject, different SHAs. Re-exports of history deserve the same one
+    merge, one row.
+    """
+    if _ev_field(e, "kind") != "commit":
+        return ""
+    title = _ev_field(e, "title")
+    if not references.is_merge_subject(title):
+        return ""
+    number = references.pr_reference(title)
+    return f"pr-merge:{_ev_field(e, 'repository')}:{number}" if number else ""
+
+
 def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
     """Structured evidence rows for the browser: words and numbers, no markup.
 
@@ -379,6 +407,15 @@ def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
     ``""`` but the row survives — the kind/key/title are what the reader is
     being shown evidence *of*.
     """
+    seen_merges: set[str] = set()
+    rows: list[object] = []
+    for e in evidence or ():
+        merge_key = _pr_merge_dedupe_key(e)
+        if merge_key:
+            if merge_key in seen_merges:
+                continue
+            seen_merges.add(merge_key)
+        rows.append(e)
     return [
         {
             "kind": _ev_field(e, "kind"),
@@ -397,7 +434,7 @@ def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
             "subtask": _ev_flag(e, "subtask"),
             "tickets": list(_ev_seq(e, "ticket_keys")),
         }
-        for e in evidence or ()
+        for e in rows
     ]
 
 
@@ -410,6 +447,39 @@ def _leftover_links(text: str, links: Sequence[tuple[str, str]]) -> list[tuple[s
             continue  # already an inline anchor in the prose
         out.append((label, url))
     return out
+
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def strip_rationale_echo(team_summary: str, rationale: str) -> str:
+    """Drop team-summary sentences that restate the confidence rationale.
+
+    The rationale renders beside the confidence chip, directly above the team
+    summary; an LLM told the sprint status as context tends to open by repeating
+    it ("Day 2 of 10: 0 of ~3 ideal points burned" → "The sprint is on day 2 of
+    10 with no points burned yet…"). The test is what fraction of the
+    *rationale's* words the sentence covers — the echo sentence pads itself with
+    prose, so measuring against the sentence would let every echo through. A
+    sentence goes only on ≥70% coverage of a rationale with enough words to make
+    that meaningful, so a first sentence that says something of its own always
+    survives.
+
+    Lives here rather than in ``engine`` because both ends need it: the engine
+    strips at generation time, and the exporters strip again so reports stored
+    before the engine did still render clean.
+    """
+    rationale_words = set(_WORD_RE.findall((rationale or "").lower()))
+    if len(rationale_words) < 4:
+        return team_summary
+    kept: list[str] = []
+    for sentence in _split_sentences(team_summary):
+        words = set(_WORD_RE.findall(sentence.lower()))
+        if len(rationale_words & words) / len(rationale_words) >= 0.7:
+            logger.info("standup: dropped a team-summary sentence that echoed the confidence rationale")
+            continue
+        kept.append(sentence)
+    return " ".join(kept)
 
 
 # ---------------------------------------------------------------------------
@@ -488,24 +558,30 @@ def build_standup_markdown(report: StandupReport) -> str:
         lines += ["", "## ⚠ Notices", ""]
         lines += [f"- {w}" for w in report.warnings]
 
-    if report.team_summary:
+    team_summary = strip_rationale_echo(report.team_summary, report.confidence_rationale)
+    if team_summary:
         lines += ["", "## Team Summary", ""]
-        sentences = [_md_runs(runs) for runs in _team_summary_runs(report.team_summary, key_map, member_names)]
+        sentences = [_md_runs(runs) for runs in _team_summary_runs(team_summary, key_map, member_names)]
         # A single sentence is a paragraph; several are a scannable list.
         lines += sentences if len(sentences) == 1 else [f"- {s}" for s in sentences]
 
+    # Zero-activity members compress to one shared line after the sections: a
+    # full section per quiet member said "No activity detected" three ways each.
+    quiet = [m for m in report.member_updates if _is_quiet(m)]
+    active = [m for m in report.member_updates if not _is_quiet(m)]
+
     lines += ["", "## Updates", ""]
-    if report.member_updates:
+    if active:
         # One section per member — labeled bullet lists read far better than the
         # old six-column table, which wrapped into tall rows on Notion/Confluence.
-        for m in report.member_updates:
+        for m in active:
             is_own = bool(m.self_report) or m.source == "self-reported"
             # First mention of a ticket within this member's section carries
             # its title inline — same rule as the HTML card.
             seen: set[str] = set()
             lines.append(f"### {m.name} (you)" if is_own else f"### {m.name}")
             lines.append("")
-            fragments = _summary_bullets(m.summary)
+            fragments = _member_summary_bullets(m.summary, key_map)
             if not fragments:
                 lines.append("_No activity detected._")
             elif len(fragments) == 1:
@@ -538,13 +614,19 @@ def build_standup_markdown(report: StandupReport) -> str:
             ):
                 if not text and not links and not evidence:
                     continue
-                value = _md_runs(_runs(text, key_map, titles=titles, seen=seen)) if text else ""
+                # A canonical empty-state sentence is a report-wide coverage
+                # fact; the Coverage footer states it once for everyone.
+                if not links and not evidence and categories.is_empty_state(text):
+                    continue
                 if evidence:
-                    # Structured evidence renders as nested sub-bullets below;
-                    # the old "— refs" join would repeat the same URLs inline.
-                    bullets.append(f"- **{label}:** {value}".rstrip())
+                    # Structured evidence renders as nested sub-bullets below.
+                    # The prose is dropped, not joined: the category one-liner
+                    # is an LLM restatement of the same rows, and the old
+                    # "— refs" join would repeat the same URLs inline too.
+                    bullets.append(f"- **{label}:**")
                     bullets += _md_evidence_lines(evidence)
                     continue
+                value = _md_runs(_runs(text, key_map, titles=titles, seen=seen)) if text else ""
                 leftovers = _leftover_links(text, links)
                 if leftovers:
                     value = f"{value} — {_refs(leftovers)}" if value else _refs(leftovers)
@@ -575,8 +657,10 @@ def build_standup_markdown(report: StandupReport) -> str:
                 quoted = m.self_report.replace("\n", "\n> ")
                 lines.append(f"> ✍ {quoted}")
             lines.append("")
-    else:
+    elif not quiet:
         lines.append("_No individual updates._")
+    if quiet:
+        lines += [f"_No activity detected: {', '.join(m.name for m in quiet)}._", ""]
     if report.images:
         # Screenshots pasted into "My Update".
         lines += ["## Screenshots", ""]
@@ -604,6 +688,65 @@ def build_standup_markdown(report: StandupReport) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _dedupe_summary_fragments(fragments: Sequence[str], known_keys: Collection[str]) -> list[str]:
+    """One summary bullet per ticket: drop a fragment that re-mentions only keys
+    an earlier fragment already covered ("Edited PSOT-14" then "continuing
+    PSOT-14 in progress" is the same fact twice). A fragment naming any new key,
+    or no key at all, always survives — this can only remove restatements.
+
+    Keys are gated on ``known_keys`` (the report's ticket-key map): the bare
+    regex also matches UTF-8 / SHA-256 / ISO-8601, and "Fixed the UTF-8
+    encoder; added UTF-8 round-trip tests" is two facts, not one.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for fragment in fragments:
+        keys = {key for key in references.find_ticket_keys(fragment) if key in known_keys}
+        if keys and keys <= seen:
+            continue
+        seen |= keys
+        kept.append(fragment)
+    return kept
+
+
+def _member_summary_bullets(summary: str, known_keys: Collection[str]) -> list[str]:
+    """The member's headline bullets: fragmented like all prose, deduped by ticket."""
+    return _dedupe_summary_fragments(_summary_bullets(summary), known_keys)
+
+
+def _is_quiet(m: MemberUpdate) -> bool:
+    """A member whose card would say nothing but "No activity detected".
+
+    Deliberately strict: any count, evidence row, link, blocker, practice
+    signal, self-report, outlook, progress note — or a summary (headline or
+    per-category) that says anything of its own — keeps the full card. A
+    votable practice signal or a blocker must never disappear into a one-line
+    strip, and neither may a category summary a host hand-edited on a share:
+    the downloaded copy renders through this same predicate.
+    """
+    if any(
+        getattr(m, f"{category}_activity_count", 0)
+        or getattr(m, f"{category}_evidence", ())
+        or getattr(m, f"{category}_links", ())
+        for category in ("ticketing", "code", "documentation")
+    ):
+        return False
+    if m.blockers or m.self_report or getattr(m, "practices", ()) or getattr(m, "links", ()):
+        return False
+    if getattr(m, "outlook", "") or getattr(m, "progress_note", ""):
+        return False
+    if any(
+        summary and not categories.is_empty_state(summary)
+        for summary in (
+            getattr(m, "ticketing_summary", ""),
+            getattr(m, "code_summary", ""),
+            getattr(m, "documentation_summary", ""),
+        )
+    ):
+        return False
+    return (m.summary or "").strip() in ("", "No activity detected.")
+
+
 def _category_payload(
     label: str,
     summary: str,
@@ -617,13 +760,22 @@ def _category_payload(
 
     ``evidence`` is the structured form (kind/key/title/repo); the renderer
     prefers it and falls back to the bare ``links`` chips only for legacy
-    reports that predate it.
+    reports that predate it. When evidence exists the prose is dropped rather
+    than sent: the category one-liner is an LLM restatement of the same rows
+    ("Edited PSOT-14; two tickets remain active" above rows for PSOT-14 and the
+    two tickets), so shipping both rendered every fact twice. The prose still
+    travels for evidence-less/legacy categories, where it is the only content.
     """
+    rows = _evidence_payload(evidence)
     return {
         "label": label,
-        "items": [_runs(fragment, key_map, titles=titles, seen=seen) for fragment in _summary_bullets(summary)],
+        "items": (
+            []
+            if rows
+            else [_runs(fragment, key_map, titles=titles, seen=seen) for fragment in _summary_bullets(summary)]
+        ),
         "links": _links_payload(_leftover_links(summary, links)),
-        "evidence": _evidence_payload(evidence),
+        "evidence": rows,
     }
 
 
@@ -685,16 +837,17 @@ def _member_payload(
     if m.blockers:
         out["blockers"] = runs(m.blockers)
     # Terse clauses, one bullet each — the same fragmenting the team summary
-    # and the category items get.
-    out["summary"] = [runs(fragment) for fragment in _summary_bullets(m.summary)]
+    # and the category items get, deduped so one ticket is one bullet.
+    out["summary"] = [runs(fragment) for fragment in _member_summary_bullets(m.summary, key_map)]
     if getattr(m, "progress_note", ""):
         out["progressNote"] = runs(m.progress_note)
 
     # A category earns a column when it has real activity or evidence links; one
-    # with prose but neither becomes a footnote, so a quiet category never
-    # squeezes the busy ones into narrow strips. The wording is preserved
-    # either way — "source not configured" must stay distinguishable from
-    # "no activity detected".
+    # with prose but neither becomes a footnote — so a quiet category never
+    # squeezes the busy ones into narrow strips — and one whose prose is a
+    # canonical empty-state sentence renders nothing at all: coverage (including
+    # "sources not configured") is a report-wide fact the Details section
+    # states once. Only bespoke prose earns a footnote.
     for label, summary, links, count, evidence in (
         (
             "Ticketing",
@@ -725,7 +878,9 @@ def _member_payload(
         )
         if block and (block["items"] or block["links"] or block["evidence"]):
             out["categories"].append(block)
-        elif summary:
+        elif summary and not categories.is_empty_state(summary):
+            # Canonical empty-state sentences are report-wide coverage facts the
+            # Details section states once; only bespoke prose earns a footnote.
             out["footnotes"].append({"label": label, "runs": runs(summary)})
 
     # Practices sit after the categories: the reader has just seen what shipped,
@@ -789,13 +944,33 @@ def standup_export_args(
 
     key_map = _ticket_key_map(report)
     titles = _ticket_title_map(report)
-    members = [_member_payload(m, key_map, titles, editable=editable) for m in report.member_updates]
+    # Zero-activity members compress into one strip below the cards. Except on
+    # an editable share: the strip has no per-member edit anchors, and a host
+    # correcting the record ("Alexandru actually did X") needs the card.
+    quiet = [] if editable else [m for m in report.member_updates if _is_quiet(m)]
+    quiet_names = {m.name for m in quiet}
+    if quiet:
+        # The log is where "where did that member's card go?" gets answered.
+        logger.info("standup export: %d quiet member(s) collapsed to the strip: %s", len(quiet), sorted(quiet_names))
+    members = [
+        _member_payload(m, key_map, titles, editable=editable)
+        for m in report.member_updates
+        if m.name not in quiet_names
+    ]
     # Screenshots pasted into "My Update". Embedded rather than referenced: the
     # files live under ~/.yeaboi and get pruned, so a path would go stale.
     images = [uri for p in report.images if (uri := image_data_uri(p))]
 
+    # New reports arrive already stripped by the engine; this pass is for
+    # stored reports that predate it. Not on an editable share — the editor
+    # opens on the raw artifact string, and hiding a sentence the host can see
+    # in the edit box would read as a failed edit.
+    team_summary = (
+        report.team_summary if editable else strip_rationale_echo(report.team_summary, report.confidence_rationale)
+    )
+
     nav: list[tuple[str, str]] = [("overview", "Overview")]
-    if report.team_summary:
+    if team_summary:
         nav.append(("summary", "Team Summary"))
     nav.append(("updates", "Updates"))
     if images:
@@ -809,10 +984,12 @@ def standup_export_args(
         title="Daily Standup",
         wordmark="standup",
         subtitle=report.date,
+        # No MEMBERS row: a head-count is not something a standup reader acts
+        # on, and the member strip plus the quiet strip below name everyone —
+        # names beat a number.
         facts=[
             ("SPRINT", _sprint_line(report)),
             ("CONFIDENCE", _confidence_text(report)),
-            ("MEMBERS", str(len(report.member_updates))),
             ("WINDOW", report.activity_window or ""),
         ],
         nav=nav,
@@ -834,8 +1011,9 @@ def standup_export_args(
                 "trendText": _trend_text(report),
                 "rationale": report.confidence_rationale,
             },
-            "summary": _team_summary_runs(report.team_summary, key_map, [m.name for m in report.member_updates]),
+            "summary": _team_summary_runs(team_summary, key_map, [m.name for m in report.member_updates]),
             "members": members,
+            "quietMembers": [m.name for m in quiet],
             "activityCounts": [[source, count] for source, count in report.activity_counts],
             "activityWindow": report.activity_window,
             "coverage": [[category, status] for category, status in report.category_coverage],

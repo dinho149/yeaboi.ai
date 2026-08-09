@@ -649,7 +649,23 @@ def _member_evidence(
     rows: list[ActivityEvidence] = []
     for a in ordered:
         url = (a.get("url") or "").strip()
-        dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
+        # One PR merge = one row. The same merge lands as two commits with
+        # different SHAs (the branch-side and target-side merge commits carry
+        # the same "Merge pull request N…" subject), so URL-first dedupe kept
+        # both; keying merge commits on the PR number keeps only the newest.
+        # Gated on the subject being an actual merge — an authored commit
+        # wearing a "(PR #91)" provenance tail is distinct work, not a merge.
+        # Any merge subject naming the same PR shares the key, so a branch-sync
+        # merge tagged with the PR's tail folds into the PR merge too: all of
+        # them are plumbing, and one row of it is enough.
+        title = str(a.get("title") or "")
+        pr_number = (
+            references.pr_reference(title) if a.get("kind") == "commit" and references.is_merge_subject(title) else ""
+        )
+        if pr_number:
+            dedupe = f"pr-merge:{a.get('repository', '')}:{pr_number}"
+        else:
+            dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
         if dedupe in seen:
             continue
         seen.add(dedupe)
@@ -897,12 +913,16 @@ def _build_fallback_member_updates(
 
 
 def _build_fallback_team_summary(bundle: collector.ActivityBundle, progress: confidence.SprintProgress) -> str:
-    """Deterministic team summary when the LLM is unavailable."""
-    counts = ", ".join(f"{src}: {n}" for src, n in bundle.counts) or "no sources"
-    return (
-        f"{bundle.total()} activity item(s) detected ({counts}). "
-        f"Sprint status: {progress.confidence_label}. {progress.confidence_rationale}"
-    ).strip()
+    """Deterministic team summary when the LLM is unavailable.
+
+    Deliberately spare: the confidence chip already states the label and
+    rationale, and the Details footer already itemises the per-source counts —
+    a fallback that restated both rendered the same three facts twice on a page
+    with no LLM to say anything else.
+    """
+    if not bundle.total():
+        return f"No activity detected in the collection window. Sprint status: {progress.confidence_label}."
+    return f"Sprint status: {progress.confidence_label}."
 
 
 def _summarize_members(
@@ -1146,7 +1166,12 @@ def _summarize_members(
             )
         )
 
-    team_summary = (parsed.get("team_summary") or "").strip() or _build_fallback_team_summary(bundle, progress)
+    # Lazy import, matching run_standup's export import below — export.py is
+    # where the strip lives so re-exports of stored reports get the same pass.
+    from yeaboi.standup.export import strip_rationale_echo
+
+    team_summary = strip_rationale_echo((parsed.get("team_summary") or "").strip(), progress.confidence_rationale)
+    team_summary = team_summary or _build_fallback_team_summary(bundle, progress)
     return updates, team_summary, []
 
 

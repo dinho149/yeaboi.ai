@@ -132,3 +132,20 @@ def empty_summary(category: str, coverage: str) -> str:
     if category == CATEGORY_CODE:
         return "No code activity detected in the selected repositories."
     return f"No {category} activity detected in the selected sources."
+
+
+def is_empty_state(text: str) -> bool:
+    """Whether ``text`` is one of the canonical empty-state sentences above.
+
+    Exporters use this to drop per-member "No X activity detected…" footnotes:
+    coverage is a report-wide fact the Details section already states once, and
+    repeating it on every card buried the members who did something. Exact
+    string match on purpose — bespoke prose ("Nothing merged, two reviews
+    pending") must never be classified as sayable-by-a-machine and dropped.
+    """
+    stripped = (text or "").strip()
+    return any(
+        stripped == empty_summary(category, coverage)
+        for category in CATEGORIES
+        for coverage in (COVERED, PARTIAL, FAILED, NOT_CONFIGURED)
+    )

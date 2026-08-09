@@ -179,6 +179,32 @@ describe('Standup', () => {
     expect(container.querySelector('.activity')).toBeNull();
   });
 
+  it('renders quiet members as one strip, not cards', () => {
+    const { container } = render(
+      <Standup {...BASE} members={[member({ name: 'Ada', counts: [2, 0, 0] })]} quietMembers={['Bo', 'Cy']} />
+    );
+    const strip = container.querySelector('.quietStrip');
+    expect(strip?.textContent).toContain('No activity detected:');
+    expect(strip?.textContent).toContain('Bo');
+    expect(strip?.textContent).toContain('Cy');
+    expect(container.querySelector('#m-bo')).toBeNull();
+  });
+
+  it('shows the quiet strip alone, without "No individual updates", when everyone is quiet', () => {
+    const { container } = render(<Standup {...BASE} members={[]} quietMembers={['Bo']} />);
+    expect(container.querySelector('.quietStrip')).not.toBeNull();
+    expect(container.querySelector('#updates .empty')).toBeNull();
+  });
+
+  it('shows no Members or Activity-items tiles', () => {
+    // A head-count and a raw API item count are numbers nobody acts on.
+    const { container } = render(
+      <Standup {...BASE} members={[member()]} activityCounts={[['jira', 38]]} />
+    );
+    const labels = [...container.querySelectorAll('.statLabel')].map((l) => l.textContent);
+    expect(labels).toEqual(['Sprint day', 'Confidence']);
+  });
+
   it('names each coverage status beside its dot, never colour alone', () => {
     const { container } = render(
       <Standup {...BASE} coverage={[['ticketing', 'covered'], ['documentation', 'not_configured']]} />

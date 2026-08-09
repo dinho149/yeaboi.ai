@@ -885,6 +885,20 @@ class TestWipFlow:
         assert engine._fallback_summary(acts) == "change 0; change 1; and 3 more"
         assert engine._fallback_summary(acts[:2]) == "change 0; change 1"
 
+    def test_fallback_team_summary_does_not_restate_chip_or_details(self):
+        # The confidence chip carries the label+rationale and the Details footer
+        # carries the per-source counts; the fallback must not render them twice.
+        from yeaboi.standup import confidence
+
+        bundle = ActivityBundle(items=[{"kind": "commit", "title": "x"}], counts=[("jira", 1)])
+        progress = confidence.SprintProgress(
+            confidence_label="Behind", confidence_rationale="Day 2 of 10: 0 of ~3 ideal points burned (0%)."
+        )
+        summary = engine._build_fallback_team_summary(bundle, progress)
+        assert summary == "Sprint status: Behind."
+        empty = engine._build_fallback_team_summary(ActivityBundle(), progress)
+        assert "No activity detected" in empty
+
     def test_llm_payload_splits_activity_and_in_progress(self, monkeypatch, db_path, seeded_session):
         items = [
             {"author": "Alice", "kind": "commit", "title": "login page", "source": "github"},
@@ -1083,6 +1097,60 @@ class TestMemberEvidence:
         rows = engine._member_evidence(acts)
         assert len(rows) == 1
         assert rows[0].url == ""
+
+    def test_same_pr_merge_from_both_sides_is_one_row(self):
+        # A merged PR lands as two merge commits — branch-side and target-side —
+        # with different SHAs/URLs but the same subject. One merge, one row.
+        acts = [
+            {
+                "kind": "commit",
+                "title": "Merge pull request 48780 from psot/jenkins into master",
+                "key": "e8bc280c",
+                "url": "https://a/c/e8bc280c",
+                "repository": "org/tf-jenkins",
+                "timestamp": "2026-08-07T16:29:44",
+            },
+            {
+                "kind": "commit",
+                "title": "Merge pull request 48780 from psot/jenkins into master",
+                "key": "31a595f1",
+                "url": "https://a/c/31a595f1",
+                "repository": "org/tf-jenkins",
+                "timestamp": "2026-08-07T15:48:17",
+            },
+        ]
+        rows = engine._member_evidence(acts)
+        assert len(rows) == 1
+        assert rows[0].key == "e8bc280c"  # newest survives
+
+    def test_provenance_tailed_commits_on_one_pr_stay_separate_rows(self):
+        # The GitHub collector appends " (PR #91)" to every commit found on a
+        # PR branch — those are distinct authored commits, not merges, and must
+        # not collapse into one row.
+        acts = [
+            {"kind": "commit", "title": "Add retry (PR #91)", "key": "aaa1", "url": "https://g/aaa1"},
+            {"kind": "commit", "title": "Fix the test (PR #91)", "key": "bbb2", "url": "https://g/bbb2"},
+        ]
+        assert len(engine._member_evidence(acts)) == 2
+
+    def test_pr_merges_in_different_repos_stay_separate_rows(self):
+        acts = [
+            {
+                "kind": "commit",
+                "title": "Merge pull request 12 from x",
+                "key": "a",
+                "url": "https://a/1",
+                "repository": "org/one",
+            },
+            {
+                "kind": "commit",
+                "title": "Merge pull request 12 from x",
+                "key": "b",
+                "url": "https://a/2",
+                "repository": "org/two",
+            },
+        ]
+        assert len(engine._member_evidence(acts)) == 2
 
     def test_caps_at_eight_preserving_order(self):
         acts = [{"kind": "pr", "title": f"pr {i}", "key": f"#{i}", "url": f"https://g/pr/{i}"} for i in range(12)]

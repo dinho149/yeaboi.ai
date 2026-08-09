@@ -470,6 +470,24 @@ a.issueKey:hover {
   letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
+.quietStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.quietMember {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 2px var(--s2);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+}
 
 /* Evidence rows: kind chip · mono key · title, with repo/status tucked below. */
 .evidence {
