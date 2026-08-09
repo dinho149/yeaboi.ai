@@ -35,7 +35,7 @@ version does not match or the handshake fails.
 ### core.hello
 
 Params: `{}` →
-`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage"]}`
+`{"contract_version": 1, "name": "yeaboi-core", "version": "<binary semver>", "methods": ["agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security"]}`
 
 ### agentwatch.refresh
 
@@ -48,6 +48,22 @@ port). See `agentwatch.refresh.json`.
 (model, session) pair and returns an `AgentUsageReport`-shaped artifact with
 empty `insights`/`recommendations`/`generated_at` — prose and stamping stay
 Python-side. See `agentwatch.usage.json`.
+
+### agentwatch.standup
+
+`agentwatch.refresh` plus the LOCAL half of the standup digest: session
+summaries, window totals, the no-local-sessions coverage note. The tracker
+leg, all prose, delivery and history stay Python-side; `window_start` /
+`digest_date` are computed by Python and travel as params. See
+`agentwatch.standup.json`.
+
+### agentwatch.security
+
+`agentwatch.refresh` (with `reset_cursors` for the engine's `deep=True`) plus
+the whole deterministic security report: stored-finding mapping, the settings
+audit and MCP inventory over the config roots passed as params, ranking and
+posture. Only the LLM `summary`/`recommendations` and `generated_at` stay
+Python-side. See `agentwatch.security.json`.
 
 ## Semantics the Go side must preserve
 
@@ -78,3 +94,14 @@ canonical JSON.
 7. **Windowing.** A session belongs to the day of its `ended_at` (first 10
    chars); the window has no upper bound; `since` filters
    `ended_at >= period_start` exactly as `store.list_sessions(since=…)`.
+8. **Config-document order.** The security audit's findings, MCP records and
+   duplicate-name notes iterate JSON objects in *document* order (Python dicts
+   preserve it), so the Go side must decode configs order-preserving — a plain
+   Go map loses the ordering the ranking's stable sort depends on. Blobs that
+   are re-serialized before pattern-matching (`hooks`, MCP `env`) must render
+   exactly like Python `json.dumps` defaults (ASCII-escaped, `", "`/`": "`
+   separators, document order).
+9. **Config-value quoting.** Where a settings finding's `detail` embeds a
+   config value via Python `!r`, Go must reproduce `repr()` for the quoted
+   value (quote choice, escapes). This applies to CONFIG values only — the
+   privacy rule (1) still bars transcript content everywhere.

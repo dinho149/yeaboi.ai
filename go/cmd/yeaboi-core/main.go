@@ -26,7 +26,7 @@ import (
 // binaryVersion is the sidecar's own semver, reported by core.hello.
 const binaryVersion = "0.1.0"
 
-var methods = []string{"agentwatch.refresh", "agentwatch.usage"}
+var methods = []string{"agentwatch.refresh", "agentwatch.usage", "agentwatch.standup", "agentwatch.security"}
 
 func main() {
 	log.SetOutput(os.Stderr)
@@ -107,6 +107,43 @@ func dispatch(req *rpc.Request, id int64, out *rpc.Writer) (any, *rpc.Error) {
 			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "today must be a YYYY-MM-DD date"}
 		}
 		result, err := agentwatch.RunAgentUsage(&params, emit)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		return result, nil
+	case "agentwatch.standup":
+		var params contract.StandupParams
+		if err := decodeParams(req.Params, &params); err != nil {
+			return nil, err
+		}
+		if params.DBPath == "" {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "db_path is required"}
+		}
+		for _, d := range []string{params.WindowStart, params.DigestDate} {
+			if _, err := time.Parse("2006-01-02", d); err != nil {
+				return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "window_start and digest_date must be YYYY-MM-DD dates"}
+			}
+		}
+		result, err := agentwatch.RunAgentStandup(&params, emit)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		return result, nil
+	case "agentwatch.security":
+		var params contract.SecurityParams
+		if err := decodeParams(req.Params, &params); err != nil {
+			return nil, err
+		}
+		if params.DBPath == "" {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "db_path is required"}
+		}
+		if _, err := time.Parse("2006-01-02", params.ScanDate); err != nil {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "scan_date must be a YYYY-MM-DD date"}
+		}
+		if params.ClaudeDir == "" || params.ClaudeJSON == "" {
+			return nil, &rpc.Error{Code: rpc.CodeInvalidParams, Message: "claude_dir and claude_json are required"}
+		}
+		result, err := agentwatch.RunAgentSecurity(&params, emit)
 		if err != nil {
 			return nil, mapError(err)
 		}

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "yeaboi-core/v1/agentwatch.security.json",
+  "title": "agentwatch.security params and result",
+  "description": "The deterministic whole of yeaboi.agent.state.AgentSecurityReport: refresh (reset_cursors mirrors the engine's deep=True), stored-finding mapping, the settings audit, the MCP inventory, ranking and posture. Only summary/recommendations (LLM prose) and generated_at stay Python-side and are ALWAYS empty from Go. The config roots travel as params — they are Python's security_checks._config_roots() results, so test overrides and parity fixtures reach the sidecar. Findings quote CONFIG values in detail (the acted-on rule/mode) but NEVER transcript content — stored findings carry (pattern label, file, line) only.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "required": ["db_path", "scan_date", "claude_dir", "claude_json"],
+      "properties": {
+        "db_path": { "type": "string" },
+        "scan_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reset_cursors": { "type": "boolean", "default": false, "description": "The engine's deep=True: forget cursors, reparse every transcript. Also selects the 'Re-scan every transcript' scan label." },
+        "claude_dir": { "type": "string", "description": "The ~/.claude directory (settings.json / settings.local.json live here)." },
+        "claude_json": { "type": "string", "description": "The ~/.claude.json file (projects map + mcpServers)." },
+        "roots": { "$ref": "agentwatch.refresh.json#/$defs/params/properties/roots" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["severity", "category", "title", "location", "line_no", "pattern", "detail", "remediation"],
+      "properties": {
+        "severity": { "enum": ["critical", "high", "medium", "info"] },
+        "category": { "enum": ["settings", "mcp", "secret", "risky_tool"] },
+        "title": { "type": "string" },
+        "location": { "type": "string", "description": "File path or config coordinate — never file content." },
+        "line_no": { "type": "integer" },
+        "pattern": { "type": "string", "description": "Detector label, e.g. wildcard-allow, curl-pipe-shell." },
+        "detail": { "type": "string", "description": "May quote a CONFIG value (Python !r repr formatting) — never a transcript value." },
+        "remediation": { "type": "string" }
+      }
+    },
+    "mcp_server": {
+      "type": "object",
+      "required": ["name", "scope", "transport", "target", "flags"],
+      "properties": {
+        "name": { "type": "string" },
+        "scope": { "type": "string", "description": "\"global\" or \"project:<path>\"." },
+        "transport": { "type": "string" },
+        "target": { "type": "string", "description": "Command or URL — never credentials." },
+        "flags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "scan_date", "posture", "sessions_scanned", "files_scanned", "secrets_found",
+        "findings", "mcp_servers", "settings_flags", "summary", "recommendations",
+        "warnings", "generated_at"
+      ],
+      "properties": {
+        "scan_date": { "type": "string" },
+        "posture": { "enum": ["good", "needs-attention", "at-risk"] },
+        "sessions_scanned": { "type": "integer", "description": "Distinct logical sessions over the WHOLE store (no window)." },
+        "files_scanned": { "type": "integer", "description": "stats.files_seen from the refresh." },
+        "secrets_found": { "type": "integer" },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" },
+          "description": "Stable-sorted by (severity rank, category, location, pattern); ties keep build order: stored (source_path, line_no) → settings audit (file order, rule order) → MCP inventory (config document order)."
+        },
+        "mcp_servers": { "type": "array", "items": { "$ref": "#/$defs/mcp_server" }, "description": "Config document order, global scope first." },
+        "settings_flags": { "type": "array", "items": { "type": "string" }, "description": "Sorted unique non-info settings patterns." },
+        "summary": { "const": "" },
+        "recommendations": { "type": "array", "maxItems": 0 },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "generated_at": { "const": "" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["contract_version", "stats", "artifact"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "stats": { "$ref": "agentwatch.refresh.json#/$defs/stats" },
+        "artifact": { "$ref": "#/$defs/artifact" }
+      }
+    }
+  }
+}
