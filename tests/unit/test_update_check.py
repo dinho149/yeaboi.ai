@@ -20,6 +20,7 @@ def _reset_state(monkeypatch):
     # restarted_version() caches the marker on first read; without this the value
     # one test popped out of its fake environ would answer every later test.
     monkeypatch.setattr(update_check, "_restarted_from", None)
+    monkeypatch.delenv("YEABOI_UPDATE_CHECK", raising=False)
 
 
 class TestParseVersion:
@@ -136,6 +137,27 @@ class TestFetchLatestVersion:
 
 
 class TestStartBackgroundCheck:
+    @pytest.mark.parametrize("value", ["0", "false", "off", "no", "False", "OFF", " 0 "])
+    def test_env_gate_disables_check(self, monkeypatch, value):
+        """YEABOI_UPDATE_CHECK=<falsy> skips the PyPI thread entirely (demo recordings)."""
+        monkeypatch.setenv("YEABOI_UPDATE_CHECK", value)
+        monkeypatch.setattr(update_check, "_current_version", lambda: "2.10.0")
+        spawned = []
+        monkeypatch.setattr(update_check.threading, "Thread", lambda **kw: spawned.append(kw) or _NoopThread())
+        update_check.start_background_check()
+        assert spawned == []
+        assert update_check._started is True
+
+    @pytest.mark.parametrize("value", ["1", "true", "", "yes-please"])
+    def test_env_gate_ignores_other_values(self, monkeypatch, value):
+        """Anything not explicitly falsy leaves the check on — the gate must not invert."""
+        monkeypatch.setenv("YEABOI_UPDATE_CHECK", value)
+        monkeypatch.setattr(update_check, "_current_version", lambda: "2.10.0")
+        spawned = []
+        monkeypatch.setattr(update_check.threading, "Thread", lambda **kw: spawned.append(kw) or _NoopThread())
+        update_check.start_background_check()
+        assert len(spawned) == 1
+
     def test_dev_version_never_spawns_thread(self, monkeypatch):
         monkeypatch.setattr(update_check, "_current_version", lambda: "0.0.0+dev")
         spawned = []

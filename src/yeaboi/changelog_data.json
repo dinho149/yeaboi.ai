@@ -2,6 +2,38 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.1.0",
+      "date": "2026-08-08",
+      "summary": "Demo GIF recording is now deterministic, repeatable, and verified — glyph corruption from multibyte characters is structurally impossible, and terminal size, keystroke timing, and environment are hermetic. A new YEABOI_UPDATE_CHECK environment variable lets you disable the background PyPI update check, which is essential for air-gapped systems and prevents the version row from repainting during captures. The recording script includes built-in verification that fails loudly on blank frames, missing artifacts, or oversize GIFs.",
+      "highlights": [
+        {
+          "text": "YEABOI_UPDATE_CHECK environment variable: disable the background PyPI update check for air-gapped installs",
+          "areas": [
+            "settings",
+            "general"
+          ]
+        },
+        {
+          "text": "Deterministic demo GIF recording: make demo re-records and verifies in ~13 seconds with no variation between runs",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "Built-in verification gates: recording fails loudly on blank frames, missing artifacts, or oversize output",
+          "areas": [
+            "general"
+          ]
+        },
+        {
+          "text": "make demo-render re-renders from the committed cast without re-recording, for theme or size tweaks",
+          "areas": [
+            "general"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.0.0",
       "date": "2026-08-08",
       "summary": "Major version: the OpenClaw integration (the shipped `skills/` package and `--install-skill` CLI flag) is removed entirely. This surfaces the true nature of yeaboi as a standalone terminal agent, not an OpenClaw plugin. The app focuses now on six surfaces: the TUI, CLI flags/subcommands, the Python engines, the MCP server, the Claude Code plugin skills, and the live-board REST API — OpenClaw itself lives only in historical changelog entries. Unused tree bloat (700+ accidentally-committed node_modules files, orphaned docs, and design packages) is also removed.",
