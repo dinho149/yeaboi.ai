@@ -118,7 +118,8 @@ class TestRegistryParity:
         )
 
     def test_nav_shape(self) -> None:
-        assert [g["label"] for g in NAV] == ["Start", "Modes", "Guides", "Reference"]
+        # Modes is the Humans half of the landing split; Agents is the other.
+        assert [g["label"] for g in NAV] == ["Start", "Modes", "Agents", "Guides", "Reference"]
         for path in seo.nav_lookup(NAV):
             assert (DOCS / path.lstrip("/")).exists(), f"nav points at missing file: {path}"
 

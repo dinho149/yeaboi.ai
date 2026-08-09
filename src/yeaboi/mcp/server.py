@@ -30,11 +30,16 @@ _MISSING_MCP_MESSAGE = (
 )
 
 _INSTRUCTIONS = (
-    "yeaboi is an AI Scrum Master. Use these tools to plan projects into epics, "
-    "stories, tasks and sprints (intake_questions → plan_generate → plan_export), "
-    "run daily standups, produce stakeholder delivery reports, and prep engineer "
-    "1:1s and reviews. Results come in an envelope {ok, llm_mode, warnings, data}; "
-    "llm_mode 'fallback' means no LLM was available and data is a deterministic "
+    "yeaboi is an AI Scrum Master, and a watcher of AI coding agents. For the "
+    "team: plan projects into epics, stories, tasks and sprints "
+    "(intake_questions → plan_generate → plan_export), run daily standups, "
+    "produce stakeholder delivery reports, and prep engineer 1:1s and reviews. "
+    "For the agents working alongside them: agents_usage costs a window of agent "
+    "work, agents_standup_run digests what they did, and agents_security_scan "
+    "audits the setup — all computed locally from this machine's agent session "
+    "logs. "
+    "Results come in an envelope {ok, llm_mode, warnings, data}; llm_mode "
+    "'fallback' means no LLM was available and data is a deterministic "
     "skeleton — surface the warning to the user."
 )
 

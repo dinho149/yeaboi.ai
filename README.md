@@ -5,7 +5,7 @@
 
 # 🤙 yeaboi.ai
 
-**A team lead's best friend — plans, standups, retros, performance & reporting, right from your terminal. It decomposes projects into epics, stories, tasks, and sprint plans, then helps you run the team around them.**
+**Best friend to engineers and agents — plans, standups, retros, performance & reporting for your team, plus cost, digests and security posture for the AI agents working alongside it. All from your terminal.**
 
 [![PyPI](https://img.shields.io/pypi/v/yeaboi?style=for-the-badge&logo=pypi&logoColor=white&color=blue)](https://pypi.org/project/yeaboi/)
 [![Python](https://img.shields.io/badge/Python-3.11+-green?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
@@ -21,9 +21,9 @@
 ---
 
 <div align="center">
-<img src="docs/demo.gif" alt="yeaboi.ai demo — the mode-select menu: analysis, planning, standup, retro, poker, performance, and reporting in one terminal" width="800"/>
+<img src="docs/demo.gif" alt="yeaboi.ai demo — the landing split asks who you're working with today, then tours the Humans menu (analysis, planning, standup, retro, poker, performance, reporting) and the Agents menu (usage, standup, security)" width="800"/>
 
-*Plans, standups, retros, poker, performance & reporting — one terminal, seven modes.*
+*Two worlds, one command: scrum for your team, and cost, digests & security posture for your agents.*
 </div>
 
 ---

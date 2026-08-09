@@ -115,13 +115,101 @@ class TestDemoScript:
     """Shape guard: future edits must not bloat, empty, or de-risk the demo."""
 
     def test_only_proven_safe_keys(self):
-        allowed = {record_demo.KEY_UP, record_demo.KEY_DOWN, record_demo.KEY_RIGHT, record_demo.KEY_LEFT, b"q"}
+        allowed = {
+            record_demo.KEY_UP,
+            record_demo.KEY_DOWN,
+            record_demo.KEY_RIGHT,
+            record_demo.KEY_LEFT,
+            record_demo.KEY_ENTER,
+            record_demo.KEY_ESC,
+            b"q",
+        }
         keys = [step[1] for step in record_demo.DEMO_SCRIPT if step[0] == "key"]
         assert keys, "demo script sends no keys at all"
         assert set(keys) <= allowed
 
-    def test_starts_by_awaiting_mode_select(self):
+    def test_no_key_immediately_after_escape(self):
+        """A bare \\x1b is only Escape if nothing follows within 100ms.
+
+        read_key disambiguates Escape from an arrow-key prefix on a 100ms
+        window (src/yeaboi/ui/shared/_input.py). A key step written straight
+        after KEY_ESC lands inside that window and gets eaten as an escape
+        sequence, so every step following an esc must be an await or a pause.
+        """
+        steps = record_demo.DEMO_SCRIPT
+        for i, step in enumerate(steps[:-1]):
+            if step == ("key", record_demo.KEY_ESC):
+                assert steps[i + 1][0] != "key", f"step {i + 1} sends a key straight after esc: {steps[i + 1]!r}"
+
+    def test_screen_changes_are_awaited_not_slept(self):
+        """Entering a menu or backing out must sync on markers, never a pause.
+
+        A pause long enough for a slow machine to build the menu is a pause the
+        fast path also sits through; markers make the take both quick and
+        machine-independent.
+        """
+        steps = record_demo.DEMO_SCRIPT
+        transitions = {record_demo.KEY_ENTER, record_demo.KEY_ESC}
+        for i, step in enumerate(steps[:-1]):
+            if step[0] == "key" and step[1] in transitions:
+                assert steps[i + 1][0] == "await", f"step {i} changes screen but step {i + 1} is {steps[i + 1]!r}"
+
+    def test_tours_both_families(self):
+        """The demo must show the split, the Humans menu, and the Agents menu.
+
+        The whole point of the re-record: a take that never leaves one family
+        sells half the product.
+        """
+        awaited = [step[1] for step in record_demo.DEMO_SCRIPT if step[0] == "await"]
+        assert awaited.count(record_demo.CATEGORY_SCREEN_MARKERS) >= 2, "never returns to the landing split"
+        assert awaited.count(record_demo.MODE_SCREEN_MARKERS) >= 2, "only one of the two mode menus is shown"
+
+    def test_marker_sets_are_disjoint(self):
+        """Each await must be able to tell the two screens apart.
+
+        If a fragment appeared on both screens, an await would match the screen
+        it was leaving and the recording would race ahead of the transition.
+        """
+        assert not set(record_demo.CATEGORY_SCREEN_MARKERS) & set(record_demo.MODE_SCREEN_MARKERS)
+
+    def test_markers_are_disjoint_on_the_rendered_screens(self):
+        """The real guard: neither set may appear on the other's screen.
+
+        Comparing the two literal tuples is not enough, and once wasn't — the
+        mode menu's rotating tip bar carries tips containing the words "switch"
+        and "choose", so a category marker set that included them matched the
+        menu it was leaving. Every tip offset is rendered here because only some
+        of them collide.
+        """
+        from rich.console import Console
+
+        from yeaboi.ui.mode_select.screens._screens import _build_mode_screen
+        from yeaboi.ui.mode_select.screens._screens_category import _build_category_screen
+
+        w, h = 140, 40
+
+        def plain(renderable) -> str:
+            # Same pinned truecolor console the other screen tests use, then the
+            # recorder's own ANSI stripper — matching exactly what the predicate
+            # in record() sees.
+            console = Console(width=w, height=h, force_terminal=True, color_system="truecolor")
+            with console.capture() as cap:
+                console.print(renderable)
+            return record_demo._strip_ansi(cap.get().encode("utf-8"))
+
+        category = plain(_build_category_screen(0, width=w, height=h))
+        for marker in record_demo.MODE_SCREEN_MARKERS:
+            assert marker not in category, f"mode marker {marker!r} renders on the landing split"
+
+        # Tips rotate, so one screen is not one string — sweep the offsets.
+        for tip_index in range(24):
+            menu = plain(_build_mode_screen(0, width=w, height=h, tip_offset=tip_index))
+            for marker in record_demo.CATEGORY_SCREEN_MARKERS:
+                assert marker not in menu, f"category marker {marker!r} renders on the mode menu (tip {tip_index})"
+
+    def test_starts_by_awaiting_the_landing_split(self):
         assert record_demo.DEMO_SCRIPT[0][0] == "await"
+        assert record_demo.DEMO_SCRIPT[0][1] == record_demo.CATEGORY_SCREEN_MARKERS
 
     def test_ends_with_quit(self):
         assert record_demo.DEMO_SCRIPT[-1] == ("key", b"q")

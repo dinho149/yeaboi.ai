@@ -72,7 +72,7 @@ def _build_welcome_panel() -> Panel:
     """
     body = Text.from_markup(
         f"[bold cyan]yeaboi.ai[/bold cyan]  [dim]v{__version__}[/dim]\n"
-        "[white]A team lead's best friend[/white]\n\n"
+        "[white]Best friend to engineers and agents[/white]\n\n"
         "[dim]Describe your project to get started, or type [cyan]help[/cyan] for commands.[/dim]"
     )
     return Panel(body, border_style="cyan", padding=(1, 2))
@@ -265,7 +265,9 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         prog="yeaboi",
-        description="yeaboi.ai — a team lead's best friend. Decomposes projects into epics, stories, and sprints.",
+        description=(
+            "yeaboi.ai — best friend to engineers and agents. Runs your team's scrum, and watches your AI agents work."
+        ),
         epilog=(
             "examples:\n"
             "  yeaboi                        interactive mode (recommended)\n"

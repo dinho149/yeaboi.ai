@@ -71,6 +71,61 @@ class TestRecordPipeline:
         assert record_demo._ALT_SCREEN_EXIT not in joined  # cast ends before the quit teardown
         assert events[0][0] == pytest.approx(record_demo.CastWriter.LEAD_IN_S, abs=0.05)
 
+    def test_records_a_two_screen_tour(self, tmp_path):
+        """The real choreography's shape: split -> menu -> split -> menu -> quit.
+
+        The stub swaps between two screens whose chrome matches the two marker
+        sets, so each `await` has to resolve against the screen it just moved
+        to. This is what the flat single-screen script above cannot cover: a
+        marker that appeared on both screens, or an esc lost to read_key's
+        100ms escape-sequence window, both show up here as a RuntimeError.
+        """
+        stub = textwrap.dedent(
+            """
+            import os, select, sys, time, tty
+            tty.setcbreak(0)
+            sys.stdout.write("\\x1b[?1049h")
+            SPLIT = "\\x1b[2J Who are we working with today?  enter choose  q quit "
+            MENU = "\\x1b[2J v2.59 c changelog  Tip: duck \\U0001f986  channel "
+            screen = SPLIT
+            while True:
+                sys.stdout.write(screen)
+                sys.stdout.flush()
+                if not select.select([0], [], [], 0.02)[0]:
+                    continue
+                ch = os.read(0, 1)
+                if ch == b"q":
+                    sys.stdout.write("\\x1b[?1049l")
+                    sys.stdout.flush()
+                    sys.exit(0)
+                # Both, like the real reader (_input.py: `if ch in ("\\r", "\\n")`):
+                # the pty's ICRNL rewrites a written CR to NL in transit.
+                if ch in (b"\\r", b"\\n") and screen is SPLIT:
+                    screen = MENU
+                elif ch == b"\\x1b" and screen is MENU:
+                    screen = SPLIT
+            """
+        )
+        script = [
+            ("await", record_demo.CATEGORY_SCREEN_MARKERS, 10.0),
+            ("pause", 0.2),
+            ("key", record_demo.KEY_ENTER),
+            ("await", record_demo.MODE_SCREEN_MARKERS, 10.0),
+            ("pause", 0.2),
+            ("key", record_demo.KEY_ESC),
+            ("await", record_demo.CATEGORY_SCREEN_MARKERS, 10.0),
+            ("pause", 0.2),
+            ("key", record_demo.KEY_ENTER),
+            ("await", record_demo.MODE_SCREEN_MARKERS, 10.0),
+            ("pause", 0.2),
+            ("key", b"q"),
+        ]
+        cast_path = tmp_path / "tour.cast"
+        record_demo.record(cast_path, cmd=[sys.executable, "-u", "-c", stub], script=script)
+        joined = "".join(e[2] for e in _read_cast(cast_path)[1])
+        assert "working with" in joined
+        assert "changelog" in joined
+
     def test_missing_markers_raise(self, tmp_path):
         stub = "import sys; sys.stdout.write('\\x1b[?1049h nothing here'); sys.stdout.flush(); sys.stdin.read(1)"
         script = [("await", ("never-rendered-marker",), 1.0), ("key", b"q")]
