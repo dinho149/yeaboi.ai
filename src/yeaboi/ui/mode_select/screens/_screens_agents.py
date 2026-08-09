@@ -10,6 +10,7 @@ convention), so the page renders correctly at the minimum terminal size.
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from rich.console import Group
 from rich.panel import Panel
@@ -17,10 +18,12 @@ from rich.text import Text
 
 from yeaboi.agent.state import AgentSecurityReport, AgentStandupDigest, AgentUsageReport
 from yeaboi.agentwatch.render import format_usage_rich
+from yeaboi.analysis.progress import is_component_progress
 from yeaboi.ui.shared._components import (
     AGENT_USAGE_THEME,
     agent_usage_title,
     build_action_buttons,
+    build_meter,
     build_page_panel,
     build_reveal_subtitle,
 )
@@ -39,6 +42,160 @@ _MAX_BREAKDOWN_ROWS = 3
 _MAX_PROSE = 2
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+# Static phase checklists, one per page — the screen owns what "pending" looks
+# like; the engines only emit lifecycle events keyed on these component ids
+# (see agentwatch/engine.py). Unknown ids still render, after the checklist.
+_USAGE_PHASES: tuple[tuple[str, str], ...] = (
+    ("scan", "Scan agent sessions"),
+    ("price", "Price usage"),
+    ("insights", "Write insights"),
+)
+_STANDUP_PHASES: tuple[tuple[str, str], ...] = (
+    ("scan", "Scan agent sessions"),
+    ("trackers", "Scan trackers"),
+    ("digest", "Write the digest"),
+)
+_SECURITY_PHASES: tuple[tuple[str, str], ...] = (
+    ("scan", "Scan transcripts"),
+    ("settings", "Audit settings"),
+    ("mcp", "Inventory MCP servers"),
+    ("summary", "Write the summary"),
+)
+
+# Marker per terminal status — same vocabulary as the analysis activity rows
+# (✓ done, ~ fallback, ! partial, ✗ failed, ○ nothing/no data).
+_STATUS_MARKS = {"completed": "✓", "fallback": "~", "partial": "!", "failed": "✗", "no_data": "○"}
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    """0:07-style elapsed stamp for the progress header."""
+    total = max(0, int(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _relative_age(iso: str, *, now: datetime | None = None) -> str:
+    """A human age for a stored report's timestamp: "5m ago", "2h ago", "3d ago".
+
+    Unparseable input returns "" — no stamp rather than a wrong one.
+    """
+    try:
+        then = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return ""
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    resolved_now = now or datetime.now(UTC)
+    seconds = (resolved_now - then).total_seconds()
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h ago"
+    return f"{int(seconds // 86400)}d ago"
+
+
+def _phase_row(label: str, event: dict | None, *, frame: str, theme) -> Text:
+    """One checklist row: pending ○, running spinner (+ meter), or its terminal mark."""
+    row = Text(justify="center")
+    if event is None:
+        row.append("○ ", style="rgb(90,90,105)")
+        row.append(label, style="rgb(110,110,125)")
+        return row
+    status = event.get("status", "")
+    detail = str(event.get("detail", "") or "")
+    if status == "running":
+        row.append(f"{frame} ", style=theme.accent_bright)
+        row.append(label, style="rgb(200,200,210)")
+        current, total = event.get("current"), event.get("total")
+        if current is not None and total:
+            row.append("  ")
+            row.append_text(build_meter(int(current), int(total), width=12, theme=theme))
+            unit = str(event.get("unit", "") or "")
+            row.append(f"  {current}/{total}{f' {unit}' if unit else ''}", style="rgb(160,160,175)")
+            secondary = event.get("secondary_count")
+            secondary_unit = str(event.get("secondary_unit", "") or "")
+            if secondary is not None and secondary_unit:
+                row.append(f" · {secondary} {secondary_unit}", style="rgb(110,110,125)")
+        elif detail:
+            row.append(f" · {detail}", style="rgb(160,160,175)")
+        return row
+    mark = _STATUS_MARKS.get(status, "○")
+    mark_style = {"✓": theme.accent, "~": theme.warn, "!": theme.warn, "✗": theme.bad}.get(mark, "rgb(90,90,105)")
+    row.append(f"{mark} ", style=mark_style)
+    row.append(label, style="rgb(160,160,175)")
+    if detail:
+        row.append(f" · {detail}", style="rgb(110,110,125)")
+    return row
+
+
+def _build_agent_progress_body(
+    phases: tuple[tuple[str, str], ...],
+    progress: list,
+    *,
+    tick: float,
+    theme,
+    status: str = "",
+) -> list:
+    """The in-progress body: header spinner + elapsed, then the phase checklist.
+
+    ``progress`` is a list of analysis_component lifecycle events (latest wins
+    per component id — folded here defensively even though the page loop
+    pre-folds). Stateless by design: elapsed derives from ``tick`` rather than
+    module clocks, so renders are pure and testable.
+    """
+    latest: dict[str, dict] = {}
+    for item in progress:
+        if is_component_progress(item):
+            latest[item["component_id"]] = item
+    frame = _SPINNER[int(tick * 10) % len(_SPINNER)]
+
+    header = Text(justify="center")
+    header.append(f"{frame} ", style=theme.accent_bright)
+    header.append("Working", style="rgb(200,200,210)")
+    header.append(f" · {_fmt_elapsed(tick)}", style="rgb(110,110,125)")
+    rows: list = [Text(""), header, Text("")]
+
+    known = {pid for pid, _ in phases}
+    for pid, label in phases:
+        rows.append(_phase_row(label, latest.get(pid), frame=frame, theme=theme))
+    for pid, event in latest.items():
+        if pid not in known:
+            rows.append(_phase_row(str(event.get("label", pid)), event, frame=frame, theme=theme))
+    if status:
+        rows.append(Text(""))
+        rows.append(Text(status, style="rgb(110,110,125)", justify="center"))
+    return rows
+
+
+def _refreshing_line(as_of: str, *, tick: float, theme, progress: list | None = None) -> Text:
+    """The one-line banner under a shown report while a fresh run replaces it.
+
+    After the first-ever run the page always opens on a saved report, so this
+    banner — not the full checklist — is where refresh progress is seen: it
+    names the running phase and, while scanning, the files meter counts.
+    """
+    frame = _SPINNER[int(tick * 10) % len(_SPINNER)]
+    line = Text(justify="center")
+    line.append(f"{frame} ", style=theme.accent_bright)
+    line.append("Refreshing", style="rgb(160,160,175)")
+    running = next(
+        (e for e in progress or [] if is_component_progress(e) and e.get("status") == "running"),
+        None,
+    )
+    if running is not None:
+        line.append(f" — {running['label']}", style="rgb(160,160,175)")
+        current, total = running.get("current"), running.get("total")
+        if current is not None and total:
+            unit = str(running.get("unit", "") or "")
+            line.append(f" {current}/{total}{f' {unit}' if unit else ''}", style="rgb(110,110,125)")
+    else:
+        line.append("…", style="rgb(160,160,175)")
+    age = _relative_age(as_of)
+    if age:
+        line.append(f" · showing report from {age}", style="rgb(110,110,125)")
+    return line
 
 
 def _result_footer(action_sel: int, notice: str, theme) -> list:
@@ -87,11 +244,16 @@ def _build_agent_usage_screen(
     status: str = "",
     action_sel: int = 0,
     notice: str = "",
+    progress: list | None = None,
+    refreshing: bool = False,
+    as_of: str = "",
 ) -> Panel:
     """The Agent Usage dashboard page.
 
-    ``report=None`` renders the in-progress state (spinner + the engine's
-    current ``status`` string); a report renders the capped dashboard.
+    ``report=None`` renders the in-progress state — the phase checklist when
+    structured ``progress`` events are given, else a one-line spinner over the
+    ``status`` string; a report renders the capped dashboard, with a
+    "Refreshing…" banner when a background re-run is replacing it.
     """
     theme = AGENT_USAGE_THEME
     parts: list = [
@@ -102,12 +264,19 @@ def _build_agent_usage_screen(
     ]
 
     if report is None:
-        frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
-        working = Text(justify="center")
-        working.append(f"{frame} ", style=theme.accent_bright)
-        working.append(status or "Collecting local agent sessions…", style="rgb(160,160,175)")
-        parts += [Text(""), working]
+        if progress is not None:
+            parts += _build_agent_progress_body(
+                _USAGE_PHASES, progress, tick=shimmer_tick or 0.0, theme=theme, status=status
+            )
+        else:
+            frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+            working = Text(justify="center")
+            working.append(f"{frame} ", style=theme.accent_bright)
+            working.append(status or "Collecting local agent sessions…", style="rgb(160,160,175)")
+            parts += [Text(""), working]
     else:
+        if refreshing:
+            parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
         capped, notes = _capped(report)
         parts.append(format_usage_rich(capped))
         for note in notes:
@@ -149,8 +318,11 @@ def _build_agent_standup_screen(
     status: str = "",
     action_sel: int = 0,
     notice: str = "",
+    progress: list | None = None,
+    refreshing: bool = False,
+    as_of: str = "",
 ) -> Panel:
-    """The Agent Standup page: spinner while running, capped digest when done."""
+    """The Agent Standup page: phase checklist while running, capped digest when done."""
     from yeaboi.agentwatch.render import format_standup_rich
     from yeaboi.ui.shared._components import AGENT_STANDUP_THEME, agent_standup_title
 
@@ -162,12 +334,19 @@ def _build_agent_standup_screen(
         Text(""),
     ]
     if digest is None:
-        frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
-        working = Text(justify="center")
-        working.append(f"{frame} ", style=theme.accent_bright)
-        working.append(status or "Collecting agent activity…", style="rgb(160,160,175)")
-        parts += [Text(""), working]
+        if progress is not None:
+            parts += _build_agent_progress_body(
+                _STANDUP_PHASES, progress, tick=shimmer_tick or 0.0, theme=theme, status=status
+            )
+        else:
+            frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+            working = Text(justify="center")
+            working.append(f"{frame} ", style=theme.accent_bright)
+            working.append(status or "Collecting agent activity…", style="rgb(160,160,175)")
+            parts += [Text(""), working]
     else:
+        if refreshing:
+            parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
         capped, notes = _capped_standup(digest)
         parts.append(format_standup_rich(capped))
         for note in notes:
@@ -205,8 +384,11 @@ def _build_agent_security_screen(
     status: str = "",
     action_sel: int = 0,
     notice: str = "",
+    progress: list | None = None,
+    refreshing: bool = False,
+    as_of: str = "",
 ) -> Panel:
-    """The Agent Security page: spinner while scanning, capped report when done."""
+    """The Agent Security page: phase checklist while scanning, capped report when done."""
     from yeaboi.agentwatch.render import format_security_rich
     from yeaboi.ui.shared._components import AGENT_SECURITY_THEME, agent_security_title
 
@@ -218,12 +400,19 @@ def _build_agent_security_screen(
         Text(""),
     ]
     if report is None:
-        frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
-        working = Text(justify="center")
-        working.append(f"{frame} ", style=theme.accent_bright)
-        working.append(status or "Scanning agent configuration…", style="rgb(160,160,175)")
-        parts += [Text(""), working]
+        if progress is not None:
+            parts += _build_agent_progress_body(
+                _SECURITY_PHASES, progress, tick=shimmer_tick or 0.0, theme=theme, status=status
+            )
+        else:
+            frame = _SPINNER[int((shimmer_tick or 0.0) * 10) % len(_SPINNER)]
+            working = Text(justify="center")
+            working.append(f"{frame} ", style=theme.accent_bright)
+            working.append(status or "Scanning agent configuration…", style="rgb(160,160,175)")
+            parts += [Text(""), working]
     else:
+        if refreshing:
+            parts.append(_refreshing_line(as_of, tick=shimmer_tick or 0.0, theme=theme, progress=progress))
         capped, notes = _capped_security(report)
         parts.append(format_security_rich(capped))
         for note in notes:

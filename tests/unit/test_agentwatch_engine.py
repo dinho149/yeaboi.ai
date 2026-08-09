@@ -218,3 +218,30 @@ class TestPersistence:
         monkeypatch.setattr(export_mod, "export_artifact", _boom)
         report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY)
         assert report.session_count == 2
+
+
+class TestProgressPhases:
+    """The engine brackets each phase with structured lifecycle events."""
+
+    def test_dry_run_phase_sequence(self, seeded):
+        from yeaboi.analysis.progress import is_component_progress
+
+        events: list = []
+        engine.run_agent_usage(db_path=seeded, today=TODAY, dry_run=True, on_progress=events.append)
+        assert all(is_component_progress(e) for e in events)
+        assert [(e["component_id"], e["status"]) for e in events] == [
+            ("scan", "running"),
+            ("scan", "completed"),
+            ("price", "running"),
+            ("price", "completed"),
+            ("insights", "no_data"),
+        ]
+        # The scan's terminal event carries parsed/cached counts, not filenames.
+        assert events[1]["detail"] == "0 parsed · 0 cached"
+
+    def test_llm_unavailable_marks_insights_fallback(self, seeded):
+        events: list = []
+        engine.run_agent_usage(db_path=seeded, today=TODAY, on_progress=events.append)
+        seq = [(e["component_id"], e["status"]) for e in events]
+        assert ("insights", "running") in seq
+        assert ("insights", "fallback") in seq

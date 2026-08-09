@@ -35,6 +35,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from yeaboi.agentwatch.store import AgentWatchStore
+from yeaboi.analysis.progress import send_component_progress
 from yeaboi.redaction import _TOKEN_PATTERNS
 
 logger = logging.getLogger(__name__)
@@ -272,9 +273,17 @@ def refresh(
     store: AgentWatchStore,
     *,
     roots: tuple[tuple[str, Path], ...] | None = None,
-    on_progress: Callable[[str], None] | None = None,
+    on_progress: Callable[[object], None] | None = None,
 ) -> IngestStats:
     """Ingest new/changed session transcripts into the store. Never raises.
+
+    ``on_progress`` receives ``analysis_component`` lifecycle dicts (see
+    yeaboi.analysis.progress) carrying an aggregate files-scanned meter —
+    never per-file names, which on a cold cache is thousands of lines of
+    noise no reader can act on. Cold runs still emit one meter event per
+    *parsed* file (that is the live meter during the slow path; the consumer
+    folds them per frame); warm runs, where nearly everything is cursor-
+    skipped, are throttled to integer-percent changes.
 
     The skip path checks (size, mtime) first — transcripts are append-only, and
     the cursor keys on both fields because coarse filesystem mtimes (FAT's 2s)
@@ -287,31 +296,61 @@ def refresh(
     """
     stats = IngestStats()
     scan_failed = False
+    # Materialise across ALL roots before scanning so the progress meter has a
+    # global denominator — a per-root total would reset the bar mid-scan when
+    # a second source kicks in.
+    pending: list[tuple[str, Path]] = []
     for source, root in roots if roots is not None else _source_roots():
         try:
-            files = list(_iter_session_files(root))
+            pending.extend((source, path) for path in _iter_session_files(root))
         except OSError as exc:
             stats.warnings.append(f"cannot scan {root}: {exc}")
             scan_failed = True
+
+    total = len(pending)
+    last_pct = -1
+
+    def _emit_scan(current: int) -> None:
+        # Throttled at the call sites: first file, a parsed (non-cached) file,
+        # an integer-percent change, or the last file. Warm runs emit at most
+        # ~100 events instead of one per transcript.
+        nonlocal last_pct
+        last_pct = (current * 100) // max(1, total)
+        send_component_progress(
+            on_progress,
+            component_id="scan",
+            label="Scan agent sessions",
+            status="running",
+            current=current,
+            total=total,
+            unit="files",
+            secondary_count=stats.files_parsed,
+            secondary_unit="parsed",
+        )
+
+    if on_progress is not None and total:
+        _emit_scan(0)
+    for index, (source, path) in enumerate(pending):
+        stats.files_seen += 1
+        handled = index + 1
+        try:
+            file_stat = path.stat()
+        except OSError:
             continue
-        for path in files:
-            stats.files_seen += 1
-            try:
-                file_stat = path.stat()
-            except OSError:
-                continue
-            cursor = store.get_cursor(str(path))
-            if cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
-                # Same size AND same mtime — the only remaining way this file
-                # differs is a same-size replacement, which the head hash
-                # catches. An empty stored hash predates the check; treat it as
-                # a match rather than reparsing every file once.
-                stored_sha = cursor["first_line_sha"]
-                if not stored_sha or stored_sha == _first_line_sha(path):
-                    stats.files_skipped += 1
-                    continue
-            if on_progress is not None:
-                on_progress(f"reading {path.name}")
+        ingested = False
+        cursor = store.get_cursor(str(path))
+        skip = False
+        if cursor and cursor["size"] == file_stat.st_size and cursor["mtime"] == file_stat.st_mtime:
+            # Same size AND same mtime — the only remaining way this file
+            # differs is a same-size replacement, which the head hash
+            # catches. An empty stored hash predates the check; treat it as
+            # a match rather than reparsing every file once.
+            stored_sha = cursor["first_line_sha"]
+            skip = not stored_sha or stored_sha == _first_line_sha(path)
+        if skip:
+            stats.files_skipped += 1
+        else:
+            ingested = True
             try:
                 _ingest_one(store, source, path, stats)
             except Exception as exc:  # one bad file must not sink the sweep
@@ -323,14 +362,20 @@ def refresh(
                 # triage; the detail goes to the log.
                 logger.warning("agentwatch ingest failed for %s: %s", path, exc)
                 stats.warnings.append(f"failed to ingest {path.name} ({type(exc).__name__} — see logs)")
-                continue
-            store.set_cursor(
-                str(path),
-                source=source,
-                size=file_stat.st_size,
-                mtime=file_stat.st_mtime,
-                first_line_sha=_first_line_sha(path),
-            )
+            else:
+                store.set_cursor(
+                    str(path),
+                    source=source,
+                    size=file_stat.st_size,
+                    mtime=file_stat.st_mtime,
+                    first_line_sha=_first_line_sha(path),
+                )
+        if on_progress is not None and (ingested or handled == total or (handled * 100) // total != last_pct):
+            _emit_scan(handled)
+    # Guarantee the meter closes at N/N even when the last file's stat() failed
+    # and its per-file emit was skipped — the bar must never freeze short.
+    if on_progress is not None and total and last_pct != 100:
+        _emit_scan(total)
 
     # Drop state for transcripts that are gone from disk. Deleting the
     # transcript is how a user remediates a leaked secret, and without this the

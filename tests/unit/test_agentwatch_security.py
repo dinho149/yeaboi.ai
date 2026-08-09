@@ -237,3 +237,57 @@ class TestRenderAndExport:
         with console.capture() as cap:
             console.print(_build_agent_security_screen(report, width=110, height=44))
         assert "Posture" in cap.get()
+
+
+class TestProgressPhases:
+    def test_phase_sequence_over_a_clean_tree(self, clean_tree, db_path):
+        from yeaboi.analysis.progress import is_component_progress
+
+        events: list = []
+        engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True, on_progress=events.append)
+        assert all(is_component_progress(e) for e in events)
+        seq = [(e["component_id"], e["status"]) for e in events]
+        for cid in ("scan", "settings", "mcp"):
+            assert (cid, "running") in seq
+            assert (cid, "completed") in seq
+        assert ("summary", "no_data") in seq  # dry_run: the LLM step is skipped
+        mcp_done = next(e for e in events if e["component_id"] == "mcp" and e["status"] == "completed")
+        assert mcp_done["detail"] == "1 server(s)"
+
+
+class TestProgressScreen:
+    def test_checklist_and_refresh_banner(self, clean_tree, db_path):
+        from rich.console import Console
+
+        from yeaboi.analysis.progress import append_component_progress
+        from yeaboi.ui.mode_select.screens._screens_agents import _build_agent_security_screen
+
+        events: list = []
+        append_component_progress(
+            events,
+            component_id="scan",
+            label="Scanning transcripts",
+            status="running",
+            current=2,
+            total=6,
+            unit="files",
+        )
+
+        def render(panel):
+            console = Console(width=110, force_terminal=False)
+            with console.capture() as cap:
+                console.print(panel)
+            return cap.get()
+
+        out = render(_build_agent_security_screen(None, width=110, height=40, shimmer_tick=0.2, progress=events))
+        assert "2/6 files" in out
+        assert "Audit settings" in out
+        assert "Inventory MCP servers" in out
+
+        report = engine.run_agent_security(db_path=db_path, today=TODAY, dry_run=True)
+        out = render(
+            _build_agent_security_screen(
+                report, width=110, height=40, shimmer_tick=0.2, refreshing=True, as_of="2020-01-01T00:00:00+00:00"
+            )
+        )
+        assert "Refreshing…" in out

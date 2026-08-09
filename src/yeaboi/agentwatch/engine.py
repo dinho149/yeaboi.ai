@@ -38,9 +38,26 @@ from yeaboi.agent.state import (
 )
 from yeaboi.agentwatch import collector
 from yeaboi.agentwatch.store import AgentWatchStore
+from yeaboi.analysis.progress import send_component_progress
 from yeaboi.pricing import PRICING_AS_OF, estimate_cost
 
 logger = logging.getLogger(__name__)
+
+
+def _emit(on_progress, component_id: str, status: str, *, label: str = "", detail: str = "") -> None:
+    """Send one phase lifecycle event to the caller's progress callback.
+
+    The TUI keys its phase checklist on ``component_id`` (see
+    _screens_agents.py); the label rides along for consumers that render
+    events standalone. None-safe, so engines can emit unconditionally.
+    """
+    send_component_progress(
+        on_progress,
+        component_id=component_id,
+        label=label or component_id,
+        status=status,
+        detail=detail,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +225,15 @@ def run_agent_usage(
 
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
-        if on_progress is not None:
-            on_progress("Scanning local agent sessions")
+        _emit(on_progress, "scan", "running", label="Scan agent sessions")
         stats = collector.refresh(store, on_progress=on_progress)
+        _emit(
+            on_progress,
+            "scan",
+            "completed",
+            label="Scan agent sessions",
+            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+        )
         warnings.extend(stats.warnings)
         sessions = store.list_sessions(since=period_start)
 
@@ -219,8 +242,7 @@ def run_agent_usage(
     if source:
         sessions = [s for s in sessions if s["source"] == source]
 
-    if on_progress is not None:
-        on_progress(f"Pricing {len(sessions)} transcript(s)")
+    _emit(on_progress, "price", "running", label="Price usage", detail=f"{len(sessions)} transcript(s)")
 
     model_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     project_totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
@@ -319,13 +341,16 @@ def run_agent_usage(
 
     if not sessions:
         warnings.append("No local agent sessions found in the window — is Claude Code used on this machine?")
+    # no_data, not completed, on an empty window — same checklist vocabulary as
+    # the insights/trackers phases' nothing-to-do case.
+    price_status = "completed" if sessions else "no_data"
+    _emit(on_progress, "price", price_status, label="Price usage", detail=f"{len(sessions)} transcript(s)")
 
     # ── The one LLM call: prose over finished numbers ─────────────────────
     insights: tuple[str, ...] = ()
     recommendations: tuple[str, ...] = ()
     if sessions and not dry_run:
-        if on_progress is not None:
-            on_progress("Writing insights")
+        _emit(on_progress, "insights", "running", label="Write insights")
         from yeaboi.prompts.agentwatch import get_usage_insights_prompt
 
         prompt = get_usage_insights_prompt(
@@ -341,6 +366,9 @@ def run_agent_usage(
         warnings.extend(llm_warnings)
         insights = _str_list(parsed.get("insights"))[:5]
         recommendations = _str_list(parsed.get("recommendations"))[:5]
+        _emit(on_progress, "insights", "fallback" if llm_warnings else "completed", label="Write insights")
+    else:
+        _emit(on_progress, "insights", "no_data", label="Write insights", detail="skipped")
     if not insights:
         # Per-field, not both-or-nothing: a model that returns usable
         # recommendations but an empty insights list used to have them thrown
@@ -447,10 +475,10 @@ def _collect_agent_repo_activity(
     from yeaboi.agent.state import AgentRepoActivityRow
 
     if tracker_sources is not None and not tracker_sources:
+        _emit(on_progress, "trackers", "no_data", label="Scan trackers", detail="skipped — local sessions only")
         return (), ("Tracker scan skipped (tracker_sources=[]) — local sessions only.",)
 
-    if on_progress is not None:
-        on_progress("Scanning trackers for agent-authored work")
+    _emit(on_progress, "trackers", "running", label="Scan trackers")
     try:
         from yeaboi.analysis.ai_usage import _classify_ai_item, collect_ai_activity
 
@@ -473,6 +501,7 @@ def _collect_agent_repo_activity(
         )
     except Exception as exc:  # noqa: BLE001 — trackers are optional context
         logger.warning("agent standup: tracker scan failed: %s", exc)
+        _emit(on_progress, "trackers", "no_data", label="Scan trackers", detail="unavailable")
         return (), (f"Tracker scan unavailable: {exc}",)
 
     # Drop non-agent automation (service hooks, scanners) before classifying —
@@ -502,6 +531,7 @@ def _collect_agent_repo_activity(
         )
     order = {"pr": 0, "commit": 1, "review": 2, "comment": 3}
     rows.sort(key=lambda r: (order.get(r.kind, 9), r.repo, r.title))
+    _emit(on_progress, "trackers", "completed", label="Scan trackers", detail=f"{len(rows)} item(s)")
     return tuple(rows), tuple(coverage)
 
 
@@ -562,9 +592,15 @@ def run_agent_standup(
 
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
-        if on_progress is not None:
-            on_progress("Scanning local agent sessions")
+        _emit(on_progress, "scan", "running", label="Scan agent sessions")
         stats = collector.refresh(store, on_progress=on_progress)
+        _emit(
+            on_progress,
+            "scan",
+            "completed",
+            label="Scan agent sessions",
+            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+        )
         warnings.extend(stats.warnings)
         sessions = store.list_sessions(since=window_start)
     summaries = _summarise_sessions(sessions)
@@ -604,8 +640,7 @@ def run_agent_standup(
     attention: tuple[str, ...] = ()
     narrative = ""
     if (summaries or repo_rows) and not dry_run:
-        if on_progress is not None:
-            on_progress("Writing the digest")
+        _emit(on_progress, "digest", "running", label="Write the digest")
         from yeaboi.prompts.agentwatch import get_standup_digest_prompt
 
         prompt = get_standup_digest_prompt(
@@ -620,6 +655,9 @@ def run_agent_standup(
         highlights = _str_list(parsed.get("highlights"))[:6]
         attention = _str_list(parsed.get("attention_items"))[:6]
         narrative = str(parsed.get("narrative") or "").strip()
+        _emit(on_progress, "digest", "fallback" if llm_warnings else "completed", label="Write the digest")
+    else:
+        _emit(on_progress, "digest", "no_data", label="Write the digest", detail="skipped")
     if not narrative:
         highlights, attention, narrative = _fallback_standup_prose(summaries, repo_rows)
 
@@ -792,24 +830,30 @@ def run_agent_security(
     warnings: list[str] = []
     with AgentWatchStore(_resolve_db_path(db_path)) as store:
         if deep:
-            if on_progress is not None:
-                on_progress("Re-scanning every session transcript")
             store.reset_cursors()
-        if on_progress is not None:
-            on_progress("Scanning local agent sessions")
+        scan_label = "Re-scan every transcript" if deep else "Scan transcripts"
+        _emit(on_progress, "scan", "running", label=scan_label)
         stats = collector.refresh(store, on_progress=on_progress)
+        _emit(
+            on_progress,
+            "scan",
+            "completed",
+            label=scan_label,
+            detail=f"{stats.files_parsed} parsed · {stats.files_skipped} cached",
+        )
         warnings.extend(stats.warnings)
         sessions_scanned = _distinct_session_count(store.list_sessions())
         files_scanned = stats.files_seen
         findings = _stored_findings(store)
 
-    if on_progress is not None:
-        on_progress("Auditing agent settings")
-    findings.extend(security_checks.audit_settings())
-    if on_progress is not None:
-        on_progress("Inventorying MCP servers")
+    _emit(on_progress, "settings", "running", label="Audit settings")
+    settings_findings = security_checks.audit_settings()
+    findings.extend(settings_findings)
+    _emit(on_progress, "settings", "completed", label="Audit settings", detail=f"{len(settings_findings)} finding(s)")
+    _emit(on_progress, "mcp", "running", label="Inventory MCP servers")
     mcp_servers, mcp_findings = security_checks.inventory_mcp()
     findings.extend(mcp_findings)
+    _emit(on_progress, "mcp", "completed", label="Inventory MCP servers", detail=f"{len(mcp_servers)} server(s)")
 
     ranked = security_checks.rank_findings(findings)
     posture = security_checks.compute_posture(ranked)
@@ -820,8 +864,7 @@ def run_agent_security(
     summary = ""
     recommendations: tuple[str, ...] = ()
     if ranked and not dry_run:
-        if on_progress is not None:
-            on_progress("Writing the summary")
+        _emit(on_progress, "summary", "running", label="Write the summary")
         from yeaboi.prompts.agentwatch import get_security_summary_prompt
 
         prompt = get_security_summary_prompt(
@@ -835,6 +878,9 @@ def run_agent_security(
         warnings.extend(llm_warnings)
         summary = str(parsed.get("summary") or "").strip()
         recommendations = _str_list(parsed.get("recommendations"))[:5]
+        _emit(on_progress, "summary", "fallback" if llm_warnings else "completed", label="Write the summary")
+    else:
+        _emit(on_progress, "summary", "no_data", label="Write the summary", detail="skipped")
     if not summary:
         by_severity: dict[str, int] = {}
         for f in ranked:

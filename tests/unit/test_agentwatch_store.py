@@ -153,3 +153,124 @@ class TestMigration:
                 row[0] for row in aw._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             }
         assert {"agent_sessions", "agent_ingest_files", "agent_security_findings"} <= tables
+
+
+class TestRehydration:
+    """record_report → latest_report → report_from_payload round-trips."""
+
+    @staticmethod
+    def _artifacts():
+        from yeaboi.agent.state import (
+            AgentRepoActivityRow,
+            AgentSecurityReport,
+            AgentSessionSummary,
+            AgentStandupDigest,
+            AgentUsageBreakdownRow,
+            AgentUsageReport,
+            DailyUsagePoint,
+            McpServerRecord,
+            ModelUsageRow,
+            SecurityFinding,
+        )
+
+        usage = AgentUsageReport(
+            period_start="2026-07-10",
+            period_end="2026-08-08",
+            session_count=3,
+            total_cost_usd=31.1,
+            unknown_model_cost_share=0.25,
+            pricing_as_of="2026-06-24",
+            by_model=(ModelUsageRow(model="claude-opus-5", input_tokens=1_000_000, cost_usd=30.0),),
+            by_project=(AgentUsageBreakdownRow(key="webapp", sessions=2, cost_usd=20.5),),
+            by_source=(AgentUsageBreakdownRow(key="claude_code", sessions=3, cost_usd=31.1),),
+            daily_trend=(DailyUsagePoint(date="2026-08-07", cost_usd=31.1, sessions=3),),
+            insights=("opus dominates",),
+            recommendations=("try haiku",),
+            warnings=("no key",),
+            generated_at="2026-08-08T10:00:00+00:00",
+        )
+        standup = AgentStandupDigest(
+            digest_date="2026-08-08",
+            window_start="2026-08-07",
+            window_end="2026-08-08",
+            sessions_worked=1,
+            total_cost_usd=2.5,
+            agents_seen=("claude_code",),
+            session_summaries=(
+                AgentSessionSummary(
+                    session_id="s1",
+                    source="claude_code",
+                    project="webapp",
+                    models=("claude-opus-5",),
+                    turns=4,
+                    cost_usd=2.5,
+                    top_tools=(("Bash", "7"), ("Edit", "3")),
+                    started_at="2026-08-07T10:00:00+00:00",
+                ),
+            ),
+            repo_activity=(
+                AgentRepoActivityRow(source="github", repo="webapp", kind="pr", title="fix", status="merged"),
+            ),
+            highlights=("merged a fix",),
+            narrative="one session ran.",
+            coverage_notes=("trackers skipped",),
+            generated_at="2026-08-08T10:00:00+00:00",
+        )
+        security = AgentSecurityReport(
+            scan_date="2026-08-08",
+            posture="needs-attention",
+            sessions_scanned=3,
+            files_scanned=5,
+            secrets_found=1,
+            findings=(
+                SecurityFinding(severity="high", category="secret", title="Credential", location="/x.jsonl", line_no=2),
+            ),
+            mcp_servers=(McpServerRecord(name="tracker", transport="http", target="http://x", flags=("plain-http",)),),
+            settings_flags=("bypass-permissions",),
+            summary="1 finding.",
+            recommendations=("rotate it",),
+            generated_at="2026-08-08T10:00:00+00:00",
+        )
+        return {"usage": usage, "standup": standup, "security": security}
+
+    def test_round_trip_each_kind(self, store):
+        from yeaboi.agentwatch.store import report_from_payload
+
+        for kind, artifact in self._artifacts().items():
+            store.record_report(kind, artifact, key_date="2026-08-08")
+            row = store.latest_report(kind)
+            assert row is not None
+            rebuilt = report_from_payload(kind, row["report"])
+            # Frozen-dataclass equality: every nested row and tuple must survive
+            # the JSON round trip (top_tools pairs come back as lists otherwise).
+            assert rebuilt == artifact
+
+    def test_latest_report_empty_history_is_none(self, store):
+        assert store.latest_report("usage") is None
+
+    def test_missing_keys_rehydrate_with_defaults(self):
+        from yeaboi.agentwatch.store import report_from_payload
+
+        rebuilt = report_from_payload("usage", {"period_start": "2026-08-01"})
+        assert rebuilt is not None
+        assert rebuilt.period_start == "2026-08-01"
+        assert rebuilt.by_model == ()
+        assert rebuilt.total_cost_usd == 0.0
+
+    def test_corrupt_payloads_are_none(self):
+        from yeaboi.agentwatch.store import report_from_payload
+
+        assert report_from_payload("usage", {}) is None
+        assert report_from_payload("usage", "not a dict") is None
+        assert report_from_payload("unknown-kind", {"a": 1}) is None
+
+    def test_corrupt_json_row_falls_back_to_none(self, store):
+        from yeaboi.agentwatch.store import report_from_payload
+
+        store._conn.execute(
+            "INSERT INTO agent_usage_reports (period_start, report_json, created_at) VALUES (?, ?, ?)",
+            ("2026-08-08", "{broken json", "2026-08-08T10:00:00+00:00"),
+        )
+        row = store.latest_report("usage")
+        assert row is not None
+        assert report_from_payload("usage", row["report"]) is None
