@@ -28,6 +28,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -175,6 +177,26 @@ class AgentWatchStore:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Batch writes into one explicit transaction on the autocommit connection.
+
+        The connection runs in autocommit (``isolation_level = None``), so a
+        cold ``collector.refresh()`` used to pay one fsync per statement —
+        ~1,500 transactions over a large corpus. Wrapping a batch in
+        BEGIN…COMMIT collapses that to one. Rolls back if the block raises.
+        Every other caller keeps autocommit semantics untouched. Not reentrant:
+        SQLite has no nested BEGIN, and nothing here nests batches.
+        """
+        self._conn.execute("BEGIN")
+        try:
+            yield
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        else:
+            self._conn.execute("COMMIT")
 
     def __del__(self) -> None:
         self.close()
