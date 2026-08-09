@@ -85,3 +85,4 @@ SCRUM.md
 /alerts-raw.json
 /codeql-auto.json
 /codeql-propose.json
+bin/

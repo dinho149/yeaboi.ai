@@ -4,7 +4,7 @@ UV := $(or $(shell command -v uv 2>/dev/null),$(HOME)/.local/bin/uv)
 # Override for forks of VS Code (e.g. `CODE=cursor make wt-open NAME=my-feature`).
 CODE ?= code
 
-.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-teardown
+.PHONY: install dev test test-fast test-v test-all lint format security run run-dry clean env pre-commit graph demo demo-render eval contract record smoke-test snapshot-update budget-report bump-patch bump-minor bump-major build publish help wt-new wt-open wt-headless wt-issue wt-list wt-rm wt-rm-all web web-dev web-check web-test web-install dev-board dev-poker dev-deck dev-editable site-seo site-check site-og site-serve pr-feedback cowork-setup cowork-agenda cowork-check cowork-teardown go-build go-test go-lint parity
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -236,6 +236,23 @@ cowork-teardown: ## Delete the cowork GitHub labels + model repo variables (prom
 	    $(UV) run python scripts/cowork_setup.py --teardown --labels --variables --yes; \
 	  else echo "[cowork] teardown aborted"; fi
 
+# ── Go core (the yeaboi-core sidecar — see contracts/v1/rpc.md) ──────────────
+# The binary is NEVER committed; bin/ is gitignored. `make test` stays
+# pytest-only: the parity suite skips itself when the binary is absent, and CI
+# builds the binary in its own job before running parity unskipped.
+
+go-build: ## Build the Go sidecar into bin/yeaboi-core (static, CGO-free)
+	cd go && CGO_ENABLED=0 go build -o ../bin/yeaboi-core ./cmd/yeaboi-core
+
+go-test: ## Run the Go unit tests
+	cd go && go test ./...
+
+go-lint: ## Vet + gofmt check for the Go tree
+	cd go && go vet ./... && test -z "$$(gofmt -l .)" || { gofmt -l ./go; echo "gofmt: files need formatting"; exit 1; }
+
+parity: go-build ## Build the sidecar and run the Python↔Go parity suite unskipped
+	YEABOI_CORE_BIN=$(CURDIR)/bin/yeaboi-core $(UV) run pytest tests/parity -v
+
 clean: ## Remove build artifacts and caches
-	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info
+	rm -rf .venv build dist .pytest_cache .ruff_cache *.egg-info src/*.egg-info bin
 	find . -type d -name __pycache__ -exec rm -rf {} +
