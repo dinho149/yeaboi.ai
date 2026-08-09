@@ -780,6 +780,27 @@ function MemberStrip({ members }: { members: StandupMember[] }) {
   );
 }
 
+/**
+ * Zero-activity members, one compact muted row. The engine already withheld
+ * their cards — a card per silent person said "No activity detected" three
+ * ways each. The words lead so the names read as the answer to a question,
+ * not as members the page forgot.
+ */
+function QuietStrip({ names }: { names: string[] }) {
+  if (!names.length) return null;
+  return (
+    <p className={styles['quietStrip']}>
+      <span className={styles['dim']}>No activity detected:</span>
+      {names.map((name) => (
+        <span key={name} className={styles['quietMember']}>
+          <Avatar name={name} size={18} />
+          {name}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 /** Per-member stacked bars, each scaled against the busiest member. */
 function TeamActivity({ members }: { members: StandupMember[] }) {
   const rows = members
@@ -815,6 +836,7 @@ export function Standup({
   edit,
   summary,
   members,
+  quietMembers = [],
   activityCounts,
   activityWindow,
   coverage,
@@ -831,6 +853,8 @@ export function Standup({
   edit?: EditMap;
   summary: Run[][];
   members: StandupMember[];
+  /** Zero-activity members — one compact strip, not a card each. */
+  quietMembers?: string[];
   activityCounts: Array<[string, number]>;
   activityWindow: string;
   coverage: Array<[string, string]>;
@@ -844,7 +868,6 @@ export function Standup({
 }) {
   const confidenceTone = tone(CONFIDENCE_TONE, confidence.label);
   const known = confidence.label && confidence.label !== 'Insufficient data';
-  const totalActivity = activityCounts.reduce((sum, [, n]) => sum + n, 0);
   const sources = countedSegments(activityCounts);
   const hasDetails = activityCounts.length > 0 || coverage.length > 0 || skipped.length > 0;
 
@@ -863,9 +886,9 @@ export function Standup({
           ) : (
             <StatTile value={sprint.name || '—'} label="Sprint" />
           )}
+          {/* No Members or Activity-items tiles: a head-count and a raw API
+              item count are numbers nobody at a standup acts on. */}
           <StatTile value={known ? `${confidence.pct}%` : '—'} label="Confidence" tone={confidenceTone} />
-          <StatTile value={members.length} label="Members" />
-          {activityCounts.length ? <StatTile value={totalActivity} label="Activity items" /> : null}
         </StatGrid>
 
         <p className={styles['confidence']}>
@@ -930,9 +953,10 @@ export function Standup({
           members.map((member) => (
             <Member key={member.name} member={member} correctable={correctable} />
           ))
-        ) : (
+        ) : quietMembers.length ? null : (
           <p className={styles['empty']}>No individual updates.</p>
         )}
+        <QuietStrip names={quietMembers} />
       </section>
 
       {images.length ? (

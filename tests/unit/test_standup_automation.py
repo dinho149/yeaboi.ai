@@ -190,10 +190,13 @@ class TestBurstHeuristic:
 class TestNoticeLines:
     def test_marker_notice_copy(self):
         _, clusters = partition_automated([_review(body="Reported by Wiz: finding.")])
-        (line,) = notice_lines(clusters)
+        line, tail = notice_lines(clusters)
         assert "Excluded 1 review item(s) posted under 'Dev Person'" in line
         assert "matched 'wiz'" in line
-        assert "automation_markers" in line and "automation_handling" in line
+        # The how-to-tune instructions live in the single shared tail line, not
+        # in every cluster line — the notice recurs daily, the manual must not.
+        assert "automation_markers" not in line
+        assert "automation_markers" in tail and "automation_handling" in tail
 
     def test_burst_notice_copy(self):
         items = [
@@ -201,7 +204,22 @@ class TestNoticeLines:
             for i in range(18)
         ]
         _, clusters = partition_automated(items)
-        (line,) = notice_lines(clusters)
+        line, tail = notice_lines(clusters)
         assert line.startswith("Excluded 18 near-identical review item(s) posted under 'Dev Person'")
         assert "across 6 repositories" in line
-        assert "'off'" in line
+        assert "'off'" in tail
+
+    def test_tune_tail_appears_once_for_many_clusters(self):
+        _, marker = partition_automated([_review(body="Reported by Wiz: finding.")])
+        _, burst = partition_automated(
+            [
+                _review(body=_wiz_body(f"r{i % 6}", i), repo=f"r{i % 6}", ts=f"2026-07-27T09:00:{i:02d}", key=f"k{i}")
+                for i in range(18)
+            ]
+        )
+        lines = notice_lines([*marker, *burst])
+        assert len(lines) == 3
+        assert sum("automation_handling" in line for line in lines) == 1
+
+    def test_no_clusters_no_tail(self):
+        assert notice_lines([]) == []

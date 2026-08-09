@@ -360,9 +360,11 @@ def _belongs_to_a_pull_request(subject: str) -> bool:
     """Skip-gate for the rules about a commit's *home*: does it name a PR at all?
 
     Any PR reference counts, including the parenthesised "(#91)" of a squash
-    merge — the commit has a home either way.
+    merge — the commit has a home either way. Branch-sync merges ("Merge
+    remote-tracking branch …") name no PR, but git wrote them: they are
+    nobody's untracked work and bypassed no review, so they skip too.
     """
-    return references.claims_pull_request(subject) or _is_revert(subject)
+    return references.claims_pull_request(subject) or references.is_merge_subject(subject) or _is_revert(subject)
 
 
 def _is_plumbing(subject: str) -> bool:

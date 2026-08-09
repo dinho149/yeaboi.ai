@@ -10,10 +10,6 @@
         "At risk (68%)"
       ],
       [
-        "MEMBERS",
-        "3"
-      ],
-      [
         "WINDOW",
         "last 24 hours"
       ]
@@ -123,17 +119,7 @@
                 "url": "https://example.invalid/browse/YB-3"
               }
             ],
-            "items": [
-              [
-                {
-                  "href": "https://example.invalid/browse/YB-1",
-                  "s": "YB-1"
-                },
-                {
-                  "s": " moved to Done."
-                }
-              ]
-            ],
+            "items": [],
             "label": "Ticketing",
             "links": [
               [
@@ -204,13 +190,7 @@
                 "url": "https://example.invalid/commit/78e4201d"
               }
             ],
-            "items": [
-              [
-                {
-                  "s": "Merged three pull requests."
-                }
-              ]
-            ],
+            "items": [],
             "label": "Code",
             "links": [
               [
@@ -382,24 +362,6 @@
             }
           ]
         ]
-      },
-      {
-        "categories": [],
-        "counts": [
-          0,
-          0,
-          0
-        ],
-        "footnotes": [],
-        "links": [],
-        "name": "Quiet",
-        "summary": [
-          [
-            {
-              "s": "No activity detected."
-            }
-          ]
-        ]
       }
     ],
     "practices": [
@@ -418,6 +380,9 @@
         "rule": "commit-messages",
         "title": "Thin commit messages"
       }
+    ],
+    "quietMembers": [
+      "Quiet"
     ],
     "skipped": [
       [

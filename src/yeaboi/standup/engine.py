@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Collection
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
+from yeaboi import html_theme
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
 
 if TYPE_CHECKING:
@@ -649,7 +651,23 @@ def _member_evidence(
     rows: list[ActivityEvidence] = []
     for a in ordered:
         url = (a.get("url") or "").strip()
-        dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
+        # One PR merge = one row. The same merge lands as two commits with
+        # different SHAs (the branch-side and target-side merge commits carry
+        # the same "Merge pull request N…" subject), so URL-first dedupe kept
+        # both; keying merge commits on the PR number keeps only the newest.
+        # Gated on the subject being an actual merge — an authored commit
+        # wearing a "(PR #91)" provenance tail is distinct work, not a merge.
+        # Any merge subject naming the same PR shares the key, so a branch-sync
+        # merge tagged with the PR's tail folds into the PR merge too: all of
+        # them are plumbing, and one row of it is enough.
+        title = str(a.get("title") or "")
+        pr_number = (
+            references.pr_reference(title) if a.get("kind") == "commit" and references.is_merge_subject(title) else ""
+        )
+        if pr_number:
+            dedupe = f"pr-merge:{a.get('repository', '')}:{pr_number}"
+        else:
+            dedupe = url or f"{a.get('kind', '')}:{a.get('key', '')}:{a.get('title', '')}"
         if dedupe in seen:
             continue
         seen.add(dedupe)
@@ -897,12 +915,51 @@ def _build_fallback_member_updates(
 
 
 def _build_fallback_team_summary(bundle: collector.ActivityBundle, progress: confidence.SprintProgress) -> str:
-    """Deterministic team summary when the LLM is unavailable."""
-    counts = ", ".join(f"{src}: {n}" for src, n in bundle.counts) or "no sources"
-    return (
-        f"{bundle.total()} activity item(s) detected ({counts}). "
-        f"Sprint status: {progress.confidence_label}. {progress.confidence_rationale}"
-    ).strip()
+    """Deterministic team summary when the LLM is unavailable.
+
+    Deliberately spare: the confidence chip already states the label and
+    rationale, and the Details footer already itemises the per-source counts —
+    a fallback that restated both rendered the same three facts twice on a page
+    with no LLM to say anything else.
+    """
+    if not bundle.total():
+        return f"No activity detected in the collection window. Sprint status: {progress.confidence_label}."
+    return f"Sprint status: {progress.confidence_label}."
+
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _strip_rationale_echo(team_summary: str, rationale: str) -> str:
+    """Drop team-summary sentences that restate the confidence rationale.
+
+    The rationale renders beside the confidence chip, directly above the team
+    summary; an LLM told the sprint status as context tends to open by repeating
+    it ("Day 2 of 10: 0 of ~3 ideal points burned" → "The sprint is on day 2 of
+    10 with no points burned yet…"). The test is what fraction of the
+    *rationale's* words the sentence covers — the echo sentence pads itself with
+    prose, so measuring against the sentence would let every echo through. A
+    sentence goes only on ≥70% coverage of a rationale with enough words to make
+    that meaningful, so a first sentence that says something of its own always
+    survives.
+
+    Generation-time only, on the LLM's own words — deliberately NOT applied by
+    the exporters or renderers: ``team_summary`` is host-editable on a share,
+    and a fuzzy strip downstream could silently delete a sentence a human
+    wrote. Reports stored before this existed keep their echo; history is
+    history.
+    """
+    rationale_words = set(_WORD_RE.findall((rationale or "").lower()))
+    if len(rationale_words) < 4:
+        return team_summary
+    kept: list[str] = []
+    for sentence in html_theme.split_sentences(team_summary):
+        words = set(_WORD_RE.findall(sentence.lower()))
+        if len(rationale_words & words) / len(rationale_words) >= 0.7:
+            logger.info("standup: dropped a team-summary sentence that echoed the confidence rationale")
+            continue
+        kept.append(sentence)
+    return " ".join(kept)
 
 
 def _summarize_members(
@@ -1146,7 +1203,8 @@ def _summarize_members(
             )
         )
 
-    team_summary = (parsed.get("team_summary") or "").strip() or _build_fallback_team_summary(bundle, progress)
+    team_summary = _strip_rationale_echo((parsed.get("team_summary") or "").strip(), progress.confidence_rationale)
+    team_summary = team_summary or _build_fallback_team_summary(bundle, progress)
     return updates, team_summary, []
 
 

@@ -90,6 +90,89 @@ class TestRender:
         assert "↗ PSOT-1" in cap.get()
 
 
+class TestRenderDenoise:
+    """Both text renderers apply the exporters' de-noise pass — the terminal an
+    operator watches must not be noisier than the Slack post the run delivers."""
+
+    def _rich_text(self, rep: StandupReport) -> str:
+        from rich.console import Console
+
+        console = Console(width=120, file=open("/dev/null", "w"))
+        with console.capture() as cap:
+            console.print(render.format_standup_rich(rep))
+        return cap.get()
+
+    def _quiet(self, name: str) -> MemberUpdate:
+        return MemberUpdate(
+            name=name,
+            summary="No activity detected.",
+            ticketing_summary="No ticketing activity detected in the selected sources.",
+            code_summary="No code activity detected in the selected repositories.",
+            documentation_summary="No documentation activity detected in the selected sources.",
+        )
+
+    def test_quiet_members_collapse_to_one_line_on_both_surfaces(self):
+        rep = StandupReport(
+            date="2026-07-10",
+            member_updates=(
+                MemberUpdate(name="Alice", summary="login page", ticketing_activity_count=1),
+                self._quiet("Bo"),
+                self._quiet("Cy"),
+            ),
+        )
+        for text in (render.format_standup_plaintext(rep), self._rich_text(rep)):
+            assert "No activity detected: Bo, Cy" in text
+            assert "• Bo" not in text
+
+    def test_canonical_empty_category_lines_drop_but_failed_survives(self):
+        from yeaboi.standup import categories
+
+        failed = categories.empty_summary("ticketing", categories.FAILED)
+        rep = StandupReport(
+            date="2026-07-10",
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="login page",
+                    ticketing_summary=failed,
+                    code_summary="No code activity detected in the selected repositories.",
+                    code_activity_count=0,
+                ),
+            ),
+        )
+        for text in (render.format_standup_plaintext(rep), self._rich_text(rep)):
+            assert "No code activity detected" not in text
+            # "we could not look" is per-member news, never dropped.
+            assert "unavailable because the selected" in text
+
+    def test_overview_clauses_dedupe_per_known_ticket(self):
+        rep = StandupReport(
+            date="2026-07-10",
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="Edited PSOT-9; continuing PSOT-9 in progress",
+                    ticketing_links=(("PSOT-9", "https://j/browse/PSOT-9"),),
+                    ticketing_activity_count=1,
+                ),
+            ),
+        )
+        text = render.format_standup_plaintext(rep)
+        assert "General overview: Edited PSOT-9" in text
+        assert "continuing" not in text
+
+    def test_team_summary_renders_verbatim(self):
+        # The rationale-echo strip is generation-time only: a host-edited
+        # sentence overlapping the rationale must survive both renderers.
+        rep = StandupReport(
+            date="2026-07-10",
+            confidence_rationale="Day 2 of 10: 0 of ~3 ideal points burned (0%).",
+            team_summary="We are on day 2 of 10 with 0 of ~3 ideal points burned, hence flagging the API work.",
+        )
+        for text in (render.format_standup_plaintext(rep), self._rich_text(rep)):
+            assert "flagging the API work" in text
+
+
 class TestTerminalDelivery:
     def test_prints_and_succeeds(self, capsys):
         assert TerminalDelivery().send(_report()) is True

@@ -238,21 +238,28 @@ def partition_automated(
 
 
 def notice_lines(clusters: Sequence[AutomationCluster]) -> list[str]:
-    """Human-readable Notices explaining exactly what was excluded and how to tune it."""
+    """Human-readable Notices explaining exactly what was excluded and how to tune it.
+
+    One short line per cluster, plus a single shared how-to-tune tail: the
+    notice recurs every run, so the config instructions must not — repeating
+    them per cluster made a 16-item exclusion a paragraph.
+    """
     lines: list[str] = []
     for c in clusters:
         if c.reason.startswith("burst"):
-            scope = f"across {len(c.repositories)} repositories " if len(c.repositories) > 1 else ""
+            scope = f" across {len(c.repositories)} repositories" if len(c.repositories) > 1 else ""
             lines.append(
-                f"Excluded {c.count} near-identical {c.kind} item(s) posted under '{c.author}' {scope}"
-                f"that look like service-hook automation — set 'automation_handling' to 'off' "
-                f"(standup_config_set via the yeaboi MCP server) if this is real work."
+                f"Excluded {c.count} near-identical {c.kind} item(s) posted under '{c.author}'{scope} "
+                f"that look like service-hook automation."
             )
         else:
             lines.append(
                 f"Excluded {c.count} {c.kind} item(s) posted under '{c.author}' that look automated "
-                f"({c.label}) — service-hook activity is not credited as personal work. "
-                f"Tune 'automation_markers' or set 'automation_handling' to 'off' "
-                f"(standup_config_set via the yeaboi MCP server)."
+                f"({c.label}) — not credited as personal work."
             )
+    if lines:
+        lines.append(
+            "Tune 'automation_markers' or set 'automation_handling' to 'off' "
+            "(standup_config_set via the yeaboi MCP server)."
+        )
     return lines

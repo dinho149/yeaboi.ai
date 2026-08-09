@@ -185,6 +185,18 @@ class TestMergeSubjectIsNarrowerThanPrClaim:
             assert references.claims_pull_request(subject), subject
             assert not references.is_merge_subject(subject), subject
 
+    def test_branch_sync_merges_are_merges_but_claim_no_pr(self):
+        # git wrote these subjects, not the author: no rule should judge them —
+        # but they name no PR, so nesting under a PR parent stays impossible.
+        for subject in (
+            "Merge branch 'main' into feature-x",
+            "Merge remote-tracking branch 'origin/master' into psot/jenkins-governance-plugins",
+        ):
+            assert references.is_merge_subject(subject), subject
+            assert not references.claims_pull_request(subject), subject
+
     def test_a_plain_subject_is_neither(self):
         assert not references.claims_pull_request("Add the SAML config")
         assert not references.is_merge_subject("Add the SAML config")
+        # "branch" mid-sentence is not a merge commit.
+        assert not references.is_merge_subject("Fix the merge branch selector UI")

@@ -1,6 +1,7 @@
 """Unit tests for Daily Standup Markdown + HTML export."""
 
 import json
+from dataclasses import replace
 
 from tests._pages import assert_self_contained, island
 from yeaboi.agent.state import ActivityEvidence, MemberUpdate, StandupReport
@@ -670,7 +671,10 @@ class TestCardReadability:
             ["PSOT-3", "https://j/browse/PSOT-3"],
         ]
 
-    def test_empty_category_becomes_footnote_not_column(self):
+    def test_canonical_empty_state_is_suppressed_not_a_footnote(self):
+        # "No documentation activity detected…" is a report-wide coverage fact
+        # the Details section states once; repeating it per card buried the
+        # members who did something.
         rep = _report(
             member_updates=(
                 MemberUpdate(
@@ -685,45 +689,118 @@ class TestCardReadability:
         )
         member = island(build_standup_html(rep))["report"]["members"][0]
         assert [c["label"] for c in member["categories"]] == ["Ticketing"]
-        assert member["footnotes"] == [
-            {
-                "label": "Documentation",
-                "runs": [{"s": "No documentation activity detected in the selected sources."}],
-            }
-        ]
+        assert member["footnotes"] == []
+        md = build_standup_markdown(rep)
+        assert "No documentation activity detected" not in md
 
-    def test_not_configured_wording_survives_in_footnote(self):
+    def test_bespoke_empty_category_prose_still_becomes_footnote(self):
+        # Only the canonical machine sentences are droppable; an LLM that said
+        # something of its own about a quiet category keeps its footnote.
         rep = _report(
             member_updates=(
                 MemberUpdate(
                     name="Alice",
                     summary="x",
                     ticketing_summary="Moved PSOT-1 forward.",
-                    ticketing_activity_count=1,
-                    documentation_summary="Documentation sources are not configured for this standup.",
+                    ticketing_activity_count=2,
+                    documentation_summary="Nothing published, though two drafts are in review.",
                     documentation_activity_count=0,
                 ),
             ),
         )
-        # "not configured" must stay distinguishable from "no activity detected".
         member = island(build_standup_html(rep))["report"]["members"][0]
-        assert _md_runs(member["footnotes"][0]["runs"]).startswith("Documentation sources are not configured")
+        assert member["footnotes"] == [
+            {
+                "label": "Documentation",
+                "runs": [{"s": "Nothing published, though two drafts are in review."}],
+            }
+        ]
 
-    def test_all_quiet_member_has_no_grid(self):
+    def test_canonical_not_configured_is_suppressed_but_bespoke_wording_survives(self):
+        # The canonical "Documentation sources not configured." is a coverage
+        # fact — the Details line states it (as "not configured") once for the
+        # whole report, so per-card copies drop. Bespoke wording is a footnote.
+        from yeaboi.standup import categories as categories_mod
+
+        canonical = categories_mod.empty_summary("documentation", categories_mod.NOT_CONFIGURED)
+        base = dict(name="Alice", summary="x", ticketing_summary="Moved PSOT-1 forward.", ticketing_activity_count=1)
+        rep = _report(member_updates=(MemberUpdate(**base, documentation_summary=canonical),))
+        assert island(build_standup_html(rep))["report"]["members"][0]["footnotes"] == []
+
+        bespoke = "Documentation sources are not configured for this standup."
+        rep = _report(member_updates=(MemberUpdate(**base, documentation_summary=bespoke),))
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert _md_runs(member["footnotes"][0]["runs"]) == bespoke
+
+    def _quiet_member(self, name: str = "Quiet") -> MemberUpdate:
+        return MemberUpdate(
+            name=name,
+            summary="No activity detected.",
+            ticketing_summary="No ticketing activity detected in the selected sources.",
+            code_summary="No code activity detected in the selected repositories.",
+            documentation_summary="No documentation activity detected in the selected sources.",
+        )
+
+    def test_all_quiet_member_collapses_into_the_quiet_strip(self):
+        # A card that would say nothing but "No activity detected" is not a
+        # card: the name moves to `quietMembers` and the markdown gets one
+        # shared line, so two silent people cost two words, not two sections.
         rep = _report(
             member_updates=(
-                MemberUpdate(
-                    name="Quiet",
-                    summary="No activity detected.",
-                    ticketing_summary="No ticketing activity detected.",
-                    code_summary="No code activity detected in the selected repositories.",
-                    documentation_summary="No documentation activity detected in the selected sources.",
-                ),
+                MemberUpdate(name="Alice", summary="Moved PSOT-1 forward.", ticketing_activity_count=1),
+                self._quiet_member("Quiet"),
+                self._quiet_member("Silent"),
             ),
         )
-        member = island(build_standup_html(rep))["report"]["members"][0]
-        assert member["categories"] == []
-        assert len(member["footnotes"]) == 3
+        report = island(build_standup_html(rep))["report"]
+        assert [m["name"] for m in report["members"]] == ["Alice"]
+        assert report["quietMembers"] == ["Quiet", "Silent"]
+        md = build_standup_markdown(rep)
+        assert "### Quiet" not in md
+        assert "_No activity detected: Quiet, Silent._" in md
+
+    def test_member_with_a_hand_edited_category_summary_keeps_the_full_card(self):
+        # A host can edit ticketing/code/documentation summaries on a share;
+        # the downloaded copy renders through this same predicate, so an edited
+        # sentence on a zero-activity member must not vanish into the strip.
+        edited = replace(self._quiet_member("Edited"), ticketing_summary="Actually shipped the audit fix offline.")
+        rep = _report(member_updates=(edited,))
+        report = island(build_standup_html(rep))["report"]
+        assert [m["name"] for m in report["members"]] == ["Edited"]
+        assert report["quietMembers"] == []
+
+    def test_member_behind_a_failed_source_keeps_the_card_and_its_caveat(self):
+        # On a day Jira 401s, "No activity detected: Bo" would be a positive
+        # claim nobody verified — the FAILED sentence is not a droppable empty
+        # state, so the member keeps a card and the caveat keeps its footnote.
+        from yeaboi.standup import categories as categories_mod
+
+        failed = categories_mod.empty_summary("ticketing", categories_mod.FAILED)
+        member = replace(self._quiet_member("Bo"), ticketing_summary=failed)
+        rep = _report(member_updates=(member,))
+        report = island(build_standup_html(rep))["report"]
+        assert [m["name"] for m in report["members"]] == ["Bo"]
+        assert report["quietMembers"] == []
+        assert any(failed in _md_runs(f["runs"]) for f in report["members"][0]["footnotes"])
+
+    def test_member_with_a_practice_or_blocker_keeps_the_full_card(self):
+        # A votable signal or a blocker must never disappear into the strip.
+        from yeaboi.agent.state import PracticeSignal
+
+        signal = PracticeSignal(rule="untracked-work", title="Untracked work", detail="d")
+        blocked = replace(self._quiet_member("Blocked"), blockers="Waiting on infra.")
+        flagged = replace(self._quiet_member("Flagged"), practices=(signal,))
+        rep = _report(member_updates=(blocked, flagged))
+        report = island(build_standup_html(rep))["report"]
+        assert [m["name"] for m in report["members"]] == ["Blocked", "Flagged"]
+        assert report["quietMembers"] == []
+
+    def test_editable_share_keeps_quiet_members_as_cards(self):
+        # The strip has no edit anchors; a host correcting the record needs the card.
+        rep = _report(member_updates=(self._quiet_member("Quiet"),))
+        payload = export.standup_export_args(rep, editable=True)["report"]
+        assert [m["name"] for m in payload["members"]] == ["Quiet"]
+        assert payload["quietMembers"] == []
 
     def test_links_only_category_still_gets_column(self):
         # Evidence links with no prose (legacy-ish shape) must not vanish.
@@ -856,6 +933,23 @@ class TestEvidence:
         legacy = export._evidence_payload([{"kind": "issue", "key": "PSOT-1"}])[0]
         assert (legacy["type"], legacy["parent"], legacy["subtask"], legacy["tickets"]) == ("", "", False, [])
 
+    def test_duplicate_pr_merge_rows_collapse_on_reexport(self):
+        # Reports stored before the engine deduped merge commits carry the
+        # branch-side and target-side merges as two rows — same subject,
+        # different SHAs. Re-exports of history deserve one merge, one row.
+        rows = (
+            _evidence(key="e8bc280c", url="https://a/c/1", title="Merge pull request 48780 from psot/x"),
+            _evidence(key="31a595f1", url="https://a/c/2", title="Merge pull request 48780 from psot/x"),
+            _evidence(key="abc123", url="https://a/c/3", title="Bound the history table"),
+        )
+        payload = export._evidence_payload(rows)
+        assert [r["key"] for r in payload] == ["e8bc280c", "abc123"]
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="x", code_activity_count=3, code_evidence=rows),),
+        )
+        md = build_standup_markdown(rep)
+        assert md.count("Merge pull request 48780") == 1
+
     def test_markdown_renders_nested_evidence_bullets_with_cap(self):
         rows = tuple(_evidence(key=f"#{i}", url=f"https://g/pr/{i}", title=f"Change {i}") for i in range(6))
         rep = _report(
@@ -870,7 +964,10 @@ class TestEvidence:
             ),
         )
         md = build_standup_markdown(rep)
-        assert "- **Code:** Merged six PRs." in md
+        # The prose one-liner is dropped when evidence rows exist — it is an
+        # LLM restatement of the same rows, and rendered every fact twice.
+        assert "- **Code:**" in md
+        assert "Merged six PRs." not in md
         assert "  - [#0](https://g/pr/0) Change 0 · yeaboi/web" in md
         assert "  - [#3](https://g/pr/3) Change 3 · yeaboi/web" in md
         assert "#4" not in md  # capped at 4 rows
@@ -974,6 +1071,30 @@ class TestEvidenceChildren:
         assert "1892385692" not in md
 
 
+class TestTeamSummaryRendersVerbatim:
+    """Exporters never run the fuzzy rationale-echo strip.
+
+    ``team_summary`` is host-editable on a share; a downstream 70%-overlap
+    strip could silently delete a sentence a human wrote about sprint status.
+    The strip is generation-time only (`engine._strip_rationale_echo`), so
+    whatever the stored report says — LLM output or a host's edit — is what
+    every surface renders.
+    """
+
+    def test_a_sentence_overlapping_the_rationale_survives_every_surface(self):
+        rep = _report(
+            team_summary=(
+                "We are on day 2 of 10 with 0 of ~3 ideal points burned, which is why I am "
+                "flagging the API work. Alice shipped the exporter."
+            ),
+            confidence_rationale="Day 2 of 10: 0 of ~3 ideal points burned (0%).",
+        )
+        md = build_standup_markdown(rep)
+        assert "flagging the API work" in md
+        payload = island(build_standup_html(rep))["report"]
+        assert len(payload["summary"]) == 2
+
+
 class TestSummaryBullets:
     """The member intro ships as terse clause bullets, one run-list each."""
 
@@ -991,6 +1112,50 @@ class TestSummaryBullets:
         md = build_standup_markdown(rep)
         assert "- Closed the login work" in md
         assert "- continuing the audit fix." in md
+
+    def test_bullets_re_mentioning_only_covered_tickets_are_dropped(self):
+        # Real-run shape: "Edited PSOT-1639" then "continuing PSOT-1639 in
+        # progress" is one fact twice. A clause naming any NEW key survives.
+        # The links put both keys in the report's key map — dedupe is gated on
+        # keys the tracker actually produced.
+        rep = _report(
+            member_updates=(
+                MemberUpdate(
+                    name="Alice",
+                    summary="Edited PSOT-1639; continuing PSOT-1639 in progress; carrying PSOT-1638 through review.",
+                    ticketing_links=(
+                        ("PSOT-1639", "https://j/browse/PSOT-1639"),
+                        ("PSOT-1638", "https://j/browse/PSOT-1638"),
+                    ),
+                    ticketing_activity_count=2,
+                ),
+            ),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        bullets = ["".join(run["s"] for run in runs) for runs in member["summary"]]
+        assert bullets[0].startswith("Edited PSOT-1639")
+        assert bullets[1].startswith("carrying PSOT-1638")
+        assert len(bullets) == 2
+        md = build_standup_markdown(rep)
+        assert "continuing" not in md
+
+    def test_keyless_bullets_are_never_deduped(self):
+        rep = _report(
+            member_updates=(MemberUpdate(name="Alice", summary="Paired on the migration; paired on the migration."),),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert len(member["summary"]) == 2
+
+    def test_lookalike_keys_never_gate_a_bullet(self):
+        # "UTF-8" matches the key regex but no tracker produced it — the second
+        # clause is its own fact and must survive.
+        rep = _report(
+            member_updates=(
+                MemberUpdate(name="Alice", summary="Fixed the UTF-8 encoder; added UTF-8 round-trip tests."),
+            ),
+        )
+        member = island(build_standup_html(rep))["report"]["members"][0]
+        assert len(member["summary"]) == 2
 
 
 class TestFirstMentionTitles:

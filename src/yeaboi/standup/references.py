@@ -62,6 +62,11 @@ PR_NUMBER_RES = (
 )
 MERGE_BRANCH_RE = re.compile(r"Merge pull request .*? from (\S+)")
 
+# A merge that names no PR at all: "Merge branch 'main' into feature-x",
+# "Merge remote-tracking branch 'origin/master' into psot/jenkins". Pure
+# plumbing — git wrote the subject, not the author.
+BRANCH_SYNC_RE = re.compile(r"^\s*Merge (?:remote-tracking )?branch\b")
+
 # Tail the collectors append to a commit subject for provenance: " (PR #91)"
 # from github's PR-branch scan, " (my-repo)" from every AzDO commit and PR.
 # Both inflate a one-word subject, so commit-message judgement strips them.
@@ -221,9 +226,18 @@ def is_merge_subject(subject: str) -> bool:
     *provenance on an authored commit*, so a rule that judges what the author
     wrote must still see it — excluding it would make commit-message quality
     unmeasurable for any team that squash-merges, which is most of them.
+
+    Wider than ``claims_pull_request`` in one direction: a branch-sync merge
+    ("Merge branch 'main' into …") names no PR, but git wrote its subject, so
+    no rule should judge it as the author's work either.
     """
     text = subject or ""
-    return bool(PR_NUMBER_RES[0].search(text) or PR_NUMBER_RES[1].search(text) or MERGE_BRANCH_RE.search(text))
+    return bool(
+        PR_NUMBER_RES[0].search(text)
+        or PR_NUMBER_RES[1].search(text)
+        or MERGE_BRANCH_RE.search(text)
+        or BRANCH_SYNC_RE.search(text)
+    )
 
 
 def normalize_commit_subject(subject: str) -> str:

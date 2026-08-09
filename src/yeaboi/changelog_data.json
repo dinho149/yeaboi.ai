@@ -2,6 +2,43 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.3.2",
+      "date": "2026-08-09",
+      "summary": "Standup output is now significantly cleaner across all surfaces — web page, markdown exports, Slack, and email. Facts are shown once instead of being repeated 3–4 times, quiet team members collapse into a single summary line, and vanity stats are removed from view. The engine dedupes by category and by ticket key, while presentation layers strip redundant explanations. Sync commits and PR merge pairs are consolidated into single evidence rows. Automation notices are now grouped compactly instead of scattered. On average, a 6-member standup report shrinks from 99 dense lines to 75 clean ones.",
+      "highlights": [
+        {
+          "text": "Each fact now appears once — category prose suppressed when structured evidence rows exist, member summaries dedupe per ticket key",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Zero-activity members collapse into a single \"No activity detected\" row across web, markdown, Slack, and email",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Vanity footnotes and stat tiles removed; coverage is stated once in the Details section",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Merge commit pairs and sync commits deduplicated; PR-bypassing and thin commits excluded from evidence",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Automation exclusion notices grouped compactly per cluster; cleaner, more readable reports overall",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.3.1",
       "date": "2026-08-09",
       "summary": "The agent pages (Usage, Standup, Security) now load with clear progress feedback instead of a firehose of transcript lines. Phase-based checklist loading screens show what's happening (scan/price/insights) with a percentage meter and elapsed time, while the last saved report opens instantly and updates in the background. A refresh banner shows the running phase and progress so you always know the page is working, and background progress is streamed and folded into one compact meter instead of spamming the display. Stale reports stay visible if a background refresh fails, and re-running keeps the page populated.",
