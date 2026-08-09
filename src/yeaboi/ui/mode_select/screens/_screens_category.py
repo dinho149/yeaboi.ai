@@ -20,19 +20,20 @@ lesson of ``mode_at_row``'s lock-step comment, applied from the start.
 
 from __future__ import annotations
 
+import re
 import textwrap
 from typing import Any
 
-import rich.box
 from rich.align import Align
 from rich.console import Group, RenderableType
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from yeaboi.ui.shared._ascii_font import render_ascii_text
-from yeaboi.ui.shared._components import AGENTS_THEME, HUMANS_THEME, NEUTRAL_BG, build_page_panel
-from yeaboi.ui.shared._mascot import FRAMES, render_full
+from yeaboi.ui.shared._components import AGENTS_THEME, HUMANS_THEME, build_page_panel
+from yeaboi.ui.shared._mascot import FRAMES, mini_cells, render_full
 
 _CATEGORY_CARDS: list[dict[str, Any]] = [
     {
@@ -65,8 +66,80 @@ _CATEGORY_CARDS: list[dict[str, Any]] = [
 # panel) — it is what the body naturally renders to, and only this page's
 # vertical-centering maths reads it.
 _MASCOT_ROWS = 18
+_TITLE_ROWS = 2  # the block wordmark's own height, reserved while it is late
+# The resting mascot's trace, and how far down the frame he stands. Fewer rows
+# above than below, so the smaller duck sits high in the card the way something
+# further away sits higher on the ground.
+_MASCOT_MINI_ROWS = 12
+_MASCOT_BACK_ABOVE = 2
+# How many paces the walk takes. The last one is the arrival — the swap to the
+# full trace — so the small duck is seen taking _MASCOT_WALK_STEPS - 1 of them.
+_MASCOT_WALK_STEPS = 4
+# Paces per render. The screen redraws on the shared frame clock, so this is
+# the walk's speed: a whole pace every four frames or so.
+_WALK_RATE = 0.15
+# How much of his own colour the furthest-back duck keeps. The rest is the page
+# behind him, which is what a thing in shadow at a distance looks like.
+# The resting duck's idle: a one-row hop every few beats, on a clock slow
+# enough to read as "alive back there" rather than as a second thing moving.
+_MASCOT_HOP_HZ = 2
+_MASCOT_HOP_CYCLE = 6
+_MASCOT_SHADE = 0.28
+_SHADE_TOWARD = (16, 16, 20)  # NEUTRAL_BG, as a triple to mix with
+
+# How far each card's mascot has walked, 0 (back of the shot) to 1 (arrived).
+# Module state for the reason the section rule's position is: the card is built
+# from scratch every frame and has nowhere else to keep it.
+_WALK: dict[str, float] = {}
+
+
+def reset_category_walk() -> None:
+    """Put both mascots back where they started (tests, and a fresh entrance)."""
+    _WALK.clear()
+
+
+def _shaded_rows(cells, level: float) -> list[Text]:
+    """The sprite's cells as Texts, its colours dimmed toward the page.
+
+    Depth is light as well as size: at the back of the shot he is in shadow,
+    and each pace forward brings him further into it. ``level`` is 1.0 for his
+    own colours and _MASCOT_SHADE for the furthest back.
+    """
+    rows: list[Text] = []
+    for row in cells:
+        line = Text(no_wrap=True, overflow="crop")
+        for glyph, style in row:
+            line.append(glyph, style=_shade_style(style, level) if style else None)
+        rows.append(line)
+    return rows
+
+
+def _shade_style(style: str, level: float) -> str:
+    """Dim every ``rgb(...)`` in a cell style toward the page background."""
+
+    def _one(match: re.Match[str]) -> str:
+        r, g, b = (int(v) for v in match.group(1, 2, 3))
+        br, bg, bb = _SHADE_TOWARD
+        return "rgb({},{},{})".format(*(round(c * level + t * (1.0 - level)) for c, t in ((r, br), (g, bg), (b, bb))))
+
+    return re.sub(r"rgb\((\d+),(\d+),(\d+)\)", _one, style)
+
+
+def _walk_step(key: str, selected: bool) -> int:
+    """Advance this mascot toward or away from the front, and say which pace.
+
+    Quantised on purpose: a duck gliding smoothly forward is a duck being
+    dragged, and there are only two traces to draw him at anyway.
+    """
+    target = 1.0 if selected else 0.0
+    at = _WALK.get(key, target)  # first sight of a card is wherever it belongs
+    at = min(1.0, at + _WALK_RATE) if at < target else max(0.0, at - _WALK_RATE)
+    _WALK[key] = at
+    return min(_MASCOT_WALK_STEPS - 1, int(at * _MASCOT_WALK_STEPS))
+
+
 _CARD_ROWS = 28
-_HINT_ROWS = 2  # blank + the key-hint line pinned at the bottom
+_HINT_ROWS = 4  # blank + the key-hint line + the two rows the footer note lands on
 _GUTTER_COLS = 2  # breathing room between the two cards
 
 # The quiet layer around the living cards.
@@ -131,18 +204,54 @@ def _card_half(
     dimmed. ``intro`` < 0.5 reserves the mascot's rows without drawing him, so
     the card never changes height while the entrance settles.
     """
-    color = card["color"]
-
-    # Full-body mascot — the hero. Wing flaps only on the living (selected) card.
-    if intro >= 0.5:
-        frame = int(shimmer_tick * 8) % FRAMES if selected else 0
-        mascot: RenderableType = render_full(frame, mascot=card["mascot"])
+    # Full-body mascot — the hero, and the card's depth cue. The selected one
+    # has walked forward: the full trace, wings flapping on the shared clock.
+    # The resting one has walked back into the screen — the smaller trace, held
+    # still, standing higher in the frame, because distance puts a thing further
+    # up the ground plane as well as making it smaller. Both occupy the same
+    # _MASCOT_ROWS, so the card never changes height as the selection moves.
+    # The mascot leads the entrance; the name follows him (see the title below).
+    if True:
+        step = _walk_step(card["key"], selected)
+        if step >= _MASCOT_WALK_STEPS - 1:
+            # Arrived: the full trace, wings going, feet on the near ground.
+            mascot: RenderableType = render_full(int(shimmer_tick * 8) % FRAMES, mascot=card["mascot"])
+        else:
+            # Still coming: the smaller trace, standing on the same ground the
+            # full one does — his feet are on the title either way, and only
+            # the size and the light say how far back he is. Wings beat once
+            # per pace, and the shadow lifts as he nears the front.
+            # A hop, on a slow clock of its own: one row up for a beat, and his
+            # wings with it. Enough that he is alive back there, not enough to
+            # pull the eye off the card that is actually selected.
+            # Mid-stride he is off the ground. Walking is an arc, not a slide:
+            # standing still he only hops now and then, but while he is crossing
+            # he lifts on every other pace and plants on the ones between.
+            if step > 0:
+                lift = 1 if step % 2 else 0
+            else:
+                beat = int(shimmer_tick * _MASCOT_HOP_HZ) % _MASCOT_HOP_CYCLE
+                lift = 1 if beat == 0 else 0
+            beat = int(shimmer_tick * _MASCOT_HOP_HZ) % _MASCOT_HOP_CYCLE
+            hop = lift
+            above = _MASCOT_ROWS - _MASCOT_MINI_ROWS - hop
+            mascot = Group(
+                *[Text("") for _ in range(above)],
+                *_shaded_rows(
+                    mini_cells(step * 2 + beat, mascot=card["mascot"]),
+                    _MASCOT_SHADE + (1.0 - _MASCOT_SHADE) * (step / max(1, _MASCOT_WALK_STEPS - 1)),
+                ),
+                *[Text("") for _ in range(hop)],
+            )
     else:
         mascot = Group(*[Text("") for _ in range(_MASCOT_ROWS)])
 
     # Block title in SOLID accent — bright on the living card, dim on the
     # resting one. No shimmer: mid-sweep it read as patchy dots.
-    title_lines = render_ascii_text(card["title"])
+    # The duck arrives first and the name follows him. It was the other way
+    # round — the wordmark landing on an empty card, with the mascot appearing
+    # under a name already there — which reads as the art being late.
+    title_lines = render_ascii_text(card["title"]) if intro >= 0.5 else [""] * _TITLE_ROWS
     title_style = f"bold {card['bright']}" if selected else card["dim"]
     title = Text("\n".join(title_lines), justify="center", style=title_style)
     title.no_wrap = True
@@ -164,21 +273,12 @@ def _card_half(
         Align.center(verb),
         *[Align.center(row) for row in caps],
     )
-    # No ``height=``: the body is a fixed 26 rows (see _CARD_ROWS), so the card
-    # sizes itself and stays an *inner* Panel — a Panel carrying height= with no
-    # width= is what the full-screen-background guard looks for, and this one
-    # inherits the page background rather than owning one.
-    # ``test_card_height_matches_the_layout_constant`` pins the two together.
-    return Panel(
-        body,
-        box=rich.box.ROUNDED,
-        expand=True,
-        padding=(0, 1),
-        border_style=color if selected else _REST_BORDER,
-        style=f"on {card['tint']}" if selected else f"on {NEUTRAL_BG}",
-        title=Text(f" {card['key']} ", style=f"bold {card['bright']}" if selected else _REST_BORDER),
-        title_align="center",
-    )
+    # No frame, and no background wash. Two boxes side by side made the choice
+    # look like a form; the mascot walking forward is what marks the live one.
+    # The padding keeps the geometry the border used to occupy, so the card is
+    # the same height either way — ``test_card_height_matches_the_layout_constant``
+    # pins that to _CARD_ROWS.
+    return Padding(body, (1, 2))
 
 
 def _build_category_screen(
@@ -222,20 +322,26 @@ def _build_category_screen(
         *[Text("") for _ in range(mid_bot)],
         Text(""),
         hint,
+        # Two rows for the chrome's footer note: it is drawn over the last three
+        # rendered rows, two of which are content, and the hint has to clear them.
+        Text(""),
+        Text(""),
     )
-    # The page's one question rides the outer frame's border — structural,
-    # never a floating line of copy.
     panel = build_page_panel(
         content,
         height=height,
         padding=(1, 2, 0, 2),
-        title=Text(f" {_HEADING} ", style=_HEADING_STYLE),
-        title_align="center",
     )
     panel._no_back_hint = True  # the landing screen's Esc is quit, not "go back"
     # The screen already features both mascots — a third duck in the chrome
     # corner is a crowd, so opt out (same stamp the too-small guard uses).
     panel._no_companion_duck = True
+    # The question goes ON the bottom border, in the chrome's own frame shape —
+    # floating a row above it, it read as one more thing on the page.
+    panel._footer_note = _HEADING
+    # And no music bar: this screen is one question with two answers, and the
+    # player is furniture for the pages you settle into.
+    panel._no_music = True
     return panel
 
 
