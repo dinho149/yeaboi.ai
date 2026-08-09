@@ -74,7 +74,7 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
     """Return the compact music status line for a Panel's bottom border.
 
     Shows the player state plus the two control-chord hints, e.g.
-    ``♪ Lofi · playing   ctrl+P pause · ctrl+O channel``. When ffplay isn't installed it
+    ``♪ Lofi · playing   P pause · O channel``. When ffplay isn't installed it
     shows a dim, one-line install hint instead so the feature stays discoverable;
     when a spawned player died on its own it shows a dim crash notice in place of
     ``off`` (see :func:`yeaboi.music.last_error`).
@@ -91,7 +91,7 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
         # why rather than a bare "off" so a silently-broken player is diagnosable.
         err = music.last_error()
         line.append(f"♪ {err} " if err else "♪ off ", style=theme.dim if err else theme.muted)
-        toggle_hint = "ctrl+P play"
+        toggle_hint = "P play"
     else:
         line.append("♪ ", style=theme.accent)
         line.append(music.current_channel_name(), style=theme.accent_bright)
@@ -106,13 +106,13 @@ def build_music_subtitle(theme: Theme = PLANNING_THEME) -> Text:
             else:
                 line.append("playing ", style=theme.value)
                 line.append(_eq_bars(), style=theme.accent_bright)  # animated equalizer
-            toggle_hint = "ctrl+P pause"
+            toggle_hint = "P pause"
         else:
             line.append("paused", style=theme.value)
-            toggle_hint = "ctrl+P play"
+            toggle_hint = "P play"
     # Single tidy gap between the status/equalizer and the control hints (was a
     # double gap that left the visualizer stranded).
-    line.append(f"  {toggle_hint} · ctrl+O channel ", style=theme.dim)
+    line.append(f"  {toggle_hint} · O channel ", style=theme.dim)
     return line
 
 
@@ -215,6 +215,66 @@ _back_region: tuple[int, int, int, int] | None = None  # (x0, y0, x1, y1), 1-bas
 # (target 0). Its slide position and click-gate both derive from this.
 _back_presence = 0.0
 
+# Per-tab presence, so a tab that appears while the strip is ALREADY up still
+# peels in rather than snapping into existence — and folds away rather than
+# vanishing when it goes. `_back_presence` alone could not do this: it describes
+# the strip, and a page adding a "next" tab mid-flow leaves it sitting at 1.0.
+#
+# Global on purpose. Every tab drawn here goes through the same registry, so an
+# entrance is a property of BEING a tab rather than something each caller has to
+# remember to ask for.
+_TAB_EASE = 0.3
+_tab_presence: dict[str, float] = {}  # identity -> eased 0->1
+_tab_memory: dict[str, tuple] = {}  # identity -> (label, key, slot) while it folds away
+
+
+def _resolve_tabs(side: str, current: list) -> list[tuple]:
+    """Advance every tab's presence and return what to draw, in slot order.
+
+    Takes this frame's ``[(label, key), ...]`` and returns
+    ``[(label, key, presence, going_away), ...]`` -- including tabs that have
+    just been
+    dropped but are still folding away, put back in the slot they held. A tab is
+    identified by its label text, not its index, so one appearing before another
+    does not make the other restart its entrance.
+    """
+    if not current:
+        # A page offering NO tabs at all is not saying "remove those three" — it
+        # is a different page (a progress screen, a prompt, a sub-flow). Freeze
+        # the registry instead of decaying it, or every tab is forgotten while a
+        # worker runs and peels in from nothing when the page comes back. Only a
+        # page that offers SOME tabs can retire one (Anonymize → Adjust/Revert).
+        return []
+    ids = [f"{side}:{label.plain}" for label, _key in current]
+    out: list[tuple] = []
+    for index, ((label, key), tid) in enumerate(zip(current, ids, strict=True)):
+        presence = _tab_presence.get(tid, 0.0)
+        presence += (1.0 - presence) * _TAB_EASE
+        _tab_presence[tid] = presence
+        _tab_memory[tid] = (label, key, index)
+        out.append((label, key, presence, False))
+    live = set(ids)
+    for tid, (label, _key, slot) in sorted(_tab_memory.items(), key=lambda kv: kv[1][2]):
+        if tid in live or not tid.startswith(f"{side}:"):
+            continue
+        presence = _tab_presence.get(tid, 0.0) * (1.0 - _TAB_EASE)
+        if presence < 0.02:
+            _tab_presence.pop(tid, None)
+            _tab_memory.pop(tid, None)
+            continue
+        _tab_presence[tid] = presence
+        # A departing tab keeps its slot: letting the ones after it slide across
+        # while it is still on screen reads as two moves rather than one. Its key
+        # is dropped -- something folding away must not still be clickable.
+        out.insert(min(slot, len(out)), (label, None, presence, True))
+    return out
+
+
+def _forget_tabs() -> None:
+    """Drop every tab's presence, so the next strip peels in from nothing."""
+    _tab_presence.clear()
+    _tab_memory.clear()
+
 
 def back_region() -> tuple[int, int, int, int] | None:
     """The clickable rect of the back tab this frame (1-based inclusive), or None
@@ -239,9 +299,18 @@ _back_retract_at = 0.0  # monotonic time the fold may begin
 
 
 def retract_back_tab() -> None:
-    """Arm the back tab's fold-away — called when the back button (or Esc) is
-    pressed, so the retract belongs to the press rather than the next screen's
-    entrance. The fold itself starts after ``_BACK_RETRACT_DELAY``."""
+    """Arm the back tab's fold-away.
+
+    NOT called from the Esc chokepoint any more. Arming on the keypress meant the
+    tab folded on EVERY Esc — including the many that pop an internal focus level
+    and stay on the same screen — and then glided straight back in, replaying the
+    whole animation and forcing a redraw. It put the burden on every
+    Esc-consuming screen to call :func:`cancel_back_retract`, which most did not.
+
+    The tab now simply follows its target: a destination with no back tab renders
+    ``target=0.0`` and it glides out there. Kept as a hook for a caller that
+    genuinely wants the fold to lead the navigation.
+    """
     global _back_retracting, _back_retract_at
     _back_retracting = True
     _back_retract_at = time.monotonic() + _BACK_RETRACT_DELAY
@@ -273,6 +342,33 @@ def build_copy_text(theme: Theme = PLANNING_THEME) -> Text:
     return line
 
 
+def build_tab_text(label: str, theme: Theme = PLANNING_THEME) -> Text:
+    """A page action's line for the left strip: just its name, in the value style.
+
+    No key prefix like the copy tab's "c": these are clicked or reached with the
+    same key the page already documents, and five tabs each carrying a letter
+    turned the strip into a cheat sheet.
+    """
+    return Text(label, style=theme.value, justify="left")
+
+
+def build_next_text(theme: Theme = PLANNING_THEME, label: str = "next") -> Text:
+    """The forward line for the tab that sits just left of the music pocket.
+
+    Back is the bottom-LEFT corner, so forward belongs at the bottom-right: the
+    two directions of a flow sit at opposite ends of the same border rather than
+    beside each other. ``label`` lets a terminal step name its own action ("Run
+    Analysis") instead of the generic "next".
+
+    Clicking it reports ``enter`` — the same key that advances the step — so the
+    page's loop needs no extra branch to handle the mouse.
+    """
+    line = Text(justify="left")
+    line.append(f"{label} ", style=theme.value)
+    line.append("⏎", style=theme.accent)
+    return line
+
+
 # Clickable rects of the sibling tabs drawn beside the back tab this frame:
 # (x0, y0, x1, y1, key) — a click inside one is reported as that key press.
 _tab_regions: list[tuple[int, int, int, int, str]] = []
@@ -286,7 +382,193 @@ def chrome_tab_regions() -> list[tuple[int, int, int, int, str]]:
     return _tab_regions
 
 
-def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extra_tabs: list | None = None) -> None:
+# ── The action strip, collapsed ────────────────────────────────────────────
+# A page's actions ride the bottom border as tabs. Three or four of them fill
+# the strip end to end, and they are controls you reach for occasionally while
+# the thing you are reading is the point — so they stack into one tab and open
+# when asked. Sticky on a click, and momentary on a held key.
+_tabs_open = False
+_stack_region: tuple[int, int, int, int] | None = None
+
+
+def tabs_expanded() -> bool:
+    """Whether the actions drawer is open."""
+    return _tabs_open
+
+
+def toggle_tabs() -> None:
+    """Open or close the drawer and leave it that way (a click, or Tab)."""
+    global _tabs_open, _stack_sel
+    _tabs_open = not _tabs_open
+    _stack_sel = 0  # always opens on the first row
+
+
+def collapse_tabs() -> None:
+    """Close it now — after an action is taken, or on leaving the page."""
+    global _tabs_open
+    _tabs_open = False
+
+
+def stack_region() -> tuple[int, int, int, int] | None:
+    """Clickable rect of the collapsed stack, or None when it is not drawn."""
+    return _stack_region
+
+
+_stack_presence = 0.0  # eased 0→1 expansion, so the list grows rather than pops
+_stack_shown = False
+
+
+_stack_sel = 0  # highlighted row while the drawer is open
+_stack_keys: list[str] = []  # this frame's rows, top to bottom
+
+
+def stack_move(delta: int) -> None:
+    """Move the highlight up or down the open drawer, stopping at the ends.
+
+    Not wrapping: a menu of three that jumps from the last back to the first
+    reads as having moved somewhere else entirely when you only meant to find
+    the bottom of it.
+    """
+    global _stack_sel
+    if _stack_keys:
+        _stack_sel = max(0, min(len(_stack_keys) - 1, _stack_sel + delta))
+
+
+def stack_selected_key() -> str:
+    """The key of the highlighted row, or "" when there is nothing to take."""
+    return _stack_keys[_stack_sel] if 0 <= _stack_sel < len(_stack_keys) else ""
+
+
+def _set_left_tabs_end(x: int) -> None:
+    """Where the controls tab may start — set from either strip shape."""
+    global _left_tabs_end
+    _left_tabs_end = x
+
+
+def actions_available() -> bool:
+    """Whether the page drawn this frame has an actions drawer to open."""
+    return _stack_shown
+
+
+def _draw_actions_drawer(console, options, lines, x0, tabs, bstyle, bg_style, width) -> int:
+    """The stacked action tab, growing upward into its list. Returns its right gap.
+
+    Modelled on :func:`draw_controls_pocket` — anchored bottom-left at its own
+    corner, the roof rises as it opens and the rows fill in beneath it, revealed
+    bottom-up, with the width easing at the same time so it unfolds rather than
+    snapping. Open, the "N actions" label is dropped: it names a list that is now
+    on screen.
+    """
+    from rich.segment import Segment
+
+    global _stack_presence, _stack_region, _stack_keys
+    term_h = len(lines)
+    labels = [label for label, _key in tabs]
+    keys = [key for _label, key in tabs]
+    _stack_keys = [k or "" for k in keys]
+    collapsed = _stacked_label(tabs)
+
+    _stack_presence += ((1.0 if tabs_expanded() else 0.0) - _stack_presence) * 0.3
+    if _stack_presence < 0.02:
+        _stack_presence = 0.0
+
+    shut_w = collapsed.cell_len + 4
+    open_w = min(max((x.cell_len for x in labels), default=10) + 6, max(shut_w, width - x0 - 6))
+    cur_w = max(shut_w, int(round(shut_w + (open_w - shut_w) * _stack_presence)))
+    right = min(width - 3, x0 + cur_w - 1)
+    cur_w = right - x0 + 1
+    inner = cur_w - 4
+    # A blank row between each pair, so three actions read as three things to
+    # pick from rather than one block of text. Never push the roof off the top.
+    shown = max(0, min(len(labels), int(round(len(labels) * _stack_presence)), (term_h - 5) // 2))
+
+    def _bordered(body: Text | None) -> Text:
+        row = Text()
+        row.append("│ ", style=bstyle)
+        if body is None:
+            row.append(" " * inner)
+        else:
+            copy = body.copy()
+            copy.truncate(inner, overflow="ellipsis", pad=True)
+            row.append_text(copy)
+        row.append(" │", style=bstyle)
+        return row
+
+    roof = Text()
+    roof.append("╭" + "─" * (cur_w - 2) + "╮", style=bstyle)
+    bot = Text()
+    bot.append("╯" + " " * (cur_w - 2) + "╰", style=bstyle)  # open bottom, like the pocket
+
+    # Bottom-up: the open border, then the rows (or the collapsed label), roof last.
+    plan: list[tuple[int, Text, str]] = [(term_h - 1, bot, "")]
+    if _stack_presence > 0.5 and shown:
+        _first = len(labels) - shown  # revealed from the bottom up
+        _row = 0
+        for i in range(len(labels) - 1, _first - 1, -1):
+            _live = i == max(0, min(len(labels) - 1, _stack_sel))
+            # Exactly one row is live at a time, the way a list of choices
+            # anywhere else in the app marks the one the keys act on. A caret as
+            # well as a colour: these labels already carry the theme's value
+            # style, so brightening alone is not a difference you can see.
+            body = Text(no_wrap=True, overflow="ellipsis")
+            body.append("› " if _live else "  ", style=PLANNING_THEME.accent_bright)
+            body.append_text(labels[i].copy())
+            if _live:
+                body.stylize(f"bold {PLANNING_THEME.accent_bright}")
+            plan.append((term_h - 2 - _row, _bordered(body), keys[i] or ""))
+            _row += 1
+            if i > _first:
+                plan.append((term_h - 2 - _row, _bordered(None), ""))
+                _row += 1
+        plan.append((term_h - 2 - _row, roof, ""))
+    else:
+        plan.append((term_h - 2, _bordered(collapsed), "__stack__"))
+        plan.append((term_h - 3, roof, ""))
+
+    sized = options.update_width(cur_w)
+    for row_i, renderable, key in plan:
+        if row_i < 0 or row_i >= term_h:
+            continue
+        full = console.render_lines(renderable, sized, pad=True, style=bg_style)[0]
+        left, _mid, rgt = Segment.divide(lines[row_i], [x0, x0 + cur_w, width])
+        lines[row_i] = list(left) + list(full) + list(rgt)
+        # 1-based rects, and only once it has settled — not mid-animation.
+        if key and (_stack_presence > 0.7 or _stack_presence == 0.0):
+            rect = (x0 + 1, row_i + 1, right + 1, row_i + 1)
+            if key == "__stack__":
+                _stack_region = rect
+            else:
+                _tab_regions.append((*rect, key))
+    return right + 2  # 1-col gap before whatever comes next
+
+
+def _stacked_label(tabs: list) -> Text:
+    """The one tab that stands for all of them.
+
+    Carries its key the way the controls tab carries its "c": a tab that only
+    opens when clicked is a tab a keyboard never finds, and the drawer's own
+    contents cannot advertise the way in while they are behind it.
+    """
+    label = Text(justify="left")
+    # Names whichever key is actually ours here: Tab opens it on a page with no
+    # pager, and Shift+Tab everywhere else, because a page with a pager gives
+    # Tab to the pager. (Read from the previous frame — the pill is drawn after
+    # this — which is stable, since a page keeps its pager.)
+    label.append("⇧ + tab" if (_pager_regions and _pager_by_tab) else "tab", style=PLANNING_THEME.accent)
+    label.append(f"  {len(tabs)} actions", style=PLANNING_THEME.muted)
+    return label
+
+
+def draw_back_pocket(
+    console,
+    options,
+    lines: list,
+    target: float = 1.0,
+    *,
+    extra_tabs: list | None = None,
+    right_tabs: list | None = None,
+    lead_tab: str = "",
+) -> None:
     """Draw a rounded 'go back' tab in the bottom-LEFT, mirroring the music pocket.
 
     ``target`` is 1.0 on back-capable screens (glide in) and 0.0 on screens that
@@ -319,6 +601,11 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
     if target <= 0.0 and _back_presence < 0.02:
         _back_presence = 0.0
         _back_retracting = False
+        # The tabs keep their presence. `min(presence, _back_presence)` already
+        # gates them on the strip, so a tab that is still offered on the next
+        # screen peels in WITH the strip rather than restarting on its own — and
+        # a page that briefly retracts the strip (a prompt, a sub-flow) comes
+        # back without every tab replaying its entrance.
         return  # fully retracted — nothing to draw
 
     width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
@@ -337,9 +624,18 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
     lead = {-1: 0.0, -2: 0.22, -3: 0.44}  # bottom row peels first, roof last
     span = 1.0 - 0.44  # so the last (roof) row still completes at presence 1
 
-    def _peel(x0: int, label: Text) -> int | None:
+    def _peel(x0: int, label: Text, *, from_right: bool = False, presence: float = 1.0) -> int | None:
         """Splice one peeling alcove starting at column ``x0``; return its right
-        edge once mostly peeled in (for the click rect), else None."""
+        edge once mostly peeled in (for the click rect), else None.
+
+        ``from_right`` mirrors the reveal for the tabs anchored beside the music
+        pocket: the left strip unfolds out of the bottom-left corner, so a
+        right-hand tab growing left-to-right would peel AWAY from the corner it
+        belongs to. It unfolds out of the pocket's side instead.
+
+        ``presence`` is this tab's OWN entrance, taken with the strip's: a tab
+        added to a strip already at 1.0 has to peel in on its own account, and a
+        strip retracting has to take every tab with it however new they are."""
         aw = label.cell_len + 4  # ╭ + space + text + space + ╮
         if x0 + aw > width - 2:
             return None
@@ -355,15 +651,25 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
         bot.append("╯" + " " * (aw - 2) + "╰", style=bstyle)
         sized = options.update_width(aw)
         right = x0 - 1
+        shown = min(_back_presence, presence)
         for idx, alcove in ((-1, bot), (-2, mid), (-3, roof)):
-            lp = max(0.0, min(1.0, (_back_presence - lead[idx]) / span))
+            lp = max(0.0, min(1.0, (shown - lead[idx]) / span))
             rw = int(round(aw * lp))  # revealed width of this row
             if rw <= 0:
+                continue
+            full = console.render_lines(alcove, sized, pad=True, style=bg_style)[0]
+            if from_right:
+                # Reveal the RIGHTMOST rw columns: the tab unfolds leftwards out
+                # of the music pocket rather than appearing from thin air.
+                vl = max(x0, x0 + aw - rw)
+                _al, seg, _ar = Segment.divide(full, [0, vl - x0, aw])
+                lft, _mid, rgt = Segment.divide(lines[idx], [vl, x0 + aw, width])
+                lines[idx] = list(lft) + list(_ar) + list(rgt)
+                right = max(right, x0 + aw - 1)
                 continue
             vr = min(width - 2, x0 + rw - 1)
             if vr < x0:
                 continue
-            full = console.render_lines(alcove, sized, pad=True, style=bg_style)[0]
             _al, seg, _ar = Segment.divide(full, [0, vr - x0 + 1, aw])
             lft, _mid, rgt = Segment.divide(lines[idx], [x0, vr + 1, width])
             lines[idx] = list(lft) + list(seg) + list(rgt)
@@ -381,16 +687,81 @@ def draw_back_pocket(console, options, lines: list, target: float = 1.0, *, extr
     # Sibling tabs sit to the right of the back tab, peeling out of the same
     # corner with it — e.g. a 'c copy' tab, or a page's control hints. Each may
     # carry a key that a click on it reports (None = informational only).
+    # FIXED SLOTS: each tab starts where the one before it ENDS AT FULL WIDTH,
+    # not where it has peeled to. Advancing by the revealed edge made every tab
+    # after an animating one slide with it, so swapping "Anonymize" for
+    # "Adjust"/"Revert" set the whole strip in motion — the two arriving tabs
+    # dragged, and the settled ones ahead of them appeared to re-animate.
     nxt = bleft + (back.cell_len + 4) + 1  # 1-col gap after the back tab
-    for label, key in extra_tabs or []:
-        right = _peel(nxt, label)
+    # Collapsed, the whole strip is one tab. Its identity is its label, like
+    # every other tab's, so opening it peels the real ones out of the stack and
+    # closing it folds them back — no extra animation state.
+    global _stack_region, _stack_shown
+    _stack_region = None
+    _left = list(extra_tabs or [])
+    # The first action stays a tab of its own. It is the page's forward move, and
+    # a page whose only way on is behind a closed drawer has no visible way on —
+    # the gate came up showing "2 actions" and nothing else.
+    # By NAME, not by position: the tab that stays out is the page's forward
+    # move, and the first action in a list is only sometimes that. On the results
+    # page it was Export, which left the one action you were looking for stacked
+    # and an unrelated one standing on its own.
+    _lead: list = []
+    if lead_tab and len(_left) > 2:
+        _keep = [t for t in _left if t[0].plain.strip() == lead_tab]
+        if _keep:
+            _lead = _keep
+            _left = [t for t in _left if t[0].plain.strip() != lead_tab]
+    _stack_shown = len(_left) > 1
+    if _stack_shown:
+        # Two or more actions become one tab that grows UPWARD into a list, the
+        # same shape the controls drawer uses — a row of tabs along the border
+        # reads as chrome, and a list rising out of one reads as a menu you
+        # opened. Drawn here rather than peeled sideways, so it returns early.
+        for label, key, presence, _going in _resolve_tabs("lead", _lead):
+            _r = _peel(nxt, label, presence=presence)
+            if _r is None:
+                break
+            if key and min(_back_presence, presence) > 0.6:
+                _tab_regions.append((nxt + 1, term_h - 2, _r + 1, term_h, key))
+            nxt += label.cell_len + 5
+        nxt = _draw_actions_drawer(console, options, lines, nxt, _left, bstyle, bg_style, width)
+        _set_left_tabs_end(nxt)
+        return
+    for label, key, presence, going in _resolve_tabs("left", _left):
+        right = _peel(nxt, label, presence=presence)
         if right is None:
             break  # ran out of width — drop this tab and any after it
-        if key and _back_presence > 0.6:
+        if key and min(_back_presence, presence) > 0.6:
             _tab_regions.append((nxt + 1, term_h - 2, right + 1, term_h, key))
-        nxt = right + 2  # 1-col gap before the next tab
+        # A tab ON ITS WAY OUT gives its room back as it folds, so the tabs
+        # after it close the gap over the same frames rather than jumping into
+        # it the moment it disappears. A tab arriving keeps its full slot: the
+        # ones already settled must not be pushed along by it.
+        width_used = round((label.cell_len + 4) * presence) if going else label.cell_len + 4
+        nxt += max(0, width_used) + 1  # 1-col gap before the next tab's slot
     global _left_tabs_end
     _left_tabs_end = nxt  # where the next tab in the left strip may start
+
+    # Right-anchored tabs: laid out leftwards from the music pocket's own left
+    # wall, so a "next"/"Run Analysis" tab reads as the forward end of the border
+    # that "back" opens at the other end. Placed here rather than in the left
+    # strip because a flow's two directions sitting side by side in one corner
+    # made the forward action look like a footnote on the back button.
+    if right_tabs or any(tid.startswith("right:") for tid in _tab_memory):
+        _pocket_left = (width - 3) - (build_music_subtitle().cell_len + 4) + 1
+        _x = _pocket_left - 2  # right edge of the first tab; 1-col gap before the pocket
+        for label, key, presence, _going in reversed(_resolve_tabs("right", right_tabs)):
+            _aw = label.cell_len + 4
+            _x0 = _x - _aw + 1
+            if _x0 <= nxt + 1:
+                break  # would run into the left strip — drop it rather than overlap
+            _r = _peel(_x0, label, from_right=True, presence=presence)
+            if _r is None:
+                break
+            if key and min(_back_presence, presence) > 0.6:
+                _tab_regions.append((_x0 + 1, term_h - 2, _r + 1, term_h, key))
+            _x = _x0 - 2
 
 
 # The duck's status bubble ("Anthropic Key updated", "Copied to clipboard"):
@@ -465,6 +836,172 @@ def close_controls() -> None:
 def controls_region() -> tuple[int, int, int, int] | None:
     """Clickable rect of the controls tab this frame (1-based inclusive)."""
     return _controls_region
+
+
+# ── The two-way pager pill (bottom centre) ─────────────────────────────────
+# Back opens the bottom-left corner and music closes the bottom-right; the span
+# between them is the only part of that border still free, and it is where a
+# control about the PAGE — rather than about leaving it — belongs.
+_pager_regions: list[tuple[int, int, int, int, str]] = []
+_pager_active = 0  # which half is live, so Tab knows which one it is not
+_pager_by_tab = True  # whether Tab may cross this page's pager at all
+
+
+def pager_regions() -> list[tuple[int, int, int, int, str]]:
+    """Clickable (x0, y0, x1, y1, key) halves of the pager pill."""
+    return _pager_regions
+
+
+def pager_other_key() -> str:
+    """The key Tab reports, or "" when Tab is not the pager's on this page.
+
+    With two halves there is only one place it can go, so it is a toggle rather
+    than a cycle — but only where crossing is cheap. A page whose other half
+    LEAVES opts out (see the fourth element of the pager tuple): Tab is one of
+    the easiest keys to hit by accident, and it must never be the one that walks
+    out of a flow.
+    """
+    if len(_pager_regions) != 2 or not _pager_by_tab:
+        return ""
+    return _pager_regions[1 - _pager_active][4]
+
+
+def draw_pager_pill(console, options, lines: list, pager, divider_x: int = 0) -> None:
+    """One tab split in two by a divider: this page, and the one after Continue.
+
+    ``pager`` is ``(here, next, active)``. ``divider_x`` lines the split up with
+    a column the PAGE owns — the right edge of its body column, where the
+    scrollbar runs — so the two read as one vertical. 0 centres it instead.
+    Centred between the left strip and the
+    music pocket, so it reads as belonging to the page rather than to either
+    corner. Each half is its own click target and reports ``pager:0``/``pager:1``;
+    the live half is marked the way the actions drawer marks its live row, with a
+    colour AND a caret, because the two labels carry the same style otherwise.
+    """
+    from rich.segment import Segment
+
+    global _pager_regions, _pager_active, _pager_by_tab
+    _pager_regions = []
+    _pager_by_tab = True
+    if not lines or len(lines) < 3 or not lines[-1] or not pager:
+        return
+    here, ahead, active, *_rest = pager
+    _pager_active = 1 if active else 0
+    _pager_by_tab = bool(_rest[0]) if _rest else True
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    bstyle = lines[-1][0].style
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+    theme = PLANNING_THEME
+
+    def _half(label: str, live: bool) -> Text:
+        # No caret. Unlike the drawer's rows these two are already told apart by
+        # weight and colour — bright and bold against muted — and a marker that
+        # appears on one side and not the other is one more thing that changes
+        # when you cross between them.
+        t = Text(no_wrap=True)
+        t.append(f" {label} ", style=f"bold {theme.accent_bright}" if live else theme.muted)
+        return t
+
+    # The divider is a rule again, and the key that crosses it is named to the
+    # LEFT of the pill, outside it: the two halves are what the button offers,
+    # and how to move between them is an instruction about the button rather
+    # than a third thing inside it.
+    hint = Text(no_wrap=True)
+    hint.append("←", style=theme.muted)
+    hint.append("tab", style=theme.accent)
+    hint.append("→ ", style=theme.muted)
+
+    left, right = _half(here, active == 0), _half(ahead, active == 1)
+    inner = left.cell_len + 1 + right.cell_len  # the two halves and their divider
+    aw = inner + 4  # ╭ + space + inner + space + ╮
+    # Centred on the PAGE, not on the gap between the corners. The gap moves
+    # whenever the left strip changes width — a drawer opening, Anonymize
+    # becoming Adjust and Revert — and a control that slides sideways because
+    # something else beside it resized is a control you have to find again.
+    # Only nudged if a corner would actually collide with it.
+    music_left = (width - 3) - (build_music_subtitle().cell_len + 4) + 1
+    lo, hi = _left_tabs_end + 1, music_left - 2
+    if aw > hi - lo:
+        return  # no room between the corners at all — skip it rather than overlap
+    # The hint rides outside the left border, so the pair is centred together —
+    # centring the box alone would shunt the hint off toward the left corner.
+    hw = hint.cell_len
+    if aw + hw > hi - lo:
+        hw, hint = 0, Text()  # room for the button but not its caption
+    if divider_x:
+        # Put the split under the page's own divider. Clamped like the centred
+        # case, so a narrow page still lands the whole pill between the corners.
+        x0 = max(lo + hw, min(hi - aw, divider_x - 2 - left.cell_len))
+    else:
+        x0 = max(lo + hw, min(hi - aw, (width - aw - hw) // 2 + hw))
+    term_h = len(lines)
+
+    roof = Text()
+    roof.append("╭" + "─" * (aw - 2) + "╮", style=bstyle)
+    mid = Text()
+    mid.append("│ ", style=bstyle)
+    mid.append_text(left)
+    mid.append("│", style=bstyle)  # the divider that splits the one tab in two
+    mid.append_text(right)
+    mid.append(" │", style=bstyle)
+    bot = Text()
+    bot.append("╯" + " " * (aw - 2) + "╰", style=bstyle)
+
+    sized = options.update_width(aw)
+    for idx, alcove in ((-3, roof), (-2, mid), (-1, bot)):
+        full = console.render_lines(alcove, sized, pad=True, style=bg_style)[0]
+        lft, _m, rgt = Segment.divide(lines[idx], [x0, x0 + aw, width])
+        lines[idx] = list(lft) + list(full) + list(rgt)
+    if hw:
+        cap = console.render_lines(hint, options.update_width(hw), pad=True, style=bg_style)[0]
+        lft, _m, rgt = Segment.divide(lines[-2], [x0 - hw, x0, width])
+        lines[-2] = list(lft) + list(cap) + list(rgt)
+
+    # 1-based rects, one per half, split at the divider.
+    split = x0 + 2 + left.cell_len
+    _pager_regions = [
+        (x0 + 2, term_h - 1, split, term_h - 1, "pager:0"),
+        (split + 2, term_h - 1, x0 + aw - 1, term_h - 1, "pager:1"),
+    ]
+
+
+def draw_footer_note(console, options, lines: list, note: str) -> None:
+    """A single framed line centred on the page's bottom border.
+
+    The pager pill's geometry with one cell instead of two halves: a page whose
+    footer is a statement rather than a control still wants it ON the border,
+    where the chrome's other boxes sit, not floating a row above it.
+    """
+    from rich.segment import Segment
+
+    if not lines or len(lines) < 3 or not lines[-1] or not note:
+        return
+    width = sum(seg.cell_length for seg in lines[-1]) or options.max_width
+    bstyle = lines[-1][0].style
+    bg_style = Style(bgcolor=bstyle.bgcolor) if bstyle and bstyle.bgcolor else None
+
+    label = Text(no_wrap=True)
+    label.append(f"  {note}  ", style=PLANNING_THEME.muted)
+    aw = label.cell_len + 2  # the two border columns
+    lo, hi = _left_tabs_end + 1, width - 3
+    if aw > hi - lo:
+        return
+    x0 = max(lo, min(hi - aw, (width - aw) // 2))
+
+    roof = Text()
+    roof.append("╭" + "─" * (aw - 2) + "╮", style=bstyle)
+    mid = Text()
+    mid.append("│", style=bstyle)
+    mid.append_text(label)
+    mid.append("│", style=bstyle)
+    bot = Text()
+    bot.append("╯" + " " * (aw - 2) + "╰", style=bstyle)
+
+    sized = options.update_width(aw)
+    for idx, part in ((-3, roof), (-2, mid), (-1, bot)):
+        full = console.render_lines(part, sized, pad=True, style=bg_style)[0]
+        lft, _m, rgt = Segment.divide(lines[idx], [x0, x0 + aw, width])
+        lines[idx] = list(lft) + list(full) + list(rgt)
 
 
 def draw_controls_pocket(console, options, lines: list, page_hint: Text | None = None, target: float = 1.0) -> None:
@@ -1028,30 +1565,60 @@ class _MusicPocketFrame:
         self.preserve_content = preserve_content  # keep row content behind the pocket band
         self.with_back = with_back  # draw the bottom-left "go back" tab (back-capable screens)
         self.with_copy = with_copy  # also draw a 'c copy' tab beside it
+        self.with_next = False  # set from the panel: draw a 'next ⏎' tab too
+        self.page_tabs: list = []  # set from the panel: [(label, key)] beside back
+        self.next_key = "enter"  # what a click on the forward tab reports
         self.hint_tab = hint_tab  # a page's control hints, as one more tab
         self.duck_say = duck_say  # transient status the companion speaks
         self.duck_say_sticky = False  # set from the panel: hold the line, don't fade
         self.duck_say_hold = None  # per-message dwell override (None = default)
         self.duck_say_seq = 0  # bump to restart the fade for identical text
+        self.pager = None  # set from the panel: (this page, the next, which is live)
+        # Column the page wants the pill split over — its body column's right
+        # edge, which is where its scrollbar runs. 0 centres the pill instead.
+        self.pager_divider = 0
+        self.lead_tab = ""  # set from the panel: the action that stays out of the drawer
+        self.with_music = True  # pages that have no use for the bar opt out
+        self.footer_note = ""  # a framed line on the bottom border, in its place
 
     def __rich_console__(self, console, options):
         from rich.segment import Segment
 
         lines = console.render_lines(self.panel, options, pad=False)
-        draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
+        if self.with_music:
+            draw_music_pocket(console, options, lines, preserve_content=self.preserve_content)
         # Always drive the back tab so it can glide OUT (target 0) when leaving a
         # back-capable screen, not only glide in (target 1) when arriving.
         _extra: list = []
         if self.with_back and self.with_copy:
             _extra.append((build_copy_text(), "c"))
+        if self.with_back:
+            _extra += [(build_tab_text(label), key) for label, key in self.page_tabs]
+        # Forward goes to the opposite end of the border from back — see
+        # draw_back_pocket's right_tabs. `with_next` may be a label ("Run
+        # Analysis") rather than just True, so a terminal step names its action.
+        _right: list = []
+        if self.with_back and self.with_next:
+            _label = self.with_next if isinstance(self.with_next, str) else "next"
+            _right.append((build_next_text(label=_label), self.next_key))
         # The page's hints are NOT drawn as their own tab any more — they'd be
         # redundant with (and cut off behind) the controls drawer, which lists them.
-        draw_back_pocket(console, options, lines, target=1.0 if self.with_back else 0.0, extra_tabs=_extra)
+        draw_back_pocket(
+            console,
+            options,
+            lines,
+            target=1.0 if self.with_back else 0.0,
+            extra_tabs=_extra,
+            right_tabs=_right,
+            lead_tab=self.lead_tab,
+        )
         # A page only qualifies for the controls tab when it HAS page-specific
         # controls to list: with nothing but the globals the drawer would just
         # repeat the back/copy tabs sitting beside it.
         _qualifies = self.hint_tab is not None and bool(self.hint_tab.plain.strip())
         draw_controls_pocket(console, options, lines, page_hint=self.hint_tab, target=1.0 if _qualifies else 0.0)
+        draw_pager_pill(console, options, lines, self.pager, self.pager_divider)
+        draw_footer_note(console, options, lines, self.footer_note)
         if self.with_duck:
             draw_companion_duck(
                 console,
@@ -1181,6 +1748,20 @@ class MusicLive(Live):
             # Pages that support copy-to-clipboard flag themselves so a 'c copy'
             # tab appears beside the back tab (Usage, Changelog, …).
             with_copy = bool(getattr(renderable, "_copy_tab", False))
+            # Multi-step flows advertise "next" in the chrome beside back, so the
+            # two directions of a wizard sit together rather than one being a
+            # button in the body and the other a tab in the corner.
+            # True for the generic "next", or a string to name the step's action.
+            _nt = getattr(renderable, "_next_tab", False)
+            with_next = _nt if isinstance(_nt, str) and _nt else bool(_nt)
+            # A page's own actions, as tabs in the left strip rather than a row of
+            # buttons in the body. Same reasoning as "next": a page's controls
+            # belong in the one place a reader already looks for controls, and a
+            # results screen with five body buttons had its actions competing with
+            # the content they act on. [(label, key)] — the key is what a click
+            # reports, so the loop handles a click exactly as it handles the key.
+            page_tabs = list(getattr(renderable, "_page_tabs", ()) or ())
+            next_key = getattr(renderable, "_next_key", "") or "enter"
             # A page can hand its control hints to the chrome (_hint_tab) so they
             # ride in the bottom pocket instead of taking a body row.
             hint_tab = getattr(renderable, "_hint_tab", None)
@@ -1241,6 +1822,16 @@ class MusicLive(Live):
             _frame.duck_say_sticky = _sticky
             _frame.duck_say_hold = _hold
             _frame.duck_say_seq = _seq
+            _frame.with_next = with_next
+            _frame.page_tabs = page_tabs
+            _frame.next_key = next_key
+            # (here, next, active) — the PAGE says what "after Continue" means;
+            # the chrome only draws it and reports which half was clicked.
+            _frame.pager = getattr(renderable, "_pager", None)
+            _frame.pager_divider = int(getattr(renderable, "_pager_divider_x", 0) or 0)
+            _frame.with_music = not getattr(renderable, "_no_music", False)
+            _frame.footer_note = str(getattr(renderable, "_footer_note", "") or "")
+            _frame.lead_tab = str(getattr(renderable, "_forward_action", "") or "")
             return _frame
         # Too narrow to box → keep the flat status line on the border.
         renderable.subtitle = build_music_subtitle()

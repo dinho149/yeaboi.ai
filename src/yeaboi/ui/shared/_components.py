@@ -103,6 +103,8 @@ _BTN_COLORS: dict[str, tuple[str, str, str, str]] = {
     "Done": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Continue": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Run Analysis": ("rgb(60,160,80)", "rgb(80,220,120)", "rgb(40,50,40)", "rgb(50,60,50)"),
+    # Board setup's go button — green like the other "proceed" verbs.
+    "Connect": ("rgb(60,160,80)", "rgb(80,200,100)", "rgb(40,50,40)", "rgb(50,60,50)"),
     "Edit": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Regenerate": ("rgb(100,100,120)", "rgb(140,140,160)", "rgb(40,40,50)", "rgb(50,50,60)"),
     "Export": ("rgb(70,100,180)", "rgb(100,140,220)", "rgb(40,40,50)", "rgb(50,50,60)"),
@@ -632,10 +634,16 @@ def build_progress_dots(
     *,
     pad: str = PAD,
     theme: Theme | None = None,
+    mark_done: bool = False,
 ) -> Text:
     """Build a progress indicator: ● Instructions  ● Epic  ○ Stories ...
 
     Filled dots for completed stages, bright dot for current, hollow for future.
+
+    ``mark_done`` also carries "done" in the LABEL — a finished stage keeps its
+    name uppercased and in the accent colour, so a glance down the row says what
+    is behind you without decoding dot fills. Off by default: the flows that
+    predate it read as a plain stage list.
     """
     _theme = theme or ANALYSIS_THEME
     progress = Text(pad, justify="left")
@@ -648,7 +656,13 @@ def build_progress_dots(
             progress.append("\u25cf", style=_theme.accent_bright)
         else:
             progress.append("\u25cb", style="rgb(60,60,70)")
-        progress.append(f" {stage_name}", style="dim" if i != current else "bold white")
+        if i == current:
+            label, style = (stage_name.upper() if mark_done else stage_name), "bold white"
+        elif i < current and mark_done:
+            label, style = stage_name.upper(), _theme.accent
+        else:
+            label, style = stage_name, "dim"
+        progress.append(f" {label}", style=style)
     return progress
 
 
@@ -691,6 +705,57 @@ def build_meter(
     meter.append("▰" * n, style=style or _theme.accent)
     meter.append("▱" * (width - n), style="rgb(60,60,70)")
     return meter
+
+
+# Where each named strip was last left. Module state for the same reason the
+# section rule's position is: a strip is drawn from scratch every frame and has
+# nowhere else to keep it. Keyed by strip so two strips on one page cannot
+# remember for each other.
+_TAB_MEMORY: dict[str, str] = {}
+
+
+def remember_tab(strip: str, current) -> None:
+    """Note where ``strip`` was left, so it opens there next time.
+
+    Called wherever the live tab is known — leaving a page is not a reliable
+    moment to do it, because a page can be left in more ways than it has exits.
+    """
+    if current:
+        _TAB_MEMORY[strip] = current
+
+
+def remembered_tab(strip: str, tabs, fallback):
+    """Where ``strip`` was left, or ``fallback`` if that tab is not in it now.
+
+    A remembered tab can name something this run does not have — a section
+    whose scan did not happen, an artifact not generated yet — and reopening on
+    it would be a lookup for a tab that is not drawn.
+    """
+    was = _TAB_MEMORY.get(strip)
+    return was if was in tuple(tabs or ()) else fallback
+
+
+def forget_tabs() -> None:
+    """Drop every strip's remembered position (tests, and a fresh session)."""
+    _TAB_MEMORY.clear()
+
+
+def step_tab(tabs, current, key: str):
+    """The tab ←/→ lands on, coming round at the ends.
+
+    A strip of tabs is a ring, not a slider: holding one arrow reaches every
+    tab rather than stopping at an end and going quiet. Shared by every strip
+    in the app, because "does this one wrap?" is not a question a strip should
+    be able to answer differently from the one beside it.
+
+    Returns ``current`` untouched for any other key, for an empty strip, and
+    for a ``current`` the strip does not contain — the caller's own fallback
+    then decides, rather than this silently landing on the first tab.
+    """
+    if not tabs or key not in ("left", "right") or current not in tabs:
+        return current
+    at = list(tabs).index(current)
+    return tabs[(at + (1 if key == "right" else -1)) % len(tabs)]
 
 
 def calc_viewport(height: int, *, header_h: int = 7, action_h: int = 4) -> int:

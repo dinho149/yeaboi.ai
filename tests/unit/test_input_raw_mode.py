@@ -157,6 +157,25 @@ def test_scroll_still_decodes_after_click_support(pty_pair):
     assert _decode_mouse(pty_pair, b"\x1b[<65;3;4M") == "scroll_down"
 
 
+def test_a_wheel_tick_records_where_the_pointer_was(pty_pair):
+    # A wheel event is a scroll key on every screen, so it cannot carry its
+    # coordinates in the key name without every `k in SCROLL_KEYS` test having to
+    # parse them. A page with two scrollable columns still needs to know which
+    # one was under the pointer, so the position is recorded alongside.
+    assert _decode_mouse(pty_pair, b"\x1b[<64;41;9M") == "scroll_up"
+    assert _input.last_wheel_pos() == (41, 9)
+    assert _decode_mouse(pty_pair, b"\x1b[<65;7;2M") == "scroll_down"
+    assert _input.last_wheel_pos() == (7, 2)
+
+
+def test_a_click_does_not_move_the_recorded_wheel_position(pty_pair):
+    # Only wheel ticks set it — a click that overwrote it would send the next
+    # keyboard-driven scroll to whichever column was last clicked.
+    _decode_mouse(pty_pair, b"\x1b[<64;41;9M")
+    assert _decode_mouse(pty_pair, b"\x1b[<0;12;5M") == "click:12:5"
+    assert _input.last_wheel_pos() == (41, 9)
+
+
 def test_left_button_release_is_swallowed(pty_pair):
     # Release events ('m') must not fire a second click (would double-activate).
     assert _decode_mouse(pty_pair, b"\x1b[<0;12;5m") == ""
@@ -254,3 +273,64 @@ class TestGlobalLetterShortcuts:
         push_back_key("ctrl+c")
         with pytest.raises(KeyboardInterrupt):
             read_key(timeout=0)
+
+
+def test_tab_opens_the_actions_drawer_only_where_there_is_one(pty_pair, monkeypatch):
+    # Tab is claimed app-wide the way the controls tab claims 'c', so no page has
+    # to bind it — but only where a drawer is actually drawn, and never while a
+    # field is being typed into.
+    from yeaboi.ui.shared import _music_bar as mb
+
+    mb.collapse_tabs()
+    # No pager on this page — say so rather than inheriting it. A pager gives
+    # Tab to the pill, so any earlier test that rendered one decided this one's
+    # first assertion for it.
+    monkeypatch.setattr(mb, "_pager_regions", [])
+    try:
+        monkeypatch.setattr(mb, "actions_available", lambda: False)
+        assert _decode_mouse(pty_pair, b"\t") == "tab"  # passes through
+        assert not mb.tabs_expanded()
+
+        monkeypatch.setattr(mb, "actions_available", lambda: True)
+        assert _decode_mouse(pty_pair, b"\t") == ""  # consumed
+        assert mb.tabs_expanded()
+        assert _decode_mouse(pty_pair, b"\t") == ""
+        assert not mb.tabs_expanded()  # and closes again
+
+        _input.set_text_entry(True)
+        assert _decode_mouse(pty_pair, b"\t") == "tab"  # not stolen mid-typing
+    finally:
+        _input.set_text_entry(False)
+        mb.collapse_tabs()
+
+
+def test_shift_tab_opens_the_drawer_where_tab_belongs_to_the_pager(pty_pair, monkeypatch):
+    # A bare Shift is invisible here — no terminal sends anything for a modifier
+    # on its own — but Shift+Tab has its own sequence, so the drawer gets a key
+    # of its own and Tab is left to the page's two-way pager.
+    from yeaboi.ui.shared import _music_bar as mb
+
+    mb.collapse_tabs()
+    try:
+        monkeypatch.setattr(mb, "actions_available", lambda: False)
+        assert _decode_mouse(pty_pair, b"\x1b[Z") == "shift+tab"  # passes through
+        monkeypatch.setattr(mb, "actions_available", lambda: True)
+        assert _decode_mouse(pty_pair, b"\x1b[Z") == ""  # consumed
+        assert mb.tabs_expanded()
+        assert _decode_mouse(pty_pair, b"\x1b[Z") == ""
+        assert not mb.tabs_expanded()  # and closes again
+    finally:
+        mb.collapse_tabs()
+
+
+def test_tab_goes_to_the_pager_when_the_page_has_one(pty_pair, monkeypatch):
+    from yeaboi.ui.shared import _music_bar as mb
+
+    mb.collapse_tabs()
+    try:
+        monkeypatch.setattr(mb, "pager_other_key", lambda: "pager:1")
+        monkeypatch.setattr(mb, "actions_available", lambda: True)
+        assert _decode_mouse(pty_pair, b"\t") == "pager:1"
+        assert not mb.tabs_expanded()  # the drawer is not what Tab meant here
+    finally:
+        mb.collapse_tabs()

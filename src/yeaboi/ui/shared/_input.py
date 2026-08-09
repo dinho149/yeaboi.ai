@@ -52,6 +52,21 @@ def esc_came_from_back_tab() -> bool:
     return _esc_from_back_tab
 
 
+# The 1-based cell the pointer was over for the most recent wheel tick.
+_wheel_at = [0, 0]
+
+
+def last_wheel_pos() -> tuple[int, int]:
+    """``(x, y)`` of the last wheel tick, or ``(0, 0)`` if there has not been one.
+
+    A wheel event is a scroll key on every screen, so it cannot carry its
+    coordinates in the key name without every ``k in SCROLL_KEYS`` test having to
+    parse them first. A page with two scrollable columns still needs to know
+    which one the pointer was over, so the position is recorded here instead.
+    """
+    return (_wheel_at[0], _wheel_at[1])
+
+
 def _esc(*, from_tab: bool = False) -> str:
     """Return the ``"esc"`` key event, starting the back tab's fold-away first.
 
@@ -66,7 +81,7 @@ def _esc(*, from_tab: bool = False) -> str:
     global _esc_from_back_tab
     _esc_from_back_tab = from_tab
     try:
-        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar, retract_back_tab
+        from yeaboi.ui.shared._music_bar import close_controls, controls_open, nudge_music_bar
 
         # An open controls drawer swallows the Esc: it closes the drawer instead of
         # navigating back, so Esc always means "dismiss what's on top".
@@ -74,7 +89,14 @@ def _esc(*, from_tab: bool = False) -> str:
             close_controls()
             nudge_music_bar()
             return ""
-        retract_back_tab()
+        # Same for an open actions drawer — Esc always means "dismiss what's on
+        # top", and the drawer is on top of the page it belongs to.
+        from yeaboi.ui.shared._music_bar import collapse_tabs, tabs_expanded
+
+        if tabs_expanded():
+            collapse_tabs()
+            nudge_music_bar()
+            return ""
     except Exception:  # noqa: BLE001 - never let chrome bookkeeping break input
         pass
     return "esc"
@@ -178,10 +200,28 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             if ch2 == "[":
                 # Third byte: blocking read
                 ch3 = _read1()
-                if ch3 == "A":
-                    return "up"
-                if ch3 == "B":
-                    return "down"
+                if ch3 in ("A", "B"):
+                    # While the actions drawer is open the arrows belong to it,
+                    # not to whatever the page was scrolling — it is the thing in
+                    # front, and a menu you cannot move through with the arrows
+                    # is a menu you have to reach for the mouse to use.
+                    from yeaboi.ui.shared._music_bar import stack_move, tabs_expanded
+
+                    if tabs_expanded():
+                        stack_move(-1 if ch3 == "A" else 1)
+                        return ""
+                    return "up" if ch3 == "A" else "down"
+                if ch3 == "Z":
+                    # Shift+Tab. A bare Shift is invisible here — no terminal
+                    # sends anything for a modifier on its own — but the chord
+                    # has its own sequence, so the drawer gets a key of its own
+                    # and Tab is left to the pager.
+                    from yeaboi.ui.shared._music_bar import actions_available, toggle_tabs
+
+                    if actions_available() and not _text_entry:
+                        toggle_tabs()
+                        return ""
+                    return "shift+tab"
                 if ch3 == "C":
                     return "right"
                 if ch3 == "D":
@@ -275,10 +315,9 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                             cy = int(parts[2])
                         except ValueError:
                             return ""
-                        if button == 64:
-                            return "scroll_up"
-                        if button == 65:
-                            return "scroll_down"
+                        if button in (64, 65):
+                            _wheel_at[:] = [cx, cy]
+                            return "scroll_up" if button == 64 else "scroll_down"
                         # Plain left-button press (button 0, no motion/modifier
                         # flag bits set) → a click. Return the 1-based cell the
                         # pointer is over so a screen can hit-test it against its
@@ -295,9 +334,41 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                                 # Clicking the tab IS Esc (and folds it away) — flagged
                                 # so a screen can tell the button from the key.
                                 return _esc(from_tab=True)
+                            # The collapsed action strip opens on a click and
+                            # stays open, the way the controls drawer does.
+                            from yeaboi.ui.shared._music_bar import (
+                                collapse_tabs,
+                                stack_region,
+                                tabs_expanded,
+                                toggle_tabs,
+                            )
+
+                            _sr = stack_region()
+                            if _sr is not None and _sr[0] <= cx <= _sr[2] and _sr[1] <= cy <= _sr[3]:
+                                toggle_tabs()
+                                return ""
+                            # Either half of the pager pill reports its own key.
+                            from yeaboi.ui.shared._music_bar import pager_regions
+
+                            for _x0, _y0, _x1, _y1, _key in pager_regions():
+                                if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
+                                    return _key
+                            _hit = None
                             for _x0, _y0, _x1, _y1, _key in chrome_tab_regions():
                                 if _x0 <= cx <= _x1 and _y0 <= cy <= _y1:
-                                    return _key  # e.g. the 'c copy' tab presses 'c'
+                                    _hit = _key
+                                    break
+                            if _hit is not None:
+                                # Taking an action closes the drawer behind it —
+                                # it opened to be chosen from.
+                                collapse_tabs()
+                                return _hit  # e.g. the 'c copy' tab presses 'c'
+                            if tabs_expanded():
+                                # Anywhere else, with the drawer open, means
+                                # "not that then" — the same as clicking off any
+                                # menu. It closes without acting on the page.
+                                collapse_tabs()
+                                return ""
                             # The persistent controls tab toggles its drawer.
                             from yeaboi.ui.shared._music_bar import controls_region, toggle_controls
 
@@ -321,12 +392,11 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                 # Button byte 96 = scroll up (64+32), 97 = scroll down (65+32).
                 if ch3 == "M":
                     btn = ord(_read1())
-                    _read1()  # x
-                    _read1()  # y
-                    if btn == 96:
-                        return "scroll_up"
-                    if btn == 97:
-                        return "scroll_down"
+                    _lx = ord(_read1()) - 32  # legacy encoding: cell + 32
+                    _ly = ord(_read1()) - 32
+                    if btn in (96, 97):
+                        _wheel_at[:] = [_lx, _ly]
+                        return "scroll_up" if btn == 96 else "scroll_down"
                     return ""  # consume other mouse events silently
                 # Bracketed paste starts with \x1b[200~
                 if ch3 == "2":
@@ -363,8 +433,32 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
                 return ""
             return _esc()
         if ch in ("\r", "\n"):
+            from yeaboi.ui.shared._music_bar import collapse_tabs, stack_selected_key, tabs_expanded
+
+            if tabs_expanded():
+                # The drawer is in front: Enter takes the highlighted action and
+                # closes behind it, rather than falling through to the page's own
+                # forward action underneath.
+                _key = stack_selected_key()
+                collapse_tabs()
+                return _key
             return "enter"
         if ch == "\t":
+            # Tab opens and closes the page's actions drawer, wherever one is
+            # drawn — the same app-wide wiring the controls tab's 'c' gets, so no
+            # page has to bind it. Pages without a drawer still see "tab".
+            from yeaboi.ui.shared._music_bar import actions_available, pager_other_key, toggle_tabs
+
+            if not _text_entry:
+                # The pager first: it is the page's own two-way move, and where a
+                # page has one that is what Tab is for. The actions drawer takes
+                # Tab only on the pages without one, and says so on its label.
+                _other = pager_other_key()
+                if _other:
+                    return _other
+                if actions_available():
+                    toggle_tabs()
+                    return ""
             return "tab"
         if ch in ("\x7f", "\x08"):
             return "backspace"
@@ -386,11 +480,10 @@ def _read_key_impl(stdin=None, timeout: float | None = None) -> str:
             # ui/shared/_attachments.py. Note: Cmd+V on macOS stays a terminal
             # *text* paste; Ctrl+V is the image binding, like Claude Code.
             return "ctrl+v"
-        # Return global music controls as internal key names. The public wrapper
-        # performs the action only after giving an active screensaver first chance
-        # to consume the event as its wake-only key.
-        if ch in ("\x10", "\x0f"):
-            return "ctrl+p" if ch == "\x10" else "ctrl+o"
+        # Music is bound to bare P and O — see the wrapper, which is where the
+        # binding is decided. Ctrl+P and Ctrl+O are left to fall through as the
+        # raw control characters they are; they used to be the binding.
+
         if ch == "\x19":
             return "ctrl+y"
         if ch == "\x03":
@@ -409,10 +502,35 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
     screen action runs. Timed polls that return no input leave the idle baseline
     untouched.
     """
-    from yeaboi.ui.shared._screensaver import begin_input_wait, handle_input_event, show_screensaver_now
+    from yeaboi.ui.shared._screensaver import (
+        begin_input_wait,
+        handle_input_event,
+        screensaver_active,
+        show_screensaver_now,
+    )
 
     begin_input_wait()
     key = _read_key_impl(stdin=stdin, timeout=timeout)
+
+    # Music first, and deliberately ahead of wake handling: the saver is what
+    # plays while you are listening to something, so the controls have to reach
+    # the player *through* it rather than being eaten as the key that dismisses
+    # it. Bare letters, so they must not fire into a text field.
+    if key in ("p", "o") and not _text_entry:
+        from yeaboi import music
+
+        if screensaver_active():
+            # Leave the saver up and the idle clock alone — changing the track is
+            # not a reason to decide somebody came back.
+            pass
+        elif _last_read_had_input:
+            handle_input_event()
+        if key == "p":
+            music.toggle()
+        else:
+            music.cycle_channel()
+        return ""
+
     if _last_read_had_input and handle_input_event():
         return ""
 
@@ -445,17 +563,6 @@ def read_key(stdin=None, timeout: float | None = None) -> str:
         show_screensaver_now()
         return ""
 
-    # Ctrl+P / Ctrl+O are global background-music controls. Keeping them after
-    # wake handling prevents the key that dismisses the saver from also changing
-    # playback state.
-    if key in ("ctrl+p", "ctrl+o"):
-        from yeaboi import music
-
-        if key == "ctrl+p":
-            music.toggle()
-        else:
-            music.cycle_channel()
-        return ""
     return key
 
 

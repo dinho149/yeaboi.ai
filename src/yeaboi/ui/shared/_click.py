@@ -41,6 +41,35 @@ def parse_click(key: str) -> tuple[int, int] | None:
     return x, y
 
 
+def stage_click(panel, x: int, y: int) -> str | None:
+    """Which setup stage a click landed on, or None.
+
+    The analysis setup page publishes ``panel._stage_regions`` — one
+    ``(x0, y0, x1, y1, stage)`` span per set it is NOT currently editing, in
+    absolute 1-based terminal coords. It counts those rows as it lays the page
+    out rather than deriving them from a formula, so unlike :func:`button_click`
+    there is nothing to re-render here: the answer is already on the panel.
+    """
+    for x0, y0, x1, y1, stage in getattr(panel, "_stage_regions", ()):
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return stage
+    return None
+
+
+def option_click(panel, x: int, y: int):
+    """Which option row of the set being edited a click landed on, or None.
+
+    Companion to :func:`stage_click` over ``panel._option_regions``. The value
+    returned is the stage's own CURSOR value — an int, or a ``(row, col)`` pair
+    for the ragged sources grid — not a row number, so the loop can move its
+    cursor there and then run exactly the code the keyboard would.
+    """
+    for x0, y0, x1, y1, target in getattr(panel, "_option_regions", ()):
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return target
+    return None
+
+
 def button_spans(labels: list[str], *, pad: str = PAD) -> list[tuple[int, int]]:
     """Return the 1-based inclusive ``(start_col, end_col)`` span of each button
     as laid out by :func:`build_action_buttons`.

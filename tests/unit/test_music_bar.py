@@ -28,6 +28,7 @@ def _reset(monkeypatch):
     _music_bar._back_presence = 0.0  # back-tab animation state is module-global
     _music_bar._back_region = None
     _music_bar._back_retracting = False
+    _music_bar.collapse_tabs()  # the action strip's open/peek state is module-global too
     _music_bar._reset_duck_state()  # bubble + quack/working/entrance clocks are module-global too
     from yeaboi.ui.shared import _duck_voice
 
@@ -45,8 +46,8 @@ def test_subtitle_when_stopped():
     music._state.status = "stopped"
     text = build_music_subtitle().plain
     assert "off" in text
-    assert "ctrl+P play" in text
-    assert "ctrl+O channel" in text
+    assert "P play" in text
+    assert "O channel" in text
 
 
 def test_subtitle_when_playing():
@@ -55,25 +56,25 @@ def test_subtitle_when_playing():
     text = build_music_subtitle().plain
     assert music.CHANNELS[0]["name"] in text
     assert "playing" in text
-    assert "ctrl+P pause" in text
+    assert "P pause" in text
 
 
 def test_subtitle_when_paused():
     music._state.status = "paused"
     text = build_music_subtitle().plain
     assert "paused" in text
-    assert "ctrl+P play" in text
+    assert "P play" in text
 
 
 def test_subtitle_shows_crash_notice_when_stopped_with_error():
     # A player that died on its own reverts to "stopped" but leaves a last_error;
     # the bar shows it instead of a bare "off" so a broken player is diagnosable.
     music._state.status = "stopped"
-    music._state.last_error = "music stopped — stream unavailable, ctrl+P to retry"
+    music._state.last_error = "music stopped — stream unavailable, P to retry"
     text = build_music_subtitle().plain
     assert "stream unavailable" in text
     assert "off" not in text
-    assert "ctrl+P play" in text
+    assert "P play" in text
 
 
 def test_eq_bars_shape():
@@ -96,7 +97,7 @@ def test_subtitle_when_connecting():
     text = build_music_subtitle().plain
     assert "connecting" in text
     assert not any(c in _EQ_CHARS for c in text)  # no equalizer while buffering
-    assert "ctrl+P pause" in text
+    assert "P pause" in text
 
 
 def test_connecting_dots_shape(monkeypatch):
@@ -765,6 +766,429 @@ def test_controls_tab_advertises_the_letter_and_the_drawer_lists_it():
     assert "close this" in opened  # 'c' closes it
     assert "quit" in opened  # ctrl+C still quits outright
     close_controls()
+
+
+# TestTabSlots lived here: it covered the LEFT strip laying its tabs out in fixed
+# slots, so one animating tab could not shove the settled ones along. Two or more
+# actions on the left are a drawer now — they grow upward as a list instead of
+# peeling sideways as a row — so there are no slots left on that side to defend.
+# TestCollapsedActionStrip covers what replaced it; the right strip still uses
+# _resolve_tabs and is covered by TestTabEntrance.
+class TestTabEntrance:
+    """Every tab peels in on its own account, not just with the strip.
+
+    `_back_presence` describes the STRIP. A page adding a "next" tab mid-flow
+    leaves it at 1.0, so without a per-tab presence the new tab snapped into
+    existence beside tabs that had glided in.
+    """
+
+    @staticmethod
+    def _blank(console, options, width, height):
+        from rich.text import Text
+
+        row = console.render_lines(Text(" " * width), options.update_width(width), pad=True)[0]
+        return [list(row) for _ in range(height)]
+
+    def _strip(self, right=(), left=(), width=120, height=12):
+        from rich.console import Console
+
+        from yeaboi.ui.shared import _music_bar as mb
+
+        console = Console(width=width, height=height, force_terminal=False)
+        options = console.options.update_dimensions(width, height)
+        lines = self._blank(console, options, width, height)
+        mb.draw_back_pocket(console, options, lines, target=1.0, extra_tabs=list(left), right_tabs=list(right))
+        return "".join(seg.text for seg in lines[-2])
+
+    def _settle(self, **kwargs):
+        for _ in range(24):
+            row = self._strip(**kwargs)
+        return row
+
+    @pytest.fixture(autouse=True)
+    def _fresh(self):
+        from yeaboi.ui.shared import _music_bar as mb
+
+        mb._forget_tabs()
+        mb._back_presence = 0.0
+        yield
+        mb._forget_tabs()
+        mb._back_presence = 0.0
+
+    def _next_tab(self):
+        from yeaboi.ui.shared._music_bar import build_next_text
+
+        return [(build_next_text(label="next"), "enter")]
+
+    def test_a_tab_added_to_a_settled_strip_peels_in(self):
+        settled = self._settle()
+        assert "next" not in settled
+        first = self._strip(right=self._next_tab())
+        # Partway in on its first frame, whole a few frames later.
+        assert "next ⏎" not in first
+        for _ in range(6):
+            grown = self._strip(right=self._next_tab())
+        assert "next ⏎" in grown
+
+    def test_it_unfolds_leftwards_out_of_the_music_pocket(self):
+        # The right strip reveals its RIGHTMOST columns first, so the label
+        # arrives as a growing suffix: "", "t ⏎", "next ⏎". Growing the other
+        # way would peel the tab away from the pocket it belongs to.
+        self._settle()
+        seen = []
+        for _ in range(5):
+            row = self._strip(right=self._next_tab())
+            label = "next ⏎"
+            seen.append(max((n for n in range(len(label) + 1) if label[len(label) - n :] in row), default=0))
+        assert seen == sorted(seen)
+        assert seen[-1] > seen[0]
+
+    def test_a_dropped_tab_folds_away_rather_than_vanishing(self):
+        from yeaboi.ui.shared._music_bar import build_next_text
+
+        other = [(build_next_text(label="Run"), "enter")]
+        self._settle(right=self._next_tab())
+        assert "next ⏎" in self._strip(right=self._next_tab())
+        # Replaced, not removed: a page offering NOTHING is a different page, and
+        # freezing the registry there is what stops a progress screen wiping
+        # every tab and replaying its entrance on the way back.
+        first = self._strip(right=other)
+        assert "next" in first  # still on screen, folding
+        for _ in range(12):
+            gone = self._strip(right=other)
+        assert "next ⏎" not in gone
+        assert "Run" in gone
+
+    def test_a_folding_tab_is_not_clickable(self):
+        from yeaboi.ui.shared._music_bar import chrome_tab_regions
+
+        self._settle(right=self._next_tab())
+        assert any(key == "enter" for *_rest, key in chrome_tab_regions())
+        self._strip()
+        assert not any(key == "enter" for *_rest, key in chrome_tab_regions())
+
+    def test_the_strip_retracting_takes_a_brand_new_tab_with_it(self):
+        from yeaboi.ui.shared import _music_bar as mb
+
+        self._settle()
+        mb._back_presence = 0.05  # mid-retract
+        row = self._strip(right=self._next_tab())
+        assert "next" not in row  # its own presence cannot outrun the strip's
+
+
+class TestNoTabsIsADifferentPage:
+    """A page offering no tabs is not asking for the current ones to be dropped.
+
+    Anonymize runs behind a worker; the screen that covers it has no tabs of its
+    own. Decaying the registry there wiped every tab, so coming back replayed
+    every entrance — which is what "all the buttons animate again" was.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fresh(self):
+        from yeaboi.ui.shared import _music_bar as mb
+
+        mb._forget_tabs()
+        mb._back_presence = 0.0
+        yield
+        mb._forget_tabs()
+        mb._back_presence = 0.0
+
+    TABS = ["Export", "Share Online", "Anonymize"]
+
+    @staticmethod
+    def _strip(names, width=130, height=12):
+        from rich.console import Console
+        from rich.text import Text
+
+        from yeaboi.ui.shared import _music_bar as mb
+
+        console = Console(width=width, height=height, force_terminal=False)
+        options = console.options.update_dimensions(width, height)
+        row = console.render_lines(Text(" " * width), options.update_width(width), pad=True)[0]
+        lines = [list(row) for _ in range(height)]
+        mb.draw_back_pocket(
+            console,
+            options,
+            lines,
+            target=1.0,
+            right_tabs=[(mb.build_tab_text(n), f"act:{n}") for n in names],
+        )
+        return "".join(seg.text for seg in lines[-2]).rstrip()
+
+    def test_the_tabs_come_back_whole_after_a_tabless_screen(self):
+        for _ in range(30):
+            settled = self._strip(self.TABS)
+        for _ in range(40):  # a long worker behind a screen with no tabs
+            self._strip([])
+        assert self._strip(self.TABS) == settled  # first frame back, identical
+
+    def test_a_tabless_screen_shows_no_stale_tabs(self):
+        for _ in range(30):
+            self._strip(self.TABS)
+        assert "Export" not in self._strip([])
+
+
+class TestCollapsedActionStrip:
+    """Three or four action tabs fill the border end to end, so they stack."""
+
+    W, H = 110, 14
+
+    # The first action stays a tab of its own — it is the page's forward move —
+    # so only the ones after it stack.
+    def _draw(self, names=("Continue", "Edit", "Regenerate", "Export"), frames=40):
+        from yeaboi.ui.shared._components import ANALYSIS_THEME
+
+        console = Console(width=self.W, height=self.H, force_terminal=False)
+        options = console.options.update_dimensions(self.W, self.H)
+        tabs = [(_music_bar.build_tab_text(n, ANALYSIS_THEME), f"act:{n}") for n in names]
+        lines = []
+        for _ in range(frames):  # settle every entrance animation
+            body = Text("\n".join("." * (self.W - 2) for _ in range(self.H)))
+            lines = console.render_lines(body, options, pad=True)
+            _music_bar.draw_music_pocket(console, options, lines)
+            _music_bar.draw_back_pocket(console, options, lines, 1.0, extra_tabs=tabs, lead_tab="Continue")
+        return "\n".join("".join(s.text for s in row) for row in lines)
+
+    def setup_method(self):
+        _music_bar.collapse_tabs()
+        _music_bar._tab_presence.clear()
+        _music_bar._tab_memory.clear()
+
+    def test_the_actions_stack_into_one_tab(self):
+        drawn = self._draw()
+        assert "3 actions" in drawn
+        assert "Continue" in drawn  # the forward move is never swallowed
+        for name in ("Edit", "Regenerate", "Export"):
+            assert name not in drawn
+        # No key of its own — a click on it opens the drawer instead.
+        assert _music_bar.stack_region() is not None
+        # Only the lead tab is clickable while the rest are stacked.
+        assert [k for *_r, k in _music_bar.chrome_tab_regions()] == ["act:Continue"]
+
+    def test_opening_it_grows_a_list_upward_out_of_the_tab(self):
+        self._draw()
+        _music_bar.toggle_tabs()
+        drawn = self._draw().split("\n")
+        assert "3 actions" not in "\n".join(drawn)
+        rows = {name: i for i in range(len(drawn)) for name in ("Edit", "Regenerate", "Export") if name in drawn[i]}
+        assert set(rows) == {"Edit", "Regenerate", "Export"}
+        # Stacked upward, in order, above the border they came out of.
+        assert rows["Edit"] < rows["Regenerate"] < rows["Export"] < len(drawn) - 1
+        assert sorted(k for *_r, k in _music_bar.chrome_tab_regions()) == sorted(
+            ["act:Continue", "act:Edit", "act:Regenerate", "act:Export"]
+        )
+        assert _music_bar.stack_region() is None
+
+    def test_every_row_of_the_open_list_is_its_own_click_target(self):
+        self._draw()
+        _music_bar.toggle_tabs()
+        self._draw()
+        rects = [r for r in _music_bar.chrome_tab_regions() if r[4] != "act:Continue"]
+        assert len(rects) == 3
+        # One row each, and no two on the same row.
+        assert all(y0 == y1 for _x0, y0, _x1, y1, _k in rects)
+        assert len({y0 for _x0, y0, _x1, _y1, _k in rects}) == 3
+
+    def test_one_action_is_not_worth_stacking(self):
+        drawn = self._draw(names=("Export",))
+        assert "Export" in drawn
+        assert "actions" not in drawn
+        assert _music_bar.stack_region() is None
+        assert not _music_bar.actions_available()
+
+    def test_a_page_with_a_drawer_says_so_for_the_tab_key(self):
+        self._draw()
+        assert _music_bar.actions_available()
+
+
+class TestActionsDrawerSelection:
+    """Open, it is a menu: one live row, arrows to move, Enter to take it."""
+
+    def _rows(self, names=("Continue", "Edit", "Regenerate", "Export")):
+        from yeaboi.ui.shared._components import ANALYSIS_THEME
+
+        console = Console(width=110, height=14, force_terminal=False)
+        options = console.options.update_dimensions(110, 14)
+        tabs = [(_music_bar.build_tab_text(n, ANALYSIS_THEME), f"act:{n}") for n in names]
+        lines = []
+        for _ in range(40):
+            body = Text("\n".join(" " * 108 for _ in range(14)))
+            lines = console.render_lines(body, options, pad=True)
+            _music_bar.draw_music_pocket(console, options, lines)
+            _music_bar.draw_back_pocket(console, options, lines, 1.0, extra_tabs=tabs, lead_tab="Continue")
+        return ["".join(s.text for s in row) for row in lines]
+
+    def setup_method(self):
+        _music_bar.collapse_tabs()
+        _music_bar._tab_presence.clear()
+        _music_bar._tab_memory.clear()
+        _music_bar.toggle_tabs()
+
+    def teardown_method(self):
+        _music_bar.collapse_tabs()
+
+    def _live(self):
+        return [r.split("›")[1].split("│")[0].strip() for r in self._rows() if "›" in r]
+
+    def test_exactly_one_row_is_live(self):
+        assert self._live() == ["Edit"]
+
+    def test_the_rows_are_separated(self):
+        rows = self._rows()
+        at = {n: i for i in range(len(rows)) for n in ("Edit", "Regenerate", "Export") if n in rows[i]}
+        # A blank row between each pair, so three actions read as three things
+        # to pick from rather than one block of text.
+        assert at["Regenerate"] - at["Edit"] == 2
+        assert at["Export"] - at["Regenerate"] == 2
+
+    def test_the_arrows_move_it_and_stop_at_the_ends(self):
+        _music_bar.stack_move(1)
+        assert self._live() == ["Regenerate"]
+        _music_bar.stack_move(1)
+        _music_bar.stack_move(1)  # past the bottom
+        assert self._live() == ["Export"]
+        assert _music_bar.stack_selected_key() == "act:Export"
+        for _ in range(5):  # and past the top
+            _music_bar.stack_move(-1)
+        assert self._live() == ["Edit"]
+        assert _music_bar.stack_selected_key() == "act:Edit"
+
+    def test_it_always_opens_on_the_first_row(self):
+        self._rows()
+        _music_bar.stack_move(2)
+        _music_bar.toggle_tabs()  # closed
+        _music_bar.toggle_tabs()  # and open again
+        assert _music_bar.stack_selected_key() == "act:Edit"
+
+
+class TestPagerPill:
+    """One tab split in two: this page, and the one Continue leads to."""
+
+    W, H = 120, 14
+
+    def _rows(self, pager=("Analysis", "Insights", 0)):
+        panel = Panel(Text("body"), height=self.H, padding=(1, 2))
+        console = Console(width=self.W, height=self.H, file=StringIO())
+        _music_bar._back_presence = 1.0
+        frame = _music_bar._MusicPocketFrame(panel, with_back=True)
+        frame.pager = pager
+        lines = console.render_lines(frame, console.options, pad=True)
+        return ["".join(s.text for s in row) for row in lines]
+
+    def test_the_key_is_named_outside_the_button(self):
+        # The two halves are what the button offers; how to move between them is
+        # an instruction ABOUT the button, so it sits outside its left border
+        # and the divider stays a plain rule.
+        row = next(r for r in self._rows() if "Analysis" in r and "Insights" in r)
+        between = row[row.index("Analysis") : row.index("Insights")]
+        assert "│" in between
+        assert "tab" not in between
+        assert "←tab→" in row[: row.index("Analysis")]
+
+    def test_each_half_s_own_label_is_inside_its_own_region(self):
+        # The divider is five cells wide now, not one. Both halves' click rects
+        # have to clear it, or the far label reports the near half.
+        rows = self._rows()
+        row = next(r for r in rows if "Analysis" in r and "Insights" in r)
+        regions = {key: (x0, x1) for x0, _y0, x1, _y1, key in _music_bar.pager_regions()}
+        # 1-based columns, the convention read_key hit-tests against.
+        for label, key in (("Analysis", "pager:0"), ("Insights", "pager:1")):
+            lo, hi = regions[key]
+            at = row.index(label) + 1
+            assert lo <= at <= hi, (label, at, lo, hi)
+            assert lo <= at + len(label) - 1 <= hi, (label, at, lo, hi)
+
+    def test_it_sits_between_the_two_corners_and_touches_neither(self):
+        rows = self._rows()
+        row = next(r for r in rows if "Analysis" in r)
+        assert row.index("back") < row.index("Analysis") < row.index("Insights") < row.index("♪")
+
+    def test_the_live_half_is_marked_without_moving_anything(self):
+        # Weight and colour only — no caret. A marker that appears on one side
+        # and not the other is one more thing that changes when you cross.
+        console = Console(width=self.W, height=self.H, file=StringIO())
+
+        def _styles(active):
+            panel = Panel(Text("body"), height=self.H, padding=(1, 2))
+            _music_bar._back_presence = 1.0
+            frame = _music_bar._MusicPocketFrame(panel, with_back=True)
+            frame.pager = ("Analysis", "Insights", active)
+            out = {}
+            for row in console.render_lines(frame, console.options, pad=True):
+                for seg in row:
+                    if seg.text.strip() in ("Analysis", "Insights"):
+                        out[seg.text.strip()] = str(seg.style)
+            return out
+
+        here, ahead = _styles(0), _styles(1)
+        assert "bold" in here["Analysis"] and "bold" not in here["Insights"]
+        assert "bold" in ahead["Insights"] and "bold" not in ahead["Analysis"]
+        assert "›" not in "".join(self._rows())
+
+    def test_it_never_moves(self):
+        # Not centred on the gap between the corners: that gap changes width
+        # whenever the left strip does — a drawer opening, Anonymize becoming
+        # Adjust and Revert — and a control that slides because something else
+        # resized is a control you have to find again.
+        seen = set()
+        for left_end, active in ((2, 0), (2, 1), (30, 0), (48, 1)):
+            _music_bar._left_tabs_end = left_end
+            rows = self._rows(("Analysis", "Insights", active))
+            seen.add(next(r for r in rows if "Analysis" in r).index("Analysis"))
+        assert len(seen) == 1, seen
+
+    def test_each_half_is_its_own_click_target(self):
+        self._rows()
+        halves = _music_bar.pager_regions()
+        assert [k for *_r, k in halves] == ["pager:0", "pager:1"]
+        # Side by side on one row, and they do not overlap.
+        (lx0, ly0, lx1, _ly1, _lk), (rx0, _ry0, rx1, _ry1, _rk) = halves
+        assert lx0 < lx1 < rx0 < rx1
+        assert ly0 == _ly1 == _ry0
+
+    def test_no_pager_draws_nothing(self):
+        rows = self._rows(pager=None)
+        assert not any("Analysis" in r for r in rows)
+        assert _music_bar.pager_regions() == []
+
+
+def test_the_lead_tab_is_the_forward_action_not_the_first_one():
+    # By NAME, not by position. On the results page the first action was Export,
+    # so an unrelated action stood on its own while the one you were looking for
+    # stayed stacked.
+    from yeaboi.ui.shared._components import ANALYSIS_THEME
+
+    console = Console(width=110, height=14, force_terminal=False)
+    options = console.options.update_dimensions(110, 14)
+    names = ("Export", "Share Online", "Anonymize", "Continue")
+    tabs = [(_music_bar.build_tab_text(n, ANALYSIS_THEME), f"act:{n}") for n in names]
+    _music_bar.collapse_tabs()
+    _music_bar._tab_presence.clear()
+    _music_bar._tab_memory.clear()
+    lines = []
+    for _ in range(40):
+        lines = console.render_lines(Text("\n".join(" " * 108 for _ in range(14))), options, pad=True)
+        _music_bar.draw_music_pocket(console, options, lines)
+        _music_bar.draw_back_pocket(console, options, lines, 1.0, extra_tabs=tabs, lead_tab="Continue")
+    drawn = "\n".join("".join(s.text for s in row) for row in lines)
+    assert "Continue" in drawn
+    assert "3 actions" in drawn
+    assert "Export" not in drawn
+
+
+def test_tab_never_crosses_a_pager_whose_far_half_leaves():
+    # Tab is one of the easiest keys to hit by accident. A page whose other half
+    # walks out of the flow opts out, and the pill stays clickable either way.
+    console = Console(width=150, height=14, file=StringIO())
+    _music_bar._back_presence = 1.0
+    for pager, crossable in ((("A", "B", 0), True), (("A", "B", 1, False), False)):
+        panel = Panel(Text("body"), height=14, padding=(1, 2))
+        frame = _music_bar._MusicPocketFrame(panel, with_back=True)
+        frame.pager = pager
+        console.render_lines(frame, console.options, pad=True)
+        assert bool(_music_bar.pager_other_key()) is crossable, pager
+        assert [k for *_r, k in _music_bar.pager_regions()] == ["pager:0", "pager:1"], pager
 
 
 # ── Chrome mascot (the robo on Agents pages) ─────────────────────────────────
