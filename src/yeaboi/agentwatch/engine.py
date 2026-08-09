@@ -183,7 +183,7 @@ def run_agent_usage(
     ``recommendations`` prose over the computed aggregates — never numbers.
 
     project: substring filter on the session's project directory name.
-    source:  exact filter on the telemetry source ("claude_code", "openclaw").
+    source:  exact filter on the telemetry source (currently "claude_code").
     dry_run: skip the LLM (deterministic artifact only, no warning).
 
     Two deliberate approximations in the windowing, both erring toward showing
@@ -318,9 +318,7 @@ def run_agent_usage(
     )
 
     if not sessions:
-        warnings.append(
-            "No local agent sessions found in the window — is Claude Code (or OpenClaw) used on this machine?"
-        )
+        warnings.append("No local agent sessions found in the window — is Claude Code used on this machine?")
 
     # ── The one LLM call: prose over finished numbers ─────────────────────
     insights: tuple[str, ...] = ()

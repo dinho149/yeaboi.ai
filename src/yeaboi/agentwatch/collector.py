@@ -1,10 +1,9 @@
 """Local agent-session ingestion for agentwatch.
 
-Scans Claude Code (and, when present, OpenClaw) session transcripts —
-append-only JSONL files under ``~/.claude/projects/**`` — and rolls each one up
-into an ``agent_sessions`` row: per-model token totals (including the 5m/1h
-cache-write split Claude Code reports), tool-use counts, turns, project path,
-branch, and timestamps.
+Scans Claude Code session transcripts — append-only JSONL files under
+``~/.claude/projects/**`` — and rolls each one up into an ``agent_sessions``
+row: per-model token totals (including the 5m/1h cache-write split Claude Code
+reports), tool-use counts, turns, project path, branch, and timestamps.
 
 Two invariants shape the design:
 
@@ -100,11 +99,12 @@ def _source_roots() -> tuple[tuple[str, Path], ...]:
 
     A function rather than a constant so tests point it at fixtures
     (monkeypatch) and future sources (Codex CLI, …) slot in as new pairs.
+
+    One source today. The pair shape is not speculative generality — the store,
+    the ``by_source`` breakdown and the ``--source`` filter are all keyed on the
+    label, so adding a tool is one entry here rather than a schema change.
     """
-    return (
-        ("claude_code", Path.home() / ".claude" / "projects"),
-        ("openclaw", Path.home() / ".openclaw" / "sessions"),
-    )
+    return (("claude_code", Path.home() / ".claude" / "projects"),)
 
 
 def _iter_session_files(root: Path) -> Iterable[Path]:

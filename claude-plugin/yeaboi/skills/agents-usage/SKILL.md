@@ -1,6 +1,6 @@
 ---
 name: agents-usage
-description: "(beta) See what the user's AI coding agents cost with yeaboi: per-model, per-project and per-source token/cost breakdowns plus a daily trend, computed from local agent session logs (Claude Code, OpenClaw). Use when the user asks what their agents cost, where agent spend went, or for an agent usage/cost report."
+description: "(beta) See what the user's AI coding agents cost with yeaboi: per-model, per-project and per-source token/cost breakdowns plus a daily trend, computed from local agent session logs (Claude Code). Use when the user asks what their agents cost, where agent spend went, or for an agent usage/cost report."
 ---
 
 # Agent usage workflows with yeaboi
@@ -13,7 +13,7 @@ description: "(beta) See what the user's AI coding agents cost with yeaboi: per-
    every project and source; narrow with:
    - `window_days` — how far back to look (1–365).
    - `project` — substring of a project directory name (e.g. "webapp").
-   - `source` — `claude_code` or `openclaw`.
+   - `source` — the telemetry source label (currently `claude_code`).
 
 2. **Present the result** conversationally: lead with the total and the window,
    then the top models and projects. `unknown_model_cost_share` above 0 means
@@ -27,7 +27,7 @@ description: "(beta) See what the user's AI coding agents cost with yeaboi: per-
 4. **Surface `warnings`** (the beta caveat, "no sessions found", LLM fallback)
    so the user knows what informed — or didn't inform — the output. A report of
    $0.00 with a "no local agent sessions" warning means the machine has no
-   Claude Code/OpenClaw history to read, not that agents are free.
+   Claude Code history to read, not that agents are free.
 
 5. **Privacy.** Only aggregates are read into the report; session transcripts
    are never copied or uploaded. Exports auto-save under

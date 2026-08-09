@@ -13,7 +13,7 @@ from yeaboi.mcp.runtime import run_engine, run_readonly
 
 logger = logging.getLogger(__name__)
 
-_VALID_SOURCES = ("claude_code", "openclaw")
+_VALID_SOURCES = ("claude_code",)
 
 
 def _usage(window_days: int, project: str, source: str):
@@ -109,8 +109,8 @@ def register(app) -> None:
     ) -> dict:
         """BETA — Report what the user's AI coding agents cost: per-model, per-project and
         per-source token/cost breakdowns plus a daily trend, computed from local agent session
-        logs (Claude Code, OpenClaw) priced at public rates. project filters by project directory
-        name (substring); source by telemetry source (claude_code, openclaw).
+        logs (Claude Code) priced at public rates. project filters by project directory
+        name (substring); source by telemetry source (claude_code).
 
         The Agents modes are in beta — costs are estimates from local session logs and public
         rate tables, not the provider's bill. Present totals as estimates."""

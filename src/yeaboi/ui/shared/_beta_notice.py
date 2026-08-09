@@ -88,7 +88,7 @@ _BETA_MODES: dict[str, _BetaMode] = {
         headline="Agent Usage is in beta.",
         body=(
             "Costs are estimates: token counts come from your local agent session logs",
-            "(Claude Code, OpenClaw), priced from a dated public rate table — not your",
+            "(Claude Code), priced from a dated public rate table — not your",
             "provider's bill. Unknown models are priced at a mid-tier guess and flagged.",
             "",
             "Only aggregates are stored. Session transcripts are read on this machine",

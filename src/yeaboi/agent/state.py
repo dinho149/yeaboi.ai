@@ -1156,7 +1156,7 @@ class AgentSessionSummary:
     """One monitored agent session, as it appears in a standup digest."""
 
     session_id: str = ""
-    source: str = ""  # claude_code | openclaw
+    source: str = ""  # telemetry source label, e.g. claude_code
     project: str = ""
     branch: str = ""
     models: tuple[str, ...] = ()

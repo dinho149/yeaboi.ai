@@ -786,9 +786,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cost_p.add_argument("--window-days", type=int, default=30, metavar="N", help="Days to look back (default 30)")
     cost_p.add_argument("--project", default="", metavar="NAME", help="Filter by project directory name (substring)")
-    cost_p.add_argument(
-        "--source", default="", choices=["", "claude_code", "openclaw"], help="Filter by telemetry source"
-    )
+    cost_p.add_argument("--source", default="", choices=["", "claude_code"], help="Filter by telemetry source")
     cost_p.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     cost_p.add_argument("--strict", action="store_true", help="Exit 3 on a degraded run (warnings present)")
     astandup_p = agents_sub.add_parser(

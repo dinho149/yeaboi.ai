@@ -31,7 +31,11 @@ def seeded(db_path):
         ),
         (
             "s2",
-            "openclaw",
+            # A second source written straight into the store. _source_roots()
+            # yields only Claude Code today, but the store, the by_source
+            # breakdown and the --source filter are all keyed on this label —
+            # so this is what proves none of them are hardcoded to one tool.
+            "codex_cli",
             "/home/dev/api",
             "2026-08-06T09:00:00+00:00",
             {
@@ -104,7 +108,7 @@ class TestAggregation:
     def test_breakdowns_and_trend(self, seeded):
         report = engine.run_agent_usage(window_days=30, db_path=seeded, today=TODAY)
         assert [r.key for r in report.by_project] == ["webapp", "api"]
-        assert {r.key for r in report.by_source} == {"claude_code", "openclaw"}
+        assert {r.key for r in report.by_source} == {"claude_code", "codex_cli"}
         assert [p.date for p in report.daily_trend] == ["2026-08-06", "2026-08-07"]
 
     def test_window_filter(self, seeded):
@@ -115,7 +119,7 @@ class TestAggregation:
     def test_project_and_source_filters(self, seeded):
         by_project = engine.run_agent_usage(window_days=30, project="api", db_path=seeded, today=TODAY)
         assert by_project.session_count == 1
-        assert by_project.by_source[0].key == "openclaw"
+        assert by_project.by_source[0].key == "codex_cli"
         by_source = engine.run_agent_usage(window_days=30, source="claude_code", db_path=seeded, today=TODAY)
         assert by_source.session_count == 1
         assert by_source.by_project[0].key == "webapp"

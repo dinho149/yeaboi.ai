@@ -2,8 +2,8 @@
 
 One shared table for everything that turns token counts into dollars: the Usage
 page's lifetime estimate (previously a hardcoded $3/$15 formula) and the
-agentwatch cost pipeline that prices monitored agent sessions (Claude Code,
-OpenClaw). Rates are a dated snapshot — ``PRICING_AS_OF`` travels with every
+agentwatch cost pipeline that prices monitored agent sessions (Claude Code).
+Rates are a dated snapshot — ``PRICING_AS_OF`` travels with every
 estimate so a rendered number can always be traced to the table that produced
 it. Unknown models fall back to a Sonnet-tier estimate with ``known_model``
 False, so callers can surface honesty flags instead of silently guessing.

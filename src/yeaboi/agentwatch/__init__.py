@@ -6,7 +6,7 @@ hazard. User-facing copy still says "Agents" (CLI ``yeaboi agents …``, MCP
 ``agents_*`` tools, TUI ``agent-*`` cards).
 
 Layout follows the standalone-mode blueprint (see the mode-blueprints skill):
-``collector.py`` ingests local agent-session telemetry (Claude Code, OpenClaw)
+``collector.py`` ingests local agent-session telemetry (Claude Code)
 into ``store.py``'s tables; ``engine.py`` holds the headless pipelines the TUI,
 CLI, and MCP surfaces adapt.
 """
