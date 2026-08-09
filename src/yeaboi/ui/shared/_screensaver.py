@@ -204,6 +204,12 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     elapsed = idle_controller.animation_elapsed() if elapsed is None else elapsed
     frame = int(elapsed * SAVER_FPS) % 8
 
+    # The saver wears whichever mascot the page it interrupted wears — idling on
+    # an Agents page keeps the robo (lazy import: _music_bar imports this module).
+    from yeaboi.ui.shared._music_bar import current_chrome_mascot
+
+    mascot = current_chrome_mascot()
+
     # Roomy terminals: the duck waddles back and forth along the floor (feet
     # stepping) rather than standing still in the centre. Needs room for the 18-row
     # duck + the caption/hint + the pocket-clearance reserve.
@@ -213,7 +219,9 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     if width >= 60 and height >= 24:
         from yeaboi.ui.shared._mayhem import render as render_mayhem
 
-        return build_page_panel(render_mayhem(width - 6, height - 2, elapsed), height=max(1, height), padding=(0, 2))
+        return build_page_panel(
+            render_mayhem(width - 6, height - 2, elapsed, mascot=mascot), height=max(1, height), padding=(0, 2)
+        )
 
     if width >= 46 and height >= 26:
         content_h = max(1, height - 2)  # inside the border
@@ -237,7 +245,7 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
         over = (x + _SAVER_DUCK_W) - tab_left  # how far his right edge is over the tab
         jump = int(round(_SAVER_JUMP_H * max(0.0, min(1.0, over / 4.0))))  # ramp over 4 cols
         glasses_frame = frame if jump > 0 else 0
-        grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left)
+        grid = walk_cells(frame, foot=foot, glasses_frame=glasses_frame, flip=facing_left, mascot=mascot)
         duck_rows = [_cells_to_text(r, x) for r in grid]
 
         # No caption/hint — just the duck walking along the floor.
@@ -253,9 +261,11 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     # Thresholds account for the surrounding Panel: the full duck is 18 half-block
     # rows plus 2 border rows. Between this and the walk threshold he stands centred.
     if width >= 46 and height >= 22:
-        art: RenderableType | None = render_full(frame)
+        art: RenderableType | None = render_full(frame, mascot=mascot)
     elif width >= 22 and height >= 13:
-        art = render_head_idle(frame, _shades_lift(elapsed))
+        # render_head_idle's lift is duck-only internally, so passing the
+        # shades clock is safe for the robo (he just rests).
+        art = render_head_idle(frame, _shades_lift(elapsed), mascot=mascot)
     else:
         art = None
 

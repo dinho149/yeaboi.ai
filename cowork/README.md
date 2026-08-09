@@ -47,7 +47,7 @@ runs.
 | [sweep-procedure.md](sweep-procedure.md) | The shared cron run, written once. |
 | [crew.md](crew.md) | scout / scribe / builder — who does what. |
 | [integrations-map.md](integrations-map.md) | Which provider reaches which mode, and every deliberate gap. Maintained by the integrations sweep's reach week. |
-| `workstreams/*.md` | Fifteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
+| `workstreams/*.md` | Sixteen charters: owned paths, standing concerns, what is out of scope. Every `CAPABILITIES` row maps to exactly one; ownership never overlaps. |
 | `routines/cron/*.md` | One per scheduled routine. |
 | `routines/events/*.md` | GitHub-event triggered. |
 
@@ -154,6 +154,7 @@ Cadence is tiered to surface size — a 1.2k-LOC mode asked for findings weekly 
 | Routine | Trigger | Workstream | Tier | URL |
 |---|---|---|---|---|
 | `cron/marketing-weekly.md` | `0 8 * * 6` Sat | marketing | `deep` | https://claude.ai/code/routines/trig_011f1J2fUGPhDQKSmjEMEiGs |
+| `cron/agents-standup.md` | `15 6 * * 1-5` weekdays | agents | `fast` | |
 | `cron/day-ahead.md` | `45 5 * * *` daily | — | `fast` | https://claude.ai/code/routines/trig_01DHtR33hCFgDhoz7yA5jXUi |
 | `cron/digest.md` | `15 8 * * *` | — | `standard` | https://claude.ai/code/routines/trig_01VY1hbAZKeGuKA1GLyVhbow |
 | `cron/slack-relay.md` | `0 7-23 * * *` hourly | — | `fast` | https://claude.ai/code/routines/trig_01X18LBBBZ1FWEtx2Cmffyow |
@@ -212,11 +213,11 @@ from [models.md](models.md#workflows), and the routines from the table above —
 routine actually runs on is the one written down here. `tests/unit/test_cowork_setup.py` fails on the
 same drift in `make test-fast`.
 
-**What each command covers.** `make cowork-setup` does the twenty-six GitHub labels (`cowork`,
+**What each command covers.** `make cowork-setup` does the twenty-seven GitHub labels (`cowork`,
 `cowork:proposal`, `claude-implement`, `feedback-override`, `workstream:<name>` for each of the
-fifteen, and the seven `type:*` labels shared with the feedback system) and the four
+sixteen, and the seven `type:*` labels shared with the feedback system) and the four
 `YEABOI_MODEL_*` repository variables — the workflows read their model from a variable because a YAML
-file cannot read a markdown table. `/cowork deploy` does all twenty-two routines, the webhook triggers
+file cannot read a markdown table. `/cowork deploy` does all twenty-three routines, the webhook triggers
 that fire the event-driven ones, and mirrors the workstream labels onto the Linear `Yeaboi` team; both
 need a Claude session, since a routine is account-scoped and has no CLI behind it.
 

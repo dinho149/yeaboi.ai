@@ -75,6 +75,14 @@ src/yeaboi/
     delivery.py         — 1:1 summary email via SMTP (reuses standup config.get_smtp_*)
     store.py            — PerformanceStore (one_on_ones/reviews/notes tables, schema v8)
     references/         — bundled default competency_framework.md (overridable via env)
+  agentwatch/           — the Agents family: what the AI coding agents did, cost, and exposed
+    __init__.py         — public API (run_agent_usage, run_agent_standup, run_agent_security, AgentWatchStore)
+    collector.py        — refresh(): ingest local Claude Code/OpenClaw session JSONL → rollups + in-stream security signals (requestId-deduped, cursor-skipped, never stores transcript text)
+    engine.py           — the 3 pipelines (deterministic numbers → one LLM call for prose → artifact)
+    security_checks.py  — deterministic scans of agent settings/MCP config; findings are (pattern, file, line) only
+    render.py           — the 3 artifacts → Rich (CLI + TUI)
+    export.py           — the 3 artifacts → Markdown (no HTML yet — see the beta notice)
+    store.py            — AgentWatchStore (agent_sessions keyed on source_path, findings, 3 report tables, schema v27)
   reporting/            — Reporting mode (business-friendly delivery report: last sprint / last month)
     __init__.py         — public API (run_delivery_report, ReportingStore, export_report, build_presentation_html)
     activity.py         — gather_delivered_work(): team-wide completed (Done/Closed) tickets over the period

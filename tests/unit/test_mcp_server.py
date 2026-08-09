@@ -61,6 +61,12 @@ EXPECTED_TOOLS = {
     "team_analyze",
     "team_roster",
     "anonymize_text",
+    "agents_usage",
+    "agents_usage_history",
+    "agents_standup_run",
+    "agents_standup_history",
+    "agents_security_scan",
+    "agents_security_history",
 }
 
 

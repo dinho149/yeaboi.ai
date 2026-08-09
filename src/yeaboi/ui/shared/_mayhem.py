@@ -41,6 +41,8 @@ from yeaboi.ui.shared._mascot import (
     DUCK_HEAD_FACE,
     DUCK_HEAD_GLASSES,
     DUCK_HEAD_QUACK,
+    ROBO_HEAD,
+    ROBO_HEAD_QUACK,
     _compose,
     _pack_cells,
     _shift,
@@ -192,6 +194,15 @@ def rotate(grid: Grid, degrees: float, size: int | None = None) -> Grid:
     return tuple(out)
 
 
+# Which sprite family the yard runs (steered by the screensaver from the
+# chrome's current mascot). The robo has no FACE/GLASSES split, so his hero
+# skips the shades gag and his resting head IS the base.
+MASCOT = "duck"
+_MAYHEM_HEADS = {
+    "duck": (DUCK_HEAD, DUCK_HEAD_QUACK),
+    "robo": (ROBO_HEAD, ROBO_HEAD_QUACK),
+}
+
 SOURCE = scale(DUCK_HEAD, DUCK_SCALE)
 SOURCE_QUACK = scale(DUCK_HEAD_QUACK, DUCK_SCALE)
 
@@ -273,6 +284,12 @@ def hero_grid(elapsed: float, quacking: bool = False) -> Grid:
     until the final blit. Always padded, at rest as well as mid-gag: compose()
     centres a sprite on its duck, so a grid that changed height would bob.
     """
+    if MASCOT != "duck":
+        # No FACE/GLASSES split on the robo — the visor is part of the head, so
+        # there is no shades gag; only the quack composes.
+        resting, quack = _MAYHEM_HEADS.get(MASCOT, _MAYHEM_HEADS["duck"])
+        pad = ("." * len(resting[0]),) * HERO_PAD
+        return scale(pad + (quack if quacking else resting), HERO_SCALE)
     pad = ("." * len(DUCK_HEAD_FACE[0]),) * HERO_PAD
     base = pad + (DUCK_HEAD_QUACK if quacking else DUCK_HEAD_FACE)
     glasses = pad + DUCK_HEAD_GLASSES
@@ -572,7 +589,7 @@ def compose(ducks: list[Duck], now: float, cols: int, rows: int) -> Group:
 HERO_2X_MIN_WIDTH = 150
 
 
-def configure(duck_scale: int, hero_scale: int | None = None) -> None:
+def configure(duck_scale: int, hero_scale: int | None = None, mascot: str | None = None) -> None:
     """Re-derive every size-dependent constant for a different sprite scale.
 
     2x is right for a recording, where the terminal font can be made tiny to pay
@@ -580,11 +597,14 @@ def configure(duck_scale: int, hero_scale: int | None = None) -> None:
     the ducks have to be 1x or a dozen of them will not fit on the screen.
     """
     global DUCK_SCALE, SOURCE, SOURCE_QUACK, SPRITE_SIZE, DUCK_RADIUS
-    global HERO_SCALE, HERO_W, HERO_H, HERO_RADIUS, GLASSES_RADIUS
+    global HERO_SCALE, HERO_W, HERO_H, HERO_RADIUS, GLASSES_RADIUS, MASCOT
     DUCK_SCALE = duck_scale
     HERO_SCALE = hero_scale if hero_scale is not None else duck_scale * 2
-    SOURCE = scale(DUCK_HEAD, DUCK_SCALE)
-    SOURCE_QUACK = scale(DUCK_HEAD_QUACK, DUCK_SCALE)
+    if mascot is not None:
+        MASCOT = mascot
+    resting, quack = _MAYHEM_HEADS.get(MASCOT, _MAYHEM_HEADS["duck"])
+    SOURCE = scale(resting, DUCK_SCALE)
+    SOURCE_QUACK = scale(quack, DUCK_SCALE)
     SPRITE_SIZE = math.ceil(math.hypot(len(SOURCE[0]) * MAX_STRETCH, len(SOURCE)))
     DUCK_RADIUS = max(len(SOURCE[0]), len(SOURCE)) / 2.0
     HERO_W, HERO_H = len(DUCK_HEAD[0]) * HERO_SCALE, len(DUCK_HEAD) * HERO_SCALE
@@ -613,12 +633,12 @@ def fits(width: int, height: int, coverage: float = 0.34) -> int:
 # rising elapsed, so stepping incrementally is O(1) per frame; recomputing from
 # zero each time would be O(elapsed) and get slower the longer it ran.
 _yard: list[Duck] = []
-_yard_key: tuple[int, int, int, int] = (0, 0, 0, 0)
+_yard_key: tuple = (0, 0, 0, 0)
 _yard_at: float = 0.0
 _STEP = 1.0 / 60
 
 
-def render(width: int, height: int, elapsed: float, *, seed: int = 3) -> RenderableType:
+def render(width: int, height: int, elapsed: float, *, seed: int = 3, mascot: str = "duck") -> RenderableType:
     """The yard at ``elapsed`` seconds, for a ``width`` x ``height`` terminal.
 
     Rebuilds when the terminal is resized or when time runs backwards. Backwards
@@ -629,9 +649,9 @@ def render(width: int, height: int, elapsed: float, *, seed: int = 3) -> Rendera
 
     px_h = height * 2
     hero_scale = DUCK_SCALE * 2 if width >= HERO_2X_MIN_WIDTH else DUCK_SCALE
-    key = (width, px_h, seed, hero_scale)
+    key = (width, px_h, seed, hero_scale, mascot)
     if key != _yard_key or elapsed < _yard_at:
-        configure(DUCK_SCALE, hero_scale)
+        configure(DUCK_SCALE, hero_scale, mascot)
         # noqa S311: ducks, not nonces. Reproducibility is the requirement.
         _yard = make_ducks(fits(width, px_h), width, px_h, random.Random(seed))  # noqa: S311
         _yard_key, _yard_at = key, 0.0

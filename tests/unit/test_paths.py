@@ -45,6 +45,23 @@ class TestExportDirHelpers:
         assert p.parent.is_dir()  # data dir created, file itself may not exist yet
 
 
+class TestAgentwatchLogDir:
+    """The Agents family's log directory (CLAUDE.md: every mode logs to its own)."""
+
+    def test_creates_under_the_constant(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "AGENTWATCH_LOGS_DIR", tmp_path / "logs" / "agentwatch")
+        d = paths.get_agentwatch_log_dir()
+        assert d == tmp_path / "logs" / "agentwatch"
+        assert d.is_dir()
+
+    def test_idempotent(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(paths, "AGENTWATCH_LOGS_DIR", tmp_path / "logs" / "agentwatch")
+        assert paths.get_agentwatch_log_dir() == paths.get_agentwatch_log_dir()
+
+    def test_lives_under_the_logs_root(self):
+        assert paths.LOGS_DIR in paths.AGENTWATCH_LOGS_DIR.parents
+
+
 class TestTranscriptsDir:
     """The managed standup-transcript drop folder."""
 

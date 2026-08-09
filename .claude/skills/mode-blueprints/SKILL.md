@@ -100,6 +100,29 @@ The `src/yeaboi/reporting/` package produces a **business-friendly summary of de
 
 **TUI**: the indigo **Reporting** card → `_build_reporting_screen` + `_run_reporting_page` in `ui/mode_select/`. Five views, styled with the analysis setup-wizard helpers (`_analysis_setup_header`/`_analysis_toggle_row` re-branded via their `brand`/`theme` params): a **picker** (↑/↓ choose Last week / Last sprint / Last month / Whole quarter / Custom range) with **Generate Report / Sources / Theme / Style / Back** and sources + style status lines; a **sprint_select** multi-select (↑/↓ move, Space toggle, Enter generate) shown when generating a quarter; a **theme_select** palette list with color-swatch previews (`_build_reporting_theme_screen`); a **style_select** deck-style options list (`_build_reporting_style_screen`: one row per `STYLE_FIELDS` entry, Space cycles the focused value in a working copy — colors cycle theme-default → roles → a custom-hex prompt via `_standup_read_line`, footer opens the line editor — **Save / Reset / Back** buttons: Save persists to `reporting_prefs.json`, Reset restores defaults in the editor, Back/Esc discards unsaved edits); and a **detail** view rendered richly from the `DeliveryReport` artifact (`_reporting_detail_rows`: headline banner, metric meters, titled sections, capped items table — one `Text` per terminal line so scroll math stays exact) with **Export / Share Online / Anonymize / Theme / Style / Back**. The custom range prompts start/end dates via `_standup_read_line`; anonymize masks the artifact via `mask_artifact` (a `DeliveryReport` reconstructor is registered in `anonymize/apply.py`). Scrollbars use `build_scrollbar` without `always_show` (a source-level regression test forbids it). Transient status messages (export paths etc.) render as a **pinned one-row banner** in the detail header — outside the scroll viewport, standup-style `header_h` accounting — so they stay visible at any scroll depth. Targets the most recent session for sprint length / project name. Logs go to `~/.yeaboi/logs/reporting/`.
 
+## Agents family (agentwatch)
+
+Three modes (`agent-usage`, `agent-standup`, `agent-security`) share one package —
+`src/yeaboi/agentwatch/` — and one blueprint deviation worth knowing: the *collector* is the gather
+step. `collector.refresh()` incrementally ingests `~/.claude/projects/**/*.jsonl` (and OpenClaw)
+into `agent_sessions` rollups, deduping usage by `requestId` via full-file reparse (Claude Code
+splits one API response across lines with identical usage — partial offsets would double-count).
+Three invariants:
+
+- **Privacy** — no transcript text in the store, exports, or screens; security findings are
+  (pattern, file, line). Planted-secret tests enforce it.
+- **Deterministic numbers** — every figure is computed in the engine; the LLM writes
+  insights/narrative/summary prose only.
+- **RO on `~/.claude`** — the fs_policy builtin rules are read-only; never write another tool's
+  state dir.
+
+Cost goes through `src/yeaboi/pricing.py` (dated `PRICING_AS_OF`, cache-aware, unknown models →
+flagged fallback tier). Exports are Markdown-only until an agentwatch React export component
+exists (a tracked web-ux follow-up). The TUI pages share one threaded-engine loop in
+`ui/mode_select/_agents.py`; the landing split lives in `screens/_screens_category.py` and the
+Agents card list is `_AGENT_CARDS` (never merged into `_MODE_CARDS` — welcome tests pin exact
+renders and indices).
+
 ## Roadmap Intake
 
 The `src/yeaboi/roadmap/` package makes Planning **proactive**: instead of describing a project by hand, the user points the 4th intake card (**Roadmap**, alongside Small/Large/Offline in `_INTAKE_CARDS`) at wherever their **quarterly roadmap** lives. One LLM call extracts the concrete candidate projects, ranks them by recommended start order, and classifies each as **small** (→ `small_project` intake) or **large** (→ `smart` intake); picking one launches `run_session` with the description **pre-seeded** from the roadmap.

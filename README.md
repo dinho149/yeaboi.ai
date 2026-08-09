@@ -98,6 +98,7 @@ yeaboi --non-interactive --description @project-brief.txt --output html --team-s
 🖥️ **Full-screen TUI** — Animated splash, mode selection, pipeline progress, dark/light themes
 🧠 **Smart Intake** — Extracts answers from your project description, asks only what's missing — or feed it a whole quarterly roadmap with Roadmap Intake
 🔄 **Seven modes, one command** — Planning, Daily Standup, Retro, Planning Poker, Performance _(beta)_, Reporting, Team Analysis
+🤖 **Agents too, not just humans** _(beta)_ — a robotic-duck landing split opens the Agents family: what your AI coding agents cost, a daily digest of what they did, and a security audit of your agent setup — computed locally from Claude Code session logs, transcripts never leave your machine
 🔌 **37 tools** — GitHub, Azure DevOps, Jira, Confluence, Notion, local codebase scanning, and more
 📤 **5 export formats** — Markdown, HTML, JSON, Jira sync, Azure DevOps Boards sync
 🤖 **5 LLM providers** — Claude (default), GPT, Gemini, AWS Bedrock, or fully local & keyless with Ollama

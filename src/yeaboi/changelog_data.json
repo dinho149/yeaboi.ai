@@ -2,6 +2,50 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.2.0",
+      "date": "2026-08-09",
+      "summary": "yeaboi now covers agents, not just humans. After the splash you pick who we're working with today: Humans (the duck, and every existing mode) or Agents (a new robotic duck, and a new family of modes that watch the AI agents working across your SDLC). The first three agent modes ship in beta: Usage prices your local Claude Code sessions per model, project and day; Standup digests what your agents did — sessions worked plus agent-authored commits and PRs found in your trackers; Security audits your agent setup — permission bypasses, wildcard allows, risky hooks, MCP servers, and secret exposure in transcripts, reported as pattern+file+line only. Everything is computed locally from your own session logs; transcripts are never copied, uploaded or stored. Full parity from day one: every agent mode has a CLI subcommand (yeaboi agents ...), MCP tools, and a plugin skill. The existing Usage page's cost estimate now uses a real per-model pricing table instead of a flat Sonnet rate, so displayed costs may shift.",
+      "highlights": [
+        {
+          "text": "Humans/Agents landing split with a robotic duck for the new family",
+          "areas": [
+            "agents",
+            "general"
+          ]
+        },
+        {
+          "text": "Agents → Usage: per-model/project/day cost of your local agent sessions, cache-aware pricing",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Agents → Standup: daily digest of agent sessions + agent-authored commits/PRs, Slack-deliverable",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Agents → Security: settings/MCP/secret audit of your agent setup (indicator, not an audit)",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "yeaboi agents cost|standup|security CLI + six new MCP tools + three plugin skills",
+          "areas": [
+            "agents"
+          ]
+        },
+        {
+          "text": "Usage page cost estimates now use per-model rates (numbers may shift from the old flat estimate)",
+          "areas": [
+            "usage"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.1.0",
       "date": "2026-08-08",
       "summary": "Demo GIF recording is now deterministic, repeatable, and verified — glyph corruption from multibyte characters is structurally impossible, and terminal size, keystroke timing, and environment are hermetic. A new YEABOI_UPDATE_CHECK environment variable lets you disable the background PyPI update check, which is essential for air-gapped systems and prevents the version row from repainting during captures. The recording script includes built-in verification that fails loudly on blank frames, missing artifacts, or oversize GIFs.",

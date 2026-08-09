@@ -54,8 +54,10 @@ class TestSchemaVersion:
         # (habit_ai_match); v25 adds the practice feedback ledger
         # (standup_practice_feedback); v26 re-applies v21 — a pre-rebase
         # lineage stamped shared DBs at 21 with a different meaning, so the
-        # provenance columns could be missing from a DB already at v25.
-        assert CURRENT_SCHEMA_VERSION == 26
+        # provenance columns could be missing from a DB already at v25;
+        # v27 adds the agentwatch tables (agent_sessions, agent_ingest_files,
+        # agent_security_findings, and the three report-history tables).
+        assert CURRENT_SCHEMA_VERSION == 27
 
     def test_new_db_has_session_mode_column(self, store: SessionStore):
         """A freshly created DB should have the session_mode column."""

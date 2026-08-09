@@ -1080,6 +1080,174 @@ class ProjectAnalysis:
 
 
 # ---------------------------------------------------------------------------
+# agentwatch (Agents family) artifacts — see agentwatch/engine.py
+#
+# Same conventions as every mode artifact above: @dataclass(frozen=True), every
+# field defaulted (older serialized rows keep deserializing), tuples not lists,
+# tuple-of-pairs instead of dicts, trailing `annotations` for reader edits.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ModelUsageRow:
+    """One model's token totals and cost within an AgentUsageReport."""
+
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_write_tokens: int = 0  # 5m + 1h writes combined (display total)
+    cache_read_tokens: int = 0
+    calls: int = 0
+    cost_usd: float = 0.0
+    known_pricing: bool = True  # False = priced at the fallback tier
+
+
+@dataclass(frozen=True)
+class AgentUsageBreakdownRow:
+    """Cost/volume rollup along one dimension (per project, per source)."""
+
+    key: str = ""
+    sessions: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass(frozen=True)
+class DailyUsagePoint:
+    """One day of the usage trend line."""
+
+    date: str = ""  # YYYY-MM-DD
+    cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    sessions: int = 0
+
+
+@dataclass(frozen=True)
+class AgentUsageReport:
+    """Cost/token dashboard over locally monitored agent sessions."""
+
+    period_start: str = ""
+    period_end: str = ""
+    session_count: int = 0
+    total_cost_usd: float = 0.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cache_write_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    # Share of total cost priced at the fallback tier (unknown models) — an
+    # honesty flag the renderers surface next to the total.
+    unknown_model_cost_share: float = 0.0
+    pricing_as_of: str = ""
+    by_model: tuple[ModelUsageRow, ...] = ()
+    by_project: tuple[AgentUsageBreakdownRow, ...] = ()
+    by_source: tuple[AgentUsageBreakdownRow, ...] = ()
+    daily_trend: tuple[DailyUsagePoint, ...] = ()
+    insights: tuple[str, ...] = ()
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
+class AgentSessionSummary:
+    """One monitored agent session, as it appears in a standup digest."""
+
+    session_id: str = ""
+    source: str = ""  # telemetry source label, e.g. claude_code
+    project: str = ""
+    branch: str = ""
+    models: tuple[str, ...] = ()
+    turns: int = 0
+    cost_usd: float = 0.0
+    top_tools: tuple[tuple[str, str], ...] = ()  # (tool name, count as str)
+    started_at: str = ""
+    ended_at: str = ""
+
+
+@dataclass(frozen=True)
+class AgentRepoActivityRow:
+    """One agent-authored item found in a tracker (commit, PR, review)."""
+
+    source: str = ""  # github | azdo
+    repo: str = ""
+    kind: str = ""  # commit | pr | review | comment
+    title: str = ""
+    url: str = ""
+    author: str = ""
+    status: str = ""  # open | merged | closed | ""
+    agent_marker: str = ""  # which detector matched (claude, copilot, …)
+
+
+@dataclass(frozen=True)
+class AgentStandupDigest:
+    """Daily "what did the agents do" digest — local sessions + repo signals."""
+
+    digest_date: str = ""
+    window_start: str = ""
+    window_end: str = ""
+    sessions_worked: int = 0
+    total_cost_usd: float = 0.0
+    agents_seen: tuple[str, ...] = ()  # distinct sources/tools active in window
+    session_summaries: tuple[AgentSessionSummary, ...] = ()
+    repo_activity: tuple[AgentRepoActivityRow, ...] = ()
+    highlights: tuple[str, ...] = ()
+    in_flight: tuple[str, ...] = ()  # open agent PRs / unfinished work
+    attention_items: tuple[str, ...] = ()
+    narrative: str = ""
+    coverage_notes: tuple[str, ...] = ()  # honesty notes (sources not reachable…)
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+@dataclass(frozen=True)
+class McpServerRecord:
+    """One MCP server found in an agent's configuration."""
+
+    name: str = ""
+    scope: str = ""  # global | project:<path>
+    transport: str = ""  # stdio | http | sse
+    target: str = ""  # command or URL (never credentials)
+    flags: tuple[str, ...] = ()  # e.g. plain-http, unpinned-package
+
+
+@dataclass(frozen=True)
+class SecurityFinding:
+    """One agent-security finding, deterministic and location-referenced."""
+
+    severity: str = "info"  # critical | high | medium | info
+    category: str = ""  # settings | mcp | secret | risky_tool
+    title: str = ""
+    location: str = ""  # file path (never file content)
+    line_no: int = 0
+    pattern: str = ""  # detector label, e.g. curl-pipe-shell
+    detail: str = ""
+    remediation: str = ""
+
+
+@dataclass(frozen=True)
+class AgentSecurityReport:
+    """Security posture of local agent usage (settings, MCP, secrets, tools)."""
+
+    scan_date: str = ""
+    posture: str = ""  # good | needs-attention | at-risk
+    sessions_scanned: int = 0
+    files_scanned: int = 0
+    secrets_found: int = 0
+    findings: tuple[SecurityFinding, ...] = ()
+    mcp_servers: tuple[McpServerRecord, ...] = ()
+    settings_flags: tuple[str, ...] = ()
+    summary: str = ""
+    recommendations: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    generated_at: str = ""
+    annotations: tuple[Annotation, ...] = ()
+
+
+# ---------------------------------------------------------------------------
 # Questionnaire state (mutable — updated incrementally by intake node)
 # ---------------------------------------------------------------------------
 
