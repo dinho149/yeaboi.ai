@@ -111,12 +111,13 @@ HERO_SCALE = DUCK_SCALE * 2
 # ping-pongs, so a three-second cycle can land almost entirely outside the
 # window — the gag was rendering correctly and still looked frozen, because at
 # most one lift fell inside the take and a dozen ducks were flying over it.
-# The anchored duck holds completely still: no shades gag, no beak. He is hit
-# several times a second, so a reacting hero flaps constantly, and next to a
-# yard that is already all motion the eye has nowhere to rest. Set False to give
-# him the gag back.
-HERO_STATIC = True
-HERO_SHADES_EVERY = 1.6
+# The anchored duck stays still apart from the shades gag, which is rare enough
+# to be a surprise rather than a tic. He is hit several times a second, so he
+# still never reacts to being hit — a hero flapping on every impact was the
+# thing that left the eye nowhere to rest.
+HERO_STATIC = False
+HERO_REACTS_TO_HITS = False
+HERO_SHADES_EVERY = 11.0
 # Its own sequence rather than the app's SHADES_LIFT_SEQUENCE, and stepped more
 # than twice as fast. The app's is a slow reveal with a long hold at the top,
 # which suits a calm idle screen and is far too languid next to a dozen ducks
@@ -346,7 +347,7 @@ class Duck:
         if self.is_hero:
             # Quacking beats the shades gag: he cannot be mid-cool-reveal and
             # mid-yelp at once, and the yelp is the one a duck to the face causes.
-            return hero_grid(now, quacking=not HERO_STATIC and now < self.quack_until)
+            return hero_grid(now, quacking=HERO_REACTS_TO_HITS and now < self.quack_until)
         level = 0
         if now < self.squish_until:
             # Flattest at the moment of impact, easing back out as the timer runs.

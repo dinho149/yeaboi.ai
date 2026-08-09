@@ -83,6 +83,13 @@ class IdleController:
             self._waiting_for_input = False
             return False
 
+    def is_active(self) -> bool:
+        """Whether the saver is on screen. Unlike handle_input_event this only
+        asks — it does not wake anything — so a key that is allowed to work
+        *through* the saver can check first."""
+        with self._lock:
+            return self._active
+
     def should_show(self) -> bool:
         """Return whether the saver should replace the current renderable."""
         now = self._clock()
@@ -138,6 +145,10 @@ def begin_input_wait() -> None:
 
 def handle_input_event() -> bool:
     return idle_controller.handle_input_event()
+
+
+def screensaver_active() -> bool:
+    return idle_controller.is_active()
 
 
 def show_screensaver_now() -> bool:
@@ -215,8 +226,12 @@ def build_screensaver(*, width: int, height: int, elapsed: float | None = None) 
     # duck + the caption/hint + the pocket-clearance reserve.
     # A yard of ducks, for any terminal with room to swing them. Below this the
     # crowd has nowhere to go and it reads as a jam rather than mayhem, so the
-    # older single-duck bands still handle the small end.
-    if width >= 60 and height >= 24:
+    # older single-duck bands still handle the small end — and so does the whole
+    # roomy band when the style preference asks for the original (Settings →
+    # System → Advanced → Screensaver).
+    from yeaboi.config import screensaver_style
+
+    if width >= 60 and height >= 24 and screensaver_style() == "ducks":
         from yeaboi.ui.shared._mayhem import render as render_mayhem
 
         return build_page_panel(

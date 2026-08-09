@@ -211,6 +211,34 @@ def set_duck_enabled(enabled: bool) -> None:
     logger.info("Duck bubble %s (persisted to %s)", "enabled" if enabled else "disabled", config_file)
 
 
+# Which idle saver a roomy terminal gets. "ducks" is the yard of them; "classic"
+# is the original single duck waddling the floor, which some people prefer to have
+# on screen for minutes at a time. Only the roomy branch differs — every smaller
+# size has always drawn one duck and still does.
+SCREENSAVER_STYLES: tuple[str, ...] = ("ducks", "classic")
+
+
+def screensaver_style() -> str:
+    """Return the idle screensaver style, defaulting to the yard of ducks.
+
+    Anything unrecognised falls back to the default rather than raising: this is
+    read on a render path, and a typo in .env should cost the fancy saver, not
+    the frame.
+    """
+    value = os.getenv("SCREENSAVER_STYLE", "ducks").strip().lower()
+    return value if value in SCREENSAVER_STYLES else "ducks"
+
+
+def set_screensaver_style(style: str) -> None:
+    """Persist the screensaver style to the config .env and apply it now."""
+    value = style.strip().lower()
+    if value not in SCREENSAVER_STYLES:
+        raise ValueError(f"screensaver style must be one of {', '.join(SCREENSAVER_STYLES)}")
+    config_file = set_config_value("SCREENSAVER_STYLE", value)
+    os.environ["SCREENSAVER_STYLE"] = value
+    logger.info("Screensaver style set to %s (persisted to %s)", value, config_file)
+
+
 def is_music_enabled() -> bool:
     """Return True if background music was left enabled (default off).
 
