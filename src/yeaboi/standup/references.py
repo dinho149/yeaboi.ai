@@ -83,6 +83,11 @@ _TRACKER_KINDS = frozenset({"issue", "wip", "work_item", "update", "comment", "t
 _WORK_ITEM_KINDS = frozenset({"work_item", "wip", "ticket_context"})
 
 
+def is_tracker_kind(kind: str) -> bool:
+    """Whether an item of this kind IS a ticket (vs a change that may name one)."""
+    return kind in _TRACKER_KINDS
+
+
 def find_ticket_keys(text: str) -> tuple[str, ...]:
     """Every Jira-shaped key in ``text``, ungated, in order of appearance."""
     return tuple(TICKET_KEY_RE.findall(text or ""))
@@ -146,6 +151,41 @@ def has_tracker_reference(
         if work_item_ids and any(match in work_item_ids for match in BARE_ID_RE.findall(text)):
             return True
     return False
+
+
+def display_ticket_keys(
+    *texts: str,
+    prefixes: Collection[str] = (),
+    work_item_ids: Collection[str] = (),
+    linked_ids: Iterable[str] = (),
+) -> tuple[str, ...]:
+    """Exact tracker references in evidence-key form ("PROJ-12", "#123").
+
+    The naming twin of ``has_tracker_reference``: same three gates — prefix-gated
+    Jira keys, ungated ``AB#123``, id-gated bare ``#123`` — plus ``linked_ids``,
+    the first-party work items a tracker attached to the change itself (AzDO PR
+    links). These keys become *visible claims* (a PR filed under a story on the
+    standup page), so only a reference the change's own text or the tracker
+    itself names may appear; the fuzzy relatedness matcher must never feed this.
+    Ordered, deduped, spelled the way evidence rows spell their keys so callers
+    can match by string equality.
+    """
+    keys: dict[str, None] = {}
+    for text in texts:
+        if not text:
+            continue
+        for key in gated_ticket_keys(text, prefixes=prefixes):
+            keys.setdefault(key)
+        for wid in AZDO_REF_RE.findall(text):
+            keys.setdefault(f"#{wid}")
+        for wid in BARE_ID_RE.findall(text):
+            if wid in work_item_ids:
+                keys.setdefault(f"#{wid}")
+    for wid in linked_ids:
+        wid = str(wid).strip().lstrip("#")
+        if wid:
+            keys.setdefault(f"#{wid}")
+    return tuple(keys)
 
 
 def pr_reference(subject: str) -> str:

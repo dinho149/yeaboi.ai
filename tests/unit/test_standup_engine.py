@@ -1187,6 +1187,83 @@ class TestMemberEvidence:
         assert [c.key for c in rows[0].children] == ["aaa2", "aaa1"]
         assert rows[0].children[0].children == ()
 
+    def test_hierarchy_fields_survive_to_evidence_rows(self):
+        acts = [
+            {
+                "kind": "issue",
+                "title": "SSO error states",
+                "key": "PSOT-3",
+                "url": "https://j/browse/PSOT-3",
+                "issue_type": "Sub-task",
+                "parent_key": "PSOT-1",
+                "subtask": True,
+            }
+        ]
+        row = engine._member_evidence(acts)[0]
+        assert (row.issue_type, row.parent_key, row.subtask) == ("Sub-task", "PSOT-1", True)
+        # Tracker rows ARE tickets — they never name ticket_keys.
+        assert row.ticket_keys == ()
+
+    def test_code_rows_name_only_gated_exact_references(self):
+        acts = [
+            {
+                "kind": "pr",
+                "title": "PSOT-12 enable SSO",
+                "key": "#91",
+                "url": "https://g/pr/91",
+                "branch": "feature/UTF-8-support",  # ticket-shaped, not a ticket
+                "body": "Relates to ab#77.",
+                "work_item_ids": ("88",),
+            }
+        ]
+        row = engine._member_evidence(acts, prefixes=frozenset({"PSOT"}), work_item_ids=frozenset({"77"}))[0]
+        assert row.ticket_keys == ("PSOT-12", "#77", "#88")
+
+    def test_without_gates_no_keys_are_named(self):
+        # The suppress-only default: a caller that passes no gates gets no
+        # claims, never ungated ones.
+        acts = [{"kind": "pr", "title": "PSOT-12 enable SSO", "key": "#91", "url": "https://g/pr/91"}]
+        assert engine._member_evidence(acts)[0].ticket_keys == ()
+
+    def test_fallback_updates_carry_hierarchy_and_attach_keys(self):
+        # End to end through _build_fallback_member_updates: the gates are
+        # derived from the report's own tracker items, so the PR's reference
+        # to the story becomes a named key on its evidence row.
+        grouped = {
+            "Ada": [
+                {
+                    "kind": "issue",
+                    "source": "jira",
+                    "title": "SSO login flow",
+                    "key": "PSOT-1",
+                    "url": "https://j/browse/PSOT-1",
+                    "issue_type": "Story",
+                    "subtask": False,
+                },
+                {
+                    "kind": "issue",
+                    "source": "jira",
+                    "title": "SSO error states",
+                    "key": "PSOT-3",
+                    "url": "https://j/browse/PSOT-3",
+                    "issue_type": "Sub-task",
+                    "parent_key": "PSOT-1",
+                    "subtask": True,
+                },
+                {
+                    "kind": "pr",
+                    "source": "github",
+                    "title": "PSOT-1 enable SSO",
+                    "key": "#91",
+                    "url": "https://g/pr/91",
+                },
+            ]
+        }
+        update = engine._build_fallback_member_updates(grouped, {})[0]
+        subtask_row = next(r for r in update.ticketing_evidence if r.key == "PSOT-3")
+        assert subtask_row.subtask is True and subtask_row.parent_key == "PSOT-1"
+        assert update.code_evidence[0].ticket_keys == ("PSOT-1",)
+
     def test_grouping_carries_timestamp_and_summary(self):
         items = [
             {
@@ -1956,7 +2033,22 @@ class TestLlmPayloadKeys:
     # Split by intent. Anything not in one of these two sets is undecided.
     FOR_THE_MODEL = frozenset({"kind", "title", "summary", "status", "source", "repository"})
     RENDERING_AND_RULES_ONLY = frozenset(
-        {"key", "url", "timestamp", "pr_id", "branch", "body", "changed_paths", "work_item_ids", "work_items_known"}
+        {
+            "key",
+            "url",
+            "timestamp",
+            "pr_id",
+            "branch",
+            "body",
+            "changed_paths",
+            "work_item_ids",
+            "work_items_known",
+            # Story/subtask hierarchy: deterministic, drawn by the web page —
+            # the model restating structure the UI renders would be noise.
+            "issue_type",
+            "parent_key",
+            "subtask",
+        }
     )
 
     def _row(self) -> dict:
@@ -1976,6 +2068,9 @@ class TestLlmPayloadKeys:
             "changed_files": [f"src/m{i}.py" for i in range(100)],
             "work_item_ids": ["1234"],
             "work_items_known": True,
+            "issue_type": "Story",
+            "parent_key": "PROJ-1",
+            "subtask": False,
         }
         return engine._group_activity_by_author([item], ["Alice"])["Alice"][0]
 

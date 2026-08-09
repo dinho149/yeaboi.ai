@@ -200,6 +200,10 @@ def _dict_to_evidence(items: object) -> tuple[ActivityEvidence, ...]:
             # One level deep in practice (commits under a PR); recursion keeps
             # the rebuild honest either way.
             children=_dict_to_evidence(e.get("children")),
+            issue_type=str(e.get("issue_type", "")),
+            parent_key=str(e.get("parent_key", "")),
+            subtask=bool(e.get("subtask", False)),
+            ticket_keys=tuple(str(k) for k in (e.get("ticket_keys") or []) if str(k)),
         )
         for e in items
         if isinstance(e, dict)

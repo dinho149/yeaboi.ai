@@ -739,8 +739,27 @@ _MAX_COMMENTS_TOTAL = 50
 # The activity searches' base field lists. Kept as named constants because the
 # ticket-text option appends to them and has to be able to fall back to exactly
 # these on rejection.
-_STANDUP_ISSUE_FIELDS = "summary,assignee,status,updated,comment"
-_STANDUP_WIP_FIELDS = "summary,assignee,status"
+_STANDUP_ISSUE_FIELDS = "summary,assignee,status,updated,comment,issuetype,parent"
+_STANDUP_WIP_FIELDS = "summary,assignee,status,issuetype,parent"
+
+
+def _issue_hierarchy(fields) -> dict:
+    """The story/subtask facts of an issue, from its already-fetched fields.
+
+    ``subtask`` comes from ``issuetype.subtask`` — Jira's own flag, the only
+    spelling that survives localized type names and team-managed projects.
+    ``parent_key`` is emitted whenever ``fields.parent`` exists, which on a
+    team-managed project includes a Story pointing at its *epic* — a true fact,
+    but not subtask parentage, which is why ``subtask`` alone licenses nesting
+    downstream. Tolerant of every absence (old cassettes, trimmed field lists).
+    """
+    issuetype = getattr(fields, "issuetype", None)
+    parent = getattr(fields, "parent", None)
+    return {
+        "issue_type": getattr(issuetype, "name", "") or "",
+        "subtask": bool(getattr(issuetype, "subtask", False)),
+        "parent_key": getattr(parent, "key", "") or "",
+    }
 
 
 def _standup_text_fields(jira: JIRA) -> tuple[str, str, str]:
@@ -866,6 +885,7 @@ def jira_recent_activity(
                     "timestamp": (getattr(issue.fields, "updated", "") or "")[:19],
                     "key": issue.key,
                     "url": _issue_url(issue.key),
+                    **_issue_hierarchy(issue.fields),
                     # Set on issue/wip items only, never on the update/comment
                     # items below: "comment" is one of automation.py's
                     # detectable kinds, and a ticket description there would go
@@ -1070,6 +1090,9 @@ def _changelog_items(issue, summary: str, assignee_name: str, cutoff: datetime) 
             # The action-phrase title below buries the ticket summary in quotes;
             # evidence rendering needs it clean, so it also travels on its own.
             "summary": summary,
+            # URL-dedupe can leave an update as the ticket's only surviving
+            # evidence row, so hierarchy rides on these items too.
+            **_issue_hierarchy(issue.fields),
         }
         if status_to:
             out.append({**base, "title": f"moved {issue.key} '{summary}' to {status_to}", "status": status_to})
@@ -1108,6 +1131,7 @@ def _comment_items(issue, summary: str, cutoff: datetime) -> list[dict]:
                 "timestamp": (getattr(comment, "created", "") or "")[:19],
                 "key": issue.key,
                 "url": _issue_url(issue.key),
+                **_issue_hierarchy(issue.fields),
             }
         )
     return out
@@ -1182,6 +1206,7 @@ def _wip_items(
                     "timestamp": "",
                     "key": issue.key,
                     "url": _issue_url(issue.key),
+                    **_issue_hierarchy(issue.fields),
                     **({"body": _ticket_body(issue.fields, acceptance_id, dod_id)} if include_ticket_text else {}),
                 }
             )

@@ -357,6 +357,21 @@ def _ev_children(evidence: object) -> Sequence[object]:
     return children if isinstance(children, (list, tuple)) else ()
 
 
+def _ev_flag(evidence: object, field: str) -> bool:
+    """Read one boolean ActivityEvidence field, dict- or dataclass-shaped."""
+    if isinstance(evidence, Mapping):
+        return bool(evidence.get(field, False))
+    return bool(getattr(evidence, field, False))
+
+
+def _ev_seq(evidence: object, field: str) -> tuple[str, ...]:
+    """Read one string-tuple ActivityEvidence field, dict- or dataclass-shaped."""
+    values = evidence.get(field) if isinstance(evidence, Mapping) else getattr(evidence, field, ())
+    if not isinstance(values, (list, tuple)):
+        return ()
+    return tuple(str(v).strip() for v in values if str(v).strip())
+
+
 def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
     """Structured evidence rows for the browser: words and numbers, no markup.
 
@@ -374,6 +389,13 @@ def _evidence_payload(evidence: Sequence[object]) -> list[dict]:
             "status": _ev_field(e, "status"),
             "time": _ev_field(e, "timestamp"),
             "children": _evidence_payload(_ev_children(e)),
+            # Story/subtask facts — the browser nests from these (words, not
+            # layout): the tracker's type word, its parent's key, its own
+            # subtask flag, and the exact ticket keys a change's text names.
+            "type": _ev_field(e, "issue_type"),
+            "parent": _ev_field(e, "parent_key"),
+            "subtask": _ev_flag(e, "subtask"),
+            "tickets": list(_ev_seq(e, "ticket_keys")),
         }
         for e in evidence or ()
     ]

@@ -2,6 +2,37 @@
   "schema_version": 1,
   "entries": [
     {
+      "version": "3.3.0",
+      "date": "2026-08-09",
+      "summary": "The standup page now renders each team member's work as a Jira-style story-centered member card with issue hierarchy. Your main user story becomes the visible unit of each card, with subtasks nested underneath and a status lozenge showing progress. The redesign supports both Jira and Azure DevOps hierarchy, automatically detecting issue types and parent-child relationships without extra API calls. Code and documentation changes are now filed under their referencing story, and legacy reports render unchanged for backward compatibility.",
+      "highlights": [
+        {
+          "text": "Story-centered member cards with Jira-style issue hierarchy — main story is the visible unit with subtasks nested underneath",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Status lozenges show progress (TO DO / IN PROGRESS / DONE / BLOCKED) with audited palette colors across all themes",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Automatic hierarchy detection for Jira and Azure DevOps — no extra API calls, works with team-managed stories and all process templates",
+          "areas": [
+            "standup"
+          ]
+        },
+        {
+          "text": "Code and documentation changes filed under their referencing story, with exact-reference attachment — orphaned work stays visible",
+          "areas": [
+            "standup"
+          ]
+        }
+      ]
+    },
+    {
       "version": "3.2.0",
       "date": "2026-08-09",
       "summary": "yeaboi now covers agents, not just humans. After the splash you pick who we're working with today: Humans (the duck, and every existing mode) or Agents (a new robotic duck, and a new family of modes that watch the AI agents working across your SDLC). The first three agent modes ship in beta: Usage prices your local Claude Code sessions per model, project and day; Standup digests what your agents did — sessions worked plus agent-authored commits and PRs found in your trackers; Security audits your agent setup — permission bypasses, wildcard allows, risky hooks, MCP servers, and secret exposure in transcripts, reported as pattern+file+line only. Everything is computed locally from your own session logs; transcripts are never copied, uploaded or stored. Full parity from day one: every agent mode has a CLI subcommand (yeaboi agents ...), MCP tools, and a plugin skill. The existing Usage page's cost estimate now uses a real per-model pricing table instead of a flat Sonnet rate, so displayed costs may shift.",
